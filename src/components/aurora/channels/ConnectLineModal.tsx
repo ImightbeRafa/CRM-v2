@@ -22,6 +22,11 @@ type ConnectLineModalProps = {
   onLaunch: () => void
   /** Opens the advanced manual link form. */
   onManual?: () => void
+  /**
+   * Meta asked for the direct login (SDK 36008): this button opens it from its own click, since a
+   * browser allows one popup per click.
+   */
+  fallbackAction?: { label: string; onClick: () => void } | null
 }
 
 /**
@@ -38,6 +43,7 @@ export function ConnectLineModal({
   connecting,
   statusMessage,
   onLaunch,
+  fallbackAction,
   onManual,
 }: ConnectLineModalProps) {
   const [attempted, setAttempted] = useState(false)
@@ -90,9 +96,15 @@ export function ConnectLineModal({
                 Vincular manualmente
               </button>
             ) : null}
-            <button type="button" className={auroraBtnPrimary} onClick={launch} disabled={disabled}>
-              Reintentar
-            </button>
+            {fallbackAction ? (
+              <button type="button" className={auroraBtnPrimary} onClick={fallbackAction.onClick}>
+                {fallbackAction.label}
+              </button>
+            ) : (
+              <button type="button" className={auroraBtnPrimary} onClick={launch} disabled={disabled}>
+                Reintentar
+              </button>
+            )}
           </>
         ) : (
           <>

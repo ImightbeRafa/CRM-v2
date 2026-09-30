@@ -23,6 +23,11 @@ type ReconnectChannelModalProps = {
   statusMessage: string
   /** Launches the EXISTING reconnect / repair action. Called synchronously inside the click. */
   onLaunch: () => void
+  /**
+   * Meta asked for the direct login (SDK 36008): this button opens it from its own click, since a
+   * browser allows one popup per click.
+   */
+  fallbackAction?: { label: string; onClick: () => void } | null
 }
 
 /** Reconectar (Instagram / token vencido) and Reparar webhook: confirm + result, no new backend. */
@@ -36,6 +41,7 @@ export function ReconnectChannelModal({
   busy,
   statusMessage,
   onLaunch,
+  fallbackAction,
 }: ReconnectChannelModalProps) {
   const [attempted, setAttempted] = useState(false)
   const [sawBusy, setSawBusy] = useState(false)
@@ -87,20 +93,26 @@ export function ReconnectChannelModal({
             <button type="button" className={auroraBtnSecondary} onClick={() => onOpenChange(false)} disabled={busy}>
               {outcome ? 'Cerrar' : 'Cancelar'}
             </button>
-            <button type="button" className={auroraBtnPrimary} onClick={launch} disabled={busy}>
-              {busy ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                  {isRepair ? 'Reparando…' : 'Conectando…'}
-                </>
-              ) : outcome ? (
-                'Reintentar'
-              ) : isRepair ? (
-                'Reparar'
-              ) : (
-                'Reconectar'
-              )}
-            </button>
+            {outcome && fallbackAction ? (
+              <button type="button" className={auroraBtnPrimary} onClick={fallbackAction.onClick}>
+                {fallbackAction.label}
+              </button>
+            ) : (
+              <button type="button" className={auroraBtnPrimary} onClick={launch} disabled={busy}>
+                {busy ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    {isRepair ? 'Reparando…' : 'Conectando…'}
+                  </>
+                ) : outcome ? (
+                  'Reintentar'
+                ) : isRepair ? (
+                  'Reparar'
+                ) : (
+                  'Reconectar'
+                )}
+              </button>
+            )}
           </>
         )
       }

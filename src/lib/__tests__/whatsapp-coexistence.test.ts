@@ -12,15 +12,13 @@ import {
   isWaCoexistenceFinishEvent,
   isWaEmbeddedSignupFinishEvent,
   isWaEmbeddedSignupMessage,
-  navigateWhatsAppDirectOauthPopup,
-  openWhatsAppDirectOauthPlaceholder,
+  openWhatsAppDirectOauthPopup,
   parseWaDirectOauthMessage,
   shouldDeferWhatsAppCodeExchange,
   shouldIgnoreWaSessionEvent,
   waSignupReadyToExchange,
   WA_COEXISTENCE_FEATURE_TYPE,
   WA_DIRECT_OAUTH_MESSAGE_TYPE,
-  WA_DIRECT_OAUTH_PLACEHOLDER_URL,
   WA_DIRECT_OAUTH_POPUP_NAME,
   WA_SESSION_INFO_VERSION,
   type OpenNamedWindow,
@@ -440,7 +438,8 @@ test('social page consumes wa_direct_oauth and does not spend the code before as
   assert.match(page, /parseWaDirectOauthMessage/)
   assert.match(page, /isFbSdkEmbeddedSignup36008/)
   assert.match(page, /\/api\/auth\/whatsapp\/direct-oauth/)
-  assert.match(page, /launchWhatsAppDirectOauthFallback/)
+  assert.match(page, /prepareWhatsAppDirectOauthFallback/)
+  assert.match(page, /openWhatsAppDirectOauthFromClick/)
   const usageAt = page.lastIndexOf('parseWaDirectOauthMessage')
   const exchangeAt = page.indexOf('tryExchangeWhatsAppSignupRef.current()', usageAt)
   assert.ok(usageAt > 0)
@@ -450,16 +449,10 @@ test('social page consumes wa_direct_oauth and does not spend the code before as
   assert.doesNotMatch(page, /forceTokenOnly/)
 })
 
-test('36008 fallback reserves popup on the click and navigates that handle after fetch', () => {
+test('WhatsApp connect opens ONE popup per click; 36008 fallback opens only from its own click', () => {
   const opens: string[] = []
   const popup = {
     closed: false,
-    location: {
-      href: WA_DIRECT_OAUTH_PLACEHOLDER_URL as string,
-      replace(url: string) {
-        this.href = url
-      },
-    },
     close() {
       this.closed = true
     },
@@ -469,24 +462,34 @@ test('36008 fallback reserves popup on the click and navigates that handle after
     return popup as unknown as Window
   }
 
-  const reserved = openWhatsAppDirectOauthPlaceholder(openWindow)
   const oauthUrl = 'https://www.facebook.com/v24.0/dialog/oauth?client_id=app-1'
-  assert.equal(navigateWhatsAppDirectOauthPopup(reserved, oauthUrl), true)
-  assert.deepEqual(opens, [`${WA_DIRECT_OAUTH_POPUP_NAME}:${WA_DIRECT_OAUTH_PLACEHOLDER_URL}`])
-  assert.equal(popup.location.href, oauthUrl)
+  assert.equal(openWhatsAppDirectOauthPopup(openWindow, oauthUrl), popup as unknown as Window)
+  assert.deepEqual(opens, [`${WA_DIRECT_OAUTH_POPUP_NAME}:${oauthUrl}`])
+  // Only Meta's dialog: a server-supplied URL elsewhere is never opened.
+  assert.equal(openWhatsAppDirectOauthPopup(openWindow, 'https://evil.test/dialog/oauth'), null)
+  assert.equal(openWhatsAppDirectOauthPopup(openWindow, 'about:blank'), null)
+  assert.equal(opens.length, 1)
 
-  closeWhatsAppDirectOauthPopup(reserved)
+  closeWhatsAppDirectOauthPopup(popup as unknown as Window)
   assert.equal(popup.closed, true)
-  assert.equal(navigateWhatsAppDirectOauthPopup(reserved, 'https://example.test'), false)
-  assert.equal(navigateWhatsAppDirectOauthPopup(null, oauthUrl), false)
+  closeWhatsAppDirectOauthPopup(null)
 
   const page = readFileSync('src/app/config/social/page.tsx', 'utf8')
-  const reserveAt = page.indexOf('openWhatsAppDirectOauthPlaceholder(')
-  const loginAt = page.indexOf('FB.login(')
-  const fallbackAt = page.indexOf('launchWhatsAppDirectOauthFallback(reservedPopup)')
-  assert.ok(reserveAt > 0 && loginAt > reserveAt, 'placeholder must open before FB.login')
-  assert.ok(fallbackAt > loginAt)
-  assert.match(page, /navigateWhatsAppDirectOauthPopup\(popup/)
+  const launchAt = page.indexOf('function launchWhatsAppEmbeddedSignup()')
+  const loginAt = page.indexOf('FB.login(', launchAt)
+  const launchBody = page.slice(launchAt, loginAt)
+  // The regression: a reserved about:blank window took the click's only popup and Meta's
+  // Embedded Signup window was blocked (users saw a blank popup that never loaded).
+  assert.doesNotMatch(launchBody, /window\.open|openWhatsAppDirectOauth|openPendingOauthWindow/)
+  assert.doesNotMatch(page, /about:blank|Placeholder|reservedPopup/)
+  assert.match(page, /await prepareWhatsAppDirectOauthFallback\(\)/)
+  // The fallback window is opened synchronously by the "Continuar en Meta" click handler.
+  const clickAt = page.indexOf('function openWhatsAppDirectOauthFromClick()')
+  const clickBody = page.slice(clickAt, page.indexOf('\n  }\n', clickAt))
+  assert.ok(clickAt > 0)
+  assert.doesNotMatch(clickBody, /await|async/)
+  assert.match(clickBody, /openWhatsAppDirectOauthPopup\(/)
+  assert.match(page, /label: 'Continuar en Meta', onClick: openWhatsAppDirectOauthFromClick/)
   assert.doesNotMatch(page, /window\.open\(\s*String\(json\.oauthUrl\)/)
   assert.doesNotMatch(page, /forceTokenOnly/)
 })

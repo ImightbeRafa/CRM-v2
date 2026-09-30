@@ -257,10 +257,14 @@ export function buildWhatsAppDirectOauthDialogUrl(opts: {
   return url.toString()
 }
 
-/** Named popup reserved on the user click so the 36008 fallback is not blocked. */
+/**
+ * Named popup for the 36008 direct-OAuth fallback. It is opened ONLY from its own click (a
+ * "Continuar en Meta" button), never reserved next to FB.login: a browser grants one popup per
+ * click, so a reserved blank window stole it and Meta's Embedded Signup window was blocked
+ * (users saw a blank popup that never loaded).
+ */
 export const WA_DIRECT_OAUTH_POPUP_NAME = 'whatsapp_direct_oauth' as const
 export const WA_DIRECT_OAUTH_POPUP_FEATURES = 'width=640,height=760' as const
-export const WA_DIRECT_OAUTH_PLACEHOLDER_URL = 'about:blank' as const
 
 export type OpenNamedWindow = (
   url: string,
@@ -268,28 +272,13 @@ export type OpenNamedWindow = (
   features: string,
 ) => Window | null
 
-/** Open the fallback popup synchronously on the click that calls FB.login. */
-export function openWhatsAppDirectOauthPlaceholder(
+/** Open the direct-OAuth dialog. Call synchronously inside the click handler. */
+export function openWhatsAppDirectOauthPopup(
   openWindow: OpenNamedWindow,
-): Window | null {
-  return openWindow(
-    WA_DIRECT_OAUTH_PLACEHOLDER_URL,
-    WA_DIRECT_OAUTH_POPUP_NAME,
-    WA_DIRECT_OAUTH_POPUP_FEATURES,
-  )
-}
-
-export function navigateWhatsAppDirectOauthPopup(
-  popup: Window | null,
   oauthUrl: string,
-): boolean {
-  if (!popup || popup.closed) return false
-  try {
-    popup.location.replace(oauthUrl)
-    return true
-  } catch {
-    return false
-  }
+): Window | null {
+  if (!/^https:\/\/www\.facebook\.com\//.test(oauthUrl)) return null
+  return openWindow(oauthUrl, WA_DIRECT_OAUTH_POPUP_NAME, WA_DIRECT_OAUTH_POPUP_FEATURES)
 }
 
 export function closeWhatsAppDirectOauthPopup(popup: Window | null): void {

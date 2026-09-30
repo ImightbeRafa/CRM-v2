@@ -1,3 +1,18 @@
+## 2026-09-30 — HOTFIX: Meta connect popups (WhatsApp + Instagram) — "2 popups, one never loads"
+
+- Cause (since 4dae7d7, 2026-09-26): the WhatsApp click opened a reserved blank window AND
+  FB.login's Embedded Signup window. Browsers grant one popup per click unless the site is
+  allow-listed, so for most users the blank window took it and Meta's window was blocked (owner's
+  browser had popups allowed, so it worked there — plus a blank window that never loaded).
+- Fix: WhatsApp click opens only Meta's window. SDK 36008 fallback now fetches the direct-OAuth URL
+  and shows a "Continuar en Meta" button (page banner + both connect modals) that opens it from its
+  own click; only https://www.facebook.com/ URLs are opened. Instagram opens its single window on the
+  click (with an "Abriendo Meta…" note) before awaiting the auth URL, then navigates it (Safari
+  blocks window.open after a fetch); the window closes on error.
+- Tests rewritten, not deleted: whatsapp-coexistence (one popup per click, fallback from its own
+  click), aurora-site-rest, new oauth-popup.test.ts (in test:chat-harden).
+- Proof: tsc 0, eslint clean on touched files, chat-harden 429, site-ui 50, config-ui 30.
+
 ## 2026-09-30 — Business switcher SHIPPED (8abb81ff live) — live line is now claudio/phase2b-switcher
 
 - 5 SecureDog rounds on a5f81cd..69108bd. Fixed before prod: switch was per user (moved other

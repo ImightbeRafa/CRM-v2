@@ -6,19 +6,18 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import {
   buildWhatsAppEmbeddedSignupLoginOptions,
-  closeWhatsAppDirectOauthPopup,
   decideWhatsAppDirectOauthPopupClosed,
   isFbSdkEmbeddedSignup36008,
   isWaEmbeddedSignupFinishEvent,
   isWaEmbeddedSignupMessage,
-  navigateWhatsAppDirectOauthPopup,
-  openWhatsAppDirectOauthPlaceholder,
+  openWhatsAppDirectOauthPopup,
   parseWaDirectOauthMessage,
   shouldIgnoreWaSessionEvent,
   waSignupReadyToExchange,
   type WaDirectOauthPopupCloseDecision,
   type WaEmbeddedSignupMessage,
 } from '@/lib/whatsapp-embedded-signup'
+import { openPendingOauthWindow } from '@/lib/oauth-popup'
 import { Plus, Search } from 'lucide-react'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
 import { ConnectLineModal } from '@/components/aurora/channels/ConnectLineModal'
@@ -126,6 +125,8 @@ export default function SocialConfigPage() {
   }>({})
   const tryExchangeWhatsAppSignupRef = useRef<() => Promise<void>>(async () => {})
   const waDirectOauthWatchRef = useRef<number | null>(null)
+  /** 36008 fallback URL, opened only from the "Continuar en Meta" click (one popup per click). */
+  const [waDirectOauthUrl, setWaDirectOauthUrl] = useState<string | null>(null)
 
   const META_WA_APP_ID =
     (process.env.NEXT_PUBLIC_META_WA_APP_ID as string | undefined) ||
@@ -396,15 +397,15 @@ export default function SocialConfigPage() {
     }
   }, [])
 
-  async function launchWhatsAppDirectOauthFallback(popup: Window | null) {
+  /** 36008: fetch the direct OAuth URL; the user opens it with a fresh click (never auto-popup). */
+  async function prepareWhatsAppDirectOauthFallback() {
     setConnectingWhatsApp(true)
-    setStatusMessage('FB.login no pudo abrir Embedded Signup. Probando el flujo directo…')
+    setStatusMessage('Meta no pudo abrir el registro en esta ventana. Preparando el acceso directo…')
     waSignupPendingRef.current = {}
     try {
       const res = await fetch('/api/auth/whatsapp/direct-oauth', { credentials: 'same-origin' })
       const json = await res.json().catch(() => ({}))
       if (!res.ok || !json.oauthUrl) {
-        closeWhatsAppDirectOauthPopup(popup)
         setStatusMessage(
           json.error ||
             json.details ||
@@ -414,29 +415,35 @@ export default function SocialConfigPage() {
         setConnectingWhatsApp(false)
         return
       }
-
-      if (!navigateWhatsAppDirectOauthPopup(popup, String(json.oauthUrl))) {
-        closeWhatsAppDirectOauthPopup(popup)
-        setStatusMessage(
-          'El navegador bloqueó la ventana emergente. Permite popups e intenta de nuevo.',
-        )
-        setConnectingWhatsApp(false)
-        return
-      }
-
-      clearWaDirectOauthWatch()
-      waDirectOauthWatchRef.current = window.setInterval(() => {
-        if (!popup || !popup.closed) return
-        clearWaDirectOauthWatch()
-        applyDirectOauthPopupClosed(
-          decideWhatsAppDirectOauthPopupClosed(waSignupPendingRef.current),
-        )
-      }, 1000)
+      setWaDirectOauthUrl(String(json.oauthUrl))
+      setStatusMessage('Tocá «Continuar en Meta» para terminar de conectar WhatsApp.')
+      setConnectingWhatsApp(false)
     } catch {
-      closeWhatsAppDirectOauthPopup(popup)
       setStatusMessage('Error al iniciar el OAuth directo de WhatsApp.')
       setConnectingWhatsApp(false)
     }
+  }
+
+  /** Click handler: window.open must run synchronously here or the browser blocks it. */
+  function openWhatsAppDirectOauthFromClick() {
+    const url = waDirectOauthUrl
+    if (!url) return
+    const popup = openWhatsAppDirectOauthPopup((u, name, features) => window.open(u, name, features), url)
+    if (!popup) {
+      setStatusMessage('El navegador bloqueó la ventana emergente. Permite popups e intenta de nuevo.')
+      return
+    }
+    setWaDirectOauthUrl(null)
+    setConnectingWhatsApp(true)
+    setStatusMessage('Completá el registro en la ventana de Meta…')
+    clearWaDirectOauthWatch()
+    waDirectOauthWatchRef.current = window.setInterval(() => {
+      if (!popup.closed) return
+      clearWaDirectOauthWatch()
+      applyDirectOauthPopupClosed(
+        decideWhatsAppDirectOauthPopupClosed(waSignupPendingRef.current),
+      )
+    }, 1000)
   }
 
   function launchWhatsAppEmbeddedSignup() {
@@ -453,21 +460,18 @@ export default function SocialConfigPage() {
     waSignupPendingRef.current = {}
     clearWaDirectOauthWatch()
 
-    // Reserve the fallback window on the click gesture. A second window.open
-    // after FB.login + await fetch is blocked by popup blockers (error 36008).
-    const reservedPopup = openWhatsAppDirectOauthPlaceholder((url, name, features) =>
-      window.open(url, name, features),
-    )
+    setWaDirectOauthUrl(null)
 
+    // FB.login must be the ONLY popup this click opens: a second popup on the same click
+    // takes the browser's one-popup allowance and Meta's Embedded Signup window gets blocked.
     FB.login(
       (response: any) => {
         const handleResponse = async () => {
           try {
             if (isFbSdkEmbeddedSignup36008(response?.error) || isFbSdkEmbeddedSignup36008(response)) {
-              await launchWhatsAppDirectOauthFallback(reservedPopup)
+              await prepareWhatsAppDirectOauthFallback()
               return
             }
-            closeWhatsAppDirectOauthPopup(reservedPopup)
             if (!response || response.status === 'unknown') {
               setStatusMessage('Conexión de WhatsApp cancelada.')
               setConnectingWhatsApp(false)
@@ -504,7 +508,6 @@ export default function SocialConfigPage() {
             // Settle the spinner; a late FINISH message re-arms it via tryExchange.
             setConnectingWhatsApp(false)
           } catch (err: unknown) {
-            closeWhatsAppDirectOauthPopup(reservedPopup)
             const message = err instanceof Error ? err.message : 'Error inesperado'
             setStatusMessage(message)
             setConnectingWhatsApp(false)
@@ -570,17 +573,22 @@ export default function SocialConfigPage() {
   async function handleLinkInstagram() {
     setConnectingInstagram(true)
     setStatusMessage('')
+    // Open the (single) window on the click itself, before any await: Safari blocks window.open
+    // after a fetch. It shows a loading note, then goes to Meta once the URL is ready.
+    const popup = openPendingOauthWindow('instagram_oauth')
+    if (!popup) {
+      setStatusMessage('El navegador bloqueó la ventana emergente. Permite popups e intenta de nuevo.')
+      setConnectingInstagram(false)
+      return
+    }
     try {
       const res = await fetch('/api/auth/instagram/auth-url')
       if (!res.ok) throw new Error('No se pudo generar el enlace de Instagram')
       const { authUrl, loginForBusiness } = await res.json()
-
-      const popup = window.open(authUrl, 'instagram_oauth', 'width=640,height=760')
-      if (!popup) {
-        setStatusMessage('El navegador bloqueó la ventana emergente. Permite popups e intenta de nuevo.')
-        setConnectingInstagram(false)
-        return
+      if (typeof authUrl !== 'string' || !/^https:\/\/(www\.)?(facebook|instagram)\.com\//.test(authUrl)) {
+        throw new Error('No se pudo generar el enlace de Instagram')
       }
+      popup.location.replace(authUrl)
 
       setStatusMessage(
         loginForBusiness
@@ -597,6 +605,7 @@ export default function SocialConfigPage() {
         }
       }, 1000)
     } catch (error) {
+      if (!popup.closed) popup.close()
       console.error('Error launching Instagram OAuth:', error)
       setStatusMessage('Error al iniciar la conexión con Instagram')
       setConnectingInstagram(false)
@@ -907,6 +916,15 @@ export default function SocialConfigPage() {
         {statusMessage && !subscribeFailToast ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
             {statusMessage}
+            {waDirectOauthUrl ? (
+              <button
+                type="button"
+                onClick={openWhatsAppDirectOauthFromClick}
+                className="ml-3 rounded-lg bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700"
+              >
+                Continuar en Meta
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -1155,6 +1173,7 @@ export default function SocialConfigPage() {
         connecting={connectingWhatsApp}
         statusMessage={statusMessage}
         onLaunch={launchWhatsAppEmbeddedSignup}
+        fallbackAction={waDirectOauthUrl ? { label: 'Continuar en Meta', onClick: openWhatsAppDirectOauthFromClick } : null}
         onManual={() => setShowManualWhatsApp(true)}
       />
       {reconnectTarget ? (
@@ -1173,6 +1192,11 @@ export default function SocialConfigPage() {
                 : connectingWhatsApp
           }
           statusMessage={statusMessage}
+          fallbackAction={
+            reconnectTarget.acc.platform !== 'instagram' && waDirectOauthUrl
+              ? { label: 'Continuar en Meta', onClick: openWhatsAppDirectOauthFromClick }
+              : null
+          }
           onLaunch={() =>
             reconnectTarget.kind === 'repair'
               ? void handleResubscribe(reconnectTarget.acc.id)

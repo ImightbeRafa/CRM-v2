@@ -6,11 +6,13 @@ import { AuroraEmptyState } from '@/components/aurora/states/AuroraEmptyState';
 import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import { hasSessionPermission } from '@/lib/session-permissions';
+import { notify } from '@/lib/ui-notify';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { Card, CardContent } from '@/app/components/ui/card';
 import { Input } from '@/app/components/ui/input';
-import { CheckCircle, Download, Edit, Loader2, Mail, MapPin, Plus, RefreshCw, Search, Star, Trash2, TrendingUp, Users, X } from 'lucide-react';
+import { CheckCircle, Download, Edit, FileDown, Loader2, Mail, MapPin, Plus, RefreshCw, Search, Star, Trash2, TrendingUp, Users, X } from 'lucide-react';
 
 interface ManagedClient {
   id: string;
@@ -44,7 +46,27 @@ interface ClientStats {
 const emptyStats: ClientStats = { totalClients: 0, activeClients: 0, newClientsThisMonth: 0, totalRevenue: 0, averageOrderValue: 0 };
 const emptyForm = { name: '', phone: '', email: '', province: '', canton: '', district: '', address: '', business: '', username: '', notes: '', isFavorite: false };
 
-function ClientHistory({ client, onClose }: { client: ManagedClient; onClose: () => void }) {
+/** Ley 8968: download everything Betsy holds about this customer (owner only; server re-checks). */
+async function downloadCustomerData(client: ManagedClient): Promise<void> {
+  const response = await fetch(`/api/clients/${encodeURIComponent(client.id)}/data-export`, { credentials: 'same-origin', cache: 'no-store' });
+  if (!response.ok) {
+    const json = await response.json().catch(() => ({}));
+    notify(json.error || 'No se pudo descargar los datos del cliente.');
+    return;
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `cliente-${client.id}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function ClientHistory({ client, onClose, canExportData }: { client: ManagedClient; onClose: () => void; canExportData: boolean }) {
+  const [exporting, setExporting] = useState(false);
   const [orders, setOrders] = useState<Array<{ id: string; orderId: string; status: string; total: number; product: string | null; timestamp: string; orderType: string }>>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -70,7 +92,7 @@ function ClientHistory({ client, onClose }: { client: ManagedClient; onClose: ()
   return <div className="fixed inset-0 z-50 bg-black/60 p-4 flex items-center justify-center">
     <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto">
       <CardContent className="p-5 space-y-4">
-        <div className="flex justify-between items-start"><div><h2 className="text-xl font-bold">{client.name}</h2><p className="text-sm text-muted-foreground">Historial enlazado por Client ID</p></div><Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button></div>
+        <div className="flex justify-between items-start"><div><h2 className="text-xl font-bold">{client.name}</h2><p className="text-sm text-muted-foreground">Historial enlazado por Client ID</p></div><div className="flex items-center gap-2">{canExportData && <Button variant="outline" size="sm" disabled={exporting} title="Todo lo que Betsy guarda de este cliente (Ley 8968)" onClick={async () => { setExporting(true); try { await downloadCustomerData(client); } finally { setExporting(false); } }}>{exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileDown className="h-4 w-4 mr-2" />}Descargar sus datos</Button>}<Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button></div></div>
         {orders.map(order => <div key={order.id} className="border rounded-lg p-3 flex justify-between gap-4"><div><strong>#{order.orderId}</strong><p className="text-sm text-muted-foreground">{order.product || 'Sin producto'} · {new Date(order.timestamp).toLocaleDateString('es-CR')}</p></div><div className="text-right"><Badge variant="outline">{order.status}</Badge><p className="font-semibold mt-1">₡{Number(order.total).toLocaleString('es-CR')}</p></div></div>)}
         {loading && <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>}
         {!loading && orders.length === 0 && <p className="text-center text-muted-foreground py-8">No hay pedidos enlazados.</p>}
@@ -83,6 +105,7 @@ function ClientHistory({ client, onClose }: { client: ManagedClient; onClose: ()
 export function PaginatedClientManagement({ onUnavailable }: { onUnavailable: () => void }) {
   const { data: session } = useSession();
   const tenantKey = session?.user?.currentTenant?.id || session?.user?.tenantId || '';
+  const canExportData = hasSessionPermission(session, 'manage_tenant');
   const [dataTenantKey, setDataTenantKey] = useState(tenantKey);
   const [clients, setClients] = useState<ManagedClient[]>([]);
   const [stats, setStats] = useState<ClientStats>(emptyStats);
@@ -188,6 +211,6 @@ export function PaginatedClientManagement({ onUnavailable }: { onUnavailable: ()
     <div className="space-y-3">{clients.map(client => <Card key={client.id}><CardContent className="p-4 flex flex-col lg:flex-row justify-between gap-4"><button type="button" className="text-left flex-1" onClick={() => setSelected(client)}><div className="flex flex-wrap gap-2 items-center"><strong>{client.name}</strong>{client.isFavorite && <Badge><Star className="h-3 w-3 mr-1" />VIP</Badge>}<Badge variant="outline">{client.totalOrders} pedidos</Badge>{!client.isActive && <Badge variant="destructive">Inactivo</Badge>}</div><div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-muted-foreground mt-3"><span>{client.phone}</span><span className="flex items-center"><Mail className="h-3 w-3 mr-1" />{client.email || 'Sin email'}</span><span className="flex items-center"><MapPin className="h-3 w-3 mr-1" />{client.province}, {client.canton}</span><span>Total: ₡{client.totalSpent.toLocaleString('es-CR')}</span><span>Promedio: ₡{client.averageOrderValue.toLocaleString('es-CR')}</span><span>Último: {new Date(client.lastOrder).toLocaleDateString('es-CR')}</span></div></button><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => openForm(client)}><Edit className="h-4 w-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => void removeClient(client)}><Trash2 className="h-4 w-4" /></Button></div></CardContent></Card>)}</div>
     {!loading && clients.length === 0 && <Card><AuroraEmptyState tone="neutral" title={search.trim() || location !== 'all' || state !== 'all' ? 'Sin resultados' : 'Todavía no hay clientes'} description={search.trim() || location !== 'all' || state !== 'all' ? 'No hay clientes que coincidan con los filtros.' : 'Tus clientes aparecen acá cuando registrás pedidos, o podés agregarlos a mano.'} actions={<Button size="sm" onClick={() => openForm()}><Plus className="h-4 w-4 mr-2" />Agregar cliente</Button>} /></Card>}
     {hasMore && <Button variant="outline" className="w-full" disabled={loadingMore} onClick={() => void loadClients(cursor)}>{loadingMore && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Cargar más clientes</Button>}
-    {selected && <ClientHistory client={selected} onClose={() => setSelected(null)} />}
+    {selected && <ClientHistory client={selected} canExportData={canExportData} onClose={() => setSelected(null)} />}
   </div>;
 }

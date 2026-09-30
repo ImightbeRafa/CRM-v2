@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { isMfaPendingToken, pendingMfaNonce, pendingMfaUserId } from '@/lib/mfa-session'
 import { verifyMfaChallenge } from '@/lib/mfa-state'
-import { clearMfaFailures, mfaThrottled, recordMfaFailure } from '@/lib/mfa-throttle'
+import { notifyMfaEvent, releaseMfaIpSlot, reserveMfaIpSlot } from '@/lib/mfa-throttle'
 import { PII_NO_STORE_HEADERS } from '@/lib/security'
 
 export const runtime = 'nodejs'
@@ -39,7 +39,8 @@ export async function POST(request: NextRequest) {
   const recoveryCode = typeof body?.recoveryCode === 'string' ? body.recoveryCode.trim().slice(0, 24) : ''
   if (!code === !recoveryCode) return reply(400, { ok: false, code: 'BAD_REQUEST', error: MESSAGES.bad_request })
 
-  if (await mfaThrottled(userId, request)) {
+  // Reserve first (never check-then-act); the per-user budget inside verifyMfaChallenge is the hard cap.
+  if (!(await reserveMfaIpSlot(request))) {
     return reply(429, { ok: false, code: 'THROTTLED', error: MESSAGES.throttled })
   }
 
@@ -52,13 +53,17 @@ export async function POST(request: NextRequest) {
   }
 
   if (!result.ok) {
-    if (result.reason === 'invalid') await recordMfaFailure(userId, request)
+    if (result.reason === 'throttled') {
+      if (result.firstLock) void notifyMfaEvent(userId, 'mfa_locked')
+      return reply(429, { ok: false, code: 'THROTTLED', error: MESSAGES.throttled })
+    }
     const status = result.reason === 'invalid' ? 400 : 401
     const message = result.reason === 'invalid' ? MESSAGES.invalid : result.reason === 'locked' ? MESSAGES.locked : MESSAGES.expired
     return reply(status, { ok: false, code: result.reason.toUpperCase(), error: message })
   }
 
-  await clearMfaFailures(userId)
+  await releaseMfaIpSlot(request)
+  if (result.method === 'recovery') void notifyMfaEvent(userId, 'mfa_recovery_used')
   return reply(200, {
     ok: true,
     method: result.method,

@@ -1,11 +1,13 @@
 /**
- * Nightly retention for workspace logs (ActivityEvent 13 months, notifications 90 / 180 days).
+ * Nightly retention for workspace logs (ActivityEvent 13 months, notifications 90 / 180 days) and
+ * finished 2FA sign-in challenges (> 1 day).
  * Auth: Bearer CRON_SECRET (constant-time). Respects DISABLE_CRONS.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { timingSafeEqualString } from '@/lib/security'
 import { cronsDisabled } from '@/lib/cron-kill-switch'
 import { purgeWorkspaceLogs } from '@/lib/workspace-retention'
+import { purgeOldMfaChallenges } from '@/lib/mfa-state'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -20,7 +22,8 @@ export async function GET(request: NextRequest) {
   if (cronsDisabled(process.env)) return NextResponse.json({ status: 'skipped', reason: 'DISABLE_CRONS' })
   try {
     const result = await purgeWorkspaceLogs({ budgetMs: 45_000 })
-    return NextResponse.json({ status: 'ok', ...result })
+    const mfaChallenges = await purgeOldMfaChallenges().catch(() => -1)
+    return NextResponse.json({ status: 'ok', ...result, mfaChallenges })
   } catch (error) {
     console.error('[workspace-retention] failed', error instanceof Error ? error.name : 'unknown')
     return NextResponse.json({ error: 'Retention failed' }, { status: 500 })

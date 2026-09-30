@@ -16,6 +16,7 @@ import {
 type Status = { available: boolean; enabled: boolean; enabledAt: string | null; recoveryLeft: number }
 type Step =
   | { kind: 'idle' }
+  | { kind: 'confirm' }
   | { kind: 'setup'; secret: string; otpauthUri: string }
   | { kind: 'codes'; codes: string[]; signOutAfter: boolean }
   | { kind: 'disable' }
@@ -66,10 +67,11 @@ export function SecurityPanel() {
   }
 
   const startSetup = async () => {
-    reset()
+    setError('')
     setBusy(true)
-    const { ok, json } = await post('/api/account/2fa/setup')
+    const { ok, json } = await post('/api/account/2fa/setup', { password })
     setBusy(false)
+    setPassword('')
     if (!ok) return setError(json.error || 'No se pudo iniciar la configuración.')
     setStep({ kind: 'setup', secret: json.secret, otpauthUri: json.otpauthUri })
   }
@@ -184,6 +186,32 @@ export function SecurityPanel() {
               </p>
             ) : null}
           </div>
+        ) : step.kind === 'confirm' ? (
+          <div className="space-y-4">
+            <p className="text-[13px] text-slate-700">Para empezar, confirmá que sos vos.</p>
+            <div>
+              <label className={auroraLabelClass} htmlFor="mfa-setup-password">
+                Contraseña (si entrás con Google, dejala vacía)
+              </label>
+              <input
+                id="mfa-setup-password"
+                type="password"
+                autoComplete="current-password"
+                className={auroraInputClass}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            {error ? <p role="alert" className="text-[12px] text-red-600">{error}</p> : null}
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={auroraBtnSecondary} onClick={() => setStep({ kind: 'idle' })} disabled={busy}>
+                Cancelar
+              </button>
+              <button type="button" className={auroraBtnPrimary} onClick={() => void startSetup()} disabled={busy}>
+                Continuar
+              </button>
+            </div>
+          </div>
         ) : step.kind === 'setup' ? (
           <div className="space-y-4">
             <ol className="list-decimal space-y-2 pl-5 text-[13px] text-slate-700">
@@ -293,7 +321,7 @@ export function SecurityPanel() {
               </div>
             </div>
             {error ? <p role="alert" className="text-[12px] text-red-600">{error}</p> : null}
-            <button type="button" className={auroraBtnPrimary} onClick={() => void startSetup()} disabled={busy}>
+            <button type="button" className={auroraBtnPrimary} onClick={() => { reset(); setStep({ kind: 'confirm' }) }} disabled={busy}>
               Activar verificación en dos pasos
             </button>
           </div>

@@ -9,8 +9,8 @@ import {
   totpStep,
   verifyTotp,
 } from '../totp'
-import { decryptMfaSecretStrict, encryptMfaSecret, mfaHash } from '../mfa-crypto'
-import { generateRecoveryCodes, hashRecoveryCode, normalizeRecoveryCode, RECOVERY_CODE_COUNT } from '../mfa-recovery'
+import { decryptMfaSecretStrict, encryptMfaSecret, mfaCryptoAvailable, mfaHash, mfaHashCandidates } from '../mfa-crypto'
+import { generateRecoveryCodes, hashRecoveryCode, normalizeRecoveryCode, RECOVERY_CODE_COUNT, recoveryCodeHashCandidates } from '../mfa-recovery'
 
 process.env.NEXTAUTH_SECRET ||= 'test-secret-for-mfa-core'
 
@@ -83,11 +83,15 @@ test('secret encryption: round trip, bound to the user, strict on plaintext / ta
   // A plaintext (or social-token style) value planted in the DB is never accepted.
   assert.throws(() => decryptMfaSecretStrict('JBSWY3DPEHPK3PXP', 'user-a'), /MFA_SECRET_NOT_ENCRYPTED/)
   assert.throws(() => decryptMfaSecretStrict('enc:AAAA', 'user-a'), /MFA_SECRET_NOT_ENCRYPTED/)
+  // Key id travels with the ciphertext.
+  assert.match(enc, /^enc:mfa1:[0-9a-f]{8}:/)
   // Tampered ciphertext: refused.
-  const raw = Buffer.from(enc.slice('enc:mfa1:'.length), 'base64')
+  const kid = enc.slice('enc:mfa1:'.length, 'enc:mfa1:'.length + 8)
+  const raw = Buffer.from(enc.slice('enc:mfa1:'.length + 9), 'base64')
   raw[14] ^= 1
-  assert.throws(() => decryptMfaSecretStrict('enc:mfa1:' + raw.toString('base64'), 'user-a'))
+  assert.throws(() => decryptMfaSecretStrict(`enc:mfa1:${kid}:` + raw.toString('base64'), 'user-a'))
   assert.throws(() => decryptMfaSecretStrict('enc:mfa1:AA==', 'user-a'), /MFA_SECRET_CORRUPT/)
+  assert.throws(() => decryptMfaSecretStrict(`enc:mfa1:${kid}:AA==`, 'user-a'), /MFA_SECRET_CORRUPT/)
   assert.throws(() => encryptMfaSecret('x', ''), /MFA_USER_REQUIRED/)
 })
 
@@ -108,4 +112,52 @@ test('recovery codes: 10 unique, readable, hashed (never plaintext), typed back 
   }
   // Recovery and challenge hashes live in separate domains.
   assert.notEqual(mfaHash('X', 'recovery'), mfaHash('X', 'challenge'))
+})
+
+function withEnv(vars: Record<string, string | undefined>, fn: () => void) {
+  const saved: Record<string, string | undefined> = {}
+  for (const k of Object.keys(vars)) {
+    saved[k] = process.env[k]
+    if (vars[k] === undefined) delete process.env[k]
+    else process.env[k] = vars[k]
+  }
+  try {
+    fn()
+  } finally {
+    for (const k of Object.keys(saved)) {
+      if (saved[k] === undefined) delete process.env[k]
+      else process.env[k] = saved[k]
+    }
+  }
+}
+
+test('AUTH-45: dedicated key required in production; rotation keeps secrets and recovery codes readable', () => {
+  // Production without MFA_ENCRYPTION_KEY: unavailable, never a silent fallback to NEXTAUTH_SECRET.
+  withEnv({ NODE_ENV: 'production', MFA_ENCRYPTION_KEY: undefined }, () => {
+    assert.equal(mfaCryptoAvailable(), false)
+    assert.throws(() => encryptMfaSecret('X', 'u'), /MFA_KEY_MISSING/)
+  })
+  let oldCipher = ''
+  let oldHash = ''
+  withEnv({ NODE_ENV: 'production', MFA_ENCRYPTION_KEY: 'key-A', MFA_ENCRYPTION_KEY_PREVIOUS: undefined }, () => {
+    assert.equal(mfaCryptoAvailable(), true)
+    oldCipher = encryptMfaSecret('SECRET', 'u1')
+    oldHash = hashRecoveryCode('abcde-fghjk') as string
+  })
+  // Rotated WITH the old key kept as previous: still readable; new writes use the new key.
+  withEnv({ NODE_ENV: 'production', MFA_ENCRYPTION_KEY: 'key-B', MFA_ENCRYPTION_KEY_PREVIOUS: 'key-A' }, () => {
+    assert.equal(decryptMfaSecretStrict(oldCipher, 'u1'), 'SECRET')
+    assert.ok(recoveryCodeHashCandidates('ABCDE FGHJK').includes(oldHash))
+    assert.notEqual(hashRecoveryCode('abcde-fghjk'), oldHash)
+    assert.notEqual(encryptMfaSecret('SECRET', 'u1').slice(0, 18), oldCipher.slice(0, 18))
+  })
+  // Rotated WITHOUT keeping the old key: refused loudly (not a wrong-code loop).
+  withEnv({ NODE_ENV: 'production', MFA_ENCRYPTION_KEY: 'key-B', MFA_ENCRYPTION_KEY_PREVIOUS: undefined }, () => {
+    assert.throws(() => decryptMfaSecretStrict(oldCipher, 'u1'), /MFA_KEY_UNKNOWN/)
+  })
+  // AES and HMAC use different subkeys; challenge / recovery domains differ.
+  withEnv({ MFA_ENCRYPTION_KEY: 'key-A' }, () => {
+    assert.equal(mfaHashCandidates('X', 'challenge').length, 1)
+    assert.notEqual(mfaHash('X', 'recovery'), mfaHash('X', 'challenge'))
+  })
 })

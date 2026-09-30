@@ -1,5 +1,5 @@
 import { randomInt } from 'crypto'
-import { mfaHash } from './mfa-crypto'
+import { mfaHash, mfaHashCandidates } from './mfa-crypto'
 
 /**
  * One-time recovery codes for two-step login: shown once, stored only as keyed hashes, each usable
@@ -31,4 +31,10 @@ export function normalizeRecoveryCode(input: string): string | null {
 export function hashRecoveryCode(input: string): string | null {
   const normalized = normalizeRecoveryCode(input)
   return normalized ? mfaHash(normalized, 'recovery') : null
+}
+
+/** Hashes of the code under every known key (a key rotation never invalidates saved codes). */
+export function recoveryCodeHashCandidates(input: string): string[] {
+  const normalized = normalizeRecoveryCode(input)
+  return normalized ? mfaHashCandidates(normalized, 'recovery') : []
 }

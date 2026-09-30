@@ -35,9 +35,16 @@ function TwoFactorForm() {
         setBusy(false)
         return
       }
-      // The session is restored only by NextAuth itself, from the verified challenge.
-      await update()
-      window.location.assign(safeMfaCallback(params.get('callbackUrl')))
+      // The session is restored only by NextAuth itself, from the verified challenge. Check that it
+      // really came back (retry once); the verify step is safe to repeat (AUTH-50).
+      let next = await update()
+      if (!next || (next as { mfa?: string }).mfa === 'pending') next = await update()
+      if (!next || (next as { mfa?: string }).mfa === 'pending') {
+        setError('Código correcto, pero no pudimos abrir la sesión. Tocá Verificar de nuevo.')
+        setBusy(false)
+        return
+      }
+      window.location.assign(safeMfaCallback(params.get('callbackUrl'), window.location.origin))
     } catch {
       setError('Sin conexión. Intentá de nuevo.')
       setBusy(false)

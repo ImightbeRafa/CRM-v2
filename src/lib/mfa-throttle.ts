@@ -1,34 +1,36 @@
 import 'server-only'
 import { createHash } from 'crypto'
-import { clearFailures, failureCount, getClientIP, recordFailure } from '@/lib/rate-limit'
+import { prisma } from '@/lib/db'
+import { getClientIP, recordFailure, releaseAttempt } from '@/lib/rate-limit'
+import { sendSecurityNoticeEmail, type SecurityNoticeKind } from '@/lib/email'
 
 /**
- * Wrong-code throttle for two-step login, on top of the hard per-challenge limit in the DB (5).
- * Per user (hashed id) and per IP, 15 min window. Upstash when configured, memory otherwise.
+ * Per-network cap on 2FA code checks, on top of the atomic per-user budget in the DB
+ * (mfa-state.reserveMfaAttempt, the hard limit). Reserve FIRST (counter +1, refuse when over), give
+ * the slot back on success — never check-then-act (SecureDog AUTH-43).
  */
 const WINDOW_MS = 15 * 60_000
-export const MFA_USER_FAILURE_LIMIT = 10
-export const MFA_IP_FAILURE_LIMIT = 30
+export const MFA_IP_LIMIT = 30
 
-function userKey(userId: string): string {
-  return `mfa:u:${createHash('sha256').update(userId).digest('hex').slice(0, 32)}`
-}
 function ipKey(request: Request): string {
   return `mfa:ip:${createHash('sha256').update(getClientIP(request)).digest('hex').slice(0, 32)}`
 }
 
-export async function mfaThrottled(userId: string, request: Request): Promise<boolean> {
-  const [u, ip] = await Promise.all([failureCount(userKey(userId)), failureCount(ipKey(request))])
-  return u >= MFA_USER_FAILURE_LIMIT || ip >= MFA_IP_FAILURE_LIMIT
+export async function reserveMfaIpSlot(request: Request): Promise<boolean> {
+  const count = await recordFailure(ipKey(request), WINDOW_MS, MFA_IP_LIMIT)
+  return count <= MFA_IP_LIMIT
 }
 
-export async function recordMfaFailure(userId: string, request: Request): Promise<void> {
-  await Promise.all([
-    recordFailure(userKey(userId), WINDOW_MS, MFA_USER_FAILURE_LIMIT),
-    recordFailure(ipKey(request), WINDOW_MS, MFA_IP_FAILURE_LIMIT),
-  ])
+export async function releaseMfaIpSlot(request: Request): Promise<void> {
+  await releaseAttempt(ipKey(request))
 }
 
-export async function clearMfaFailures(userId: string): Promise<void> {
-  await clearFailures(userKey(userId))
+/** Best-effort security email to the account owner (never blocks the request's outcome). */
+export async function notifyMfaEvent(userId: string, kind: SecurityNoticeKind): Promise<void> {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } })
+    if (user?.email) await sendSecurityNoticeEmail({ email: user.email, kind })
+  } catch {
+    // mail is best effort
+  }
 }

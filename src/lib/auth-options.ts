@@ -123,6 +123,15 @@ declare module "next-auth/jwt" {
   }
 }
 
+/** Unknown (DB hiccup) counts as ON: the side effect is simply deferred to the full session. */
+async function mfaOnOrUnknown(userId: string): Promise<boolean> {
+  try {
+    return await isMfaEnabled(userId)
+  } catch {
+    return true
+  }
+}
+
 type JwtParams = Parameters<NonNullable<NonNullable<NextAuthOptions['callbacks']>['jwt']>>[0]
 
 /** The session claims logic (sign-in + periodic DB re-sync). Wrapped by the 2FA gate below. */
@@ -500,7 +509,8 @@ export const authOptions: NextAuthOptions = {
               inviteTokenFromCookieHeader((req?.headers as Record<string, unknown> | undefined)?.cookie),
               user.email,
             )
-            if (pending) {
+            // 2FA users join only after the code step (accept-invite page, full session; AUTH-49).
+            if (pending && !(await mfaOnOrUnknown(user.id))) {
               const accepted = await acceptTeamInviteForUser({
                 emailProven: true, // holds the emailed invite token
                 inviteId: pending.id,
@@ -727,7 +737,9 @@ export const authOptions: NextAuthOptions = {
                 pendingInvite: pending ? { tenantId: pending.tenantId, role: pending.role } : null,
               })
 
-              if (decision === 'join_invite' && pending) {
+              // 2FA users with a business join only after the code step (AUTH-49).
+              const deferInviteFor2fa = updatedUser.memberships.length > 0 && (await mfaOnOrUnknown(updatedUser.id))
+              if (decision === 'join_invite' && pending && !deferInviteFor2fa) {
                 try {
                   const accepted = await acceptTeamInviteForUser({
                     emailProven: true, // Google-verified email (checked at the top of signIn)
@@ -1072,6 +1084,8 @@ export const authOptions: NextAuthOptions = {
       const next = await jwtCore(params)
       const signedInId = typeof (next as { id?: unknown }).id === 'string' ? ((next as { id: string }).id) : ''
       if (user && signedInId && !(next as { error?: string }).error) {
+        // When this session proved the password / Google (fresh-sign-in checks for sensitive changes).
+        ;(next as { authAt?: number }).authAt = Date.now()
         try {
           if (await isMfaEnabled(signedInId)) {
             const challenge = await createMfaChallenge(signedInId)
@@ -1080,7 +1094,7 @@ export const authOptions: NextAuthOptions = {
         } catch (error) {
           // Fail closed: if we can't tell whether a code is required, no session.
           console.error('[2FA] sign-in gate unavailable:', error instanceof Error ? error.name : 'unknown')
-          return revokedMfaToken() as JWT
+          return revokedMfaToken('mfa_unavailable') as JWT
         }
       }
       return next

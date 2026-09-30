@@ -9,5 +9,6 @@ export function loginErrorMessage(code: string | null | undefined, fallback = 'C
   if (code === 'invite_seat_limit') return 'El negocio que te invitó llegó a su límite de usuarios. Pedile al dueño que amplíe el plan.'
   if (code === 'invite_invalid') return 'La invitación ya no es válida. Pedí una nueva.'
   if (code === 'invite_retry') return 'Otra persona se unió al mismo tiempo. Intentá de nuevo.'
+  if (code === 'mfa_unavailable') return 'No pudimos verificar tu cuenta en este momento. Esperá un minuto e intentá de nuevo.'
   return fallback
 }

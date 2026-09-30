@@ -136,7 +136,10 @@ test('only the code page, the verify API and NextAuth core answer a pending sess
 
 test('the return path after the code is same-origin only', () => {
   assert.equal(safeMfaCallback('/chats?x=1'), '/chats?x=1')
-  for (const bad of ['https://evil.test', '//evil.test', '/\\evil.test', 'javascript:alert(1)', '', null, undefined, '/api/users', '/auth/2fa?x']) {
+  assert.equal(safeMfaCallback('https://app.test/chats', 'https://app.test'), '/chats')
+  assert.equal(safeMfaCallback('https://evil.test/chats', 'https://app.test'), '/dashboard')
+  // AUTH-47: control characters the browser strips (/\t/evil.com -> //evil.com) and encoded tricks.
+  for (const bad of ['https://evil.test', '//evil.test', '/\\evil.test', 'javascript:alert(1)', '', null, undefined, '/api/users', '/auth/2fa?x', '/\t/evil.test', '/\n/evil.test', '/\r/evil.test', '/%09/evil.test', '/%2F%2Fevil.test']) {
     assert.equal(safeMfaCallback(bad as string), '/dashboard', String(bad))
   }
 })
@@ -147,7 +150,7 @@ test('wiring: jwt gate fails closed, session exposes nothing while pending, midd
   assert.match(jwt, /if \(!user && isMfaPendingToken\(token\)\)/)
   assert.match(jwt, /consume: consumeVerifiedMfaChallenge/)
   assert.match(jwt, /isMfaEnabled\(signedInId\)/)
-  assert.match(jwt, /catch \(error\) \{[\s\S]*?return revokedMfaToken\(\) as JWT/)
+  assert.match(jwt, /catch \(error\) \{[\s\S]*?return revokedMfaToken\('mfa_unavailable'\) as JWT/)
   const session = auth.slice(auth.indexOf('    async session({ session, token }) {'))
   assert.match(session, /^    async session\(\{ session, token \}\) \{\s*\/\/[^\n]*\n\s*if \(isMfaPendingToken\(token\)\) \{\s*return \{ expires: session\.expires, mfa: 'pending' \}/)
 
@@ -178,4 +181,54 @@ test('2FA routes never read the user from the request body', () => {
     else assert.match(src, /pendingMfaUserId\(token\)/, f)
     assert.match(src, /PII_NO_STORE_HEADERS|mfaReply/, f)
   }
+})
+
+test('SecureDog round 1 fixes are wired (AUTH-43/44/48/49/50/51)', () => {
+  const state = readFileSync('src/lib/mfa-state.ts', 'utf8')
+  // AUTH-43: one conditional UPDATE reserves a guess BEFORE any check (no check-then-act).
+  const reserve = state.slice(state.indexOf('export async function reserveMfaAttempt'), state.indexOf('async function refundMfaAttempts'))
+  assert.match(reserve, /UPDATE "UserTwoFactor" SET[\s\S]*"failCount" < \$\{MFA_WINDOW_LIMIT\}[\s\S]*"dayFailCount" < \$\{MFA_DAY_LIMIT\}/)
+  const verify = state.slice(state.indexOf('export async function verifyMfaChallenge'), state.indexOf('async function checkFactor'))
+  assert.ok(verify.indexOf('reserveMfaAttempt(') < verify.indexOf('checkFactor('), 'budget reserved before the code is checked')
+  const current = state.slice(state.indexOf('export async function verifyCurrentFactor'))
+  assert.ok(current.indexOf('reserveMfaAttempt(') < current.indexOf('checkFactor('))
+  const setup = state.slice(state.indexOf('export async function completeMfaSetup'))
+  assert.ok(setup.indexOf('reserveMfaAttempt(') < setup.indexOf('verifyTotp('))
+  // Only the newest challenge is live; expired rows go.
+  const create = state.slice(state.indexOf('export async function createMfaChallenge'), state.indexOf('export type MfaVerifyResult'))
+  assert.match(create, /deleteMany\(\{ where: \{ userId, expiresAt: \{ lte: nowDate \} \} \}\)/)
+  assert.match(create, /updateMany\(\{\s*where: \{ userId, consumedAt: null, verifiedAt: null, expiresAt: \{ gt: nowDate \} \},\s*data: \{ expiresAt: nowDate \}/)
+  // AUTH-50: an already verified (unconsumed) challenge answers success again.
+  assert.match(verify, /verifiedAt: \{ not: null \}, consumedAt: null[\s\S]*method: 'already_verified'/)
+  // AUTH-48: missing tables fail closed once MFA_TABLES_REQUIRED=1.
+  assert.match(state, /process\.env\.MFA_TABLES_REQUIRED === '1'/)
+  // Only a verified mailbox can enrol.
+  assert.match(state, /if \(!owner\?\.emailVerified\) return \{ error: 'email_unverified' \}/)
+
+  // Routes: IP slot reserved before the check, never the old check-then-act helpers.
+  const verifyRoute = readFileSync('src/app/api/auth/2fa/verify/route.ts', 'utf8')
+  assert.ok(verifyRoute.indexOf('reserveMfaIpSlot(') < verifyRoute.indexOf('verifyMfaChallenge({'))
+  assert.doesNotMatch(verifyRoute, /mfaThrottled|recordMfaFailure/)
+  // AUTH-44: setup and disable need the password (or a fresh Google sign-in).
+  for (const f of ['setup', 'disable']) {
+    assert.match(readFileSync(`src/app/api/account/2fa/${f}/route.ts`, 'utf8'), /proveAccountOwner\(request, auth\.userId, body\?\.password\)/, f)
+  }
+  const account = readFileSync('src/lib/mfa-account.ts', 'utf8')
+  assert.match(account, /FRESH_SIGN_IN_MS = 15 \* 60_000/)
+  assert.match(account, /Date\.now\(\) - authAt > FRESH_SIGN_IN_MS/)
+  // AUTH-50: once enabled / disabled, a follow-up hiccup never turns into an error answer.
+  const enable = readFileSync('src/app/api/account/2fa/enable/route.ts', 'utf8')
+  assert.match(enable, /try \{\s*await revokeUserSessions\(auth\.userId\)\s*\} catch \{\s*sessionsEnded = false/)
+
+  const auth = readFileSync('src/lib/auth-options.ts', 'utf8')
+  // AUTH-49: invites wait for the code step for 2FA users.
+  assert.match(auth, /if \(pending && !\(await mfaOnOrUnknown\(user\.id\)\)\)/)
+  assert.match(auth, /decision === 'join_invite' && pending && !deferInviteFor2fa/)
+  assert.match(auth, /\(next as \{ authAt\?: number \}\)\.authAt = Date\.now\(\)/)
+
+  const mw = readFileSync('src/middleware.ts', 'utf8')
+  assert.match(mw, /tokenError === 'mfa_unavailable'/)
+  assert.match(mw, /!tenantId && \(pathname === '\/api\/account\/2fa' \|\| pathname\.startsWith\('\/api\/account\/2fa\/'\)\)/)
+  // AUTH-51: nightly purge of finished challenges.
+  assert.match(readFileSync('src/app/api/cron/workspace-retention/route.ts', 'utf8'), /purgeOldMfaChallenges\(\)/)
 })

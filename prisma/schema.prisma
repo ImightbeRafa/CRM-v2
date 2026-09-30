@@ -1722,6 +1722,11 @@ model UserTwoFactor {
   enabledAt      DateTime?
   setupExpiresAt DateTime?
   lastUsedStep   BigInt?
+  failCount      Int       @default(0)
+  failWindowStart DateTime?
+  dayFailCount   Int       @default(0)
+  dayWindowStart DateTime?
+  lockNotifiedAt DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 }

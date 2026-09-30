@@ -210,3 +210,58 @@ export async function sendTeamInviteEmail(input: {
     return { success: false, error: error?.message || 'Failed to send invite email' }
   }
 }
+
+export type SecurityNoticeKind =
+  | 'mfa_enabled'
+  | 'mfa_disabled'
+  | 'mfa_codes_regenerated'
+  | 'mfa_recovery_used'
+  | 'mfa_locked'
+
+const SECURITY_NOTICE_TEXT: Record<SecurityNoticeKind, { subject: string; body: string }> = {
+  mfa_enabled: {
+    subject: 'Activaste la verificación en dos pasos',
+    body: 'La verificación en dos pasos quedó activa en tu cuenta de BetsyCRM. Desde ahora te pediremos un código de tu app al iniciar sesión.',
+  },
+  mfa_disabled: {
+    subject: 'Desactivaste la verificación en dos pasos',
+    body: 'La verificación en dos pasos se desactivó en tu cuenta de BetsyCRM.',
+  },
+  mfa_codes_regenerated: {
+    subject: 'Nuevos códigos de recuperación',
+    body: 'Se generaron nuevos códigos de recuperación para tu cuenta de BetsyCRM. Los anteriores ya no sirven.',
+  },
+  mfa_recovery_used: {
+    subject: 'Se usó un código de recuperación',
+    body: 'Alguien inició sesión en tu cuenta de BetsyCRM con uno de tus códigos de recuperación.',
+  },
+  mfa_locked: {
+    subject: 'Intentos fallidos en tu cuenta',
+    body: 'Hubo demasiados códigos incorrectos al iniciar sesión en tu cuenta de BetsyCRM, así que pausamos los intentos por un rato. Si no fuiste vos, alguien tiene tu contraseña.',
+  },
+}
+
+/** Account security notice (2FA changes / lockouts). Fixed text only: nothing user-controlled. */
+export async function sendSecurityNoticeEmail(input: { email: string; kind: SecurityNoticeKind }) {
+  try {
+    if (!process.env.RESEND_API_KEY) return { success: false, error: 'RESEND_API_KEY missing' }
+    const text = SECURITY_NOTICE_TEXT[input.kind]
+    await resend.emails.send({
+      from: 'BetsyCRM <noreply@betsycrm.com>',
+      to: input.email,
+      subject: text.subject,
+      html: `
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto;">
+          <h2 style="color:#111827;margin:0 0 12px;">${text.subject}</h2>
+          <p style="color:#4b5563;font-size:14px;">${text.body}</p>
+          <p style="color:#6b7280;font-size:13px;margin-top:20px;">
+            ¿No fuiste vos? Cambiá tu contraseña de inmediato y escribinos a soporte.
+          </p>
+        </div>`,
+    })
+    return { success: true }
+  } catch (error) {
+    console.error('[Email] security notice failed:', error instanceof Error ? error.name : 'unknown')
+    return { success: false }
+  }
+}

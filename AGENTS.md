@@ -66,6 +66,11 @@ cover non-obvious setup/run gotchas.
   that previously used the fallback must initially set it to the current
   `NEXTAUTH_SECRET` value; choosing a different value immediately invalidates all issued
   employee codes. Do not rotate it without an explicit code reissue plan.
+- `MFA_ENCRYPTION_KEY` — key for two-step login (2FA) secrets and recovery-code hashes. In
+  production 2FA stays unavailable (nobody can enrol) until it is set. **Never change it** without
+  moving the old value into `MFA_ENCRYPTION_KEY_PREVIOUS` (comma separated): otherwise every
+  enrolled user is locked out. After SQL 038 is applied, set `MFA_TABLES_REQUIRED=1` so a missing
+  2FA table fails closed instead of silently turning 2FA off.
 - All other integrations (Tilopay, Telegram/WhatsApp/Meta, OpenAI/xAI, Upstash Redis,
   Vercel Blob, Correos SOAP) are optional; features degrade gracefully when unset
   (Upstash has an in-memory fallback).

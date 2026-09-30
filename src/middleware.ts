@@ -170,6 +170,15 @@ export default async function middleware(request: Request) {
 
     // Reject sessions cleared after deactivation or revocation (JWT refresh sets error)
     const tokenError = (token as { error?: string }).error;
+    if (tokenError === 'mfa_unavailable') {
+      // The 2FA check itself could not run (DB hiccup): no session, and say so (AUTH-48).
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Unauthorized', code: 'MFA_UNAVAILABLE' }, { status: 401 });
+      }
+      const retry = new URL('/auth/signin', url.origin);
+      retry.searchParams.set('error', 'mfa_unavailable');
+      return NextResponse.redirect(retry);
+    }
     if (tokenError === 'inactive_user' || tokenError === 'session_revoked' ||
         (token as { active?: boolean }).active === false) {
       if (pathname.startsWith('/api/')) {
@@ -350,6 +359,11 @@ async function handleApiRequest(
       JSON.stringify({ error: 'Unauthorized' }),
       { status: 401, headers: { 'Content-Type': 'application/json' } }
     );
+  }
+
+  // Own-account security (2FA) works with or without a business.
+  if (!tenantId && (pathname === '/api/account/2fa' || pathname.startsWith('/api/account/2fa/'))) {
+    return NextResponse.next(fwd);
   }
 
   // Allow other setup-related routes for MASTER users without tenant

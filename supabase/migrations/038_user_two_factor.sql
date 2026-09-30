@@ -6,7 +6,9 @@
 -- enrolled" (nobody can enrol before they exist), so apply order vs deploy does not matter.
 --
 -- - UserTwoFactor: one row per user. secretEnc is AES-GCM bound to the user (never plaintext);
---   enabledAt NULL = setup not finished yet (expires at setupExpiresAt); lastUsedStep blocks replay.
+--   enabledAt NULL = setup not finished yet (expires at setupExpiresAt); lastUsedStep blocks replay;
+--   failCount / dayFailCount are the atomic per-user guess budget (15 min / 24 h), reserved BEFORE
+--   each code check so parallel requests can't exceed it (SecureDog AUTH-43).
 -- - UserRecoveryCode: keyed hashes only, each usable once (usedAt).
 -- - UserTwoFactorChallenge: the "password OK, code pending" step of one sign-in (nonce hash only,
 --   attempt counter, verified / consumed once).
@@ -28,6 +30,11 @@ CREATE TABLE IF NOT EXISTS public."UserTwoFactor" (
   "enabledAt" timestamp(3) without time zone NULL,
   "setupExpiresAt" timestamp(3) without time zone NULL,
   "lastUsedStep" bigint NULL,
+  "failCount" integer NOT NULL DEFAULT 0,
+  "failWindowStart" timestamp(3) without time zone NULL,
+  "dayFailCount" integer NOT NULL DEFAULT 0,
+  "dayWindowStart" timestamp(3) without time zone NULL,
+  "lockNotifiedAt" timestamp(3) without time zone NULL,
   "createdAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "UserTwoFactor_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."User"("id") ON DELETE CASCADE ON UPDATE CASCADE,

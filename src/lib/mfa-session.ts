@@ -9,6 +9,8 @@
  *
  * Edge-safe (used by middleware): no Node or DB imports here.
  */
+import { safeReturnPath } from './safe-return-path'
+
 export const MFA_PENDING = 'pending' as const
 
 type TokenLike = Record<string, unknown>
@@ -27,8 +29,8 @@ export function holdTokenForMfa(token: TokenLike, nonce: string, expiresAt: numb
 }
 
 /** A dead session: middleware and helpers reject it (same shape as a revoked session). */
-export function revokedMfaToken(): TokenLike {
-  return { error: 'session_revoked', active: false }
+export function revokedMfaToken(reason: 'session_revoked' | 'mfa_unavailable' = 'session_revoked'): TokenLike {
+  return { error: reason, active: false }
 }
 
 /** Held user id of a pending token (the verify route needs it; nothing else may use it). */
@@ -102,10 +104,10 @@ export function isSessionReadingPublicRoute(pathname: string): boolean {
   )
 }
 
-/** Same-origin relative path only (no protocol-relative / absolute redirects). */
-export function safeMfaCallback(path: string | null | undefined): string {
-  if (!path || typeof path !== 'string') return '/dashboard'
-  if (!path.startsWith('/') || path.startsWith('//') || path.startsWith('/\\')) return '/dashboard'
-  if (path.startsWith(MFA_PAGE) || path.startsWith('/api/')) return '/dashboard'
-  return path
+/**
+ * Where to go after the code: the app's shared open-redirect guard (control characters, encoded
+ * tricks, other origins, /auth /api /_next all refused; AUTH-47).
+ */
+export function safeMfaCallback(path: string | null | undefined, origin?: string): string {
+  return safeReturnPath(path, { origin, fallback: '/dashboard' })
 }

@@ -72,31 +72,44 @@ export async function GET(request: NextRequest) {
         }
       : baseWhere
 
-    const rows = await prisma.chatConversation.findMany({
-      where,
-      orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
-      take: limit + 1,
-      select: {
-        ...listSelect,
-        readStates: { ...listSelect.readStates, where: { userId: auth.userId } },
-      },
-    })
+    // Independent reads in parallel (they used to run one after another). The max revision is read
+    // BEFORE/with the page: a change landing in between is re-sent by /changes, never skipped.
+    const [rows, { stages: chatStages }, maxRevisionAgg] = await Promise.all([
+      prisma.chatConversation.findMany({
+        where,
+        orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
+        take: limit + 1,
+        select: {
+          ...listSelect,
+          readStates: { ...listSelect.readStates, where: { userId: auth.userId } },
+        },
+      }),
+      loadStages(auth.tenantId, 'chat'),
+      prisma.chatConversation.aggregate({
+        where: { tenantId: auth.tenantId },
+        _max: { revision: true },
+      }),
+    ])
 
     const hasMore = rows.length > limit
     const page = hasMore ? rows.slice(0, limit) : rows
-    const { stages: chatStages } = await loadStages(auth.tenantId, 'chat')
-    const conversations = await attachSnoozeState(auth.tenantId, await enrichConversationDtosWithLinkedOrders(
-      auth.tenantId,
-      await enrichConversationDtosWithAgents(
-      auth.tenantId,
-      page.map((row) =>
-        mapConversationToListDto(
-          mapRawConversationRow(row as Parameters<typeof mapRawConversationRow>[0]),
-          chatStages,
-        ),
+    const base = page.map((row) =>
+      mapConversationToListDto(
+        mapRawConversationRow(row as Parameters<typeof mapRawConversationRow>[0]),
+        chatStages,
       ),
-      ),
-    ))
+    )
+    // Each enrichment only adds its own fields to the same rows (same order): run them together.
+    const [withAgents, withOrders, withSnooze] = await Promise.all([
+      enrichConversationDtosWithAgents(auth.tenantId, base),
+      enrichConversationDtosWithLinkedOrders(auth.tenantId, base),
+      attachSnoozeState(auth.tenantId, base),
+    ])
+    const conversations = base.map((_, i) => ({
+      ...withAgents[i],
+      ...('linkedOrder' in withOrders[i] ? { linkedOrder: withOrders[i].linkedOrder } : {}),
+      ...(withSnooze[i].snooze ? { snooze: withSnooze[i].snooze } : {}),
+    }))
 
     const last = page[page.length - 1]
     const nextCursor =
@@ -106,11 +119,6 @@ export async function GET(request: NextRequest) {
             scope,
           )
         : null
-
-    const maxRevisionAgg = await prisma.chatConversation.aggregate({
-      where: { tenantId: auth.tenantId },
-      _max: { revision: true },
-    })
 
     return NextResponse.json({
       success: true,

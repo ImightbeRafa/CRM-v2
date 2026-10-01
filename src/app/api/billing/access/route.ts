@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getLiveToken } from '@/lib/live-token';
-import { evaluateTenantAccess } from '@/lib/billing-access';
-import { getMembershipForToken } from '@/lib/selected-tenant';
+import { evaluateTenantAccessCached } from '@/lib/billing-access';
+import { getMembershipSummaryForToken } from '@/lib/selected-tenant';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,13 +9,13 @@ export async function GET(request: NextRequest) {
   const token = await getLiveToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
   if (!token?.sub) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const membership = await getMembershipForToken(token);
+  const membership = await getMembershipSummaryForToken(token);
   if (!membership) {
     return NextResponse.json({ error: 'Selected tenant membership not found' }, { status: 403 });
   }
 
   try {
-    const access = await evaluateTenantAccess(membership.tenantId);
+    const access = await evaluateTenantAccessCached(membership.tenantId);
     return NextResponse.json({ status: 'success', data: access });
   } catch (error) {
     console.error('[BillingAccess] Access read failed', {

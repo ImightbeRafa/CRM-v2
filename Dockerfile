@@ -111,6 +111,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/puppeteer-core ./nod
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/puppeteer ./node_modules/puppeteer
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+# Chat photo previews (src/lib/chat-media-thumb.ts): sharp + its prebuilt linux binary. The code falls
+# back to the original photo if these are missing, so this only decides whether previews work.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/sharp ./node_modules/sharp
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@img ./node_modules/@img
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/detect-libc ./node_modules/detect-libc
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/semver ./node_modules/semver
 
 # resolveWsdlPath() checks cwd/src/lib/correos/wsdl and cwd/wsdl
 # (next.config.js outputFileTracingIncludes for Correos SOAP).

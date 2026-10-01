@@ -340,6 +340,11 @@ function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClos
   )
 }
 
+/** Small preview of a chat photo (the server falls back to the original when it can't resize). */
+function withThumb(src: string, width: 320 | 640): string {
+  return `${src}${src.includes('?') ? '&' : '?'}w=${width}`
+}
+
 /** Media inside a chat bubble (served by message id from `/api/chat/media/[id]`). */
 export function ChatMediaBubble({ msg, outbound }: { msg: ChatInboxMessage; outbound?: boolean }) {
   const baseSrc = `/api/chat/media/${encodeURIComponent(msg.id)}`
@@ -372,10 +377,11 @@ export function ChatMediaBubble({ msg, outbound }: { msg: ChatInboxMessage; outb
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={src}
+            src={sticker ? src : withThumb(src, 640)}
             alt={alt}
             className={`max-w-full object-contain ${sticker ? 'max-h-32' : 'max-h-72'} ${loaded ? '' : 'opacity-0'}`}
             loading="lazy"
+            decoding="async"
             onLoad={() => setLoaded(true)}
             onError={markFailed}
           />

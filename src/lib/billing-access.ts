@@ -222,6 +222,22 @@ export async function evaluateTenantAccess(tenantId: string): Promise<TenantAcce
   return computeTenantAccess(tenant, flags);
 }
 
+/**
+ * Display-only copy (the subscription banner on every page), 30 s per business per process. Writes
+ * keep calling evaluateTenantAccess (fresh) through guardTenantWrite, so nothing gets less strict.
+ */
+const accessCache = new Map<string, { value: TenantAccessEvaluation; at: number }>()
+const ACCESS_TTL_MS = 30_000
+
+export async function evaluateTenantAccessCached(tenantId: string): Promise<TenantAccessEvaluation> {
+  const hit = accessCache.get(tenantId)
+  if (hit && Date.now() - hit.at < ACCESS_TTL_MS) return hit.value
+  const value = await evaluateTenantAccess(tenantId)
+  if (accessCache.size > 5_000) accessCache.clear()
+  accessCache.set(tenantId, { value, at: Date.now() })
+  return value
+}
+
 export async function guardTenantWrite(
   tenantId: string,
   context: { channel: string; route?: string },

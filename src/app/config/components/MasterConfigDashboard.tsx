@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
@@ -59,7 +59,9 @@ export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial 
   const [activeTab, setActiveTab] = useState<'inventory' | 'clients' | 'shipping'>(initialTab);
   const [products, setProducts] = useState<FrequentProduct[]>([]);
   const [customers, setCustomers] = useState<FrequentCustomer[]>([]);
-  const [loading, setLoading] = useState(true);
+  // The legacy "Productos / Clientes recurrentes" lists below are never rendered (`{false && …}`):
+  // their data is no longer downloaded on every Productos / Clientes / Envíos visit (perf 2026-10-01).
+  const [loading, setLoading] = useState(false);
   const [showProductForm, setShowProductForm] = useState(false);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<FrequentProduct | null>(null);
@@ -88,9 +90,6 @@ export function MasterConfigDashboard({ initialTab = 'inventory', lockToInitial 
     business: ''
   });
 
-  useEffect(() => {
-    loadData();
-  }, []);
 
   const loadData = async () => {
     setLoading(true);

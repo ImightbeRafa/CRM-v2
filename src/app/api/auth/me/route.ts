@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getLiveToken } from '@/lib/live-token';
-import { prisma } from '@/lib/db';
-import { getMembershipForToken } from '@/lib/selected-tenant';
+import { getMembershipSummaryForToken } from '@/lib/selected-tenant';
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,23 +10,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const membership = await getMembershipForToken(token);
+    // One lean query (cached 30 s): membership + business name + the user's own profile fields.
+    const membership = await getMembershipSummaryForToken(token);
     if (!membership) {
       return NextResponse.json({ error: 'Selected tenant membership not found' }, { status: 403 });
     }
-
-    // Get profile fields without selecting an unrelated membership.
-    const user = await prisma.user.findUnique({
-      where: { id: token.sub },
-      select: { 
-        id: true, 
-        username: true, 
-        email: true,
-        active: true,
-      }
-    });
-
-    if (!user || !user.active) {
+    const user = membership.user;
+    if (!user.active) {
       return NextResponse.json({ error: 'User not found or inactive' }, { status: 404 });
     }
 

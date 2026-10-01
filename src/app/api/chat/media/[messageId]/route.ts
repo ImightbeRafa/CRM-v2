@@ -14,11 +14,41 @@ import {
   readChatMediaFromBlob,
   readMediaBlobRefFromMessage,
 } from '@/lib/chat-media'
+import { isThumbnailable, makeChatThumbnail, parseThumbWidth } from '@/lib/chat-media-thumb'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 type RouteContext = { params: Promise<{ messageId: string }> }
+
+/**
+ * `?w=320|640` on a photo → small WebP preview (the chat bubble); the lightbox / download use the
+ * original. Falls back to the original when the type isn't resizable or resizing fails.
+ */
+async function respondWithMedia(
+  request: NextRequest,
+  bytes: Buffer,
+  contentType: string,
+  filename?: string | null,
+): Promise<NextResponse> {
+  const width = parseThumbWidth(new URL(request.url).searchParams.get('w'))
+  if (width && isThumbnailable(contentType) && !request.headers.get('range')) {
+    const thumb = await makeChatThumbnail(bytes, width)
+    if (thumb) {
+      return new NextResponse(new Uint8Array(thumb), {
+        status: 200,
+        headers: {
+          ...safeMediaServeHeaders('image/webp', null),
+          // A message's photo never changes: the browser keeps the preview for a day.
+          'Cache-Control': 'private, max-age=86400',
+          'X-Content-Type-Options': 'nosniff',
+          'Content-Length': String(thumb.length),
+        },
+      })
+    }
+  }
+  return mediaResponse(request, bytes, contentType, filename)
+}
 
 /** 200 full body, or 206 for a single `Range` (iOS Safari needs this for audio/video). */
 function mediaResponse(
@@ -93,7 +123,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (existingRef?.mediaCacheStatus === 'ready' && existingRef.mediaBlobPath) {
       try {
         const blob = await readChatMediaFromBlob({ pathname: existingRef.mediaBlobPath })
-        return mediaResponse(
+        return await respondWithMedia(
           request,
           blob.bytes,
           pickMediaContentType(existingRef.mediaMimeType, blob.contentType, message.mediaMimeType),
@@ -211,7 +241,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       }
     }
 
-    return mediaResponse(
+    return await respondWithMedia(
       request,
       cached.bytes,
       pickMediaContentType(cached.ref.mediaMimeType, message.mediaMimeType),

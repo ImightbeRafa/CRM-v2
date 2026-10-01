@@ -100,7 +100,8 @@ export async function GET(request: NextRequest) {
       customFields: true,
     } as const
 
-    const [currentOrders, previousOrders] = await Promise.all([
+    // One round trip: orders (current + previous period) and the chat statistics are independent.
+    const [currentOrders, previousOrders, chatGroups, accounts, aiTurns, chatLinks] = await Promise.all([
       prisma.order.findMany({
         where: { tenantId, ...buildStatsOrderDateWhere(range.startDate, range.endDate) },
         select: orderSelect,
@@ -111,12 +112,6 @@ export async function GET(request: NextRequest) {
         select: orderSelect,
         take: ORDER_TAKE,
       }),
-    ])
-    if (currentOrders.length > 25_000 || previousOrders.length > 25_000) {
-      return NextResponse.json({ error: 'Elegí un período más corto' }, { status: 413 })
-    }
-
-    const [chatGroups, accounts, aiTurns, chatLinks] = await Promise.all([
       optional<ChatGroup[]>(() =>
         (prisma.chatConversation as any).groupBy({
           by: ['socialAccountId'],
@@ -163,6 +158,9 @@ export async function GET(request: NextRequest) {
         }),
       ),
     ])
+    if (currentOrders.length > 25_000 || previousOrders.length > 25_000) {
+      return NextResponse.json({ error: 'Elegí un período más corto' }, { status: 413 })
+    }
 
     const cur = summarize(currentOrders as OrderRow[], collectedMode)
     const prev = summarize(previousOrders as OrderRow[], collectedMode)

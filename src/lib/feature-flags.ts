@@ -109,7 +109,37 @@ async function readTenantFlag(tenantId: string, key: string): Promise<TenantFeat
   }
 }
 
+/**
+ * Readiness answers per business, memoised 30 s per process (perf 2026-10-01): several list / stats
+ * routes read them on every request and they only change when a rollout flag is flipped. The raw
+ * readTenantFlag (used by write paths) stays uncached.
+ */
+const readinessMemo = new Map<string, { at: number; value: Promise<unknown> }>()
+const READINESS_TTL_MS = 30_000
+
+function memoReadiness<T>(kind: string, tenantId: string, load: () => Promise<T>): Promise<T> {
+  const key = `${kind}|${tenantId}`
+  const hit = readinessMemo.get(key)
+  if (hit && Date.now() - hit.at < READINESS_TTL_MS) return hit.value as Promise<T>
+  const value = load()
+  if (readinessMemo.size > 10_000) readinessMemo.clear()
+  readinessMemo.set(key, { at: Date.now(), value })
+  // A failed read is never remembered.
+  value.catch(() => readinessMemo.delete(key))
+  return value
+}
+
+/** Tests / explicit invalidation after a flag write in this process. */
+export function forgetReadiness(tenantId?: string): void {
+  if (!tenantId) return readinessMemo.clear()
+  for (const key of readinessMemo.keys()) if (key.endsWith(`|${tenantId}`)) readinessMemo.delete(key)
+}
+
 export async function readProductionServerReadiness(tenantId: string) {
+  return memoReadiness('production', tenantId, () => loadProductionServerReadiness(tenantId))
+}
+
+async function loadProductionServerReadiness(tenantId: string) {
   const flag = await readTenantFlag(tenantId, PRODUCTION_SERVER_V2_FLAG);
   const mappingRevision = typeof flag.config.terminalMappingRevision === 'string'
     ? flag.config.terminalMappingRevision
@@ -125,6 +155,10 @@ export async function readProductionServerReadiness(tenantId: string) {
 }
 
 export async function readClientsServerReadiness(tenantId: string) {
+  return memoReadiness('clients', tenantId, () => loadClientsServerReadiness(tenantId))
+}
+
+async function loadClientsServerReadiness(tenantId: string) {
   const [clientsFlag, lifecycleFlag] = await Promise.all([
     readTenantFlag(tenantId, CLIENTS_SERVER_V2_FLAG),
     readTenantFlag(tenantId, ORDER_LIFECYCLE_V2_FLAG),
@@ -196,6 +230,10 @@ export async function readSoftTenantAiConfig(tenantId: string) {
 }
 
 export async function readTenantUiReadiness(tenantId: string) {
+  return memoReadiness('ui', tenantId, () => loadTenantUiReadiness(tenantId))
+}
+
+async function loadTenantUiReadiness(tenantId: string) {
   try {
     const flags = await prisma.tenantFeatureFlag.findMany({
       where: {

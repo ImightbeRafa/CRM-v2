@@ -1,3 +1,5 @@
+import { parseInstagramReferral, parseWhatsAppReferral, type ParsedAdReferral } from '@/lib/meta-attribution/referral'
+
 export type MetaChatPlatform = 'instagram' | 'whatsapp'
 
 export type MetaChatMessageDirection = 'inbound' | 'outbound'
@@ -20,6 +22,8 @@ export interface ParsedMetaChatMessage {
   providerMediaId?: string
   mediaMimeType?: string
   mediaFilename?: string
+  /** Ad click that opened this chat. Only on live inbound customer messages (never echoes / history). */
+  referral?: ParsedAdReferral
 }
 
 export type MetaChatReceiptStatus = 'sent' | 'delivered' | 'read' | 'failed'
@@ -307,6 +311,7 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
         const contact = (value.contacts || []).find((item: any) => item?.wa_id === message.from) || value.contacts?.[0]
         const content = getWhatsAppContent(message)
         const media = extractWhatsAppMediaFields(message)
+        const referral = parseWhatsAppReferral(message) ?? undefined
 
         messages.push({
           platform: 'whatsapp',
@@ -320,6 +325,7 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
           direction: 'inbound',
           suppressSoftAi: false,
           ...media,
+          ...(referral ? { referral } : {}),
           metadata: compactObject({
             providerMessageId: message.id,
             providerTimestamp: message.timestamp,
@@ -477,6 +483,7 @@ function parseInstagramMessaging(
       const accountId = resolveInstagramAccountId({ source, entryId, recipientId })
       const messageType = message.attachments?.[0]?.type || (message.text ? 'text' : 'unknown')
       const isEcho = Boolean(message.is_echo)
+      const referral = isEcho ? undefined : parseInstagramReferral(message) ?? undefined
 
       // Echo = business-sent from IG app / inbox; store as outbound, never Soft-AI.
       const peerId = isEcho ? recipientId : String(senderId)
@@ -498,6 +505,7 @@ function parseInstagramMessaging(
         sentAt: toDateFromMetaTimestamp(event.timestamp),
         direction: isEcho ? 'outbound' : 'inbound',
         suppressSoftAi: isEcho,
+        ...(referral ? { referral } : {}),
         metadata: compactObject({
           providerMessageId: message.mid,
           providerTimestamp: event.timestamp,

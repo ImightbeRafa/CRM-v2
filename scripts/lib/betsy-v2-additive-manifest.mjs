@@ -24,6 +24,7 @@ export const FILES = {
   '035': '035_crm_workspace.sql',
   '036': '036_crm_workspace_2b.sql',
   '037': '037_chat_team_replied.sql',
+  '039': '039_meta_sales_attribution.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -62,6 +63,7 @@ export const EXPECTED_TABLES = {
   '029': ['ChatAgentShortcut', 'ChatAgentAsset', 'ChatAgentShortcutAsset'],
   '030': ['TenantInvite'],
   '031': [],
+  '039': ['ChatAdReferral', 'MetaCapiDataset', 'MetaConversionEvent'],
 };
 
 export const EXPECTED_COLUMNS = {

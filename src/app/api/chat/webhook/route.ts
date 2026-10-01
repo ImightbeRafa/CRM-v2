@@ -26,6 +26,7 @@ import {
   buildChatWebhookObsFields,
   logChatWebhookEvent,
 } from '@/lib/chat-webhook-observability'
+import { recordAdReferral } from '@/lib/meta-attribution/referral-store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -172,6 +173,19 @@ async function storeMessage(event: ParsedMetaChatMessage) {
       }),
     },
   })
+
+  // Ad click that opened this chat (click-to-WhatsApp / IG ad). Best effort; never blocks the 200.
+  if (direction === 'inbound' && event.referral && result.conversationId) {
+    await recordAdReferral({
+      tenantId: account.tenantId,
+      socialAccountId: account.id,
+      conversationId: result.conversationId,
+      messageId: result.messageId ?? null,
+      providerMessageId: event.providerMessageId,
+      occurredAt: event.sentAt,
+      referral: event.referral,
+    })
+  }
 
   return {
     stored: true as const,

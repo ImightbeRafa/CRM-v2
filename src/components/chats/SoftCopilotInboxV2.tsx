@@ -78,6 +78,7 @@ import {
 } from '@/components/chats/SoftThreadPane'
 import { SoftTokenHealthBanners } from '@/components/chats/SoftTokenHealthBanners'
 import { ChatContextRail, normalizeRailTab, type ContextRailTab } from '@/components/chats/ChatContextRail'
+import { ChatAdOriginCard } from '@/components/chats/ChatAdOriginCard'
 import { useCrmCatalog } from '@/components/chats/useCrmCatalog'
 import { useChatPresence } from '@/components/chats/useChatPresence'
 import { ChatClientPanel } from '@/components/chats/ChatClientPanel'
@@ -1516,6 +1517,8 @@ export function SoftCopilotInboxV2() {
   )
   const clientPanel =
     selectedConversationId && selectedConversation && !selectedConversation.isDemo ? (
+      <>
+      <ChatAdOriginCard key={`ad-${selectedConversationId}`} conversationId={selectedConversationId} />
       <ChatClientPanel
         key={selectedConversationId}
         conversationId={selectedConversationId}
@@ -1527,6 +1530,7 @@ export function SoftCopilotInboxV2() {
           void fetchChanges()
         }}
       />
+      </>
     ) : null
 
   const threadSharedProps = {

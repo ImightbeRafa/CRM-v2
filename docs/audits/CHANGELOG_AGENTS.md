@@ -11,6 +11,22 @@
   when a customer message raises the unread count (not on first load, not our own replies); speaker
   toggle in the inbox header (per browser, on by default). Preview WAV sent to Rafael.
 
+## 2026-10-01 — Meta sales attribution S1+S2 (claudio/meta-attribution, not deployed)
+
+Advisor plan (CTWA / IG click-to-message → Conversions API for Business Messaging); slices S0–S6.
+- **S1 capture**: `src/lib/meta-attribution/referral.ts` parses WhatsApp `referral` (incl. `ctwa_clid`)
+  and IG ad `message.referral` on live inbound messages only; webhook stores it best-effort in
+  `ChatAdReferral` (idempotent, tenant-checked, silent until SQL 039 applied, click id never logged).
+- **SQL 039** (`supabase/migrations/039_meta_sales_attribution.sql`, NOT applied, gated
+  `BETSY_V2_APPLY_FILES=039`): ChatAdReferral, MetaCapiDataset, MetaConversionEvent, RLS on.
+- **S2 visibility**: `GET /api/chat/conversations/[id]/attribution` + "Llegó por un anuncio" card in the
+  chat side panel (separate request; not in the inbox list query).
+- Proof: test:meta-attribution 11/11, chat-harden 461, security 264, chat-scale 15, backups 8,
+  chat-mobile 6, site-ui 50; subset tsc no new errors; eslint clean.
+- **Blocked on Rafael** before S3/S4 (sending Purchase events): Meta permission
+  `whatsapp_business_manage_events` in the Embedded Signup config + App Review, SQL 039 apply,
+  currency (CRC only?), what counts as "paid", privacy/terms wording.
+
 ## 2026-10-01 — Inbox live fix: verifier follow-ups (claudio/inbox-live)
 
 Verifier PASS WITH NOTES on 10b00a3; all six notes addressed:

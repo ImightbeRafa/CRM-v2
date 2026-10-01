@@ -72,9 +72,13 @@ export async function GET(request: NextRequest) {
         }
       : baseWhere
 
-    // Independent reads in parallel (they used to run one after another). The max revision is read
-    // BEFORE/with the page: a change landing in between is re-sent by /changes, never skipped.
-    const [rows, { stages: chatStages }, maxRevisionAgg] = await Promise.all([
+    // The max revision is read strictly BEFORE the page: a change landing in between has a higher
+    // revision, so /changes re-sends it (never skipped). The page and the stages then run together.
+    const maxRevisionAgg = await prisma.chatConversation.aggregate({
+      where: { tenantId: auth.tenantId },
+      _max: { revision: true },
+    })
+    const [rows, { stages: chatStages }] = await Promise.all([
       prisma.chatConversation.findMany({
         where,
         orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
@@ -85,10 +89,6 @@ export async function GET(request: NextRequest) {
         },
       }),
       loadStages(auth.tenantId, 'chat'),
-      prisma.chatConversation.aggregate({
-        where: { tenantId: auth.tenantId },
-        _max: { revision: true },
-      }),
     ])
 
     const hasMore = rows.length > limit

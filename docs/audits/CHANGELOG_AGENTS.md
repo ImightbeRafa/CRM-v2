@@ -1,3 +1,17 @@
+## 2026-10-01 — Performance batch 2 (branch claudio/perf-2) + speed indexes 032 applied
+
+- Measured after batch 1 (live 9d776d0b): API p50 2-13x faster (dashboard 5.2 s → 0.38 s, auth/me
+  3.1 → 0.93, chat list 3.0 → 1.1, billing 2.2 → 0.74); JS 49 → 34 files; edge cache HIT; 3 DB conns.
+- 032 applied (8 indexes valid, 4 s; Order 3.8k rows).
+- Batch 2: chat list reads in parallel (max revision read first); agent flag cached 60 s; lean 30 s
+  cached membership for /api/auth/me + /api/billing/access (payments / writes stay fresh; billing
+  screen uses ?fresh=1 so post-payment re-checks see the webhook); readiness readers memoised 30 s;
+  Config Productos/Clientes/Envíos stop downloading a never-rendered legacy list; chat photo
+  previews ?w=320|640 (sharp; real JPEG/PNG/WebP bytes only, 40 MP cap, 5 s timeout, 2 at a time,
+  falls back to the original); stats summary in one round.
+- Verifier: PASS WITH NOTES → all notes fixed (F1 billing freshness, F2 magic bytes = MEDIA finding,
+  F3 throttle, F4 revision order). Tests: chat-harden 451+, security 263, all suites green.
+
 ## 2026-09-30 — Performance batch 1 (branch claudio/perf-1)
 
 - Measured live (test tenant): HTML TTFB 0.4-0.8 s fine; API p50 1.5-5 s; ~700 KB JS per page;

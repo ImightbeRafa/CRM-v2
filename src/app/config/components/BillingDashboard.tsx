@@ -215,8 +215,9 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         }
       }
 
-      // Use the same fresh DB-backed evaluator that protects writes.
-      const trialRes = await fetch('/api/billing/access', { cache: 'no-store' });
+      // Fresh DB-backed evaluator (bypasses the 30 s server cache): right after a Tilopay payment the
+      // re-checks must see the webhook's plan change, or the Pro button would stay live.
+      const trialRes = await fetch('/api/billing/access?fresh=1', { cache: 'no-store' });
       if (trialRes.ok) {
         const payload = await trialRes.json();
         const trialData = payload.data;

@@ -111,8 +111,9 @@ async function readTenantFlag(tenantId: string, key: string): Promise<TenantFeat
 
 /**
  * Readiness answers per business, memoised 30 s per process (perf 2026-10-01): several list / stats
- * routes read them on every request and they only change when a rollout flag is flipped. The raw
- * readTenantFlag (used by write paths) stays uncached.
+ * routes read them on every request and they only change when a rollout flag is flipped (by an
+ * operator script, never from inside the app). A flip takes up to 30 s to reach every caller,
+ * including orders/status. The raw readTenantFlag stays uncached.
  */
 const readinessMemo = new Map<string, { at: number; value: Promise<unknown> }>()
 const READINESS_TTL_MS = 30_000

@@ -52,6 +52,7 @@ import {
   messageDtoToInbox,
   softConversationKeyFromDto,
   sortedConversationDtos,
+  threadTailCursor,
 } from '@/lib/chat-inbox-v2-client'
 import {
   applyAgentControl,
@@ -314,10 +315,8 @@ export function SoftCopilotInboxV2() {
       const persistedTail = existing?.length
         ? [...existing].reverse().find((m) => !m.id.startsWith('optimistic:'))
         : undefined
-      const threadAfter =
-        threadId && persistedTail
-          ? `${persistedTail.sentAt},${persistedTail.id}`
-          : null
+      // Look back a little: a customer message can be stored with a send time just before ours.
+      const threadAfter = threadId ? threadTailCursor(persistedTail) : null
 
       const qs = buildChangesPollQuery({
         afterRevision: after,
@@ -347,8 +346,9 @@ export function SoftCopilotInboxV2() {
         // A customer wrote (unread went up on an inbound message): soft chime, once per burst.
         if (lastFullReconcileRef.current > 0) {
           const onScreen = dtoMapRef.current
+          const nowMs = Date.now()
           const fresh = parsed.data.conversations.some((c) =>
-            isNewInboundActivity(onScreen.get(c.id)?.unreadCount ?? undefined, c),
+            isNewInboundActivity(onScreen.get(c.id)?.unreadCount ?? undefined, c, nowMs),
           )
           if (fresh) playNotificationChime()
         }
@@ -433,6 +433,8 @@ export function SoftCopilotInboxV2() {
       setLoading(true)
       // Block the poller during the first load: focus/visibility ticks would otherwise fire a
       // second "reconcile" list fetch in parallel (lastFullReconcileRef is still 0).
+      const startedAt = Date.now()
+      pollStartedAtRef.current = startedAt
       pollInFlightRef.current = true
       try {
         // Fresh on mount (a line connected seconds ago must show up); still shares an in-flight request.
@@ -445,7 +447,8 @@ export function SoftCopilotInboxV2() {
         }
       } finally {
         // fetchListPage sets lastFullReconcileRef on success; after a failure the next tick reconciles.
-        pollInFlightRef.current = false
+        // Only release the flag if a stuck-recovery poll has not taken it over meanwhile.
+        if (pollStartedAtRef.current === startedAt) pollInFlightRef.current = false
         setLoading(false)
       }
     })()

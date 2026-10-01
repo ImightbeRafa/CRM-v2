@@ -176,6 +176,7 @@ export function SoftConversationList({
         <div className="flex items-center justify-between gap-2 px-4 pt-4">
           <h2 className="text-[28px] font-bold leading-tight tracking-tight text-slate-900">Chats</h2>
           <div className="flex shrink-0 items-center gap-2">
+            {lastSyncAt !== undefined ? <SoundToggle size="lg" /> : null}
             {onSearchChange ? (
               <button
                 type="button"

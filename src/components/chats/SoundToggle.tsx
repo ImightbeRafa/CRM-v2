@@ -9,7 +9,7 @@ import {
 } from '@/lib/notification-sound'
 
 /** Speaker button in the inbox header: turns the new-message chime on / off for this browser. */
-export function SoundToggle() {
+export function SoundToggle({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
   const [on, setOn] = useState(true)
   useEffect(() => setOn(isNotificationSoundEnabled()), [])
   const label = on ? 'Sonido de mensajes nuevos: activado' : 'Sonido de mensajes nuevos: desactivado'
@@ -26,10 +26,18 @@ export function SoundToggle() {
         // A click is a user gesture: the preview also unlocks audio in the browser.
         if (next) playNotificationChime(true)
       }}
-      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+      className={
+        size === 'lg'
+          ? 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-slate-700 ring-1 ring-slate-200/70'
+          : 'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700'
+      }
       data-testid="chat-sound-toggle"
     >
-      {on ? <Volume2 className="h-4 w-4" aria-hidden /> : <VolumeX className="h-4 w-4" aria-hidden />}
+      {on ? (
+        <Volume2 className={size === 'lg' ? 'h-5 w-5' : 'h-4 w-4'} aria-hidden />
+      ) : (
+        <VolumeX className={size === 'lg' ? 'h-5 w-5' : 'h-4 w-4'} aria-hidden />
+      )}
     </button>
   )
 }

@@ -11,6 +11,22 @@
   when a customer message raises the unread count (not on first load, not our own replies); speaker
   toggle in the inbox header (per browser, on by default). Preview WAV sent to Rafael.
 
+## 2026-10-01 — Inbox live fix: verifier follow-ups (claudio/inbox-live)
+
+Verifier PASS WITH NOTES on 10b00a3; all six notes addressed:
+- **Open chat missed a late customer message** (pre-existing): the thread tail cursor sat at our last
+  message's ms timestamp while WhatsApp stamps customer messages in whole seconds and delivers 1–3 s
+  later. The poll now re-asks a 45 s window (`threadTailCursor`), merged by id. Window kept far below
+  the 50-row tail page.
+- First load now records a real poll start time (the stuck-release saw 0 and fired a parallel list load)
+  and only clears the in-flight flag it owns.
+- `mergeListDtoIntoMap` ignores an older revision of a chat (a late response can't overwrite a newer row).
+- `inboxFetch` uses `AbortSignal.timeout`, so a stalled response body is also cut off.
+- Chime: chats not on screen only chime if the customer wrote in the last 2 min (no chime when a teammate
+  tags / assigns an old unanswered chat). Audio unlock also listens to pointerup/touchend/click and
+  re-arms when the tab comes back; mobile header has the sound switch.
+- Proof: chat-inbox-live 9/9, chat-harden 461/461, chat-mobile 6/6, site-ui 50/50, subset tsc 0, eslint 0 errors.
+
 ## 2026-10-01 — Performance batch 2 (branch claudio/perf-2) + speed indexes 032 applied
 
 - Measured after batch 1 (live 9d776d0b): API p50 2-13x faster (dashboard 5.2 s → 0.38 s, auth/me

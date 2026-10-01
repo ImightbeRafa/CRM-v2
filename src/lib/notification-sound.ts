@@ -49,14 +49,31 @@ function audioContext(): AudioContext | null {
 export function installNotificationSoundUnlock(): void {
   if (unlockInstalled || typeof window === 'undefined') return
   unlockInstalled = true
+  // Phones only allow audio from a completed tap (touchend / click), not from pointerdown.
+  const events = ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'] as const
   const unlock = () => {
     const c = audioContext()
-    if (c && c.state === 'suspended') void c.resume().catch(() => undefined)
-    window.removeEventListener('pointerdown', unlock)
-    window.removeEventListener('keydown', unlock)
+    if (!c) return
+    if (c.state === 'running') {
+      // Keep listening until audio really runs; the browser can suspend it again later
+      // (iOS after a call or backgrounding), so re-arm on visibility below.
+      for (const e of events) window.removeEventListener(e, unlock)
+      return
+    }
+    void c.resume().then(
+      () => {
+        if (c.state === 'running') for (const e of events) window.removeEventListener(e, unlock)
+      },
+      () => undefined,
+    )
   }
-  window.addEventListener('pointerdown', unlock, { passive: true })
-  window.addEventListener('keydown', unlock)
+  const arm = () => {
+    for (const e of events) window.addEventListener(e, unlock, { passive: true })
+  }
+  arm()
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && ctx && ctx.state !== 'running') arm()
+  })
 }
 
 /** One soft marimba-like note: a sine plus a quiet octave partial, quick attack, smooth decay. */
@@ -101,15 +118,24 @@ export function playNotificationChime(force = false): boolean {
   }
 }
 
+/** A chat that is not on screen only chimes if the customer wrote within this window. */
+export const OFF_SCREEN_FRESH_MS = 2 * 60_000
+
 /**
  * True when a refreshed chat row means "a customer just wrote": the last message is inbound and
- * the viewer's unread count went up (new chats count from zero).
+ * the viewer's unread count went up. A chat that is not on screen (previousUnread undefined) also
+ * needs a recent customer message — a teammate tagging or assigning an old unanswered chat must
+ * not chime.
  */
 export function isNewInboundActivity(
   previousUnread: number | undefined,
-  next: { unreadCount?: number | null; lastMessageDirection?: string | null },
+  next: { unreadCount?: number | null; lastMessageDirection?: string | null; lastInboundAt?: string | null },
+  nowMs: number = Date.now(),
 ): boolean {
-  const before = previousUnread ?? 0
   const after = next.unreadCount ?? 0
-  return next.lastMessageDirection === 'inbound' && after > before
+  if (next.lastMessageDirection !== 'inbound') return false
+  if (previousUnread !== undefined) return after > previousUnread
+  if (after <= 0 || !next.lastInboundAt) return false
+  const at = Date.parse(next.lastInboundAt)
+  return Number.isFinite(at) && nowMs - at < OFF_SCREEN_FRESH_MS
 }

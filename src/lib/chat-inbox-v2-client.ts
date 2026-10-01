@@ -23,9 +23,31 @@ export const CHAT_INBOX_V2_STUCK_POLL_MS = 30_000
  * 5 s tick was skipped.
  */
 export function inboxFetch(url: string, init: RequestInit = {}, timeoutMs = CHAT_INBOX_V2_REQUEST_TIMEOUT_MS): Promise<Response> {
+  // The signal stays armed while the body is read too (a stalled body must not hang either).
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
+  }
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer))
+  setTimeout(() => controller.abort(), timeoutMs)
+  return fetch(url, { ...init, signal: controller.signal })
+}
+
+/**
+ * How far back the open chat re-asks for messages on every poll. Customer messages carry Meta's
+ * send time (whole seconds) and arrive 1–3 s later, so one can be stored "before" a reply we
+ * already have; a cursor at our last message would skip it forever. Duplicates merge by id.
+ * Kept short: the tail returns at most 50 rows from the cursor, so the window must never hold 50.
+ */
+export const CHAT_INBOX_V2_THREAD_LOOKBACK_MS = 45_000
+
+export function threadTailCursor(
+  tail: { sentAt: string; id: string } | undefined,
+  lookbackMs = CHAT_INBOX_V2_THREAD_LOOKBACK_MS,
+): string | null {
+  if (!tail) return null
+  const ms = Date.parse(tail.sentAt)
+  if (!Number.isFinite(ms)) return `${tail.sentAt},${tail.id}`
+  return `${new Date(ms - lookbackMs).toISOString()},${tail.id}`
 }
 export const CHAT_INBOX_V2_LIST_PAGE_LIMIT = 50
 export const CHAT_INBOX_V2_LIST_MAX_PAGES = 40
@@ -124,9 +146,21 @@ export function mergeListDtoIntoMap(
 ): Map<string, ChatConversationListItemDto> {
   const next = new Map(prev)
   for (const item of items) {
+    // A late (older) response must never replace a newer copy of the same chat.
+    const current = next.get(item.id)
+    if (current && isOlderRevision(item.revision, current.revision)) continue
     next.set(item.id, item)
   }
   return next
+}
+
+function isOlderRevision(incoming: string | undefined, current: string | undefined): boolean {
+  if (!incoming || !current) return false
+  try {
+    return BigInt(incoming) < BigInt(current)
+  } catch {
+    return false
+  }
 }
 
 export function sortedConversationDtos(map: Map<string, ChatConversationListItemDto>): ChatConversationListItemDto[] {

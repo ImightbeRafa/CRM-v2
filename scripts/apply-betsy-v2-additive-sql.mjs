@@ -30,7 +30,7 @@
  * 033 security: enable RLS (deny-all) on 7 data-API-exposed tables (BETSY_V2_APPLY_FILES=033).
  * 034 security: User.sessionVersion + passwordChangedAt for session revocation (BETSY_V2_APPLY_FILES=034).
  * 035 Phase 2a workspace: CrmStage, CrmTag, ClientLifecycleState, CrmNote, ActivityEvent (BETSY_V2_APPLY_FILES=035).
- * 039 Meta sales attribution: ChatAdReferral, MetaCapiDataset, MetaConversionEvent (BETSY_V2_APPLY_FILES=039).
+ * 039 Meta sales attribution step 1: ChatAdReferral (BETSY_V2_APPLY_FILES=039; quiet window).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

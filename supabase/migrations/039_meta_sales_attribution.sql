@@ -1,6 +1,10 @@
--- 039 Meta sales attribution (ad referral capture + Business Messaging CAPI outbox). Additive only.
+-- 039 Meta sales attribution, step 1: ad referral capture only. Additive only.
 -- Gated: BETSY_V2_APPLY_FILES=039 — never DEFAULT_APPLY_FILES. DO NOT run prisma db push / migrate.
 -- Code is fail-safe on missing tables (P2021/42P01). Rollback: deploy previous code; tables can stay (ignored).
+-- Apply in a quiet window (madrugada): the foreign keys briefly block writes on ChatConversation,
+-- SocialAccount and Tenant. They are declared in the same order the webhook writes them, to avoid
+-- lock-order deadlocks. messageId has no foreign key on purpose (keeps ChatMessage out of the lock set).
+-- The dataset + conversion outbox tables come in a later migration (step 3).
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '30s';
@@ -25,10 +29,9 @@ CREATE TABLE IF NOT EXISTS public."ChatAdReferral" (
   "refParam" text NULL,
   "occurredAt" timestamp(3) without time zone NOT NULL,
   "createdAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT "ChatAdReferral_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES public."Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "ChatAdReferral_socialAccountId_fkey" FOREIGN KEY ("socialAccountId") REFERENCES public."SocialAccount"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "ChatAdReferral_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES public."ChatConversation"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "ChatAdReferral_messageId_fkey" FOREIGN KEY ("messageId") REFERENCES public."ChatMessage"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT "ChatAdReferral_socialAccountId_fkey" FOREIGN KEY ("socialAccountId") REFERENCES public."SocialAccount"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "ChatAdReferral_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES public."Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "ChatAdReferral_platform_check" CHECK ("platform" IN ('whatsapp', 'instagram')),
   CONSTRAINT "ChatAdReferral_len_check" CHECK (
     char_length("dedupeKey") BETWEEN 1 AND 300
@@ -41,65 +44,10 @@ CREATE TABLE IF NOT EXISTS public."ChatAdReferral" (
 );
 CREATE INDEX IF NOT EXISTS "ChatAdReferral_conversation_time_idx" ON public."ChatAdReferral" ("conversationId", "occurredAt");
 CREATE INDEX IF NOT EXISTS "ChatAdReferral_tenant_source_idx" ON public."ChatAdReferral" ("tenantId", "sourceId", "occurredAt") WHERE "sourceId" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "ChatAdReferral_tenant_idx" ON public."ChatAdReferral" ("tenantId");
+CREATE INDEX IF NOT EXISTS "ChatAdReferral_account_idx" ON public."ChatAdReferral" ("socialAccountId");
+CREATE INDEX IF NOT EXISTS "ChatAdReferral_clid_age_idx" ON public."ChatAdReferral" ("occurredAt") WHERE "ctwaClid" IS NOT NULL;
 ALTER TABLE public."ChatAdReferral" ENABLE ROW LEVEL SECURITY;
 
--- Per connected line: the business's own Meta dataset and whether its token can send events.
-CREATE TABLE IF NOT EXISTS public."MetaCapiDataset" (
-  "socialAccountId" text PRIMARY KEY,
-  "tenantId" text NOT NULL,
-  "datasetId" text NULL,
-  "status" text NOT NULL DEFAULT 'unknown',
-  "grantedScopes" text[] NOT NULL DEFAULT '{}',
-  "checkedAt" timestamp(3) without time zone NULL,
-  "lastErrorCode" text NULL,
-  "lastErrorAt" timestamp(3) without time zone NULL,
-  "createdAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT "MetaCapiDataset_socialAccountId_fkey" FOREIGN KEY ("socialAccountId") REFERENCES public."SocialAccount"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "MetaCapiDataset_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES public."Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "MetaCapiDataset_status_check" CHECK ("status" IN ('unknown', 'ready', 'missing_permission', 'token_invalid', 'error'))
-);
-CREATE INDEX IF NOT EXISTS "MetaCapiDataset_tenant_idx" ON public."MetaCapiDataset" ("tenantId");
-ALTER TABLE public."MetaCapiDataset" ENABLE ROW LEVEL SECURITY;
 
--- Outbox of conversion events. Holds references only; the click id is re-read at send time.
-CREATE TABLE IF NOT EXISTS public."MetaConversionEvent" (
-  "id" text PRIMARY KEY,
-  "tenantId" text NOT NULL,
-  "socialAccountId" text NOT NULL,
-  "conversationId" text NULL,
-  "orderId" text NULL,
-  "referralId" text NULL,
-  "eventName" text NOT NULL,
-  "eventId" text NOT NULL,
-  "eventTime" timestamp(3) without time zone NOT NULL,
-  "value" numeric(14,2) NULL,
-  "currency" text NULL,
-  "channel" text NOT NULL,
-  "isTest" boolean NOT NULL DEFAULT false,
-  "status" text NOT NULL DEFAULT 'pending',
-  "attempts" integer NOT NULL DEFAULT 0,
-  "availableAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "leaseToken" text NULL,
-  "leaseExpiresAt" timestamp(3) without time zone NULL,
-  "sentAt" timestamp(3) without time zone NULL,
-  "fbtraceId" text NULL,
-  "lastErrorCode" text NULL,
-  "lastErrorAt" timestamp(3) without time zone NULL,
-  "createdAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT "MetaConversionEvent_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES public."Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "MetaConversionEvent_socialAccountId_fkey" FOREIGN KEY ("socialAccountId") REFERENCES public."SocialAccount"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "MetaConversionEvent_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES public."ChatConversation"("id") ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT "MetaConversionEvent_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES public."Order"("id") ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT "MetaConversionEvent_referralId_fkey" FOREIGN KEY ("referralId") REFERENCES public."ChatAdReferral"("id") ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT "MetaConversionEvent_eventName_check" CHECK ("eventName" IN ('Purchase', 'LeadSubmitted')),
-  CONSTRAINT "MetaConversionEvent_channel_check" CHECK ("channel" IN ('whatsapp', 'instagram')),
-  CONSTRAINT "MetaConversionEvent_status_check" CHECK ("status" IN ('pending', 'processing', 'sent', 'failed', 'skipped', 'expired')),
-  CONSTRAINT "MetaConversionEvent_tenant_event_key" UNIQUE ("tenantId", "eventId")
-);
-CREATE INDEX IF NOT EXISTS "MetaConversionEvent_claim_idx" ON public."MetaConversionEvent" ("status", "availableAt") WHERE "status" IN ('pending', 'processing');
-CREATE INDEX IF NOT EXISTS "MetaConversionEvent_tenant_order_idx" ON public."MetaConversionEvent" ("tenantId", "orderId") WHERE "orderId" IS NOT NULL;
-CREATE INDEX IF NOT EXISTS "MetaConversionEvent_tenant_created_idx" ON public."MetaConversionEvent" ("tenantId", "createdAt" DESC);
-ALTER TABLE public."MetaConversionEvent" ENABLE ROW LEVEL SECURITY;
 COMMIT;

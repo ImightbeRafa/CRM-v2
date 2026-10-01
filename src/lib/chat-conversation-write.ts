@@ -562,7 +562,12 @@ export async function dualWriteChatMessage(
         reason: 'duplicate',
       }
     }
-    console.error('[chat-conversation-write] dualWrite failed', error)
+    // Name / code only: a Prisma validation error prints the whole row (phone, text, raw message).
+    const e = error as { name?: unknown; code?: unknown } | null
+    console.error('[chat-conversation-write] dualWrite failed', {
+      name: typeof e?.name === 'string' ? e.name : undefined,
+      code: typeof e?.code === 'string' ? e.code : undefined,
+    })
     return {
       ok: false,
       reason: 'error',

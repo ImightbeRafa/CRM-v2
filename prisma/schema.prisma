@@ -1715,7 +1715,7 @@ model ChatWorkspaceSettings {
   updatedAt           DateTime  @updatedAt
 }
 
-// 039 Meta sales attribution (supabase/migrations/039_meta_sales_attribution.sql). FKs live in SQL only.
+// 039 Meta sales attribution step 1 (supabase/migrations/039_meta_sales_attribution.sql). FKs live in SQL only.
 model ChatAdReferral {
   id              String   @id @default(cuid())
   tenantId        String
@@ -1737,48 +1737,4 @@ model ChatAdReferral {
 
   @@unique([socialAccountId, dedupeKey], map: "ChatAdReferral_account_dedupe_key")
   @@index([conversationId, occurredAt], map: "ChatAdReferral_conversation_time_idx")
-}
-
-model MetaCapiDataset {
-  socialAccountId String    @id
-  tenantId        String
-  datasetId       String?
-  status          String    @default("unknown")
-  grantedScopes   String[]  @default([])
-  checkedAt       DateTime?
-  lastErrorCode   String?
-  lastErrorAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @default(now()) @updatedAt
-
-  @@index([tenantId], map: "MetaCapiDataset_tenant_idx")
-}
-
-model MetaConversionEvent {
-  id              String    @id @default(cuid())
-  tenantId        String
-  socialAccountId String
-  conversationId  String?
-  orderId         String?
-  referralId      String?
-  eventName       String
-  eventId         String
-  eventTime       DateTime
-  value           Decimal?  @db.Decimal(14, 2)
-  currency        String?
-  channel         String
-  isTest          Boolean   @default(false)
-  status          String    @default("pending")
-  attempts        Int       @default(0)
-  availableAt     DateTime  @default(now())
-  leaseToken      String?
-  leaseExpiresAt  DateTime?
-  sentAt          DateTime?
-  fbtraceId       String?
-  lastErrorCode   String?
-  lastErrorAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @default(now()) @updatedAt
-
-  @@unique([tenantId, eventId], map: "MetaConversionEvent_tenant_event_key")
 }

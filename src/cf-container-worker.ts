@@ -1,13 +1,27 @@
-import { Container, getContainer } from "@cloudflare/containers";
+import { Container } from "@cloudflare/containers";
 
 /**
  * Named container object (was the library default "cf-singleton-container"). 2026-09-29: that
  * object's instance got stuck "inactive" on Cloudflare's side (every fetch → internal error, a
  * redeploy did not reset it). A new name gives a fresh Durable Object + container.
  */
-const CONTAINER_INSTANCE_NAME = "betsy-main-2";
+const CONTAINER_INSTANCE_NAME = "betsy-main-enam-1";
 /** Standby object: only started when the primary throws (max_instances 2 leaves room for it). */
-const STANDBY_INSTANCE_NAME = "betsy-standby-1";
+const STANDBY_INSTANCE_NAME = "betsy-standby-enam-1";
+
+/**
+ * Where the container objects live (perf 2026-10-01). A Durable Object — and the container behind it —
+ * is placed where it is FIRST created and never moves: "betsy-main-2" landed on the US West Coast
+ * (every DB query crossed the US to Supabase us-east-1, ~0.27 s extra per request from Costa Rica).
+ * The hint only applies at creation, hence the new names. Eastern North America = next to the DB.
+ */
+const CONTAINER_LOCATION_HINT: DurableObjectLocationHint = "enam";
+
+function containerStub(env: Env, name: string) {
+  return env.BETSY_CRM_CONTAINER.get(env.BETSY_CRM_CONTAINER.idFromName(name), {
+    locationHint: CONTAINER_LOCATION_HINT,
+  });
+}
 
 /** Friendly page instead of Cloudflare's raw "Error 1101" when no container answers. */
 function unavailableResponse(request: Request): Response {
@@ -32,12 +46,12 @@ async function fetchWithFailover(env: Env, request: Request): Promise<Response> 
   const replayable = !request.body || (size > 0 && size <= 1024 * 1024);
   const retry = replayable ? request.clone() : null;
   try {
-    return await getContainer(env.BETSY_CRM_CONTAINER, CONTAINER_INSTANCE_NAME).fetch(request);
+    return await containerStub(env, CONTAINER_INSTANCE_NAME).fetch(request);
   } catch (primaryError) {
     console.error("[container] primary failed, trying standby", String(primaryError));
     if (!retry) return unavailableResponse(request);
     try {
-      return await getContainer(env.BETSY_CRM_CONTAINER, STANDBY_INSTANCE_NAME).fetch(retry);
+      return await containerStub(env, STANDBY_INSTANCE_NAME).fetch(retry);
     } catch (standbyError) {
       console.error("[container] standby failed too", String(standbyError));
       return unavailableResponse(request);

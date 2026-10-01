@@ -95,3 +95,13 @@ test('withSerializationRetry: retries P2034 only, at most 3 times', async () => 
   }), /other/)
   assert.equal(calls, 1, 'other errors are never retried')
 })
+
+test('worker: container objects are pinned to Eastern North America (next to the database)', () => {
+  const w = read('src/cf-container-worker.ts')
+  assert.match(w, /const CONTAINER_LOCATION_HINT: DurableObjectLocationHint = "enam"/)
+  assert.match(w, /idFromName\(name\), \{\s*locationHint: CONTAINER_LOCATION_HINT,/)
+  assert.match(w, /const CONTAINER_INSTANCE_NAME = "betsy-main-enam-1"/)
+  assert.match(w, /const STANDBY_INSTANCE_NAME = "betsy-standby-enam-1"/)
+  // Every route to a container goes through the pinned stub.
+  assert.doesNotMatch(w, /getContainer\(/)
+})

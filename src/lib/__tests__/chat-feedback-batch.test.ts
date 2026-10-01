@@ -351,8 +351,9 @@ describe('quick-reply files: SecureDog M-1 / L-3 / L-4', () => {
 describe('outage 2026-09-29: container failover', () => {
   test('named primary + standby, thrown errors fail over, friendly 503 last', () => {
     const w = read('src/cf-container-worker.ts')
-    assert.match(w, /CONTAINER_INSTANCE_NAME = "betsy-main-2"/)
-    assert.match(w, /STANDBY_INSTANCE_NAME = "betsy-standby-1"/)
+    // Named primary + a different named standby (renamed 2026-10-01 to pin them near the DB).
+    assert.match(w, /CONTAINER_INSTANCE_NAME = "betsy-main-enam-1"/)
+    assert.match(w, /STANDBY_INSTANCE_NAME = "betsy-standby-enam-1"/)
     assert.match(w, /return fetchWithFailover\(env, new Request\(request, \{ headers \}\)\)/)
     assert.match(w, /return unavailableResponse\(request\)/)
     assert.doesNotMatch(w, /getContainer\(env\.BETSY_CRM_CONTAINER\)\./)

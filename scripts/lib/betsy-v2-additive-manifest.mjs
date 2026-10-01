@@ -63,7 +63,7 @@ export const EXPECTED_TABLES = {
   '029': ['ChatAgentShortcut', 'ChatAgentAsset', 'ChatAgentShortcutAsset'],
   '030': ['TenantInvite'],
   '031': [],
-  '039': ['ChatAdReferral', 'MetaCapiDataset', 'MetaConversionEvent'],
+  '039': ['ChatAdReferral'],
 };
 
 export const EXPECTED_COLUMNS = {

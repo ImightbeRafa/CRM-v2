@@ -14,6 +14,8 @@ import { isMissingRelation } from '@/lib/db-missing-relation'
 export const ACTIVITY_RETENTION_DAYS = 395
 export const NOTIFICATION_READ_DAYS = 90
 export const NOTIFICATION_UNREAD_DAYS = 180
+/** Meta click ids (ChatAdReferral.ctwaClid) are only useful for attribution windows of days. */
+export const AD_CLICK_ID_DAYS = 90
 const DAY = 24 * 60 * 60 * 1000
 
 export function retentionCutoffs(now: Date = new Date()) {
@@ -21,6 +23,7 @@ export function retentionCutoffs(now: Date = new Date()) {
     activity: new Date(now.getTime() - ACTIVITY_RETENTION_DAYS * DAY),
     notificationRead: new Date(now.getTime() - NOTIFICATION_READ_DAYS * DAY),
     notificationUnread: new Date(now.getTime() - NOTIFICATION_UNREAD_DAYS * DAY),
+    adClickId: new Date(now.getTime() - AD_CLICK_ID_DAYS * DAY),
   }
 }
 
@@ -41,7 +44,7 @@ export async function purgeWorkspaceLogs(opts: { now?: Date; budgetMs?: number; 
   const deadline = Date.now() + (opts.budgetMs ?? 45_000)
   const size = opts.batchSize ?? 2_000
   const cut = retentionCutoffs(now)
-  const result = { activity: 0, notifications: 0, skipped: [] as string[] }
+  const result = { activity: 0, notifications: 0, adClickIds: 0, skipped: [] as string[] }
 
   try {
     result.activity = await drain(async () => {
@@ -69,6 +72,25 @@ export async function purgeWorkspaceLogs(opts: { now?: Date; budgetMs?: number; 
   } catch (error) {
     if (!isMissingRelation(error)) throw error
     result.skipped.push('notifications_missing')
+  }
+
+  try {
+    result.adClickIds = await drain(async () => {
+      const ids = await prisma.chatAdReferral.findMany({
+        where: { ctwaClid: { not: null }, occurredAt: { lt: cut.adClickId } },
+        select: { id: true },
+        take: size,
+      })
+      if (!ids.length) return 0
+      const res = await prisma.chatAdReferral.updateMany({
+        where: { id: { in: ids.map((r) => r.id) } },
+        data: { ctwaClid: null },
+      })
+      return res.count
+    }, deadline, 20)
+  } catch (error) {
+    if (!isMissingRelation(error)) throw error
+    result.skipped.push('ad_referrals_missing')
   }
   return result
 }

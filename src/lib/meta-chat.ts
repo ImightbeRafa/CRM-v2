@@ -1,5 +1,15 @@
 import { parseInstagramReferral, parseWhatsAppReferral, type ParsedAdReferral } from '@/lib/meta-attribution/referral'
 
+/**
+ * Raw provider message as stored in ChatMessage.metadata, minus the ad referral (click id, signed
+ * CDN media URLs). The parsed referral lives only in ChatAdReferral (SecureDog DATA-, 2026-10-01).
+ */
+export function rawMessageForStorage(message: any): any {
+  if (!message || typeof message !== 'object' || !('referral' in message)) return message
+  const { referral: _referral, ...rest } = message
+  return { ...rest, hasAdReferral: true }
+}
+
 export type MetaChatPlatform = 'instagram' | 'whatsapp'
 
 export type MetaChatMessageDirection = 'inbound' | 'outbound'
@@ -338,7 +348,7 @@ function parseWhatsApp(payload: any): ParsedMetaChatPayload {
             mediaMimeType: media.mediaMimeType,
             mediaFilename: media.mediaFilename,
             from: String(message.from),
-            rawMessage: message,
+            rawMessage: rawMessageForStorage(message),
           }),
         })
       }
@@ -520,7 +530,7 @@ function parseInstagramMessaging(
           webhookObject: source === 'page' ? 'page' : undefined,
           pageId: source === 'page' ? entryId : undefined,
           isEcho: isEcho || undefined,
-          rawMessage: message,
+          rawMessage: rawMessageForStorage(message),
         }),
       })
     }

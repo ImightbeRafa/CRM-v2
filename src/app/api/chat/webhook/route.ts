@@ -90,6 +90,37 @@ function receiptAsResolveEvent(receipt: ParsedMetaChatReceipt): ParsedMetaChatMe
   }
 }
 
+/** Duplicate path: the conversation / message ids come from the stored row (tenant + line scoped). */
+async function recordAdReferralForRetry(
+  account: { id: string; tenantId: string },
+  event: ParsedMetaChatMessage,
+) {
+  if (!event.referral || !event.providerMessageId) return
+  try {
+    const row = await prisma.chatMessage.findFirst({
+      where: {
+        tenantId: account.tenantId,
+        socialAccountId: account.id,
+        providerMessageId: event.providerMessageId,
+        conversationId: { not: null },
+      },
+      select: { id: true, conversationId: true },
+    })
+    if (!row?.conversationId) return
+    await recordAdReferral({
+      tenantId: account.tenantId,
+      socialAccountId: account.id,
+      conversationId: row.conversationId,
+      messageId: row.id,
+      providerMessageId: event.providerMessageId,
+      occurredAt: event.sentAt,
+      referral: event.referral,
+    })
+  } catch {
+    /* best effort; never affects the webhook response */
+  }
+}
+
 async function storeMessage(event: ParsedMetaChatMessage) {
   const resolved = await resolveWebhookSocialAccount(prisma as any, event)
 
@@ -145,6 +176,10 @@ async function storeMessage(event: ParsedMetaChatMessage) {
   }
 
   if (result.duplicate) {
+    // A retry after a crash between the message write and the referral write: record it now.
+    if (direction === 'inbound' && event.referral) {
+      await recordAdReferralForRetry(account, event)
+    }
     console.log('[chat/webhook][POST] Duplicate Meta message skipped', {
       socialAccountId: account.id,
       providerMessageId: event.providerMessageId,

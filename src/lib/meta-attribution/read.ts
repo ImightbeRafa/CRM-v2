@@ -47,26 +47,23 @@ export async function getChatAdAttribution(
   conversationId: string,
 ): Promise<ChatAdAttributionDto | null> {
   try {
-    const rows = await prisma.chatAdReferral.findMany({
-      where: { tenantId, conversationId },
-      orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
-      take: 200,
-      select: {
-        platform: true,
-        sourceType: true,
-        sourceId: true,
-        sourceUrl: true,
-        headline: true,
-        body: true,
-        occurredAt: true,
-      },
-    })
-    if (rows.length === 0) return null
-    return {
-      firstTouch: toDto(rows[0]!),
-      lastTouch: toDto(rows[rows.length - 1]!),
-      touches: rows.length,
-    }
+    const select = {
+      platform: true,
+      sourceType: true,
+      sourceId: true,
+      sourceUrl: true,
+      headline: true,
+      body: true,
+      occurredAt: true,
+    } as const
+    const where = { tenantId, conversationId }
+    const [first, last, touches] = await Promise.all([
+      prisma.chatAdReferral.findFirst({ where, orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }], select }),
+      prisma.chatAdReferral.findFirst({ where, orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }], select }),
+      prisma.chatAdReferral.count({ where }),
+    ])
+    if (!first || !last) return null
+    return { firstTouch: toDto(first), lastTouch: toDto(last), touches }
   } catch (error) {
     if (isMissingTable(error)) return null
     throw error

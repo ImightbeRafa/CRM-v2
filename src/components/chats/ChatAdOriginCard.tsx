@@ -3,16 +3,12 @@
 import { useEffect, useState } from 'react'
 import { ExternalLink, Megaphone } from 'lucide-react'
 import type { ChatAdAttributionDto, ChatAdTouchDto } from '@/lib/meta-attribution/read'
+import { isMetaAdUrl } from '@/lib/meta-attribution/referral'
 
-/** Only real https links are clickable (the server already drops anything else). */
+/** Only https links on Meta's own domains are clickable (the server already drops anything else). */
 export function safeAdHref(url: string | null | undefined): string | null {
-  if (!url) return null
-  try {
-    const parsed = new URL(url)
-    return parsed.protocol === 'https:' ? parsed.toString() : null
-  } catch {
-    return null
-  }
+  if (!url || !isMetaAdUrl(url)) return null
+  return new URL(url).toString()
 }
 
 function formatWhen(iso: string): string {

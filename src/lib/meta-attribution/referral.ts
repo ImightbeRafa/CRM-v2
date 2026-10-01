@@ -1,4 +1,8 @@
 /**
+ * SecureDog INT- (2026-10-01): on WhatsApp the referral travels inside the end-to-end encrypted
+ * message, so a modified client can forge every field. Treat it as unverified customer input:
+ * links only to Meta hosts, text stripped of control / bidi characters, never trusted for AI.
+ *
  * Ad referral data that Meta attaches to the first customer message after an ad click
  * (WhatsApp "click to WhatsApp" `messages[].referral`, Instagram `message.referral`).
  *
@@ -36,24 +40,38 @@ const LIMITS = {
   refParam: 500,
 } as const
 
+// C0/C1 controls, zero-width and bidi override characters (spoofing in the side panel).
+// eslint-disable-next-line no-control-regex
+const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g
+
 function clean(value: unknown, max: number): string | null {
   if (typeof value !== 'string' && typeof value !== 'number') return null
-  // Strip control characters; keep normal text and emoji.
-  // eslint-disable-next-line no-control-regex
-  const text = String(value).replace(/[\u0000-\u001f\u007f]/g, ' ').trim()
+  const text = String(value).replace(UNSAFE_CHARS, ' ').replace(/\s+/g, ' ').trim()
   if (!text) return null
   return text.length > max ? text.slice(0, max) : text
 }
 
-function cleanUrl(value: unknown): string | null {
-  const text = clean(value, LIMITS.sourceUrl)
-  if (!text) return null
+/** Ad / post links are only ever on Meta's own domains. */
+export const META_AD_HOSTS = ['facebook.com', 'fb.me', 'fb.com', 'instagram.com', 'whatsapp.com', 'wa.me'] as const
+
+export function isMetaAdUrl(value: string): boolean {
   try {
-    const url = new URL(text)
-    return url.protocol === 'https:' ? url.toString() : null
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.username || url.password || url.port) return false
+    const host = url.hostname.toLowerCase()
+    return META_AD_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))
   } catch {
-    return null
+    return false
   }
+}
+
+function cleanUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const text = value.trim()
+  if (!text || text.length > LIMITS.sourceUrl || !isMetaAdUrl(text)) return null
+  const normalised = new URL(text).toString()
+  // Length is checked again after normalising (percent-encoding can grow it past the DB limit).
+  return normalised.length <= LIMITS.sourceUrl ? normalised : null
 }
 
 function cleanId(value: unknown, max: number): string | null {

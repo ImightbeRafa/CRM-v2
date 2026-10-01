@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { inboxFetch } from '@/lib/chat-inbox-v2-client'
 import {
   CHAT_POLL_INTERVAL_MS,
   groupMessagesByRecipient,
@@ -263,7 +264,7 @@ export function SoftCopilotInboxLegacy() {
         const accountById = new Map(accounts.map((a) => [a.id, a]))
         const results = await Promise.all(
           pollAccountIds.map(async (id) => {
-            const res = await fetch(
+            const res = await inboxFetch(
               `/api/chat/messages?socialAccountId=${encodeURIComponent(id)}&limit=${POLL_LIMIT}`,
               { credentials: 'same-origin', cache: 'no-store' },
             )

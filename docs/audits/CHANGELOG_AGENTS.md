@@ -1,3 +1,16 @@
+## 2026-10-01 — Chats not updating until refresh + calm notification chime (branch claudio/inbox-live)
+
+- Location pin live (b3b7a13b, containers "enam"): API p50 now 0.22-0.57 s (dashboard 0.23, auth/me
+  0.22, billing 0.24, chat list 0.82), pages fully loaded in 0.26-0.50 s.
+- Reported: new chat messages only appeared after a page refresh (bell still updated). Cause: the
+  inbox poll skips a tick while the previous poll is in flight, and its requests had no timeout — one
+  hung request (e.g. during a container restart) froze polling until reload. Fix: 15 s timeout on
+  every inbox request (V2 list / changes / thread, legacy poll), a poll in flight > 30 s no longer
+  blocks, and a superseded poll can't clear the newer one's flag.
+- Notification sound: soft two-note chime (Web Audio, no file), low volume, max once per 4 s, only
+  when a customer message raises the unread count (not on first load, not our own replies); speaker
+  toggle in the inbox header (per browser, on by default). Preview WAV sent to Rafael.
+
 ## 2026-10-01 — Performance batch 2 (branch claudio/perf-2) + speed indexes 032 applied
 
 - Measured after batch 1 (live 9d776d0b): API p50 2-13x faster (dashboard 5.2 s → 0.38 s, auth/me

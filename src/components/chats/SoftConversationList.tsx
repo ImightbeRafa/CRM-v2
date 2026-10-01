@@ -20,6 +20,7 @@ import { AuroraAvatar } from '@/components/aurora/shell/AuroraAvatar'
 import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import { ChatTagFilter, ChatViewMenu } from '@/components/chats/ChatViewMenu'
 import { SyncAgeLabel } from '@/components/chats/SyncAgeLabel'
+import { SoundToggle } from '@/components/chats/SoundToggle'
 import {
   AuroraEmptyState,
   AuroraErrorState,
@@ -207,7 +208,10 @@ export function SoftConversationList({
                 <p className="mt-0.5 text-[10px] text-slate-400">Sincronizado hace {syncAgeSeconds}s</p>
               ) : null}
             </div>
-            <span className="shrink-0 pt-1 text-[11px] text-slate-500">Más nuevos</span>
+            <div className="flex shrink-0 items-center gap-1">
+              {lastSyncAt !== undefined ? <SoundToggle /> : null}
+              <span className="pt-1 text-[11px] text-slate-500">Más nuevos</span>
+            </div>
           </div>
           {onSearchChange ? (
             <label className="relative mt-3 block">

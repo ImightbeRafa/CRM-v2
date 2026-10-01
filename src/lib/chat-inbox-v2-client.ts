@@ -12,6 +12,21 @@ import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 export const CHAT_INBOX_V2_IMPORTED_KEY = 'betsy.softCopilot.inboxV2Imported.v1'
 export const CHAT_INBOX_V2_POLL_MS = 5000
 export const CHAT_INBOX_V2_FULL_RECONCILE_MS = 120_000
+/** Any inbox request is abandoned after this (a hung request must never freeze the inbox). */
+export const CHAT_INBOX_V2_REQUEST_TIMEOUT_MS = 15_000
+/** A poll still "in flight" after this is treated as stuck and polling resumes. */
+export const CHAT_INBOX_V2_STUCK_POLL_MS = 30_000
+
+/**
+ * fetch with a hard timeout. Reported 2026-10-01: new messages only appeared after a page refresh —
+ * one hung request (e.g. during a server restart) kept the poll "in flight" forever, so every later
+ * 5 s tick was skipped.
+ */
+export function inboxFetch(url: string, init: RequestInit = {}, timeoutMs = CHAT_INBOX_V2_REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer))
+}
 export const CHAT_INBOX_V2_LIST_PAGE_LIMIT = 50
 export const CHAT_INBOX_V2_LIST_MAX_PAGES = 40
 export const CHAT_INBOX_V2_THREAD_FETCH_LIMIT = 50
@@ -264,9 +279,15 @@ export function decideInboxV2PollTick(opts: {
   nowMs: number
   lastFullReconcileMs: number
   fullReconcileEveryMs?: number
+  /** When the in-flight poll started; one older than CHAT_INBOX_V2_STUCK_POLL_MS no longer blocks. */
+  inFlightSinceMs?: number
 }): ChatInboxV2PollDecision {
   if (opts.documentHidden) return { action: 'skip', reason: 'hidden' }
-  if (opts.inFlight) return { action: 'skip', reason: 'in_flight' }
+  const stuck =
+    opts.inFlight &&
+    typeof opts.inFlightSinceMs === 'number' &&
+    opts.nowMs - opts.inFlightSinceMs >= CHAT_INBOX_V2_STUCK_POLL_MS
+  if (opts.inFlight && !stuck) return { action: 'skip', reason: 'in_flight' }
   const every = opts.fullReconcileEveryMs ?? CHAT_INBOX_V2_FULL_RECONCILE_MS
   if (opts.nowMs - opts.lastFullReconcileMs >= every) {
     return { action: 'reconcile' }

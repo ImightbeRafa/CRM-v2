@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
+import { installNotificationSoundUnlock, isNewInboundActivity, playNotificationChime } from '@/lib/notification-sound'
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
@@ -44,6 +45,7 @@ import {
   CHAT_INBOX_V2_POLL_MS,
   CHAT_INBOX_V2_THREAD_FETCH_LIMIT,
   decideInboxV2PollTick,
+  inboxFetch,
   listDtoToSoftConversation,
   mergeListDtoIntoMap,
   mergeThreadMessageWindow,
@@ -102,6 +104,9 @@ export function SoftCopilotInboxV2() {
   const [createOrderOpen, setCreateOrderOpen] = useState(false)
   const [accounts, setAccounts] = useState<SoftSocialAccount[]>([])
   const [dtoMap, setDtoMap] = useState<Map<string, ChatConversationListItemDto>>(new Map())
+  // Mirror for the notification chime (compares a refreshed row with what is on screen).
+  const dtoMapRef = useRef(dtoMap)
+  dtoMapRef.current = dtoMap
   const [threadMessages, setThreadMessages] = useState<Record<string, ChatInboxMessage[]>>({})
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
   // Default = every open chat: new inbound chats have no owner until someone replies.
@@ -177,6 +182,7 @@ export function SoftCopilotInboxV2() {
   /** Rows loaded outside the pages (deep link, Pospuestos): kept when the first page reloads. */
   const pinnedDtosRef = useRef<ChatConversationListItemDto[]>([])
   const pollInFlightRef = useRef(false)
+  const pollStartedAtRef = useRef(0)
   const selectedConversationIdRef = useRef<string | null>(null)
   const threadMessagesRef = useRef<Record<string, ChatInboxMessage[]>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -237,7 +243,7 @@ export function SoftCopilotInboxV2() {
   const fetchListPage = useCallback(async (opts?: { cursor?: string | null; replace?: boolean }) => {
     const qs = new URLSearchParams({ limit: String(CHAT_INBOX_V2_LIST_PAGE_LIMIT) })
     if (opts?.cursor) qs.set('cursor', opts.cursor)
-    const res = await fetch(`/api/chat/conversations?${qs.toString()}`, {
+    const res = await inboxFetch(`/api/chat/conversations?${qs.toString()}`, {
       credentials: 'same-origin',
       cache: 'no-store',
     })
@@ -320,7 +326,7 @@ export function SoftCopilotInboxV2() {
         threadId: guard === 1 ? threadId : null,
         threadAfter: guard === 1 ? threadAfter : null,
       })
-      const res = await fetch(`/api/chat/conversations/changes?${qs}`, {
+      const res = await inboxFetch(`/api/chat/conversations/changes?${qs}`, {
         credentials: 'same-origin',
         cache: 'no-store',
       })
@@ -338,6 +344,14 @@ export function SoftCopilotInboxV2() {
       if (!parsed.ok || !res.ok || !parsed.data.success) return
 
       if (parsed.data.conversations?.length) {
+        // A customer wrote (unread went up on an inbound message): soft chime, once per burst.
+        if (lastFullReconcileRef.current > 0) {
+          const onScreen = dtoMapRef.current
+          const fresh = parsed.data.conversations.some((c) =>
+            isNewInboundActivity(onScreen.get(c.id)?.unreadCount ?? undefined, c),
+          )
+          if (fresh) playNotificationChime()
+        }
         setDtoMap((prev) => mergeListDtoIntoMap(prev, parsed.data.conversations!))
       }
 
@@ -359,7 +373,7 @@ export function SoftCopilotInboxV2() {
 
   const fetchThreadMessages = useCallback(async (conversationId: string) => {
     const qs = `limit=${CHAT_INBOX_V2_THREAD_FETCH_LIMIT}`
-    const res = await fetch(
+    const res = await inboxFetch(
       `/api/chat/conversations/${encodeURIComponent(conversationId)}/messages?${qs}`,
       { credentials: 'same-origin', cache: 'no-store' },
     )
@@ -451,6 +465,10 @@ export function SoftCopilotInboxV2() {
   }
 
   useEffect(() => {
+    installNotificationSoundUnlock()
+  }, [])
+
+  useEffect(() => {
     const tick = () => {
       void (async () => {
         const decision = decideInboxV2PollTick({
@@ -459,8 +477,11 @@ export function SoftCopilotInboxV2() {
           nowMs: Date.now(),
           lastFullReconcileMs: lastFullReconcileRef.current,
           fullReconcileEveryMs: CHAT_INBOX_V2_FULL_RECONCILE_MS,
+          inFlightSinceMs: pollStartedAtRef.current,
         })
         if (decision.action === 'skip') return
+        const startedAt = Date.now()
+        pollStartedAtRef.current = startedAt
         pollInFlightRef.current = true
         try {
           if (decision.action === 'reconcile') {
@@ -472,7 +493,8 @@ export function SoftCopilotInboxV2() {
         } catch {
           // swallow — next tick retries
         } finally {
-          pollInFlightRef.current = false
+          // Only the poll that still owns the flag clears it (a stuck one was already superseded).
+          if (pollStartedAtRef.current === startedAt) pollInFlightRef.current = false
         }
       })()
     }

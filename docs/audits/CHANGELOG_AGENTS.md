@@ -1,3 +1,16 @@
+## 2026-10-02 — Agent Ops: SecureDog fixes for S2–S4 (INT-13..18) (claudio/agent-ops)
+
+- INT-13 (SQL not tracked) fixed earlier. INT-14: kill switch keeps its last known value on a read error (never
+  disarms silently), POST needs a boolean + known scope + existing business, uses the session token directly so a
+  billing restriction cannot block an emergency stop; legacy path checks it at entry; tenantId now required.
+- INT-15: analytics reads run with an 8 s statement timeout, tenant routes capped at 30 days and cached 60 s; the
+  correlated subqueries also match on tenantId.
+- INT-16: a per-business stop is audited in THAT business's log; the scorecard open is audited too.
+- INT-17: feedback takes no free text; eval history capped at 20 per agent; dead helper removed. (Ley 8968 erase
+  inventory must include ChatAgentVersion / ChatAgentFeedback / ChatAgentEvalRun when that feature ships.)
+- INT-18: the xAI client also pins organization/project to null.
+- Platform scope is explicit (`tenantId: null`) instead of an omitted argument.
+
 ## 2026-10-02 — Agent Ops: Verifier fixes for S2–S4 (claudio/agent-ops)
 
 - BLOCKING: SQL 044/045 were untracked (migrations folder is gitignored) → force-added; a guard test reads them.

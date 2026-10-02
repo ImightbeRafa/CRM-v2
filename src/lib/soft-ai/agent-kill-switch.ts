@@ -42,18 +42,19 @@ async function readKey(key: string): Promise<boolean> {
         FROM "PlatformAgentPolicy" WHERE "key" = ${key} LIMIT 1`
     armed = rows[0]?.armed === true
   } catch (error) {
-    // A transient read error must not silently pause every reply (a skipped job is not retried), so this
-    // fails open; the env switch is the always-on trigger. Log it so it is never invisible.
+    // A transient read error must neither silently pause every reply (a skipped job is not retried) nor
+    // silently DISARM an armed switch: keep the last known value (default: not armed) and log it.
     if (!isMissingRelation(error)) console.error('[agent-kill] read failed', error instanceof Error ? error.name : 'unknown')
+    armed = hit?.armed === true
   }
   cache.set(key, { at: Date.now(), armed })
   return armed
 }
 
-export async function readAgentKillState(tenantId?: string | null): Promise<KillState> {
+export async function readAgentKillState(tenantId: string): Promise<KillState> {
   if (envKillArmed()) return { armed: true, source: 'env' }
   if (await readKey(KILL_GLOBAL_KEY)) return { armed: true, source: 'platform' }
-  if (tenantId && (await readKey(killTenantKey(tenantId)))) return { armed: true, source: 'tenant' }
+  if (await readKey(killTenantKey(tenantId))) return { armed: true, source: 'tenant' }
   return { armed: false, source: null }
 }
 

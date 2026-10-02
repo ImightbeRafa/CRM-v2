@@ -88,7 +88,7 @@ describe('feedback input', () => {
   })
   it('accepts a thumbs down with a known reason and trims the note', () => {
     const r = parseFeedbackInput({ turnId: 't1', rating: -1, reasonCode: 'wrong_fact', note: '  precio mal ' })
-    assert.deepEqual(r, { ok: true, turnId: 't1', rating: -1, reasonCode: 'wrong_fact', note: 'precio mal' })
+    assert.deepEqual(r, { ok: true, turnId: 't1', rating: -1, reasonCode: 'wrong_fact', note: null })
   })
   it('rejects bad input', () => {
     for (const bad of [null, {}, { turnId: 't', rating: 2 }, { turnId: '', rating: 1 }, { turnId: 't', rating: -1, reasonCode: 'x' }]) {

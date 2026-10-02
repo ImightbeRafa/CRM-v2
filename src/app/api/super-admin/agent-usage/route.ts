@@ -37,13 +37,13 @@ export async function GET(request: NextRequest) {
     const from = new Date(to.getTime() - days * 86_400_000)
 
     const [rows, p95] = await Promise.all([
-      loadAgentUsageRows({ from, to }),
-      loadAgentP95Latency({ from, to, mode }),
+      loadAgentUsageRows({ from, to, tenantId: null }),
+      loadAgentP95Latency({ from, to, tenantId: null, mode }),
     ])
     const summary = summarizeAgentUsage(rows, mode, p95)
     const [tenantNames, agentNames] = await Promise.all([
       loadTenantNames(summary.byTenant.map((row) => row.tenantId)),
-      loadAgentNames(summary.byAgent.map((row) => row.agentId)),
+      loadAgentNames(summary.byAgent.map((row) => row.agentId), null),
     ])
 
     await logAuditEvent({

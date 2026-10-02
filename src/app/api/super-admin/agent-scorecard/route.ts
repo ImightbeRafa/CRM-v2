@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPI } from '@/lib/auth-helpers'
 import { isSuperAdmin } from '@/lib/super-admin-helpers'
+import { logAuditEvent } from '@/lib/auditLogger'
 import { clampUsageDays } from '@/lib/soft-ai/agent-usage'
 import { loadAgentScorecard } from '@/lib/soft-ai/agent-improvement'
 import { loadAgentNames } from '@/lib/soft-ai/agent-usage-server'
@@ -23,8 +24,17 @@ export async function GET(request: NextRequest) {
     const days = clampUsageDays(request.nextUrl.searchParams.get('days'))
     const to = new Date()
     const from = new Date(to.getTime() - days * 86_400_000)
-    const { rows, feedbackReady } = await loadAgentScorecard({ from, to })
-    const agentNames = await loadAgentNames([...new Set(rows.map((r) => r.agentId))])
+    const { rows, feedbackReady } = await loadAgentScorecard({ from, to, tenantId: null })
+    const agentNames = await loadAgentNames([...new Set(rows.map((r) => r.agentId))], null)
+    await logAuditEvent({
+      action: 'EXPORT',
+      entityType: 'agent_scorecard',
+      entityId: 'platform',
+      description: `Abrió la calidad de agentes (${days} días)`,
+      userId: auth.userId,
+      userRole: 'SUPER_ADMIN',
+      tenantId: auth.tenantId,
+    })
     return NextResponse.json(
       { success: true, days, feedbackReady, rows, agentNames },
       { headers: NO_STORE },

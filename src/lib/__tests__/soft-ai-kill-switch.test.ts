@@ -62,7 +62,7 @@ describe('kill switch wiring (static)', () => {
 
   it('admin route is super-admin only, needs a reason and is audited', () => {
     const src = read('src/app/api/super-admin/agent-kill/route.ts')
-    assert.match(src, /isSuperAdmin\(auth\.userId\)/)
+    assert.match(src, /isSuperAdmin\(userId\)/)
     assert.match(src, /status: 404/)
     assert.match(src, /reason\.length < 3/)
     assert.match(src, /logAuditEvent/)
@@ -103,5 +103,43 @@ describe('kill switch hardening (static)', () => {
   it('SQL 044 and 045 are tracked (the migrations folder is gitignored)', () => {
     assert.ok(read('supabase/migrations/044_platform_agent_policy.sql').length > 100)
     assert.ok(read('supabase/migrations/045_agent_improvement.sql').length > 100)
+  })
+})
+
+describe('kill switch route hardening (SecureDog INT-14/16)', () => {
+  const src = read('src/app/api/super-admin/agent-kill/route.ts')
+  it('requires a known scope, a boolean and an existing business, and is not blocked by billing', () => {
+    assert.match(src, /scope !== 'global' && scope !== 'tenant'/)
+    assert.match(src, /prisma\.tenant\.findUnique/)
+    assert.match(src, /getLiveToken/)
+    assert.doesNotMatch(src.slice(src.indexOf('export async function POST')), /authenticateAPI\(/)
+  })
+  it('files a per-business stop in that business audit log', () => {
+    assert.match(src, /auditTenantId = tenantId/)
+  })
+  it('a read error never disarms a switch that was armed', () => {
+    assert.match(read('src/lib/soft-ai/agent-kill-switch.ts'), /armed = hit\?\.armed === true/)
+  })
+})
+
+describe('analytics read guard rails (SecureDog INT-15/17)', () => {
+  it('reads run with a statement timeout and tenant routes cap at 30 days with a short cache', () => {
+    assert.match(read('src/lib/soft-ai/safe-query.ts'), /statement_timeout = '8s'/)
+    assert.match(read('src/lib/soft-ai/agent-usage-server.ts'), /queryWithTimeout/)
+    assert.match(read('src/lib/soft-ai/agent-improvement.ts'), /queryWithTimeout/)
+    for (const p of ['src/app/api/chat/agents/usage/route.ts', 'src/app/api/chat/agents/scorecard/route.ts']) {
+      const src = read(p)
+      assert.match(src, /Math\.min\(30,/)
+      assert.match(src, /memoTtl\(/)
+    }
+  })
+  it('platform scope is explicit (tenantId: null), never an omitted argument', () => {
+    for (const p of ['src/app/api/super-admin/agent-usage/route.ts', 'src/app/api/super-admin/agent-scorecard/route.ts']) {
+      assert.match(read(p), /tenantId: null/)
+    }
+  })
+  it('feedback accepts no free text and the eval history is capped', () => {
+    assert.match(read('src/lib/soft-ai/agent-scorecard.ts'), /note: null/)
+    assert.match(read('src/lib/soft-ai/agent-improvement.ts'), /LIMIT 20/)
   })
 })

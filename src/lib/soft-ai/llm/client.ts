@@ -61,6 +61,8 @@ export function createSoftAiClient(model: string, timeoutMs = SOFT_AI_FIRST_CALL
   return new OpenAI({
     apiKey,
     baseURL: SOFT_AI_XAI_BASE_URL,
+    organization: null,
+    project: null,
     timeout: timeoutMs,
     maxRetries: 0,
   })

@@ -171,7 +171,6 @@ export function parseFeedbackInput(body: unknown):
     reasonCode = b.reasonCode as FeedbackReason
   }
   if (rating === 1) reasonCode = null
-  const note =
-    typeof b.note === 'string' && b.note.trim() ? b.note.trim().slice(0, 500) : null
-  return { ok: true, turnId, rating, reasonCode, note }
+  // Free-text notes are not accepted until there is a UI and a retention rule for them.
+  return { ok: true, turnId, rating, reasonCode, note: null }
 }

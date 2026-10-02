@@ -57,7 +57,7 @@ export async function hasHumanRepliedAfter(input: {
 }
 
 export async function runClaimGates(input: {
-  tenantId?: string
+  tenantId: string
   conversationId: string
   triggerMessageId: string
   triggerSentAt: Date

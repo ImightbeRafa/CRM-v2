@@ -8,6 +8,7 @@ import 'server-only'
 import { randomUUID } from 'crypto'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { queryWithTimeout } from '@/lib/soft-ai/safe-query'
 import { isMissingRelation } from '@/lib/db-missing-relation'
 import { replayFixtures } from '@/lib/soft-ai/agent-replay'
 import {
@@ -84,20 +85,6 @@ export async function ensureCurrentVersionSnapshots(tenantId?: string): Promise<
   }
 }
 
-export async function listAgentVersions(tenantId: string, agentId: string, take = 20) {
-  try {
-    return await prisma.$queryRaw<
-      Array<{ version: number; snapshotHash: string; promptCodeVersion: string; createdAt: Date }>
-    >`SELECT "version", "snapshotHash", "promptCodeVersion", "createdAt"
-        FROM "ChatAgentVersion"
-       WHERE "tenantId" = ${tenantId} AND "agentId" = ${agentId}
-       ORDER BY "version" DESC LIMIT ${take}`
-  } catch (error) {
-    if (isMissingTable(error)) return []
-    throw error
-  }
-}
-
 export type FeedbackResult =
   | { ok: true }
   | { ok: false; code: 'TURN_NOT_FOUND' | 'NOT_READY' }
@@ -134,15 +121,16 @@ export async function submitAgentFeedback(input: {
 
 type CountRow = Partial<ScorecardCounts> & { agentId: string; agentVersion: number }
 
+/** `tenantId: null` is the explicit PLATFORM scope (super-admin routes only); a string is one business. */
 export async function loadAgentScorecard(input: {
   from: Date
   to: Date
-  tenantId?: string
+  tenantId: string | null
 }): Promise<{ rows: ScorecardRow[]; feedbackReady: boolean }> {
-  await ensureCurrentVersionSnapshots(input.tenantId)
+  await ensureCurrentVersionSnapshots(input.tenantId ?? undefined)
   const tenantTurn = input.tenantId ? Prisma.sql`AND t."tenantId" = ${input.tenantId}` : Prisma.empty
 
-  const turns = await prisma.$queryRaw<CountRow[]>(Prisma.sql`
+  const turns = await queryWithTimeout<CountRow[]>(Prisma.sql`
     SELECT t."agentId", t."agentVersion", min(t."model") AS "model",
            count(*)::int AS "turns",
            (count(*) FILTER (WHERE t."status" = 'delivered'))::int AS "delivered",
@@ -151,14 +139,14 @@ export async function loadAgentScorecard(input: {
            (count(*) FILTER (WHERE t."status" = 'failed'))::int AS "failed",
            (count(*) FILTER (WHERE t."status" = 'delivered' AND EXISTS (
               SELECT 1 FROM "ChatMessage" m
-               WHERE m."conversationId" = t."conversationId" AND m."direction" = 'outbound'
+               WHERE m."conversationId" = t."conversationId" AND m."tenantId" = t."tenantId" AND m."direction" = 'outbound'
                  AND m."sentAt" > t."createdAt" AND m."sentAt" < t."createdAt" + interval '30 minutes'
                  AND coalesce(m."metadata"->>'softAi', '') <> 'true')))::int AS "takeoverAfterSend",
            (count(DISTINCT t."conversationId") FILTER (WHERE t."status" IN ('delivered', 'suggested')))::int AS "attendedConversations",
            (count(DISTINCT t."conversationId") FILTER (WHERE t."status" IN ('delivered', 'suggested') AND EXISTS (
               SELECT 1 FROM "ChatConversation" c
                 JOIN "Order" o ON o."clientId" = c."clientId" AND o."tenantId" = t."tenantId"
-               WHERE c."id" = t."conversationId" AND c."clientId" IS NOT NULL
+               WHERE c."id" = t."conversationId" AND c."tenantId" = t."tenantId" AND c."clientId" IS NOT NULL
                  AND o."deletedAt" IS NULL
                  AND o."timestamp" >= t."createdAt" AND o."timestamp" < t."createdAt" + interval '7 days')))::int AS "convertedConversations"
       FROM "ChatAgentTurn" t
@@ -167,13 +155,13 @@ export async function loadAgentScorecard(input: {
      GROUP BY t."agentId", t."agentVersion"
      LIMIT 500`)
 
-  const suggestions = await prisma.$queryRaw<CountRow[]>(Prisma.sql`
+  const suggestions = await queryWithTimeout<CountRow[]>(Prisma.sql`
     SELECT t."agentId", t."agentVersion",
            (count(*) FILTER (WHERE s."status" = 'accepted'))::int AS "suggestionsAccepted",
            (count(*) FILTER (WHERE s."status" = 'edited'))::int AS "suggestionsEdited",
            (count(*) FILTER (WHERE s."status" = 'dismissed'))::int AS "suggestionsDismissed"
       FROM "ChatAgentSuggestion" s
-      JOIN "ChatAgentTurn" t ON t."id" = s."turnId"
+      JOIN "ChatAgentTurn" t ON t."id" = s."turnId" AND t."tenantId" = s."tenantId"
      WHERE s."createdAt" >= ${input.from} AND s."createdAt" < ${input.to}
        ${input.tenantId ? Prisma.sql`AND s."tenantId" = ${input.tenantId}` : Prisma.empty}
      GROUP BY t."agentId", t."agentVersion"
@@ -182,7 +170,7 @@ export async function loadAgentScorecard(input: {
   let feedback: CountRow[] = []
   let feedbackReady = true
   try {
-    feedback = await prisma.$queryRaw<CountRow[]>(Prisma.sql`
+    feedback = await queryWithTimeout<CountRow[]>(Prisma.sql`
       SELECT f."agentId", f."agentVersion",
              (count(*) FILTER (WHERE f."rating" = 1))::int AS "thumbsUp",
              (count(*) FILTER (WHERE f."rating" = -1))::int AS "thumbsDown"
@@ -257,6 +245,14 @@ export async function runAgentSafetyEval(input: {
       VALUES (${runId}, ${input.tenantId}, ${agent.id}, ${agent.version}, ${EVAL_SUITE_SAFETY},
               ${report.fixtureSetHash}, ${report.examined}, ${report.passRate}, ${report.policyViolations},
               ${JSON.stringify(failures)}::jsonb, ${input.actorUserId})`
+    // Keep the last 20 runs per agent (the table is a history for comparison, not an archive).
+    await prisma.$executeRaw`
+      DELETE FROM "ChatAgentEvalRun"
+       WHERE "tenantId" = ${input.tenantId} AND "agentId" = ${agent.id}
+         AND "id" NOT IN (
+           SELECT "id" FROM "ChatAgentEvalRun"
+            WHERE "tenantId" = ${input.tenantId} AND "agentId" = ${agent.id}
+            ORDER BY "createdAt" DESC LIMIT 20)`
   } catch (error) {
     if (!isMissingTable(error)) throw error
     saved = false

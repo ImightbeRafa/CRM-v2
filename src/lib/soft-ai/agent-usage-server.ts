@@ -6,6 +6,7 @@ import 'server-only'
 
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { queryWithTimeout } from '@/lib/soft-ai/safe-query'
 import type { AgentUsageMode, AgentUsageRow } from '@/lib/soft-ai/agent-usage'
 
 const ROW_LIMIT = 5_000
@@ -24,15 +25,16 @@ type RawRow = {
   costMicros: bigint | number | null
 }
 
+/** `tenantId: null` is the explicit PLATFORM scope (super-admin routes only); a string is one business. */
 export async function loadAgentUsageRows(input: {
   from: Date
   to: Date
-  tenantId?: string
+  tenantId: string | null
 }): Promise<AgentUsageRow[]> {
   const tenantFilter = input.tenantId
     ? Prisma.sql`AND "tenantId" = ${input.tenantId}`
     : Prisma.empty
-  const rows = await prisma.$queryRaw<RawRow[]>(Prisma.sql`
+  const rows = await queryWithTimeout<RawRow[]>(Prisma.sql`
     SELECT to_char((("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'America/Costa_Rica')::date, 'YYYY-MM-DD') AS "day",
            "tenantId", "agentId", "model", "mode", "status",
            count(*)::int AS "turns",
@@ -64,7 +66,7 @@ export async function loadAgentUsageRows(input: {
 export async function loadAgentP95Latency(input: {
   from: Date
   to: Date
-  tenantId?: string
+  tenantId: string | null
   mode: AgentUsageMode
 }): Promise<number | null> {
   const tenantFilter = input.tenantId
@@ -76,7 +78,7 @@ export async function loadAgentP95Latency(input: {
       : input.mode === 'test'
         ? Prisma.sql`AND "mode" = 'test'`
         : Prisma.sql`AND "mode" <> 'test'`
-  const result = await prisma.$queryRaw<Array<{ p95: number | null }>>(Prisma.sql`
+  const result = await queryWithTimeout<Array<{ p95: number | null }>>(Prisma.sql`
     SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY "latencyMs") AS "p95"
       FROM "ChatAgentTurn"
      WHERE "createdAt" >= ${input.from} AND "createdAt" < ${input.to}
@@ -98,7 +100,7 @@ export async function loadTenantNames(ids: string[]): Promise<Record<string, str
 
 export async function loadAgentNames(
   ids: string[],
-  tenantId?: string,
+  tenantId: string | null,
 ): Promise<Record<string, { name: string; status: string; version: number }>> {
   if (ids.length === 0) return {}
   const rows = await prisma.chatAgent.findMany({

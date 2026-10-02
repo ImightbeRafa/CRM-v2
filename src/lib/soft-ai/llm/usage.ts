@@ -1,34 +1,36 @@
 /**
- * Soft Agent Layer usage / cost helpers.
- * Short-context rates ($2 / 1M input, $6 / 1M output) are shared by every
- * model on the allowlist. Verified 2026-09-22 on the xAI price card: the new
- * default matches the previous default at those rates (and at the long-context
- * tier, which this estimator does not apply). Cached input is still billed at
- * the full input rate. pricingVersion stays xai-2026-09.
+ * Soft Agent Layer usage / cost helpers (estimated list price, not an invoice).
+ *
+ * Rate card per model, USD per 1M tokens:
+ *  - Grok 4.6 / 4.7: $2 input, $6 output (xAI price card 2026-09-22). Cached input is still
+ *    billed at the full input rate (no published discount applied). pricingVersion xai-2026-09.
+ *  - gpt-6-luna: $0.10 input, $0.50 output, cached input $0.01 (OpenAI model page,
+ *    2026-10-02). pricingVersion openai-2026-10.
+ * Re-check the provider page whenever a rate changes and bump the pricingVersion.
  */
 
 import {
   CHAT_AGENT_MODEL_ALLOWLIST,
+  DEFAULT_CHAT_AGENT_MODEL,
   DEFAULT_PRICING_VERSION,
   type ChatAgentModel,
 } from '@/lib/soft-ai/agent-types'
 
-const SHARED_INPUT_USD_PER_M = 2
-const SHARED_OUTPUT_USD_PER_M = 6
+type Rates = { inputUsdPerM: number; outputUsdPerM: number; cachedInputUsdPerM: number }
 
-const MODEL_RATES: Record<ChatAgentModel, { inputUsdPerM: number; outputUsdPerM: number }> =
-  Object.fromEntries(
-    CHAT_AGENT_MODEL_ALLOWLIST.map((model) => [
-      model,
-      { inputUsdPerM: SHARED_INPUT_USD_PER_M, outputUsdPerM: SHARED_OUTPUT_USD_PER_M },
-    ]),
-  ) as Record<ChatAgentModel, { inputUsdPerM: number; outputUsdPerM: number }>
+const XAI_RATES: Rates = { inputUsdPerM: 2, outputUsdPerM: 6, cachedInputUsdPerM: 2 }
+const LUNA_RATES: Rates = { inputUsdPerM: 0.1, outputUsdPerM: 0.5, cachedInputUsdPerM: 0.01 }
 
-function ratesFor(model: string | undefined): { inputUsdPerM: number; outputUsdPerM: number } {
+const MODEL_RATES: Record<ChatAgentModel, Rates> = Object.fromEntries(
+  CHAT_AGENT_MODEL_ALLOWLIST.map((model) => [model, model.startsWith('gpt-') ? LUNA_RATES : XAI_RATES]),
+) as Record<ChatAgentModel, Rates>
+
+export function ratesFor(model: string | undefined): Rates {
   if (model && Object.prototype.hasOwnProperty.call(MODEL_RATES, model)) {
     return MODEL_RATES[model as ChatAgentModel]
   }
-  return { inputUsdPerM: SHARED_INPUT_USD_PER_M, outputUsdPerM: SHARED_OUTPUT_USD_PER_M }
+  // Unknown ids are rejected before any call; price them like the default so a stray row never reads as free.
+  return MODEL_RATES[DEFAULT_CHAT_AGENT_MODEL]
 }
 
 export function estimateCostMicros(input: {
@@ -36,16 +38,17 @@ export function estimateCostMicros(input: {
   inputTokens: number
   cachedInputTokens: number
   outputTokens: number
-  /** Until a pricingVersion bump applies the published cache discount, bill cached tokens at full input rate. */
+  /** Optional override of the cached-input rate (tests / future rate card changes). */
   cachedPriceUsdPerM?: number
 }): number {
   const rates = ratesFor(input.model)
-  const uncached = Math.max(0, input.inputTokens - input.cachedInputTokens)
-  const cachedRate = input.cachedPriceUsdPerM ?? rates.inputUsdPerM
+  const cachedTokens = Math.min(Math.max(0, input.cachedInputTokens), Math.max(0, input.inputTokens))
+  const uncached = Math.max(0, input.inputTokens - cachedTokens)
+  const cachedRate = input.cachedPriceUsdPerM ?? rates.cachedInputUsdPerM
   const usd =
     (uncached * rates.inputUsdPerM +
-      input.cachedInputTokens * cachedRate +
-      input.outputTokens * rates.outputUsdPerM) /
+      cachedTokens * cachedRate +
+      Math.max(0, input.outputTokens) * rates.outputUsdPerM) /
     1_000_000
   return Math.round(usd * 1_000_000)
 }

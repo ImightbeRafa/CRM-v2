@@ -1,3 +1,19 @@
+## 2026-10-02 — Agent Ops S1: gpt-6-luna provider switch (claudio/agent-ops, INBOX only, default unchanged)
+
+Plan: Notion "Agent Layer + Platform Admin (2026-10) — Claude SoT" v4. Inbox agent only; `src/lib/bot/**` and
+`src/app/api/bot/**` untouched (diff empty), `XAI_API_KEY` untouched (staff bot + customer-paste still use it).
+- Model id picks the provider: `gpt-*` → OpenAI (`OPENAI_API_KEY`), Grok ids → xAI as before. Default model
+  stays `grok-4.7`; agents move to `gpt-6-luna` one at a time from Avanzado (button added; refused with 409 until
+  the OpenAI key exists). Flipping the default is a later one-line change.
+- OpenAI request shape: no `temperature` unless reasoning is `none` (env `SOFT_AI_OPENAI_REASONING`, default low),
+  encrypted reasoning items replayed for the tool loop (`store:false`), output cap raised to 1500 for reasoning.
+- Cost: per-model rate card; Luna $0.10 / $0.50 per 1M, cached input $0.01 (now billed at the discount);
+  Grok unchanged. `pricingVersion` follows the provider (`openai-2026-10` / `xai-2026-09`).
+- New provider-neutral error codes `LLM_NOT_CONFIGURED`, `LLM_TIMEOUT`, `LLM_ERROR` (Grok keeps `XAI_*`).
+- Unlock key check is per provider; unlock already invalidates on model change (existing behavior).
+- Tests: new `soft-ai-llm-provider.test.ts` (routing, body shape, pricing); added to test:soft-ai,
+  test:soft-ai-agent, test:chat-harden. HELD: OPENAI_API_KEY (Rafael), default flip, deploy.
+
 ## 2026-10-01 — Chats not updating until refresh + calm notification chime (branch claudio/inbox-live)
 
 - Location pin live (b3b7a13b, containers "enam"): API p50 now 0.22-0.57 s (dashboard 0.23, auth/me

@@ -137,10 +137,11 @@ describe('soft-ai output validator + history (1.7, gate 9)', () => {
 })
 
 describe('soft-ai model allowlist', () => {
-  it('allows grok-4.7 and grok-4.6, rejects others', () => {
+  it('allows gpt-6-luna, grok-4.7 and grok-4.6, rejects others', () => {
     assert.equal(assertAllowedModel('grok-4.7'), 'grok-4.7')
     assert.equal(assertAllowedModel('grok-4.6'), 'grok-4.6')
-    assert.deepEqual(CHAT_AGENT_MODEL_ALLOWLIST, ['grok-4.7', 'grok-4.6'])
+    assert.equal(assertAllowedModel('gpt-6-luna'), 'gpt-6-luna')
+    assert.deepEqual(CHAT_AGENT_MODEL_ALLOWLIST, ['gpt-6-luna', 'grok-4.7', 'grok-4.6'])
     assert.equal(DEFAULT_CHAT_AGENT_MODEL, 'grok-4.7')
     assert.throws(() => assertAllowedModel('grok-4.5'), /SOFT_AI_MODEL_NOT_ALLOWED/)
     assert.throws(() => assertAllowedModel('gpt-4o'), /SOFT_AI_MODEL_NOT_ALLOWED/)

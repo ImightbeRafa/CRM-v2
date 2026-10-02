@@ -10,12 +10,35 @@ export const CHAT_AGENT_LAYER_V1_FLAG = 'chat_agent_layer_v1' as const
  * and a rollback is a one-line default flip. This file is the only soft-ai
  * source allowed to contain the previous model id.
  */
-export const CHAT_AGENT_MODEL_ALLOWLIST = ['grok-4.7', 'grok-4.6'] as const
+export const CHAT_AGENT_MODEL_ALLOWLIST = ['gpt-6-luna', 'grok-4.7', 'grok-4.6'] as const
 export type ChatAgentModel = (typeof CHAT_AGENT_MODEL_ALLOWLIST)[number]
+
+/**
+ * Target live model for Soft agents (OpenAI direct, OPENAI_API_KEY). Agents move to it one at a
+ * time from Avanzado once the key is set and the unlock canaries pass again; the default below
+ * flips to it in a later one-line change. The Grok ids stay resolvable as the rollback path.
+ */
+export const LUNA_CHAT_AGENT_MODEL: ChatAgentModel = 'gpt-6-luna'
 export const DEFAULT_CHAT_AGENT_MODEL: ChatAgentModel = 'grok-4.7'
 
+export type SoftAiProvider = 'openai' | 'xai'
+
+export function softAiProviderFor(model: string): SoftAiProvider {
+  return model.startsWith('gpt-') ? 'openai' : 'xai'
+}
+
+export const XAI_PRICING_VERSION = 'xai-2026-09'
+export const OPENAI_PRICING_VERSION = 'openai-2026-10'
+
+/** Rate card id stored on every turn; follows the provider of the model that ran. */
+export function pricingVersionFor(model: string | null | undefined): string {
+  return softAiProviderFor(model || DEFAULT_CHAT_AGENT_MODEL) === 'openai'
+    ? OPENAI_PRICING_VERSION
+    : XAI_PRICING_VERSION
+}
+
 export const DEFAULT_DAILY_TOKEN_CAP = 250_000
-export const DEFAULT_PRICING_VERSION = 'xai-2026-09'
+export const DEFAULT_PRICING_VERSION = XAI_PRICING_VERSION
 export const AGENT_INSTRUCTIONS_MAX = 1_200
 export const AGENT_NAME_MAX = 40
 export const INTRODUCTION_NAMES_MAX = 3

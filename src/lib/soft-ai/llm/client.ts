@@ -1,9 +1,16 @@
 /**
- * Soft-only xAI Responses client. Never imports staff bot; never reads WhatsApp env secrets.
+ * Soft-only LLM client (Responses API). Provider follows the model id: gpt-* goes to OpenAI
+ * (OPENAI_API_KEY), everything else to xAI (XAI_API_KEY, rollback path). Never imports the staff bot;
+ * never reads WhatsApp env secrets.
  */
 
 import OpenAI from 'openai'
-import { DEFAULT_CHAT_AGENT_MODEL, isAllowedChatAgentModel } from '@/lib/soft-ai/agent-types'
+import {
+  DEFAULT_CHAT_AGENT_MODEL,
+  isAllowedChatAgentModel,
+  softAiProviderFor,
+  type SoftAiProvider,
+} from '@/lib/soft-ai/agent-types'
 
 export const SOFT_AI_XAI_BASE_URL = 'https://api.x.ai/v1'
 export const SOFT_AI_FIRST_CALL_TIMEOUT_MS = 9_000
@@ -22,7 +29,20 @@ export function resolveSoftAiModel(override?: string | null): string {
   return candidate
 }
 
-export function createSoftAiXaiClient(timeoutMs = SOFT_AI_FIRST_CALL_TIMEOUT_MS) {
+/** True when the key for this model's provider is present (never reveals the key). */
+export function isSoftAiProviderConfigured(model?: string | null): boolean {
+  const provider = softAiProviderFor(model || DEFAULT_CHAT_AGENT_MODEL)
+  const key = provider === 'openai' ? process.env.OPENAI_API_KEY : process.env.XAI_API_KEY
+  return Boolean(key && key.trim())
+}
+
+export function createSoftAiClient(model: string, timeoutMs = SOFT_AI_FIRST_CALL_TIMEOUT_MS) {
+  const provider: SoftAiProvider = softAiProviderFor(model)
+  if (provider === 'openai') {
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey || !apiKey.trim()) throw new Error('LLM_NOT_CONFIGURED')
+    return new OpenAI({ apiKey: apiKey.trim(), timeout: timeoutMs, maxRetries: 0 })
+  }
   const apiKey = process.env.XAI_API_KEY
   if (!apiKey) throw new Error('XAI_NOT_CONFIGURED')
   return new OpenAI({
@@ -41,27 +61,58 @@ export type SoftAiResponsesCreateArgs = {
   promptCacheKey?: string
   maxOutputTokens?: number
   temperature?: number
-  reasoningEffort?: 'low' | 'medium' | 'high'
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high'
   timeoutMs?: number
   store?: boolean
 }
 
-export async function softAiResponsesCreate(args: SoftAiResponsesCreateArgs) {
+type OpenAiEffort = 'none' | 'low' | 'medium' | 'high'
+
+function openAiEffort(requested?: OpenAiEffort): OpenAiEffort {
+  const fromEnv = (process.env.SOFT_AI_OPENAI_REASONING || '').trim().toLowerCase()
+  if (fromEnv === 'none' || fromEnv === 'low' || fromEnv === 'medium' || fromEnv === 'high') {
+    return fromEnv
+  }
+  return requested ?? 'low'
+}
+
+/**
+ * Build the request body for a provider. Exported for tests.
+ * OpenAI reasoning models reject `temperature` unless reasoning is `none`, spend part of
+ * `max_output_tokens` on reasoning (so the cap is raised), and with `store:false` need the
+ * encrypted reasoning items to replay a tool loop.
+ */
+export function buildSoftAiResponsesBody(args: SoftAiResponsesCreateArgs): Record<string, unknown> {
   const model = resolveSoftAiModel(args.model)
-  const timeoutMs = args.timeoutMs ?? SOFT_AI_FIRST_CALL_TIMEOUT_MS
-  const client = createSoftAiXaiClient(timeoutMs)
+  const provider = softAiProviderFor(model)
+  const baseMax = args.maxOutputTokens ?? 700
   const body: Record<string, unknown> = {
     model,
     instructions: args.instructions,
     input: args.input,
     store: args.store === true ? true : false,
-    temperature: args.temperature ?? 0.1,
-    max_output_tokens: args.maxOutputTokens ?? 700,
-    reasoning: { effort: args.reasoningEffort ?? 'low' },
+  }
+  if (provider === 'openai') {
+    const effort = openAiEffort(args.reasoningEffort)
+    body.reasoning = { effort }
+    body.max_output_tokens = effort === 'none' ? baseMax : Math.max(baseMax, 1_500)
+    if (effort === 'none') body.temperature = args.temperature ?? 0.1
+    else body.include = ['reasoning.encrypted_content']
+  } else {
+    body.temperature = args.temperature ?? 0.1
+    body.max_output_tokens = baseMax
+    body.reasoning = { effort: args.reasoningEffort === 'none' ? 'low' : args.reasoningEffort ?? 'low' }
   }
   if (args.tools && args.tools.length > 0) body.tools = args.tools
   if (args.promptCacheKey) body.prompt_cache_key = args.promptCacheKey
+  return body
+}
 
+export async function softAiResponsesCreate(args: SoftAiResponsesCreateArgs) {
+  const model = resolveSoftAiModel(args.model)
+  const timeoutMs = args.timeoutMs ?? SOFT_AI_FIRST_CALL_TIMEOUT_MS
+  const client = createSoftAiClient(model, timeoutMs)
+  const body = buildSoftAiResponsesBody({ ...args, model })
   return client.responses.create(
     body as unknown as OpenAI.Responses.ResponseCreateParamsNonStreaming,
     { timeout: timeoutMs, maxRetries: 0 },

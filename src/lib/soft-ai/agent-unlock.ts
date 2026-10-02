@@ -6,6 +6,7 @@
 import 'server-only'
 
 import { prisma } from '@/lib/db'
+import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { mutateChatAgentLayerConfig } from '@/lib/soft-ai/agent-layer-config-mutate'
@@ -262,9 +263,12 @@ export async function approveAgentAiFullUnlock(
   const readConfig = deps.readConfig ?? defaultReadConfig
   const findAgent = deps.findAgent ?? defaultFindAgent
   const findServing = deps.findServing ?? defaultFindServing
+  let findAgentModel: string | undefined
   const listShortcuts = deps.listShortcuts ?? listRuntimeShortcuts
   const loadTestTokens = deps.loadTestTokens ?? loadDailyTestTokens
-  const xaiConfigured = deps.xaiConfigured ?? (() => Boolean(process.env.XAI_API_KEY?.trim()))
+  // Provider key for the model this agent runs on (OPENAI_API_KEY for gpt-*, XAI_API_KEY for Grok).
+  const xaiConfigured =
+    deps.xaiConfigured ?? (() => isSoftAiProviderConfigured(findAgentModel))
   const canaryFixtures = deps.canaryFixtures ?? (() => FORGE_WA_V2_FIXTURES.filter((row) => row.canary))
   const replay = deps.replay ?? defaultReplay
   const runCanaryTurn = deps.runCanaryTurn ?? defaultRunCanaryTurn
@@ -285,6 +289,7 @@ export async function approveAgentAiFullUnlock(
 
   const agent = await findAgent(input.tenantId, input.agentId)
   if (!agent) throw new Error('AGENT_NOT_FOUND')
+  findAgentModel = agent.model
 
   const serving = await findServing(input.tenantId, account.id)
   if (!serving || serving.agentId !== agent.id) {

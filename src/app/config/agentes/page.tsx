@@ -9,6 +9,7 @@ import { hasSessionPermission } from '@/lib/session-permissions'
 import {
   AGENT_TOOL_NAMES,
   DEFAULT_CHAT_AGENT_MODEL,
+  LUNA_CHAT_AGENT_MODEL,
   TONE_PRESET_LABELS,
   type ChatAgentTonePreset,
 } from '@/lib/soft-ai/agent-types'
@@ -1210,14 +1211,36 @@ export default function AgentesConfigPage() {
                     <p className="mt-3 text-sm text-slate-900">
                       Modelo: <span className="font-mono">{selected.model}</span>
                     </p>
-                    {canEdit && selected.model !== DEFAULT_CHAT_AGENT_MODEL ? (
+                    {canEdit && selected.model !== LUNA_CHAT_AGENT_MODEL ? (
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => void patch({ model: LUNA_CHAT_AGENT_MODEL })}
+                        className={`mt-3 ${auroraButtonSecondary} disabled:opacity-50`}
+                      >
+                        Cambiar a {LUNA_CHAT_AGENT_MODEL}
+                      </button>
+                    ) : null}
+                    {canEdit &&
+                    selected.model !== LUNA_CHAT_AGENT_MODEL &&
+                    selected.model !== DEFAULT_CHAT_AGENT_MODEL ? (
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => void patch({ model: DEFAULT_CHAT_AGENT_MODEL })}
+                        className={`mt-3 ml-2 ${auroraButtonSecondary} disabled:opacity-50`}
+                      >
+                        Cambiar a {DEFAULT_CHAT_AGENT_MODEL}
+                      </button>
+                    ) : null}
+                    {canEdit && selected.model === LUNA_CHAT_AGENT_MODEL ? (
                       <button
                         type="button"
                         disabled={saving}
                         onClick={() => void patch({ model: DEFAULT_CHAT_AGENT_MODEL })}
                         className={`mt-3 ${auroraButtonSecondary} disabled:opacity-50`}
                       >
-                        Cambiar a {DEFAULT_CHAT_AGENT_MODEL}
+                        Volver a {DEFAULT_CHAT_AGENT_MODEL}
                       </button>
                     ) : null}
                   </details>

@@ -29,6 +29,7 @@ import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import {
   CHAT_AGENT_LAYER_V1_FLAG,
   HISTORY_WINDOW_MAX,
+  pricingVersionFor,
   type EffectiveAgentBehavior,
 } from '@/lib/soft-ai/agent-types'
 import {
@@ -462,7 +463,7 @@ export async function executeAgentLayerTurn(
         outputTokens: 0,
         reasoningTokens: 0,
         estimatedCostMicros: BigInt(0),
-        pricingVersion: 'xai-2026-09',
+        pricingVersion: pricingVersionFor(resolved.agent.model),
         latencyMs: 0,
         fallbackUsed: false,
         errorCode: decision.escalate ? decision.shortcutKey : null,
@@ -600,7 +601,7 @@ export async function executeAgentLayerTurn(
       outputTokens: llm.outputTokens,
       reasoningTokens: llm.reasoningTokens,
       estimatedCostMicros: BigInt(llm.estimatedCostMicros),
-      pricingVersion: 'xai-2026-09',
+      pricingVersion: pricingVersionFor(resolved.agent.model),
       latencyMs: llm.latencyMs,
       fallbackUsed: llm.fallbackUsed,
       errorCode: llm.errorCode || (needsHuman ? policy.reasons[0] || null : null),
@@ -1173,7 +1174,7 @@ export async function runAgentTestTurn(input: {
       cachedInputTokens: tokens.cached,
       outputTokens: tokens.output,
       estimatedCostMicros: BigInt(0),
-      pricingVersion: 'xai-2026-09',
+      pricingVersion: pricingVersionFor(runtimeAgent.model),
       latencyMs,
       fallbackUsed,
       completedAt: new Date(),

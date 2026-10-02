@@ -12,11 +12,12 @@ import {
   parseChatAgentLayerConfig,
 } from '@/lib/soft-ai/agent-config'
 import { isChatAgentSchemaReady } from '@/lib/soft-ai/agent-schema'
-import { DEFAULT_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
+import { DEFAULT_CHAT_AGENT_MODEL, pricingVersionFor } from '@/lib/soft-ai/agent-types'
 import { parseBrandFactsSafe } from '@/lib/soft-ai/brand-facts'
 import {
   parseSoftAiResponseText,
   readSoftAiUsage,
+  isSoftAiProviderConfigured,
   resolveSoftAiModel,
   softAiResponsesCreate,
 } from '@/lib/soft-ai/llm/client'
@@ -80,7 +81,7 @@ export async function runShortcutExtract(input: {
   const config = parseChatAgentLayerConfig(flag?.config)
   const testTokensUsed = await loadDailyTestTokens(input.tenantId)
   const socialAccountId = await resolveChargeAccount(input.tenantId, agent.id)
-  const llmReady = Boolean(process.env.XAI_API_KEY?.trim())
+  const llmReady = isSoftAiProviderConfigured(agent.model)
   let charged = false
 
   const proposal = await extractShortcutImport(
@@ -124,7 +125,7 @@ export async function runShortcutExtract(input: {
             outputTokens: usage.outputTokens,
             reasoningTokens: usage.reasoningTokens,
             estimatedCostMicros: BigInt(0),
-            pricingVersion: 'xai-2026-09',
+            pricingVersion: pricingVersionFor(agent.model || DEFAULT_CHAT_AGENT_MODEL),
             completedAt: new Date(),
           },
         })
@@ -296,7 +297,11 @@ export function shortcutImportErrorStatus(error: unknown): { status: number; cod
   if (code === 'IDEMPOTENCY_CONFLICT' || code === 'VERSION_CONFLICT') return { status: 409, code }
   if (code === 'TEST_BUDGET_BLOCKED') return { status: 429, code }
   if (code === 'SCHEMA_NOT_READY') return { status: 503, code }
-  if (code === 'XAI_NOT_CONFIGURED' || code === 'SOFT_AI_MODEL_NOT_ALLOWED') {
+  if (
+    code === 'XAI_NOT_CONFIGURED' ||
+    code === 'LLM_NOT_CONFIGURED' ||
+    code === 'SOFT_AI_MODEL_NOT_ALLOWED'
+  ) {
     return { status: 503, code }
   }
   return null

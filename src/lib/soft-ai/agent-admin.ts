@@ -7,6 +7,7 @@ import 'server-only'
 
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
+import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
 import {
   AGENT_TOOL_NAMES,
   AGENT_INSTRUCTIONS_MAX,
@@ -16,6 +17,7 @@ import {
   isAllowedChatAgentModel,
   isAgentToolName,
   normalizeIntroductionNames,
+  softAiProviderFor,
   type ChatAgentOperationMode,
   type ChatAgentStatus,
   type ChatAgentTonePreset,
@@ -89,6 +91,16 @@ export function mapChatAgentAdminError(error: unknown): ChatAgentAdminHttpError 
     return {
       status: 400,
       body: { success: false, error: 'Modelo no permitido', code: 'MODEL_NOT_ALLOWED' },
+    }
+  }
+  if (msg === 'MODEL_PROVIDER_NOT_CONFIGURED') {
+    return {
+      status: 409,
+      body: {
+        success: false,
+        error: 'Ese modelo todavía no está configurado en el servidor.',
+        code: 'MODEL_PROVIDER_NOT_CONFIGURED',
+      },
     }
   }
   if (msg === 'SOCIAL_ACCOUNT_NOT_FOUND') {
@@ -380,6 +392,10 @@ export async function updateChatAgent(input: {
   if (typeof input.patch.model === 'string') {
     if (!isAllowedChatAgentModel(input.patch.model)) {
       throw new Error('MODEL_NOT_ALLOWED')
+    }
+    // Never move an agent onto a model whose provider key is missing: every turn would fall back to a human.
+    if (softAiProviderFor(input.patch.model) === 'openai' && !isSoftAiProviderConfigured(input.patch.model)) {
+      throw new Error('MODEL_PROVIDER_NOT_CONFIGURED')
     }
     data.model = input.patch.model
     bumpVersion = true

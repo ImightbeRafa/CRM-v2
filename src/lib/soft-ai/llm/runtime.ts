@@ -26,7 +26,7 @@ import {
   buildAgentSystemInstructions,
   buildAgentUserPrompt,
 } from '@/lib/soft-ai/llm/prompt'
-import type { ChatAgentTonePreset } from '@/lib/soft-ai/agent-types'
+import { softAiProviderFor, type ChatAgentTonePreset } from '@/lib/soft-ai/agent-types'
 import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
 import { isAgentIntent } from '@/lib/soft-ai/agent-intents'
 
@@ -312,12 +312,19 @@ export async function runSoftAiLlmRuntime(
       toolCtx: input.toolCtx,
       linkedOrderId: input.linkedOrderId,
     })
+    const openai = softAiProviderFor(input.model) === 'openai'
     const errorCode =
       error instanceof Error && error.message === 'XAI_NOT_CONFIGURED'
         ? 'XAI_NOT_CONFIGURED'
-        : error instanceof Error && /timeout|abort/i.test(error.message)
-          ? 'XAI_TIMEOUT'
-          : 'XAI_ERROR'
+        : error instanceof Error && error.message === 'LLM_NOT_CONFIGURED'
+          ? 'LLM_NOT_CONFIGURED'
+          : error instanceof Error && /timeout|abort/i.test(error.message)
+            ? openai
+              ? 'LLM_TIMEOUT'
+              : 'XAI_TIMEOUT'
+            : openai
+              ? 'LLM_ERROR'
+              : 'XAI_ERROR'
     return {
       text: fb.text,
       status: 'fallback',

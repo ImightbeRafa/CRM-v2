@@ -1,7 +1,6 @@
 // next.config.js
 /** @type {import('next').NextConfig} */
 import withBundleAnalyzer from '@next/bundle-analyzer';
-import { withSentryConfig } from '@sentry/nextjs';
 import { AURORA_ALIAS_REDIRECTS, CONFIG_PATH_REDIRECTS } from './src/components/aurora/config/config-redirects.mjs';
 
 const bundleAnalyzer = withBundleAnalyzer({
@@ -85,7 +84,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "img-src 'self' data: https: blob:",
               "font-src 'self' data: https://fonts.gstatic.com",
-              "connect-src 'self' https://app.tilopay.com https://api.tilopay.com https://api.tokenex.com https://*.vercel-storage.com https://accounts.google.com https://connect.facebook.net https://graph.facebook.com https://www.facebook.com https://static.cloudflareinsights.com https://*.ingest.us.sentry.io https://challenges.cloudflare.com",
+              "connect-src 'self' https://app.tilopay.com https://api.tilopay.com https://api.tokenex.com https://*.vercel-storage.com https://accounts.google.com https://connect.facebook.net https://graph.facebook.com https://www.facebook.com https://static.cloudflareinsights.com https://challenges.cloudflare.com",
               "worker-src 'self' blob:",
               "frame-src 'self' https://app.tilopay.com https://api.tokenex.com https://accounts.google.com https://www.facebook.com https://web.facebook.com https://challenges.cloudflare.com",
               "object-src 'none'",
@@ -145,15 +144,5 @@ const nextConfig = {
   },
 };
 
-export default withSentryConfig(bundleAnalyzer(nextConfig), {
-  org: "betsy-v0",
-  project: "javascript-nextjs",
-  silent: !process.env.CI,
-  widenClientFileUpload: true,
-  // No tunnelRoute: its rewrite forwarded every header (session cookie included) to Sentry.
-  // Browser events use our own relay, src/app/monitoring/route.ts (Sentry.init tunnel).
-  webpack: {
-    automaticVercelMonitors: true,
-    treeshake: { removeDebugLogging: true },
-  },
-});
+// Error tracking is Betsy's own (src/lib/observability, Sentry removed 2026-10-02).
+export default bundleAnalyzer(nextConfig);

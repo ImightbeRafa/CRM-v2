@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import * as Sentry from '@sentry/nextjs';
+import { reportClientError } from '@/lib/observability/client-report';
 import {
   AuthShell,
   authPrimaryButtonClass,
@@ -17,7 +17,7 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    reportClientError(error, { digest: error.digest });
   }, [error]);
 
   return (

@@ -11,6 +11,24 @@
   when a customer message raises the unread count (not on first load, not our own replies); speaker
   toggle in the inbox header (per browser, on by default). Preview WAV sent to Rafael.
 
+## 2026-10-02 — Backups → Cloudflare R2; Sentry replaced by own error tracking (claudio/live-next)
+
+- **Backups were failing silently**: Vercel Blob rejects the token from Cloudflare, no call had a
+  timeout, failures were never recorded, `/api/backups/status` hung >170 s on prod.
+  - R2 store (`src/lib/backups/r2-store.ts`, SigV4 via node:crypto, AWS test vector), hard timeouts,
+    bounded retries; `store-factory.ts` (`BACKUP_STORE=vercel` only to read old dumps).
+  - Runs: advisory lock, 12-min deadline, `idle_in_transaction_session_timeout` on the snapshot.
+  - Status bounded (20 s → `unknown`), platform-admin only (was any business owner/admin), no raw errors.
+  - Alerts to `OPS_ALERT_EMAIL` on failure + `/api/cron/ops-daily` (06:00 UTC) when the full is >26 h old.
+  - Rafael: create bucket `betsy-backups` + bucket-scoped R/W token; Worker secrets/vars R2_*, OPS_ALERT_EMAIL.
+- **Sentry removed** (quota 403s): `@sentry/nextjs` out of package.json/lock (surgical), configs/relay deleted,
+  CSP host dropped. Replacement (`src/lib/observability/*`): scrubbed JSON error lines → Workers Logs,
+  coalesced groups → `OpsErrorGroup` (SQL 040, additive, RLS, not applied), new-error email (capped),
+  console.error capture (Error object only), browser reports → `/api/client-errors` (same-origin, 10/min,
+  8 KB), Next `onRequestError`. Admin page `/super-admin/salud` (backups + errors, resolve / mute).
+- Proof: test:ops 15, test:backups 17, security 264, chat-harden 461, site-ui 50, meta-attribution 12;
+  lint clean; tsc clean on touched files; `npm ci --dry-run` ok on the trimmed lockfile.
+
 ## 2026-10-02 — Lint cleanup: 22 warnings → 0 (claudio/meta-attribution)
 
 - 7 real fixes: internal `<a>` → `next/link` (SubscriptionBanner, data-deletion, chat list empty state,

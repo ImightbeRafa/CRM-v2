@@ -1738,3 +1738,21 @@ model ChatAdReferral {
   @@unique([socialAccountId, dedupeKey], map: "ChatAdReferral_account_dedupe_key")
   @@index([conversationId, occurredAt], map: "ChatAdReferral_conversation_time_idx")
 }
+
+// 040 Betsy's own error tracking (supabase/migrations/040_ops_error_groups.sql). Platform table, no tenant data.
+model OpsErrorGroup {
+  id             String    @id
+  source         String
+  route          String?
+  name           String
+  message        String
+  stack          String?
+  count          Int       @default(0)
+  firstSeen      DateTime  @default(now())
+  lastSeen       DateTime  @default(now())
+  lastNotifiedAt DateTime?
+  status         String    @default("open")
+  release        String?
+
+  @@index([lastSeen(sort: Desc)], map: "OpsErrorGroup_last_seen_idx")
+}

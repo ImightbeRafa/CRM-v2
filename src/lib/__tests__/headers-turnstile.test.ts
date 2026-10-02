@@ -1,4 +1,4 @@
-/** One CSP source, Sentry tunnel, Turnstile off-by-default (security, 2026-09-28). */
+/** One CSP source, own error tracking (Sentry removed), Turnstile off-by-default (security). */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -28,25 +28,29 @@ test('CSP: Turnstile allowed, Vercel preview hosts gone, blob storage kept', () 
   assert.match(cfg, /value: 'strict-origin-when-cross-origin'/)
 })
 
-test('Sentry: own relay (no cookie-forwarding rewrite), tokens scrubbed, replay masked', () => {
-  assert.doesNotMatch(read('next.config.js'), /^\s*tunnelRoute:/m, 'the rewrite tunnel forwarded cookies (M6)')
-  assert.match(read('src/middleware.ts'), /'\/monitoring'/)
-  const client = read('instrumentation-client.ts')
-  assert.match(client, /tunnel: "\/monitoring"/)
-  assert.match(client, /maskAllText: true,\s*maskAllInputs: true,\s*blockAllMedia: true/)
-  assert.match(client, /beforeSend: \(event\) => scrubEvent\(event\)/)
-  const relay = read('src/app/monitoring/route.ts')
-  assert.match(relay, /headers: \{ 'Content-Type': 'application\/x-sentry-envelope' \}/, 'only the body goes upstream')
-  assert.match(relay, /MAX_ENVELOPE_BYTES/)
+test('Sentry is gone: no SDK, no relay, no Sentry host in the CSP (replaced by own tracking, 2026-10-02)', () => {
+  const cfg = read('next.config.js')
+  assert.doesNotMatch(cfg, /@sentry\/nextjs|withSentryConfig|ingest\.us\.sentry\.io/)
+  assert.doesNotMatch(read('package.json'), /"@sentry\/nextjs"/)
+  for (const f of ['instrumentation.ts', 'instrumentation-client.ts', 'src/app/error.tsx', 'src/app/global-error.tsx', 'src/middleware.ts']) {
+    assert.doesNotMatch(read(f), /from ['"]@sentry\//, f)
+  }
+  assert.doesNotMatch(read('src/middleware.ts'), /'\/monitoring'/)
+  assert.match(read('src/middleware.ts'), /'\/api\/client-errors',/)
 })
 
-test('Sentry relay only accepts this app\'s DSN', async () => {
-  const { sentryEnvelopeTarget, SENTRY_DSN } = await import('../sentry-tunnel')
-  const env = (dsn: string) => new TextEncoder().encode(`${JSON.stringify({ dsn })}\n{"type":"event"}\n{}`)
-  assert.match(sentryEnvelopeTarget(env(SENTRY_DSN)) || '', /^https:\/\/o4511109425725440\.ingest\.us\.sentry\.io\/api\/4511109427494912\/envelope\/$/)
-  assert.equal(sentryEnvelopeTarget(env('https://abc@o1.ingest.us.sentry.io/42')), null)
-  assert.equal(sentryEnvelopeTarget(env('https://34154b8e86072342dbf9c6e55236e963@evil.example/4511109427494912')), null)
-  assert.equal(sentryEnvelopeTarget(new TextEncoder().encode('not json')), null)
+test('own error tracking: browser reports are same-origin, rate limited, size capped and scrubbed', () => {
+  const route = read('src/app/api/client-errors/route.ts')
+  assert.match(route, /if \(!sameOrigin\(request\)\) return new NextResponse\(null, \{ status: 403 \}\)/)
+  assert.match(route, /createIdentifierRateLimit\(\{ windowMs: 60_000, maxRequests: 10/)
+  assert.match(route, /const MAX_BYTES = 8 \* 1024/)
+  assert.match(route, /if \(text === null\) return new NextResponse\(null, \{ status: 413 \}\)/)
+  const reporter = read('src/lib/observability/report-error.ts')
+  assert.match(reporter, /message: clip\(scrubPii\(report\.message \|\| ''\), 500\)/)
+  // The console wrapper records only the Error object, never the other arguments.
+  assert.match(reporter, /const err = args\.find\(\(a\): a is Error => a instanceof Error\)/)
+  assert.match(read('instrumentation.ts'), /installConsoleErrorCapture\(\)/)
+  assert.match(read('src/app/error.tsx'), /reportClientError\(error, \{ digest: error\.digest \}\)/)
 })
 
 function withEnv(env: Record<string, string | undefined>, fn: () => Promise<void> | void) {
@@ -114,8 +118,8 @@ test('Meta Pixel never loads on a URL carrying a one-time token; no automatic SP
   assert.ok(!guard.test('https://www.betsycrm.com/home?plan=pro'))
 })
 
-test('Sentry scrub: tokens redacted raw / encoded / before a JSON escape; unparsable → dropped', async () => {
-  const { scrubTokens, scrubEvent } = await import('../sentry-scrub')
+test('error scrub: tokens redacted raw / encoded / before a JSON escape; unparsable → dropped', async () => {
+  const { scrubTokens, scrubEvent } = await import('../observability/scrub')
   assert.equal(scrubTokens('/auth/reset-password?token=abc&x=1'), '/auth/reset-password?token=[redacted]&x=1')
   assert.match(scrubTokens('callbackUrl=%2Fauth%2Fverify-email%3Ftoken%3Dabc123'), /%3Ftoken%3D\[redacted\]/)
   const ev = scrubEvent({ message: 'url="/auth/reset-password?token=abc\\"x"' })

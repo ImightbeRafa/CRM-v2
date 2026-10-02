@@ -25,6 +25,7 @@ export const FILES = {
   '036': '036_crm_workspace_2b.sql',
   '037': '037_chat_team_replied.sql',
   '039': '039_meta_sales_attribution.sql',
+  '040': '040_ops_error_groups.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -64,6 +65,7 @@ export const EXPECTED_TABLES = {
   '030': ['TenantInvite'],
   '031': [],
   '039': ['ChatAdReferral'],
+  '040': ['OpsErrorGroup'],
 };
 
 export const EXPECTED_COLUMNS = {

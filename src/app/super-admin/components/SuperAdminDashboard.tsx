@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { RefreshCw, TrendingUp, Users, Building2, ShoppingCart, DollarSign } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 
@@ -111,13 +112,22 @@ export default function SuperAdminDashboard() {
           <h1 className="text-3xl font-bold text-foreground">🔐 Super Admin Dashboard</h1>
           <p className="text-muted-foreground mt-1">Cross-tenant monitoring and analytics</p>
         </div>
-        <button
-          onClick={fetchStats}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/super-admin/salud"
+            className="px-4 py-2 rounded-md ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
+            data-testid="super-admin-salud-link"
+          >
+            Salud (respaldos y errores)
+          </Link>
+          <button
+            onClick={fetchStats}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Global Stats Cards */}

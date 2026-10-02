@@ -1992,3 +1992,6 @@ Append-only. Newest entries at the top.
 ## 2026-10-02 — SecureDog round on the AI opt-in (INT-30..42)
 - Fixed: INT-30 (ID/account/IBAN/card masking gaps + tests), INT-31 (revoking AI consent no longer blocked by billing; accepting still is), INT-32 (/data-deletion page matches v8), INT-36 (bare "agente" reaches a person deterministically; unbacked "we ask customers" claim removed), INT-37 (AI terms version → ia-2026-10-v2), INT-39 (JSON-only + same-origin on consent route).
 - Open for Rafael/legal: INT-33 (legacy Vercel dumps/backup row), INT-34 (publish annex + controller identity), INT-35 (durable consent ledger), INT-38 (Probar/import/flow-mining disclosure), INT-40 (OWNER-only accept?), INT-41 (retention batching, feedback notes), INT-42 (coding agents' DB access).
+
+## 2026-10-02 — Legal drafts removed from the codebase (Rafael's call)
+- Privacy v8 (EN/ES), terms 12A, DPA annex, compliance docs and their test removed; /privacy, /terms, /data-deletion restored to the pre-batch versions. Drafts kept outside the repo. AI opt-in feature code stays.

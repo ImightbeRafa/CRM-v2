@@ -213,22 +213,9 @@ export default function TermsPage() {
             <h2 className="text-xl font-semibold text-gray-900 mb-3">12. Privacy and Data Protection</h2>
             <p>
               Your use of the Service is also governed by our{' '}
-              <a href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</a>{' '}
-              (<a href="/privacy/es" className="text-blue-600 hover:underline">en español</a>), which explains how we collect and use
-              your information. Where the law requires your specific consent for a use of data (for example the opt-in for AI features
-              below), we ask for it separately and you can withdraw it at any time.
+              <a href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</a>.
+              By using the Service, you consent to our collection and use of your information as described in the Privacy Policy.
             </p>
-          </section>
-
-          <section id="ai-features">
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">12A. AI Features</h2>
-            <ul className="list-disc pl-6 space-y-2">
-              <li>AI agents are optional and are off until the business owner or an administrator accepts the AI terms inside the Service; the acceptance can be revoked at any time</li>
-              <li>When AI agents are on, customer messages are sent to the AI providers listed in the Privacy Policy only to generate replies; we do not use them to train or improve AI models</li>
-              <li>The business remains the controller of its customers&apos; data and is responsible for informing its customers that an AI assistant may answer them and for having permission to message them, and for complying with the WhatsApp Business and Instagram platform terms</li>
-              <li>The business is responsible for reviewing and approving how its agents are configured and for choosing when they may send messages without review</li>
-              <li>AI output can be wrong: do not rely on it for legal, financial or medical decisions, and handle payments, refunds and disputes yourself</li>
-            </ul>
           </section>
 
           <section>

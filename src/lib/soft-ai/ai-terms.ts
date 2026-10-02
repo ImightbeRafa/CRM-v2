@@ -1,7 +1,7 @@
 /**
  * Business opt-in for AI features (client-safe constants). A business must accept these terms before its agents
- * send customer messages to an AI provider. Single source for the card in /config/agentes, the API and the docs
- * (docs/compliance/). Bump AI_TERMS_VERSION whenever the wording changes: everyone must accept the new version.
+ * send customer messages to an AI provider. Single source for the card in /config/agentes, the API.
+ * Bump AI_TERMS_VERSION whenever the wording changes: everyone must accept the new version.
  */
 
 export const AI_TERMS_VERSION = 'ia-2026-10-v2'
@@ -22,7 +22,7 @@ export const AI_TERMS_CHECKBOX =
   'Leí y acepto, en nombre de mi negocio, el uso de proveedores de inteligencia artificial descrito arriba y la Política de Privacidad.'
 
 export const AI_TERMS_LINKS = {
-  privacy: '/privacy/es',
+  privacy: '/privacy',
   privacyEn: '/privacy',
 } as const
 

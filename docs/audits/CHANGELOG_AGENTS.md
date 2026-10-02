@@ -1,3 +1,14 @@
+## 2026-10-02 — Agent Ops S2: usage dashboard (claudio/agent-ops, INBOX only, no SQL)
+
+- Platform view `/super-admin/agentes` + `GET /api/super-admin/agent-usage` (isSuperAdmin only, 404 to others,
+  aggregates only — no customer/output text, AuditLog row on every open). Totals, fallback/failure rate, p95 latency,
+  by model / business / agent / day; filters 7/30/90 days and Reales/Probar/Todo. Costs are labelled estimated
+  list price with the pricingVersions shown. Link added on the super-admin dashboard.
+- Tenant view: `GET /api/chat/agents/usage` (view_config, tenantId from session) + "Últimos 30 días" card in
+  Avanzado. Volume and outcomes only — dollars (COGS) never leave the platform view.
+- Reads existing ChatAgentTurn (index tenantId+createdAt); no SQL, no staff-bot files.
+- Tests: `agent-usage-dashboard.test.ts` (mode filters, rates, cost math, tenant strip, route gates).
+
 ## 2026-10-02 — Agent Ops S1: gpt-6-luna provider switch (claudio/agent-ops, INBOX only, default unchanged)
 
 Plan: Notion "Agent Layer + Platform Admin (2026-10) — Claude SoT" v4. Inbox agent only; `src/lib/bot/**` and

@@ -14,6 +14,7 @@ import {
   type ChatAgentTonePreset,
 } from '@/lib/soft-ai/agent-types'
 import { AgentTestSandbox } from '@/app/config/agentes/AgentTestSandbox'
+import { AgentUsageCard } from '@/app/config/agentes/AgentUsageCard'
 import { BrandFactsEditor } from '@/app/config/agentes/BrandFactsEditor'
 import { ChannelsEditor, type ChannelRow } from '@/app/config/agentes/ChannelsEditor'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
@@ -1211,6 +1212,7 @@ export default function AgentesConfigPage() {
                     <p className="mt-3 text-sm text-slate-900">
                       Modelo: <span className="font-mono">{selected.model}</span>
                     </p>
+                    <AgentUsageCard />
                     {canEdit && selected.model !== LUNA_CHAT_AGENT_MODEL ? (
                       <button
                         type="button"

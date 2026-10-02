@@ -10,8 +10,10 @@ import {
   InventoryMapEmptyError,
   InventoryMapNotReadyError,
   listMappedInventory,
+  loadMappedInventoryIds,
   setMappedInventory,
 } from '@/lib/soft-ai/agent-inventory-map'
+import { recordAgentVersionSnapshot } from '@/lib/soft-ai/agent-improvement'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -60,13 +62,26 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       itemIds: body.itemIds.filter((v): v is string => typeof v === 'string'),
       actorUserId: auth.userId,
     })
+    // A change of the product list changes what the agent can quote: it is a new version with its own snapshot.
+    const bumped = await prisma.chatAgent.update({
+      where: { id: agent.id },
+      data: { version: { increment: 1 }, updatedBy: auth.userId },
+    })
+    const mappedNow = await loadMappedInventoryIds(auth.tenantId, agent.id)
+    await recordAgentVersionSnapshot({
+      tenantId: auth.tenantId,
+      agentId: agent.id,
+      version: bumped.version,
+      agent: { ...bumped, inventoryItemIds: mappedNow },
+      actorUserId: auth.userId,
+    })
     await logAuditEvent({
       action: 'UPDATE',
       entityType: 'ChatAgent',
       entityId: agent.id,
       entityName: agent.name,
       description: `Productos del agente: ${stored}`,
-      newValues: { inventoryItemCount: stored },
+      newValues: { inventoryItemCount: stored, inventoryItemIds: (mappedNow ?? []).slice(0, 50), version: bumped.version },
       userId: auth.userId,
       userRole: auth.role,
       tenantId: auth.tenantId,

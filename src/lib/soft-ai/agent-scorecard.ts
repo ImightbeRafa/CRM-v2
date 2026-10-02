@@ -113,6 +113,8 @@ export type VersionSnapshotSource = {
   brandFacts?: unknown
   replyStyle?: unknown
   introductionNames?: unknown
+  /** Products this agent may quote (SQL 046); null/undefined = whole catalog or not available. */
+  inventoryItemIds?: string[] | null
 }
 
 /** Everything that can change what the agent says. Stable key order so the hash is reproducible. */
@@ -131,6 +133,7 @@ export function buildVersionSnapshot(agent: VersionSnapshotSource) {
     brandFacts: agent.brandFacts ?? null,
     replyStyle: agent.replyStyle ?? null,
     introductionNames: agent.introductionNames ?? null,
+    inventoryItemIds: agent.inventoryItemIds ? [...agent.inventoryItemIds].sort() : null,
     promptCodeVersion: SOFT_AI_PROMPT_CODE_VERSION,
   }
 }

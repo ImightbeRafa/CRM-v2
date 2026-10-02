@@ -32,12 +32,19 @@ export async function POST(
       windowOpen: parsed.windowOpen,
       customerName: parsed.customerName,
       conversationAiMode: parsed.conversationAiMode,
+      modelOverride: parsed.modelOverride,
     })
     return NextResponse.json({ success: true, ...result })
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'error'
     if (msg === 'TEST_REQUEST_INVALID') {
       return NextResponse.json({ success: false, error: 'Solicitud de prueba inválida' }, { status: 400 })
+    }
+    if (msg === 'MODEL_PROVIDER_NOT_CONFIGURED') {
+      return NextResponse.json(
+        { success: false, error: 'Ese modelo todavía no está configurado en el servidor.' },
+        { status: 409 },
+      )
     }
     if (msg === 'AGENT_NOT_FOUND') {
       return NextResponse.json({ success: false, error: 'No encontrado' }, { status: 404 })

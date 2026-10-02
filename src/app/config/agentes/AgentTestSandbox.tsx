@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { AgentInternalTests } from '@/app/config/agentes/AgentInternalTests'
 import { formatUnlockConfirm, formatUnlockSuccessLine } from '@/lib/soft-ai/agent-config'
 import { selectWhatsappTestChannel, type TestChannelOption } from '@/lib/soft-ai/test-channel'
+import { ProbarScenarios } from '@/app/config/agentes/ProbarScenarios'
 
 export type WaBubble = {
   kind: 'text'
@@ -87,6 +88,8 @@ export function AgentTestSandbox({
   socialAccountId,
   onSelectChannel,
   onUnlocked,
+  agentModel,
+  operationMode,
 }: {
   agentId: string
   agentName: string
@@ -96,6 +99,8 @@ export function AgentTestSandbox({
   socialAccountId: string | null
   onSelectChannel: (socialAccountId: string) => void
   onUnlocked?: () => void
+  agentModel?: string
+  operationMode?: string
 }) {
   const [sessionId] = useState(() => crypto.randomUUID())
   const [text, setText] = useState('precio con envío?')
@@ -326,6 +331,14 @@ export function AgentTestSandbox({
         onAskUnlock={() => setConfirmingUnlock(true)}
         onCancelUnlock={() => setConfirmingUnlock(false)}
         onConfirmUnlock={() => void confirmUnlock()}
+      />
+      <ProbarScenarios
+        agentId={agentId}
+        socialAccountId={socialAccountId}
+        canEdit={canEdit}
+        agentModel={agentModel}
+        operationMode={operationMode}
+        conversation={history.map((b) => ({ from: b.from, text: b.text }))}
       />
     </div>
   )

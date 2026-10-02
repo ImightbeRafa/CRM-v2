@@ -1126,6 +1126,8 @@ export default function AgentesConfigPage() {
                       socialAccountId={channelId}
                       onSelectChannel={setChannelId}
                       onUnlocked={() => setChannelReload((value) => value + 1)}
+                      agentModel={selected.model}
+                      operationMode={selected.operationMode}
                     />
                   </div>
                 </div>

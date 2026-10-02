@@ -31,6 +31,7 @@ export const FILES = {
   '044': '044_platform_agent_policy.sql',
   '045': '045_agent_improvement.sql',
   '046': '046_chat_agent_inventory_map.sql',
+  '047': '047_chat_agent_test_cases.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -76,6 +77,7 @@ export const EXPECTED_TABLES = {
   '044': ['PlatformAgentPolicy'],
   '045': ['ChatAgentVersion', 'ChatAgentFeedback', 'ChatAgentEvalRun'],
   '046': ['ChatAgentInventoryItem'],
+  '047': ['ChatAgentTestCase'],
 };
 
 export const EXPECTED_COLUMNS = {

@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod'
+import { CHAT_AGENT_MODEL_ALLOWLIST } from '@/lib/soft-ai/agent-types'
 
 export const TestHistoryMessageSchema = z.object({
   direction: z.enum(['inbound', 'outbound']),
@@ -24,6 +25,8 @@ export const AgentTestRequestSchema = z.object({
     return trimmed.length === 0 ? undefined : trimmed
   }, z.string().max(120).optional()),
   conversationAiMode: z.enum(['ai_active', 'human', 'paused']).default('ai_active'),
+  /** Compare mode: run THIS test turn on another allowed model (never changes the agent). */
+  modelOverride: z.enum(CHAT_AGENT_MODEL_ALLOWLIST).optional(),
 })
 
 export type AgentTestRequest = z.infer<typeof AgentTestRequestSchema>

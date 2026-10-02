@@ -1,3 +1,23 @@
+## 2026-10-02 — Agent Ops S10: Probar playground (scenarios, saved tests, model compare) (claudio/agent-ops, SQL 047 held)
+
+The playground ("Probar conversación") already played one message at a time with zero Meta. It now also has:
+- **Escenarios listos:** 17 ready-made customer conversations (price, unknown product, fake price, "maybe later", how to
+  pay, payment proof, payment claim, refund, far-away contra entrega, post-sale tracking, prompt injection, opt-out,
+  voice note, photo, three messages in a row, window closed, human already has the chat) with automatic safety checks
+  (never "pago confirmado", handoff when it must, silent when it must, no invented times/prices, no prompt leak).
+  Run one or all; shows the transcript, why it failed, tokens and estimated cost; the pass rate is stored per agent
+  version (Calidad). A hit of the daily test cap is reported as "not run", never as pass/fail.
+- **Mis pruebas:** save the conversation on screen as a permanent test (name + "must/must not hand off" + phrases it
+  must not say); replayed with the rest. New table `ChatAgentTestCase` (SQL 047, new table, no FKs, RLS, ≤50/agent).
+- **Comparar modelos:** same message on the agent's model and another allowed one, side by side with speed, tokens and
+  cost. `modelOverride` is test-only (validated, provider key required, never written to the agent).
+- Mode badge always visible ("Modo del agente", model, "Probar no envía nada a nadie"). Agents stay human/suggest by default.
+- Test turns now store their estimated cost (Probar spend shows correctly in the dashboard); daily test cap 100k → 300k
+  tokens (Luna is cheap; the cap still applies per business).
+- Follow-up closed: a product-list change now bumps the agent version, snapshots the list and audits which products.
+- Verified SQL 043–047 and every new query on a throwaway Postgres 17 (constraints, upserts, locks, CR day, scorecard).
+- Tests: probar-scenarios.test.ts.
+
 ## 2026-10-02 — Agent Ops: SecureDog INT-19..25 (S5–S9) (claudio/agent-ops)
 
 - INT-19: rule creation is atomic (per-business lock, count+insert in one statement) and always starts OFF; the

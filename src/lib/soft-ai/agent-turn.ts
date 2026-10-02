@@ -29,10 +29,13 @@ import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import {
   CHAT_AGENT_LAYER_V1_FLAG,
   HISTORY_WINDOW_MAX,
+  isAllowedChatAgentModel,
   pricingVersionFor,
   type EffectiveAgentBehavior,
 } from '@/lib/soft-ai/agent-types'
 import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
+import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
+import { estimateCostMicros } from '@/lib/soft-ai/llm/usage'
 import {
   assembleAgentRuntimeInputs,
   channelBindingBlocker,
@@ -955,6 +958,8 @@ export async function runAgentTestTurn(input: {
   windowOpen?: boolean
   customerName?: string
   conversationAiMode?: SoftAiAgentMode
+  /** Probar compare mode: use this model for this test turn only (validated; provider key required). */
+  modelOverride?: string
   /**
    * Unlock canaries qualify the model even when ops flags are off.
    * `flag_off` stays in `blockedBy` but does not force outcome `skip`.
@@ -977,6 +982,8 @@ export async function runAgentTestTurn(input: {
   highlightedAmounts: number[]
   intent: string
   shortcutKey: string | null
+  model: string
+  estimatedCostUsd: number
 }> {
   const agent = await prisma.chatAgent.findFirst({
     where: { id: input.agentId, tenantId: input.tenantId },
@@ -996,10 +1003,20 @@ export async function runAgentTestTurn(input: {
   })
   const servingId = await servingAgentIdForTest(input.tenantId, input.socialAccountId, resolved)
   const boundToChannel = channelBindingBlocker(input.agentId, servingId) == null
-  const runtimeAgent =
+  const baseRuntimeAgent =
     resolved.agent && resolved.agent.id === input.agentId
       ? resolved.agent
       : toResolvedChatAgent(agent)
+  if (input.modelOverride && !isAllowedChatAgentModel(input.modelOverride)) {
+    throw new Error('MODEL_NOT_ALLOWED')
+  }
+  if (input.modelOverride && !isSoftAiProviderConfigured(input.modelOverride)) {
+    throw new Error('MODEL_PROVIDER_NOT_CONFIGURED')
+  }
+  // The override only exists for this test turn: the stored agent is never touched.
+  const runtimeAgent = input.modelOverride
+    ? { ...baseRuntimeAgent, model: input.modelOverride }
+    : baseRuntimeAgent
 
   const shortcuts = await listRuntimeShortcuts(input.tenantId, runtimeAgent.id)
   const history = windowedAgentHistory(
@@ -1155,6 +1172,12 @@ export async function runAgentTestTurn(input: {
     runtimeAgent.brandFacts,
   )
 
+  const testCostMicros = estimateCostMicros({
+    model: runtimeAgent.model,
+    inputTokens: tokens.input,
+    cachedInputTokens: tokens.cached,
+    outputTokens: tokens.output,
+  })
   const turn = await prisma.chatAgentTurn.create({
     data: {
       tenantId: input.tenantId,
@@ -1177,7 +1200,7 @@ export async function runAgentTestTurn(input: {
       inputTokens: tokens.input,
       cachedInputTokens: tokens.cached,
       outputTokens: tokens.output,
-      estimatedCostMicros: BigInt(0),
+      estimatedCostMicros: BigInt(testCostMicros),
       pricingVersion: pricingVersionFor(runtimeAgent.model),
       latencyMs,
       fallbackUsed,
@@ -1202,5 +1225,7 @@ export async function runAgentTestTurn(input: {
     highlightedAmounts,
     intent,
     shortcutKey,
+    model: runtimeAgent.model,
+    estimatedCostUsd: testCostMicros / 1_000_000,
   }
 }

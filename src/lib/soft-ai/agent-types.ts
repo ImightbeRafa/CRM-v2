@@ -140,7 +140,7 @@ export type AiFullUnlockRefusalCode = (typeof AI_FULL_UNLOCK_REFUSAL_CODES)[numb
 
 export type AiFullUnlockMismatch = 'missing' | 'hash' | 'agent' | 'model' | 'version'
 
-export const DEFAULT_TEST_DAILY_TOKEN_CAP = 100_000
+export const DEFAULT_TEST_DAILY_TOKEN_CAP = 300_000
 /** Single source for the v2 fixture hash (G7). Fixtures re-export this. */
 export const FORGE_WA_V2_FIXTURE_SET_HASH = 'forge-wa-v2-al2-a1-2026-09-21'
 export const FIXTURE_SET_HASH_V2 = FORGE_WA_V2_FIXTURE_SET_HASH

@@ -20,6 +20,7 @@ import {
   type VersionSnapshotSource,
 } from '@/lib/soft-ai/agent-scorecard'
 import { SOFT_AI_PROMPT_CODE_VERSION } from '@/lib/soft-ai/agent-types'
+import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import {
   canSharePaymentFacts,
   parseBrandFactsSafe,
@@ -77,7 +78,7 @@ export async function ensureCurrentVersionSnapshots(tenantId?: string): Promise<
         tenantId: agent.tenantId,
         agentId: agent.id,
         version: agent.version,
-        agent,
+        agent: { ...agent, inventoryItemIds: await loadMappedInventoryIds(agent.tenantId, agent.id) },
       })
     }
   } catch (error) {

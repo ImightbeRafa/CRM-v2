@@ -748,6 +748,7 @@ export async function probeAgent(input: {
   windowOpen?: boolean
   customerName?: string
   conversationAiMode?: 'ai_active' | 'human' | 'paused'
+  modelOverride?: string
 }) {
   return runAgentTestTurn(input)
 }

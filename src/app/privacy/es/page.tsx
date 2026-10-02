@@ -124,7 +124,7 @@ export default function PrivacidadPage() {
             <p>
               Solo lo necesario para redactar la respuesta: el texto del mensaje, el nombre visible del cliente, el contexto reciente
               de la conversación y, cuando corresponde, el estado de un pedido. Antes de enviar, los agentes enmascaran los números de tarjeta, de cuenta/IBAN/SINPE y de cédula que puedan detectar por patrón;
-              además pedimos a los clientes no compartirlos, y no es posible garantizar la detección de todos los formatos. Las respuestas se generan con parámetros que piden al proveedor no almacenar la solicitud para
+              y no es posible garantizar la detección de todos los formatos. Las respuestas se generan con parámetros que piden al proveedor no almacenar la solicitud para
               uso propio.
             </p>
             <h3 className={h3}>5.4 Lo que los proveedores de IA pueden y no pueden hacer</h3>

@@ -40,8 +40,11 @@ export function isMediaMessageType(value: string | null | undefined): value is M
   )
 }
 
+// The suggested customer notice says «escriba agente»: a bare word must reach a person deterministically.
+const BARE_HANDOFF_RE = /^\s*["'«]?\s*(agente|humano|persona|asesor|agent|human|person)\s*["'».!]*\s*$/i
+
 export function isOptOutText(text: string): boolean {
-  return OPT_OUT_RE.test(text || '')
+  return OPT_OUT_RE.test(text || '') || BARE_HANDOFF_RE.test(text || '')
 }
 
 /**

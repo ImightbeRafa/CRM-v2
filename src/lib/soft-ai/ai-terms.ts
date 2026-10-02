@@ -4,7 +4,7 @@
  * (docs/compliance/). Bump AI_TERMS_VERSION whenever the wording changes: everyone must accept the new version.
  */
 
-export const AI_TERMS_VERSION = 'ia-2026-10-v1'
+export const AI_TERMS_VERSION = 'ia-2026-10-v2'
 
 export const AI_TERMS_TITLE = 'Antes de activar agentes con IA: autorización de su negocio'
 
@@ -14,7 +14,7 @@ export const AI_TERMS_POINTS: readonly string[] = [
   'Esos datos no se usan para entrenar ni mejorar modelos de IA, no se venden y no se comparten con otros fines. El proveedor puede conservarlos hasta 30 días únicamente por seguridad y prevención de abusos.',
   'Las pruebas del agente (Probar) usan solo mensajes que su equipo escribe; nunca conversaciones reales de clientes.',
   'Su negocio debe informar a sus clientes que los atiende un asistente de inteligencia artificial y contar con su permiso para escribirles. En la Política de Privacidad (sección 5.6) hay un aviso sugerido.',
-  'Los agentes enmascaran números de tarjeta, de cuenta y de cédula antes de enviar un mensaje al proveedor de IA, y también pedimos a sus clientes que no los compartan; no es posible garantizar la detección de todos los formatos.',
+  'Los agentes enmascaran números de tarjeta, de cuenta y de cédula antes de enviar un mensaje al proveedor de IA; no es posible garantizar la detección de todos los formatos.',
   'Puede revocar esta autorización en cualquier momento: los agentes dejan de generar respuestas y sugerencias de inmediato.',
 ]
 

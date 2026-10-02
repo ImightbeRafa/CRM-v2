@@ -25,7 +25,7 @@ export default function DataDeletionPage() {
               <li>Inicia sesión en tu cuenta de Betsy CRM</li>
               <li>Ve a <strong>Configuración → Cuentas Sociales</strong></li>
               <li>Haz clic en &quot;Desvincular&quot; en la cuenta que deseas eliminar</li>
-              <li>Tus datos serán eliminados inmediatamente</li>
+              <li>Se eliminan los tokens de acceso de la cuenta vinculada. El historial de mensajes permanece en la cuenta del negocio hasta que el negocio solicite su eliminación (ver abajo) o cierre su cuenta</li>
             </ol>
           </section>
 
@@ -37,10 +37,10 @@ export default function DataDeletionPage() {
             <p className="ml-4">
               <strong>Email:</strong>{' '}
               <a 
-                href="mailto:support@betsycrm.com" 
+                href="mailto:privacy@betsycrm.com" 
                 className="text-blue-600 hover:underline"
               >
-                support@betsycrm.com
+                privacy@betsycrm.com
               </a>
             </p>
             <p className="ml-4 mt-2">
@@ -60,7 +60,7 @@ export default function DataDeletionPage() {
             </p>
             <ul className="list-disc list-inside ml-4 space-y-1">
               <li>Información de tu cuenta vinculada (ID, tokens de acceso)</li>
-              <li>Historial de mensajes enviados y recibidos</li>
+              <li>Historial de mensajes enviados y recibidos (al solicitar la eliminación completa)</li>
               <li>Metadatos asociados a tus conversaciones</li>
             </ul>
           </section>
@@ -68,7 +68,7 @@ export default function DataDeletionPage() {
           <section>
             <h3 className="text-lg font-semibold mb-2">Tiempo de procesamiento</h3>
             <p>
-              Las solicitudes de eliminación se procesan de forma inmediata. 
+              Los tokens se eliminan de inmediato al desvincular; la eliminación completa de datos se completa dentro de 30 días. 
               Si solicitas la eliminación por correo, responderemos en un plazo 
               máximo de <strong>48 horas</strong>.
             </p>

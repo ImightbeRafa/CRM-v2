@@ -132,7 +132,7 @@ export async function authenticateUserOnly(request: NextRequest) {
  * if (!auth.ok) return auth.response;
  * const { session, tenantId, role } = auth;
  */
-export async function authenticateAPI(request: NextRequest) {
+export async function authenticateAPI(request: NextRequest, opts: { skipBillingGuard?: boolean } = {}) {
   // Fast path: middleware-injected headers (avoids a redundant JWT decode), trusted only when
   // signed by the middleware. Unsigned / forged headers fall through to the session check.
   const ctx = await readVerifiedAuthContext(request.headers);
@@ -153,7 +153,7 @@ export async function authenticateAPI(request: NextRequest) {
       role: (ctx.role || 'VIEWER') as Role,
       userId: ctx.userId,
     };
-    return applyBillingWriteGuard(request, auth);
+    return applyBillingWriteGuard(request, auth, opts);
   }
 
   // Fallback: full session check (for routes where middleware didn't inject headers)
@@ -190,13 +190,14 @@ export async function authenticateAPI(request: NextRequest) {
     role: role,
     userId: session.user.id || session.user.email || '',
   };
-  return applyBillingWriteGuard(request, auth);
+  return applyBillingWriteGuard(request, auth, opts);
 }
 
 async function applyBillingWriteGuard<T extends {
   ok: true;
   tenantId: string;
-}>(request: NextRequest, auth: T): Promise<T | { ok: false; response: NextResponse }> {
+}>(request: NextRequest, auth: T, opts: { skipBillingGuard?: boolean } = {}): Promise<T | { ok: false; response: NextResponse }> {
+  if (opts.skipBillingGuard) return auth;
   if (['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) return auth;
 
   try {
@@ -229,9 +230,10 @@ async function applyBillingWriteGuard<T extends {
  */
 export async function authenticateAPIWithPermission(
   request: NextRequest,
-  permission: Permission
+  permission: Permission,
+  opts: { skipBillingGuard?: boolean } = {},
 ) {
-  const auth = await authenticateAPI(request);
+  const auth = await authenticateAPI(request, opts);
 
   if (!auth.ok) {
     return auth;

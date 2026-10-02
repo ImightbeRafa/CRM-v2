@@ -9,6 +9,7 @@ import {
   redactSinpe,
   redactToolTrace,
 } from '../soft-ai/llm/redact'
+import { isOptOutText } from '../soft-ai/llm/safety-router'
 
 describe('soft-ai redact (1.16)', () => {
   it('masks CR phone, email, SINPE and IBAN', () => {
@@ -51,5 +52,27 @@ describe('redactSensitiveForProvider', () => {
     const out = redactSensitiveForProvider('cédula 1-2345-6789 / pasaporte: A1234567')
     assert.ok(!out.includes('2345-6789'))
     assert.ok(!out.includes('A1234567'))
+  })
+  it('masks the number whatever filler words follow the label', () => {
+    for (const t of ['cedula numero 112345678', 'mi identificacion personal es 112345678', 'mi cedula es 112345678', 'mi dimex es 155812345678', 'cedula 1 1234 5678']) {
+      const out = redactSensitiveForProvider(t)
+      assert.ok(!/\d{8}/.test(out.replace(/\s/g, '')), t + ' -> ' + out)
+    }
+  })
+  it('masks 17-digit accounts, CR accounts, lowercase IBAN and dotted cards', () => {
+    for (const t of ['cuenta cliente 15201001024567893', 'cuenta BCR 001-0123456-7', 'cr05015202001026284066', 'tarjeta 4111.1111.1111.1111']) {
+      const out = redactSensitiveForProvider(t)
+      assert.ok(!/\d{6,}/.test(out.replace(/[\s.-]/g, '')), t + ' -> ' + out)
+    }
+  })
+  it('keeps normal text and order numbers', () => {
+    assert.equal(redactSensitiveForProvider('quiero 2 camisas talla M, pedido 4821'), 'quiero 2 camisas talla M, pedido 4821')
+  })
+})
+
+describe('bare handoff word from the suggested customer notice', () => {
+  it('routes "agente" / "human" to a person but not normal sentences', () => {
+    for (const t of ['agente', ' Agente. ', '"agent"', 'humano']) assert.equal(isOptOutText(t), true, t)
+    for (const t of ['el agente de ventas me dijo', 'quiero una camisa']) assert.equal(isOptOutText(t), false, t)
   })
 })

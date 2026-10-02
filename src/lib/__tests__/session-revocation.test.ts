@@ -34,7 +34,7 @@ test('wiring: signed context carries sv, API fast path checks it, JWT refresh cl
   const helpers = read('src/lib/auth-helpers.ts')
   const check = 'sessionStillValid(ctx.userId, ctx.sv, { tenantId: ctx.tenantId, role: ctx.role })'
   assert.ok(helpers.indexOf(check) > 0)
-  assert.ok(helpers.indexOf(check) < helpers.indexOf('return applyBillingWriteGuard(request, auth);'))
+  assert.ok(helpers.indexOf(check) < helpers.indexOf('return applyBillingWriteGuard(request, auth, opts);'))
   const opts = read('src/lib/auth-options.ts')
   assert.match(opts, /\(token as any\)\.sv = \(user as any\)\.sv;/)
   assert.match(opts, /cleared\.error = revoked \? 'session_revoked' : 'inactive_user'/)

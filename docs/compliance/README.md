@@ -17,7 +17,7 @@ Actualizado 2026-10-02 · Rama `claudio/agent-ops`
 | Términos de servicio (cláusula 12 corregida + 12A «Funciones de IA») | `src/app/terms/page.tsx` | Borrador en la rama, **sin publicar** |
 | **Anexo de tratamiento de datos y uso de IA** (contrato Betsy–negocio) | `docs/compliance/anexo-tratamiento-datos-ia-borrador.md` | Borrador para abogado |
 | **Informe de cumplimiento** (Ley 8968, Meta, OpenAI/xAI/Anthropic, brechas, 5 preguntas para abogado) | `docs/compliance/agentes-ia-cumplimiento-2026-10-02.md` | Actualizado con la aclaración de hoy |
-| Texto de la autorización de IA que acepta el negocio (única fuente) | `src/lib/soft-ai/ai-terms.ts` (versión `ia-2026-10-v1`) | Implementado |
+| Texto de la autorización de IA que acepta el negocio (única fuente) | `src/lib/soft-ai/ai-terms.ts` (versión `ia-2026-10-v2`) | Implementado |
 | Runbook del SQL 043–047 | `docs/runbooks/agent-ops-sql-043-047.md` | Listo |
 
 Ruta completa en este equipo: `D:\Coder\CRM-v2-agentops\docs\compliance\`.

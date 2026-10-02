@@ -57,8 +57,18 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    // Withdrawing consent must work even when billing is restricted; only ACCEPTING is billing-guarded (below).
+    const auth = await authenticateAPIWithPermission(request, 'update_config', { skipBillingGuard: true })
     if (!auth.ok) return auth.response
+    // CSRF: JSON only, same-origin only (the session cookie is SameSite=Lax, this is defence in depth).
+    if (!(request.headers.get('content-type') || '').toLowerCase().includes('application/json')) {
+      return NextResponse.json({ success: false, error: 'Content-Type inválido.' }, { status: 415 })
+    }
+    const site = request.headers.get('sec-fetch-site')
+    const origin = request.headers.get('origin')
+    if ((site && site !== 'same-origin') || (origin && origin !== request.nextUrl.origin)) {
+      return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })
+    }
     const rate = await termsRateLimit(`${auth.tenantId}:${auth.userId}`)
     if (!rate.allowed) {
       return NextResponse.json({ success: false, error: 'Demasiados intentos. Esperá un momento.' }, { status: 429, headers: rate.headers })
@@ -68,6 +78,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Falta indicar si acepta o revoca.' }, { status: 400 })
     }
     const accept = body.accept
+    if (accept) {
+      const guarded = await authenticateAPIWithPermission(request, 'update_config')
+      if (!guarded.ok) return guarded.response
+    }
     // The acceptance is bound to the exact wording shown: a stale page cannot accept a newer text.
     if (accept && body.version !== AI_TERMS_VERSION) {
       return NextResponse.json(

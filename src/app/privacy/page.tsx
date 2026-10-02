@@ -124,7 +124,7 @@ export default function PrivacyPage() {
             <h3 className={h3}>5.3 What is sent to the AI provider</h3>
             <p>
               Only what is needed to write the reply: the text of the message, the customer&apos;s display name, recent conversation
-              context and, when relevant, the status of an order. Before sending, the agents mask card, account/IBAN/SINPE and ID numbers they can detect by pattern; we also ask customers not to share them, and detection of every possible format cannot be guaranteed.
+              context and, when relevant, the status of an order. Before sending, the agents mask card, account/IBAN/SINPE and ID numbers they can detect by pattern; detection of every possible format cannot be guaranteed.
               Replies are generated with settings that ask the provider not to store the request for its own use.
             </p>
             <h3 className={h3}>5.4 What AI providers may and may not do</h3>

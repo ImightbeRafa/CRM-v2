@@ -1988,3 +1988,7 @@ Append-only. Newest entries at the top.
 ## 2026-10-02 — Opt-in / privacy hardening after verifier review
 - Policy text corrected (EN/ES): history is NOT deleted 24 h after disconnect; Upstash row discloses assistant memory; AI trace retention 90 d; customer-notice text moved into policy §5.6; staff assistant (xAI) disclosed honestly; opt-in checkbox no longer references the unpublished Annex.
 - Code: customer-paste helper follows the AI opt-in; card/account/ID masking before provider calls; opt-in re-checked at pre-send and before suggestion; revocation trail kept in config; retention also purges toolTrace and stale pending suggestions. Bot code untouched.
+
+## 2026-10-02 — SecureDog round on the AI opt-in (INT-30..42)
+- Fixed: INT-30 (ID/account/IBAN/card masking gaps + tests), INT-31 (revoking AI consent no longer blocked by billing; accepting still is), INT-32 (/data-deletion page matches v8), INT-36 (bare "agente" reaches a person deterministically; unbacked "we ask customers" claim removed), INT-37 (AI terms version → ia-2026-10-v2), INT-39 (JSON-only + same-origin on consent route).
+- Open for Rafael/legal: INT-33 (legacy Vercel dumps/backup row), INT-34 (publish annex + controller identity), INT-35 (durable consent ledger), INT-38 (Probar/import/flow-mining disclosure), INT-40 (OWNER-only accept?), INT-41 (retention batching, feedback notes), INT-42 (coding agents' DB access).

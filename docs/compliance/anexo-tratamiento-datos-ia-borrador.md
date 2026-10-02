@@ -1,6 +1,6 @@
 # Anexo de tratamiento de datos y uso de inteligencia artificial — BORRADOR para revisión legal
 
-Betsy CRM (encargada) · Negocio cliente (responsable) · Versión de términos de IA: `ia-2026-10-v1` (la misma que se acepta en Config → Agentes)
+Betsy CRM (encargada) · Negocio cliente (responsable) · Versión de términos de IA: `ia-2026-10-v2` (la misma que se acepta en Config → Agentes)
 
 > **Estado:** borrador preparado el 2026-10-02 para revisión de un abogado costarricense de protección de datos. **No es asesoría legal ni está publicado.** Los textos entre [corchetes] son decisiones o datos que debe completar Rafael. Donde dice «Ley 8968» se refiere a la Ley N.º 8968 de Protección de la Persona frente al Tratamiento de sus Datos Personales y su Reglamento (Decreto 37554-JP).
 

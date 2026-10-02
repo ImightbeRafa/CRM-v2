@@ -11,14 +11,17 @@ import { purchaseEventId } from '@/lib/meta-attribution/capi-payload'
  * no order write path: it only reads orders (linked to a chat through ChatMessage.orderId, the
  * same link the inbox shows) and inserts into the outbox (unique per business + order).
  *
- * Eligible when ALL hold: the order is not archived / cancelled, payment is CONFIRMED (cash on
- * delivery confirmed, or explicitly paid), the chat has an ad click id from the last 7 days, the
- * line is WhatsApp, and the business currency is colones or dollars.
+ * Eligible when ALL hold: the order was created in the last 7 days and is not archived /
+ * cancelled, payment is CONFIRMED (cash on delivery confirmed, or explicitly paid), the chat has an
+ * ad click id from BEFORE the order (at most 7 days before it), the line is WhatsApp and has a
+ * ready dataset, and the business currency is colones or dollars. The event time is the order
+ * time (an old purchase is never credited to a newer click — SecureDog M5).
  */
 const MAX_ORDERS_PER_TENANT = 500
 
 type Candidate = {
   id: string
+  timestamp: Date
   total: number
   status: string
   contraEntrega: boolean
@@ -46,11 +49,19 @@ export async function sweepTenant(tenantId: string, now = new Date()): Promise<S
     return result
   }
   const since = new Date(now.getTime() - ATTRIBUTION_WINDOW_DAYS * 24 * 60 * 60_000)
+  const windowMs = ATTRIBUTION_WINDOW_DAYS * 24 * 60 * 60_000
+
+  // Nothing to do until at least one line can actually send (avoids queueing rows that would wait).
+  const ready = await prisma.metaCapiDataset.count({ where: { tenantId, status: 'ready' } }).catch(() => 0)
+  if (ready === 0) {
+    skip('no_ready_line')
+    return result
+  }
 
   let rows: Candidate[]
   try {
     rows = await prisma.$queryRaw<Candidate[]>`
-      SELECT o."id", o."total", o."status", o."contraEntrega", o."cePaymentConfirmed", o."customFields", o."deletedAt",
+      SELECT o."id", o."timestamp", o."total", o."status", o."contraEntrega", o."cePaymentConfirmed", o."customFields", o."deletedAt",
              link."conversationId", c."socialAccountId", s."platform"
       FROM public."Order" o
       JOIN LATERAL (
@@ -64,17 +75,19 @@ export async function sweepTenant(tenantId: string, now = new Date()): Promise<S
       JOIN public."SocialAccount" s ON s."id" = c."socialAccountId" AND s."tenantId" = ${tenantId}
       WHERE o."tenantId" = ${tenantId}
         AND o."deletedAt" IS NULL
-        AND o."updatedAt" >= ${since}
+        AND o."timestamp" >= ${since}
         AND EXISTS (
           SELECT 1 FROM public."ChatAdReferral" r
           WHERE r."tenantId" = ${tenantId} AND r."conversationId" = link."conversationId"
-            AND r."ctwaClid" IS NOT NULL AND r."occurredAt" >= ${since}
+            AND r."ctwaClid" IS NOT NULL
+            AND r."occurredAt" <= o."timestamp"
+            AND r."occurredAt" >= o."timestamp" - interval '7 days'
         )
         AND NOT EXISTS (
           SELECT 1 FROM public."MetaConversionEvent" e
           WHERE e."tenantId" = ${tenantId} AND e."orderId" = o."id"
         )
-      ORDER BY o."updatedAt" DESC
+      ORDER BY o."timestamp" DESC
       LIMIT ${MAX_ORDERS_PER_TENANT}`
   } catch (error) {
     if (isMissingTable(error)) {
@@ -99,8 +112,14 @@ export async function sweepTenant(tenantId: string, now = new Date()): Promise<S
       skip('no_amount')
       continue
     }
+    const orderAt = new Date(o.timestamp)
     const referral = await prisma.chatAdReferral.findFirst({
-      where: { tenantId, conversationId: o.conversationId, ctwaClid: { not: null }, occurredAt: { gte: since, lte: now } },
+      where: {
+        tenantId,
+        conversationId: o.conversationId,
+        ctwaClid: { not: null },
+        occurredAt: { gte: new Date(orderAt.getTime() - windowMs), lte: orderAt },
+      },
       orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
       select: { id: true },
     })
@@ -114,7 +133,7 @@ export async function sweepTenant(tenantId: string, now = new Date()): Promise<S
         "eventName", "eventId", "eventTime", "value", "currency", "channel", "status", "availableAt"
       ) VALUES (
         ${randomUUID()}, ${tenantId}, ${o.socialAccountId}, ${o.conversationId}, ${o.id}, ${referral.id},
-        'Purchase', ${purchaseEventId(o.id)}, ${now}, ${value}, ${currency}, 'whatsapp', 'pending', ${now}
+        'Purchase', ${purchaseEventId(o.id)}, ${orderAt}, ${value}, ${currency}, 'whatsapp', 'pending', ${now}
       )
       ON CONFLICT ("tenantId", "eventId") DO NOTHING`
     if (inserted > 0) result.queued += 1

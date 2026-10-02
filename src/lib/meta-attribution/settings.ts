@@ -81,11 +81,12 @@ export async function writeMetaSalesSettings(
   now = new Date(),
 ): Promise<MetaSalesSettings> {
   const current = await readMetaSalesSettings(tenantId)
-  if (input.enabled && !input.acknowledge && !current.acknowledgedAt) {
+  if (input.enabled && !input.acknowledge && !(current.enabled && current.acknowledgedAt)) {
     throw new Error('ACK_REQUIRED')
   }
-  const acknowledgedAt = input.enabled ? (input.acknowledge ? now.toISOString() : current.acknowledgedAt) : current.acknowledgedAt
-  const acknowledgedByUserId = input.enabled && input.acknowledge ? input.userId : current.acknowledgedByUserId
+  // Turning it off clears the acknowledgement: turning it on again asks again.
+  const acknowledgedAt = input.enabled ? (input.acknowledge ? now.toISOString() : current.acknowledgedAt) : null
+  const acknowledgedByUserId = input.enabled ? (input.acknowledge ? input.userId : current.acknowledgedByUserId) : null
   const code = input.testEventCode === undefined ? current.testEventCode : input.testEventCode ? input.testEventCode.trim().slice(0, 40) : null
   if (code && !/^TEST[0-9A-Za-z]{1,36}$/.test(code)) throw new Error('BAD_TEST_CODE')
   const testExpires =

@@ -122,3 +122,51 @@ test('SQL 040 is additive, platform-only and locked down; Salud is admin only', 
   }
   assert.match(read('src/app/super-admin/salud/page.tsx'), /if \(!\(await isSuperAdmin\(userId\)\)\) redirect\('\/dashboard'\)/)
 })
+
+test('SecureDog 2026-10-02: scrubber is fast on long input, drops row details / Prisma arguments, strips NUL', async () => {
+  const { reducePrismaMessage, cleanText, SCRUB_INPUT_MAX } = await import('../observability/scrub')
+  const started = Date.now()
+  scrubPii('a'.repeat(200_000))
+  assert.ok(Date.now() - started < 1_000, 'bounded patterns + input cut (was quadratic)')
+  assert.equal(SCRUB_INPUT_MAX, 12_000)
+  const prismaMsg = 'Invalid `prisma.order.create()` invocation:\n\n{\n  data: {\n    customerName: "María José Rodríguez",\n    address: "200 m sur de la iglesia"\n  }\n}\n\nArgument `total` is missing.'
+  const reduced = reducePrismaMessage(prismaMsg)
+  assert.ok(!reduced.includes('María') && !reduced.includes('iglesia'))
+  assert.match(reduced, /Argument `total` is missing\./)
+  const pg = scrubPii('null value violates constraint. DETAIL: Failing row contains (1, Juan Pérez, Barrio Escalante)')
+  assert.ok(!pg.includes('Juan') && !pg.includes('Escalante'))
+  assert.ok(!cleanText('x\u0000y').includes('\u0000'))
+  const clipped = sanitizeReport({ source: 'client', name: 'E', message: `${'a'.repeat(498)}😀😀😀` })
+  assert.doesNotMatch(clipped.message, /[\ud800-\udbff](?![\udc00-\udfff])/, 'no half emoji')
+})
+
+test('SecureDog 2026-10-02: browser reports have their own budget, only production writes, emails carry no error text', () => {
+  const src = read('src/lib/observability/report-error.ts')
+  assert.match(src, /const MAX_PENDING_CLIENT_GROUPS = 20/)
+  assert.match(src, /const MAX_NEW_CLIENT_GROUPS_PER_DAY = 200/)
+  assert.match(src, /if \(!isProductionContainer\(env\)\) return \{ written: 0, newGroups: 0, failed: 0, skipped: 'not_production' \}/)
+  assert.match(src, /if \(p\.report\.source === 'client'\) clientBudget -= 1\n\s+else fresh\.push\(p\.report\)/, 'browser groups never email')
+  assert.match(src, /groups\.slice\(0, 5\)\.map\(\(g\) => `\$\{g\.source\} · \$\{emailSafe\(g\.route, 120\)\} · \$\{emailSafe\(g\.name, 60\)\}`\)/)
+  assert.doesNotMatch(src, /g\.message\.slice/)
+  // One bad row never hides the others: each row has its own try / catch.
+  assert.match(src, /for \(const \[id, p\] of batch\) \{\n\s+try \{/)
+  assert.match(src, /export async function purgeErrorGroups/)
+  assert.match(read('src/lib/workspace-retention.ts'), /const purged = await purgeErrorGroups\(\)/)
+  assert.match(read('src/lib/observability/client-report.ts'), /type: 'text\/plain;charset=UTF-8'/)
+})
+
+test('flush on a non-production container writes nothing (Railway preview shares the database)', async () => {
+  resetObservabilityForTests()
+  const realError = console.error
+  console.error = () => undefined
+  try {
+    reportError({ source: 'server', name: 'Error', message: 'preview noise' })
+    const { flushErrorGroups } = await import('../observability/report-error')
+    const r = await flushErrorGroups({})
+    assert.equal(r.skipped, 'not_production')
+    assert.equal(pendingGroupCount(), 0)
+  } finally {
+    resetObservabilityForTests()
+    console.error = realError
+  }
+})

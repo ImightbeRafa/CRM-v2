@@ -20,15 +20,21 @@ export function reportClientError(error: unknown, extra?: { digest?: string }): 
     seen.add(key)
     sent += 1
     const payload = JSON.stringify({
-      name: scrubPii(err.name).slice(0, 120),
-      message: scrubPii(err.message).slice(0, 500),
-      stack: err.stack ? scrubPii(err.stack).slice(0, 3000) : undefined,
+      name: scrubPii(err.name.slice(0, 240)).slice(0, 120),
+      message: scrubPii(err.message.slice(0, 1000)).slice(0, 500),
+      stack: err.stack ? scrubPii(err.stack.slice(0, 6000)).slice(0, 3000) : undefined,
       route: window.location.pathname.slice(0, 300),
       digest: extra?.digest?.slice(0, 64),
     })
-    const blob = new Blob([payload], { type: 'application/json' })
-    if (!navigator.sendBeacon?.('/api/client-errors', blob)) {
-      void fetch('/api/client-errors', { method: 'POST', body: payload, headers: { 'Content-Type': 'application/json' }, keepalive: true, credentials: 'same-origin' }).catch(() => undefined)
+    // text/plain: Chrome refuses sendBeacon with an application/json Blob (CORS-safelisted types only).
+    let queued = false
+    try {
+      queued = navigator.sendBeacon?.('/api/client-errors', new Blob([payload], { type: 'text/plain;charset=UTF-8' })) ?? false
+    } catch {
+      queued = false
+    }
+    if (!queued) {
+      void fetch('/api/client-errors', { method: 'POST', body: payload, headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, keepalive: true, credentials: 'same-origin' }).catch(() => undefined)
     }
   } catch {
     /* reporting must never break the page */

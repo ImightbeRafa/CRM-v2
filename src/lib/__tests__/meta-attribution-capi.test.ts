@@ -153,3 +153,32 @@ test('sweep / sender / cron: tenant-scoped SQL, no secrets in logs, off-switch f
   assert.doesNotMatch(sql, /REFERENCES public\."(Order|ChatMessage|ChatConversation)"/)
   for (const t of ['MetaCapiDataset', 'MetaConversionEvent']) assert.match(sql, new RegExp(`ALTER TABLE public\\."${t}" ENABLE ROW LEVEL SECURITY`))
 })
+
+test('SecureDog 2026-10-02: a sale is credited only to a click BEFORE the order; event time is the order time', () => {
+  const sweep = read('src/lib/meta-attribution/sweep.ts')
+  assert.match(sweep, /AND r\."occurredAt" <= o\."timestamp"\n\s+AND r\."occurredAt" >= o\."timestamp" - interval '7 days'/)
+  assert.match(sweep, /'Purchase', \$\{purchaseEventId\(o\.id\)\}, \$\{orderAt\}/)
+  assert.match(sweep, /skip\('no_ready_line'\)/)
+})
+
+test('SecureDog 2026-10-02: one event per request, waiting lines keep their sales, broken lines isolated, order re-checked', () => {
+  const sender = read('src/lib/meta-attribution/sender.ts')
+  assert.match(sender, /buildEventsBody\(\[event\], testCode\)/, 'one event per request')
+  assert.match(sender, /await reschedule\(events, account \? 'line_not_ready' : 'line_gone'/, 'not ready → waits, not skipped')
+  assert.match(sender, /await sendLine\(events, \{[^}]*\}\)\n\s+\} catch \(error\) \{/, 'per-line isolation')
+  assert.match(sender, /if \(!order \|\| !isPaymentConfirmed\(order\)\)/, 're-checked at send time')
+  assert.match(sender, /AND e\."attempts" < \$\{MAX_CLAIM_ATTEMPTS\}/)
+  assert.match(sender, /const RUN_BUDGET_MS = 60_000/)
+  assert.match(sender, /if \(outcome\.ok && testCode\) \{/, 'test sends do not consume the real send')
+  const dataset = read('src/lib/meta-attribution/dataset.ts')
+  assert.match(dataset, /const persist = opts\.persist \?\? isProductionContainer\(\)/)
+  assert.match(dataset, /if \(!datasetId && opts\.createIfMissing === false\)/)
+  const api = read('src/app/api/config/meta-attribution/route.ts')
+  assert.match(api, /refreshTenantDatasets\(auth\.tenantId, \{ createIfMissing: current\.enabled \}\)/)
+  assert.match(api, /!hasPermission\(auth\.role as never, 'manage_tenant'\)/)
+})
+
+test('turning the feature off clears the acknowledgement (turning on again asks again)', () => {
+  const settings = read('src/lib/meta-attribution/settings.ts')
+  assert.match(settings, /const acknowledgedAt = input\.enabled \? \(input\.acknowledge \? now\.toISOString\(\) : current\.acknowledgedAt\) : null/)
+})

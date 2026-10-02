@@ -20,10 +20,16 @@ function missingTable(error: unknown): boolean {
 }
 
 /** Most recent error groups (platform admin view). Empty before SQL 040. */
-export async function listErrorGroups(opts: { status?: 'open' | 'muted' | 'resolved' | 'all'; limit?: number } = {}): Promise<{ groups: ErrorGroupDto[]; tableReady: boolean }> {
+export async function listErrorGroups(
+  opts: { status?: 'open' | 'muted' | 'resolved' | 'all'; source?: 'server' | 'client' | 'all'; limit?: number } = {},
+): Promise<{ groups: ErrorGroupDto[]; tableReady: boolean }> {
   try {
+    const where: Record<string, unknown> = {}
+    if (opts.status && opts.status !== 'all') where.status = opts.status
+    if (opts.source === 'client') where.source = 'client'
+    else if (opts.source === 'server') where.source = { not: 'client' }
     const rows = await prisma.opsErrorGroup.findMany({
-      where: opts.status && opts.status !== 'all' ? { status: opts.status } : undefined,
+      where,
       orderBy: { lastSeen: 'desc' },
       take: Math.min(Math.max(opts.limit ?? 50, 1), 200),
     })

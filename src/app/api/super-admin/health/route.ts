@@ -14,8 +14,10 @@ export async function GET(request: NextRequest) {
   if (!(await isSuperAdmin(auth.userId))) return NextResponse.json({ error: 'Not found' }, { status: 404, headers: NO_STORE })
   const raw = request.nextUrl.searchParams.get('status')
   const status = raw === 'muted' || raw === 'resolved' || raw === 'all' ? raw : 'open'
+  const rawSource = request.nextUrl.searchParams.get('source')
+  const source = rawSource === 'client' || rawSource === 'all' ? rawSource : 'server'
   try {
-    const [backup, errors] = await Promise.all([getBackupStatus(), listErrorGroups({ status, limit: 100 })])
+    const [backup, errors] = await Promise.all([getBackupStatus(), listErrorGroups({ status, source, limit: 100 })])
     return NextResponse.json(
       {
         backup: {

@@ -10,6 +10,7 @@
 import 'server-only'
 import { prisma } from '@/lib/db'
 import { isMissingRelation } from '@/lib/db-missing-relation'
+import { purgeErrorGroups } from '@/lib/observability/report-error'
 
 export const ACTIVITY_RETENTION_DAYS = 395
 export const NOTIFICATION_READ_DAYS = 90
@@ -44,7 +45,7 @@ export async function purgeWorkspaceLogs(opts: { now?: Date; budgetMs?: number; 
   const deadline = Date.now() + (opts.budgetMs ?? 45_000)
   const size = opts.batchSize ?? 2_000
   const cut = retentionCutoffs(now)
-  const result = { activity: 0, notifications: 0, adClickIds: 0, skipped: [] as string[] }
+  const result = { activity: 0, notifications: 0, adClickIds: 0, errorGroups: 0, skipped: [] as string[] }
 
   try {
     result.activity = await drain(async () => {
@@ -91,6 +92,14 @@ export async function purgeWorkspaceLogs(opts: { now?: Date; budgetMs?: number; 
   } catch (error) {
     if (!isMissingRelation(error)) throw error
     result.skipped.push('ad_referrals_missing')
+  }
+
+  try {
+    const purged = await purgeErrorGroups()
+    result.errorGroups = purged.deleted
+    if (purged.skipped) result.skipped.push(`error_groups_${purged.skipped}`)
+  } catch {
+    result.skipped.push('error_groups_failed')
   }
   return result
 }

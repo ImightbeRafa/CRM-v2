@@ -40,6 +40,7 @@ function ago(iso: string): string {
 /** Backups + grouped errors (server and browser) for Betsy platform admins. */
 export default function HealthDashboard() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>('open')
+  const [source, setSource] = useState<'server' | 'client' | 'all'>('server')
   const [data, setData] = useState<Health | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -49,7 +50,7 @@ export default function HealthDashboard() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/super-admin/health?status=${filter}`, { cache: 'no-store', signal: AbortSignal.timeout(45_000) })
+      const res = await fetch(`/api/super-admin/health?status=${filter}&source=${source}`, { cache: 'no-store', signal: AbortSignal.timeout(45_000) })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setData((await res.json()) as Health)
     } catch {
@@ -57,7 +58,7 @@ export default function HealthDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [filter])
+  }, [filter, source])
 
   useEffect(() => {
     void load()
@@ -121,6 +122,16 @@ export default function HealthDashboard() {
       <section className="rounded-xl bg-white p-4 ring-1 ring-slate-200" data-testid="health-errors">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-semibold text-slate-900">Errores</h2>
+          <select
+            value={source}
+            onChange={(e) => setSource(e.target.value as 'server' | 'client' | 'all')}
+            className="rounded-lg px-2 py-1 text-xs text-slate-700 ring-1 ring-slate-200"
+            aria-label="Origen"
+          >
+            <option value="server">Servidor</option>
+            <option value="client">Navegador</option>
+            <option value="all">Todos</option>
+          </select>
           <div className="ml-auto flex gap-1">
             {FILTERS.map((f) => (
               <button

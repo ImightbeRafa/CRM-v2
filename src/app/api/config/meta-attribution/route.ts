@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { hasPermission } from '@/lib/rbac'
 import { readMetaSalesSettings, senderSwitchOn, writeMetaSalesSettings } from '@/lib/meta-attribution/settings'
 import { refreshTenantDatasets } from '@/lib/meta-attribution/dataset'
 import { tenantCurrency } from '@/lib/meta-attribution/payment'
@@ -82,20 +83,31 @@ export async function PUT(request: NextRequest) {
       if (!(await verifyLimit(`meta-attr-verify:${auth.tenantId}`)).allowed) {
         return NextResponse.json({ success: false, error: 'Demasiados intentos. Probá en unos minutos.' }, { status: 429, headers: NO_STORE })
       }
-      await refreshTenantDatasets(auth.tenantId)
+      // Before the business opts in this only LOOKS (never creates a dataset in their Meta account).
+      const current = await readMetaSalesSettings(auth.tenantId)
+      await refreshTenantDatasets(auth.tenantId, { createIfMissing: current.enabled })
       return NextResponse.json({ success: true, data: await snapshot(auth.tenantId) }, { headers: NO_STORE })
     }
     if (body?.action !== 'save' || typeof body.enabled !== 'boolean') {
       return NextResponse.json({ success: false, error: 'Solicitud inválida' }, { status: 400, headers: NO_STORE })
     }
+    // Accepting the notice (sharing data with Meta for the business) is the owner's decision.
+    if (body.enabled && body.acknowledge === true && !hasPermission(auth.role as never, 'manage_tenant')) {
+      return NextResponse.json({ success: false, error: 'Solo el dueño del negocio puede aceptar el aviso.' }, { status: 403, headers: NO_STORE })
+    }
     const testEventCode =
       body.testEventCode === undefined ? undefined : typeof body.testEventCode === 'string' ? body.testEventCode : null
+    const wasEnabled = (await readMetaSalesSettings(auth.tenantId)).enabled
     await writeMetaSalesSettings(auth.tenantId, {
       enabled: body.enabled,
       acknowledge: body.acknowledge === true,
       userId: auth.userId,
       testEventCode,
     })
+    if (body.enabled && !wasEnabled) {
+      // Just turned on: prepare the lines now (creates the dataset in their own Meta account).
+      await refreshTenantDatasets(auth.tenantId, { createIfMissing: true }).catch(() => undefined)
+    }
     return NextResponse.json({ success: true, data: await snapshot(auth.tenantId) }, { headers: NO_STORE })
   } catch (error) {
     const code = error instanceof Error ? error.message : ''

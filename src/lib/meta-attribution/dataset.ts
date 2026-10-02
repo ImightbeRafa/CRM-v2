@@ -7,6 +7,7 @@ import {
   getMetaWhatsAppAppSecret,
 } from '@/lib/meta-api'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
+import { isProductionContainer } from '@/lib/ops/runtime'
 
 /**
  * Per WhatsApp line: can Betsy send sales events to this business's Meta dataset?
@@ -38,12 +39,17 @@ function metaErrorCode(json: Record<string, unknown>): number | null {
 
 export async function checkLineDataset(
   account: { id: string; tenantId: string; wabaId: string | null; accessToken: string | null },
-  opts: { fetchImpl?: FetchLike; env?: Record<string, string | undefined> } = {},
+  opts: { fetchImpl?: FetchLike; env?: Record<string, string | undefined>; createIfMissing?: boolean } = {},
 ): Promise<DatasetCheck> {
   const fetchImpl = opts.fetchImpl ?? fetch
   const env = opts.env ?? process.env
   const base = { socialAccountId: account.id }
-  const token = account.accessToken ? decryptSocialAccessToken(account.accessToken) : null
+  let token: string | null = null
+  try {
+    token = account.accessToken ? decryptSocialAccessToken(account.accessToken) ?? null : null
+  } catch {
+    return { ...base, status: 'error', datasetId: null, errorCode: 'token_unreadable' }
+  }
   if (!token || !account.wabaId || !/^\d{5,30}$/.test(account.wabaId)) {
     return { ...base, status: 'error', datasetId: null, errorCode: 'line_not_ready' }
   }
@@ -73,6 +79,10 @@ export async function checkLineDataset(
     const datasetUrl = addAppSecretProofToUrl(buildMetaGraphUrl(`${account.wabaId}/dataset`), token, { purpose: 'whatsapp' })
     const existing = await graphJson(datasetUrl, { method: 'GET', headers }, fetchImpl)
     let datasetId = pickDatasetId(existing.json)
+    if (!datasetId && opts.createIfMissing === false) {
+      // Not opted in yet: never create anything in the business's Meta account.
+      return { ...base, status: 'error', datasetId: null, errorCode: 'no_dataset_yet' }
+    }
     if (!datasetId) {
       const created = await graphJson(datasetUrl, { method: 'POST', headers }, fetchImpl)
       const code = metaErrorCode(created.json)
@@ -96,8 +106,20 @@ export function pickDatasetId(json: Record<string, unknown>): string | null {
   return id && /^\d{5,30}$/.test(id) ? id : null
 }
 
-/** Checks every active WhatsApp line of a business and stores the result (ids and status only). */
-export async function refreshTenantDatasets(tenantId: string, opts: { fetchImpl?: FetchLike } = {}): Promise<DatasetCheck[]> {
+/** Problems of THIS server's configuration — never saved as the line's status. */
+const LOCAL_ERRORS = new Set(['app_not_configured', 'token_unreadable'])
+
+/**
+ * Checks every active WhatsApp line of a business. Results are stored (ids and status only) only
+ * by the production container: the Railway preview shares the database and may lack the Meta app
+ * secret, which must never mark a production line as broken. A dataset is created in the
+ * business's Meta account only once the business has opted in.
+ */
+export async function refreshTenantDatasets(
+  tenantId: string,
+  opts: { fetchImpl?: FetchLike; createIfMissing?: boolean; persist?: boolean } = {},
+): Promise<DatasetCheck[]> {
+  const persist = opts.persist ?? isProductionContainer()
   const accounts = await prisma.socialAccount.findMany({
     where: { tenantId, isActive: true, platform: 'whatsapp' },
     select: { id: true, tenantId: true, wabaId: true, accessToken: true },
@@ -105,8 +127,14 @@ export async function refreshTenantDatasets(tenantId: string, opts: { fetchImpl?
   })
   const results: DatasetCheck[] = []
   for (const account of accounts) {
-    const check = await checkLineDataset(account, opts)
+    let check: DatasetCheck
+    try {
+      check = await checkLineDataset(account, opts)
+    } catch {
+      check = { socialAccountId: account.id, status: 'error', datasetId: null, errorCode: 'check_failed' }
+    }
     results.push(check)
+    if (!persist || (check.errorCode && LOCAL_ERRORS.has(check.errorCode)) || check.errorCode === 'no_dataset_yet') continue
     const now = new Date()
     await prisma.metaCapiDataset.upsert({
       where: { socialAccountId: account.id },

@@ -236,3 +236,14 @@ test('only the Cloudflare Worker may write / prune backups; Vercel is restore-on
     if (saved !== undefined) process.env.BACKUP_WRITER = saved;
   }
 });
+
+test('restore drill 2026-10-02: schema dump has extensions, search path, sequences, indexes before exact foreign keys', () => {
+  const schema = read('src/lib/backups/schema.ts');
+  assert.match(schema, /FROM pg_extension e/);
+  assert.match(schema, /pre\.push\(`SET search_path = \$\{searchPath\};`, ''\);/);
+  assert.match(schema, /FROM pg_sequences/);
+  assert.match(schema, /CREATE SEQUENCE IF NOT EXISTS/);
+  assert.match(schema, /pg_get_constraintdef\(c\.oid\)/);
+  assert.doesNotMatch(schema, /information_schema\.constraint_column_usage/);
+  assert.ok(schema.indexOf('// Non-PK indexes') < schema.indexOf('// Foreign keys'), 'unique indexes before foreign keys');
+});

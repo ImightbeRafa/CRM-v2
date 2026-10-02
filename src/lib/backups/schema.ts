@@ -23,6 +23,28 @@ export async function dumpPublicSchema(sql: Sql, tableNames: string[]): Promise<
     '',
   ];
 
+  // Extensions first (e.g. pg_trgm for the search indexes), each in its own schema. Platform-only
+  // ones (Supabase vault, graphql…) are skipped where they do not exist.
+  const extensions = await sql<{ extname: string; schema: string }[]>`
+    SELECT e.extname, n.nspname AS schema
+    FROM pg_extension e
+    JOIN pg_namespace n ON n.oid = e.extnamespace
+    WHERE e.extname <> 'plpgsql'
+    ORDER BY e.extname
+  `;
+  for (const ext of extensions) {
+    pre.push(
+      `DO $$ BEGIN CREATE SCHEMA IF NOT EXISTS ${quoteIdent(ext.schema)}; CREATE EXTENSION IF NOT EXISTS ${quoteIdent(ext.extname)} WITH SCHEMA ${quoteIdent(ext.schema)}; EXCEPTION WHEN OTHERS THEN NULL; END $$;`,
+    );
+  }
+  if (extensions.length) pre.push('');
+  // Supabase keeps extensions in their own schema: index / column definitions name their operators
+  // unqualified, so the restore session must search those schemas too.
+  const extSchemas = [...new Set(extensions.map((e) => e.schema).filter((n) => n !== 'public'))];
+  const searchPath = ['public', ...extSchemas].map((n) => quoteIdent(n)).join(', ');
+  pre.push(`SET search_path = ${searchPath};`, '');
+  post.splice(2, 0, `SET search_path = ${searchPath};`);
+
   // Enum types used by public tables
   const enums = await sql<{ typname: string; labels: string[] }[]>`
     SELECT t.typname,
@@ -41,6 +63,29 @@ export async function dumpPublicSchema(sql: Sql, tableNames: string[]): Promise<
     );
   }
   if (enums.length) pre.push('');
+
+  // Sequences (2026-10-02 restore drill: column defaults use nextval('…'::regclass), so every
+  // sequence must exist before the tables; owned and standalone ones alike).
+  const sequences = await sql<{
+    sequencename: string;
+    data_type: string;
+    start_value: string;
+    increment_by: string;
+    last_value: string | null;
+  }[]>`
+    SELECT sequencename, data_type::text AS data_type, start_value::text AS start_value,
+           increment_by::text AS increment_by, last_value::text AS last_value
+    FROM pg_sequences
+    WHERE schemaname = 'public'
+    ORDER BY sequencename
+  `;
+  for (const seq of sequences) {
+    const type = /^(smallint|integer|bigint)$/.test(seq.data_type) ? seq.data_type : 'bigint';
+    pre.push(
+      `CREATE SEQUENCE IF NOT EXISTS ${quoteIdent(seq.sequencename)} AS ${type} INCREMENT BY ${Number(seq.increment_by) || 1} START WITH ${Number(seq.start_value) || 1};`,
+    );
+  }
+  if (sequences.length) pre.push('');
 
   for (const tableName of tableNames) {
     const cols = await sql<{
@@ -90,58 +135,7 @@ export async function dumpPublicSchema(sql: Sql, tableNames: string[]): Promise<
     pre.push('');
   }
 
-  // Foreign keys
-  const fks = await sql<{
-    constraint_name: string;
-    table_name: string;
-    column_name: string;
-    foreign_table_name: string;
-    foreign_column_name: string;
-  }[]>`
-    SELECT
-      tc.constraint_name,
-      tc.table_name,
-      kcu.column_name,
-      ccu.table_name AS foreign_table_name,
-      ccu.column_name AS foreign_column_name
-    FROM information_schema.table_constraints AS tc
-    JOIN information_schema.key_column_usage AS kcu
-      ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-    JOIN information_schema.constraint_column_usage AS ccu
-      ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
-    WHERE tc.constraint_type = 'FOREIGN KEY'
-      AND tc.table_schema = 'public'
-      AND tc.table_name = ANY(${tableNames})
-    ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position
-  `;
-
-  type FkRow = {
-    constraint_name: string;
-    table_name: string;
-    column_name: string;
-    foreign_table_name: string;
-    foreign_column_name: string;
-  };
-  const fkGroups = new Map<string, FkRow[]>();
-  for (const fk of fks) {
-    const key = `${fk.table_name}::${fk.constraint_name}`;
-    const arr = fkGroups.get(key) || [];
-    arr.push(fk);
-    fkGroups.set(key, arr);
-  }
-  for (const group of fkGroups.values()) {
-    const first = group[0];
-    post.push(
-      `DO $$ BEGIN
-  ALTER TABLE ${quoteIdent(first.table_name)}
-    ADD CONSTRAINT ${quoteIdent(first.constraint_name)}
-    FOREIGN KEY (${group.map((g) => quoteIdent(g.column_name)).join(', ')})
-    REFERENCES ${quoteIdent(first.foreign_table_name)} (${group.map((g) => quoteIdent(g.foreign_column_name)).join(', ')});
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
-    );
-  }
-
-  // Non-PK indexes
+  // Non-PK indexes (incl. unique ones) BEFORE foreign keys: a key can only reference a unique index.
   const indexes = await sql<{ indexdef: string }[]>`
     SELECT pg_get_indexdef(i.indexrelid) AS indexdef
     FROM pg_index i
@@ -157,6 +151,28 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
     const def = idx.indexdef.replace(/^CREATE UNIQUE INDEX /, 'CREATE UNIQUE INDEX IF NOT EXISTS ')
       .replace(/^CREATE INDEX /, 'CREATE INDEX IF NOT EXISTS ');
     post.push(`${def};`);
+  }
+
+  // Foreign keys: Postgres's own definition (exact column order, multi-column keys and the
+  // ON DELETE / ON UPDATE actions). The information_schema join used before cross-multiplied
+  // multi-column keys and dropped the actions (2026-10-02 restore drill).
+  const fks = await sql<{ constraint_name: string; table_name: string; def: string }[]>`
+    SELECT c.conname AS constraint_name, cl.relname AS table_name, pg_get_constraintdef(c.oid) AS def
+    FROM pg_constraint c
+    JOIN pg_class cl ON cl.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = cl.relnamespace
+    WHERE c.contype = 'f'
+      AND n.nspname = 'public'
+      AND cl.relname = ANY(${tableNames})
+    ORDER BY cl.relname, c.conname
+  `;
+  for (const fk of fks) {
+    post.push(
+      `DO $$ BEGIN
+  ALTER TABLE ${quoteIdent(fk.table_name)}
+    ADD CONSTRAINT ${quoteIdent(fk.constraint_name)} ${fk.def};
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+    );
   }
 
   // Reset sequences owned by columns
@@ -181,6 +197,17 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
         `SELECT setval(${literal(sc.seq)}, COALESCE((SELECT MAX(${quoteIdent(sc.column_name)}) FROM ${quoteIdent(tableName)}), 1), true);`,
       );
     }
+  }
+
+  // Every sequence back to the value it had at backup time (never lower than the restored data).
+  post.push('');
+  post.push('-- Sequences to their backup-time value');
+  for (const seq of sequences) {
+    if (seq.last_value === null || !/^-?\d+$/.test(seq.last_value)) continue;
+    const name = literal(`public.${quoteIdent(seq.sequencename)}`);
+    post.push(
+      `SELECT setval(${name}, GREATEST(${seq.last_value}, (SELECT last_value FROM public.${quoteIdent(seq.sequencename)})), true);`,
+    );
   }
 
   return { preSql: `${pre.join('\n')}\n`, postSql: `${post.join('\n')}\n` };

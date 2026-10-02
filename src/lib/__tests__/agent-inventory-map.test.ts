@@ -61,7 +61,7 @@ describe('per-agent inventory map', () => {
 describe('product list edge cases (review fixes)', () => {
   it('a live agent with the search on cannot be left with an empty list', () => {
     const src = read('src/app/api/chat/agents/[id]/inventory/route.ts')
-    assert.match(src, /emptying && agent\.status === 'live'/)
+    assert.match(src, /requireNonEmpty = agent\.status === 'live'/)
     assert.match(src, /status: 409/)
   })
   it('saves are serialized per agent and use one insert', () => {

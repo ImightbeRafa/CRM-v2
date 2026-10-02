@@ -12,6 +12,13 @@ import { isTableReady } from '@/lib/soft-ai/table-ready'
 export const MAX_MAPPED_ITEMS = 200
 const TABLE = 'ChatAgentInventoryItem'
 
+export class InventoryMapEmptyError extends Error {
+  constructor() {
+    super('INVENTORY_MAP_EMPTY')
+    this.name = 'InventoryMapEmptyError'
+  }
+}
+
 export class InventoryMapNotReadyError extends Error {
   constructor() {
     super('INVENTORY_MAP_NOT_READY')
@@ -62,6 +69,8 @@ export async function setMappedInventory(input: {
   agentId: string
   itemIds: string[]
   actorUserId: string
+  /** Live agents with the product search on must keep at least one (checked AFTER tenant validation). */
+  requireNonEmpty?: boolean
 }): Promise<number> {
   if (!(await isTableReady(TABLE))) throw new InventoryMapNotReadyError()
   const wanted = [...new Set(input.itemIds.filter((id) => typeof id === 'string' && id && id.length <= 80))].slice(
@@ -75,6 +84,7 @@ export async function setMappedInventory(input: {
       })
     : []
   const ids = valid.map((v) => v.id)
+  if (input.requireNonEmpty && ids.length === 0) throw new InventoryMapEmptyError()
   await prisma.$transaction([
     // Two admins saving at once queue up instead of merging their lists.
     prisma.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.agentId}))`,

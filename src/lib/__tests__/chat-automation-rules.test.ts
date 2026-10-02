@@ -147,3 +147,37 @@ describe('evaluator review fixes (static)', () => {
     assert.match(read('src/app/api/cron/chat-workspace/route.ts'), /error: 'rules_failed'/)
   })
 })
+
+describe('SecureDog INT-19..24 fixes (static)', () => {
+  const server = read('src/lib/chat-automation-rules-server.ts')
+  it('rule creation is atomic under a lock, capped, and always starts off', () => {
+    assert.match(server, /pg_advisory_xact_lock\(hashtext\(\$\{'rules:' \+ tenantId\}\)\)/)
+    assert.match(server, /< \$\{MAX_RULES_PER_TENANT\}\s*RETURNING "id"/)
+    assert.match(server, /SELECT \$\{id\}, \$\{tenantId\}, \$\{rule\.name\}, false,/)
+    assert.match(read('src/app/api/config/chat-automations/route.ts'), /enabled: false/)
+  })
+  it('the evaluator caps rules per business, rotates businesses, slices time, yields and never overlaps', () => {
+    assert.match(server, /row_number\(\) OVER \(PARTITION BY r\."tenantId"/)
+    assert.match(server, /Math\.floor\(now\.getTime\(\) \/ 60_000\) % tenantIds\.length/)
+    assert.match(server, /tenantStarted > sliceMs/)
+    assert.match(server, /setImmediate/)
+    assert.match(server, /runningSince/)
+    assert.match(server, /m\.content\.slice\(0, 1_000\)/)
+  })
+  it('tags must be in the business catalog (create, update and run) and automated changes are logged', () => {
+    assert.match(server, /tag_not_in_catalog/)
+    assert.match(server, /chat\.auto_tag/)
+    assert.match(server, /chat\.auto_assign/)
+    for (const p of ['src/app/api/config/chat-automations/route.ts', 'src/app/api/config/chat-automations/[id]/route.ts']) {
+      assert.match(read(p), /loadTags\(auth\.tenantId\)/)
+    }
+  })
+  it('the task never silently falls back to a creator who left', () => {
+    assert.match(server, /assigneeUserId: conv\.assignedUserId \?\? creator/)
+    assert.match(server, /creator_inactive/)
+  })
+  it('a live agent keeps at least one product, checked after tenant validation; SSE skips aborted requests', () => {
+    assert.match(read('src/lib/soft-ai/agent-inventory-map.ts'), /if \(input\.requireNonEmpty && ids\.length === 0\) throw new InventoryMapEmptyError/)
+    assert.match(read('src/app/api/chat/stream/route.ts'), /request\.signal\.aborted/)
+  })
+})

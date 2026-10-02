@@ -1,3 +1,17 @@
+## 2026-10-02 — Agent Ops: SecureDog INT-19..25 (S5–S9) (claudio/agent-ops)
+
+- INT-19: rule creation is atomic (per-business lock, count+insert in one statement) and always starts OFF; the
+  evaluator takes ≤20 rules/business, rotates the starting business each minute, gives each a time slice, yields
+  between rules, truncates scanned messages and never overlaps itself.
+- INT-20/21: a keyword+task rule fires once per chat per day; the task goes to the chat's owner or the rule creator
+  and is refused (creator_inactive) if that person left.
+- INT-22/23: automated tag/assign write system activity entries; tags must come from the business tag list (editor
+  is now a picker; server validates on create, update and run).
+- INT-24: "live agent keeps ≥1 product" is enforced after tenant validation of the ids.
+- INT-25 (partly): SSE skips already-aborted requests. STILL OPEN before CHAT_SSE=1 in prod: per-user connection cap,
+  one batched revision query per tick, and a ~100-stream load test through the Worker→Container path.
+- Platform scope checks use `=== null` (an empty string can no longer widen scope).
+
 ## 2026-10-02 — Agent Ops: Verifier fixes for S5–S9 (claudio/agent-ops)
 
 - BLOCKING: `scripts/flow-mining.ts` was gitignored (scripts/*) → whitelisted and committed; a guard test checks it.

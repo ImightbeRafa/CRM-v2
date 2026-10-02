@@ -128,7 +128,7 @@ export async function loadAgentScorecard(input: {
   tenantId: string | null
 }): Promise<{ rows: ScorecardRow[]; feedbackReady: boolean }> {
   await ensureCurrentVersionSnapshots(input.tenantId ?? undefined)
-  const tenantTurn = input.tenantId ? Prisma.sql`AND t."tenantId" = ${input.tenantId}` : Prisma.empty
+  const tenantTurn = input.tenantId !== null ? Prisma.sql`AND t."tenantId" = ${input.tenantId}` : Prisma.empty
 
   const turns = await queryWithTimeout<CountRow[]>(Prisma.sql`
     SELECT t."agentId", t."agentVersion", min(t."model") AS "model",
@@ -163,7 +163,7 @@ export async function loadAgentScorecard(input: {
       FROM "ChatAgentSuggestion" s
       JOIN "ChatAgentTurn" t ON t."id" = s."turnId" AND t."tenantId" = s."tenantId"
      WHERE s."createdAt" >= ${input.from} AND s."createdAt" < ${input.to}
-       ${input.tenantId ? Prisma.sql`AND s."tenantId" = ${input.tenantId}` : Prisma.empty}
+       ${input.tenantId !== null ? Prisma.sql`AND s."tenantId" = ${input.tenantId}` : Prisma.empty}
      GROUP BY t."agentId", t."agentVersion"
      LIMIT 500`)
 
@@ -177,7 +177,7 @@ export async function loadAgentScorecard(input: {
         FROM "ChatAgentFeedback" f
        WHERE f."createdAt" >= ${input.from} AND f."createdAt" < ${input.to}
          AND f."agentVersion" IS NOT NULL
-         ${input.tenantId ? Prisma.sql`AND f."tenantId" = ${input.tenantId}` : Prisma.empty}
+         ${input.tenantId !== null ? Prisma.sql`AND f."tenantId" = ${input.tenantId}` : Prisma.empty}
        GROUP BY f."agentId", f."agentVersion"
        LIMIT 500`)
   } catch (error) {

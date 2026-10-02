@@ -31,7 +31,7 @@ export async function loadAgentUsageRows(input: {
   to: Date
   tenantId: string | null
 }): Promise<AgentUsageRow[]> {
-  const tenantFilter = input.tenantId
+  const tenantFilter = input.tenantId !== null
     ? Prisma.sql`AND "tenantId" = ${input.tenantId}`
     : Prisma.empty
   const rows = await queryWithTimeout<RawRow[]>(Prisma.sql`
@@ -69,7 +69,7 @@ export async function loadAgentP95Latency(input: {
   tenantId: string | null
   mode: AgentUsageMode
 }): Promise<number | null> {
-  const tenantFilter = input.tenantId
+  const tenantFilter = input.tenantId !== null
     ? Prisma.sql`AND "tenantId" = ${input.tenantId}`
     : Prisma.empty
   const modeFilter =
@@ -104,7 +104,7 @@ export async function loadAgentNames(
 ): Promise<Record<string, { name: string; status: string; version: number }>> {
   if (ids.length === 0) return {}
   const rows = await prisma.chatAgent.findMany({
-    where: { id: { in: ids.slice(0, 500) }, ...(tenantId ? { tenantId } : {}) },
+    where: { id: { in: ids.slice(0, 500) }, ...(tenantId !== null ? { tenantId } : {}) },
     select: { id: true, name: true, status: true, version: true },
   })
   return Object.fromEntries(

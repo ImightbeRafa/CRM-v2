@@ -10,7 +10,8 @@ import { prisma } from '@/lib/db'
 import { isMissingRelation } from '@/lib/db-missing-relation'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
 import { isClosedCategory } from '@/lib/crm-stages'
-import { loadStages } from '@/lib/crm-stages-server'
+import { loadStages, loadTags } from '@/lib/crm-stages-server'
+import { recordActivity } from '@/lib/activity'
 import { isAssignableChatMember } from '@/lib/chat-conversation-route-helpers'
 import { createTask } from '@/lib/crm-tasks'
 import { notifyUsers } from '@/lib/workspace-notifications'
@@ -82,16 +83,21 @@ export async function listRules(tenantId: string): Promise<{ available: boolean;
 
 export async function createRule(tenantId: string, userId: string, rule: RuleInput): Promise<string> {
   await requireReady()
-  const count = await prisma.$queryRaw<Array<{ n: number }>>`
-    SELECT count(*)::int AS "n" FROM "ChatAutomationRule" WHERE "tenantId" = ${tenantId}`
-  if ((count[0]?.n ?? 0) >= MAX_RULES_PER_TENANT) throw new RuleLimitError()
   const id = randomUUID()
-  await prisma.$executeRaw`
-    INSERT INTO "ChatAutomationRule"
-      ("id", "tenantId", "name", "enabled", "triggerKind", "triggerConfig", "actionKind", "actionConfig", "createdBy")
-    VALUES (${id}, ${tenantId}, ${rule.name}, ${rule.enabled}, ${rule.triggerKind},
-            ${JSON.stringify(rule.triggerConfig)}::jsonb, ${rule.actionKind},
-            ${JSON.stringify(rule.actionConfig)}::jsonb, ${userId})`
+  // Count + insert under a per-business lock in ONE statement: parallel requests cannot all pass the limit.
+  // New rules are ALWAYS created off (turning one on is an explicit PATCH).
+  const results = await prisma.$transaction([
+    prisma.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'rules:' + tenantId}))`,
+    prisma.$queryRaw<Array<{ id: string }>>`
+      INSERT INTO "ChatAutomationRule"
+        ("id", "tenantId", "name", "enabled", "triggerKind", "triggerConfig", "actionKind", "actionConfig", "createdBy")
+      SELECT ${id}, ${tenantId}, ${rule.name}, false, ${rule.triggerKind},
+             ${JSON.stringify(rule.triggerConfig)}::jsonb, ${rule.actionKind},
+             ${JSON.stringify(rule.actionConfig)}::jsonb, ${userId}
+       WHERE (SELECT count(*) FROM "ChatAutomationRule" WHERE "tenantId" = ${tenantId}) < ${MAX_RULES_PER_TENANT}
+      RETURNING "id"`,
+  ])
+  if (!(results[1] as Array<{ id: string }>)[0]) throw new RuleLimitError()
   return id
 }
 
@@ -218,7 +224,7 @@ async function findCandidates(
   })
   const out: Candidate[] = []
   for (const m of cache.keywordMessages) {
-    if (!m.conversationId || !matchesKeyword(m.content, keywords)) continue
+    if (!m.conversationId || !matchesKeyword(m.content.slice(0, 1_000), keywords)) continue
     // A task rule fires once per chat per day (not once per matching message: "precio?", "precio??", ...).
     out.push({
       conversationId: m.conversationId,
@@ -250,6 +256,19 @@ async function runAction(rule: RuleRow, c: Candidate, now: Date, memberOk: Map<s
   if (rule.actionKind === 'tag') {
     const tag = String(rule.actionConfig.tag || '').slice(0, 30)
     if (!tag) return
+    // Tags must exist in the business's catalog (same rule as a person tagging a chat; SecureDog DATA-07).
+    const allowed = (await loadTags(tenantId)).tags.filter((t) => !t.archived).map((t) => t.key)
+    if (!allowed.includes(tag)) throw new Error('tag_not_in_catalog')
+    void recordActivity({
+      tenantId,
+      actorUserId: null,
+      actorKind: 'system',
+      verb: 'chat.auto_tag',
+      entityType: 'ChatConversation',
+      entityId: conv.id,
+      conversationId: conv.id,
+      props: { ruleId: rule.id },
+    })
     await prisma.$executeRaw`
       UPDATE "ChatConversation" SET "tags" = array_append("tags", ${tag})
        WHERE "id" = ${conv.id} AND "tenantId" = ${tenantId}
@@ -266,6 +285,16 @@ async function runAction(rule: RuleRow, c: Candidate, now: Date, memberOk: Map<s
       data: { assignedUserId: userId },
     })
     if (res.count > 0) {
+      void recordActivity({
+        tenantId,
+        actorUserId: null,
+        actorKind: 'system',
+        verb: 'chat.auto_assign',
+        entityType: 'ChatConversation',
+        entityId: conv.id,
+        conversationId: conv.id,
+        props: { to: userId, ruleId: rule.id },
+      })
       await notifyUsers({
         tenantId,
         actorUserId: null,
@@ -292,7 +321,7 @@ async function runAction(rule: RuleRow, c: Candidate, now: Date, memberOk: Map<s
     title: rule.actionConfig.title,
     kind: 'follow_up',
     dueAt: typeof due === 'number' ? new Date(now.getTime() + due * 60_000).toISOString() : undefined,
-    assigneeUserId: conv.assignedUserId ?? undefined,
+    assigneeUserId: conv.assignedUserId ?? creator,
     conversationId: conv.id,
   })
   if (!result.ok) throw new Error(`task_${result.status}`)
@@ -300,6 +329,19 @@ async function runAction(rule: RuleRow, c: Candidate, now: Date, memberOk: Map<s
 
 export async function runChatAutomationRules(opts: { now?: Date; budgetMs?: number } = {}): Promise<RulesSummary> {
   const summary: RulesSummary = { rules: 0, fired: 0, failed: 0 }
+  if (runningSince && Date.now() - runningSince < 5 * 60_000) return { ...summary, skipped: 'time_budget' }
+  const mine = Date.now()
+  runningSince = mine
+  try {
+    return await runRulesOnce(opts, summary)
+  } finally {
+    if (runningSince === mine) runningSince = 0
+  }
+}
+
+let runningSince = 0
+
+async function runRulesOnce(opts: { now?: Date; budgetMs?: number }, summary: RulesSummary): Promise<RulesSummary> {
   if (!(await isTableReady(RULE_TABLE))) return { ...summary, skipped: 'tables_missing' }
   const now = opts.now ?? new Date()
   const started = Date.now()
@@ -309,8 +351,11 @@ export async function runChatAutomationRules(opts: { now?: Date; budgetMs?: numb
     rules = await prisma.$queryRaw<RuleRow[]>`
       SELECT "id", "tenantId", "name", "enabled", "triggerKind", "triggerConfig", "actionKind", "actionConfig",
              "createdBy", "createdAt", "updatedAt"
-        FROM "ChatAutomationRule" WHERE "enabled" = true
-       ORDER BY "tenantId", "createdAt" LIMIT 500`
+        FROM (
+          SELECT r.*, row_number() OVER (PARTITION BY r."tenantId" ORDER BY r."createdAt") AS rn
+            FROM "ChatAutomationRule" r WHERE r."enabled" = true) x
+       WHERE x.rn <= ${MAX_RULES_PER_TENANT}
+       ORDER BY x."tenantId", x."createdAt" LIMIT 1000`
   } catch (error) {
     if (isMissingRelation(error)) return { ...summary, skipped: 'tables_missing' }
     throw error
@@ -319,13 +364,27 @@ export async function runChatAutomationRules(opts: { now?: Date; budgetMs?: numb
   const byTenant = new Map<string, RuleRow[]>()
   for (const r of rules) byTenant.set(r.tenantId, [...(byTenant.get(r.tenantId) ?? []), r])
 
-  for (const [, tenantRules] of byTenant) {
+  // Rotate the starting business every minute and give each its own time slice (a slow or abusive one can
+  // never starve the rest — same approach as the workspace sweep).
+  const tenantIds = [...byTenant.keys()]
+  const offset = tenantIds.length ? Math.floor(now.getTime() / 60_000) % tenantIds.length : 0
+  const ordered = [...tenantIds.slice(offset), ...tenantIds.slice(0, offset)]
+  const sliceMs = Math.max(1_000, Math.min(4_000, Math.floor(budget / Math.max(1, ordered.length))))
+  for (const tid of ordered) {
+    const tenantRules = byTenant.get(tid) ?? []
+    const tenantStarted = Date.now()
     let actionsLeft = MAX_ACTIONS_PER_TENANT_PER_RUN
     const cache: Parameters<typeof findCandidates>[2] = {}
     const memberOk = new Map<string, boolean>()
     for (const rule of tenantRules) {
-      if (Date.now() - started > budget) return { ...summary, skipped: 'time_budget' }
+      if (Date.now() - started > budget) {
+        summary.skipped = 'time_budget'
+        break
+      }
+      if (Date.now() - tenantStarted > sliceMs) break
       if (actionsLeft <= 0) break
+      // Let other requests run between rules (the evaluator shares the event loop with the app).
+      await new Promise<void>((resolve) => setImmediate(resolve))
       let candidates: Candidate[] = []
       try {
         candidates = await findCandidates(rule, now, cache)

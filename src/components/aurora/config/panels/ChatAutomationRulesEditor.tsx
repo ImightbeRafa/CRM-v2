@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { ConfigCard } from '@/components/aurora/config/panels/ConfigCard'
+import { useCrmCatalog } from '@/components/chats/useCrmCatalog'
 import type { ActionKind, TriggerKind } from '@/lib/chat-automation-rules'
 
 type Rule = {
@@ -49,6 +50,7 @@ function describe(rule: Rule, team: Teammate[]): string {
  * task) — a rule never writes to a customer. Every rule starts turned off.
  */
 export function ChatAutomationRulesEditor() {
+  const { activeTags } = useCrmCatalog()
   const [available, setAvailable] = useState(true)
   const [rules, setRules] = useState<Rule[] | null>(null)
   const [team, setTeam] = useState<Teammate[]>([])
@@ -241,7 +243,16 @@ export function ChatAutomationRulesEditor() {
                   </option>
                 ))}
               </select>
-              {actionKind === 'tag' ? <input value={tag} onChange={(e) => setTag(e.target.value)} maxLength={30} placeholder="Etiqueta" className={field} aria-label="Etiqueta" /> : null}
+              {actionKind === 'tag' ? (
+                <select value={tag} onChange={(e) => setTag(e.target.value)} className={field} aria-label="Etiqueta">
+                  <option value="">Elegí una etiqueta…</option>
+                  {activeTags.map((t) => (
+                    <option key={t.key} value={t.key}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
               {actionKind === 'assign' ? (
                 <select value={userId} onChange={(e) => setUserId(e.target.value)} className={field} aria-label="Persona">
                   <option value="">Elegí una persona…</option>

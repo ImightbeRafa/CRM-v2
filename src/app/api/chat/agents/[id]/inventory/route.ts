@@ -7,6 +7,7 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { prisma } from '@/lib/db'
 import {
+  InventoryMapEmptyError,
   InventoryMapNotReadyError,
   listMappedInventory,
   setMappedInventory,
@@ -49,15 +50,11 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     if (!body || !Array.isArray(body.itemIds)) {
       return NextResponse.json({ success: false, error: 'Falta la lista de productos' }, { status: 400 })
     }
-    // A live agent with the product search on can't be left without a list (it would quote the whole catalog).
-    const emptying = body.itemIds.filter((v): v is string => typeof v === 'string').length === 0
-    if (emptying && agent.status === 'live' && agent.enabledTools.includes('search_inventory')) {
-      return NextResponse.json(
-        { success: false, error: 'Este agente está activo: dejá al menos un producto o pasalo a borrador primero.' },
-        { status: 409 },
-      )
-    }
+    // A live agent with the product search on can't be left without a list (it would quote the whole catalog);
+    // checked on the list AFTER every id was validated against the business.
+    const requireNonEmpty = agent.status === 'live' && agent.enabledTools.includes('search_inventory')
     const stored = await setMappedInventory({
+      requireNonEmpty,
       tenantId: auth.tenantId,
       agentId: agent.id,
       itemIds: body.itemIds.filter((v): v is string => typeof v === 'string'),
@@ -76,6 +73,12 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     }).catch(() => {})
     return NextResponse.json({ success: true, stored })
   } catch (error) {
+    if (error instanceof InventoryMapEmptyError) {
+      return NextResponse.json(
+        { success: false, error: 'Este agente está activo: dejá al menos un producto o pasalo a borrador primero.' },
+        { status: 409 },
+      )
+    }
     if (error instanceof InventoryMapNotReadyError) {
       return NextResponse.json(
         { success: false, error: 'Los productos por agente todavía no están disponibles.' },

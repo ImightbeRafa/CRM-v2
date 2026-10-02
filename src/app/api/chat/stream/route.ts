@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'disabled' }, { status: 404, headers: { 'Cache-Control': 'no-store' } })
   }
 
+  if (request.signal.aborted) return new Response(null, { status: 204 })
   const encoder = new TextEncoder()
   let cleanup: (() => void) | null = null
 

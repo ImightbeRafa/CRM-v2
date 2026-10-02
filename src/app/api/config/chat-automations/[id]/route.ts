@@ -7,6 +7,7 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { isAssignableChatMember } from '@/lib/chat-conversation-route-helpers'
 import { parseRuleInput } from '@/lib/chat-automation-rules'
+import { loadTags } from '@/lib/crm-stages-server'
 import {
   RulesNotReadyError,
   deleteRule,
@@ -51,6 +52,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const { rule } = parsed
     if (rule.actionKind === 'assign' && !(await isAssignableChatMember(auth.tenantId, String(rule.actionConfig.userId)))) {
       return NextResponse.json({ success: false, error: 'Esa persona no puede recibir chats.' }, { status: 400 })
+    }
+    if (rule.actionKind === 'tag') {
+      const allowed = (await loadTags(auth.tenantId)).tags.filter((t) => !t.archived).map((t) => t.key)
+      if (!allowed.includes(String(rule.actionConfig.tag))) {
+        return NextResponse.json({ success: false, error: 'Elegí una etiqueta de la lista del negocio.' }, { status: 400 })
+      }
     }
     if (!(await updateRule(auth.tenantId, id, rule))) return notFound()
     await logAuditEvent({

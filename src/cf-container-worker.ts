@@ -139,6 +139,8 @@ interface Env {
   R2_SECRET_ACCESS_KEY?: string;
   BACKUP_STORE?: string;
   OPS_ALERT_EMAIL?: string;
+  // Meta sales attribution: sending stays off unless this is exactly "1" (never on Railway preview).
+  META_SALES_CAPI_SENDER?: string;
   // NEXT_PUBLIC_* — client bundle is build-time; server process.env can still
   // read these at runtime for Embedded Signup / Meta helpers.
   NEXT_PUBLIC_FB_LOGIN_CONFIG_ID?: string;
@@ -225,6 +227,7 @@ const CONTAINER_ENV_KEYS = [
   "R2_SECRET_ACCESS_KEY",
   "BACKUP_STORE",
   "OPS_ALERT_EMAIL",
+  "META_SALES_CAPI_SENDER",
   "NEXT_PUBLIC_FB_LOGIN_CONFIG_ID",
   "NEXT_PUBLIC_IG_LOGIN_CONFIG_ID",
   "NEXT_PUBLIC_META_APP_ID",
@@ -243,7 +246,8 @@ const CRON_PATHS: Record<string, readonly string[]> = {
     "/api/cron/process-subscription-expiry",
   ],
   "0 14 * * *": ["/api/cron/backup/hot"],
-  "*/5 * * * *": ["/api/cron/bot-inbox"],
+  // meta-attribution: no-op unless META_SALES_CAPI_SENDER=1 and a business opted in.
+  "*/5 * * * *": ["/api/cron/bot-inbox", "/api/cron/meta-attribution"],
   // chat-workspace (Phase 2b): assignment rules / auto-close / reopen; no-op unless a business turned them on.
   "*/1 * * * *": ["/api/cron/chat-automation", "/api/cron/chat-workspace"],
   "30 3 * * *": ["/api/cron/chat-agent-retention", "/api/cron/workspace-retention"],

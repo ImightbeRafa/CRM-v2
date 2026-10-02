@@ -26,6 +26,7 @@ export const FILES = {
   '037': '037_chat_team_replied.sql',
   '039': '039_meta_sales_attribution.sql',
   '040': '040_ops_error_groups.sql',
+  '041': '041_meta_capi_outbox.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -66,6 +67,7 @@ export const EXPECTED_TABLES = {
   '031': [],
   '039': ['ChatAdReferral'],
   '040': ['OpsErrorGroup'],
+  '041': ['MetaCapiDataset', 'MetaConversionEvent'],
 };
 
 export const EXPECTED_COLUMNS = {

@@ -1756,3 +1756,48 @@ model OpsErrorGroup {
 
   @@index([lastSeen(sort: Desc)], map: "OpsErrorGroup_last_seen_idx")
 }
+
+// 041 Meta sales attribution step 3 (supabase/migrations/041_meta_capi_outbox.sql). FKs live in SQL only.
+model MetaCapiDataset {
+  socialAccountId String    @id
+  tenantId        String
+  datasetId       String?
+  status          String    @default("unknown")
+  checkedAt       DateTime?
+  lastErrorCode   String?
+  lastErrorAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
+
+  @@index([tenantId], map: "MetaCapiDataset_tenant_idx")
+}
+
+model MetaConversionEvent {
+  id              String    @id @default(cuid())
+  tenantId        String
+  socialAccountId String
+  conversationId  String?
+  orderId         String?
+  referralId      String?
+  eventName       String
+  eventId         String
+  eventTime       DateTime
+  value           Decimal?  @db.Decimal(14, 2)
+  currency        String?
+  channel         String
+  isTest          Boolean   @default(false)
+  status          String    @default("pending")
+  attempts        Int       @default(0)
+  availableAt     DateTime  @default(now())
+  leaseToken      String?
+  leaseExpiresAt  DateTime?
+  sentAt          DateTime?
+  fbtraceId       String?
+  lastErrorCode   String?
+  lastErrorAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
+
+  @@unique([tenantId, eventId], map: "MetaConversionEvent_tenant_event_key")
+  @@index([socialAccountId], map: "MetaConversionEvent_account_idx")
+}

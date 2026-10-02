@@ -11,6 +11,25 @@
   when a customer message raises the unread count (not on first load, not our own replies); speaker
   toggle in the inbox header (per browser, on by default). Preview WAV sent to Rafael.
 
+## 2026-10-02 — Meta sales attribution S3/S4: report paid ad sales (claudio/live-next, OFF)
+
+Rafael's decisions: colones + dollars (business currency), a sale counts only once payment is CONFIRMED,
+must never affect WhatsApp messaging.
+- `payment.ts`: strict confirmed-payment rule (COD needs `cePaymentConfirmed`; others an explicit paid
+  status; "Enviado" alone does NOT count), CRC/USD from Tenant.settings, 7-day window.
+- `settings.ts`: per-business opt-in (TenantFeatureFlag `meta_sales_capi_v1`) — never on without a recorded
+  acknowledgement (who/when); optional 24 h Events Manager test code.
+- `dataset.ts`: per WhatsApp line — debug_token scope `whatsapp_business_manage_events`, then GET/POST
+  `/{waba}/dataset`; status ready / missing_permission / token_invalid / error.
+- `sweep.ts` + `sender.ts`: tenant-scoped outbox (one Purchase per order, unique), lease claims, batches of
+  50, Meta error classes (190 pause, permission → reconnect, limits/5xx/network → backoff, max 6), 7-day expiry,
+  click id read at send time; payload = WABA id + ctwa_clid + value/currency only.
+- Cron `/api/cron/meta-attribution` on the existing */5 slot: does nothing unless `META_SALES_CAPI_SENDER=1`
+  (Cloudflare only; never Railway). Config card "Ventas por anuncios (Meta)" in Cuentas conectadas.
+- SQL 041 (MetaCapiDataset, MetaConversionEvent): additive, RLS, FKs only to Tenant/SocialAccount, not applied.
+- Proof: test:meta-attribution 20/20, security 264, ops 16, chat-harden 461, config-ui 30, site-ui 50; lint
+  clean; tsc clean on touched files; worker tsc clean.
+
 ## 2026-10-02 — Backups → Cloudflare R2; Sentry replaced by own error tracking (claudio/live-next)
 
 - **Backups were failing silently**: Vercel Blob rejects the token from Cloudflare, no call had a

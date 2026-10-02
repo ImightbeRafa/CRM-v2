@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
         controller.close()
         return
       }
-      const heartbeat = setInterval(() => send(': ping\n\n'), HEARTBEAT_MS)
+      const heartbeat = setInterval(() => send('event: ping\ndata: {}\n\n'), HEARTBEAT_MS)
       const lifetime = setTimeout(() => close(), MAX_LIFETIME_MS)
       function close() {
         if (closed) return

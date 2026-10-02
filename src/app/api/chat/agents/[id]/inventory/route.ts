@@ -16,7 +16,10 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 async function ownedAgent(tenantId: string, id: string) {
-  return prisma.chatAgent.findFirst({ where: { id, tenantId }, select: { id: true, name: true } })
+  return prisma.chatAgent.findFirst({
+    where: { id, tenantId },
+    select: { id: true, name: true, status: true, enabledTools: true },
+  })
 }
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -45,6 +48,14 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     const body = (await request.json().catch(() => null)) as { itemIds?: unknown } | null
     if (!body || !Array.isArray(body.itemIds)) {
       return NextResponse.json({ success: false, error: 'Falta la lista de productos' }, { status: 400 })
+    }
+    // A live agent with the product search on can't be left without a list (it would quote the whole catalog).
+    const emptying = body.itemIds.filter((v): v is string => typeof v === 'string').length === 0
+    if (emptying && agent.status === 'live' && agent.enabledTools.includes('search_inventory')) {
+      return NextResponse.json(
+        { success: false, error: 'Este agente está activo: dejá al menos un producto o pasalo a borrador primero.' },
+        { status: 409 },
+      )
     }
     const stored = await setMappedInventory({
       tenantId: auth.tenantId,

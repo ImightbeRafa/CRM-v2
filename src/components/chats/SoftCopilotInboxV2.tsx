@@ -44,6 +44,7 @@ import {
   CHAT_INBOX_V2_LIST_PAGE_LIMIT,
   CHAT_INBOX_V2_POLL_MS,
   CHAT_INBOX_V2_SSE_SAFETY_POLL_MS,
+  CHAT_INBOX_V2_SSE_SILENT_MS,
   CHAT_INBOX_V2_THREAD_FETCH_LIMIT,
   decideInboxV2PollTick,
   inboxFetch,
@@ -187,6 +188,8 @@ export function SoftCopilotInboxV2() {
   const pollInFlightRef = useRef(false)
   const pollStartedAtRef = useRef(0)
   const lastPollAtRef = useRef(0)
+  const lastSseFrameRef = useRef(0)
+  const pendingForcedRef = useRef(false)
   const sseHealthyRef = useRef(false)
   const tickRef = useRef<((forced?: boolean) => void) | null>(null)
   const selectedConversationIdRef = useRef<string | null>(null)
@@ -478,6 +481,10 @@ export function SoftCopilotInboxV2() {
 
   useEffect(() => {
     const tick = (forced = false) => {
+      // A stream that went silent (no frame, not even a heartbeat) is treated as broken: back to the 5 s poll.
+      if (sseHealthyRef.current && Date.now() - lastSseFrameRef.current > CHAT_INBOX_V2_SSE_SILENT_MS) {
+        sseHealthyRef.current = false
+      }
       // While live ticks (SSE) are healthy, the interval only acts as a slow safety net.
       if (
         !forced &&
@@ -486,7 +493,6 @@ export function SoftCopilotInboxV2() {
       ) {
         return
       }
-      lastPollAtRef.current = Date.now()
       void (async () => {
         const decision = decideInboxV2PollTick({
           documentHidden: typeof document !== 'undefined' ? document.hidden : false,
@@ -496,7 +502,12 @@ export function SoftCopilotInboxV2() {
           fullReconcileEveryMs: CHAT_INBOX_V2_FULL_RECONCILE_MS,
           inFlightSinceMs: pollStartedAtRef.current,
         })
-        if (decision.action === 'skip') return
+        if (decision.action === 'skip') {
+          // A live tick that lands while a poll is running must not be lost: re-run it when that poll ends.
+          if (forced && decision.reason === 'in_flight') pendingForcedRef.current = true
+          return
+        }
+        lastPollAtRef.current = Date.now()
         const startedAt = Date.now()
         pollStartedAtRef.current = startedAt
         pollInFlightRef.current = true
@@ -504,6 +515,8 @@ export function SoftCopilotInboxV2() {
           if (decision.action === 'reconcile') {
             // Option (2): reconcile tick = one list page only (no thread fetch).
             await fetchListPage({ replace: true })
+            // A live tick also needs the open thread's new messages, which the list page does not carry.
+            if (forced) await fetchChanges()
           } else {
             await fetchChanges()
           }
@@ -512,6 +525,10 @@ export function SoftCopilotInboxV2() {
         } finally {
           // Only the poll that still owns the flag clears it (a stuck one was already superseded).
           if (pollStartedAtRef.current === startedAt) pollInFlightRef.current = false
+          if (pendingForcedRef.current) {
+            pendingForcedRef.current = false
+            tickRef.current?.(true)
+          }
         }
       })()
     }
@@ -560,10 +577,17 @@ export function SoftCopilotInboxV2() {
       if (closed) return
       source = new EventSource('/api/chat/stream')
       source.addEventListener('ready', () => {
+        lastSseFrameRef.current = Date.now()
         sseHealthyRef.current = true
         backoffMs = 5_000
       })
-      source.addEventListener('tick', () => tickRef.current?.(true))
+      source.addEventListener('ping', () => {
+        lastSseFrameRef.current = Date.now()
+      })
+      source.addEventListener('tick', () => {
+        lastSseFrameRef.current = Date.now()
+        tickRef.current?.(true)
+      })
       source.addEventListener('full', () => {
         sseHealthyRef.current = false
         source?.close()

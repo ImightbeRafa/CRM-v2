@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     // Automation rules (tag / assign / task). A failure here never fails the workspace sweep.
     const rules = await runChatAutomationRules({ budgetMs: 12_000 }).catch((error) => {
       console.error('[chat-automation-rules] sweep failed', error instanceof Error ? error.name : 'unknown')
-      return { rules: 0, fired: 0, failed: 0, skipped: 'tables_missing' as const }
+      return { rules: 0, fired: 0, failed: 0, error: 'rules_failed' as const }
     })
     return NextResponse.json({ status: 'ok', ...summary, automationRules: rules, durationMs: Date.now() - startedAt })
   } catch (error) {

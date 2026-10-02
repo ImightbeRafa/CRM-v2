@@ -1,3 +1,22 @@
+## 2026-10-02 — Agent Ops: Verifier fixes for S5–S9 (claudio/agent-ops)
+
+- BLOCKING: `scripts/flow-mining.ts` was gitignored (scripts/*) → whitelisted and committed; a guard test checks it.
+- SSE client: a live tick that lands during a running poll is re-run (no more 30 s stale chat); the safety timer only
+  restarts when a poll really runs; a live tick on a reconcile also fetches the open thread; named `ping` + 45 s
+  silence watchdog drops a dead stream back to the 5 s poll; safety poll while SSE is healthy is 10 s (not 30 s) so
+  delivery/read ticks stay fresh.
+- Automations: retention DELETE uses `make_interval(days => $n::int)` (the untyped int would have failed every minute);
+  idle skips every closed stage (+ legacy hecho) and snoozed chats like the workspace sweep; a keyword+task rule fires
+  once per chat per day; the task is never handed to a creator who left the team (run marked creator_inactive);
+  keyword scan is bounded by createdAt (index); cron reports `rules_failed` instead of "tables_missing".
+- Product list: the gate checks the RESULTING state (live + search on + no list) whatever path gets there; emptying the
+  list of a live agent with search on is refused (409); saves are serialized (advisory lock) with a single insert.
+- Flow mining: window = first message inside the period (backfilled old chats no longer count as new); currency symbols
+  count as price; output file name is forced into `.reports/`; wording no longer claims "no names".
+- Catalog popover closes when the chat changes.
+- Known follow-ups (not blocking): rule tags are free text vs catalog keys (pick from the tag list in the editor);
+  rule-driven assign/tag write no activity-log entry; product-list changes are not versioned in the snapshot.
+
 ## 2026-10-02 — Agent Ops S9: per-agent product list ("inventory map") (claudio/agent-ops, SQL 046 held)
 
 - Pipeline SoT requirement (§5): an agent must not quote a catalog nobody chose for it. New table

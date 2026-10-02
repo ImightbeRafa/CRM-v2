@@ -87,3 +87,16 @@ describe('script safety (static)', () => {
     assert.match(readFileSync(join(process.cwd(), '.gitignore'), 'utf8'), /^\.reports\/$/m)
   })
 })
+
+describe('review fixes', () => {
+  it('currency symbols count as a price question', () => {
+    assert.equal(classifyIntent('₡5000?'), 'precio')
+    assert.equal(classifyIntent('tiene a $20'), 'precio')
+  })
+  it('the script is tracked, windows by the first message, and keeps output inside .reports', () => {
+    const src = readFileSync(join(process.cwd(), 'scripts/flow-mining.ts'), 'utf8')
+    assert.match(src, /f\."sentAt" >= \$\{from\} AND f\."sentAt" < \$\{to\}/)
+    assert.match(src, /replace\(\/\[\^A-Za-z0-9\._-\]\/g, '_'\)/)
+    assert.match(readFileSync(join(process.cwd(), '.gitignore'), 'utf8'), /^!scripts\/flow-mining\.ts$/m)
+  })
+})

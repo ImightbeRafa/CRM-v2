@@ -28,6 +28,7 @@ scripts/*
 !scripts/apply-betsy-v2-additive-sql.mjs
 !scripts/verify-betsy-v2-additive-sql.mjs
 !scripts/disable-betsy-v2-flags.mjs
+!scripts/flow-mining.ts
 !scripts/chat-inbox-backfill.ts
 !scripts/chat-inbox-verify.ts
 !scripts/chat-inbox-v2-cutover.ts

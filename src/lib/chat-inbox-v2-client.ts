@@ -12,7 +12,9 @@ import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 export const CHAT_INBOX_V2_IMPORTED_KEY = 'betsy.softCopilot.inboxV2Imported.v1'
 export const CHAT_INBOX_V2_POLL_MS = 5000
 /** While live ticks (SSE) are connected, the interval poll only runs this often as a safety net. */
-export const CHAT_INBOX_V2_SSE_SAFETY_POLL_MS = 30_000
+export const CHAT_INBOX_V2_SSE_SAFETY_POLL_MS = 10_000
+/** No frame (tick, ready or heartbeat) for this long = the stream is considered broken. */
+export const CHAT_INBOX_V2_SSE_SILENT_MS = 45_000
 export const CHAT_INBOX_V2_FULL_RECONCILE_MS = 120_000
 /** Any inbox request is abandoned after this (a hung request must never freeze the inbox). */
 export const CHAT_INBOX_V2_REQUEST_TIMEOUT_MS = 15_000

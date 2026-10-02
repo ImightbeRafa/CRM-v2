@@ -400,13 +400,21 @@ export async function updateChatAgent(input: {
   }
   if (input.patch.status) {
     data.status = asStatus(input.patch.status)
-    // Going live with the product search on needs a product list (when the feature is available): an agent
-    // must never be live quoting a catalog nobody chose for it. Existing live agents are not affected.
-    if (data.status === 'live' && existing.status !== 'live') {
-      const tools = (input.patch.enabledTools ?? existing.enabledTools) as readonly string[]
-      if (tools.includes('search_inventory') && (await agentHasInventoryMap(input.tenantId, existing.id)) === false) {
-        throw new Error('INVENTORY_MAP_REQUIRED')
-      }
+  }
+  {
+    // Resulting state check: an agent must never be LIVE with the product search on and no product list
+    // (when the feature is available). Whatever path gets it there (going live, or turning the search on
+    // while live) is refused, except an agent that was already live with the search on before this change.
+    const nextStatus = (data.status as string | undefined) ?? existing.status
+    const nextTools = ((data.enabledTools as string[] | undefined) ?? existing.enabledTools) as readonly string[]
+    const wasLiveWithSearch = existing.status === 'live' && (existing.enabledTools as readonly string[]).includes('search_inventory')
+    if (
+      nextStatus === 'live' &&
+      nextTools.includes('search_inventory') &&
+      !wasLiveWithSearch &&
+      (await agentHasInventoryMap(input.tenantId, existing.id)) === false
+    ) {
+      throw new Error('INVENTORY_MAP_REQUIRED')
     }
   }
   if (typeof input.patch.model === 'string') {

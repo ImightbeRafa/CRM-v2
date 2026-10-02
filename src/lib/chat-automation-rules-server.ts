@@ -137,13 +137,15 @@ export type RulesSummary = {
   fired: number
   failed: number
   skipped?: 'tables_missing' | 'time_budget'
+  error?: 'rules_failed'
 }
 
 type Candidate = { conversationId: string; dedupeKey: string }
 
 async function closedStageKeys(tenantId: string): Promise<string[]> {
   const { stages } = await loadStages(tenantId, 'chat')
-  return stages.filter((s) => !s.archived && isClosedCategory(s.category)).map((s) => s.key)
+  // Same rule as the workspace sweep: any closed stage (archived or not) plus the legacy 'hecho'.
+  return [...new Set([...stages.filter((s) => isClosedCategory(s.category)).map((s) => s.key), 'hecho'])]
 }
 
 async function findCandidates(
@@ -177,9 +179,24 @@ async function findCandidates(
       orderBy: { lastInboundAt: 'desc' },
       take: 200,
     })
+    // Snoozed chats (time not reached AND the customer has not written since) are not "idle" either.
+    const states = rows.length
+      ? await prisma.chatConversationWorkState.findMany({
+          where: { tenantId, conversationId: { in: rows.map((r) => r.id) }, snoozedUntil: { gt: now } },
+          select: { conversationId: true, snoozedAt: true },
+        })
+      : []
+    const snoozed = new Set(
+      states
+        .filter((st) => {
+          const row = rows.find((r) => r.id === st.conversationId)
+          return Boolean(row?.lastInboundAt && st.snoozedAt && st.snoozedAt.getTime() >= row.lastInboundAt.getTime())
+        })
+        .map((st) => st.conversationId),
+    )
     return rows
       // An agent that is attending the chat is not "idle".
-      .filter((r) => isAwaitingReply(r) && r.aiMode !== 'ai_active')
+      .filter((r) => isAwaitingReply(r) && r.aiMode !== 'ai_active' && !snoozed.has(r.id))
       .slice(0, MAX_CANDIDATES_PER_RULE)
       .map((r) => ({ conversationId: r.id, dedupeKey: idleDedupeKey(r.lastInboundAt as Date) }))
   }
@@ -191,6 +208,8 @@ async function findCandidates(
       tenantId,
       direction: 'inbound',
       sentAt: { gte: new Date(now.getTime() - KEYWORD_WINDOW_MS) },
+      // Also bound by createdAt so the (tenantId, createdAt) index is used instead of walking all messages.
+      createdAt: { gte: new Date(now.getTime() - 2 * KEYWORD_WINDOW_MS) },
       conversationId: { not: null },
     },
     select: { id: true, conversationId: true, content: true },
@@ -200,7 +219,11 @@ async function findCandidates(
   const out: Candidate[] = []
   for (const m of cache.keywordMessages) {
     if (!m.conversationId || !matchesKeyword(m.content, keywords)) continue
-    out.push({ conversationId: m.conversationId, dedupeKey: `msg:${m.id}` })
+    // A task rule fires once per chat per day (not once per matching message: "precio?", "precio??", ...).
+    out.push({
+      conversationId: m.conversationId,
+      dedupeKey: rule.actionKind === 'task' ? `kw-day:${now.toISOString().slice(0, 10)}` : `msg:${m.id}`,
+    })
     if (out.length >= MAX_CANDIDATES_PER_RULE) break
   }
   return out
@@ -257,6 +280,11 @@ async function runAction(rule: RuleRow, c: Candidate, now: Date, memberOk: Map<s
   // task
   const creator = rule.createdBy
   if (!creator) throw new Error('no_creator')
+  // The task defaults to the chat's owner, else to the rule's creator: never to someone who left the team.
+  if (!conv.assignedUserId) {
+    if (!memberOk.has(creator)) memberOk.set(creator, await isAssignableChatMember(tenantId, creator))
+    if (!memberOk.get(creator)) throw new Error('creator_inactive')
+  }
   const due = rule.actionConfig.dueInMinutes
   const result = await createTask({
     tenantId,
@@ -331,7 +359,7 @@ export async function runChatAutomationRules(opts: { now?: Date; budgetMs?: numb
     await prisma.$executeRaw`
       DELETE FROM "ChatAutomationRuleRun"
        WHERE "id" IN (SELECT "id" FROM "ChatAutomationRuleRun"
-                        WHERE "createdAt" < now() - make_interval(days => ${RETENTION_DAYS}) LIMIT 500)`
+                        WHERE "createdAt" < now() - make_interval(days => ${RETENTION_DAYS}::int) LIMIT 500)`
   } catch {
     /* best effort */
   }

@@ -296,6 +296,9 @@ export function SoftThreadPane({
   /** `false` = closed; string = open (optionally pre-filling a new shortcut). */
   const [managerOpen, setManagerOpen] = useState<false | { shortcut?: string }>(false)
   const [catalogOpen, setCatalogOpen] = useState(false)
+  useEffect(() => {
+    setCatalogOpen(false)
+  }, [conversation?.recipientId, conversation?.socialAccountId])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragActive, setDragActive] = useState(false)
   const [dropError, setDropError] = useState<string | null>(null)

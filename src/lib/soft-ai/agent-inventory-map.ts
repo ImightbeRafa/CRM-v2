@@ -5,7 +5,6 @@
  */
 import 'server-only'
 
-import { randomUUID } from 'crypto'
 import { prisma } from '@/lib/db'
 import { isMissingRelation } from '@/lib/db-missing-relation'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
@@ -77,14 +76,19 @@ export async function setMappedInventory(input: {
     : []
   const ids = valid.map((v) => v.id)
   await prisma.$transaction([
+    // Two admins saving at once queue up instead of merging their lists.
+    prisma.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.agentId}))`,
     prisma.$executeRaw`
       DELETE FROM "ChatAgentInventoryItem" WHERE "tenantId" = ${input.tenantId} AND "agentId" = ${input.agentId}`,
-    ...ids.map(
-      (itemId) => prisma.$executeRaw`
-        INSERT INTO "ChatAgentInventoryItem" ("id", "tenantId", "agentId", "inventoryItemId", "createdBy")
-        VALUES (${randomUUID()}, ${input.tenantId}, ${input.agentId}, ${itemId}, ${input.actorUserId})
-        ON CONFLICT ("agentId", "inventoryItemId") DO NOTHING`,
-    ),
+    ...(ids.length
+      ? [
+          prisma.$executeRaw`
+            INSERT INTO "ChatAgentInventoryItem" ("id", "tenantId", "agentId", "inventoryItemId", "createdBy")
+            SELECT gen_random_uuid()::text, ${input.tenantId}, ${input.agentId}, x, ${input.actorUserId}
+              FROM unnest(${ids}::text[]) AS x
+            ON CONFLICT ("agentId", "inventoryItemId") DO NOTHING`,
+        ]
+      : []),
   ])
   return ids.length
 }

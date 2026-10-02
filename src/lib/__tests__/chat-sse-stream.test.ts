@@ -104,3 +104,23 @@ describe('chat SSE route and client (static)', () => {
     assert.match(read('src/cf-container-worker.ts'), /"CHAT_SSE"/)
   })
 })
+
+describe('SSE client robustness (review fixes)', () => {
+  const client = read('src/components/chats/SoftCopilotInboxV2.tsx')
+  it('a live tick that arrives during a running poll is re-run, not dropped', () => {
+    assert.match(client, /if \(forced && decision\.reason === 'in_flight'\) pendingForcedRef\.current = true/)
+    assert.match(client, /if \(pendingForcedRef\.current\) \{\s*pendingForcedRef\.current = false\s*tickRef\.current\?\.\(true\)/)
+  })
+  it('the safety timer only restarts when a poll really runs', () => {
+    const body = client.slice(client.indexOf('const tick = (forced = false)'))
+    assert.ok(body.indexOf("decision.action === 'skip'") < body.indexOf('lastPollAtRef.current = Date.now()'))
+  })
+  it('a live tick on a reconcile also fetches the thread changes', () => {
+    assert.match(client, /if \(forced\) await fetchChanges\(\)/)
+  })
+  it('a silent stream is treated as broken (named ping + watchdog)', () => {
+    assert.match(client, /addEventListener\('ping'/)
+    assert.match(client, /CHAT_INBOX_V2_SSE_SILENT_MS/)
+    assert.match(read('src/app/api/chat/stream/route.ts'), /event: ping/)
+  })
+})

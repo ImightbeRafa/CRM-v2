@@ -24,7 +24,7 @@ export type Intent = (typeof INTENTS)[number]
 const INTENT_PATTERNS: Array<[Intent, RegExp]> = [
   ['estado_pedido', /\b(mi pedido|donde (va|esta) mi|numero de guia|guia|rastre|tracking|cuando llega)\b/],
   ['pago', /\b(sinpe|transferencia|tarjeta|pagar|pago|contra ?entrega|iban|cuenta)\b/],
-  ['precio', /\b(precio|cuanto (sale|cuesta|vale)|costo|valor|cuanto es|tarifa|\$|₡)\b/],
+  ['precio', /\b(precio|cuanto (sale|cuesta|vale)|costo|valor|cuanto es|tarifa)\b|[$₡]/],
   ['envio', /\b(envios?|envian|enviar|mandan|correos|domicilio|entregas?)\b/],
   ['ubicacion', /\b(donde (estan|queda|se ubican)|ubicacion|direccion|sucursal|tienda fisica|retiro|recoger)\b/],
   ['stock', /\b(tienen|hay |disponible|stock|quedan|existencia)\b/],
@@ -180,7 +180,7 @@ export function reportToMarkdown(report: FlowReport, label: string): string {
   const lines: string[] = []
   lines.push(`# Flow mining — ${label}`)
   lines.push('')
-  lines.push(`Solo conteos. Nada con menos de ${report.kMin} casos. Sin textos ni nombres.`)
+  lines.push(`Solo conteos. Nada con menos de ${report.kMin} casos. Sin mensajes ni números; las palabras frecuentes pueden incluir nombres comunes.`)
   lines.push('')
   lines.push(`- Conversaciones nuevas: ${report.conversations}`)
   lines.push(`- Respondidas: ${report.replied}`)

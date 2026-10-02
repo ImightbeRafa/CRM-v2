@@ -125,3 +125,25 @@ describe('SQL 043', () => {
     assert.match(read('scripts/lib/betsy-v2-additive-manifest.mjs'), /'043': '043_chat_automation_rules\.sql'/)
   })
 })
+
+describe('evaluator review fixes (static)', () => {
+  const server = read('src/lib/chat-automation-rules-server.ts')
+  it('retention uses an int-typed make_interval', () => {
+    assert.match(server, /make_interval\(days => \$\{RETENTION_DAYS\}::int\)/)
+  })
+  it('idle ignores every closed stage (+ legacy hecho) and snoozed chats like the sweep', () => {
+    assert.match(server, /'hecho'/)
+    assert.match(server, /chatConversationWorkState\.findMany/)
+    assert.match(server, /snoozedUntil: \{ gt: now \}/)
+  })
+  it('a task keyword rule fires once per chat per day and checks the creator is still on the team', () => {
+    assert.match(server, /kw-day:/)
+    assert.match(server, /creator_inactive/)
+  })
+  it('keyword scan is bounded by createdAt so the tenant index is used', () => {
+    assert.match(server, /createdAt: \{ gte: new Date\(now\.getTime\(\) - 2 \* KEYWORD_WINDOW_MS\) \}/)
+  })
+  it('a rules failure is reported as rules_failed, not as missing tables', () => {
+    assert.match(read('src/app/api/cron/chat-workspace/route.ts'), /error: 'rules_failed'/)
+  })
+})

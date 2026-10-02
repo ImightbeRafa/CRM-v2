@@ -1,3 +1,20 @@
+## 2026-10-02 — Agent Ops S4: improvement loop — versions, staff thumbs, scorecard, safety test (claudio/agent-ops)
+
+"Are the agents getting better" = compare rates between versions of the same agent.
+- SQL 045 (new tables only, no FKs, RLS): ChatAgentVersion (immutable snapshot of instructions/tools/model/brand facts
+  per version), ChatAgentFeedback (👍/👎 + reason chip per staff member per turn), ChatAgentEvalRun. HELD: not applied;
+  all code is fail-safe on the missing tables (scorecard still works from existing data).
+- Scorecard per agent + version from EXISTING data (no new events): suggestion accept rate, takeover-after-send
+  (human replies within 30 min), fallback rate, conversion (client orders within 7 days of an agent turn), thumbs.
+  Platform view in Agent Ops; per-business card in Avanzado (rates only, no dollars).
+- Thumbs on agent-sent bubbles in the inbox (SoftThreadPane data component only; no chrome change).
+- "Probar reglas de seguridad": replays the frozen fixture set through the deterministic safety layer (no tokens,
+  no sends, no key) and stores pass rate per version. LLM judge arrives with the OpenAI key (held).
+- Version snapshot written after every agent edit that bumps the version.
+- SecureDog on S1 (INT-09..12) fixed: pinned OpenAI base URL/org/project, `server-only` client, safe failure log
+  (never message/headers), `LLM_AUTH` code, dedicated `SOFT_AI_OPENAI_API_KEY`.
+- Tests: agent-improvement.test.ts.
+
 ## 2026-10-02 — Agent Ops S1 fixes after Verifier review (claudio/agent-ops)
 
 - HIGH: OpenAI strict function schemas — every property now `required` (optional ones nullable) for

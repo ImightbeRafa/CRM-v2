@@ -15,6 +15,7 @@ import {
 } from '@/lib/soft-ai/agent-types'
 import { AgentTestSandbox } from '@/app/config/agentes/AgentTestSandbox'
 import { AgentUsageCard } from '@/app/config/agentes/AgentUsageCard'
+import { AgentQualityCard } from '@/app/config/agentes/AgentQualityCard'
 import { BrandFactsEditor } from '@/app/config/agentes/BrandFactsEditor'
 import { ChannelsEditor, type ChannelRow } from '@/app/config/agentes/ChannelsEditor'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
@@ -1213,6 +1214,7 @@ export default function AgentesConfigPage() {
                       Modelo: <span className="font-mono">{selected.model}</span>
                     </p>
                     <AgentUsageCard />
+                    <AgentQualityCard agentId={selected.id} canEdit={canEdit} />
                     {canEdit && selected.model !== LUNA_CHAT_AGENT_MODEL ? (
                       <button
                         type="button"

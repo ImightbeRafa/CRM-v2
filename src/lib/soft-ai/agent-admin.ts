@@ -8,6 +8,7 @@ import 'server-only'
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
+import { recordAgentVersionSnapshot } from '@/lib/soft-ai/agent-improvement'
 import {
   AGENT_TOOL_NAMES,
   AGENT_INSTRUCTIONS_MAX,
@@ -417,6 +418,16 @@ export async function updateChatAgent(input: {
     where: { id: existing.id },
     data,
   })
+  if (row.version !== existing.version) {
+    // Immutable snapshot per version (best effort; tolerant of SQL 045 not applied yet).
+    await recordAgentVersionSnapshot({
+      tenantId: input.tenantId,
+      agentId: row.id,
+      version: row.version,
+      agent: row,
+      actorUserId: input.actorUserId,
+    })
+  }
   await logAuditEvent({
     tenantId: input.tenantId,
     action: 'UPDATE',

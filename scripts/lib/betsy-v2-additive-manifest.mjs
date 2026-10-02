@@ -28,6 +28,7 @@ export const FILES = {
   '040': '040_ops_error_groups.sql',
   '041': '041_meta_capi_outbox.sql',
   '044': '044_platform_agent_policy.sql',
+  '045': '045_agent_improvement.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -70,6 +71,7 @@ export const EXPECTED_TABLES = {
   '040': ['OpsErrorGroup'],
   '041': ['MetaCapiDataset', 'MetaConversionEvent'],
   '044': ['PlatformAgentPolicy'],
+  '045': ['ChatAgentVersion', 'ChatAgentFeedback', 'ChatAgentEvalRun'],
 };
 
 export const EXPECTED_COLUMNS = {

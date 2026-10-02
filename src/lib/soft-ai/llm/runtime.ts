@@ -321,12 +321,16 @@ export async function runSoftAiLlmRuntime(
       linkedOrderId: input.linkedOrderId,
     })
     const openai = softAiProviderFor(input.model) === 'openai'
+    logLlmFailure(input.model, error)
+    const authFailure = isAuthFailure(error)
     const errorCode =
       error instanceof Error && error.message === 'XAI_NOT_CONFIGURED'
         ? 'XAI_NOT_CONFIGURED'
         : error instanceof Error && error.message === 'LLM_NOT_CONFIGURED'
           ? 'LLM_NOT_CONFIGURED'
-          : error instanceof Error && /timed? ?out|abort/i.test(error.message)
+          : authFailure
+            ? 'LLM_AUTH'
+            : error instanceof Error && /timed? ?out|abort/i.test(error.message)
             ? openai
               ? 'LLM_TIMEOUT'
               : 'XAI_TIMEOUT'
@@ -362,6 +366,29 @@ export async function runSoftAiLlmRuntime(
       errorCode,
     }
   }
+}
+
+/** Provider 401/403 (wrong, revoked or restricted key): a distinct code so ops can see it. */
+function isAuthFailure(error: unknown): boolean {
+  const status = (error as { status?: unknown } | null)?.status
+  return status === 401 || status === 403
+}
+
+/**
+ * One safe line per failure. Never the error message (a 401 text contains a masked key fragment)
+ * and never headers (org/project ids).
+ */
+function logLlmFailure(model: string, error: unknown) {
+  const e = (error ?? {}) as { status?: unknown; type?: unknown; code?: unknown; request_id?: unknown; name?: unknown }
+  console.error('[soft-ai llm]', {
+    provider: softAiProviderFor(model),
+    model,
+    status: typeof e.status === 'number' ? e.status : null,
+    type: typeof e.type === 'string' ? e.type : null,
+    code: typeof e.code === 'string' ? e.code : null,
+    requestId: typeof e.request_id === 'string' ? e.request_id : null,
+    name: typeof e.name === 'string' ? e.name : null,
+  })
 }
 
 function parseStructuredAgentOutput(raw: string): {

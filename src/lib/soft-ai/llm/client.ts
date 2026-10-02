@@ -4,6 +4,8 @@
  * never reads WhatsApp env secrets.
  */
 
+import 'server-only'
+
 import OpenAI from 'openai'
 import {
   DEFAULT_CHAT_AGENT_MODEL,
@@ -13,6 +15,7 @@ import {
 } from '@/lib/soft-ai/agent-types'
 
 export const SOFT_AI_XAI_BASE_URL = 'https://api.x.ai/v1'
+export const SOFT_AI_OPENAI_BASE_URL = 'https://api.openai.com/v1'
 export const SOFT_AI_FIRST_CALL_TIMEOUT_MS = 9_000
 export const SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS = 7_000
 export const SOFT_AI_META_SEND_TIMEOUT_MS = 7_000
@@ -42,7 +45,16 @@ export function createSoftAiClient(model: string, timeoutMs = SOFT_AI_FIRST_CALL
     // Dedicated key: the staff bot's OPENAI_API_KEY (voice transcription) is never used for inbox agents.
     const apiKey = process.env.SOFT_AI_OPENAI_API_KEY
     if (!apiKey || !apiKey.trim()) throw new Error('LLM_NOT_CONFIGURED')
-    return new OpenAI({ apiKey: apiKey.trim(), timeout: timeoutMs, maxRetries: 0 })
+    // Endpoint, org and project are pinned: ambient OPENAI_BASE_URL / OPENAI_ORG_ID / OPENAI_PROJECT_ID
+    // (set for other tools) must never redirect inbox customer conversations or this key.
+    return new OpenAI({
+      apiKey: apiKey.trim(),
+      baseURL: SOFT_AI_OPENAI_BASE_URL,
+      organization: null,
+      project: null,
+      timeout: timeoutMs,
+      maxRetries: 0,
+    })
   }
   const apiKey = process.env.XAI_API_KEY
   if (!apiKey) throw new Error('XAI_NOT_CONFIGURED')

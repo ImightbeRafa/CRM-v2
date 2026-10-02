@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import KillSwitchPanel from '@/app/super-admin/agentes/KillSwitchPanel'
+import ScorecardPanel from '@/app/super-admin/agentes/ScorecardPanel'
 
 type Bucket = {
   turns: number
@@ -206,6 +207,7 @@ export default function AgentOpsDashboard() {
             />
           </div>
 
+          <ScorecardPanel days={days} />
           <Table
             title="Por modelo"
             rows={data.summary.byModel.map((b) => ({ key: b.model, label: b.model, b }))}

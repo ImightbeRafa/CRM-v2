@@ -13,6 +13,7 @@ import {
 } from 'react'
 import Link from 'next/link'
 import { Check, CheckCheck, ChevronLeft, Hand, Info, PanelRight, Paperclip, Pause, Play, Send, ShoppingBag, Smile, Sparkles, User, X, Zap } from 'lucide-react'
+import { AgentFeedbackButtons } from '@/components/chats/AgentFeedbackButtons'
 import {
   initialsFromName,
   isWhatsAppWindowOpen,
@@ -823,6 +824,10 @@ export function SoftThreadPane({
             const softAi =
               Boolean(msg.id?.startsWith('demo-ai-')) ||
               isSoftAiOutboundMetadata(msg.metadata)
+            const feedbackTurnId =
+              softAi && msg.metadata && typeof msg.metadata === 'object' && !Array.isArray(msg.metadata)
+                ? ((msg.metadata as Record<string, unknown>).turnId as unknown)
+                : null
             const showMedia = messageHasMedia(msg)
             // Any stored `[type]` token (media, share, story_mention, ig_reel…) is never shown
             // as text next to the media (it stays after IG media gets cached).
@@ -888,6 +893,9 @@ export function SoftThreadPane({
                           <>
                             <Sparkles className="h-3 w-3" aria-hidden />
                             <span className="font-medium">{conversation.agentLabel || 'Agente'}</span>
+                            {typeof feedbackTurnId === 'string' && feedbackTurnId ? (
+                              <AgentFeedbackButtons turnId={feedbackTurnId} />
+                            ) : null}
                             <span aria-hidden>·</span>
                           </>
                         ) : null}
@@ -909,9 +917,14 @@ export function SoftThreadPane({
                       data-testid="soft-thread-outbound-attribution"
                     >
                       {softAi ? (
-                        msg.id?.startsWith('demo-ai-')
-                          ? 'IA envió'
-                          : softAiOutboundLabel(msg.metadata)
+                        <>
+                          {msg.id?.startsWith('demo-ai-')
+                            ? 'IA envió'
+                            : softAiOutboundLabel(msg.metadata)}
+                          {typeof feedbackTurnId === 'string' && feedbackTurnId ? (
+                            <AgentFeedbackButtons turnId={feedbackTurnId} />
+                          ) : null}
+                        </>
                       ) : failed || msg.deliveryStatus === 'failed' ? (
                         <>
                           No enviado ⓘ{' '}

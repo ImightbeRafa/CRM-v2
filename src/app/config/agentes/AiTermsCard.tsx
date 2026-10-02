@@ -84,8 +84,8 @@ export function AiTermsCard({ canEdit }: { canEdit: boolean }) {
     <div className="rounded-xl bg-amber-50 px-4 py-4 text-[13px] text-amber-950 ring-1 ring-amber-200" data-testid="ai-terms-pending" role="region" aria-label="Autorización de IA">
       <h2 className="text-[14px] font-semibold">{state.title}</h2>
       <p className="mt-1 text-[12.5px]">
-        Mientras no se acepte, los agentes <strong>no responden ni sugieren</strong>: ningún mensaje de sus clientes se envía a un proveedor de IA.
-        Las pruebas (Probar) siguen funcionando con mensajes que escribe su equipo.
+        Mientras no se acepte, los agentes del inbox <strong>no responden ni sugieren</strong> y el ayudante de pegado de clientes (Ventas) queda sin IA:
+        ningún mensaje de sus clientes se envía a un proveedor de IA desde esas funciones. Las pruebas (Probar) siguen funcionando con mensajes que escribe su equipo.
       </p>
       <ul className="mt-2 list-disc space-y-1 pl-5 text-[12.5px]">
         {state.points.map((p, i) => (

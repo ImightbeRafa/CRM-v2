@@ -167,6 +167,8 @@ export type ChatAgentLayerConfig = {
   unlockCanaries: boolean
   /** The business's opt-in to AI features (null = not accepted: agents never send customer data to a provider). */
   aiTerms: AiTermsAcceptance | null
+  /** Last revocation (kept so the config itself says who stopped AI and when). */
+  aiTermsRevoked: { revokedAt: string; revokedByUserId: string; version: string } | null
 }
 
 export const DEFAULT_CHAT_AGENT_LAYER_CONFIG: ChatAgentLayerConfig = {
@@ -180,6 +182,7 @@ export const DEFAULT_CHAT_AGENT_LAYER_CONFIG: ChatAgentLayerConfig = {
   strictUnlockVersion: false,
   unlockCanaries: true,
   aiTerms: null,
+  aiTermsRevoked: null,
 }
 
 export const TONE_PRESET_LABELS: Record<ChatAgentTonePreset, string> = {

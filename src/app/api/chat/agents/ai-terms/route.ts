@@ -83,6 +83,11 @@ export async function POST(request: NextRequest) {
       aiTerms: accept
         ? { version: AI_TERMS_VERSION, acceptedAt: at, acceptedByUserId: auth.userId, acceptedByName: who }
         : null,
+      aiTermsRevoked: accept
+        ? config.aiTermsRevoked
+        : config.aiTerms
+          ? { revokedAt: at, revokedByUserId: auth.userId, version: config.aiTerms.version }
+          : config.aiTermsRevoked,
     }))
     await logAuditEvent({
       action: 'UPDATE',

@@ -13,12 +13,13 @@ export const AI_TERMS_POINTS: readonly string[] = [
   'Cuando un agente de IA está activo, el texto de los mensajes de sus clientes, su nombre visible, el contexto reciente de la conversación y, si corresponde, el estado de un pedido se envían a un proveedor de IA (hoy OpenAI y/o xAI, en Estados Unidos) solo para generar la respuesta.',
   'Esos datos no se usan para entrenar ni mejorar modelos de IA, no se venden y no se comparten con otros fines. El proveedor puede conservarlos hasta 30 días únicamente por seguridad y prevención de abusos.',
   'Las pruebas del agente (Probar) usan solo mensajes que su equipo escribe; nunca conversaciones reales de clientes.',
-  'Su negocio debe informar a sus clientes que los atiende un asistente de inteligencia artificial y contar con su permiso para escribirles. En el Anexo de tratamiento de datos hay un aviso sugerido.',
+  'Su negocio debe informar a sus clientes que los atiende un asistente de inteligencia artificial y contar con su permiso para escribirles. En la Política de Privacidad (sección 5.6) hay un aviso sugerido.',
+  'Los agentes enmascaran números de tarjeta, de cuenta y de cédula antes de enviar un mensaje al proveedor de IA, y también pedimos a sus clientes que no los compartan; no es posible garantizar la detección de todos los formatos.',
   'Puede revocar esta autorización en cualquier momento: los agentes dejan de generar respuestas y sugerencias de inmediato.',
 ]
 
 export const AI_TERMS_CHECKBOX =
-  'Leí y acepto, en nombre de mi negocio, el uso de proveedores de inteligencia artificial descrito arriba, la Política de Privacidad y el Anexo de tratamiento de datos.'
+  'Leí y acepto, en nombre de mi negocio, el uso de proveedores de inteligencia artificial descrito arriba y la Política de Privacidad.'
 
 export const AI_TERMS_LINKS = {
   privacy: '/privacy/es',

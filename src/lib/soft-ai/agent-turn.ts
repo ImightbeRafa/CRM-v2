@@ -35,6 +35,7 @@ import {
 } from '@/lib/soft-ai/agent-types'
 import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import { acquireProbarSlot, releaseProbarSlot } from '@/lib/soft-ai/probar-slots'
+import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
 import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
 import { estimateCostMicros } from '@/lib/soft-ai/llm/usage'
 import {
@@ -744,6 +745,15 @@ async function finishDeliveryOrSuggest(input: {
     needsHuman: input.needsHuman,
     fallbackUsed: input.fallbackUsed || input.usage.fallbackUsed,
     escalate: input.escalate,
+  }
+  // Revoked while this turn was running: nothing is suggested or sent.
+  if (!(await isAiTermsAcceptedNow(input.row.tenantId))) {
+    return persistDecidedTurn({
+      turnId: input.turnId,
+      outcome: { outcome: 'skip', reason: 'ai_terms_not_accepted' },
+      operationMode: input.agent.operationMode,
+      setMode: false,
+    })
   }
   const first = decideTurnOutcome({
     ...decisionBase,

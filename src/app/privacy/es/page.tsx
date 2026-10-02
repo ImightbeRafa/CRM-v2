@@ -115,16 +115,16 @@ export default function PrivacidadPage() {
             <h3 className={h3}>5.2 Autorización previa, por negocio</h3>
             <p>
               Los agentes de IA <strong>permanecen apagados hasta que el propietario o un administrador del negocio acepta los
-              términos de IA</strong> dentro de Betsy CRM (Config → Agentes). Mientras tanto, ningún mensaje de clientes se envía a
-              un proveedor de IA. La aceptación registra quién aceptó, cuándo y qué versión, y{' '}
+              términos de IA</strong> dentro de Betsy CRM (Config → Agentes). Mientras tanto, los agentes de IA del inbox no funcionan y el ayudante de pegado de clientes de Ventas no usa IA, por lo que
+              desde ellos no se envía ningún mensaje de clientes a un proveedor de IA. La aceptación registra quién aceptó, cuándo y qué versión, y{' '}
               <strong>puede revocarse en cualquier momento</strong>: los agentes dejan de responder y de sugerir de inmediato. Si
               cambiamos los términos de IA, el negocio debe aceptar la nueva versión.
             </p>
             <h3 className={h3}>5.3 Qué se envía al proveedor de IA</h3>
             <p>
               Solo lo necesario para redactar la respuesta: el texto del mensaje, el nombre visible del cliente, el contexto reciente
-              de la conversación y, cuando corresponde, el estado de un pedido. Nunca enviamos números de tarjeta, contraseñas ni
-              documentos de identidad. Las respuestas se generan con parámetros que piden al proveedor no almacenar la solicitud para
+              de la conversación y, cuando corresponde, el estado de un pedido. Antes de enviar, los agentes enmascaran los números de tarjeta, de cuenta/IBAN/SINPE y de cédula que puedan detectar por patrón;
+              además pedimos a los clientes no compartirlos, y no es posible garantizar la detección de todos los formatos. Las respuestas se generan con parámetros que piden al proveedor no almacenar la solicitud para
               uso propio.
             </p>
             <h3 className={h3}>5.4 Lo que los proveedores de IA pueden y no pueden hacer</h3>
@@ -143,7 +143,19 @@ export default function PrivacidadPage() {
             <h3 className={h3}>5.6 Informar a sus clientes</h3>
             <p>
               Los negocios deben informar a sus clientes que un asistente de inteligencia artificial puede atenderlos y que una
-              persona puede intervenir. Incluimos una redacción sugerida en nuestro acuerdo de tratamiento de datos.
+              persona puede intervenir. Redacción sugerida (el negocio puede editarla):
+            </p>
+            <blockquote className="border-l-4 pl-3 italic my-2">
+              Este chat es atendido por un asistente de inteligencia artificial de [NOMBRE DEL NEGOCIO] que puede responderle de forma
+              automática, y una persona de nuestro equipo puede intervenir cuando lo solicite. Sus mensajes se procesan con proveedores
+              tecnológicos en el extranjero (por ejemplo, Estados Unidos) únicamente para responderle y gestionar su pedido; más
+              información y sus derechos en [URL de la política] o en [correo del negocio]. Si prefiere hablar con una persona, escriba
+              «agente».
+            </blockquote>
+            <p>
+              El asistente interno del equipo (Telegram/WhatsApp) lo opera Betsy para el personal del negocio y usa un proveedor de IA
+              (xAI) para entender mensajes del personal y textos de pedidos; no está cubierto por la autorización previa por negocio y
+              se rige por esta política y los Términos.
             </p>
           </section>
 
@@ -225,7 +237,7 @@ export default function PrivacidadPage() {
             <h3 className={h3}>9.3 Conservación y eliminación</h3>
             <ul className={ul}>
               <li>Los mensajes se guardan mientras mantenga la conexión</li>
-              <li>Puede desconectar en cualquier momento desde Configuración → Cuentas sociales; al desconectar eliminamos los tokens y el historial de mensajes en un plazo de 24 horas</li>
+              <li>Puede desconectar en cualquier momento desde Configuración → Cuentas sociales; al desconectar eliminamos los tokens; el historial de mensajes permanece en la cuenta del negocio hasta que el negocio solicite eliminarlo o cierre su cuenta (entonces, dentro de 30 días)</li>
               <li>Puede solicitar la eliminación total escribiendo a <a href={`mailto:${PRIVACY_EMAIL}`} className="text-blue-600 hover:underline">{PRIVACY_EMAIL}</a></li>
             </ul>
             <h3 className={h3}>9.4 Comunicación de datos</h3>
@@ -262,8 +274,8 @@ export default function PrivacidadPage() {
             <h2 className={h2}>11. Plazos de conservación</h2>
             <ul className={ul}>
               <li><strong>Cuenta y datos del negocio:</strong> mientras la cuenta esté activa; al eliminarla borramos los datos personales en 30 días, salvo lo que la ley nos obligue a conservar</li>
-              <li><strong>Mensajes de conversaciones:</strong> mientras se mantenga la conexión; se eliminan dentro de las 24 horas posteriores a desconectar</li>
-              <li><strong>Texto de respuestas de IA guardado para revisión:</strong> 90 días y luego se elimina (se conservan conteos y datos técnicos para estadísticas)</li>
+              <li><strong>Mensajes de conversaciones:</strong> se conservan mientras la cuenta esté activa; se eliminan dentro de 30 días tras la solicitud de eliminación o el cierre de la cuenta del negocio</li>
+              <li><strong>Texto de respuestas de IA y su traza técnica guardados para revisión:</strong> 90 días y luego se eliminan (se conservan conteos y costos para estadísticas)</li>
               <li><strong>Identificadores de clic de anuncios:</strong> 90 días</li>
               <li><strong>Copias de seguridad:</strong> se eliminan dentro de 90 días</li>
               <li><strong>Proveedores de IA:</strong> hasta 30 días para prevención de abusos, según sus términos, salvo retención cero</li>

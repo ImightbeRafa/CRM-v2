@@ -18,6 +18,7 @@ import type {
 } from '@/lib/soft-ai/agent-types'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
+import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
 
 export type GateFail = {
   ok: false
@@ -201,6 +202,10 @@ export async function runPreSendGates(input: {
   // Kill switch re-checked right before a send (it may have been armed while the model ran).
   if ((await readAgentKillState(input.tenantId)).armed) {
     return { ok: false, status: 'skipped', skipReason: 'kill_switch' }
+  }
+  // Revoking the AI authorization also stops a reply that is already being generated.
+  if (!(await isAiTermsAcceptedNow(input.tenantId))) {
+    return { ok: false, status: 'skipped', skipReason: 'ai_terms_not_accepted' }
   }
   // Gate 1 again
   if (await hasHumanRepliedAfter({

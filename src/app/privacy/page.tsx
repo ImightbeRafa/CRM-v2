@@ -117,14 +117,14 @@ export default function PrivacyPage() {
             <h3 className={h3}>5.2 Opt-in, per business</h3>
             <p>
               AI agents are <strong>off until the business owner or an administrator accepts the AI terms</strong> inside Betsy CRM
-              (Config → Agents). Until then, no customer message is sent to an AI provider. The acceptance records who accepted,
+              (Config → Agents). Until then, the inbox AI agents do not run and the Sales customer-paste helper does not use AI, so no customer message is sent to an AI provider from them. The acceptance records who accepted,
               when and which version, and <strong>can be revoked at any time</strong>: agents stop answering and suggesting
               immediately. If we change the AI terms, the business must accept the new version.
             </p>
             <h3 className={h3}>5.3 What is sent to the AI provider</h3>
             <p>
               Only what is needed to write the reply: the text of the message, the customer&apos;s display name, recent conversation
-              context and, when relevant, the status of an order. We never send card numbers, passwords or identity documents.
+              context and, when relevant, the status of an order. Before sending, the agents mask card, account/IBAN/SINPE and ID numbers they can detect by pattern; we also ask customers not to share them, and detection of every possible format cannot be guaranteed.
               Replies are generated with settings that ask the provider not to store the request for its own use.
             </p>
             <h3 className={h3}>5.4 What AI providers may and may not do</h3>
@@ -142,7 +142,18 @@ export default function PrivacyPage() {
             <h3 className={h3}>5.6 Telling your customers</h3>
             <p>
               Businesses must tell their customers that an AI assistant may answer them and that a person can step in. We provide
-              suggested wording in our data processing terms.
+              suggested wording below (the business may edit it):
+            </p>
+            <blockquote className="border-l-4 pl-3 italic my-2">
+              This chat is answered by an artificial-intelligence assistant of [BUSINESS NAME] that may reply automatically, and a
+              person on our team can step in when you ask. Your messages are processed by technology providers abroad (for example
+              the United States) only to reply to you and manage your order; more information and your rights at [policy URL] or
+              [business email]. If you prefer to talk to a person, write &quot;agent&quot;.
+            </blockquote>
+            <p>
+              The internal team assistant (Telegram/WhatsApp) is operated by Betsy for the business&apos;s staff and uses an AI
+              provider (xAI) to understand staff messages and order text; it is not covered by the per-business AI opt-in and is
+              governed by this policy and the Terms.
             </p>
           </section>
 
@@ -224,7 +235,7 @@ export default function PrivacyPage() {
             <h3 className={h3}>9.3 Retention and deletion</h3>
             <ul className={ul}>
               <li>Messages are stored while you keep the connection</li>
-              <li>You can disconnect at any time from Settings → Social Accounts; on disconnection we delete access tokens and message history within 24 hours</li>
+              <li>You can disconnect at any time from Settings → Social Accounts; on disconnection we delete the access tokens; message history stays in the business&apos;s account until the business asks us to delete it or closes its account (then within 30 days)</li>
               <li>You can request full deletion by emailing <a href={`mailto:${PRIVACY_EMAIL}`} className="text-blue-600 hover:underline">{PRIVACY_EMAIL}</a></li>
             </ul>
             <h3 className={h3}>9.4 Data sharing</h3>
@@ -262,8 +273,8 @@ export default function PrivacyPage() {
             <h2 className={h2}>11. Data retention</h2>
             <ul className={ul}>
               <li><strong>Account and business data:</strong> while the account is active; when you delete the account we delete personal data within 30 days, except what the law requires us to keep</li>
-              <li><strong>Conversation messages:</strong> while the connection is kept; deleted within 24 hours of disconnecting</li>
-              <li><strong>AI reply text kept for review:</strong> 90 days, then removed (counts and technical metadata are kept for statistics)</li>
+              <li><strong>Conversation messages:</strong> kept while the account is active; deleted within 30 days of the business&apos;s deletion request or account closure</li>
+              <li><strong>AI reply text and its technical trace kept for review:</strong> 90 days, then removed (counts and cost metadata are kept for statistics)</li>
               <li><strong>Ad click identifiers:</strong> 90 days</li>
               <li><strong>Backups:</strong> deleted within 90 days</li>
               <li><strong>AI providers:</strong> up to 30 days for abuse prevention, per their terms, unless zero retention applies</li>

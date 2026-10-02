@@ -23,20 +23,20 @@ Actualizado 2026-10-02 · Rama `claudio/agent-ops`
 Ruta completa en este equipo: `D:\Coder\CRM-v2-agentops\docs\compliance\`.
 
 ## Qué está implementado en el producto
-1. **Autorización previa por negocio** (Config → Agentes, tarjeta superior): hasta que el propietario o un administrador acepta, **ningún mensaje de clientes llega a un proveedor de IA**; los agentes no responden ni sugieren y la aprobación de envío real se rechaza. Queda registrado quién, cuándo y qué versión; es revocable y detiene a los agentes al instante; se audita. Probar no la requiere (solo usa texto del equipo).
+1. **Autorización previa por negocio** (Config → Agentes, tarjeta superior): hasta que el propietario o un administrador acepta, **ningún mensaje de clientes llega a un proveedor de IA**; los agentes no responden ni sugieren y la aprobación de envío real se rechaza. Queda registrado quién, cuándo y qué versión; es revocable y detiene a los agentes al instante; se audita. Probar no la requiere (solo usa texto del equipo). Cubre también el ayudante de pegado de clientes de Ventas. Antes de enviar, los agentes enmascaran tarjetas, cuentas y cédulas detectables por patrón. Si se revoca, un mensaje en curso tampoco se envía ni se sugiere.
 2. Aislamiento por negocio, auditoría de acciones de administración, interruptor de emergencia de IA, claves de IA separadas del bot interno.
 3. Flujos de análisis (flow mining) con solo conteos.
 
 ## Antes de publicar (lista para Rafael)
 1. Revisión legal de las dos políticas, los Términos y el Anexo (5 preguntas en el informe).
 2. Completar: datos legales de la encargada, plazos entre corchetes del Anexo, confirmar la **región** de Supabase/Cloudflare para describir «dónde» (hoy la política dice «puede incluir Estados Unidos»), y que `privacy@betsycrm.com` recibe correo.
-3. Verificar y, si corresponde, **corregir el contenido factual** de la política contra la realidad operativa (plazos de 24 h/30 días/90 días).
+3. Verificado en esta ronda: el historial NO se borra a las 24 h al desconectar (se corrigió a «hasta que el negocio lo pida / cierre, luego 30 días»); la traza técnica de IA ahora también se purga a los 90 días. Falta confirmar el plazo de 30 días de supresión y el de 90 días de copias.
 4. Pedir a OpenAI y xAI el **DPA** y la **retención cero**; crear el proyecto de OpenAI aparte para `SOFT_AI_OPENAI_API_KEY`.
 5. Publicar (merge + deploy) y avisar a los negocios con tiempo.
 6. **Aviso importante de despliegue:** al activarse la autorización previa, los agentes ya existentes (incluido el piloto) **dejan de responder/sugerir hasta que su propietario haga clic en «Autorizar el uso de IA»** una vez.
 
 ## Pendiente de decisión
 - Aviso a los clientes finales: hoy es una **obligación del negocio** con texto sugerido (Anexo 8.2). Se puede automatizar como un primer mensaje opcional del agente; requiere decidir texto y dónde se envía.
-- Extender la autorización previa al asistente interno (Telegram/WhatsApp) y al ayudante de pegado: hoy están cubiertos solo por la política; exigirlo implica tocar el bot interno, que está bloqueado por decisión.
+- Extender la autorización previa al asistente interno (Telegram/WhatsApp): hoy está cubierto solo por la política (declarado con honestidad en §5.6); exigirlo implica tocar el bot interno, que está bloqueado por decisión. El ayudante de pegado ya sigue la autorización.
 - Aceptación del Anexo completo en el alta de cada negocio (hoy solo se registra la aceptación del uso de IA).
 - Política de retención/borrado de las tablas nuevas de agentes dentro de la función de exportación/borrado de la Ley 8968 (en espera).

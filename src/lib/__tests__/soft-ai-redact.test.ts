@@ -5,6 +5,7 @@ import {
   redactIban,
   redactPhone,
   redactPiiText,
+  redactSensitiveForProvider,
   redactSinpe,
   redactToolTrace,
 } from '../soft-ai/llm/redact'
@@ -36,5 +37,19 @@ describe('soft-ai redact (1.16)', () => {
     assert.ok(redactEmail('juan@x.com').startsWith('j'))
     assert.ok(redactSinpe('1234 5678 9012 3456').includes('SINPE'))
     assert.ok(redactIban('CR05015202001026284066').includes('****'))
+  })
+})
+
+describe('redactSensitiveForProvider', () => {
+  it('masks Luhn-valid card numbers but keeps order numbers', () => {
+    const out = redactSensitiveForProvider('mi tarjeta 4111 1111 1111 1111 y el pedido 1234567')
+    assert.ok(!out.includes('4111 1111'))
+    assert.ok(out.includes('****1111'))
+    assert.ok(out.includes('pedido 1234567'))
+  })
+  it('masks cédula and labelled ID numbers', () => {
+    const out = redactSensitiveForProvider('cédula 1-2345-6789 / pasaporte: A1234567')
+    assert.ok(!out.includes('2345-6789'))
+    assert.ok(!out.includes('A1234567'))
   })
 })

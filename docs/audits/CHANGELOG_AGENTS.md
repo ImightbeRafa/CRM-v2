@@ -1984,3 +1984,7 @@ Append-only. Newest entries at the top.
   Auth screens, onboarding wizard and Ayuda restyled to Aurora; logic untouched.
 - **Global:** `tailwind.config.ts` `darkMode` is now a custom variant that never applies `dark:` inside `.aurora-light`.
 - Prove: `npm run test:site-ui`, `test:security`, `test:pedidos-ui`, `test:stats-ui`, `test:config-ui`; no SQL / Prisma / runtime files touched.
+
+## 2026-10-02 — Opt-in / privacy hardening after verifier review
+- Policy text corrected (EN/ES): history is NOT deleted 24 h after disconnect; Upstash row discloses assistant memory; AI trace retention 90 d; customer-notice text moved into policy §5.6; staff assistant (xAI) disclosed honestly; opt-in checkbox no longer references the unpublished Annex.
+- Code: customer-paste helper follows the AI opt-in; card/account/ID masking before provider calls; opt-in re-checked at pre-send and before suggestion; revocation trail kept in config; retention also purges toolTrace and stale pending suggestions. Bot code untouched.

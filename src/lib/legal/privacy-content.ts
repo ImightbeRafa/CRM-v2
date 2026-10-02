@@ -72,8 +72,8 @@ export const SUBPROCESSORS: readonly Subprocessor[] = [
     name: 'Upstash',
     purposeEn: 'Rate limiting (abuse protection).',
     purposeEs: 'Limitación de solicitudes (protección contra abuso).',
-    dataEn: 'Request counters keyed by account; no message content.',
-    dataEs: 'Contadores de solicitudes por cuenta; sin contenido de mensajes.',
+    dataEn: 'Request counters keyed by account, and short-lived (7-day) recent-message memory of the internal team assistant.',
+    dataEs: 'Contadores de solicitudes por cuenta y memoria breve (7 días) de mensajes recientes del asistente interno del equipo.',
   },
   {
     name: 'Resend',

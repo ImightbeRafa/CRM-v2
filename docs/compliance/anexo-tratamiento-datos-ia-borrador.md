@@ -24,12 +24,13 @@ Betsy CRM (encargada) · Negocio cliente (responsable) · Versión de términos 
 | Datos | Texto y archivos de las conversaciones de WhatsApp/Instagram, nombre visible, identificadores de contacto, datos de pedidos y envíos que el Negocio registre |
 | Finalidad | Gestionar conversaciones, pedidos y atención al cliente; si el Negocio lo autoriza, generar respuestas y sugerencias con IA |
 | Duración | Mientras dure la relación y los plazos de la sección 9 |
-| Datos que NO se envían a la IA | Números de tarjeta, contraseñas, documentos de identidad |
+| Datos enmascarados antes de enviarse a la IA | Números de tarjeta, cuenta/IBAN/SINPE y cédula detectables por patrón (no se garantiza detectar todos los formatos) |
 
 ## 4. Uso de inteligencia artificial (autorización previa del Negocio)
 
 4.1. Los agentes de IA permanecen **apagados** hasta que el propietario o un administrador del Negocio acepte los términos de IA en la plataforma. La aceptación registra quién, cuándo y qué versión, es **revocable en cualquier momento** y, al revocarla, los agentes dejan de generar respuestas y sugerencias de inmediato. Un cambio de versión exige una nueva aceptación.
-4.2. Cuando un agente está activo, se envían al proveedor de IA únicamente: el texto del mensaje, el nombre visible, el contexto reciente de la conversación y, si corresponde, el estado de un pedido.
+4.2. El ayudante de pegado de clientes (Ventas) sigue la misma autorización; el asistente interno de Telegram/WhatsApp usa xAI y no está cubierto por ella (se rige por la Política y los Términos).
+4.2 bis. Cuando un agente está activo, se envían al proveedor de IA únicamente: el texto del mensaje, el nombre visible, el contexto reciente de la conversación y, si corresponde, el estado de un pedido.
 4.3. Los proveedores de IA procesan esos datos solo para devolver la respuesta, no pueden entrenar sus modelos con ellos según los términos de sus interfaces empresariales y pueden conservarlos hasta **30 días** únicamente por seguridad y prevención de abusos, salvo que se acuerde retención cero [Rafael: solicitar a OpenAI/xAI].
 4.4. Los agentes nuevos operan en modo «Sugerir» (una persona revisa); el envío sin revisión requiere aprobación expresa del Negocio por canal. La IA nunca confirma pagos; los pagos, reembolsos, solicitudes de hablar con una persona, fotos, notas de voz y casos inciertos se pasan a una persona.
 4.5. Existe un interruptor de emergencia que la Encargada puede activar para detener todos los agentes (por canal de operación o por seguridad).
@@ -62,8 +63,8 @@ La Encargada mantiene medidas técnicas y organizativas adecuadas (Ley 8968, art
 
 | Dato | Plazo |
 |---|---|
-| Conversaciones y datos del negocio | Mientras la cuenta o la conexión esté activa; mensajes eliminados dentro de 24 horas de desconectar |
-| Texto de respuestas de IA guardado para revisión | 90 días (luego solo se conservan conteos y metadatos técnicos) |
+| Conversaciones y datos del negocio | Mientras la cuenta esté activa; al desconectar un canal se eliminan los tokens y el historial permanece hasta que el Negocio pida su eliminación o cierre la cuenta (entonces, 30 días) |
+| Texto de respuestas de IA guardado para revisión | 90 días, junto con su traza técnica (luego solo se conservan conteos y costos) |
 | Identificadores de clic de anuncios (si la medición está activa) | 90 días |
 | Copias de seguridad | Hasta 90 días |
 | Proveedores de IA | Hasta 30 días (seguridad y abuso), salvo retención cero |

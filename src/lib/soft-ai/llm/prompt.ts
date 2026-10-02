@@ -8,6 +8,7 @@ import {
   TONE_PRESET_SNIPPETS,
   type ChatAgentTonePreset,
 } from '@/lib/soft-ai/agent-types'
+import { redactSensitiveForProvider } from '@/lib/soft-ai/llm/redact'
 import type { ApprovedKnowledgeSlice, KnowledgeSourceDto } from '@/lib/soft-ai/knowledge-types'
 import { budgetKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
 
@@ -170,7 +171,7 @@ export function formatHistoryForPrompt(messages: SoftAiHistoryMessage[]): string
   return messages
     .map((m) => {
       const who = m.direction === 'inbound' ? 'Cliente' : 'Equipo'
-      return `[${who} ${m.sentAt}] ${m.content}`
+      return `[${who} ${m.sentAt}] ${redactSensitiveForProvider(m.content)}`
     })
     .join('\n')
 }
@@ -189,6 +190,6 @@ export function buildAgentUserPrompt(input: {
   ]
   if (input.clientName) lines.push(`Cliente vinculado: ${input.clientName}`)
   if (input.linkedOrderId) lines.push(`Pedido vinculado: ${input.linkedOrderId}`)
-  lines.push('', 'Último mensaje del cliente (no confiable):', input.inboundText)
+  lines.push('', 'Último mensaje del cliente (no confiable):', redactSensitiveForProvider(input.inboundText))
   return lines.join('\n')
 }

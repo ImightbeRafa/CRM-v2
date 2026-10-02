@@ -108,7 +108,16 @@ export function parseChatAgentLayerConfig(raw: unknown): ChatAgentLayerConfig {
     strictUnlockVersion: src.strictUnlockVersion === true,
     unlockCanaries: src.unlockCanaries === false ? false : true,
     aiTerms: parseAiTerms(src.aiTerms),
+    aiTermsRevoked: parseAiTermsRevoked(src.aiTermsRevoked),
   }
+}
+
+function parseAiTermsRevoked(raw: unknown): ChatAgentLayerConfig['aiTermsRevoked'] {
+  const row = asRecord(raw)
+  const revokedAt = optionalText(row.revokedAt)
+  const revokedByUserId = optionalText(row.revokedByUserId)
+  const version = optionalText(row.version)
+  return revokedAt && revokedByUserId && version ? { revokedAt, revokedByUserId, version } : null
 }
 
 function parseAiTerms(raw: unknown): AiTermsAcceptance | null {
@@ -139,6 +148,7 @@ export function chatAgentLayerConfigToJson(
     strictUnlockVersion: config.strictUnlockVersion,
     unlockCanaries: config.unlockCanaries,
     aiTerms: config.aiTerms ? { ...config.aiTerms } : null,
+    aiTermsRevoked: config.aiTermsRevoked ? { ...config.aiTermsRevoked } : null,
   }
 }
 

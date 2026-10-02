@@ -31,7 +31,7 @@ export async function purgeChatAgentOutputs(input?: {
     const ids = await prisma.chatAgentTurn.findMany({
       where: {
         createdAt: { lt: cutoff },
-        outputText: { not: null },
+        OR: [{ outputText: { not: null } }, { toolTrace: { not: Prisma.DbNull } }],
       },
       select: { id: true },
       take: batchSize,
@@ -40,10 +40,12 @@ export async function purgeChatAgentOutputs(input?: {
     let purged = 0
     if (ids.length > 0) {
       const result = await prisma.chatAgentTurn.updateMany({
-        where: { id: { in: ids.map((r) => r.id) }, outputText: { not: null } },
+        where: { id: { in: ids.map((r) => r.id) } },
         data: {
           outputText: null,
           decisionTrace: Prisma.DbNull,
+          // Tool results hold customer names, order numbers and tracking numbers: they leave with the text.
+          toolTrace: Prisma.DbNull,
           outputPurgedAt: now,
         },
       })
@@ -58,7 +60,7 @@ export async function purgeChatAgentOutputs(input?: {
           where: {
             createdAt: { lt: cutoff },
             contentPurgedAt: null,
-            status: { in: ['accepted', 'edited', 'dismissed', 'expired'] },
+            status: { in: ['pending', 'accepted', 'edited', 'dismissed', 'expired'] },
           },
           select: { id: true },
           take: batchSize,

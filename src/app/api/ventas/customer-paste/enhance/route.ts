@@ -5,6 +5,7 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { readTenantUiReadiness } from '@/lib/feature-flags';
 import { createIdentifierRateLimit } from '@/lib/rate-limit';
 import { enhanceCustomerPasteWithGrok } from '@/lib/customer-paste-grok';
+import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server';
 
 export const maxDuration = 15;
 
@@ -25,7 +26,9 @@ export async function GET(request: NextRequest) {
   const auth = await authenticateAPIWithPermission(request, 'create_sales');
   if (!auth.ok) return auth.response;
   const readiness = await readTenantUiReadiness(auth.tenantId);
-  return NextResponse.json({ enabled: readiness.aiCustomerPaste && Boolean(process.env.XAI_API_KEY) });
+  // Staff-pasted customer text goes to an AI provider only for businesses that accepted the AI terms.
+  const accepted = await isAiTermsAcceptedNow(auth.tenantId);
+  return NextResponse.json({ enabled: readiness.aiCustomerPaste && Boolean(process.env.XAI_API_KEY) && accepted });
 }
 
 export async function POST(request: NextRequest) {
@@ -34,6 +37,9 @@ export async function POST(request: NextRequest) {
   const readiness = await readTenantUiReadiness(auth.tenantId);
   if (!readiness.aiCustomerPaste) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (!process.env.XAI_API_KEY) return NextResponse.json({ error: 'AI enhancement is not configured' }, { status: 503 });
+  if (!(await isAiTermsAcceptedNow(auth.tenantId))) {
+    return NextResponse.json({ error: 'AI terms not accepted', code: 'AI_TERMS_NOT_ACCEPTED' }, { status: 403 });
+  }
 
   const limited = await limiter(`${auth.tenantId}:${auth.userId}`);
   if (!limited.allowed) {

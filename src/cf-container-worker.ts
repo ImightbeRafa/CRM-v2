@@ -333,6 +333,73 @@ async function runCronPaths(
 }
 
 /**
+ * Uptime watchdog (every 5 min, runs in the Worker, so it still works when the container or the
+ * database is down): asks the container for /api/health; if two checks 20 s apart both fail,
+ * emails OPS_ALERT_EMAIL through Resend's API directly. At most one email per hour (edge cache
+ * marker), plus one "back up" email when it recovers.
+ */
+const HEALTH_ALERT_KEY = "https://betsy-internal.invalid/health-alert";
+
+async function checkHealthOnce(env: Env): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const response = await fetchWithFailover(
+      env,
+      new Request("http://container/api/health", { method: "GET" }),
+    );
+    const text = await response.text().catch(() => "");
+    return { ok: response.ok, detail: `HTTP ${response.status} ${text.slice(0, 120)}` };
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.name : "error" };
+  }
+}
+
+async function sendWorkerAlert(env: Env, subject: string, text: string): Promise<void> {
+  const to = (env.OPS_ALERT_EMAIL || "").trim();
+  const key = (env.RESEND_API_KEY || "").trim();
+  if (!to || !key) return;
+  await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: "BetsyCRM Alertas <noreply@betsycrm.com>",
+      to,
+      subject: `[Betsy] ${subject}`,
+      text,
+    }),
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => undefined);
+}
+
+async function healthWatch(env: Env): Promise<void> {
+  const cache = caches.default;
+  const marker = new Request(HEALTH_ALERT_KEY);
+  let result = await checkHealthOnce(env);
+  if (!result.ok) {
+    await new Promise((r) => setTimeout(r, 20_000));
+    result = await checkHealthOnce(env);
+  }
+  const alerted = await cache.match(marker);
+  if (!result.ok) {
+    console.error(`[cf-health] DOWN ${result.detail}`);
+    if (alerted) return;
+    await sendWorkerAlert(
+      env,
+      "www.betsycrm.com NO responde",
+      `El sitio o la base de datos no responde (2 intentos con 20 s de diferencia).
+Detalle: ${result.detail}
+Hora: ${new Date().toISOString()}
+Revisá Cloudflare (Worker betsy-crm-daytime-smoke) y Supabase.`,
+    );
+    await cache.put(marker, new Response("1", { headers: { "Cache-Control": "max-age=3600" } }));
+    return;
+  }
+  if (alerted) {
+    await cache.delete(marker);
+    await sendWorkerAlert(env, "www.betsycrm.com volvió a responder", `Todo responde de nuevo. Hora: ${new Date().toISOString()}`);
+  }
+}
+
+/**
  * Next.js build files under /_next/static/ are content-hashed and immutable: served from
  * Cloudflare's edge cache after the first request, so they never cost a container round trip
  * (the container was serving every JS chunk of every page view).
@@ -388,6 +455,12 @@ const worker = {
     if (!paths || paths.length === 0) {
       console.error(`[cf-cron] unknown cron expression: ${controller.cron}`);
       return;
+    }
+
+    if (controller.cron === "*/5 * * * *") {
+      await healthWatch(env).catch((error) =>
+        console.error(`[cf-health] watchdog failed ${error instanceof Error ? error.name : "error"}`),
+      );
     }
 
     const result = await runCronPaths(env, paths);

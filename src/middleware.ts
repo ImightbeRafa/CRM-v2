@@ -41,6 +41,7 @@ const PUBLIC_ROUTES = [
   '/terms',                                     // Terms of service (required for Meta verification)
   '/data-deletion',                             // Data deletion instructions (required for Meta)
   '/docs',                                      // Public documentation (no auth required)
+  '/api/health',                                // Uptime check (no data; DB ping only)
   '/api/client-errors',                         // Browser error reports (same-origin + rate limited in the handler)
 ];
 

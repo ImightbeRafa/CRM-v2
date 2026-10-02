@@ -170,3 +170,16 @@ test('flush on a non-production container writes nothing (Railway preview shares
     console.error = realError
   }
 })
+
+test('uptime: public /api/health pings the DB with a 3 s limit; the Worker checks it every 5 min and emails when down', () => {
+  const health = read('src/app/api/health/route.ts')
+  assert.match(health, /prisma\.\$queryRaw`SELECT 1`/)
+  assert.match(health, /setTimeout\(\(\) => resolve\('timeout'\), 3_000\)/)
+  assert.doesNotMatch(health, /tenant|session|auth/i)
+  assert.match(read('src/middleware.ts'), /'\/api\/health',/)
+  const worker = read('src/cf-container-worker.ts')
+  assert.match(worker, /if \(controller\.cron === "\*\/5 \* \* \* \*"\) \{\n\s+await healthWatch\(env\)/)
+  assert.match(worker, /await new Promise\(\(r\) => setTimeout\(r, 20_000\)\);/, 'second check before alerting')
+  assert.match(worker, /"Cache-Control": "max-age=3600"/, 'at most one alert per hour')
+  assert.match(worker, /volvió a responder/)
+})

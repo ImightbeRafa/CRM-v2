@@ -1,3 +1,14 @@
+## 2026-10-02 — Agent Ops S3: platform kill switch for inbox agents (claudio/agent-ops)
+
+- Two independent triggers: env `SOFT_AGENT_KILL=1` (works with the DB down) and a `PlatformAgentPolicy` row
+  (SQL 044, written only by super admins via `/api/super-admin/agent-kill`, reason required, audited).
+  Not in Tenant.settings on purpose: tenant admins can write that JSON.
+- Checked first in the claim gate and again in the pre-send gate (new skipReason `kill_switch`), and before the
+  legacy Soft path. Probar is not affected. Inbound messages still land for humans.
+- Agent Ops page shows the panel (Frenar / Reanudar + motivo). Until SQL 044 is applied the panel answers 409 and
+  the env trigger is the only one (code is fail-safe on the missing table).
+- SQL 044 prepared + registered in the apply manifest (HELD: not applied). Tests: `soft-ai-kill-switch.test.ts`.
+
 ## 2026-10-02 — Agent Ops S2: usage dashboard (claudio/agent-ops, INBOX only, no SQL)
 
 - Platform view `/super-admin/agentes` + `GET /api/super-admin/agent-usage` (isSuperAdmin only, 404 to others,

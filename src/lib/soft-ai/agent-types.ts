@@ -101,6 +101,7 @@ export type ChatAgentSkipReason =
   | 'human_only'
   | 'schema_not_ready'
   | 'draft_agent'
+  | 'kill_switch'
 
 export type EffectiveAgentBehavior =
   | 'skip'

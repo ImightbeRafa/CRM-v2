@@ -316,6 +316,7 @@ export async function executeAgentLayerTurn(
   }
 
   const claimGate = await runClaimGates({
+    tenantId: row.tenantId,
     conversationId: row.conversationId,
     triggerMessageId: row.messageId,
     triggerSentAt: trigger.sentAt,

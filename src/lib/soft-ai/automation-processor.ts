@@ -18,6 +18,7 @@ import {
   hashSoftAiDeliveryContent,
 } from '@/lib/soft-ai/automation-delivery'
 import { executeSoftAiInboundTurn } from '@/lib/soft-ai/inbound-hook'
+import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
 import { dualWriteChatMessage } from '@/lib/chat-conversation-write'
 import { executeAgentLayerTurn } from '@/lib/soft-ai/agent-turn'
 import { resolveChatAgent } from '@/lib/soft-ai/agent-resolver'
@@ -125,6 +126,10 @@ async function dispatch(row: ClaimedChatAutomationJob) {
   })
 
   if (!probe.layerEnabled) {
+    // The legacy Soft path can send too: the platform kill switch stops it as well.
+    if ((await readAgentKillState(row.tenantId)).armed) {
+      return { status: 'skipped' as const, reason: 'kill_switch' }
+    }
     return dispatchLegacy(row)
   }
 

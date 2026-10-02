@@ -16,6 +16,7 @@ import type {
   ChatAgentTurnStatus,
 } from '@/lib/soft-ai/agent-types'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
+import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
 
 export type GateFail = {
   ok: false
@@ -56,11 +57,16 @@ export async function hasHumanRepliedAfter(input: {
 }
 
 export async function runClaimGates(input: {
+  tenantId?: string
   conversationId: string
   triggerMessageId: string
   triggerSentAt: Date
   superseded: boolean
 }): Promise<GatePass | GateFail> {
+  // Kill switch first: no tokens spent, no send, no suggestion.
+  if ((await readAgentKillState(input.tenantId)).armed) {
+    return { ok: false, status: 'skipped', skipReason: 'kill_switch' }
+  }
   if (input.superseded) {
     return { ok: false, status: 'skipped', skipReason: 'superseded' }
   }
@@ -187,6 +193,10 @@ export async function runPreSendGates(input: {
   unlockedRequired: boolean
   outputValidationOk: boolean
 }): Promise<GatePass | GateFail> {
+  // Kill switch re-checked right before a send (it may have been armed while the model ran).
+  if ((await readAgentKillState(input.tenantId)).armed) {
+    return { ok: false, status: 'skipped', skipReason: 'kill_switch' }
+  }
   // Gate 1 again
   if (await hasHumanRepliedAfter({
     conversationId: input.conversationId,

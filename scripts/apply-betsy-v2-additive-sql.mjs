@@ -33,6 +33,7 @@
  * 039 Meta sales attribution step 1: ChatAdReferral (BETSY_V2_APPLY_FILES=039; quiet window).
  * 040 own error tracking: OpsErrorGroup (BETSY_V2_APPLY_FILES=040; no FKs, safe any time).
  * 041 Meta sales attribution step 3: MetaCapiDataset, MetaConversionEvent (BETSY_V2_APPLY_FILES=041; quiet window).
+ * 044 platform agent kill switch: PlatformAgentPolicy (BETSY_V2_APPLY_FILES=044; no FKs, safe any time).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
+import KillSwitchPanel from '@/app/super-admin/agentes/KillSwitchPanel'
 
 type Bucket = {
   turns: number
@@ -142,6 +143,7 @@ export default function AgentOpsDashboard() {
   const t = data?.summary.totals
   return (
     <div className="space-y-4">
+      <KillSwitchPanel />
       <div className="flex flex-wrap items-center gap-2">
         {DAY_OPTIONS.map((d) => (
           <button

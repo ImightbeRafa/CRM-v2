@@ -7,7 +7,7 @@ import { Input } from '@/app/components/ui/input';
 
 type Preview = {
   name: string;
-  counts: { orders: number; conversations: number; messages: number; notes: number; tasks: number };
+  counts: { orders: number; ordersMatchedByContact?: number; archivedOrders?: number; conversations: number; messages: number; notes: number; tasks: number };
   openOrders: string[];
   confirmToken: string | null;
 };
@@ -31,6 +31,7 @@ export function CustomerErasePanel({ clientId, onErased }: { clientId: string; o
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [typed, setTyped] = useState('');
+  const [finished, setFinished] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -48,7 +49,7 @@ export function CustomerErasePanel({ clientId, onErased }: { clientId: string; o
     if (!preview?.confirmToken) return;
     setBusy(true);
     setError('');
-    const { ok, json } = await post(clientId, { confirmToken: preview.confirmToken, typedName: typed });
+    const { ok, json } = await post(clientId, { confirmToken: preview.confirmToken, typedName: typed, confirmFinished: finished });
     setBusy(false);
     if (!ok) return setError(json.error || 'No se pudo completar.');
     onErased();
@@ -66,10 +67,13 @@ export function CustomerErasePanel({ clientId, onErased }: { clientId: string; o
     <div className="rounded-lg border p-3 space-y-3 text-sm" data-testid="customer-erase-panel">
       {busy && !preview ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
       {preview && preview.openOrders.length > 0 ? (
-        <p>
-          Este cliente tiene pedidos en curso ({preview.openOrders.slice(0, 5).join(', ')}
-          {preview.openOrders.length > 5 ? '…' : ''}). Cuando estén cerrados podés eliminar sus datos.
-        </p>
+        <label className="flex items-start gap-2 text-xs">
+          <input type="checkbox" className="mt-0.5" checked={finished} onChange={(e) => setFinished(e.target.checked)} />
+          <span>
+            Los pedidos {preview.openOrders.slice(0, 5).join(', ')}
+            {preview.openOrders.length > 5 ? '…' : ''} ya terminaron (si alguno sigue en camino, perdería la dirección).
+          </span>
+        </label>
       ) : null}
       {preview && preview.confirmToken ? (
         <>
@@ -79,7 +83,7 @@ export function CustomerErasePanel({ clientId, onErased }: { clientId: string; o
           </p>
           <p className="text-xs text-muted-foreground">
             {preview.counts.orders} pedidos · {preview.counts.conversations} chats · {preview.counts.messages} mensajes ·{' '}
-            {preview.counts.notes} notas
+            {preview.counts.notes} notas · {preview.counts.tasks} tareas
           </p>
           <label className="block text-xs">
             Escribí <strong>{preview.name}</strong> para confirmar
@@ -89,11 +93,11 @@ export function CustomerErasePanel({ clientId, onErased }: { clientId: string; o
       ) : null}
       {error ? <p role="alert" className="text-xs text-red-600">{error}</p> : null}
       <div className="flex gap-2 justify-end">
-        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => { setOpen(false); setPreview(null); setTyped(''); setError(''); }}>
+        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => { setOpen(false); setPreview(null); setTyped(''); setFinished(false); setError(''); }}>
           Cancelar
         </Button>
         {preview?.confirmToken ? (
-          <Button type="button" size="sm" className="bg-red-600 text-white hover:bg-red-700" disabled={busy || !typed.trim()} onClick={() => void erase()}>
+          <Button type="button" size="sm" className="bg-red-600 text-white hover:bg-red-700" disabled={busy || !typed.trim() || (preview.openOrders.length > 0 && !finished)} onClick={() => void erase()}>
             {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
             Eliminar
           </Button>

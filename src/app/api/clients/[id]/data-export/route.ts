@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { buildCustomerExport, ExportTooLargeError, serializeExport } from '@/lib/data-subject/export'
+import { dataSubjectRequestsEnabled } from '@/lib/data-subject/availability'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { createIdentifierRateLimit, getClientIP } from '@/lib/rate-limit'
 import { PII_NO_STORE_HEADERS } from '@/lib/security'
@@ -15,8 +16,12 @@ type RouteContext = { params: Promise<{ id: string }> }
 /**
  * Ley 8968 access request: download everything about one customer as JSON. Business OWNER only
  * (manage_tenant), 10 per hour per business, audited with counts only (never the data).
+ * Off unless DATA_SUBJECT_REQUESTS=1 (standby).
  */
 export async function GET(request: NextRequest, context: RouteContext) {
+  if (!dataSubjectRequestsEnabled()) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404, headers: PII_NO_STORE_HEADERS })
+  }
   const auth = await authenticateAPIWithPermission(request, 'manage_tenant')
   if (!auth.ok) return auth.response
   const { id } = await context.params
@@ -55,8 +60,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
     userAgent: request.headers.get('user-agent')?.slice(0, 200) ?? null,
   }).catch(() => undefined)
 
+  let json: string
+  try {
+    json = serializeExport(data)
+  } catch (error) {
+    if (error instanceof ExportTooLargeError) {
+      return NextResponse.json(
+        { error: 'Este cliente tiene demasiados datos para una sola descarga. Escribinos a soporte.' },
+        { status: 413, headers: PII_NO_STORE_HEADERS },
+      )
+    }
+    throw error
+  }
   const day = new Date().toISOString().slice(0, 10)
-  return new NextResponse(serializeExport(data), {
+  return new NextResponse(json, {
     status: 200,
     headers: {
       ...PII_NO_STORE_HEADERS,

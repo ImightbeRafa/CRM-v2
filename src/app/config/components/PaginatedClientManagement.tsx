@@ -66,8 +66,26 @@ async function downloadCustomerData(client: ManagedClient): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function ClientHistory({ client, onClose, canExportData, onErased }: { client: ManagedClient; onClose: () => void; canExportData: boolean; onErased: () => void }) {
+/** Customer data requests are on standby until the server switch is on (owner only). */
+function useDataRequestsAvailability(canExportData: boolean): { export: boolean; erase: boolean } {
+  const [state, setState] = useState({ export: false, erase: false });
+  useEffect(() => {
+    if (!canExportData) return;
+    let cancelled = false;
+    fetch('/api/clients/data-requests', { credentials: 'same-origin', cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (!cancelled && j) setState({ export: j.export === true, erase: j.erase === true }); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [canExportData]);
+  return state;
+}
+
+function ClientHistory({ client, onClose, canExportData: canManage, onErased }: { client: ManagedClient; onClose: () => void; canExportData: boolean; onErased: () => void }) {
   const [exporting, setExporting] = useState(false);
+  const available = useDataRequestsAvailability(canManage);
+  const canExportData = canManage && available.export;
+  const canEraseData = canManage && available.erase;
   const [orders, setOrders] = useState<Array<{ id: string; orderId: string; status: string; total: number; product: string | null; timestamp: string; orderType: string }>>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -98,7 +116,7 @@ function ClientHistory({ client, onClose, canExportData, onErased }: { client: M
         {loading && <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>}
         {!loading && orders.length === 0 && <p className="text-center text-muted-foreground py-8">No hay pedidos enlazados.</p>}
         {hasMore && <Button variant="outline" className="w-full" disabled={loading} onClick={() => void load(cursor)}>Cargar más historial</Button>}
-        {canExportData && <div className="pt-2 border-t"><CustomerErasePanel clientId={client.id} onErased={onErased} /></div>}
+        {canEraseData && <div className="pt-2 border-t"><CustomerErasePanel clientId={client.id} onErased={onErased} /></div>}
       </CardContent>
     </Card>
   </div>;

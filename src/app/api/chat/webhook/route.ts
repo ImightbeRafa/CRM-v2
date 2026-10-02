@@ -26,6 +26,7 @@ import {
   buildChatWebhookObsFields,
   logChatWebhookEvent,
 } from '@/lib/chat-webhook-observability'
+import { isPhoneSuppressed } from '@/lib/data-subject/suppression'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -107,6 +108,12 @@ async function storeMessage(event: ParsedMetaChatMessage) {
 
   const account = resolved.account
   const direction = event.direction || 'inbound'
+
+  // Ley 8968: WhatsApp history sync must not rebuild the chat of a customer this business erased.
+  // (A new live message from them is a new contact and is received normally.)
+  if (event.metadata?.webhookField === 'history' && (await isPhoneSuppressed(account.tenantId, event.senderId))) {
+    return { stored: false as const, reason: 'erased_customer_history' as const }
+  }
 
   const result = await dualWriteChatMessage({
     tenantId: account.tenantId,

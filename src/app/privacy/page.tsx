@@ -178,7 +178,8 @@ export default function PrivacyPage() {
             </ul>
             <p className="mt-3">
               When a business using Betsy removes the personal data of one of its customers, it is removed from the
-              app right away and from our backups within 14 days. Invoices are kept as tax records.
+              app right away and from our backups within about 15 days. Invoices are kept as tax records, and
+              shipping labels and delivery records are kept as the business's delivery history.
             </p>
           </section>
 

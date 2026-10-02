@@ -132,7 +132,15 @@ export async function authenticateUserOnly(request: NextRequest) {
  * if (!auth.ok) return auth.response;
  * const { session, tenantId, role } = auth;
  */
-export async function authenticateAPI(request: NextRequest) {
+export type AuthenticateOptions = {
+  /**
+   * Legal obligations (Ley 8968 customer erasure) must work even when the business's plan is
+   * restricted for billing reasons. Use ONLY for such routes.
+   */
+  skipBillingWriteGuard?: boolean;
+};
+
+export async function authenticateAPI(request: NextRequest, options: AuthenticateOptions = {}) {
   // Fast path: middleware-injected headers (avoids a redundant JWT decode), trusted only when
   // signed by the middleware. Unsigned / forged headers fall through to the session check.
   const ctx = await readVerifiedAuthContext(request.headers);
@@ -153,7 +161,7 @@ export async function authenticateAPI(request: NextRequest) {
       role: (ctx.role || 'VIEWER') as Role,
       userId: ctx.userId,
     };
-    return applyBillingWriteGuard(request, auth);
+    return options.skipBillingWriteGuard ? auth : applyBillingWriteGuard(request, auth);
   }
 
   // Fallback: full session check (for routes where middleware didn't inject headers)
@@ -190,7 +198,7 @@ export async function authenticateAPI(request: NextRequest) {
     role: role,
     userId: session.user.id || session.user.email || '',
   };
-  return applyBillingWriteGuard(request, auth);
+  return options.skipBillingWriteGuard ? auth : applyBillingWriteGuard(request, auth);
 }
 
 async function applyBillingWriteGuard<T extends {
@@ -229,9 +237,10 @@ async function applyBillingWriteGuard<T extends {
  */
 export async function authenticateAPIWithPermission(
   request: NextRequest,
-  permission: Permission
+  permission: Permission,
+  options: AuthenticateOptions = {},
 ) {
-  const auth = await authenticateAPI(request);
+  const auth = await authenticateAPI(request, options);
 
   if (!auth.ok) {
     return auth;

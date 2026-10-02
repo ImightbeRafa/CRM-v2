@@ -67,13 +67,22 @@ function encodePath(pathname: string): string {
   return pathname.split('/').map(encodeURIComponent).join('/')
 }
 
+/**
+ * Supabase accepts both key styles: the legacy service_role JWT (`eyJ…`, sent as apikey + Bearer)
+ * and the new revocable secret key (`sb_secret_…`, sent as apikey only — it is not a JWT).
+ * Swapping SUPABASE_SERVICE_ROLE_KEY to a new secret key needs no code change.
+ */
+export function authHeaders(key: string): Record<string, string> {
+  return key.startsWith('sb_secret_') ? { apikey: key } : { Authorization: `Bearer ${key}`, apikey: key }
+}
+
 async function call(path: string, init: RequestInit & { timeoutMs: number }): Promise<Response> {
   const { url, key } = config()
   const { timeoutMs, headers, ...rest } = init
   try {
     return await fetch(`${url}/storage/v1/${path}`, {
       ...rest,
-      headers: { Authorization: `Bearer ${key}`, apikey: key, ...(headers || {}) },
+      headers: { ...authHeaders(key), ...(headers || {}) },
       signal: AbortSignal.timeout(timeoutMs),
       cache: 'no-store',
       // Never follow a redirect: the apikey header would go with it.

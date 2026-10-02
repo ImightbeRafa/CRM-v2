@@ -135,7 +135,25 @@ export default function PrivacyPage() {
             <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">7.4 Data Sharing</h3>
             <p>
               We do NOT share, sell, or transfer your Instagram/Facebook/WhatsApp data to third parties.
-              Your data is only accessible to you and your authorized team members within Betsy CRM.
+              Your data is only accessible to you and your authorized team members within Betsy CRM. The
+              only exception is the optional ad sales measurement described in 7.5, which a business must
+              turn on itself.
+            </p>
+
+            <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">7.5 Ad Sales Measurement (optional, off by default)</h3>
+            <p>
+              When a customer starts a WhatsApp conversation from a Meta (Facebook or Instagram) ad, Meta
+              includes an ad click identifier in the message. Betsy stores it with that conversation so the
+              business can see which ad brought the chat.
+            </p>
+            <p className="mt-2">
+              If the business owner turns on &quot;Ventas por anuncios (Meta)&quot; and accepts the notice, Betsy
+              reports to that business&apos;s own Meta account, on the business&apos;s behalf, only when an order
+              from that conversation is paid: the ad click identifier, the business&apos;s WhatsApp Business
+              account identifier, the amount and the currency. Betsy never sends names, phone numbers, email
+              addresses or message content for this purpose. The business is the controller of this data and is
+              responsible for informing its customers; Betsy acts as its processor. Ad click identifiers are
+              deleted from Betsy after 90 days, and the business can turn the feature off at any time.
             </p>
           </section>
 

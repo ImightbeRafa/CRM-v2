@@ -138,3 +138,9 @@ describe('delete never hangs (2026-09-29: requests stuck 70–116 s)', () => {
     assert.match(readFileSync('src/lib/chat-storage.ts', 'utf8').replace(/\r\n/g, '\n'), /setTimeout\(resolve, 5_000\)/)
   })
 })
+
+test('new revocable Supabase secret keys (sb_secret_…) go as apikey only; legacy JWT keys keep the Bearer header', async () => {
+  const { authHeaders } = await import('../chat-storage')
+  assert.deepEqual(authHeaders('sb_secret_abc'), { apikey: 'sb_secret_abc' })
+  assert.deepEqual(authHeaders('eyJhbGciOi.x.y'), { Authorization: 'Bearer eyJhbGciOi.x.y', apikey: 'eyJhbGciOi.x.y' })
+})

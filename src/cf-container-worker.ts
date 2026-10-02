@@ -335,7 +335,7 @@ async function edgeCachedStatic(request: Request, env: Env, ctx: ExecutionContex
   return fresh;
 }
 
-export default {
+const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const cached = await edgeCachedStatic(request, env, ctx).catch(() => null);
     if (cached) return cached;
@@ -382,3 +382,5 @@ export default {
     console.log(`[cf-cron] ok cron=${controller.cron}`);
   },
 };
+
+export default worker;

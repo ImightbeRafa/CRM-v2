@@ -55,6 +55,7 @@ export default function TopCustomersChart({ startDate, endDate, prefetchedData }
     return () => {
       abortController.abort();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch only when the period / prefetched data change
   }, [startDate, endDate, prefetchedData]);
 
   const fetchData = async (signal?: AbortSignal) => {

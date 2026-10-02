@@ -11,6 +11,17 @@
   when a customer message raises the unread count (not on first load, not our own replies); speaker
   toggle in the inbox header (per browser, on by default). Preview WAV sent to Rafael.
 
+## 2026-10-02 — Lint cleanup: 22 warnings → 0 (claudio/meta-attribution)
+
+- 7 real fixes: internal `<a>` → `next/link` (SubscriptionBanner, data-deletion, chat list empty state,
+  thread "Reconectar" ×2); logistics rates effect uses a functional update; worker default export named
+  (`const worker`; perf-guards test marker updated).
+- 15 `react-hooks/exhaustive-deps` kept as-is on purpose with a reason comment each (mount-only loads,
+  filter-triggered effects): adding the non-memoised loaders would re-run them every render.
+- Meta pixel `<noscript><img>` kept (must be a plain img) with a reasoned disable.
+- Proof: `next lint` ✔ no warnings; security 264, chat-harden 461, chat-mobile 6, site-ui 50, config-ui 30,
+  stats-ui 42, meta-attribution 12; worker tsc 0; app subset tsc only the known baseline session-type error.
+
 ## 2026-10-01 — Meta sales attribution S1+S2 (claudio/meta-attribution, not deployed)
 
 Advisor plan (CTWA / IG click-to-message → Conversions API for Business Messaging); slices S0–S6.

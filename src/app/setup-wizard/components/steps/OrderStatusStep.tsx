@@ -24,6 +24,7 @@ export function OrderStatusStep({ onNext, markCompleted }: WizardStepProps) {
 
   useEffect(() => {
     loadExistingStatuses();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   }, []);
 
   const loadExistingStatuses = async () => {

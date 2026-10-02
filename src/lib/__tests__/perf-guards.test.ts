@@ -46,7 +46,7 @@ test('Serializable order transactions retry a serialization conflict (P2034)', (
 test('worker: container gets a real DB pool; only immutable build files are edge-cached', () => {
   const w = read('src/cf-container-worker.ts')
   assert.match(w, /envVars\.PRISMA_CONNECTION_LIMIT = \(source\.PRISMA_CONNECTION_LIMIT \|\| ""\)\.trim\(\) \|\| "6"/)
-  const cache = w.slice(w.indexOf('async function edgeCachedStatic'), w.indexOf('export default {'))
+  const cache = w.slice(w.indexOf('async function edgeCachedStatic'), w.indexOf('const worker = {'))
   assert.match(cache, /if \(request\.method !== "GET"\) return null/)
   assert.match(cache, /EDGE_CACHEABLE_PREFIX\) \|\| url\.pathname\.includes\("\.\."\)\) return null/)
   assert.match(w, /const EDGE_CACHEABLE_PREFIX = "\/_next\/static\/"/)

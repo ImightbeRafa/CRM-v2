@@ -100,6 +100,7 @@ export function InvoiceGenerator({
         loadOrderData(order);
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the selection changes
   }, [selectedOrders]);
 
   const loadOrderData = (order: Order) => {

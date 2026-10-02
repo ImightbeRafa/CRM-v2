@@ -1105,9 +1105,9 @@ export function SoftThreadPane({
               {chatSendErrorNeedsReconnect(sendError) ? (
                 <>
                   {' '}
-                  <a href="/config?tab=social" className="font-semibold underline underline-offset-2">
+                  <Link href="/config?tab=social" className="font-semibold underline underline-offset-2">
                     Reconectar
-                  </a>
+                  </Link>
                 </>
               ) : null}
             </div>
@@ -1134,9 +1134,9 @@ export function SoftThreadPane({
               {chatSendErrorNeedsReconnect(sendError) ? (
                 <>
                   {' '}
-                  <a href="/config?tab=social" className="font-semibold underline underline-offset-2">
+                  <Link href="/config?tab=social" className="font-semibold underline underline-offset-2">
                     Reconectar
-                  </a>
+                  </Link>
                 </>
               ) : null}
             </div>

@@ -371,6 +371,7 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
       setGenerationResults(null);
       loadShippingConfigs();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when the dialog opens
   }, [open]);
 
   const loadShippingConfigs = async () => {

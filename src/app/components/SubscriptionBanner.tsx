@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
@@ -107,13 +108,13 @@ export default function SubscriptionBanner() {
         </div>
         <div className="flex flex-shrink-0 items-center gap-1 md:gap-2">
           {isOwner && (
-            <a
+            <Link
               href="/config?tab=billing"
               className="flex items-center gap-1 whitespace-nowrap rounded-md border border-white/40 bg-white px-2.5 py-1 text-xs font-semibold text-slate-900 shadow-sm transition-colors hover:bg-slate-100 md:px-3 md:py-1.5 md:text-sm"
             >
               <CreditCard className="h-3.5 w-3.5 md:h-4 md:w-4" />
               Renovar
-            </a>
+            </Link>
           )}
           {!enforced && (
             <button

@@ -73,6 +73,7 @@ export function OptionSetsManager() {
 
   useEffect(() => {
     loadData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   }, []);
 
   const handleAddOption = async (setId: string, formData: FormData) => {

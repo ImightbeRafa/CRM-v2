@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 export default function DataDeletionPage() {
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -82,12 +84,12 @@ export default function DataDeletionPage() {
         </div>
 
         <div className="mt-8 pt-6 border-t">
-          <a 
+          <Link
             href="/"
             className="text-blue-600 hover:underline font-medium"
           >
             ← Volver a Betsy CRM
-          </a>
+          </Link>
         </div>
       </div>
     </div>

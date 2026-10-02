@@ -32,6 +32,7 @@ export function FirstProductStep({ markCompleted, markUnsavedChanges }: WizardSt
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   useEffect(() => { loadProducts(); }, []);
 
   useEffect(() => {

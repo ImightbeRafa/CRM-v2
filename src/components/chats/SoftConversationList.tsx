@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { Clock, Search, Sparkles, X } from 'lucide-react'
 import {
@@ -346,9 +347,9 @@ export function SoftConversationList({
             description="Conectá WhatsApp o Instagram para ver acá los chats de tus clientes."
             actions={
               <>
-                <a href="/config?tab=social" className={auroraButtonPrimary}>
+                <Link href="/config?tab=social" className={auroraButtonPrimary}>
                   Ir a Canales
-                </a>
+                </Link>
                 {!demoMode && onLoadDemo ? (
                   <button type="button" onClick={onLoadDemo} className={auroraButtonSecondary}>
                     Cargar chats DEMO (locales)

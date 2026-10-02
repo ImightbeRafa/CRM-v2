@@ -96,10 +96,12 @@ function LegacyAutomaticClientManagement() {
 
   useEffect(() => {
     loadClients();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   }, []);
 
   useEffect(() => {
     filterClients();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- re-filter only when the data or filters change
   }, [clients, searchTerm, locationFilter, statusFilter]);
 
   const loadClients = async () => {

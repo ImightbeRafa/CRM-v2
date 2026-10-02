@@ -42,6 +42,8 @@ export default function MetaPixel() {
         `}
       </Script>
       <noscript>
+        {/* Meta pixel fallback: must be a plain <img> inside <noscript> (no JS, no next/image). */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           height="1"
           width="1"

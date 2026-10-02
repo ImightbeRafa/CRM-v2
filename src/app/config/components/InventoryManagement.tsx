@@ -134,6 +134,7 @@ export function InventoryManagement() {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   useEffect(() => { loadInventory(); }, []);
 
   // Unique categories for the Select dropdown. We MUST exclude empty-string

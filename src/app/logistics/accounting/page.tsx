@@ -88,6 +88,7 @@ function ResumenTab({ rates }: { rates: Rates }) {
             const pendingCorreosCost = entregados.filter((o: any) => o.lmCarrier === 'correos' && o.correosShippingCost == null).length;
             setTotals({ orders: entregados.length, mensajeria: rowList.reduce((s, r) => s + r.mensajeria, 0), correos: rowList.reduce((s, r) => s + r.correos, 0), unassigned: rowList.reduce((s, r) => s + r.unassigned, 0), mensajeriaCost: rowList.reduce((s, r) => s + r.mensajeriaCost, 0), correosCost: rowList.reduce((s, r) => s + r.correosCost, 0), handling: rowList.reduce((s, r) => s + r.handling, 0), pendingCorreosCost });
         } catch (e) { console.error(e); } finally { setLoading(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getTenantName is rebuilt every render but only depends on tenants (listed)
     }, [dateFrom, dateTo, rates, tenants]);
 
     useEffect(() => { load(); }, [load]);
@@ -1524,7 +1525,7 @@ export default function AccountingPage() {
 
     useEffect(() => {
         fetch('/api/logistics/rates').then(r => r.json()).then(d => {
-            if (d.rates) setRates({ ...rates, ...d.rates });
+            if (d.rates) setRates((current) => ({ ...current, ...d.rates }));
         });
     }, []);
 

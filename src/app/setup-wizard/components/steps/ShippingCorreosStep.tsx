@@ -42,6 +42,7 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
   const [platformConfigured, setPlatformConfigured] = useState<boolean | null>(null);
   const { toast } = useToast();
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   useEffect(() => { loadConfig(); checkPlatformStatus(); }, []);
 
   useEffect(() => {

@@ -52,6 +52,7 @@ export function WelcomeBusinessStep({ markCompleted, markUnsavedChanges }: Wizar
 
   useEffect(() => {
     loadProfile();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   }, []);
 
   useEffect(() => {

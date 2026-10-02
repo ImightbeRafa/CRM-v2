@@ -168,6 +168,7 @@ export default function ConfigPage() {
     useEffect(() => {
         if (tab === 'feedback') loadFeedback();
         if (tab === 'changelog') loadChangelog();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load only when the tab changes
     }, [tab]);
 
     useEffect(() => {

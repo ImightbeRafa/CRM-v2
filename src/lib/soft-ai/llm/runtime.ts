@@ -173,7 +173,15 @@ export async function runSoftAiLlmRuntime(
           }))))
 
       for (const call of calls) {
-        if (toolCalls >= SOFT_AI_MAX_TOOL_CALLS) break
+        if (toolCalls >= SOFT_AI_MAX_TOOL_CALLS) {
+          // Every replayed call needs an output or the provider rejects the next request.
+          inputItems.push({
+            type: 'function_call_output',
+            call_id: call.callId,
+            output: JSON.stringify({ error: 'tool_call_limit_reached' }),
+          })
+          continue
+        }
         toolCalls += 1
         const result = await runA1Tool(input.toolCtx, call.name, call.argumentsJson)
         citedToolNames.push(result.name)
@@ -318,7 +326,7 @@ export async function runSoftAiLlmRuntime(
         ? 'XAI_NOT_CONFIGURED'
         : error instanceof Error && error.message === 'LLM_NOT_CONFIGURED'
           ? 'LLM_NOT_CONFIGURED'
-          : error instanceof Error && /timeout|abort/i.test(error.message)
+          : error instanceof Error && /timed? ?out|abort/i.test(error.message)
             ? openai
               ? 'LLM_TIMEOUT'
               : 'XAI_TIMEOUT'

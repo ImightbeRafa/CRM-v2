@@ -74,10 +74,11 @@ const TOOL_DEFS: Record<AgentToolName, SoftAiToolDefinition> = {
       type: 'object',
       additionalProperties: false,
       properties: {
-        orderNumberHint: { type: 'string' },
-        guiaNumber: { type: 'string' },
+        orderNumberHint: { type: ['string', 'null'] },
+        guiaNumber: { type: ['string', 'null'] },
       },
-      required: [],
+      // OpenAI strict mode: every property must be required; optional ones are nullable.
+      required: ['orderNumberHint', 'guiaNumber'],
     },
     strict: true,
   },
@@ -110,9 +111,9 @@ const TOOL_DEFS: Record<AgentToolName, SoftAiToolDefinition> = {
           description:
             'payment_or_sinpe | media_inbound | opt_out | llm_unavailable | ownership | other',
         },
-        note: { type: 'string' },
+        note: { type: ['string', 'null'] },
       },
-      required: ['reason'],
+      required: ['reason', 'note'],
     },
     strict: true,
   },

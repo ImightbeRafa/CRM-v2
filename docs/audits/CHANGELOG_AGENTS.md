@@ -1,3 +1,14 @@
+## 2026-10-02 — Agent Ops S1 fixes after Verifier review (claudio/agent-ops)
+
+- HIGH: OpenAI strict function schemas — every property now `required` (optional ones nullable) for
+  `get_shipping_status` and `escalate_to_human`; unit test asserts it for all tools.
+- MEDIUM: an unlock record with no stored model no longer carries over to an OpenAI model (forces re-canary).
+- Dedicated key `SOFT_AI_OPENAI_API_KEY` for inbox agents — the staff bot's `OPENAI_API_KEY` (voice transcription)
+  is never used for them, so the "held key" is really held and spend/limits are separate. Forwarded to the container
+  with `SOFT_AI_OPENAI_REASONING` and `SOFT_AGENT_KILL` (CONTAINER_ENV_KEYS).
+- Tool-call cap: replayed calls past the cap get a stub output (OpenAI rejects unanswered calls).
+- Timeout detection matches the SDK message ("Request timed out."); reasoning headroom scales with effort.
+
 ## 2026-10-02 — Agent Ops S3: platform kill switch for inbox agents (claudio/agent-ops)
 
 - Two independent triggers: env `SOFT_AGENT_KILL=1` (works with the DB down) and a `PlatformAgentPolicy` row

@@ -1,5 +1,7 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   LUNA_CHAT_AGENT_MODEL,
   OPENAI_PRICING_VERSION,
@@ -21,13 +23,13 @@ const base = {
 }
 
 const saved = {
-  openai: process.env.OPENAI_API_KEY,
+  openai: process.env.SOFT_AI_OPENAI_API_KEY,
   xai: process.env.XAI_API_KEY,
   effort: process.env.SOFT_AI_OPENAI_REASONING,
 }
 afterEach(() => {
   for (const [key, value] of [
-    ['OPENAI_API_KEY', saved.openai],
+    ['SOFT_AI_OPENAI_API_KEY', saved.openai],
     ['XAI_API_KEY', saved.xai],
     ['SOFT_AI_OPENAI_REASONING', saved.effort],
   ] as const) {
@@ -46,18 +48,18 @@ describe('soft-ai provider routing', () => {
   })
 
   it('reports provider configuration per model without revealing keys', () => {
-    delete process.env.OPENAI_API_KEY
+    delete process.env.SOFT_AI_OPENAI_API_KEY
     process.env.XAI_API_KEY = 'x'
     assert.equal(isSoftAiProviderConfigured('gpt-6-luna'), false)
     assert.equal(isSoftAiProviderConfigured('grok-4.7'), true)
-    process.env.OPENAI_API_KEY = '  '
+    process.env.SOFT_AI_OPENAI_API_KEY = '  '
     assert.equal(isSoftAiProviderConfigured('gpt-6-luna'), false)
-    process.env.OPENAI_API_KEY = 'k'
+    process.env.SOFT_AI_OPENAI_API_KEY = 'k'
     assert.equal(isSoftAiProviderConfigured('gpt-6-luna'), true)
   })
 
   it('missing OpenAI key fails closed with LLM_NOT_CONFIGURED', () => {
-    delete process.env.OPENAI_API_KEY
+    delete process.env.SOFT_AI_OPENAI_API_KEY
     assert.throws(() => createSoftAiClient('gpt-6-luna'), /LLM_NOT_CONFIGURED/)
     delete process.env.XAI_API_KEY
     assert.throws(() => createSoftAiClient('grok-4.7'), /XAI_NOT_CONFIGURED/)
@@ -79,7 +81,7 @@ describe('soft-ai request body', () => {
     assert.deepEqual(body.reasoning, { effort: 'low' })
     assert.equal('temperature' in body, false)
     assert.deepEqual(body.include, ['reasoning.encrypted_content'])
-    assert.equal(body.max_output_tokens, 1500)
+    assert.equal(body.max_output_tokens, 1500) // 700 visible + 800 reasoning headroom
     assert.equal(body.prompt_cache_key, 't:a:1:s:m')
   })
 
@@ -144,5 +146,75 @@ describe('soft-ai pricing', () => {
       outputTokens: 0,
     })
     assert.equal(cost, estimateCostMicros({ model: 'gpt-6-luna', inputTokens: 100, cachedInputTokens: 100, outputTokens: 0 }))
+  })
+})
+
+describe('OpenAI strict tool schemas', () => {
+  it('every tool lists all of its properties as required and forbids extras', async () => {
+    const { softAiToolDefinitions } = await import('@/lib/soft-ai/llm/tool-definitions')
+    const { AGENT_TOOL_NAMES } = await import('@/lib/soft-ai/agent-types')
+    const tools = softAiToolDefinitions([...AGENT_TOOL_NAMES]) as unknown as Array<{
+      name: string
+      strict?: boolean
+      parameters: { properties: Record<string, unknown>; required: string[]; additionalProperties: boolean }
+    }>
+    assert.ok(tools.length >= 5)
+    for (const tool of tools) {
+      assert.equal(tool.parameters.additionalProperties, false, tool.name)
+      if (tool.strict) {
+        assert.deepEqual(
+          [...tool.parameters.required].sort(),
+          Object.keys(tool.parameters.properties).sort(),
+          `${tool.name}: OpenAI strict mode needs every property in required`,
+        )
+      }
+    }
+  })
+})
+
+describe('unlock records and the OpenAI model', () => {
+  it('a record without a stored model does not carry over to an OpenAI model', async () => {
+    const { aiFullUnlockStatus } = await import('@/lib/soft-ai/agent-config')
+    const { DEFAULT_CHAT_AGENT_LAYER_CONFIG } = await import('@/lib/soft-ai/agent-types')
+    const config = {
+      ...DEFAULT_CHAT_AGENT_LAYER_CONFIG,
+      aiFullUnlock: {
+        acc: {
+          passedAt: '2026-10-01T00:00:00.000Z',
+          approvedBy: 'u',
+          fixtureSetHash: DEFAULT_CHAT_AGENT_LAYER_CONFIG.fixtureSetHash,
+          passRate: 1,
+          agentId: 'a1',
+        },
+      },
+    }
+    const grok = aiFullUnlockStatus(config, 'acc', { agentId: 'a1', agentVersion: 1, model: 'grok-4.7' })
+    assert.equal(grok.unlocked, true)
+    const luna = aiFullUnlockStatus(config, 'acc', { agentId: 'a1', agentVersion: 1, model: 'gpt-6-luna' })
+    assert.equal(luna.unlocked, false)
+    assert.equal(luna.reason, 'model')
+  })
+})
+
+describe('runtime and admin wiring (static)', () => {
+  const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
+  it('answers every replayed tool call, even past the call cap', () => {
+    assert.match(read('src/lib/soft-ai/llm/runtime.ts'), /tool_call_limit_reached/)
+  })
+  it('recognizes the SDK timeout message and maps provider-neutral codes', () => {
+    const src = read('src/lib/soft-ai/llm/runtime.ts')
+    assert.match(src, /timed\? \?out\|abort/)
+    assert.match(src, /LLM_TIMEOUT/)
+    assert.match(src, /LLM_NOT_CONFIGURED/)
+  })
+  it('PATCH refuses an OpenAI model while its key is missing (409)', () => {
+    const src = read('src/lib/soft-ai/agent-admin.ts')
+    assert.match(src, /MODEL_PROVIDER_NOT_CONFIGURED/)
+    assert.match(src, /status: 409/)
+  })
+  it('inbox agents never read the staff bot OPENAI_API_KEY', () => {
+    const client = read('src/lib/soft-ai/llm/client.ts')
+    assert.doesNotMatch(client.replace(/\/\/.*$/gm, ''), /process\.env\.OPENAI_API_KEY/)
+    assert.match(client, /SOFT_AI_OPENAI_API_KEY/)
   })
 })

@@ -8,6 +8,7 @@ import {
   DEFAULT_DAILY_TOKEN_CAP,
   DEFAULT_PRICING_VERSION,
   DEFAULT_TEST_DAILY_TOKEN_CAP,
+  softAiProviderFor,
   type AiFullUnlockMismatch,
   type AiFullUnlockRecord,
   type ChatAgentLayerConfig,
@@ -155,6 +156,11 @@ export function aiFullUnlockStatus(
     return { unlocked: false, reason: 'agent', versionWarning: false, record }
   }
   if (ctx && record.model && record.model !== ctx.model) {
+    return { unlocked: false, reason: 'model', versionWarning: false, record }
+  }
+  // Records written before the model was stored were only ever qualified on Grok: they never carry
+  // over to an OpenAI model (its canaries have not run).
+  if (ctx && !record.model && softAiProviderFor(ctx.model) === 'openai') {
     return { unlocked: false, reason: 'model', versionWarning: false, record }
   }
   const versionMismatch = Boolean(

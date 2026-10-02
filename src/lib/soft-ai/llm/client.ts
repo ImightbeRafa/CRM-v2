@@ -1,6 +1,6 @@
 /**
  * Soft-only LLM client (Responses API). Provider follows the model id: gpt-* goes to OpenAI
- * (OPENAI_API_KEY), everything else to xAI (XAI_API_KEY, rollback path). Never imports the staff bot;
+ * (SOFT_AI_OPENAI_API_KEY), everything else to xAI (XAI_API_KEY, rollback path). Never imports the staff bot;
  * never reads WhatsApp env secrets.
  */
 
@@ -32,14 +32,15 @@ export function resolveSoftAiModel(override?: string | null): string {
 /** True when the key for this model's provider is present (never reveals the key). */
 export function isSoftAiProviderConfigured(model?: string | null): boolean {
   const provider = softAiProviderFor(model || DEFAULT_CHAT_AGENT_MODEL)
-  const key = provider === 'openai' ? process.env.OPENAI_API_KEY : process.env.XAI_API_KEY
+  const key = provider === 'openai' ? process.env.SOFT_AI_OPENAI_API_KEY : process.env.XAI_API_KEY
   return Boolean(key && key.trim())
 }
 
 export function createSoftAiClient(model: string, timeoutMs = SOFT_AI_FIRST_CALL_TIMEOUT_MS) {
   const provider: SoftAiProvider = softAiProviderFor(model)
   if (provider === 'openai') {
-    const apiKey = process.env.OPENAI_API_KEY
+    // Dedicated key: the staff bot's OPENAI_API_KEY (voice transcription) is never used for inbox agents.
+    const apiKey = process.env.SOFT_AI_OPENAI_API_KEY
     if (!apiKey || !apiKey.trim()) throw new Error('LLM_NOT_CONFIGURED')
     return new OpenAI({ apiKey: apiKey.trim(), timeout: timeoutMs, maxRetries: 0 })
   }
@@ -95,7 +96,9 @@ export function buildSoftAiResponsesBody(args: SoftAiResponsesCreateArgs): Recor
   if (provider === 'openai') {
     const effort = openAiEffort(args.reasoningEffort)
     body.reasoning = { effort }
-    body.max_output_tokens = effort === 'none' ? baseMax : Math.max(baseMax, 1_500)
+    // Reasoning tokens count against the cap, so leave room for them on top of the visible answer.
+    const headroom = effort === 'none' ? 0 : effort === 'low' ? 800 : effort === 'medium' ? 1_800 : 3_500
+    body.max_output_tokens = baseMax + headroom
     if (effort === 'none') body.temperature = args.temperature ?? 0.1
     else body.include = ['reasoning.encrypted_content']
   } else {

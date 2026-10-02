@@ -1,3 +1,13 @@
+## 2026-10-02 — Privacy policy v8 + legal pages + compliance docs (claudio/agent-ops, UNPUBLISHED draft)
+
+- Decision (Rafael): no selling, no sharing for others' purposes, NO training/improving AI with customer data; tests use own data.
+  The Claude-judge/consented-snapshot and chat-distill ideas are cancelled.
+- `/privacy` rewritten (v8.0): roles (controller vs processor), commitments, AI features with opt-in, provider table (single
+  source `src/lib/legal/privacy-content.ts`), retention table, Costa Rica Ley 8968 + PRODHAB, Meta/GDPR; fixed date/version.
+  New Spanish page `/privacy/es`. Terms: consent sentence replaced + clause 12A "AI Features". Fixes the old §7.4 contradiction.
+- Docs: `docs/compliance/README.md` (index), `anexo-tratamiento-datos-ia-borrador.md` (Betsy–business data processing annex),
+  report updated. Tests: privacy-policy.test.ts. NOT published: needs lawyer review and Rafael's go (merge + deploy).
+
 ## 2026-10-02 — AI opt-in for businesses (claudio/agent-ops, no SQL)
 
 - A business must ACCEPT the AI terms (version `ia-2026-10-v1`) before any agent sends customer messages to an AI provider.

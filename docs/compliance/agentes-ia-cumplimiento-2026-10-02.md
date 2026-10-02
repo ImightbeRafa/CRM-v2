@@ -2,12 +2,14 @@
 
 Fecha de acceso de las fuentes: 2026-10-02 · Preparado para revisión de un abogado costarricense de protección de datos.
 
+> **Decisión de Rafael (2026-10-02, aclaración).** Betsy **no** usa datos de clientes para entrenar ni mejorar IA, y las pruebas y evaluaciones se hacen con mensajes escritos por el propio equipo o por el propio negocio (datos propios), **nunca** con conversaciones reales de clientes. Por eso este informe se actualizó: se **eliminó** del producto cualquier uso de fragmentos de chats reales para evaluar/mejorar agentes (el juez de IA sobre "snapshots consentidos" y la destilación de chats quedan **cancelados**). Lo que sí queda: la **autorización previa (opt-in) por negocio** para usar proveedores de IA, ya implementada, y la política de privacidad actualizada (versión 8.0, borrador listo en `src/app/privacy/page.tsx` y `src/app/privacy/es/page.tsx`, **sin publicar**).
+>
 > **Aviso.** Es investigación de apoyo, **no asesoría legal**. Lo marcado "no verificado" no se pudo comprobar (páginas que devolvieron 403 a la herramienta, resúmenes automáticos de baja confianza o ausencia de fuentes). Ningún texto de este documento se ha publicado: la política de privacidad pública (`src/app/privacy/page.tsx`) **no se modificó** y requiere aprobación de Rafael y revisión legal antes de publicarse.
 
 ## A. Resumen ejecutivo (obligaciones y riesgos, por prioridad)
 
 1. **BLOQUEANTE de política.** La política de privacidad actual contradice la función: la sección 7.4 dice que **no** se comparten ni transfieren datos de Instagram/Facebook/WhatsApp a terceros, pero el agente envía el texto de los clientes finales a OpenAI/xAI; la sección 7.2 no menciona IA. Debe corregirse **antes de activar el envío real de mensajes por IA**. (Confianza alta: leído del repo.)
-2. **Cláusula §4.7 de los Términos de WhatsApp Business Platform (vigentes 23-sep-2026).** Prohíbe permitir que los datos de la plataforma se usen para crear, desarrollar, entrenar o mejorar sistemas de IA/ML, con una excepción limitada (modelos de uso exclusivo del negocio). Usar OpenAI/xAI solo para **responder** (inferencia) no es entrenamiento, siempre que el proveedor no entrene con los datos. Afecta a: (a) el uso de chats de WhatsApp para evaluar/mejorar agentes con un juez de IA (Claude), (b) cualquier reentrenamiento. **Consecuencia práctica para Betsy:** las pruebas del playground y las pruebas de evaluación deben usar conversaciones **simuladas escritas por el equipo**, no chats reales de WhatsApp, hasta que un abogado confirme la lectura de §4.7. (Confianza media: lectura por resumen automático.)
+2. **Cláusula §4.7 de los Términos de WhatsApp Business Platform (vigentes 23-sep-2026).** Prohíbe permitir que los datos de la plataforma se usen para crear, desarrollar, entrenar o mejorar sistemas de IA/ML, con una excepción limitada (modelos de uso exclusivo del negocio). Usar OpenAI/xAI solo para **responder** (inferencia) no es entrenamiento, siempre que el proveedor no entrene con los datos. **Estado en Betsy: cumplido por diseño** — no se entrena ni se mejora IA con datos de clientes, y las pruebas (playground, escenarios, pruebas guardadas) usan solo texto escrito por el equipo. Queda por confirmar con el abogado la lectura exacta de §4.7 y que los proveedores de IA queden cubiertos como subprocesadores. (Confianza media: lectura por resumen automático.)
 3. **Contrato encargado/responsable.** Betsy es **encargada**; cada negocio es **responsable** (Reglamento 37554-JP, arts. 30-31: tratar solo según contrato e instrucciones, sin transferir ni difundir sin instrucción expresa, confidencialidad, seguridad y supresión al terminar). Hace falta un **DPA** firmado o aceptado con cada negocio que autorice expresamente a los subencargados (OpenAI, xAI, etc.). Hoy el repo no tiene DPA.
 4. **Aviso al cliente final (Ley 8968, art. 5).** Información "expresa, precisa e inequívoca": existencia de la base, fines, destinatarios, tratamiento, derechos, identidad y dirección del responsable. El aviso por negocio debe nombrar al negocio y mencionar a los proveedores de IA como destinatarios.
 5. **Decir que es una IA.** Meta lo exige en Messenger/Instagram. No se encontró una norma costarricense que lo exija literalmente; es buena práctica y parte de informar el "tratamiento" (art. 5). (Confianza media.)
@@ -45,7 +47,7 @@ No verificado: estado 2026 del proyecto 22.388; criterios de PRODHAB sobre IA/ch
 
 - **OpenAI API:** https://developers.openai.com/api/docs/guides/your-data — sin entrenamiento por defecto; logs de abuso 30 días; **ZDR** requiere aprobación previa (contactar ventas); `store:false` ≠ ZDR; regiones de datos: EE. UU., Europa, EAU (no Latinoamérica). DPA incorporado a los Business Terms: https://openai.com/policies/business-terms (la página del DPA devolvió 403: abrir en navegador). Vía exacta de firma para una cuenta de API: **no verificada**.
 - **xAI (Grok):** https://x.ai/legal/data-processing-addendum · https://x.ai/legal/faq-enterprise (403 a la herramienta; confianza media-baja) — sin entrenamiento con datos empresariales/API, retención 30 días, ZDR empresarial; DPA para cuentas self-serve **no verificado**.
-- **Anthropic API (solo si se usa un juez Claude):** https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data · https://platform.claude.com/docs/en/manage-claude/api-and-data-retention — borrado a 30 días salvo ZDR; nunca entrena sin permiso; ZDR por ventas (https://claude.com/contact-sales); algunos modelos requieren retención de 30 días y no admiten ZDR.
+- **Anthropic API (referencia; NO se usará: el juez de IA con datos de clientes quedó cancelado):** https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data · https://platform.claude.com/docs/en/manage-claude/api-and-data-retention — borrado a 30 días salvo ZDR; nunca entrena sin permiso; ZDR por ventas (https://claude.com/contact-sales); algunos modelos requieren retención de 30 días y no admiten ZDR.
 - **Subprocesadores realmente presentes en el repo** (por dependencias/variables): OpenAI, xAI, Meta (WhatsApp/Instagram/Graph/Conversions API), Supabase, Resend, Upstash, Vercel Blob (respaldos), Telegram, Tilopay, Correos de Costa Rica, Google OAuth; por documentación: Cloudflare (producción) y Railway (vista previa). Anthropic y Sentry **no** están en el código.
 
 ### B4. Transferencias transfronterizas (confianza media)
@@ -68,7 +70,7 @@ La Ley 8968 no establece un régimen de adecuación/cláusulas tipo/BCR como el 
 >
 > **5. Transferencia internacional.** Estos proveedores pueden procesar datos fuera de Costa Rica, incluidos los Estados Unidos. Exigimos medidas de seguridad contractuales y técnicas comparables a las requeridas por la Ley N.º 8968 y su Reglamento.
 >
-> **6. Supervisión humana y evaluación.** Las respuestas de la IA pueden ser revisadas por el personal del Negocio, que puede marcarlas como útiles o inadecuadas; esa valoración se usa para mejorar el agente de ese Negocio. Si el Negocio lo autoriza de manera expresa y la persona titular lo consiente cuando corresponda, podrán usarse fragmentos de conversaciones para evaluar la calidad de los agentes, de forma revocable y sin efecto retroactivo. No usamos mensajes de WhatsApp para entrenar modelos de IA.
+> **6. Supervisión humana.** Las respuestas de la IA pueden ser revisadas por el personal del Negocio, que puede marcarlas como útiles o inadecuadas; esa valoración se usa únicamente para que el Negocio ajuste la configuración de su propio agente. No usamos mensajes de clientes para entrenar ni mejorar modelos de IA, y probamos y evaluamos los agentes solo con mensajes escritos por nuestro equipo o por el propio Negocio.
 >
 > **7. Decisiones.** El agente no toma decisiones jurídicas ni financieras sobre las personas; los casos sensibles se escalan a una persona del Negocio.
 >
@@ -99,7 +101,9 @@ La Ley 8968 no establece un régimen de adecuación/cláusulas tipo/BCR como el 
 
 > «Este chat es atendido por un asistente de inteligencia artificial de [NOMBRE DEL NEGOCIO] que puede responderle de forma automática, y una persona de nuestro equipo puede intervenir cuando lo solicite. Sus mensajes se procesan con proveedores tecnológicos en el extranjero (por ejemplo, Estados Unidos) únicamente para responderle y gestionar su pedido; más información y sus derechos en [URL de la política] o en [correo del negocio]. Si prefiere hablar con una persona, escriba "agente".»
 
-### C4. Consentimiento opt-in para fragmentos de evaluación
+### C4. Consentimiento opt-in para fragmentos de evaluación — **NO SE USA (cancelado por decisión del 2026-10-02)**
+
+> Este texto se conserva solo como referencia histórica. Betsy no usa fragmentos de conversaciones reales para evaluar ni mejorar agentes; la autorización que sí existe es la del **negocio** para usar proveedores de IA (ver `AI_TERMS_POINTS` en `src/lib/soft-ai/ai-terms.ts`).
 
 > «Autorizo a [NOMBRE DEL NEGOCIO] (responsable) y a Betsy CRM (encargada) a conservar y usar fragmentos de esta conversación, con mi nombre y datos de contacto retirados o reemplazados, únicamente para evaluar y mejorar la calidad de las respuestas del asistente de este negocio, incluyendo su análisis por un proveedor de IA en el extranjero (por ejemplo, Estados Unidos). Esta autorización es voluntaria, no condiciona mi atención, puede revocarse en cualquier momento escribiendo a [correo] sin efecto retroactivo, y los fragmentos se eliminarán en un plazo máximo de [90] días. No se usarán para entrenar modelos de inteligencia artificial.»
 
@@ -110,7 +114,7 @@ Notas: solicitarlo por separado (Reglamento art. 5), conservar la prueba (art. 6
 1. **Corregir y publicar la política de privacidad** (ver brechas abajo), en español, **antes de activar el envío real por IA**.
 2. **OpenAI:** aceptar/solicitar el DPA (https://openai.com/policies/business-terms, https://openai.com/policies/data-processing-addendum) y pedir **ZDR** a ventas; crear un **proyecto de OpenAI aparte** para `SOFT_AI_OPENAI_API_KEY` con presupuesto propio.
 3. **xAI:** confirmar DPA/ZDR para la cuenta de API usada, o dejar de enviar datos de clientes finales a xAI cuando los agentes pasen a Luna (el bot interno del equipo sigue usando Grok; es otro flujo).
-4. **Anthropic (solo antes de usar un juez Claude):** DPA vía Console/ventas; datos pseudonimizados; y recordar §4.7 de Meta.
+4. ~~Anthropic / juez de IA~~ **Cancelado**: no se enviarán datos de clientes a Anthropic. Si en el futuro se usara un juez de IA, solo sería sobre conversaciones simuladas escritas por el equipo (no datos personales).
 5. **DPA Betsy–negocio:** plantilla con las cláusulas C2, aceptación en el alta (versionada, con prueba de aceptación).
 6. **Aviso al cliente final:** texto C3 en el primer mensaje de cada conversación, editable por negocio.
 7. **Meta:** leer §4.1 y §4.7 completos y verificar el DPA de Meta como Solution Provider; garantizar opt-in y salida a humano; el agente no debe pedir identificadores sensibles.
@@ -139,7 +143,7 @@ Notas: solicitarlo por separado (Reglamento art. 5), conservar la prueba (art. 6
 
 1. ¿Enviar mensajes de clientes a un proveedor de IA en EE. UU., como encargado de Betsy, requiere consentimiento del titular (art. 14 de la Ley) o basta contrato de encargo más aviso? ¿Hay criterio de PRODHAB?
 2. ¿Deben Betsy o cada negocio inscribir sus bases ante PRODHAB (art. 21 Ley; art. 44 Reglamento) dado que el texto habla de bases «con fines de distribución, difusión o comercialización»?
-3. ¿Qué dicen exactamente la cláusula 4.7 de Meta y su DPA sobre subprocesadores de IA y sobre usar chats de WhatsApp para **evaluar** (no entrenar) agentes con un juez de IA?
+3. ¿Qué dicen exactamente la cláusula 4.7 de Meta y su DPA sobre subprocesadores de IA (OpenAI/xAI generando respuestas)? Betsy no entrena ni evalúa con chats reales.
 4. ¿Es obligatorio o solo recomendable informar al cliente final que habla con una IA, y con qué contenido mínimo?
 5. ¿Qué plazos y contenido debe tener la notificación de incidentes entre encargado y responsable, y aplican los 5 días hábiles del art. 38 al encargado extranjero? ¿Cómo afecta el proyecto de reforma 22.388?
 
@@ -149,5 +153,6 @@ Notas: solicitarlo por separado (Reglamento art. 5), conservar la prueba (art. 6
 - Los agentes nuevos nacen en modo **Sugerir** (una persona revisa); el envío real requiere aprobación explícita por canal y re-aprobación al cambiar de modelo.
 - Los registros de pruebas (playground) contienen solo texto simulado por el equipo; las salidas del agente se purgan a los 90 días; los rastros se enmascaran (teléfonos, correos, SINPE).
 - La clave del proveedor de IA de los agentes es propia y separada de la del bot interno; hay **freno de emergencia** (variable de entorno y panel de super admin).
-- Los informes de análisis de chats (flow mining) devuelven solo conteos, sin textos ni números.
+- Los informes de análisis de chats (flow mining) devuelven solo conteos, sin textos ni números, y solo se ejecutan a mano para un negocio.
+- **Autorización previa por negocio (nuevo):** ningún mensaje de clientes se envía a un proveedor de IA hasta que el propietario o un administrador acepta los términos de IA en Config → Agentes; queda registrado quién, cuándo y qué versión; es revocable y detiene a los agentes al instante. Probar no la requiere porque solo usa mensajes que escribe el equipo.
 - Pendiente por decisión humana/legal: puntos 1–13 de la sección D.

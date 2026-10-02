@@ -7,6 +7,7 @@ import 'server-only'
 
 import { prisma } from '@/lib/db'
 import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
+import { aiTermsAccepted } from '@/lib/soft-ai/agent-config'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { mutateChatAgentLayerConfig } from '@/lib/soft-ai/agent-layer-config-mutate'
@@ -45,6 +46,7 @@ const REFUSAL_COPY: Record<AiFullUnlockRefusalCode, string> = {
   CANARY_FAILED: 'Una prueba de envío no pasó.',
   TEST_BUDGET_BLOCKED: 'Se alcanzó el tope de pruebas de hoy.',
   XAI_NOT_CONFIGURED: 'El modelo de respuestas no está configurado.',
+  AI_TERMS_NOT_ACCEPTED: 'Primero aceptá el uso de IA en nombre de tu negocio (arriba, en Agentes).',
 }
 
 export class AgentUnlockRefusal extends Error {
@@ -285,6 +287,9 @@ export async function approveAgentAiFullUnlock(
   }
   if ((account.platform || '').toLowerCase() !== 'whatsapp') {
     throw new AgentUnlockRefusal('ACCOUNT_NOT_WHATSAPP')
+  }
+  if (!aiTermsAccepted(config)) {
+    throw new AgentUnlockRefusal('AI_TERMS_NOT_ACCEPTED')
   }
 
   const agent = await findAgent(input.tenantId, input.agentId)

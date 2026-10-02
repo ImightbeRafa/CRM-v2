@@ -2,6 +2,7 @@
  * Soft Agent Layer flag config — parse / serialize chat_agent_layer_v1.
  */
 
+import { isCurrentAiTerms, type AiTermsAcceptance } from '@/lib/soft-ai/ai-terms'
 import {
   CHAT_AGENT_LAYER_V1_FLAG,
   DEFAULT_CHAT_AGENT_LAYER_CONFIG,
@@ -106,7 +107,22 @@ export function parseChatAgentLayerConfig(raw: unknown): ChatAgentLayerConfig {
         : DEFAULT_CHAT_AGENT_LAYER_CONFIG.fixtureSetHash,
     strictUnlockVersion: src.strictUnlockVersion === true,
     unlockCanaries: src.unlockCanaries === false ? false : true,
+    aiTerms: parseAiTerms(src.aiTerms),
   }
+}
+
+function parseAiTerms(raw: unknown): AiTermsAcceptance | null {
+  const row = asRecord(raw)
+  const version = optionalText(row.version)
+  const acceptedAt = optionalText(row.acceptedAt)
+  const acceptedByUserId = optionalText(row.acceptedByUserId)
+  if (!version || !acceptedAt || !acceptedByUserId) return null
+  return { version, acceptedAt, acceptedByUserId, acceptedByName: optionalText(row.acceptedByName) ?? '' }
+}
+
+/** True when the business accepted the CURRENT AI terms (a new version needs a new acceptance). */
+export function aiTermsAccepted(config: ChatAgentLayerConfig): boolean {
+  return isCurrentAiTerms(config.aiTerms)
 }
 
 export function chatAgentLayerConfigToJson(
@@ -122,6 +138,7 @@ export function chatAgentLayerConfigToJson(
     fixtureSetHash: config.fixtureSetHash,
     strictUnlockVersion: config.strictUnlockVersion,
     unlockCanaries: config.unlockCanaries,
+    aiTerms: config.aiTerms ? { ...config.aiTerms } : null,
   }
 }
 

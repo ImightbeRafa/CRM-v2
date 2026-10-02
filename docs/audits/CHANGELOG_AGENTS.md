@@ -1,3 +1,16 @@
+## 2026-10-02 — AI opt-in for businesses (claudio/agent-ops, no SQL)
+
+- A business must ACCEPT the AI terms (version `ia-2026-10-v1`) before any agent sends customer messages to an AI provider.
+  Until then agents neither answer nor suggest (skip reason `ai_terms_not_accepted`, checked before any budget read or model
+  call) and the real-send approval is refused. Probar keeps working (it only uses messages the team types).
+- Card at the top of /config/agentes (owners/admins accept; "Revocar" stops agents at once). Recorded: who, when, version,
+  audited. Stored in the business's own `chat_agent_layer_v1` config (no SQL). A new wording version = everyone re-accepts.
+- Wording promises: no training/improvement with customer data, no sale/sharing, provider keeps requests ≤30 days for abuse
+  monitoring only, testing with the team's own messages, customer notice duty, revocable.
+- HEADS-UP for rollout: the existing pilot business must click "Autorizar el uso de IA" once after deploy or its agents go
+  silent (suggest-only turns skip).
+- Tests: soft-ai-ai-terms.test.ts; unlock tests updated.
+
 ## 2026-10-02 — Probar playground: Verifier + SecureDog fixes (INT-26..29) (claudio/agent-ops)
 
 - Scoring now judges what the agent WOULD say: a good reply is no longer failed because a gate (draft, human-only,

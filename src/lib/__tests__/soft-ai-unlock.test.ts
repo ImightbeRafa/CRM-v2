@@ -36,6 +36,7 @@ import {
   type AgentUnlockDeps,
 } from '../soft-ai/agent-unlock'
 import { composeEffectiveBehavior } from '../soft-ai/agent-resolver'
+import { AI_TERMS_VERSION } from '@/lib/soft-ai/ai-terms'
 import {
   AI_FULL_UNLOCK_REFUSAL_CODES,
   DEFAULT_CHAT_AGENT_LAYER_CONFIG,
@@ -73,6 +74,8 @@ function config(partial: Record<string, unknown> = {}): ChatAgentLayerConfig {
     unlockCanaries: true,
     testDailyTokenCap: 1_000,
     aiFullUnlock: {},
+    // The business accepted the current AI terms (the unlock refuses without it).
+    aiTerms: { version: AI_TERMS_VERSION, acceptedAt: '2026-10-02T00:00:00.000Z', acceptedByUserId: 'u1', acceptedByName: 'Owner' },
     ...partial,
   })
 }
@@ -426,6 +429,7 @@ describe('approveAgentAiFullUnlock', () => {
       ],
       ['TEST_BUDGET_BLOCKED', { loadTestTokens: async () => 1_000 }],
       ['XAI_NOT_CONFIGURED', { xaiConfigured: () => false }],
+      ['AI_TERMS_NOT_ACCEPTED', { readConfig: async () => config({ aiTerms: null }) }],
     ]
     assert.equal(cases.length, AI_FULL_UNLOCK_REFUSAL_CODES.length)
     for (const [code, patch] of cases) {

@@ -6,6 +6,7 @@ import { createHash } from 'crypto'
 import { prisma } from '@/lib/db'
 import { waWindowOpenFromInbound } from '@/lib/chat-conversation-api'
 import {
+  aiTermsAccepted,
   hasAiFullUnlock,
   isAccountAllowlisted,
   parseChatAgentLayerConfig,
@@ -171,6 +172,10 @@ export async function runPreModelGates(input: {
   const config = parseChatAgentLayerConfig(layerFlag.config)
   if (!isAccountAllowlisted(config, input.socialAccountId)) {
     return { ok: false, status: 'skipped', skipReason: 'account_not_allowlisted' }
+  }
+  // Customer messages never reach an AI provider until the business accepted the AI terms (opt-in, revocable).
+  if (!aiTermsAccepted(config)) {
+    return { ok: false, status: 'skipped', skipReason: 'ai_terms_not_accepted' }
   }
   const used = await loadDailyBilledTokens(input.tenantId)
   if (used >= config.dailyTokenCap) {

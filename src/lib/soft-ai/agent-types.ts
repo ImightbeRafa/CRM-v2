@@ -3,6 +3,8 @@
  * Soft-only; never import staff bot paths.
  */
 
+import type { AiTermsAcceptance } from '@/lib/soft-ai/ai-terms'
+
 export const CHAT_AGENT_LAYER_V1_FLAG = 'chat_agent_layer_v1' as const
 
 /**
@@ -105,6 +107,7 @@ export type ChatAgentSkipReason =
   | 'schema_not_ready'
   | 'draft_agent'
   | 'kill_switch'
+  | 'ai_terms_not_accepted'
 
 export type EffectiveAgentBehavior =
   | 'skip'
@@ -135,6 +138,7 @@ export const AI_FULL_UNLOCK_REFUSAL_CODES = [
   'CANARY_FAILED',
   'TEST_BUDGET_BLOCKED',
   'XAI_NOT_CONFIGURED',
+  'AI_TERMS_NOT_ACCEPTED',
 ] as const
 export type AiFullUnlockRefusalCode = (typeof AI_FULL_UNLOCK_REFUSAL_CODES)[number]
 
@@ -161,6 +165,8 @@ export type ChatAgentLayerConfig = {
   strictUnlockVersion: boolean
   /** When true, Aprobar runs the tagged canary fixtures through Probar (D2). */
   unlockCanaries: boolean
+  /** The business's opt-in to AI features (null = not accepted: agents never send customer data to a provider). */
+  aiTerms: AiTermsAcceptance | null
 }
 
 export const DEFAULT_CHAT_AGENT_LAYER_CONFIG: ChatAgentLayerConfig = {
@@ -173,6 +179,7 @@ export const DEFAULT_CHAT_AGENT_LAYER_CONFIG: ChatAgentLayerConfig = {
   fixtureSetHash: FIXTURE_SET_HASH_V2,
   strictUnlockVersion: false,
   unlockCanaries: true,
+  aiTerms: null,
 }
 
 export const TONE_PRESET_LABELS: Record<ChatAgentTonePreset, string> = {

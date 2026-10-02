@@ -15,6 +15,7 @@ import {
 } from '@/lib/soft-ai/agent-types'
 import { AgentTestSandbox } from '@/app/config/agentes/AgentTestSandbox'
 import { AgentUsageCard } from '@/app/config/agentes/AgentUsageCard'
+import { AiTermsCard } from '@/app/config/agentes/AiTermsCard'
 import { AgentQualityCard } from '@/app/config/agentes/AgentQualityCard'
 import { AgentInventoryCard } from '@/app/config/agentes/AgentInventoryCard'
 import { BrandFactsEditor } from '@/app/config/agentes/BrandFactsEditor'
@@ -645,6 +646,7 @@ export default function AgentesConfigPage() {
       )}
 
       <div className="mx-auto w-full max-w-[1200px] space-y-4 px-4 py-5 !text-slate-900 md:px-6">
+        <AiTermsCard canEdit={canEdit} />
         {!schemaReady ? (
           <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-100">
             Los agentes todavía no están habilitados para esta cuenta: la pantalla es de solo lectura y no se

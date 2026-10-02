@@ -1,3 +1,12 @@
+## 2026-10-02 — Agent Ops S8: flow mining report (claudio/agent-ops, offline, no SQL)
+
+- `scripts/flow-mining.ts --tenant=<id> [--days=60]` (read-only): what customers ask first, reply time, and which first
+  questions lead to an order (client order within 14 days). Output = counts only (topic, common phrases, hour of day),
+  nothing with fewer than 5 chats, no text/names/numbers; written to `.reports/` (gitignored). One business per run.
+- No LLM, no embeddings in v1 (keyword topics for Costa Rican Spanish); clustering/LLM labelling deferred until the
+  shallow numbers prove useful. NOT run by Claude (it reads the production database): Rafael runs it when wanted.
+- Tests: flow-mining.test.ts (intents, k-anonymity, no digits, math, script safety).
+
 ## 2026-10-02 — Agent Ops S7: automation rules v1 (claudio/agent-ops, SQL 043 held)
 
 - Config › Chats › "Automatizaciones": simple rules for the team. Triggers: new chat · customer waiting N min

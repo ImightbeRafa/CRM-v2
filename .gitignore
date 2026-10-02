@@ -138,3 +138,4 @@ holama/
 PRODUCTION_READINESS_REPORT.md
 playwright-report/
 test-results/
+.reports/

@@ -43,6 +43,7 @@ import {
   CHAT_INBOX_V2_IMPORTED_KEY,
   CHAT_INBOX_V2_LIST_PAGE_LIMIT,
   CHAT_INBOX_V2_POLL_MS,
+  CHAT_INBOX_V2_SSE_SAFETY_POLL_MS,
   CHAT_INBOX_V2_THREAD_FETCH_LIMIT,
   decideInboxV2PollTick,
   inboxFetch,
@@ -185,6 +186,9 @@ export function SoftCopilotInboxV2() {
   const pinnedDtosRef = useRef<ChatConversationListItemDto[]>([])
   const pollInFlightRef = useRef(false)
   const pollStartedAtRef = useRef(0)
+  const lastPollAtRef = useRef(0)
+  const sseHealthyRef = useRef(false)
+  const tickRef = useRef<((forced?: boolean) => void) | null>(null)
   const selectedConversationIdRef = useRef<string | null>(null)
   const threadMessagesRef = useRef<Record<string, ChatInboxMessage[]>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -473,7 +477,16 @@ export function SoftCopilotInboxV2() {
   }, [])
 
   useEffect(() => {
-    const tick = () => {
+    const tick = (forced = false) => {
+      // While live ticks (SSE) are healthy, the interval only acts as a slow safety net.
+      if (
+        !forced &&
+        sseHealthyRef.current &&
+        Date.now() - lastPollAtRef.current < CHAT_INBOX_V2_SSE_SAFETY_POLL_MS
+      ) {
+        return
+      }
+      lastPollAtRef.current = Date.now()
       void (async () => {
         const decision = decideInboxV2PollTick({
           documentHidden: typeof document !== 'undefined' ? document.hidden : false,
@@ -502,12 +515,13 @@ export function SoftCopilotInboxV2() {
         }
       })()
     }
-    const id = window.setInterval(tick, CHAT_INBOX_V2_POLL_MS)
+    tickRef.current = tick
+    const id = window.setInterval(() => tick(), CHAT_INBOX_V2_POLL_MS)
     const onVisibility = () => {
-      if (!document.hidden) tick()
+      if (!document.hidden) tick(true)
     }
-    const onFocus = () => tick()
-    const onOnline = () => tick()
+    const onFocus = () => tick(true)
+    const onOnline = () => tick(true)
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('focus', onFocus)
     window.addEventListener('online', onOnline)
@@ -518,6 +532,57 @@ export function SoftCopilotInboxV2() {
       window.removeEventListener('online', onOnline)
     }
   }, [fetchChanges, fetchListPage])
+
+  // Live ticks over Server-Sent Events (only when the server has CHAT_SSE on). The frames carry no data:
+  // each tick just triggers the normal /changes poll. Any failure falls back to the 5 s poll.
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof EventSource === 'undefined') return
+    let closed = false
+    let source: EventSource | null = null
+    let retryTimer: number | null = null
+    let backoffMs = 5_000
+
+    const scheduleRetry = () => {
+      if (closed) return
+      retryTimer = window.setTimeout(() => void connect(), backoffMs)
+      backoffMs = Math.min(backoffMs * 2, 120_000)
+    }
+    const connect = async () => {
+      if (closed) return
+      try {
+        const probe = await inboxFetch('/api/chat/stream?probe=1', { credentials: 'same-origin', cache: 'no-store' })
+        const info = probe.ok ? ((await probe.json()) as { enabled?: boolean }) : null
+        if (!info?.enabled) return // off on the server: stay on polling, no retries
+      } catch {
+        scheduleRetry()
+        return
+      }
+      if (closed) return
+      source = new EventSource('/api/chat/stream')
+      source.addEventListener('ready', () => {
+        sseHealthyRef.current = true
+        backoffMs = 5_000
+      })
+      source.addEventListener('tick', () => tickRef.current?.(true))
+      source.addEventListener('full', () => {
+        sseHealthyRef.current = false
+        source?.close()
+      })
+      source.onerror = () => {
+        sseHealthyRef.current = false
+        source?.close()
+        source = null
+        scheduleRetry()
+      }
+    }
+    void connect()
+    return () => {
+      closed = true
+      sseHealthyRef.current = false
+      if (retryTimer !== null) window.clearTimeout(retryTimer)
+      source?.close()
+    }
+  }, [])
 
   // Team quick replies for the composer (`/atajo`).
   useEffect(() => {

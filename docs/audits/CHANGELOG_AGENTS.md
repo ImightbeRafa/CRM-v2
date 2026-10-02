@@ -1,3 +1,16 @@
+## 2026-10-02 — Agent Ops S5: live inbox updates over SSE (claudio/agent-ops, OFF by default)
+
+- `GET /api/chat/stream` (Server-Sent Events, same auth as /changes, tenant from session). Frames carry ONLY the
+  newest conversation revision; the client then calls the existing /changes endpoint, so scoping/DTO logic stays in
+  one place. One shared DB poller per tenant per container (2 s, started only while a tab is connected), caps
+  50 tabs/tenant and 500/container, heartbeat 20 s, closes after 5 min (client reconnects). Works with any number of
+  containers (no pub/sub needed).
+- Off unless `CHAT_SSE=1` (forwarded to the container). The inbox probes `/api/chat/stream?probe=1`; when off it
+  never opens a stream. The 5 s poll stays: it slows to a 30 s safety net while SSE is healthy and returns to 5 s on
+  any error/close/cap. Existing chime/revision-cursor logic untouched.
+- HELD: enabling `CHAT_SSE` in prod (worker streaming path not yet proven under the Worker→Container proxy).
+- Tests: chat-sse-stream.test.ts (tenant isolation of ticks, caps, cleanup, flag, frame content, client fallback).
+
 ## 2026-10-02 — Agent Ops S4: improvement loop — versions, staff thumbs, scorecard, safety test (claudio/agent-ops)
 
 "Are the agents getting better" = compare rates between versions of the same agent.

@@ -81,6 +81,7 @@ interface Env {
   SOFT_AI_OPENAI_API_KEY?: string;
   SOFT_AI_OPENAI_REASONING?: string;
   SOFT_AGENT_KILL?: string;
+  CHAT_SSE?: string;
   XAI_API_KEY?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
@@ -172,6 +173,7 @@ const CONTAINER_ENV_KEYS = [
   "SOFT_AI_OPENAI_API_KEY",
   "SOFT_AI_OPENAI_REASONING",
   "SOFT_AGENT_KILL",
+  "CHAT_SSE",
   "XAI_API_KEY",
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",

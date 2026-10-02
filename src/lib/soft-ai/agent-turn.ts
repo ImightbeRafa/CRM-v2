@@ -32,6 +32,7 @@ import {
   pricingVersionFor,
   type EffectiveAgentBehavior,
 } from '@/lib/soft-ai/agent-types'
+import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import {
   assembleAgentRuntimeInputs,
   channelBindingBlocker,
@@ -537,6 +538,7 @@ export async function executeAgentLayerTurn(
       socialAccountId: row.socialAccountId,
       peerId: row.peerId,
       clientId: conversation.clientId,
+      inventoryItemIds: await loadMappedInventoryIds(row.tenantId, resolved.agent.id),
     },
   })
   const llm = await runSoftAiLlmRuntime(runtimeInput)
@@ -1092,6 +1094,7 @@ export async function runAgentTestTurn(input: {
         peerId: 'sandbox-peer',
         clientId: null,
         sandbox: true,
+        inventoryItemIds: await loadMappedInventoryIds(input.tenantId, runtimeAgent.id),
       },
     })
     const llm = await runSoftAiLlmRuntime(runtimeInput)

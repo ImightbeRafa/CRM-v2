@@ -29,6 +29,8 @@ export type SoftAiToolRunContext = {
   brandFacts?: BrandFacts | null
   /** Probar: order/shipping tools read fixtures, never live Order/Client rows. */
   sandbox?: boolean
+  /** Products this agent may quote (SQL 046). null/undefined/empty = whole active catalog (as before). */
+  inventoryItemIds?: string[] | null
 }
 
 export type SoftAiToolRunResult = {
@@ -99,6 +101,9 @@ async function runSearchInventory(
     where: {
       tenantId: ctx.tenantId,
       isActive: true,
+      ...(ctx.inventoryItemIds && ctx.inventoryItemIds.length > 0
+        ? { id: { in: ctx.inventoryItemIds } }
+        : {}),
       OR: [
         { name: { contains: query, mode: 'insensitive' } },
         { sku: { contains: query, mode: 'insensitive' } },

@@ -1,3 +1,15 @@
+## 2026-10-02 — Agent Ops S9: per-agent product list ("inventory map") (claudio/agent-ops, SQL 046 held)
+
+- Pipeline SoT requirement (§5): an agent must not quote a catalog nobody chose for it. New table
+  `ChatAgentInventoryItem` (SQL 046, new table, no FKs, RLS); card "Productos que puede cotizar" in Avanzado.
+- Behavior: no products chosen = today's behavior (whole active catalog). With products chosen, `search_inventory`
+  (live turns AND Probar) only finds those; price/stock still come from the live inventory row.
+- Gate: moving an agent draft → live with the product search enabled and no products chosen is refused (409,
+  "elegí los productos"). Only on that transition and only once SQL 046 exists, so today's live agents are untouched.
+- Tenant safety: every product id is checked to belong to the session business before it is stored; ≤200 products.
+- NOT built (needs product decisions): the full sales state machine (greet → locate → quote → collect → pay pause),
+  the Citas persona/runtime, and canary traffic splits. Tests: agent-inventory-map.test.ts.
+
 ## 2026-10-02 — Agent Ops S8: flow mining report (claudio/agent-ops, offline, no SQL)
 
 - `scripts/flow-mining.ts --tenant=<id> [--days=60]` (read-only): what customers ask first, reply time, and which first

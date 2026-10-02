@@ -9,6 +9,7 @@ import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
 import { recordAgentVersionSnapshot } from '@/lib/soft-ai/agent-improvement'
+import { agentHasInventoryMap } from '@/lib/soft-ai/agent-inventory-map'
 import {
   AGENT_TOOL_NAMES,
   AGENT_INSTRUCTIONS_MAX,
@@ -92,6 +93,16 @@ export function mapChatAgentAdminError(error: unknown): ChatAgentAdminHttpError 
     return {
       status: 400,
       body: { success: false, error: 'Modelo no permitido', code: 'MODEL_NOT_ALLOWED' },
+    }
+  }
+  if (msg === 'INVENTORY_MAP_REQUIRED') {
+    return {
+      status: 409,
+      body: {
+        success: false,
+        error: 'Antes de activar este agente elegí los productos que puede cotizar.',
+        code: 'INVENTORY_MAP_REQUIRED',
+      },
     }
   }
   if (msg === 'MODEL_PROVIDER_NOT_CONFIGURED') {
@@ -389,6 +400,14 @@ export async function updateChatAgent(input: {
   }
   if (input.patch.status) {
     data.status = asStatus(input.patch.status)
+    // Going live with the product search on needs a product list (when the feature is available): an agent
+    // must never be live quoting a catalog nobody chose for it. Existing live agents are not affected.
+    if (data.status === 'live' && existing.status !== 'live') {
+      const tools = (input.patch.enabledTools ?? existing.enabledTools) as readonly string[]
+      if (tools.includes('search_inventory') && (await agentHasInventoryMap(input.tenantId, existing.id)) === false) {
+        throw new Error('INVENTORY_MAP_REQUIRED')
+      }
+    }
   }
   if (typeof input.patch.model === 'string') {
     if (!isAllowedChatAgentModel(input.patch.model)) {

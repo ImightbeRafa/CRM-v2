@@ -35,6 +35,7 @@
  * 041 Meta sales attribution step 3: MetaCapiDataset, MetaConversionEvent (BETSY_V2_APPLY_FILES=041; quiet window).
  * 043 chat automation rules v1: ChatAutomationRule, ChatAutomationRuleRun (BETSY_V2_APPLY_FILES=043; new tables only, safe any time).
  * 044 platform agent kill switch: PlatformAgentPolicy (BETSY_V2_APPLY_FILES=044; no FKs, safe any time).
+ * 046 per-agent inventory map: ChatAgentInventoryItem (BETSY_V2_APPLY_FILES=046; new table only, safe any time).
  * 045 agent improvement loop: ChatAgentVersion, ChatAgentFeedback, ChatAgentEvalRun (BETSY_V2_APPLY_FILES=045; new tables only, safe any time).
  */
 import { readFileSync } from 'node:fs';

@@ -1214,7 +1214,7 @@ export default function AgentesConfigPage() {
                       Modelo: <span className="font-mono">{selected.model}</span>
                     </p>
                     <AgentUsageCard />
-                    <AgentQualityCard agentId={selected.id} canEdit={canEdit} />
+                    <AgentQualityCard key={selected.id} agentId={selected.id} canEdit={canEdit} />
                     {canEdit && selected.model !== LUNA_CHAT_AGENT_MODEL ? (
                       <button
                         type="button"

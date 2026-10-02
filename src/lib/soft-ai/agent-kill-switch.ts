@@ -8,6 +8,8 @@
 import 'server-only'
 
 import { prisma } from '@/lib/db'
+import { isMissingRelation } from '@/lib/db-missing-relation'
+import { isTableReady } from '@/lib/soft-ai/table-ready'
 
 export const KILL_GLOBAL_KEY = 'agent_kill_global'
 export const killTenantKey = (tenantId: string) => `agent_kill_tenant:${tenantId}`
@@ -23,23 +25,26 @@ export function envKillArmed(): boolean {
   return v === '1' || v === 'true' || v === 'on'
 }
 
-function isMissingTable(error: unknown): boolean {
-  const msg = error instanceof Error ? error.message : String(error)
-  return /42P01|does not exist|P2021|P2010/i.test(msg)
-}
+const POLICY_TABLE = 'PlatformAgentPolicy'
 
 async function readKey(key: string): Promise<boolean> {
   const hit = cache.get(key)
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.armed
   let armed = false
   try {
+    // Table not applied yet (SQL 044): the env switch is the only trigger; skip the failing query.
+    if (!(await isTableReady(POLICY_TABLE))) {
+      cache.set(key, { at: Date.now(), armed: false })
+      return false
+    }
     const rows = await prisma.$queryRaw<Array<{ armed: boolean | null }>>`
       SELECT ("value"->>'armed') = 'true' AS "armed"
         FROM "PlatformAgentPolicy" WHERE "key" = ${key} LIMIT 1`
     armed = rows[0]?.armed === true
   } catch (error) {
-    // Table not applied yet (or a transient read error): the env switch is the always-on trigger.
-    if (!isMissingTable(error)) console.error('[agent-kill] read failed', error instanceof Error ? error.name : 'unknown')
+    // A transient read error must not silently pause every reply (a skipped job is not retried), so this
+    // fails open; the env switch is the always-on trigger. Log it so it is never invisible.
+    if (!isMissingRelation(error)) console.error('[agent-kill] read failed', error instanceof Error ? error.name : 'unknown')
   }
   cache.set(key, { at: Date.now(), armed })
   return armed
@@ -82,7 +87,7 @@ export async function writeAgentKill(input: {
       ON CONFLICT ("key") DO UPDATE
         SET "value" = EXCLUDED."value", "updatedBy" = EXCLUDED."updatedBy", "updatedAt" = now()`
   } catch (error) {
-    if (isMissingTable(error)) throw new KillTableMissingError()
+    if (isMissingRelation(error)) throw new KillTableMissingError()
     throw error
   }
   cache.delete(input.key)
@@ -103,7 +108,7 @@ export async function listAgentKills(): Promise<
       updatedAt: new Date(r.updatedAt).toISOString(),
     }))
   } catch (error) {
-    if (isMissingTable(error)) return []
+    if (isMissingRelation(error)) return []
     throw error
   }
 }

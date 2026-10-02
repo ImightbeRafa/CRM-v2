@@ -923,7 +923,7 @@ export function SoftThreadPane({
                           {msg.id?.startsWith('demo-ai-')
                             ? 'IA envió'
                             : softAiOutboundLabel(msg.metadata)}
-                          {typeof feedbackTurnId === 'string' && feedbackTurnId ? (
+                          {!compact && typeof feedbackTurnId === 'string' && feedbackTurnId ? (
                             <AgentFeedbackButtons turnId={feedbackTurnId} />
                           ) : null}
                         </>

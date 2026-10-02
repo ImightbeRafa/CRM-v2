@@ -8,6 +8,7 @@ import 'server-only'
 import { randomUUID } from 'crypto'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { isMissingRelation } from '@/lib/db-missing-relation'
 import { replayFixtures } from '@/lib/soft-ai/agent-replay'
 import {
   buildVersionSnapshot,
@@ -25,10 +26,7 @@ import {
 } from '@/lib/soft-ai/brand-facts'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
 
-function isMissingTable(error: unknown): boolean {
-  const msg = error instanceof Error ? error.message : String(error)
-  return /42P01|does not exist|P2021|P2010/i.test(msg)
-}
+const isMissingTable = isMissingRelation
 
 export class ImprovementNotReadyError extends Error {
   constructor() {
@@ -59,6 +57,30 @@ export async function recordAgentVersionSnapshot(input: {
     if (!isMissingTable(error)) {
       console.error('[agent-improvement] snapshot failed', error instanceof Error ? error.name : 'unknown')
     }
+  }
+}
+
+/**
+ * Lazy backfill: make sure the CURRENT version of every agent (of this business, or all for the platform
+ * view) has a snapshot. Versions bumped by shortcut/knowledge/import edits get theirs the next time the
+ * scorecard is opened. Past versions cannot be reconstructed.
+ */
+export async function ensureCurrentVersionSnapshots(tenantId?: string): Promise<void> {
+  try {
+    const agents = await prisma.chatAgent.findMany({
+      where: tenantId ? { tenantId } : {},
+      take: 500,
+    })
+    for (const agent of agents) {
+      await recordAgentVersionSnapshot({
+        tenantId: agent.tenantId,
+        agentId: agent.id,
+        version: agent.version,
+        agent,
+      })
+    }
+  } catch (error) {
+    console.error('[agent-improvement] backfill failed', error instanceof Error ? error.name : 'unknown')
   }
 }
 
@@ -117,6 +139,7 @@ export async function loadAgentScorecard(input: {
   to: Date
   tenantId?: string
 }): Promise<{ rows: ScorecardRow[]; feedbackReady: boolean }> {
+  await ensureCurrentVersionSnapshots(input.tenantId)
   const tenantTurn = input.tenantId ? Prisma.sql`AND t."tenantId" = ${input.tenantId}` : Prisma.empty
 
   const turns = await prisma.$queryRaw<CountRow[]>(Prisma.sql`
@@ -136,6 +159,7 @@ export async function loadAgentScorecard(input: {
               SELECT 1 FROM "ChatConversation" c
                 JOIN "Order" o ON o."clientId" = c."clientId" AND o."tenantId" = t."tenantId"
                WHERE c."id" = t."conversationId" AND c."clientId" IS NOT NULL
+                 AND o."deletedAt" IS NULL
                  AND o."timestamp" >= t."createdAt" AND o."timestamp" < t."createdAt" + interval '7 days')))::int AS "convertedConversations"
       FROM "ChatAgentTurn" t
      WHERE t."createdAt" >= ${input.from} AND t."createdAt" < ${input.to}

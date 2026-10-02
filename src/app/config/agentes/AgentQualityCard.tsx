@@ -77,6 +77,8 @@ export function AgentQualityCard({ agentId, canEdit }: { agentId: string; canEdi
         if (json.saved === false) setMessage((m) => `${m ?? ''} (Resultado no guardado: falta activar el historial.)`)
         await load()
       }
+    } catch {
+      setMessage('No se pudo ejecutar. Intentá de nuevo.')
     } finally {
       setBusy(false)
     }

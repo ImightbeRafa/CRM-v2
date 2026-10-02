@@ -83,3 +83,25 @@ describe('SQL 044', () => {
     assert.match(manifest, /DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024'/)
   })
 })
+
+describe('kill switch hardening (static)', () => {
+  it('the admin route needs a real boolean (a missing/stringly armed never disarms)', () => {
+    assert.match(read('src/app/api/super-admin/agent-kill/route.ts'), /typeof body\?\.armed !== 'boolean'/)
+  })
+  it('every path into the legacy Soft turn checks the kill switch', () => {
+    const src = read('src/lib/soft-ai/automation-processor.ts')
+    const legacy = src.slice(src.indexOf('async function dispatchLegacy'))
+    assert.ok(legacy.indexOf('readAgentKillState') > -1 && legacy.indexOf('readAgentKillState') < legacy.indexOf('readPayload'))
+  })
+  it('missing tables use the shared relation check and a cached to_regclass probe, not a loose regex', () => {
+    const kill = read('src/lib/soft-ai/agent-kill-switch.ts')
+    assert.match(kill, /isMissingRelation/)
+    assert.match(kill, /isTableReady/)
+    assert.doesNotMatch(kill, /does not exist\|P2021/)
+    assert.match(read('src/lib/soft-ai/table-ready.ts'), /to_regclass/)
+  })
+  it('SQL 044 and 045 are tracked (the migrations folder is gitignored)', () => {
+    assert.ok(read('supabase/migrations/044_platform_agent_policy.sql').length > 100)
+    assert.ok(read('supabase/migrations/045_agent_improvement.sql').length > 100)
+  })
+})

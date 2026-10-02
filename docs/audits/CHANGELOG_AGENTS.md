@@ -1,3 +1,17 @@
+## 2026-10-02 — Agent Ops: Verifier fixes for S2–S4 (claudio/agent-ops)
+
+- BLOCKING: SQL 044/045 were untracked (migrations folder is gitignored) → force-added; a guard test reads them.
+- Per-day usage used the wrong Costa Rica day (stored UTC read as CR time) → `AT TIME ZONE 'UTC' AT TIME ZONE 'America/Costa_Rica'`.
+- Kill switch: legacy Soft path checks it at its entry; admin route requires a real boolean; missing-table detection
+  uses the shared `isMissingRelation` + a cached `to_regclass` probe (no failing queries/log noise before SQL 044).
+  Read errors fail OPEN on purpose (a skipped job is not retried) but are logged; env trigger is the always-on one.
+- Scorecard: lazy backfill snapshots the CURRENT version of every agent (versions bumped by shortcut/knowledge/import
+  edits get theirs on the next scorecard view); conversions ignore soft-deleted orders.
+- UI: quality card resets per agent and shows network errors; no double thumbs in compact view; tenant usage card says
+  it covers all agents of the business.
+- KNOWN, for the Ley 8968 erase feature (on hold): ChatAgentVersion / ChatAgentFeedback rows have no cascade or
+  retention yet — include them when that feature ships.
+
 ## 2026-10-02 — Agent Ops S6: "Catálogo" in the chat composer (claudio/agent-ops, no SQL)
 
 - New Catálogo button in the inbox composer (next to quick replies): search active products (name / SKU /

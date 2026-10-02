@@ -55,7 +55,10 @@ export async function POST(request: NextRequest) {
   if ('response' in g && g.response) return g.response
   const auth = g.auth!
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
-  const armed = body?.armed === true
+  if (typeof body?.armed !== 'boolean') {
+    return NextResponse.json({ success: false, error: 'Falta indicar si se frena o se reanuda.' }, { status: 400, headers: NO_STORE })
+  }
+  const armed = body.armed
   const reason = typeof body?.reason === 'string' ? body.reason.trim() : ''
   const scope = body?.scope === 'tenant' ? 'tenant' : 'global'
   const tenantId = typeof body?.tenantId === 'string' ? body.tenantId.trim() : ''

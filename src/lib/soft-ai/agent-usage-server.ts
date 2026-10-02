@@ -33,7 +33,7 @@ export async function loadAgentUsageRows(input: {
     ? Prisma.sql`AND "tenantId" = ${input.tenantId}`
     : Prisma.empty
   const rows = await prisma.$queryRaw<RawRow[]>(Prisma.sql`
-    SELECT to_char(("createdAt" AT TIME ZONE 'America/Costa_Rica')::date, 'YYYY-MM-DD') AS "day",
+    SELECT to_char((("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'America/Costa_Rica')::date, 'YYYY-MM-DD') AS "day",
            "tenantId", "agentId", "model", "mode", "status",
            count(*)::int AS "turns",
            coalesce(sum("inputTokens"), 0)::bigint AS "inputTokens",

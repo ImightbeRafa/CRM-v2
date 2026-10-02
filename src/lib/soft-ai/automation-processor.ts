@@ -40,6 +40,10 @@ function readPayload(payload: unknown): JobPayload {
 }
 
 async function dispatchLegacy(row: ClaimedChatAutomationJob) {
+  // Every path into the legacy Soft turn (including a layer flag flipping mid-dispatch) honors the kill switch.
+  if ((await readAgentKillState(row.tenantId)).armed) {
+    return { status: 'skipped' as const, reason: 'kill_switch' }
+  }
   const payload = readPayload(row.payload)
   if (!payload.content || !payload.platform) {
     throw new Error('SOFT_AI_PAYLOAD_INVALID')

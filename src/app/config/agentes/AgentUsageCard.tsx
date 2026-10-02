@@ -42,7 +42,7 @@ export function AgentUsageCard() {
   const toHuman = totals.skipped + totals.fallback
   return (
     <div className="mt-4 rounded-lg bg-slate-50 p-3" data-testid="agent-usage-card">
-      <p className="text-[13px] font-semibold text-slate-900">Últimos 30 días</p>
+      <p className="text-[13px] font-semibold text-slate-900">Últimos 30 días · todos los agentes del negocio</p>
       <dl className="mt-2 grid grid-cols-2 gap-2 text-[12px] text-slate-700 sm:grid-cols-4">
         <div>
           <dt className="text-slate-500">Respuestas enviadas</dt>

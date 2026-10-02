@@ -105,3 +105,10 @@ describe('route gates (static)', () => {
     assert.match(src, /stripSummaryCost/)
   })
 })
+
+describe('usage query time zone', () => {
+  it('converts the stored UTC timestamp to Costa Rica before taking the day', () => {
+    const src = readFileSync(join(process.cwd(), 'src/lib/soft-ai/agent-usage-server.ts'), 'utf8')
+    assert.match(src, /AT TIME ZONE 'UTC'\) AT TIME ZONE 'America\/Costa_Rica'/)
+  })
+})

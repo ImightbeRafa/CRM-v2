@@ -76,7 +76,8 @@ export interface BackupRunResult {
 export interface BackupStatusResponse {
   formatVersion: typeof BACKUP_FORMAT_VERSION;
   isHealthy: boolean;
-  status: 'healthy' | 'degraded' | 'missing';
+  /** `unknown`: storage did not answer in time (never hang the status page). */
+  status: 'healthy' | 'degraded' | 'missing' | 'unknown';
   retentionDays: number;
   full: ManifestSummary | null;
   hot: ManifestSummary | null;

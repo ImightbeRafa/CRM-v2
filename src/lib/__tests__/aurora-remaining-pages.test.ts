@@ -7,7 +7,7 @@ const read = (p: string) => readFileSync(p, 'utf8')
 test('classic pages render inside Aurora with their permission gates unchanged', () => {
   const cases: Array<[string, RegExp]> = [
     ['src/app/exports/page.tsx', /requirePermission\('view_sales'\)/],
-    ['src/app/backups/page.tsx', /requirePermission\('view_config'\)/],
+    ['src/app/backups/page.tsx', /if \(!\(await isSuperAdmin\(userId\)\)\) redirect\('\/dashboard'\)/], // platform admins only (2026-10-02)
     ['src/app/ventas/dashboard/page.tsx', /requirePermission\('view_sales'\)/],
     ['src/app/super-admin/page.tsx', /isSuperAdmin/],
   ]

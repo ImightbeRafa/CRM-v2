@@ -1,6 +1,7 @@
 #!/usr/bin/env npx tsx
 /**
- * Restore Betsy backup v1 manifests from private Vercel Blob (or test store).
+ * Restore Betsy backup v1 manifests from the private Cloudflare R2 bucket (BACKUP_STORE=vercel reads
+ * the old Vercel Blob dumps; tests use a memory store).
  *
  * Usage:
  *   npx tsx scripts/restore-from-backup.ts list
@@ -12,7 +13,6 @@
  * Refuses non-loopback targets unless --allow-remote is set.
  */
 import {
-  createVercelBlobStore,
   verifyManifestArtifacts,
 } from '../src/lib/backups/service';
 import {
@@ -20,6 +20,7 @@ import {
   loadManifestByRunId,
   restoreFromManifest,
 } from '../src/lib/backups/restore';
+import { createBackupStore } from '../src/lib/backups/store-factory';
 
 function usage(): never {
   console.log(`Usage:
@@ -35,7 +36,7 @@ async function main() {
   const [cmd, runId, ...rest] = process.argv.slice(2);
   if (!cmd) usage();
 
-  const store = createVercelBlobStore();
+  const store = createBackupStore();
 
   if (cmd === 'list') {
     const manifests = await listBackupManifests(store);

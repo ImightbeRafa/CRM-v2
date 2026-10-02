@@ -34,7 +34,7 @@ interface ManifestSummary {
 interface BackupStatus {
   formatVersion: number;
   isHealthy: boolean;
-  status: 'healthy' | 'degraded' | 'missing';
+  status: 'healthy' | 'degraded' | 'missing' | 'unknown';
   retentionDays: number;
   full: ManifestSummary | null;
   hot: ManifestSummary | null;
@@ -94,16 +94,12 @@ export default function BackupDashboard() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('/api/backups/status');
+      const response = await fetch('/api/backups/status', { cache: 'no-store', signal: AbortSignal.timeout(45_000) });
       if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        const detail = typeof body?.detail === 'string' ? body.detail : '';
         throw new Error(
-          /BLOB_READ_WRITE_TOKEN/.test(detail)
-            ? 'Los respaldos no están configurados en este entorno (falta el almacenamiento privado).'
-            : response.status === 403
-              ? 'No tenés permiso para ver los respaldos.'
-              : `No se pudo cargar el estado de los respaldos (${response.status}).`,
+          response.status === 404 || response.status === 403
+            ? 'No tenés permiso para ver los respaldos.'
+            : `No se pudo cargar el estado de los respaldos (${response.status}).`,
         );
       }
       const data = await response.json();
@@ -135,7 +131,7 @@ export default function BackupDashboard() {
             <Database className="h-6 w-6" /> Database backups
           </h1>
           <p className="text-muted-foreground mt-1">
-            Private Vercel Blob snapshots (full 02:00 UTC, hot 14:00 UTC). Logistics <code>lm_*</code> included.
+            Private Cloudflare R2 snapshots (full 02:00 UTC, hot 14:00 UTC). Logistics <code>lm_*</code> included.
           </p>
         </div>
         <Button variant="outline" onClick={() => void fetchBackupStatus()} disabled={loading}>

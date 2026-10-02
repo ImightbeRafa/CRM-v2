@@ -132,6 +132,13 @@ interface Env {
   BETSY_API_URL?: string;
   TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
+  // Backups on Cloudflare R2 (S3 API, bucket-scoped token) + ops alert address.
+  R2_ACCOUNT_ID?: string;
+  R2_BACKUP_BUCKET?: string;
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
+  BACKUP_STORE?: string;
+  OPS_ALERT_EMAIL?: string;
   // NEXT_PUBLIC_* — client bundle is build-time; server process.env can still
   // read these at runtime for Embedded Signup / Meta helpers.
   NEXT_PUBLIC_FB_LOGIN_CONFIG_ID?: string;
@@ -212,6 +219,12 @@ const CONTAINER_ENV_KEYS = [
   // Bot check on signup / password reset (src/lib/turnstile.ts): off until both are set.
   "TURNSTILE_SITE_KEY",
   "TURNSTILE_SECRET_KEY",
+  "R2_ACCOUNT_ID",
+  "R2_BACKUP_BUCKET",
+  "R2_ACCESS_KEY_ID",
+  "R2_SECRET_ACCESS_KEY",
+  "BACKUP_STORE",
+  "OPS_ALERT_EMAIL",
   "NEXT_PUBLIC_FB_LOGIN_CONFIG_ID",
   "NEXT_PUBLIC_IG_LOGIN_CONFIG_ID",
   "NEXT_PUBLIC_META_APP_ID",
@@ -236,7 +249,8 @@ const CRON_PATHS: Record<string, readonly string[]> = {
   "30 3 * * *": ["/api/cron/chat-agent-retention", "/api/cron/workspace-retention"],
   "0 5 * * *": ["/api/cron/logistics-report"],
   "0 18 * * SUN": ["/api/cron/logistics-finalize"],
-  "0 6 * * *": ["/api/cron/chat-token-health"],
+  // ops-daily: alerts the owner when the nightly backup is missing / stale.
+  "0 6 * * *": ["/api/cron/chat-token-health", "/api/cron/ops-daily"],
 };
 
 function getContainerEnvVars(source: Env): Record<string, string> {

@@ -20,6 +20,12 @@ export function createBackupSql(url = getBackupDatabaseUrl()): Sql {
     idle_timeout: 20,
     connect_timeout: 30,
     ssl: url.includes('localhost') || url.includes('127.0.0.1') ? false : 'require',
+    // A stalled upload must never hold the read snapshot open on the shared DB: Postgres ends a
+    // transaction idle for 2 minutes (the dump itself never idles that long between queries).
+    connection: {
+      application_name: 'betsy-backup',
+      idle_in_transaction_session_timeout: 120_000,
+    },
   });
 }
 

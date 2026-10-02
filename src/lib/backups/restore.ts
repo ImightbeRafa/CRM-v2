@@ -1,6 +1,5 @@
 import postgres from 'postgres';
 import {
-  createVercelBlobStore,
   gunzipToString,
   sha256Hex,
   type BackupBlobStore,
@@ -9,6 +8,7 @@ import { MANIFEST_PREFIX } from './config';
 import { quoteIdent } from './postgres';
 import { verifyManifestArtifacts } from './service';
 import { isBackupManifestV1, type BackupManifestV1 } from './types';
+import { createBackupStore } from './store-factory';
 
 function isLoopbackUrl(url: string): boolean {
   try {
@@ -81,7 +81,7 @@ export interface RestoreResult {
 }
 
 export async function restoreFromManifest(options: RestoreOptions): Promise<RestoreResult> {
-  const store = options.store ?? createVercelBlobStore();
+  const store = options.store ?? createBackupStore();
   const errors: string[] = [];
 
   if (!options.targetUrl) {

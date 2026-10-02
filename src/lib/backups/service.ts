@@ -19,6 +19,7 @@ import {
   sha256Hex,
   type BackupBlobStore,
 } from './blob-store';
+import { createBackupStore } from './store-factory';
 import {
   computeSchemaHash,
   createBackupSql,
@@ -47,6 +48,11 @@ export interface PerformBackupOptions {
   retentionDays?: number;
   now?: Date;
 }
+
+/** Full + hot + manual runs never overlap (session advisory lock on the backup connection). */
+const BACKUP_LOCK_KEY = 815_420_026;
+/** Worker cron wall limit is 15 min; stop before it and close the connection (aborts the snapshot). */
+export const BACKUP_DEADLINE_MS = 12 * 60_000;
 
 function runIdFromDate(d: Date): string {
   return d.toISOString().replace(/[:.]/g, '-');
@@ -89,13 +95,25 @@ export async function performBackup(options: PerformBackupOptions): Promise<Back
   const startedAt = options.now ?? new Date();
   const kind = options.kind;
   const runId = runIdFromDate(startedAt);
-  const store = options.store ?? createVercelBlobStore();
+  const store = options.store ?? createBackupStore();
   const ownsSql = !options.sql;
   const sql = options.sql ?? createBackupSql();
   const retentionDays = options.retentionDays
     ?? parseInt(process.env.BACKUP_RETENTION_DAYS || String(DEFAULT_RETENTION_DAYS), 10);
 
+  let timedOut = false;
+  const deadline = ownsSql
+    ? setTimeout(() => {
+        timedOut = true;
+        void sql.end({ timeout: 0 }).catch(() => undefined);
+      }, BACKUP_DEADLINE_MS)
+    : null;
+
   try {
+    if (ownsSql) {
+      const [lock] = await sql<{ ok: boolean }[]>`SELECT pg_try_advisory_lock(${BACKUP_LOCK_KEY}) AS ok`;
+      if (!lock?.ok) throw new Error('Backup already running');
+    }
     const {
       discovered,
       requiredLmPresent,
@@ -297,6 +315,7 @@ export async function performBackup(options: PerformBackupOptions): Promise<Back
       }
     }
 
+    forgetBackupStatusCache();
     return {
       success: true,
       kind,
@@ -304,8 +323,13 @@ export async function performBackup(options: PerformBackupOptions): Promise<Back
       manifestPath,
       manifest,
     };
+  } catch (err) {
+    if (timedOut) throw new Error(`Backup stopped: exceeded ${Math.round(BACKUP_DEADLINE_MS / 60_000)} minutes`);
+    throw err;
   } finally {
-    if (ownsSql) {
+    if (deadline) clearTimeout(deadline);
+    if (ownsSql && !timedOut) {
+      // Ending the session also releases the advisory lock.
       await sql.end({ timeout: 5 });
     }
   }
@@ -379,22 +403,78 @@ function toSummary(manifest: BackupManifestV1, now: Date): ManifestSummary {
   };
 }
 
+export const BACKUP_STATUS_DEADLINE_MS = 20_000;
+const STATUS_CACHE_MS = 60_000;
+let statusCache: { at: number; value: BackupStatusResponse } | null = null;
+
+/** Clears the 60 s status cache (tests, and right after a backup run). */
+export function forgetBackupStatusCache(): void {
+  statusCache = null;
+}
+
+/**
+ * Backup health for the platform admin. Never hangs: storage that does not answer within 20 s
+ * yields `status: 'unknown'` (2026-10-02 the old version waited forever on Vercel Blob).
+ */
 export async function getBackupStatus(
   store?: BackupBlobStore,
   now = new Date(),
+  deadlineMs = BACKUP_STATUS_DEADLINE_MS,
 ): Promise<BackupStatusResponse> {
-  const blobStore = store ?? createVercelBlobStore();
+  const cacheable = !store;
+  if (cacheable && statusCache && Date.now() - statusCache.at < STATUS_CACHE_MS) return statusCache.value;
   const retentionDays = parseInt(
     process.env.BACKUP_RETENTION_DAYS || String(DEFAULT_RETENTION_DAYS),
     10,
   );
-
-  const manifestObjs = await listManifests(blobStore);
-  const summaries: ManifestSummary[] = [];
-  for (const m of manifestObjs.slice(0, 40)) {
-    const manifest = await loadManifest(blobStore, m.pathname);
-    if (manifest) summaries.push(toSummary(manifest, now));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), deadlineMs);
+  });
+  let result: BackupStatusResponse;
+  try {
+    const computed = await Promise.race([computeBackupStatus(store ?? createBackupStore(), now, retentionDays), timeout]);
+    result = computed === 'timeout' ? unknownStatus(retentionDays, 'Backup storage did not answer in time.') : computed;
+  } catch {
+    result = unknownStatus(retentionDays, 'Backup storage is not reachable or not configured.');
+  } finally {
+    if (timer) clearTimeout(timer);
   }
+  if (cacheable) statusCache = { at: Date.now(), value: result };
+  return result;
+}
+
+function unknownStatus(retentionDays: number, message: string): BackupStatusResponse {
+  return {
+    formatVersion: BACKUP_FORMAT_VERSION,
+    isHealthy: false,
+    status: 'unknown',
+    retentionDays,
+    full: null,
+    hot: null,
+    recentManifests: [],
+    recommendations: [{ type: 'critical', message, action: 'Check the R2 settings on the Worker and the backup cron logs.' }],
+  };
+}
+
+async function computeBackupStatus(
+  blobStore: BackupBlobStore,
+  now: Date,
+  retentionDays: number,
+): Promise<BackupStatusResponse> {
+  const manifestObjs = (await listManifests(blobStore)).slice(0, 40);
+  const loaded: Array<BackupManifestV1 | null> = new Array(manifestObjs.length).fill(null);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(4, manifestObjs.length) }, async () => {
+      for (let i = next++; i < manifestObjs.length; i = next++) {
+        loaded[i] = await loadManifest(blobStore, manifestObjs[i]!.pathname);
+      }
+    }),
+  );
+  const summaries: ManifestSummary[] = loaded
+    .filter((m): m is BackupManifestV1 => m !== null)
+    .map((m) => toSummary(m, now));
 
   const full = summaries.find((s) => s.kind === 'full') ?? null;
   const hot = summaries.find((s) => s.kind === 'hot') ?? null;

@@ -1,3 +1,14 @@
+## 2026-10-02 — Agent Ops S6: "Catálogo" in the chat composer (claudio/agent-ops, no SQL)
+
+- New Catálogo button in the inbox composer (next to quick replies): search active products (name / SKU /
+  category) and insert "Nombre — ₡precio (Pocas unidades|Agotado por ahora)" into the message. The person reads,
+  edits and sends — nothing is sent automatically, and no cost/supplier data is ever selected.
+- `GET /api/chat/catalog` (update_sales, tenantId from session, active items only, max 25).
+- NOT built (and why): sending the product PHOTO from the picker. `InventoryItem` has no image field; the only
+  product photos live in the agent asset library (separate storage). Next step if wanted: add a product photo to
+  inventory, then reuse `/api/chat/send-media` (WhatsApp only; Instagram has no media send path today).
+- Tests: chat-catalog.test.ts (added to test:chat-harden).
+
 ## 2026-10-02 — Agent Ops S5: live inbox updates over SSE (claudio/agent-ops, OFF by default)
 
 - `GET /api/chat/stream` (Server-Sent Events, same auth as /changes, tenant from session). Frames carry ONLY the

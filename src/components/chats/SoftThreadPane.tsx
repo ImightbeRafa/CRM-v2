@@ -14,6 +14,7 @@ import {
 import Link from 'next/link'
 import { Check, CheckCheck, ChevronLeft, Hand, Info, PanelRight, Paperclip, Pause, Play, Send, ShoppingBag, Smile, Sparkles, User, X, Zap } from 'lucide-react'
 import { AgentFeedbackButtons } from '@/components/chats/AgentFeedbackButtons'
+import { CatalogPicker } from '@/components/chats/composer/CatalogPicker'
 import {
   initialsFromName,
   isWhatsAppWindowOpen,
@@ -294,6 +295,7 @@ export function SoftThreadPane({
   const [slashIndex, setSlashIndex] = useState(0)
   /** `false` = closed; string = open (optionally pre-filling a new shortcut). */
   const [managerOpen, setManagerOpen] = useState<false | { shortcut?: string }>(false)
+  const [catalogOpen, setCatalogOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragActive, setDragActive] = useState(false)
   const [dropError, setDropError] = useState<string | null>(null)
@@ -1243,6 +1245,15 @@ export function SoftThreadPane({
             {emojiOpen ? (
               <EmojiPickerPopover onPick={(emoji) => insertAtCaret(emoji)} onClose={() => setEmojiOpen(false)} />
             ) : null}
+            {catalogOpen ? (
+              <CatalogPicker
+                onPick={(snippet) => {
+                  insertAtCaret(snippet)
+                  setCatalogOpen(false)
+                }}
+                onClose={() => setCatalogOpen(false)}
+              />
+            ) : null}
             {attachMenuOpen && attachments ? (
               <RecentMediaPopover
                 sending={sending}
@@ -1279,6 +1290,25 @@ export function SoftThreadPane({
               >
                 <Smile className="h-5 w-5" aria-hidden />
               </button>
+              {!compact ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmojiOpen(false)
+                    setCatalogOpen((v) => !v)
+                  }}
+                  disabled={!composerEnabled}
+                  aria-label="Catálogo"
+                  aria-expanded={catalogOpen}
+                  title="Catálogo: insertar un producto con su precio"
+                  className={`flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF] disabled:opacity-40 ${
+                    catalogOpen ? 'bg-slate-100 text-au-ink-5b6cff' : ''
+                  }`}
+                  data-testid="composer-catalog-button"
+                >
+                  <ShoppingBag className="h-[18px] w-[18px]" aria-hidden />
+                </button>
+              ) : null}
               {quickReplies && !compact ? (
                 <button
                   type="button"

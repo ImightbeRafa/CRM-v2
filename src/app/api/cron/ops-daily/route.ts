@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 /** A missed nightly backup (02:00 UTC) is caught here at 06:00 UTC. */
-export const FULL_BACKUP_MAX_AGE_HOURS = 26;
+const FULL_BACKUP_MAX_AGE_HOURS = 26;
 
 /** Daily operations check (06:00 UTC): alerts the platform owner when backups are stale or broken. */
 export async function GET(request: NextRequest) {

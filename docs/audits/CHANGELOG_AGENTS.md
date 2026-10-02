@@ -1,3 +1,17 @@
+## 2026-10-02 — Agent Ops S7: automation rules v1 (claudio/agent-ops, SQL 043 held)
+
+- Config › Chats › "Automatizaciones": simple rules for the team. Triggers: new chat · customer waiting N min
+  (5–10080) · customer writes a keyword (accent/case-insensitive). Actions: add a tag · assign (never takes a chat
+  from someone) · create a follow-up task (assigned to the chat's owner). Every rule starts OFF.
+- INTERNAL only: no action can message a customer, and no trigger reacts to an action (no tag/assignee trigger), so
+  rules cannot loop. "Idle" ignores chats an AI agent is attending and fires once per customer message.
+- Evaluated in the existing 1-minute workspace cron (a failure never fails the sweep): ≤20 rules/business,
+  ≤50 candidates/rule, ≤100 actions/business/minute; run ledger (unique per rule+chat+event) = fires once per event,
+  pruned after 30 days. All reads/writes scoped by tenantId; update_config to change, audited.
+- SQL 043 (new tables, no FKs, RLS) prepared + registered, force-added to git (folder is gitignored). HELD: not applied;
+  the editor says "se activa con la próxima actualización" and the sweep skips until it is.
+- Tests: chat-automation-rules.test.ts (validation, matching, no-loop/no-send guarantees, tenant scoping, SQL 043).
+
 ## 2026-10-02 — Agent Ops: SecureDog fixes for S2–S4 (INT-13..18) (claudio/agent-ops)
 
 - INT-13 (SQL not tracked) fixed earlier. INT-14: kill switch keeps its last known value on a read error (never

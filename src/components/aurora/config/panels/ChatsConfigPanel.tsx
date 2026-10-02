@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, Loader2, Plus, Trash2 } from 'lucide-react'
 import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader'
 import { ConfigCard } from '@/components/aurora/config/panels/ConfigCard'
 import { ChatRulesEditor } from '@/components/aurora/config/panels/ChatRulesEditor'
+import { ChatAutomationRulesEditor } from '@/components/aurora/config/panels/ChatAutomationRulesEditor'
 import { refreshCrmCatalog, stageChipClass } from '@/components/chats/useCrmCatalog'
 import {
   STAGE_COLORS,
@@ -340,6 +341,7 @@ export function ChatsConfigPanel() {
       />
       <TagListEditor />
       <ChatRulesEditor />
+      <ChatAutomationRulesEditor />
     </div>
   )
 }

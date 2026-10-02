@@ -27,6 +27,7 @@ export const FILES = {
   '039': '039_meta_sales_attribution.sql',
   '040': '040_ops_error_groups.sql',
   '041': '041_meta_capi_outbox.sql',
+  '043': '043_chat_automation_rules.sql',
   '044': '044_platform_agent_policy.sql',
   '045': '045_agent_improvement.sql',
 };
@@ -70,6 +71,7 @@ export const EXPECTED_TABLES = {
   '039': ['ChatAdReferral'],
   '040': ['OpsErrorGroup'],
   '041': ['MetaCapiDataset', 'MetaConversionEvent'],
+  '043': ['ChatAutomationRule', 'ChatAutomationRuleRun'],
   '044': ['PlatformAgentPolicy'],
   '045': ['ChatAgentVersion', 'ChatAgentFeedback', 'ChatAgentEvalRun'],
 };

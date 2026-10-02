@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runChatWorkspaceSweep } from '@/lib/chat-workspace-sweep'
+import { runChatAutomationRules } from '@/lib/chat-automation-rules-server'
 import { cronsDisabled } from '@/lib/cron-kill-switch'
 import { timingSafeEqualString } from '@/lib/security'
 
@@ -27,7 +28,12 @@ export async function GET(request: NextRequest) {
   const startedAt = Date.now()
   try {
     const summary = await runChatWorkspaceSweep({ budgetMs: 40_000 })
-    return NextResponse.json({ status: 'ok', ...summary, durationMs: Date.now() - startedAt })
+    // Automation rules (tag / assign / task). A failure here never fails the workspace sweep.
+    const rules = await runChatAutomationRules({ budgetMs: 12_000 }).catch((error) => {
+      console.error('[chat-automation-rules] sweep failed', error instanceof Error ? error.name : 'unknown')
+      return { rules: 0, fired: 0, failed: 0, skipped: 'tables_missing' as const }
+    })
+    return NextResponse.json({ status: 'ok', ...summary, automationRules: rules, durationMs: Date.now() - startedAt })
   } catch (error) {
     console.error('[chat-workspace-cron] failed', error instanceof Error ? error.name : 'unknown')
     return NextResponse.json({ error: 'Chat workspace sweep failed' }, { status: 500 })

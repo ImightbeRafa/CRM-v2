@@ -137,7 +137,6 @@ interface Env {
   R2_BACKUP_BUCKET?: string;
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;
-  BACKUP_STORE?: string;
   OPS_ALERT_EMAIL?: string;
   // Meta sales attribution: sending stays off unless this is exactly "1" (never on Railway preview).
   META_SALES_CAPI_SENDER?: string;
@@ -225,7 +224,6 @@ const CONTAINER_ENV_KEYS = [
   "R2_BACKUP_BUCKET",
   "R2_ACCESS_KEY_ID",
   "R2_SECRET_ACCESS_KEY",
-  "BACKUP_STORE",
   "OPS_ALERT_EMAIL",
   "META_SALES_CAPI_SENDER",
   "NEXT_PUBLIC_FB_LOGIN_CONFIG_ID",
@@ -238,12 +236,13 @@ const CONTAINER_ENV_KEYS = [
 ] as const;
 
 /** Unique cron expressions → internal paths (Vercel vercel.json schedules).
- * "0 2 * * *" fans out to both backup and process-subscription-expiry.
+ * "0 2 * * *" fans out to process-subscription-expiry, then backup.
  */
 const CRON_PATHS: Record<string, readonly string[]> = {
+  // Subscription expiry first: the backup can take up to 12 minutes of the 15-minute window.
   "0 2 * * *": [
-    "/api/cron/backup",
     "/api/cron/process-subscription-expiry",
+    "/api/cron/backup",
   ],
   "0 14 * * *": ["/api/cron/backup/hot"],
   // meta-attribution: no-op unless META_SALES_CAPI_SENDER=1 and a business opted in.
@@ -273,6 +272,10 @@ function getContainerEnvVars(source: Env): Record<string, string> {
   // container draining during a rollout (18) + Railway + backups + Supabase's own services stay
   // under max_connections (60). Override with a Worker var.
   envVars.PRISMA_CONNECTION_LIMIT = (source.PRISMA_CONNECTION_LIMIT || "").trim() || "6";
+
+  // Only the production container (this Worker) may write / prune backups. The Railway preview
+  // shares the production database and never runs this code, so it can never set this.
+  envVars.BACKUP_WRITER = "1";
 
   // Behind Cloudflare the edge sets cf-connecting-ip and overwrites any client value,
   // while X-Forwarded-For keeps client-supplied entries. Rate limits key on this.

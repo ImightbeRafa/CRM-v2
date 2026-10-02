@@ -1,5 +1,8 @@
 import { createHash } from 'crypto';
-import { gunzipSync, gzipSync } from 'zlib';
+import { promisify } from 'util';
+import { gunzipSync, gzip, gzipSync } from 'zlib';
+
+const gzipAsync = promisify(gzip);
 import { del, get, list, put, type BlobAccessType } from '@vercel/blob';
 
 export interface StoredObject {
@@ -24,6 +27,19 @@ export function sha256Hex(data: Buffer | string): string {
 export function gzipJsonlLines(lines: string[]): Buffer {
   const body = lines.length ? `${lines.join('\n')}\n` : '';
   return gzipSync(Buffer.from(body, 'utf8'));
+}
+
+/**
+ * Same as gzipJsonlLines but on the libuv thread pool: backups run inside the container that serves
+ * every user, and a synchronous gzip of a large table froze all requests while it ran.
+ */
+export async function gzipJsonlLinesAsync(lines: string[]): Promise<Buffer> {
+  const body = lines.length ? `${lines.join('\n')}\n` : '';
+  return gzipAsync(Buffer.from(body, 'utf8'));
+}
+
+export async function gzipBufferAsync(data: Buffer): Promise<Buffer> {
+  return gzipAsync(data);
 }
 
 export function gunzipToString(data: Buffer): string {

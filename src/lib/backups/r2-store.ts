@@ -23,7 +23,8 @@ export interface R2StoreConfig {
 
 export const DEFAULT_TIMEOUTS = {
   listMs: 8_000,
-  getMs: 30_000,
+  /** Whole download incl. body; restores pull large artifacts (R2_GET_TIMEOUT_MS overrides). */
+  getMs: 120_000,
   putBaseMs: 30_000,
   putPerMbMs: 1_000,
   deleteMs: 10_000,
@@ -242,7 +243,7 @@ export function createR2BlobStore(config: R2StoreConfig): BackupBlobStore {
               'x-amz-date': signed.amzDate,
               'x-amz-content-sha256': payloadHash,
             },
-            body: opts.body ? new Uint8Array(opts.body) : undefined,
+            body: opts.body,
             signal,
             cache: 'no-store',
           });
@@ -324,5 +325,6 @@ export function createR2BlobStoreFromEnv(env: Record<string, string | undefined>
     bucket: env.R2_BACKUP_BUCKET || '',
     accessKeyId: env.R2_ACCESS_KEY_ID || '',
     secretAccessKey: env.R2_SECRET_ACCESS_KEY || '',
+    timeouts: Number(env.R2_GET_TIMEOUT_MS) > 0 ? { getMs: Number(env.R2_GET_TIMEOUT_MS) } : undefined,
   });
 }

@@ -10,16 +10,16 @@ import {
   encodeTableFileName,
   isHotTable,
 } from './config';
-import { gzipSync } from 'zlib';
 import {
   createMemoryBlobStore,
   createVercelBlobStore,
   gunzipToString,
-  gzipJsonlLines,
+  gzipBufferAsync,
+  gzipJsonlLinesAsync,
   sha256Hex,
   type BackupBlobStore,
 } from './blob-store';
-import { createBackupStore } from './store-factory';
+import { backupStoreKind, createBackupStore } from './store-factory';
 import {
   computeSchemaHash,
   createBackupSql,
@@ -49,8 +49,20 @@ export interface PerformBackupOptions {
   now?: Date;
 }
 
-/** Full + hot + manual runs never overlap (session advisory lock on the backup connection). */
+/**
+ * Full + hot + manual runs never overlap: transaction-level advisory lock (two-key form, its own
+ * key space), released by Postgres at commit / rollback even through a session pooler.
+ */
 const BACKUP_LOCK_KEY = 815_420_026;
+const BACKUP_LOCK_SUBKEY = 1;
+
+/**
+ * Only the Cloudflare Worker sets BACKUP_WRITER=1 (in its own code). The Railway preview shares the
+ * production database and must never write or prune backups, even if R2 keys were copied there.
+ */
+export function backupWriterAllowed(env: Record<string, string | undefined> = process.env): boolean {
+  return (env.BACKUP_WRITER || '').trim() === '1' && backupStoreKind(env) === 'r2';
+}
 /** Worker cron wall limit is 15 min; stop before it and close the connection (aborts the snapshot). */
 export const BACKUP_DEADLINE_MS = 12 * 60_000;
 
@@ -63,7 +75,19 @@ async function loadManifest(
   pathname: string,
 ): Promise<BackupManifestV1 | null> {
   try {
-    const buf = await store.getBytes(pathname);
+    return await readManifestStrict(store, pathname);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Throws when the storage read fails (network, timeout, 5xx); returns null only for content that is
+ * not a v1 manifest. Retention must never treat "could not read" as "garbage".
+ */
+async function readManifestStrict(store: BackupBlobStore, pathname: string): Promise<BackupManifestV1 | null> {
+  const buf = await store.getBytes(pathname);
+  try {
     const parsed = JSON.parse(buf.toString('utf8')) as unknown;
     return isBackupManifestV1(parsed) ? parsed : null;
   } catch {
@@ -94,6 +118,9 @@ export async function findLatestManifest(
 export async function performBackup(options: PerformBackupOptions): Promise<BackupRunResult> {
   const startedAt = options.now ?? new Date();
   const kind = options.kind;
+  if (!options.store && !backupWriterAllowed()) {
+    throw new Error('Backup writer disabled here (BACKUP_WRITER is set only by the Cloudflare Worker)');
+  }
   const runId = runIdFromDate(startedAt);
   const store = options.store ?? createBackupStore();
   const ownsSql = !options.sql;
@@ -110,10 +137,6 @@ export async function performBackup(options: PerformBackupOptions): Promise<Back
     : null;
 
   try {
-    if (ownsSql) {
-      const [lock] = await sql<{ ok: boolean }[]>`SELECT pg_try_advisory_lock(${BACKUP_LOCK_KEY}) AS ok`;
-      if (!lock?.ok) throw new Error('Backup already running');
-    }
     const {
       discovered,
       requiredLmPresent,
@@ -121,6 +144,12 @@ export async function performBackup(options: PerformBackupOptions): Promise<Back
       tableArtifacts,
       warnings,
     } = await sql.begin('ISOLATION LEVEL REPEATABLE READ READ ONLY', async (tx) => {
+      // Session-pooler safe: settings and the lock live in THIS transaction only.
+      // A stalled upload never holds the read snapshot open on the shared DB for long.
+      await tx`SET LOCAL idle_in_transaction_session_timeout = '120s'`;
+      await tx`SET LOCAL application_name = 'betsy-backup'`;
+      const [lock] = await tx<{ ok: boolean }[]>`SELECT pg_try_advisory_xact_lock(${BACKUP_LOCK_KEY}, ${BACKUP_LOCK_SUBKEY}) AS ok`;
+      if (!lock?.ok) throw new Error('Backup already running');
       const discovered = await discoverPublicTables(tx);
       const discoveredNames = discovered.map((t) => t.tableName);
       const requiredLmMissing = REQUIRED_LM_TABLES.filter((t) => !discoveredNames.includes(t));
@@ -133,6 +162,10 @@ export async function performBackup(options: PerformBackupOptions): Promise<Back
       }
 
       const previousFull = await findLatestManifest(store, 'full');
+      if (kind === 'hot' && !previousFull) {
+        // A hot run only makes sense on top of a full one (it would upload everything, then fail).
+        throw new Error('No full backup yet: run a full backup first');
+      }
       const previousAny = kind === 'hot'
         ? (await findLatestManifest(store, 'hot')) || previousFull
         : previousFull;
@@ -149,8 +182,8 @@ export async function performBackup(options: PerformBackupOptions): Promise<Back
 
       let schemaArtifacts: SchemaArtifacts;
       const schemaDump = await dumpPublicSchema(tx, discoveredNames);
-      const preGz = gzipSync(Buffer.from(schemaDump.preSql, 'utf8'));
-      const postGz = gzipSync(Buffer.from(schemaDump.postSql, 'utf8'));
+      const preGz = await gzipBufferAsync(Buffer.from(schemaDump.preSql, 'utf8'));
+      const postGz = await gzipBufferAsync(Buffer.from(schemaDump.postSql, 'utf8'));
       const preSha = sha256Hex(preGz);
       const postSha = sha256Hex(postGz);
 
@@ -206,7 +239,7 @@ export async function performBackup(options: PerformBackupOptions): Promise<Back
             `${table.tableName}: dumped ${lines.length} rows but fingerprint count was ${fp.rowCount}`,
           );
         }
-        const gz = gzipJsonlLines(lines);
+        const gz = await gzipJsonlLinesAsync(lines);
         const digest = sha256Hex(gz);
         const artifactPath = `${OBJECT_PREFIX}/${runId}/tables/${encodeTableFileName(table.tableName)}.jsonl.gz`;
         await store.putBytes(artifactPath, gz, 'application/gzip');
@@ -303,7 +336,7 @@ export async function performBackup(options: PerformBackupOptions): Promise<Back
 
     if (kind === 'full' && retentionDays > 0) {
       try {
-        await applyRetention(store, retentionDays);
+        await applyRetention(store, retentionDays, new Date(), { protect: [manifestPath] });
       } catch (err) {
         warnings.push(`Retention cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
         manifest.health.warnings = warnings;
@@ -324,37 +357,57 @@ export async function performBackup(options: PerformBackupOptions): Promise<Back
       manifest,
     };
   } catch (err) {
-    if (timedOut) throw new Error(`Backup stopped: exceeded ${Math.round(BACKUP_DEADLINE_MS / 60_000)} minutes`);
+    if (timedOut) {
+      const cause = err instanceof Error ? err.message.slice(0, 120) : 'unknown';
+      throw new Error(`Backup stopped: exceeded ${Math.round(BACKUP_DEADLINE_MS / 60_000)} minutes (${cause})`);
+    }
     throw err;
   } finally {
     if (deadline) clearTimeout(deadline);
     if (ownsSql && !timedOut) {
-      // Ending the session also releases the advisory lock.
       await sql.end({ timeout: 5 });
     }
   }
 }
 
+/**
+ * Deletes manifests older than the retention window and artifacts no kept manifest references.
+ * Safe by construction (SecureDog 2026-10-02, H1):
+ * - if ANY manifest cannot be read (network / timeout / 5xx) nothing is deleted (throws);
+ * - a manifest that is not a recognised v1 document is kept, and then no artifact is deleted
+ *   (its references are unknown);
+ * - manifests in `protect` (the run that just finished) are never deleted.
+ */
 export async function applyRetention(
   store: BackupBlobStore,
   retentionDays: number,
   now = new Date(),
-): Promise<{ deletedManifests: number; deletedObjects: number }> {
+  opts: { protect?: string[] } = {},
+): Promise<{ deletedManifests: number; deletedObjects: number; keptUnknown: number }> {
+  if (!(retentionDays > 0)) return { deletedManifests: 0, deletedObjects: 0, keptUnknown: 0 };
   const cutoff = now.getTime() - retentionDays * 24 * 60 * 60 * 1000;
   const graceCutoff = now.getTime() - RETENTION_SWEEP_GRACE_HOURS * 60 * 60 * 1000;
+  const protect = new Set(opts.protect ?? []);
 
   const manifestObjs = await listManifests(store);
   const keptPaths = new Set<string>();
   const toDeleteManifests: string[] = [];
+  let keptUnknown = 0;
 
   for (const m of manifestObjs) {
-    const manifest = await loadManifest(store, m.pathname);
+    let manifest: BackupManifestV1 | null;
+    try {
+      manifest = await readManifestStrict(store, m.pathname);
+    } catch {
+      throw new Error(`Retention skipped: could not read manifest ${m.pathname}`);
+    }
     if (!manifest) {
-      toDeleteManifests.push(m.pathname);
+      keptUnknown += 1;
+      keptPaths.add(m.pathname);
       continue;
     }
     const finished = new Date(manifest.finishedAt).getTime();
-    if (finished < cutoff) {
+    if (Number.isFinite(finished) && finished < cutoff && !protect.has(m.pathname)) {
       toDeleteManifests.push(m.pathname);
     } else {
       keptPaths.add(m.pathname);
@@ -364,15 +417,17 @@ export async function applyRetention(
     }
   }
 
-  // Objects under prefix not referenced and older than grace
-  const allObjects = await store.list(`${OBJECT_PREFIX}/`);
+  // Objects under the prefix that no kept manifest references and older than the grace window.
+  // Skipped entirely when an unknown manifest exists (it may reference them).
   const toDeleteObjects: string[] = [];
-  for (const obj of allObjects) {
-    if (keptPaths.has(obj.pathname)) continue;
-    const uploaded = obj.uploadedAt?.getTime() ?? 0;
-    if (uploaded && uploaded > graceCutoff) continue;
-    // Also skip if still referenced (already handled); delete unreferenced
-    toDeleteObjects.push(obj.pathname);
+  if (keptUnknown === 0) {
+    const allObjects = await store.list(`${OBJECT_PREFIX}/`);
+    for (const obj of allObjects) {
+      if (keptPaths.has(obj.pathname)) continue;
+      const uploaded = obj.uploadedAt?.getTime() ?? 0;
+      if (!uploaded || uploaded > graceCutoff) continue;
+      toDeleteObjects.push(obj.pathname);
+    }
   }
 
   await store.deleteMany(toDeleteManifests);
@@ -380,6 +435,7 @@ export async function applyRetention(
   return {
     deletedManifests: toDeleteManifests.length,
     deletedObjects: toDeleteObjects.length,
+    keptUnknown,
   };
 }
 

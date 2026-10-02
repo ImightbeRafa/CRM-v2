@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createR2BlobStore, parseListObjectsV2, signV4 } from '../r2-store';
 import { backupStoreKind } from '../store-factory';
 import { createMemoryBlobStore } from '../blob-store';
-import { getBackupStatus } from '../service';
+import { applyRetention, backupWriterAllowed, getBackupStatus, performBackup } from '../service';
 
 const read = (p: string) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
 
@@ -151,9 +151,10 @@ test('backup status is platform-admin only and returns no raw error text; page g
 test('backups run on R2 with a lock, a deadline and alerts; Worker passes the R2 settings', () => {
   const service = read('src/lib/backups/service.ts');
   assert.match(service, /const store = options\.store \?\? createBackupStore\(\)/);
-  assert.match(service, /pg_try_advisory_lock\(\$\{BACKUP_LOCK_KEY\}\)/);
+  assert.match(service, /pg_try_advisory_xact_lock\(\$\{BACKUP_LOCK_KEY\}, \$\{BACKUP_LOCK_SUBKEY\}\)/);
   assert.match(service, /export const BACKUP_DEADLINE_MS = 12 \* 60_000/);
-  assert.match(read('src/lib/backups/postgres.ts'), /idle_in_transaction_session_timeout: 120_000/);
+  assert.match(service, /SET LOCAL idle_in_transaction_session_timeout = '120s'/);
+  assert.doesNotMatch(read('src/lib/backups/postgres.ts'), /^\s+idle_timeout:/m);
   for (const p of ['src/app/api/cron/backup/route.ts', 'src/app/api/cron/backup/hot/route.ts']) {
     const r = read(p);
     assert.match(r, /requireCronBearer\(request\)/);
@@ -165,4 +166,73 @@ test('backups run on R2 with a lock, a deadline and alerts; Worker passes the R2
     assert.match(worker, new RegExp(`"${k}",`));
   }
   assert.match(worker, /"0 6 \* \* \*": \["\/api\/cron\/chat-token-health", "\/api\/cron\/ops-daily"\]/);
+  assert.match(worker, /envVars\.BACKUP_WRITER = "1";/);
+  assert.doesNotMatch(worker, /"BACKUP_STORE",/, 'BACKUP_STORE is a restore-CLI setting, never forwarded');
+  assert.match(worker, /"0 2 \* \* \*": \[\s+"\/api\/cron\/process-subscription-expiry",\s+"\/api\/cron\/backup",/);
+  const alert = read('src/lib/ops/alert-email.ts');
+  assert.match(alert, /if \(result\?\.error\) \{\s+lastSent\.delete\(alert\.key\);/, 'Resend errors are not "sent"');
+});
+
+function manifestJson(runId: string, finishedAt: string, artifact: string) {
+  return Buffer.from(
+    JSON.stringify({
+      formatVersion: 1,
+      kind: 'full',
+      runId,
+      startedAt: finishedAt,
+      finishedAt,
+      schemaHash: 'h',
+      health: { ok: true, requiredLmPresent: [], requiredLmMissing: [], warnings: [] },
+      schema: { prePath: 'betsy/backups/v1/objects/pre.sql.gz', postPath: 'betsy/backups/v1/objects/post.sql.gz', preSha256: 'x', postSha256: 'y', preBytes: 1, postBytes: 1 },
+      tables: [{ tableName: 'T', artifactPath: artifact, rowCount: 1, compressedBytes: 1, sha256: 'z', fingerprint: {}, source: 'materialized', capturedAt: finishedAt }],
+      stats: { discoveredTables: 1, materialized: 1, reused: 0, carriedForward: 0, totalLogicalRows: 1, totalCompressedBytes: 1 },
+    }),
+  );
+}
+
+test('retention never deletes backups when storage hiccups (SecureDog H1)', async () => {
+  const store = createMemoryBlobStore();
+  const old = new Date('2026-09-01T02:00:00Z');
+  const now = new Date('2026-10-02T03:00:00Z');
+  store.objects.set('betsy/backups/v1/manifests/old-full.json', manifestJson('old', old.toISOString(), 'betsy/backups/v1/objects/a.gz'));
+  store.objects.set('betsy/backups/v1/manifests/new-full.json', manifestJson('new', now.toISOString(), 'betsy/backups/v1/objects/a.gz'));
+  store.objects.set('betsy/backups/v1/objects/a.gz', Buffer.from('x'));
+  for (const k of store.objects.keys()) store.setUploadedAt(k, old);
+  const realGet = store.getBytes.bind(store);
+  store.getBytes = async () => {
+    throw new Error('R2 get failed: timeout');
+  };
+  await assert.rejects(applyRetention(store, 14, now), /Retention skipped: could not read manifest/);
+  assert.equal(store.objects.size, 3, 'nothing deleted');
+  store.getBytes = realGet;
+  const r = await applyRetention(store, 14, now, { protect: ['betsy/backups/v1/manifests/new-full.json'] });
+  assert.equal(r.deletedManifests, 1, 'only the expired manifest');
+  assert.ok(store.objects.has('betsy/backups/v1/objects/a.gz'), 'artifact reused by the kept manifest stays');
+  assert.ok(store.objects.has('betsy/backups/v1/manifests/new-full.json'));
+});
+
+test('retention: an unrecognised manifest is kept and blocks artifact deletion; the fresh run is protected', async () => {
+  const store = createMemoryBlobStore();
+  const old = new Date('2026-09-01T02:00:00Z');
+  const now = new Date('2026-10-02T03:00:00Z');
+  store.objects.set('betsy/backups/v1/manifests/future-format.json', Buffer.from('{"formatVersion":2}'));
+  store.objects.set('betsy/backups/v1/manifests/run-full.json', manifestJson('run', old.toISOString(), 'betsy/backups/v1/objects/b.gz'));
+  store.objects.set('betsy/backups/v1/objects/orphan.gz', Buffer.from('x'));
+  for (const k of store.objects.keys()) store.setUploadedAt(k, old);
+  const r = await applyRetention(store, 14, now, { protect: ['betsy/backups/v1/manifests/run-full.json'] });
+  assert.deepEqual([r.deletedManifests, r.deletedObjects, r.keptUnknown], [0, 0, 1]);
+  assert.equal(store.objects.size, 3);
+});
+
+test('only the Cloudflare Worker may write / prune backups; Vercel is restore-only', async () => {
+  assert.equal(backupWriterAllowed({}), false);
+  assert.equal(backupWriterAllowed({ BACKUP_WRITER: '1' }), true);
+  assert.equal(backupWriterAllowed({ BACKUP_WRITER: '1', BACKUP_STORE: 'vercel' }), false);
+  const saved = process.env.BACKUP_WRITER;
+  delete process.env.BACKUP_WRITER;
+  try {
+    await assert.rejects(performBackup({ kind: 'full' }), /Backup writer disabled here/);
+  } finally {
+    if (saved !== undefined) process.env.BACKUP_WRITER = saved;
+  }
 });

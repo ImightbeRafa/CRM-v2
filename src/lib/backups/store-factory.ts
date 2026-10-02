@@ -3,8 +3,8 @@ import { createR2BlobStoreFromEnv } from './r2-store';
 
 /**
  * Where backups live. Default: Cloudflare R2 (private bucket, S3 API). `BACKUP_STORE=vercel` only
- * reads the old Vercel Blob dumps (for a restore from before the move, 2026-10); never for new runs
- * from Cloudflare, where Vercel rejected the token.
+ * reads the old Vercel Blob dumps (for a restore from before the move, 2026-10); runs and retention
+ * refuse it (see backupWriterAllowed), and the Worker does not forward BACKUP_STORE.
  */
 export function backupStoreKind(env: Record<string, string | undefined> = process.env): 'r2' | 'vercel' {
   return (env.BACKUP_STORE || '').trim().toLowerCase() === 'vercel' ? 'vercel' : 'r2';

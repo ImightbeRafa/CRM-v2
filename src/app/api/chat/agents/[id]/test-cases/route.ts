@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { parseSavedTest } from '@/lib/soft-ai/probar-scenarios'
+import { createIdentifierRateLimit } from '@/lib/rate-limit'
 import {
   TestCaseLimitError,
   TestCasesNotReadyError,
@@ -15,6 +16,7 @@ import {
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+const casesRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 20, identifier: 'chat-agent-test-cases' })
 const notFound = () => NextResponse.json({ success: false, error: 'Agente no encontrado' }, { status: 404 })
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -35,6 +37,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_config')
     if (!auth.ok) return auth.response
+    const rate = await casesRateLimit(`${auth.tenantId}:${auth.userId}`)
+    if (!rate.allowed) return NextResponse.json({ success: false, error: 'Demasiados cambios. Esperá un momento.' }, { status: 429, headers: rate.headers })
     const { id } = await context.params
     const parsed = parseSavedTest(await request.json().catch(() => null))
     if (!parsed.ok) return NextResponse.json({ success: false, error: parsed.error }, { status: 400 })

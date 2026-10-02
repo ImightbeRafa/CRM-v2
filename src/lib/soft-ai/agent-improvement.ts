@@ -249,10 +249,10 @@ export async function runAgentSafetyEval(input: {
     // Keep the last 20 runs per agent (the table is a history for comparison, not an archive).
     await prisma.$executeRaw`
       DELETE FROM "ChatAgentEvalRun"
-       WHERE "tenantId" = ${input.tenantId} AND "agentId" = ${agent.id}
+       WHERE "tenantId" = ${input.tenantId} AND "agentId" = ${agent.id} AND "suite" = ${EVAL_SUITE_SAFETY}
          AND "id" NOT IN (
            SELECT "id" FROM "ChatAgentEvalRun"
-            WHERE "tenantId" = ${input.tenantId} AND "agentId" = ${agent.id}
+            WHERE "tenantId" = ${input.tenantId} AND "agentId" = ${agent.id} AND "suite" = ${EVAL_SUITE_SAFETY}
             ORDER BY "createdAt" DESC LIMIT 20)`
   } catch (error) {
     if (!isMissingTable(error)) throw error

@@ -25,7 +25,7 @@ export type SafetyRouteResult =
     }
 
 const OPT_OUT_RE =
-  /\b(no\s+quiero\s+(hablar\s+con\s+)?(un\s+)?bot|hablar\s+con\s+(una\s+)?persona|quiero\s+(un\s+)?humano|atenci[oó]n\s+humana|STOP)\b/i
+  /\b(no\s+quiero\s+(hablar\s+con\s+)?(un\s+|una\s+)?(bot|robot|ia|inteligencia\s+artificial|m[aá]quina|asistente\s+virtual)|hablar\s+con\s+(una\s+)?(persona|humano|alguien|asesor|agente)|quiero\s+(hablar\s+con\s+)?(una\s+persona|un\s+humano|un\s+asesor|un\s+agente|alguien)|atenci[oó]n\s+humana|STOP)\b/i
 
 export const SAFETY_HANDOFF_TEXTS: Record<SafetyRouteReason, string> = {
   payment_or_sinpe: reservedShortcutBody('sys_handoff_payment'),

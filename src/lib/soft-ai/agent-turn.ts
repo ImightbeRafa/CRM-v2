@@ -34,6 +34,7 @@ import {
   type EffectiveAgentBehavior,
 } from '@/lib/soft-ai/agent-types'
 import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
+import { acquireProbarSlot, releaseProbarSlot } from '@/lib/soft-ai/probar-slots'
 import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
 import { estimateCostMicros } from '@/lib/soft-ai/llm/usage'
 import {
@@ -946,7 +947,7 @@ async function servingAgentIdForTest(
 }
 
 /** Probar — isolated multi-turn sandbox. conversationId stays null. No Meta send. */
-export async function runAgentTestTurn(input: {
+async function runAgentTestTurnInner(input: {
   tenantId: string
   agentId: string
   inboundText: string
@@ -1053,7 +1054,30 @@ export async function runAgentTestTurn(input: {
     agentStatus: runtimeAgent.status,
     conversationAiMode,
   })
-  if (testTokens >= config.testDailyTokenCap) blockedBy.push('test_budget_blocked')
+  if (testTokens >= config.testDailyTokenCap) {
+    blockedBy.push('test_budget_blocked')
+    // Budget spent: answer immediately, spend nothing and write nothing (no model call, no turn row).
+    return {
+      text: '',
+      toolTrace: [],
+      decisionTrace: { blockedBy },
+      tokens: { input: 0, output: 0, cached: 0 },
+      turnId: '',
+      latencyMs: 0,
+      wouldSend: false,
+      outcome: 'skip' as const,
+      needsHuman: false,
+      fallbackUsed: false,
+      escalate: false,
+      blockedBy,
+      notSimulatedGates: [...PROBAR_NOT_SIMULATED_GATES],
+      highlightedAmounts: [],
+      intent: 'other',
+      shortcutKey: null,
+      model: runtimeAgent.model,
+      estimatedCostUsd: 0,
+    }
+  }
 
   const notSimulatedGates = [...PROBAR_NOT_SIMULATED_GATES]
   const decision = decideInbound({
@@ -1227,5 +1251,18 @@ export async function runAgentTestTurn(input: {
     shortcutKey,
     model: runtimeAgent.model,
     estimatedCostUsd: testCostMicros / 1_000_000,
+  }
+}
+
+type ProbarInput = Parameters<typeof runAgentTestTurnInner>[0]
+type ProbarResult = Awaited<ReturnType<typeof runAgentTestTurnInner>>
+
+/** Probar: at most a few model calls in flight per business (see probar-slots.ts). */
+export async function runAgentTestTurn(input: ProbarInput): Promise<ProbarResult> {
+  if (!acquireProbarSlot(input.tenantId)) throw new Error('PROBAR_BUSY')
+  try {
+    return await runAgentTestTurnInner(input)
+  } finally {
+    releaseProbarSlot(input.tenantId)
   }
 }

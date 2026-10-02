@@ -1118,6 +1118,7 @@ export default function AgentesConfigPage() {
                   />
                   <div id="agent-probar">
                     <AgentTestSandbox
+                      key={selected.id}
                       agentId={selected.id}
                       agentName={selected.name}
                       canEdit={canEdit}

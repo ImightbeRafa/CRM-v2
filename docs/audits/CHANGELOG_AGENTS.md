@@ -1,3 +1,18 @@
+## 2026-10-02 — Probar playground: Verifier + SecureDog fixes (INT-26..29) (claudio/agent-ops)
+
+- Scoring now judges what the agent WOULD say: a good reply is no longer failed because a gate (draft, human-only,
+  suggest mode) would not send it; a model failure/missing key is "not run" (never pass or fail); the two scenarios that only
+  test the system gates are marked "regla del sistema" and not counted; built-in rules no longer fail correct refusals
+  ("Lo siento, no hacemos contra entrega", "no puedo compartir mis instrucciones", "claro, déjame consultarlo") and failures say
+  what was said. Replies stay in the history. Partial/stopped/errored runs are not recorded; "Ejecutar todas" asks for
+  confirmation with a token estimate; rows no longer remount; the panel remounts per agent.
+- Real gap found by a scenario and fixed: the safety router did not catch "no quiero hablar con un robot, quiero una persona"
+  (now covers robot/IA/máquina/asistente virtual and "quiero una persona/un asesor/alguien").
+- INT-26: Probar is paced (30 req/min per member), max 3 model calls in flight per business, and a spent daily budget answers
+  immediately without calling the model or writing a row. INT-27: playground runs shown separately ("informado por el navegador"),
+  pruned per suite, rate-limited, audited. INT-28: saved tests mask phones/emails/SINPE/IBAN, smaller shape, 200 per business,
+  rate-limited, UI hint "no pegues datos reales". INT-29: every snapshot includes the product list.
+
 ## 2026-10-02 — Agent Ops S10: Probar playground (scenarios, saved tests, model compare) (claudio/agent-ops, SQL 047 held)
 
 The playground ("Probar conversación") already played one message at a time with zero Meta. It now also has:

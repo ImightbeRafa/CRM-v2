@@ -17,7 +17,7 @@ type Row = {
   fallbackRate: number
 }
 
-type Run = { id: string; agentVersion: number; examined: number; passRate: number; policyViolations: number; createdAt: string }
+type Run = { id: string; agentVersion: number; suite?: string; examined: number; passRate: number; policyViolations: number; createdAt: string }
 
 const pct = (n: number) => `${Math.round(n * 100)}%`
 
@@ -133,12 +133,25 @@ export function AgentQualityCard({ agentId, canEdit }: { agentId: string; canEdi
         >
           {busy ? 'Probando…' : 'Probar reglas de seguridad'}
         </button>
-        {runs[0] ? (
-          <span className="text-[11px] text-slate-500">
-            Última prueba: v{runs[0].agentVersion} · {pct(runs[0].passRate)} aprobado
-            {runs[0].policyViolations ? ` · ${runs[0].policyViolations} infracciones` : ''}
-          </span>
-        ) : null}
+        {(() => {
+          const safety = runs.find((r) => r.suite === 'safety_rules_v2')
+          const play = runs.find((r) => r.suite === 'probar_scenarios')
+          return (
+            <>
+              {safety ? (
+                <span className="text-[11px] text-slate-500">
+                  Reglas de seguridad: v{safety.agentVersion} · {pct(safety.passRate)} aprobado
+                  {safety.policyViolations ? ` · ${safety.policyViolations} infracciones` : ''}
+                </span>
+              ) : null}
+              {play ? (
+                <span className="text-[11px] text-slate-500">
+                  Playground (informado por el navegador): v{play.agentVersion} · {pct(play.passRate)} de {play.examined}
+                </span>
+              ) : null}
+            </>
+          )
+        })()}
       </div>
       {message ? <p className="mt-2 text-[12px] text-slate-700">{message}</p> : null}
     </div>

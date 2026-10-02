@@ -8,8 +8,10 @@ import { randomUUID } from 'crypto'
 import { prisma } from '@/lib/db'
 import { isMissingRelation } from '@/lib/db-missing-relation'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
+import { redactPiiText } from '@/lib/soft-ai/llm/redact'
 import {
   MAX_CASES_PER_AGENT,
+  MAX_CASES_PER_TENANT,
   SCENARIO_SET_VERSION,
   parseSavedTest,
   type SavedTestInput,
@@ -71,12 +73,25 @@ export async function createTestCase(input: {
   if (!(await ownsAgent(input.tenantId, input.agentId))) return null
   if (!(await isTableReady(TABLE))) throw new TestCasesNotReadyError()
   const id = randomUUID()
+  // The playground is for SIMULATED customers; if someone pastes a real one by mistake, phones/emails/SINPE/IBAN are masked.
+  const clean: SavedTestInput = {
+    title: redactPiiText(input.test.title),
+    steps: input.test.steps.map((step) => ({
+      ...step,
+      text: redactPiiText(step.text),
+      burst: step.burst?.map(redactPiiText),
+      expect: step.expect?.forbidText
+        ? { ...step.expect, forbidText: step.expect.forbidText.map(redactPiiText) }
+        : step.expect,
+    })),
+  }
   const results = await prisma.$transaction([
     prisma.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'cases:' + input.agentId}))`,
     prisma.$queryRaw<Array<{ id: string }>>`
       INSERT INTO "ChatAgentTestCase" ("id", "tenantId", "agentId", "title", "steps", "createdBy")
-      SELECT ${id}, ${input.tenantId}, ${input.agentId}, ${input.test.title}, ${JSON.stringify(input.test.steps)}::jsonb, ${input.userId}
+      SELECT ${id}, ${input.tenantId}, ${input.agentId}, ${clean.title}, ${JSON.stringify(clean.steps)}::jsonb, ${input.userId}
        WHERE (SELECT count(*) FROM "ChatAgentTestCase" WHERE "tenantId" = ${input.tenantId} AND "agentId" = ${input.agentId}) < ${MAX_CASES_PER_AGENT}
+         AND (SELECT count(*) FROM "ChatAgentTestCase" WHERE "tenantId" = ${input.tenantId}) < ${MAX_CASES_PER_TENANT}
       RETURNING "id"`,
   ])
   if (!(results[1] as Array<{ id: string }>)[0]) throw new TestCaseLimitError()
@@ -124,8 +139,16 @@ export async function recordScenarioRun(input: {
          "passRate", "policyViolations", "results", "startedBy")
       VALUES (${randomUUID()}, ${input.tenantId}, ${agent.id}, ${agent.version}, 'probar_scenarios',
               ${`${SCENARIO_SET_VERSION}+${Math.max(0, Math.min(MAX_CASES_PER_AGENT, input.run.customCount))}`},
-              ${examined}, ${examined ? passed / examined : 0}, ${failures.length},
+              ${examined}, ${examined ? passed / examined : 0}, 0,
               ${JSON.stringify(failures)}::jsonb, ${input.userId})`
+    // Keep the last 20 playground runs per agent (same cap as the safety test).
+    await prisma.$executeRaw`
+      DELETE FROM "ChatAgentEvalRun"
+       WHERE "tenantId" = ${input.tenantId} AND "agentId" = ${agent.id} AND "suite" = 'probar_scenarios'
+         AND "id" NOT IN (
+           SELECT "id" FROM "ChatAgentEvalRun"
+            WHERE "tenantId" = ${input.tenantId} AND "agentId" = ${agent.id} AND "suite" = 'probar_scenarios'
+            ORDER BY "createdAt" DESC LIMIT 20)`
   } catch (error) {
     if (isMissingRelation(error)) return { saved: false }
     throw error

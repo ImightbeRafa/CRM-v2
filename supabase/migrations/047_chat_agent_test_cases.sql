@@ -2,7 +2,8 @@
 -- Additive only. Gated: BETSY_V2_APPLY_FILES=047 — never DEFAULT_APPLY_FILES. DO NOT run prisma db push / migrate.
 -- New table only, no foreign keys (no locks on busy tables). Tenant isolation is enforced in code: every read and
 -- write is scoped by "tenantId" from the session and the agent is checked to belong to that tenant.
--- Holds only what the team typed as the SIMULATED customer in the playground (no real customer data).
+-- Holds what the team typed as the SIMULATED customer in the playground. If a real message is pasted by mistake, the app
+-- masks phones/emails/SINPE/IBAN before saving; caps: 50 tests per agent, 200 per business.
 -- Code is fail-safe on a missing table (42P01). Rollback: deploy previous code; the table can stay (ignored).
 BEGIN;
 SET LOCAL lock_timeout = '3s';

@@ -9,7 +9,7 @@ import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
 import { recordAgentVersionSnapshot } from '@/lib/soft-ai/agent-improvement'
-import { agentHasInventoryMap } from '@/lib/soft-ai/agent-inventory-map'
+import { agentHasInventoryMap, loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import {
   AGENT_TOOL_NAMES,
   AGENT_INSTRUCTIONS_MAX,
@@ -451,7 +451,7 @@ export async function updateChatAgent(input: {
       tenantId: input.tenantId,
       agentId: row.id,
       version: row.version,
-      agent: row,
+      agent: { ...row, inventoryItemIds: await loadMappedInventoryIds(input.tenantId, row.id) },
       actorUserId: input.actorUserId,
     })
   }

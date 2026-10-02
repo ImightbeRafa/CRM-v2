@@ -6,14 +6,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { recordScenarioRun } from '@/lib/soft-ai/probar-test-cases'
+import { createIdentifierRateLimit } from '@/lib/rate-limit'
+import { logAuditEvent } from '@/lib/auditLogger'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+const runsRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 10, identifier: 'chat-agent-scenario-runs' })
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_config')
     if (!auth.ok) return auth.response
+    const rate = await runsRateLimit(`${auth.tenantId}:${auth.userId}`)
+    if (!rate.allowed) return NextResponse.json({ success: false, error: 'Demasiados envíos. Esperá un momento.' }, { status: 429, headers: rate.headers })
     const { id } = await context.params
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
@@ -36,6 +41,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       },
     })
     if (!result) return NextResponse.json({ success: false, error: 'Agente no encontrado' }, { status: 404 })
+    await logAuditEvent({
+      action: 'CREATE',
+      entityType: 'ChatAgentScenarioRun',
+      entityId: id,
+      description: 'Corrida del playground registrada (resultado informado por el navegador)',
+      userId: auth.userId,
+      userRole: auth.role,
+      tenantId: auth.tenantId,
+    }).catch(() => {})
     return NextResponse.json({ success: true, saved: result.saved })
   } catch (error) {
     console.error('[chat/agents/scenario-runs POST]', error instanceof Error ? error.name : 'unknown')

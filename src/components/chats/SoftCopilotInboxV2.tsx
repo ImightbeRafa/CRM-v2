@@ -557,7 +557,22 @@ export function SoftCopilotInboxV2() {
     let closed = false
     let source: EventSource | null = null
     let retryTimer: number | null = null
+    let tickTimer: number | null = null
     let backoffMs = 5_000
+    // Busy chats: coalesce live ticks so /changes runs at most every 3 s (a burst becomes one trailing poll).
+    const TICK_MIN_GAP_MS = 3_000
+    const onLiveTick = () => {
+      const since = Date.now() - lastPollAtRef.current
+      if (since >= TICK_MIN_GAP_MS) {
+        tickRef.current?.(true)
+        return
+      }
+      if (tickTimer !== null) return
+      tickTimer = window.setTimeout(() => {
+        tickTimer = null
+        tickRef.current?.(true)
+      }, TICK_MIN_GAP_MS - since)
+    }
 
     const scheduleRetry = () => {
       if (closed) return
@@ -574,7 +589,7 @@ export function SoftCopilotInboxV2() {
         scheduleRetry()
         return
       }
-      if (closed) return
+      if (closed || document.hidden || source) return
       source = new EventSource('/api/chat/stream')
       source.addEventListener('ready', () => {
         lastSseFrameRef.current = Date.now()
@@ -586,11 +601,12 @@ export function SoftCopilotInboxV2() {
       })
       source.addEventListener('tick', () => {
         lastSseFrameRef.current = Date.now()
-        tickRef.current?.(true)
+        onLiveTick()
       })
       source.addEventListener('full', () => {
         sseHealthyRef.current = false
         source?.close()
+        source = null
       })
       source.onerror = () => {
         sseHealthyRef.current = false
@@ -599,11 +615,27 @@ export function SoftCopilotInboxV2() {
         scheduleRetry()
       }
     }
+    // A hidden tab holds no stream (the server polls the DB for every open stream); reopen when visible.
+    const onVisibility = () => {
+      if (document.hidden) {
+        sseHealthyRef.current = false
+        source?.close()
+        source = null
+        if (retryTimer !== null) window.clearTimeout(retryTimer)
+        retryTimer = null
+      } else if (!source) {
+        backoffMs = 5_000
+        void connect()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
     void connect()
     return () => {
       closed = true
       sseHealthyRef.current = false
+      document.removeEventListener('visibilitychange', onVisibility)
       if (retryTimer !== null) window.clearTimeout(retryTimer)
+      if (tickTimer !== null) window.clearTimeout(tickTimer)
       source?.close()
     }
   }, [])

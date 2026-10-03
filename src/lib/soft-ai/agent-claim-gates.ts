@@ -18,7 +18,6 @@ import type {
 } from '@/lib/soft-ai/agent-types'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
-import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
 
 export type GateFail = {
   ok: false
@@ -203,8 +202,18 @@ export async function runPreSendGates(input: {
   if ((await readAgentKillState(input.tenantId)).armed) {
     return { ok: false, status: 'skipped', skipReason: 'kill_switch' }
   }
+  // One live read of the layer config serves both the AI-terms re-check and Gate 8 below.
+  const layerFlag = await prisma.tenantFeatureFlag.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      scope: input.tenantId,
+      key: CHAT_AGENT_LAYER_V1_FLAG,
+    },
+    select: { config: true },
+  })
+  const config = parseChatAgentLayerConfig(layerFlag?.config)
   // Revoking the AI authorization also stops a reply that is already being generated.
-  if (!(await isAiTermsAcceptedNow(input.tenantId))) {
+  if (!aiTermsAccepted(config)) {
     return { ok: false, status: 'skipped', skipReason: 'ai_terms_not_accepted' }
   }
   // Gate 1 again
@@ -277,16 +286,7 @@ export async function runPreSendGates(input: {
     return { ok: false, status: 'window_closed' }
   }
 
-  // Gate 8 — daily cap
-  const layerFlag = await prisma.tenantFeatureFlag.findFirst({
-    where: {
-      tenantId: input.tenantId,
-      scope: input.tenantId,
-      key: CHAT_AGENT_LAYER_V1_FLAG,
-    },
-    select: { config: true },
-  })
-  const config = parseChatAgentLayerConfig(layerFlag?.config)
+  // Gate 8 — daily cap (config read at the top of this function)
   const used = await loadDailyBilledTokens(input.tenantId)
   if (used >= config.dailyTokenCap) {
     return { ok: false, status: 'budget_blocked' }

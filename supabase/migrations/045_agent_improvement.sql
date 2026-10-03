@@ -43,8 +43,8 @@ CREATE TABLE IF NOT EXISTS public."ChatAgentFeedback" (
   CONSTRAINT "ChatAgentFeedback_note_len" CHECK (char_length(coalesce("note", '')) <= 500),
   CONSTRAINT "ChatAgentFeedback_actor_turn_key" UNIQUE ("tenantId", "actorUserId", "turnId")
 );
-CREATE INDEX IF NOT EXISTS "ChatAgentFeedback_agent_idx" ON public."ChatAgentFeedback" ("agentId", "agentVersion", "createdAt" DESC);
-CREATE INDEX IF NOT EXISTS "ChatAgentFeedback_turn_idx" ON public."ChatAgentFeedback" ("turnId");
+-- The only read (scorecard) filters by tenant + time window.
+CREATE INDEX IF NOT EXISTS "ChatAgentFeedback_tenant_created_idx" ON public."ChatAgentFeedback" ("tenantId", "createdAt" DESC);
 ALTER TABLE public."ChatAgentFeedback" ENABLE ROW LEVEL SECURITY;
 
 -- One row per automatic test-suite run of an agent version (deterministic safety rules; LLM judge later).

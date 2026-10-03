@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import KillSwitchPanel from '@/app/super-admin/agentes/KillSwitchPanel'
 import ScorecardPanel from '@/app/super-admin/agentes/ScorecardPanel'
@@ -120,25 +120,35 @@ export default function AgentOpsDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
+  const inflightRef = useRef<AbortController | null>(null)
   const load = useCallback(async () => {
+    // Switching days/mode cancels the previous request instead of stacking heavy reads on the server.
+    inflightRef.current?.abort()
+    const controller = new AbortController()
+    inflightRef.current = controller
+    const timeout = window.setTimeout(() => controller.abort(), 45_000)
     setLoading(true)
     setError(null)
     try {
       const res = await fetch(`/api/super-admin/agent-usage?days=${days}&mode=${mode}`, {
         cache: 'no-store',
-        signal: AbortSignal.timeout(45_000),
+        signal: controller.signal,
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setData((await res.json()) as Payload)
+      const json = (await res.json()) as Payload
+      if (inflightRef.current === controller) setData(json)
     } catch {
-      setError('No se pudo cargar. Intentá de nuevo.')
+      // A newer request replaced this one: stay quiet. A real timeout or failure shows the error.
+      if (inflightRef.current === controller) setError('No se pudo cargar. Intentá de nuevo.')
     } finally {
-      setLoading(false)
+      window.clearTimeout(timeout)
+      if (inflightRef.current === controller) setLoading(false)
     }
   }, [days, mode])
 
   useEffect(() => {
     void load()
+    return () => inflightRef.current?.abort()
   }, [load])
 
   const t = data?.summary.totals

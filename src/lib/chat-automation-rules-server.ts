@@ -162,7 +162,12 @@ async function findCandidates(
   const tenantId = rule.tenantId
   if (rule.triggerKind === 'new_chat') {
     const rows = await prisma.chatConversation.findMany({
-      where: { tenantId, createdAt: { gte: new Date(now.getTime() - NEW_CHAT_WINDOW_MS) } },
+      // lastMessageAt >= createdAt always, so the extra bound is exact and lets the (tenantId, lastMessageAt) index work.
+      where: {
+        tenantId,
+        createdAt: { gte: new Date(now.getTime() - NEW_CHAT_WINDOW_MS) },
+        lastMessageAt: { gte: new Date(now.getTime() - NEW_CHAT_WINDOW_MS) },
+      },
       select: { id: true },
       orderBy: { createdAt: 'desc' },
       take: MAX_CANDIDATES_PER_RULE,
@@ -179,6 +184,8 @@ async function findCandidates(
       where: {
         tenantId,
         lastInboundAt: { lte: upper, gte: lower },
+        // lastMessageAt >= lastInboundAt always: exact extra bound that makes the index usable.
+        lastMessageAt: { gte: lower },
         ...(cache.closed.length ? { status: { notIn: cache.closed } } : {}),
       },
       select: { id: true, lastInboundAt: true, lastOutboundAt: true, aiMode: true },
@@ -243,6 +250,15 @@ async function claimRun(rule: RuleRow, c: Candidate): Promise<string | null> {
     ON CONFLICT ("ruleId", "conversationId", "dedupeKey") DO NOTHING
     RETURNING "id"`
   return rows[0]?.id ?? null
+}
+
+/** Events this rule already fired for (one indexed query instead of one no-op INSERT per candidate). */
+async function alreadyFired(rule: RuleRow, candidates: Candidate[]): Promise<Set<string>> {
+  if (!candidates.length) return new Set()
+  const rows = await prisma.$queryRaw<Array<{ conversationId: string; dedupeKey: string }>>`
+    SELECT "conversationId", "dedupeKey" FROM "ChatAutomationRuleRun"
+     WHERE "ruleId" = ${rule.id} AND "conversationId" = ANY(${candidates.map((c) => c.conversationId)}::text[])`
+  return new Set(rows.map((r) => `${r.conversationId} ${r.dedupeKey}`))
 }
 
 async function runAction(rule: RuleRow, c: Candidate, now: Date, memberOk: Map<string, boolean>) {
@@ -340,6 +356,7 @@ export async function runChatAutomationRules(opts: { now?: Date; budgetMs?: numb
 }
 
 let runningSince = 0
+let lastRetentionAt = 0
 
 async function runRulesOnce(opts: { now?: Date; budgetMs?: number }, summary: RulesSummary): Promise<RulesSummary> {
   if (!(await isTableReady(RULE_TABLE))) return { ...summary, skipped: 'tables_missing' }
@@ -376,7 +393,10 @@ async function runRulesOnce(opts: { now?: Date; budgetMs?: number }, summary: Ru
     let actionsLeft = MAX_ACTIONS_PER_TENANT_PER_RUN
     const cache: Parameters<typeof findCandidates>[2] = {}
     const memberOk = new Map<string, boolean>()
-    for (const rule of tenantRules) {
+    // Rotate the first rule each minute too, so a slow early rule cannot starve the later ones.
+    const ruleOffset = tenantRules.length ? Math.floor(now.getTime() / 60_000) % tenantRules.length : 0
+    const orderedRules = [...tenantRules.slice(ruleOffset), ...tenantRules.slice(0, ruleOffset)]
+    for (const rule of orderedRules) {
       if (Date.now() - started > budget) {
         summary.skipped = 'time_budget'
         break
@@ -392,8 +412,15 @@ async function runRulesOnce(opts: { now?: Date; budgetMs?: number }, summary: Ru
         console.error('[chat-automation-rules] candidates failed', error instanceof Error ? error.name : 'unknown')
         continue
       }
+      let fired: Set<string>
+      try {
+        fired = await alreadyFired(rule, candidates)
+      } catch {
+        fired = new Set()
+      }
       for (const cand of candidates) {
         if (actionsLeft <= 0) break
+        if (fired.has(`${cand.conversationId} ${cand.dedupeKey}`)) continue
         try {
           const runId = await claimRun(rule, cand)
           if (!runId) continue // already fired for this event
@@ -413,7 +440,9 @@ async function runRulesOnce(opts: { now?: Date; budgetMs?: number }, summary: Ru
       }
     }
   }
-  // Retention: the run ledger is only needed to avoid refiring, never kept for long.
+  // Retention: the run ledger is only needed to avoid refiring, never kept for long. Hourly is plenty.
+  if (Date.now() - lastRetentionAt < 60 * 60_000) return summary
+  lastRetentionAt = Date.now()
   try {
     await prisma.$executeRaw`
       DELETE FROM "ChatAutomationRuleRun"

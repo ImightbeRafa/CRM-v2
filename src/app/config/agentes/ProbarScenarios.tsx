@@ -64,7 +64,7 @@ async function playStep(args: {
 }): Promise<PlayResult> {
   const now = new Date().toISOString()
   const earlier = (args.step.burst ?? []).map((text) => ({ direction: 'inbound' as const, content: text, sentAt: now }))
-  const res = await fetch(`/api/chat/agents/${encodeURIComponent(args.agentId)}/test`, {
+  const send = () => fetch(`/api/chat/agents/${encodeURIComponent(args.agentId)}/test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -79,6 +79,13 @@ async function playStep(args: {
       modelOverride: args.modelOverride,
     }),
   })
+  let res = await send()
+  // "Probar todo" can go past the 30-per-minute limit: wait as the server asks (max 3 times) instead of failing.
+  for (let attempt = 0; res.status === 429 && attempt < 3; attempt += 1) {
+    const waitS = Math.min(60, Math.max(2, Number(res.headers.get('Retry-After')) || 10))
+    await new Promise((resolve) => setTimeout(resolve, waitS * 1_000))
+    res = await send()
+  }
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
   if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Error en Probar')
   return data as PlayResult

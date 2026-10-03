@@ -17,6 +17,7 @@ import {
   loadAgentUsageRows,
   loadTenantNames,
 } from '@/lib/soft-ai/agent-usage-server'
+import { memoTtl } from '@/lib/soft-ai/safe-query'
 import { OPENAI_PRICING_VERSION, XAI_PRICING_VERSION } from '@/lib/soft-ai/agent-types'
 
 export const runtime = 'nodejs'
@@ -33,13 +34,15 @@ export async function GET(request: NextRequest) {
     const params = request.nextUrl.searchParams
     const days = clampUsageDays(params.get('days'))
     const mode = parseUsageMode(params.get('mode'))
-    const to = new Date()
-    const from = new Date(to.getTime() - days * 86_400_000)
-
-    const [rows, p95] = await Promise.all([
-      loadAgentUsageRows({ from, to, tenantId: null }),
-      loadAgentP95Latency({ from, to, tenantId: null, mode }),
-    ])
+    // Platform-wide scans are the heaviest reads here: cached 60 s per (days, mode) and shared by concurrent opens.
+    const [rows, p95] = await memoTtl(`platform-usage:${days}:${mode}`, 60_000, () => {
+      const to = new Date()
+      const from = new Date(to.getTime() - days * 86_400_000)
+      return Promise.all([
+        loadAgentUsageRows({ from, to, tenantId: null }),
+        loadAgentP95Latency({ from, to, tenantId: null, mode }),
+      ])
+    })
     const summary = summarizeAgentUsage(rows, mode, p95)
     const [tenantNames, agentNames] = await Promise.all([
       loadTenantNames(summary.byTenant.map((row) => row.tenantId)),

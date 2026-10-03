@@ -69,10 +69,15 @@ export async function recordAgentVersionSnapshot(input: {
  */
 export async function ensureCurrentVersionSnapshots(tenantId?: string): Promise<void> {
   try {
-    const agents = await prisma.chatAgent.findMany({
-      where: tenantId ? { tenantId } : {},
-      take: 500,
-    })
+    // Only agents whose CURRENT version has no snapshot yet (normally none: updates snapshot on every bump).
+    const tenantFilter = tenantId ? Prisma.sql`AND a."tenantId" = ${tenantId}` : Prisma.empty
+    const missing = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT a."id" FROM "ChatAgent" a
+        LEFT JOIN "ChatAgentVersion" v ON v."agentId" = a."id" AND v."version" = a."version"
+       WHERE v."agentId" IS NULL ${tenantFilter}
+       LIMIT 50`)
+    if (missing.length === 0) return
+    const agents = await prisma.chatAgent.findMany({ where: { id: { in: missing.map((m) => m.id) } } })
     for (const agent of agents) {
       await recordAgentVersionSnapshot({
         tenantId: agent.tenantId,
@@ -82,6 +87,7 @@ export async function ensureCurrentVersionSnapshots(tenantId?: string): Promise<
       })
     }
   } catch (error) {
+    if (isMissingTable(error)) return
     console.error('[agent-improvement] backfill failed', error instanceof Error ? error.name : 'unknown')
   }
 }

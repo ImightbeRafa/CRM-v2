@@ -42,5 +42,7 @@ CREATE TABLE IF NOT EXISTS public."ChatAutomationRuleRun" (
   CONSTRAINT "ChatAutomationRuleRun_len" CHECK (char_length("dedupeKey") <= 120 AND char_length(coalesce("error", '')) <= 200)
 );
 CREATE INDEX IF NOT EXISTS "ChatAutomationRuleRun_tenant_idx" ON public."ChatAutomationRuleRun" ("tenantId", "createdAt" DESC);
+-- Retention deletes by age across tenants.
+CREATE INDEX IF NOT EXISTS "ChatAutomationRuleRun_created_idx" ON public."ChatAutomationRuleRun" ("createdAt");
 ALTER TABLE public."ChatAutomationRuleRun" ENABLE ROW LEVEL SECURITY;
 COMMIT;

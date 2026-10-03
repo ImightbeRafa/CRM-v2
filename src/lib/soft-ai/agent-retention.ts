@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client'
 import { OUTPUT_RETENTION_DAYS } from '@/lib/soft-ai/agent-types'
 import { isChatAgentSchemaReady, isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { isChatSuggestionSchemaReady } from '@/lib/soft-ai/knowledge-schema'
+import { isTableReady } from '@/lib/soft-ai/table-ready'
 
 export async function purgeChatAgentOutputs(input?: {
   olderThanDays?: number
@@ -18,6 +19,7 @@ export async function purgeChatAgentOutputs(input?: {
   skipped: boolean
   suggestionsPurged?: number
   actionsPurged?: number
+  feedbackNotesPurged?: number
 }> {
   const ready = await isChatAgentSchemaReady()
   if (!ready) return { purged: 0, skipped: true }
@@ -96,7 +98,20 @@ export async function purgeChatAgentOutputs(input?: {
       }
     }
 
-    return { purged, skipped: false, suggestionsPurged, actionsPurged }
+    // Staff feedback notes are free text (may quote the customer): same 90 days. Thumbs/reason codes stay.
+    let feedbackNotesPurged = 0
+    if (await isTableReady('ChatAgentFeedback')) {
+      try {
+        feedbackNotesPurged = await prisma.$executeRaw`
+          UPDATE "ChatAgentFeedback" SET "note" = NULL
+           WHERE "id" IN (SELECT "id" FROM "ChatAgentFeedback"
+                           WHERE "note" IS NOT NULL AND "createdAt" < ${cutoff} LIMIT ${batchSize})`
+      } catch (error) {
+        if (!isMissingRelationError(error)) throw error
+      }
+    }
+
+    return { purged, skipped: false, suggestionsPurged, actionsPurged, feedbackNotesPurged }
   } catch (error) {
     if (isMissingRelationError(error)) return { purged: 0, skipped: true }
     throw error

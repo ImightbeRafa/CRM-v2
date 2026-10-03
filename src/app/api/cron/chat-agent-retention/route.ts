@@ -1,5 +1,5 @@
 /**
- * Daily Soft Agent Layer retention — null outputText older than 90 days.
+ * Daily Soft Agent Layer retention — AI reply text, traces, suggestions, action args and feedback notes older than 90 days.
  * Auth: Bearer CRON_SECRET (same as other chat crons).
  */
 
@@ -20,7 +20,23 @@ export async function GET(request: NextRequest) {
   if (!timingSafeEqualString(auth, `Bearer ${secret}`)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  // TODO(A1): optionally raise statement_timeout / lock_timeout for large tenants.
-  const result = await purgeChatAgentOutputs({ batchSize: 1_000 })
-  return NextResponse.json({ success: true, ...result })
+  // Batches of 1,000 until nothing is left or ~40 s have passed, so the 90-day promise holds at any volume
+  // (the next daily run continues where this one stopped).
+  const started = Date.now()
+  const total = { purged: 0, suggestionsPurged: 0, actionsPurged: 0, feedbackNotesPurged: 0, batches: 0 }
+  let skipped = false
+  for (;;) {
+    const r = await purgeChatAgentOutputs({ batchSize: 1_000 })
+    total.batches += 1
+    skipped = r.skipped
+    total.purged += r.purged
+    total.suggestionsPurged += r.suggestionsPurged ?? 0
+    total.actionsPurged += r.actionsPurged ?? 0
+    total.feedbackNotesPurged += r.feedbackNotesPurged ?? 0
+    const more =
+      r.purged >= 1_000 || (r.suggestionsPurged ?? 0) >= 1_000 || (r.actionsPurged ?? 0) >= 1_000 ||
+      (r.feedbackNotesPurged ?? 0) >= 1_000
+    if (r.skipped || !more || Date.now() - started > 40_000) break
+  }
+  return NextResponse.json({ success: true, skipped, ...total })
 }

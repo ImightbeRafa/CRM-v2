@@ -11,13 +11,14 @@ describe('soft-ai agent retention contract (1.18)', () => {
     assert.equal(typeof mod.purgeChatAgentOutputs, 'function')
   })
 
-  it('cron route exists and documents TODO for heavy batches', () => {
+  it('cron route exists and loops batches within a time budget (heavy volumes)', () => {
     const src = readFileSync(
       join(process.cwd(), 'src/app/api/cron/chat-agent-retention/route.ts'),
       'utf8',
     )
     assert.match(src, /purgeChatAgentOutputs/)
-    assert.match(src, /TODO/)
+    assert.match(src, /for \(;;\)/)
+    assert.match(src, /40_000/)
     assert.match(src, /timingSafeEqualString/)
   })
 })

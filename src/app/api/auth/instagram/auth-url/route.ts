@@ -20,6 +20,8 @@ export async function GET(request: NextRequest) {
 
   const baseUrl = `https://www.facebook.com/${getMetaGraphApiVersion()}/dialog/oauth`
 
+  // Must stay the same app as the callback's token exchange (META_APP_ID there too) —
+  // the client secret used to redeem the code has to belong to this same app.
   const appId = process.env.META_APP_ID
   const redirectUri = `${process.env.NEXTAUTH_URL}/api/auth/instagram/callback`
   const configId = getInstagramLoginConfigId()

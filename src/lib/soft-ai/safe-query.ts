@@ -6,14 +6,11 @@ import 'server-only'
 
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { createSlotQueue, SlotQueueFullError } from '@/lib/soft-ai/slot-queue'
 
 // At most 2 analytics statements hold a pooled connection at once per process: dashboards must never starve
-// webhooks, the inbox or agent turns (the pool is only 6–8 connections per container).
-const ANALYTICS_MAX_CONCURRENT = 2
-let analyticsActive = 0
-const analyticsWaiters: Array<() => void> = []
-
-const ANALYTICS_MAX_WAITING = 20
+// webhooks, the inbox or agent turns (the pool is only 6–8 connections per container). At most 20 wait; more → 503.
+const analyticsSlots = createSlotQueue(2, 20)
 
 /** Thrown when too many dashboard reads are already queued: the route answers 503 instead of piling up. */
 export class AnalyticsBusyError extends Error {
@@ -24,18 +21,16 @@ export class AnalyticsBusyError extends Error {
 }
 
 async function acquireAnalyticsSlot(): Promise<void> {
-  if (analyticsActive < ANALYTICS_MAX_CONCURRENT) {
-    analyticsActive += 1
-    return
+  try {
+    await analyticsSlots.acquire()
+  } catch (error) {
+    if (error instanceof SlotQueueFullError) throw new AnalyticsBusyError()
+    throw error
   }
-  if (analyticsWaiters.length >= ANALYTICS_MAX_WAITING) throw new AnalyticsBusyError()
-  await new Promise<void>((resolve) => analyticsWaiters.push(resolve))
 }
 
 function releaseAnalyticsSlot(): void {
-  const next = analyticsWaiters.shift()
-  if (next) next()
-  else analyticsActive = Math.max(0, analyticsActive - 1)
+  analyticsSlots.release()
 }
 
 /** Runs one read-only SQL statement with a hard 8 s statement timeout (SET LOCAL ends with the transaction). */

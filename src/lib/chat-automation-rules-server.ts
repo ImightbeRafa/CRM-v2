@@ -162,12 +162,8 @@ async function findCandidates(
   const tenantId = rule.tenantId
   if (rule.triggerKind === 'new_chat') {
     const rows = await prisma.chatConversation.findMany({
-      // lastMessageAt >= createdAt always, so the extra bound is exact and lets the (tenantId, lastMessageAt) index work.
-      where: {
-        tenantId,
-        createdAt: { gte: new Date(now.getTime() - NEW_CHAT_WINDOW_MS) },
-        lastMessageAt: { gte: new Date(now.getTime() - NEW_CHAT_WINDOW_MS) },
-      },
+      // No lastMessageAt bound here: it is the provider's sentAt, which can be OLDER than createdAt (late webhooks).
+      where: { tenantId, createdAt: { gte: new Date(now.getTime() - NEW_CHAT_WINDOW_MS) } },
       select: { id: true },
       orderBy: { createdAt: 'desc' },
       take: MAX_CANDIDATES_PER_RULE,
@@ -258,7 +254,7 @@ async function alreadyFired(rule: RuleRow, candidates: Candidate[]): Promise<Set
   const rows = await prisma.$queryRaw<Array<{ conversationId: string; dedupeKey: string }>>`
     SELECT "conversationId", "dedupeKey" FROM "ChatAutomationRuleRun"
      WHERE "ruleId" = ${rule.id} AND "conversationId" = ANY(${candidates.map((c) => c.conversationId)}::text[])`
-  return new Set(rows.map((r) => `${r.conversationId} ${r.dedupeKey}`))
+  return new Set(rows.map((r) => `${r.conversationId}\u0000${r.dedupeKey}`))
 }
 
 async function runAction(rule: RuleRow, c: Candidate, now: Date, memberOk: Map<string, boolean>) {
@@ -420,7 +416,7 @@ async function runRulesOnce(opts: { now?: Date; budgetMs?: number }, summary: Ru
       }
       for (const cand of candidates) {
         if (actionsLeft <= 0) break
-        if (fired.has(`${cand.conversationId} ${cand.dedupeKey}`)) continue
+        if (fired.has(`${cand.conversationId}\u0000${cand.dedupeKey}`)) continue
         try {
           const runId = await claimRun(rule, cand)
           if (!runId) continue // already fired for this event
@@ -444,10 +440,15 @@ async function runRulesOnce(opts: { now?: Date; budgetMs?: number }, summary: Ru
   if (Date.now() - lastRetentionAt < 60 * 60_000) return summary
   lastRetentionAt = Date.now()
   try {
-    await prisma.$executeRaw`
-      DELETE FROM "ChatAutomationRuleRun"
-       WHERE "id" IN (SELECT "id" FROM "ChatAutomationRuleRun"
-                        WHERE "createdAt" < now() - make_interval(days => ${RETENTION_DAYS}::int) LIMIT 500)`
+    // Batches of 500 for up to ~3 s, so busy businesses can never outgrow the hourly cleanup.
+    const retentionStarted = Date.now()
+    for (;;) {
+      const deleted = await prisma.$executeRaw`
+        DELETE FROM "ChatAutomationRuleRun"
+         WHERE "id" IN (SELECT "id" FROM "ChatAutomationRuleRun"
+                          WHERE "createdAt" < now() - make_interval(days => ${RETENTION_DAYS}::int) LIMIT 500)`
+      if (deleted < 500 || Date.now() - retentionStarted > 3_000) break
+    }
   } catch {
     /* best effort */
   }

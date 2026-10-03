@@ -59,10 +59,23 @@ describe('redactSensitiveForProvider', () => {
       'cedula 1 1234 5678',
       'cédula: 1-1234-5678',
       'pasaporte: A1234567',
+      'mi id es 112345678',
+      'ID: 155812345678',
     ]) {
       const out = masked(t)
       assert.ok(!/\d{6,}/.test(out.replace(/[\s-]/g, '')), t + ' -> ' + out)
     }
+  })
+  it('masks mistyped 4x4 card groups and foreign IBANs; "id del pedido" stays', () => {
+    assert.ok(!masked('tarjeta 1234 5678 9012 3456').includes('9012'))
+    assert.ok(!masked('IBAN GB29NWBK60161331926819').includes('60161331'))
+    assert.equal(masked('el id del pedido 1234567'), 'el id del pedido 1234567')
+    assert.equal(masked('mis numeros 8888-7777 6666-5555'), 'mis numeros 8888-7777 6666-5555')
+  })
+  it('never leaves part of a number unmasked at the length cut', () => {
+    const out = masked('x'.repeat(3_990) + ' 4111 1111 1111 1111')
+    assert.ok(!/4111/.test(out))
+    assert.ok(out.length <= 4_000)
   })
   it('keeps the quantity after a masked ID', () => {
     assert.equal(masked('mi cedula es 112345678 y 2 camisas'), 'mi cedula es [número oculto] y 2 camisas')

@@ -742,7 +742,9 @@ export function SoftThreadPane({
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[14px] font-bold text-slate-900">
-                  {agentMode === 'ai_active'
+                  {aiBlocked
+                    ? 'IA detenida: falta autorizar el uso de IA'
+                    : agentMode === 'ai_active'
                     ? `${conversation.agentLabel || 'Agente'} está atendiendo`
                     : agentMode === 'paused'
                       ? 'Agente en pausa'
@@ -1316,6 +1318,7 @@ export function SoftThreadPane({
                   data-popover-toggle
                   onClick={() => {
                     setEmojiOpen(false)
+                    setAttachMenuOpen(false)
                     setCatalogOpen((v) => !v)
                   }}
                   disabled={!composerEnabled}
@@ -1364,6 +1367,7 @@ export function SoftThreadPane({
                     data-popover-toggle
                     onClick={() => {
                       setEmojiOpen(false)
+                      setCatalogOpen(false)
                       if (attachments.onSendRecent) setAttachMenuOpen((v) => !v)
                       else fileInputRef.current?.click()
                     }}

@@ -25,9 +25,9 @@ export type SafetyRouteResult =
     }
 
 const OPT_OUT_RE =
-  // "no quiero una máquina tan grande" is a product question: máquina/IA/asistente only count after "hablar con" or
-  // "que me atienda"; a bare "no quiero (un) bot/robot" still counts.
-  /\b(no\s+quiero\s+(?:hablar\s+con|que\s+me\s+(?:atienda|responda))\s+(un\s+|una\s+)?(bot|robot|ia|inteligencia\s+artificial|m[aá]quina|asistente\s+virtual)|no\s+quiero\s+(un\s+)?(bot|robot)|hablar\s+con\s+(una\s+)?(persona|humano|alguien|asesor|agente)|quiero\s+(hablar\s+con\s+)?(una\s+persona|un\s+humano|un\s+asesor|un\s+agente|alguien)|atenci[oó]n\s+humana|STOP)\b/i
+  // "no quiero una máquina tan grande" is a product question: "máquina" only counts after "hablar con" or
+  // "que me atienda"; bare refusals of a bot/robot/IA/asistente virtual still count.
+  /\b(no\s+quiero\s+(?:hablar\s+con|que\s+me\s+(?:atienda|responda))\s+(un\s+|una\s+)?(bot|robot|ia|inteligencia\s+artificial|m[aá]quina|asistente\s+virtual)|no\s+quiero\s+(un\s+|una\s+)?(bot|robot|ia|inteligencia\s+artificial|asistente\s+virtual)|hablar\s+con\s+(una\s+)?(persona|humano|alguien|asesor|agente)|quiero\s+(hablar\s+con\s+)?(una\s+persona|un\s+humano|un\s+asesor|un\s+agente|alguien)|atenci[oó]n\s+humana|STOP)\b/i
 
 export const SAFETY_HANDOFF_TEXTS: Record<SafetyRouteReason, string> = {
   payment_or_sinpe: reservedShortcutBody('sys_handoff_payment'),

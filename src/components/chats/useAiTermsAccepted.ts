@@ -13,17 +13,32 @@ function load(): Promise<boolean | null> {
   return cached
 }
 
+/** Drop the cached answer (after accepting/revoking, or when the tab comes back). */
+export function invalidateAiTermsAccepted() {
+  cached = null
+}
+
 /** Whether the business authorized AI features (agents stay silent until it does). */
 export function useAiTermsAccepted(enabled: boolean): boolean | null {
   const [accepted, setAccepted] = useState<boolean | null>(null)
   useEffect(() => {
     if (!enabled) return
     let alive = true
-    void load().then((value) => {
-      if (alive) setAccepted(value)
-    })
+    const refresh = () =>
+      void load().then((value) => {
+        if (alive) setAccepted(value)
+      })
+    // Re-read when the tab becomes visible again (someone may have accepted/revoked in another tab or page).
+    const onVisible = () => {
+      if (document.hidden) return
+      invalidateAiTermsAccepted()
+      refresh()
+    }
+    refresh()
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
       alive = false
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [enabled])
   return accepted

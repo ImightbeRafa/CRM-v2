@@ -1,3 +1,14 @@
+## 2026-10-02 — Second-pass review of the fixes (claudio/agent-ops)
+
+- Opt-out: bare "no quiero IA / una IA / inteligencia artificial / un asistente virtual" counts again (only "máquina" needs
+  "hablar con"). Masking: `id` label back, mistyped 4×4 card groups and foreign IBANs masked, mask BEFORE the 4,000-char cut.
+- Rules evaluator: removed literal NUL bytes (file was binary to grep), dropped the wrong new_chat bound, run-log retention
+  loops in batches. Inbox: compact banner shows "IA detenida"; AI-terms status refreshes after accept/revoke and on tab focus;
+  catalog/attach popovers close each other. Probar retry waits from X-RateLimit-Reset.
+- Guía lookups answer the same for unknown and foreign guías; phone ownership needs ≥ 8 digits on both sides
+  (`src/lib/soft-ai/phone-ownership.ts`). Analytics queue extracted to `slot-queue.ts`. New behaviour tests:
+  `agent-ops-guards.test.ts`, more redact/opt-out cases.
+
 ## 2026-10-02 — Full-batch review on Opus (4 reviewers) + fixes (claudio/agent-ops)
 
 - Reviewers: correctness (verifier), security (SecureDog INT-43..51), performance, UI/SQL/tests/ops. All four ran on the whole

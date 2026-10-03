@@ -4,6 +4,7 @@
  */
 
 import { prisma } from '@/lib/db'
+import { phoneOwnershipMatch } from '@/lib/soft-ai/phone-ownership'
 import {
   AGENT_TOOL_NAMES,
   type AgentToolName,
@@ -67,15 +68,9 @@ async function ownershipOk(
     phone?: string | null
   },
 ): Promise<boolean> {
-  const hints = [
-    normalizePhone(ctx.peerId),
-    ...(ctx.peerPhoneHints || []).map(normalizePhone),
-  ].filter(Boolean)
-  const phoneMatches = (raw: string | null | undefined) => {
-    const phone = raw ? normalizePhone(raw) : ''
-    if (!phone) return false
-    return hints.some((h) => h === phone || h.endsWith(phone.slice(-8)) || phone.endsWith(h.slice(-8)))
-  }
+  const hints = [normalizePhone(ctx.peerId), ...(ctx.peerPhoneHints || []).map(normalizePhone)]
+  // Last-8-digit match; short or placeholder phones ("0", "123") never match anyone (see phone-ownership.ts).
+  const phoneMatches = (raw: string | null | undefined) => phoneOwnershipMatch(hints, raw ? normalizePhone(raw) : '')
   if (ctx.clientId && order.clientId && ctx.clientId === order.clientId) {
     // Chats can be linked to a client by hand (Chats › Cliente). The link alone is a human claim:
     // it proves ownership only when the linked client's phone is this chat's phone.
@@ -358,6 +353,16 @@ async function runGetShippingStatus(
     },
   })
   if (!row) {
+    // Guía-only lookups answer the same for "unknown" and "someone else's" (no probing which guías exist).
+    if (!order) {
+      return {
+        ok: false,
+        name: 'get_shipping_status',
+        result: { error: 'not_shareable', message: 'no puedo compartir eso' },
+        escalate: true,
+        escalateReason: 'ownership',
+      }
+    }
     return {
       ok: false,
       name: 'get_shipping_status',

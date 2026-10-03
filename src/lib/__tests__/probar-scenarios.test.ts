@@ -225,6 +225,10 @@ describe('review fixes: scoring is about what the agent would say', () => {
       'no quiero hablar con una máquina',
       'prefiero hablar con alguien',
       'atención humana por favor',
+      'no quiero IA',
+      'No quiero una IA',
+      'no quiero inteligencia artificial',
+      'no quiero un asistente virtual',
     ]) {
       assert.equal(isOptOutText(t), true, t)
     }

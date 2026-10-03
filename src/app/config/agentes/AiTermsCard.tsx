@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { AI_CUSTOMER_NOTICE } from '@/lib/soft-ai/ai-terms'
+import { invalidateAiTermsAccepted } from '@/components/chats/useAiTermsAccepted'
 
 type TermsState = {
   version: string
@@ -46,6 +47,7 @@ export function AiTermsCard({ canEdit }: { canEdit: boolean }) {
       const json = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) setError(json.error || 'No se pudo guardar.')
       else setChecked(false)
+      invalidateAiTermsAccepted() // the inbox status re-reads it
       await load()
     } catch {
       setError('No se pudo guardar. Intentá de nuevo.')

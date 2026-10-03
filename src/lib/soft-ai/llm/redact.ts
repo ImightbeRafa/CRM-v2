@@ -51,16 +51,21 @@ const IBAN_PROVIDER_RE = /\b([A-Za-z]{2}\d{2})((?:[ ]?\d{4}){3,7})((?:[ ]?\d{1,4
 /** Dashed cédula without a label (1-2345-6789). Spaced forms are only masked after a label (they look like prices). */
 const CEDULA_DASHED_RE = /\b\d-\d{4}-\d{4}\b/g
 const CUENTA_CLIENTE_RE = /\b\d{17}\b/g
+/** 16 digits in 4×4 groups with ONE consistent separator (or none): a card even when mistyped (Luhn fails). */
+const CARD_GROUPS_RE = /\b\d{4}([ -]?)\d{4}\1\d{4}\1\d{4}\b/g
+/** Foreign IBAN with letters in the body (e.g. GB29NWBK6016…): uppercase only, long, and mostly digits. */
+const IBAN_FOREIGN_RE = /\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/g
 const CR_ACCOUNT_RE = /\b\d{3}-\d{6,8}-\d\b/g
 
 /** ID labels. Sticky helpers below walk forward from each label without backtracking across alternatives. */
-const ID_LABEL_RE = /\b(?:c[eé]dula|dimex|pasaporte|identificaci[oó]n)\b/gi
+const ID_LABEL_RE = /\b(?:c[eé]dula|dimex|pasaporte|identificaci[oó]n|id)\b/gi
 const SEP_STICKY = /[\s:#.,-]{0,4}/y
 const FILLER_STICKY = /(?:de|es|mi|n[uú]mero|num|no|nro|personal|jur[ií]dica|f[ií]sica)\b\.?/iy
 /** The ID itself: optional 1–3 letter prefix, then digits with at most one space/dash between digits. */
 const ID_VALUE_STICKY = /[A-Za-z]{0,3}\d(?:[ -]?\d){4,14}/y
 
-/** Never scan more than this per message: longer text is cut before masking (the prompt caps it anyway). */
+/** Longest text sent per message/history line (WhatsApp allows 4,096). Cut AFTER masking, so a cut never
+ * leaves part of a number unmasked. Every pattern here is linear, so masking the full text first is cheap. */
 export const PROVIDER_REDACT_MAX_CHARS = 4_000
 
 function luhnOk(digits: string): boolean {
@@ -87,10 +92,12 @@ export function redactCardNumbers(text: string): string {
 }
 
 function redactIbanForProvider(text: string): string {
-  return text.replace(IBAN_PROVIDER_RE, (_m, start: string, body: string, tail: string) => {
-    const digits = `${body}${tail}`.replace(/\s/g, '')
-    return `${start.toUpperCase()}****${digits.slice(-4)}`
-  })
+  return text
+    .replace(IBAN_PROVIDER_RE, (_m, start: string, body: string, tail: string) => {
+      const digits = `${body}${tail}`.replace(/\s/g, '')
+      return `${start.toUpperCase()}****${digits.slice(-4)}`
+    })
+    .replace(IBAN_FOREIGN_RE, (m) => ((m.match(/\d/g) || []).length >= 10 ? `${m.slice(0, 4)}****${m.slice(-4)}` : m))
 }
 
 /** Masks the value that follows an ID label, skipping up to 4 filler words ("es", "número", ...). */
@@ -127,6 +134,7 @@ function redactLabeledIds(text: string): string {
 /** Costa Rican ID and account numbers: labelled IDs, dashed cédula, 17-digit cuenta cliente, bank account. */
 export function redactIdNumbers(text: string): string {
   return redactLabeledIds(text)
+    .replace(CARD_GROUPS_RE, (m) => `****${m.replace(/\D/g, '').slice(-4)}`)
     .replace(CEDULA_DASHED_RE, '[cédula]')
     .replace(CUENTA_CLIENTE_RE, '[cuenta]')
     .replace(CR_ACCOUNT_RE, '[cuenta]')
@@ -138,8 +146,8 @@ export function redactIdNumbers(text: string): string {
  * Phones and emails are NOT masked here (the conversation itself is addressed to them).
  */
 export function redactSensitiveForProvider(text: string): string {
-  const bounded = text.length > PROVIDER_REDACT_MAX_CHARS ? text.slice(0, PROVIDER_REDACT_MAX_CHARS) : text
-  return redactIdNumbers(redactIbanForProvider(redactCardNumbers(bounded)))
+  const masked = redactIdNumbers(redactIbanForProvider(redactCardNumbers(text)))
+  return masked.length > PROVIDER_REDACT_MAX_CHARS ? masked.slice(0, PROVIDER_REDACT_MAX_CHARS) : masked
 }
 
 export function redactPiiText(text: string): string {

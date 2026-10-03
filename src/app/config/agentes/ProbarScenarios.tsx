@@ -78,7 +78,9 @@ async function playStep(args: {
   let res = await send()
   // "Probar todo" can go past the 30-per-minute limit: wait as the server asks (max 3 times) instead of failing.
   for (let attempt = 0; res.status === 429 && attempt < 3; attempt += 1) {
-    const waitS = Math.min(60, Math.max(2, Number(res.headers.get('Retry-After')) || 10))
+    const resetAt = Number(res.headers.get('X-RateLimit-Reset')) * 1_000
+    const fromReset = resetAt > 0 ? Math.ceil((resetAt - Date.now()) / 1_000) + 1 : 0
+    const waitS = Math.min(61, Math.max(2, Number(res.headers.get('Retry-After')) || fromReset || 10))
     await new Promise((resolve) => setTimeout(resolve, waitS * 1_000))
     res = await send()
   }

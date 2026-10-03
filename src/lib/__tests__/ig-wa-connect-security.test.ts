@@ -350,6 +350,26 @@ test('meta-api ownership verify never hard-codes nested whatsapp_business_accoun
 })
 
 
+test('IG callback OAuth code exchange uses META_WA_APP_SECRET, never META_APP_SECRET (client secret must match META_APP_ID app)', async () => {
+  const source = await readFile('src/app/api/auth/instagram/callback/route.ts', 'utf8')
+
+  // Isolate the code->token exchange block (between the appId/appSecret env reads and
+  // the fetch(tokenUrl) call) so the later debug_token block — which legitimately
+  // falls back to META_APP_SECRET — doesn't make this assertion pass by accident.
+  const exchangeStart = source.indexOf('const appId = process.env.META_APP_ID')
+  const exchangeEnd = source.indexOf('fetch(tokenUrl)')
+  assert.ok(exchangeStart > -1 && exchangeEnd > exchangeStart, 'could not locate OAuth exchange block')
+  const exchangeBlock = source.slice(exchangeStart, exchangeEnd)
+
+  assert.match(exchangeBlock, /process\.env\.META_WA_APP_SECRET/)
+  assert.doesNotMatch(exchangeBlock, /process\.env\.META_APP_SECRET\b/)
+  assert.match(exchangeBlock, /client_secret:\s*appSecret/)
+  assert.match(exchangeBlock, /process\.env\.META_APP_ID/)
+
+  // The config-error copy must name the env vars this route actually checks.
+  assert.match(source, /META_APP_ID o META_WA_APP_SECRET/)
+})
+
 test('WA direct-oauth requires update_config and persists CSRF state cookie (SD-04)', async () => {
   const source = await readFile('src/app/api/auth/whatsapp/direct-oauth/route.ts', 'utf8')
   assert.match(source, /authenticateAPIWithPermission/)

@@ -5,6 +5,7 @@
  * tenantId from the session; the acceptance lives in the tenant's own chat_agent_layer_v1 config row.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { isSameOriginJson } from '@/lib/same-origin'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { prisma } from '@/lib/db'
@@ -61,12 +62,8 @@ export async function POST(request: NextRequest) {
     const auth = await authenticateAPIWithPermission(request, 'update_config', { skipBillingGuard: true })
     if (!auth.ok) return auth.response
     // CSRF: JSON only, same-origin only (the session cookie is SameSite=Lax, this is defence in depth).
-    if (!(request.headers.get('content-type') || '').toLowerCase().includes('application/json')) {
-      return NextResponse.json({ success: false, error: 'Content-Type inválido.' }, { status: 415 })
-    }
-    const site = request.headers.get('sec-fetch-site')
-    const origin = request.headers.get('origin')
-    if ((site && site !== 'same-origin') || (origin && origin !== request.nextUrl.origin)) {
+    // Never compare with nextUrl.origin: inside the container it is http://0.0.0.0:3000 (see same-origin.ts).
+    if (!isSameOriginJson(request)) {
       return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })
     }
     const rate = await termsRateLimit(`${auth.tenantId}:${auth.userId}`)

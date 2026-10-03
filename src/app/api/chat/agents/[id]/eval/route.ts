@@ -4,6 +4,10 @@
  * against the agent's current version; GET lists the latest runs.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { createIdentifierRateLimit } from '@/lib/rate-limit'
+
+const evalRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 10, identifier: 'chat-agent-eval' })
+import { isSameOriginRequest } from '@/lib/same-origin'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { loadLatestEvalRuns, runAgentSafetyEval } from '@/lib/soft-ai/agent-improvement'
 
@@ -33,6 +37,13 @@ export async function POST(
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_config')
     if (!auth.ok) return auth.response
+    if (!isSameOriginRequest(request)) {
+      return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })
+    }
+    const rate = await evalRateLimit(`${auth.tenantId}:${auth.userId}`)
+    if (!rate.allowed) {
+      return NextResponse.json({ success: false, error: 'Demasiadas pruebas seguidas. Esperá un momento.' }, { status: 429, headers: rate.headers })
+    }
     const { id } = await context.params
     const result = await runAgentSafetyEval({
       tenantId: auth.tenantId,

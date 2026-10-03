@@ -3,6 +3,7 @@
  * tenantId comes from the session; the turn must belong to it.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { isSameOriginRequest } from '@/lib/same-origin'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { parseFeedbackInput } from '@/lib/soft-ai/agent-scorecard'
 import { submitAgentFeedback } from '@/lib/soft-ai/agent-improvement'
@@ -14,6 +15,9 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_sales')
     if (!auth.ok) return auth.response
+    if (!isSameOriginRequest(request)) {
+      return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })
+    }
     const body = await request.json().catch(() => null)
     const parsed = parseFeedbackInput(body)
     if (!parsed.ok) {

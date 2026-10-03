@@ -100,7 +100,7 @@ export function mapChatAgentAdminError(error: unknown): ChatAgentAdminHttpError 
       status: 409,
       body: {
         success: false,
-        error: 'Antes de activar este agente elegí los productos que puede cotizar.',
+        error: 'Antes de activar este agente elegí los productos que puede cotizar (en Avanzado → Productos que puede cotizar).',
         code: 'INVENTORY_MAP_REQUIRED',
       },
     }

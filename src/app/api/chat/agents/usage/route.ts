@@ -15,7 +15,7 @@ import {
   loadAgentP95Latency,
   loadAgentUsageRows,
 } from '@/lib/soft-ai/agent-usage-server'
-import { memoTtl } from '@/lib/soft-ai/safe-query'
+import { memoTtl, AnalyticsBusyError } from '@/lib/soft-ai/safe-query'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -48,6 +48,12 @@ export async function GET(request: NextRequest) {
       { headers: { 'Cache-Control': 'no-store' } },
     )
   } catch (error) {
+    if (error instanceof AnalyticsBusyError) {
+      return NextResponse.json(
+        { success: false, error: 'Hay muchas consultas en curso. Probá de nuevo en un momento.' },
+        { status: 503, headers: { 'Cache-Control': 'no-store', 'Retry-After': '10' } },
+      )
+    }
     console.error('[chat/agents/usage GET]', error instanceof Error ? error.name : 'unknown')
     return NextResponse.json({ success: false, error: 'Error al cargar el uso' }, { status: 500 })
   }

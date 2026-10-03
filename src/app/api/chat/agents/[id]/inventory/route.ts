@@ -3,6 +3,7 @@
  * tenantId from the session; the agent and every product must belong to it; PUT needs update_config and is audited.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { isSameOriginRequest } from '@/lib/same-origin'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { prisma } from '@/lib/db'
@@ -14,6 +15,9 @@ import {
   setMappedInventory,
 } from '@/lib/soft-ai/agent-inventory-map'
 import { recordAgentVersionSnapshot } from '@/lib/soft-ai/agent-improvement'
+import { createIdentifierRateLimit } from '@/lib/rate-limit'
+
+const inventoryRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 20, identifier: 'chat-agent-inventory' })
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -45,12 +49,25 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_config')
     if (!auth.ok) return auth.response
+    if (!isSameOriginRequest(request)) {
+      return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })
+    }
+    const rate = await inventoryRateLimit(`${auth.tenantId}:${auth.userId}`)
+    if (!rate.allowed) {
+      return NextResponse.json({ success: false, error: 'Demasiados cambios. Esperá un momento.' }, { status: 429, headers: rate.headers })
+    }
     const { id } = await context.params
     const agent = await ownedAgent(auth.tenantId, id)
     if (!agent) return NextResponse.json({ success: false, error: 'Agente no encontrado' }, { status: 404 })
     const body = (await request.json().catch(() => null)) as { itemIds?: unknown } | null
     if (!body || !Array.isArray(body.itemIds)) {
       return NextResponse.json({ success: false, error: 'Falta la lista de productos' }, { status: 400 })
+    }
+    // Same list as today: nothing to save, no new version, no snapshot row (no growth from repeated saves).
+    const requested = new Set(body.itemIds.filter((v): v is string => typeof v === 'string'))
+    const current = await loadMappedInventoryIds(auth.tenantId, agent.id)
+    if (current !== null && current.length === requested.size && current.every((itemId) => requested.has(itemId))) {
+      return NextResponse.json({ success: true, stored: current.length, unchanged: true })
     }
     // A live agent with the product search on can't be left without a list (it would quote the whole catalog);
     // checked on the list AFTER every id was validated against the business.

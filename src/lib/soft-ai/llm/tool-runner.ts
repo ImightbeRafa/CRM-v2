@@ -364,6 +364,25 @@ async function runGetShippingStatus(
       result: { error: 'not_found' },
     }
   }
+  // Looked up by guía only (no owned order): the guía's order must belong to THIS customer, otherwise anyone
+  // (or an injected prompt) could probe other customers' guía numbers.
+  if (!order) {
+    const guiaOrder = row.orderId
+      ? await prisma.order.findFirst({
+          where: { id: row.orderId, tenantId: ctx.tenantId },
+          select: { clientId: true, phone: true },
+        })
+      : null
+    if (!guiaOrder || !(await ownershipOk(ctx, guiaOrder))) {
+      return {
+        ok: false,
+        name: 'get_shipping_status',
+        result: { error: 'not_shareable', message: 'no puedo compartir eso' },
+        escalate: true,
+        escalateReason: 'ownership',
+      }
+    }
+  }
   return {
     ok: true,
     name: 'get_shipping_status',

@@ -36,7 +36,7 @@ import {
 import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import { acquireProbarSlot, releaseProbarSlot } from '@/lib/soft-ai/probar-slots'
 import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
-import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
+import { isPlatformAiPaused, readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
 import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
 import { estimateCostMicros } from '@/lib/soft-ai/llm/usage'
 import {
@@ -1279,6 +1279,7 @@ type ProbarResult = Awaited<ReturnType<typeof runAgentTestTurnInner>>
 
 /** Probar: at most a few model calls in flight per business (see probar-slots.ts). */
 export async function runAgentTestTurn(input: ProbarInput): Promise<ProbarResult> {
+  if (await isPlatformAiPaused()) throw new Error('AI_PAUSED')
   if (!acquireProbarSlot(input.tenantId)) throw new Error('PROBAR_BUSY')
   try {
     return await runAgentTestTurnInner(input)

@@ -17,7 +17,7 @@ import {
   loadAgentUsageRows,
   loadTenantNames,
 } from '@/lib/soft-ai/agent-usage-server'
-import { memoTtl } from '@/lib/soft-ai/safe-query'
+import { memoTtl, AnalyticsBusyError } from '@/lib/soft-ai/safe-query'
 import { OPENAI_PRICING_VERSION, XAI_PRICING_VERSION } from '@/lib/soft-ai/agent-types'
 
 export const runtime = 'nodejs'
@@ -76,6 +76,12 @@ export async function GET(request: NextRequest) {
       { headers: NO_STORE },
     )
   } catch (error) {
+    if (error instanceof AnalyticsBusyError) {
+      return NextResponse.json(
+        { success: false, error: 'Hay muchas consultas en curso. Probá de nuevo en un momento.' },
+        { status: 503, headers: { 'Cache-Control': 'no-store', 'Retry-After': '10' } },
+      )
+    }
     console.error('[super-admin/agent-usage] failed', error instanceof Error ? error.name : 'unknown')
     return NextResponse.json({ error: 'Failed' }, { status: 500, headers: NO_STORE })
   }

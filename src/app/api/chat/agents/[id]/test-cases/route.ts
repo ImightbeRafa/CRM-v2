@@ -3,6 +3,7 @@
  * tenantId from the session; the agent must belong to it; POST needs update_config and is audited.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { isSameOriginRequest } from '@/lib/same-origin'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { parseSavedTest } from '@/lib/soft-ai/probar-scenarios'
@@ -10,6 +11,7 @@ import { createIdentifierRateLimit } from '@/lib/rate-limit'
 import {
   TestCaseLimitError,
   TestCasesNotReadyError,
+  cleanSavedTest,
   createTestCase,
   listTestCases,
 } from '@/lib/soft-ai/probar-test-cases'
@@ -37,6 +39,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_config')
     if (!auth.ok) return auth.response
+    if (!isSameOriginRequest(request)) {
+      return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })
+    }
     const rate = await casesRateLimit(`${auth.tenantId}:${auth.userId}`)
     if (!rate.allowed) return NextResponse.json({ success: false, error: 'Demasiados cambios. Esperá un momento.' }, { status: 429, headers: rate.headers })
     const { id } = await context.params
@@ -48,7 +53,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       action: 'CREATE',
       entityType: 'ChatAgentTestCase',
       entityId: caseId,
-      entityName: parsed.value.title,
+      entityName: cleanSavedTest(parsed.value).title, // audit the title as stored (masked)
       description: `Prueba guardada para el agente ${id}`,
       userId: auth.userId,
       userRole: auth.role,
@@ -60,7 +65,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       return NextResponse.json({ success: false, error: 'Las pruebas guardadas todavía no están disponibles.' }, { status: 503 })
     }
     if (error instanceof TestCaseLimitError) {
-      return NextResponse.json({ success: false, error: 'Llegaste al máximo de pruebas guardadas (50).' }, { status: 409 })
+      return NextResponse.json({ success: false, error: 'Llegaste al máximo de pruebas guardadas (50 por agente, 200 por negocio).' }, { status: 409 })
     }
     console.error('[chat/agents/test-cases POST]', error instanceof Error ? error.name : 'unknown')
     return NextResponse.json({ success: false, error: 'No se pudo guardar' }, { status: 500 })

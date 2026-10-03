@@ -79,7 +79,8 @@ describe('chat SSE route and client (static)', () => {
   const route = read('src/app/api/chat/stream/route.ts')
   it('authenticates like /changes and scopes by the session tenant', () => {
     assert.match(route, /authenticateAPIWithPermission\(request, 'update_sales'\)/)
-    assert.match(route, /subscribeChatTicks\(auth\.tenantId/)
+    assert.match(route, /subscribeChatTicks\(\s*auth\.tenantId,/)
+    assert.match(route, /auth\.userId,\s*\)/) // per-person stream cap (INT-44)
     assert.doesNotMatch(route, /searchParams\.get\('tenantId'\)/)
   })
   it('is off without CHAT_SSE, sends heartbeats and closes after 5 minutes', () => {
@@ -122,5 +123,24 @@ describe('SSE client robustness (review fixes)', () => {
     assert.match(client, /addEventListener\('ping'/)
     assert.match(client, /CHAT_INBOX_V2_SSE_SILENT_MS/)
     assert.match(read('src/app/api/chat/stream/route.ts'), /event: ping/)
+  })
+})
+
+describe('chat stream per-user cap (INT-44)', () => {
+  it('one person gets at most 3 streams; others in the same business are unaffected', async () => {
+    const { subscribeChatTicks, CHAT_STREAM_MAX_PER_USER } = await import('@/lib/chat-stream-hub')
+    const offs = []
+    for (let i = 0; i < CHAT_STREAM_MAX_PER_USER; i += 1) {
+      const off = subscribeChatTicks('USERCAP', () => {}, 'u1')
+      assert.ok(off)
+      offs.push(off)
+    }
+    assert.equal(subscribeChatTicks('USERCAP', () => {}, 'u1'), null)
+    const other = subscribeChatTicks('USERCAP', () => {}, 'u2')
+    assert.ok(other)
+    offs[0]?.()
+    const again = subscribeChatTicks('USERCAP', () => {}, 'u1') // a closed stream frees its slot
+    assert.ok(again)
+    for (const off of [...offs.slice(1), other, again]) off?.()
   })
 })

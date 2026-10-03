@@ -10,7 +10,8 @@ import 'server-only'
 import { prisma } from '@/lib/db'
 
 export const CHAT_STREAM_POLL_MS = 2_000
-export const CHAT_STREAM_MAX_PER_TENANT = 50
+export const CHAT_STREAM_MAX_PER_TENANT = 20
+export const CHAT_STREAM_MAX_PER_USER = 3
 export const CHAT_STREAM_MAX_TOTAL = 500
 
 export function chatSseEnabled(): boolean {
@@ -22,6 +23,7 @@ type Listener = (revision: string) => void
 type TenantHub = { listeners: Set<Listener>; timer: ReturnType<typeof setInterval> | null; last: string | null; busy: boolean }
 
 const hubs = new Map<string, TenantHub>()
+const perUser = new Map<string, number>()
 let total = 0
 
 type RevisionReader = (tenantId: string) => Promise<string | null>
@@ -64,11 +66,17 @@ async function pollTenant(tenantId: string, hub: TenantHub) {
   }
 }
 
-/** Returns an unsubscribe function, or null when the connection caps are reached. */
-export function subscribeChatTicks(tenantId: string, listener: Listener): (() => void) | null {
+/**
+ * Returns an unsubscribe function, or null when a cap is reached (process, business, or — when `userId` is given —
+ * 3 streams per person, so one user can't take a whole business's slots).
+ */
+export function subscribeChatTicks(tenantId: string, listener: Listener, userId?: string): (() => void) | null {
   if (total >= CHAT_STREAM_MAX_TOTAL) return null
   let hub = hubs.get(tenantId)
   if (hub && hub.listeners.size >= CHAT_STREAM_MAX_PER_TENANT) return null
+  const userKey = userId ? `${tenantId}:${userId}` : null
+  if (userKey && (perUser.get(userKey) ?? 0) >= CHAT_STREAM_MAX_PER_USER) return null
+  if (userKey) perUser.set(userKey, (perUser.get(userKey) ?? 0) + 1)
   if (!hub) {
     hub = { listeners: new Set(), timer: null, last: null, busy: false }
     hubs.set(tenantId, hub)
@@ -84,6 +92,11 @@ export function subscribeChatTicks(tenantId: string, listener: Listener): (() =>
   return () => {
     if (done) return
     done = true
+    if (userKey) {
+      const left = (perUser.get(userKey) ?? 1) - 1
+      if (left <= 0) perUser.delete(userKey)
+      else perUser.set(userKey, left)
+    }
     const current = hubs.get(tenantId)
     if (!current) return
     if (current.listeners.delete(listener)) total = Math.max(0, total - 1)

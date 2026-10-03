@@ -62,6 +62,12 @@ export async function POST(
     if (msg === 'AGENT_NOT_FOUND') {
       return NextResponse.json({ success: false, error: 'No encontrado' }, { status: 404 })
     }
+    if (msg === 'AI_PAUSED') {
+      return NextResponse.json(
+        { success: false, error: 'La IA está en pausa por mantenimiento de Betsy. Probá más tarde.', code: 'AI_PAUSED' },
+        { status: 423 },
+      )
+    }
     if (msg === 'PROBAR_BUSY') {
       return NextResponse.json(
         { success: false, error: 'Hay pruebas en curso para este negocio. Esperá a que terminen y volvé a aprobar.' },

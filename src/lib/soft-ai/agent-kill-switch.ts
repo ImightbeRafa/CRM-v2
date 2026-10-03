@@ -58,6 +58,15 @@ export async function readAgentKillState(tenantId: string): Promise<KillState> {
   return { armed: false, source: null }
 }
 
+/**
+ * Platform-wide pause (env switch or the global key): also stops the paid calls that are not customer turns —
+ * Probar, unlock canaries and shortcut import — so a key-abuse or provider incident stops ALL spend.
+ * A per-business stop does not pause that business's own tests.
+ */
+export async function isPlatformAiPaused(): Promise<boolean> {
+  return envKillArmed() || (await readKey(KILL_GLOBAL_KEY))
+}
+
 export function clearKillCache() {
   cache.clear()
 }

@@ -3,7 +3,9 @@
  * tenantId from the session; creating needs update_config and is audited.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { isSameOriginRequest } from '@/lib/same-origin'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { hasPermission, type Role } from '@/lib/rbac'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { isAssignableChatMember } from '@/lib/chat-conversation-route-helpers'
 import { parseRuleInput } from '@/lib/chat-automation-rules'
@@ -23,7 +25,10 @@ export async function GET(request: NextRequest) {
     const auth = await authenticateAPIWithPermission(request, 'view_config')
     if (!auth.ok) return auth.response
     const result = await listRules(auth.tenantId)
-    return NextResponse.json({ success: true, ...result }, { headers: { 'Cache-Control': 'no-store' } })
+    return NextResponse.json(
+      { success: true, ...result, canEdit: hasPermission(auth.role as Role, 'update_config') },
+      { headers: { 'Cache-Control': 'no-store' } },
+    )
   } catch (error) {
     console.error('[config/chat-automations GET]', error instanceof Error ? error.name : 'unknown')
     return NextResponse.json({ success: false, error: 'No se pudieron cargar las reglas' }, { status: 500 })
@@ -34,6 +39,9 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_config')
     if (!auth.ok) return auth.response
+    if (!isSameOriginRequest(request)) {
+      return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })
+    }
     const parsed = parseRuleInput(await request.json().catch(() => null))
     if (!parsed.ok) return NextResponse.json({ success: false, error: parsed.error }, { status: 400 })
     const rule = { ...parsed.rule, enabled: false } // new rules are always created off

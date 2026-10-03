@@ -12,6 +12,8 @@ import {
   parseChatAgentLayerConfig,
 } from '@/lib/soft-ai/agent-config'
 import { isChatAgentSchemaReady } from '@/lib/soft-ai/agent-schema'
+import { isPlatformAiPaused } from '@/lib/soft-ai/agent-kill-switch'
+import { estimateCostMicros } from '@/lib/soft-ai/llm/usage'
 import { DEFAULT_CHAT_AGENT_MODEL, pricingVersionFor } from '@/lib/soft-ai/agent-types'
 import { parseBrandFactsSafe } from '@/lib/soft-ai/brand-facts'
 import {
@@ -81,7 +83,8 @@ export async function runShortcutExtract(input: {
   const config = parseChatAgentLayerConfig(flag?.config)
   const testTokensUsed = await loadDailyTestTokens(input.tenantId)
   const socialAccountId = await resolveChargeAccount(input.tenantId, agent.id)
-  const llmReady = isSoftAiProviderConfigured(agent.model)
+  // Platform pause (kill switch) also stops this paid call: the import falls back to the local heuristic.
+  const llmReady = isSoftAiProviderConfigured(agent.model) && !(await isPlatformAiPaused())
   let charged = false
 
   const proposal = await extractShortcutImport(
@@ -124,7 +127,14 @@ export async function runShortcutExtract(input: {
             cachedInputTokens: usage.cachedInputTokens,
             outputTokens: usage.outputTokens,
             reasoningTokens: usage.reasoningTokens,
-            estimatedCostMicros: BigInt(0),
+            estimatedCostMicros: BigInt(
+              estimateCostMicros({
+                model: agent.model || DEFAULT_CHAT_AGENT_MODEL,
+                inputTokens: usage.inputTokens,
+                cachedInputTokens: usage.cachedInputTokens,
+                outputTokens: usage.outputTokens, // provider output_tokens already include reasoning
+              }),
+            ),
             pricingVersion: pricingVersionFor(agent.model || DEFAULT_CHAT_AGENT_MODEL),
             completedAt: new Date(),
           },

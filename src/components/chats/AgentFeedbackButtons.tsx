@@ -10,7 +10,7 @@ const REASONS = [
 
 /** Staff thumbs on an agent-sent message. Small, optional, and silent on failure. */
 export function AgentFeedbackButtons({ turnId }: { turnId: string }) {
-  const [state, setState] = useState<'idle' | 'up' | 'down' | 'sent'>('idle')
+  const [state, setState] = useState<'idle' | 'up' | 'down' | 'sent' | 'soon' | 'error'>('idle')
   const [busy, setBusy] = useState(false)
 
   async function send(rating: 1 | -1, reasonCode?: string) {
@@ -21,9 +21,10 @@ export function AgentFeedbackButtons({ turnId }: { turnId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ turnId, rating, reasonCode }),
       })
-      if (res.ok) setState('sent')
+      // 503 = the feedback table is not installed yet; anything else that fails gets a short retry hint.
+      setState(res.ok ? 'sent' : res.status === 503 ? 'soon' : 'error')
     } catch {
-      /* feedback is optional */
+      setState('error')
     } finally {
       setBusy(false)
     }
@@ -31,6 +32,9 @@ export function AgentFeedbackButtons({ turnId }: { turnId: string }) {
 
   if (state === 'sent') {
     return <span className="ml-1 text-[10px] text-emerald-600">Gracias</span>
+  }
+  if (state === 'soon') {
+    return <span className="ml-1 text-[10px] text-slate-500">Disponible pronto</span>
   }
   return (
     <span className="ml-1 inline-flex items-center gap-1" data-testid="agent-feedback">
@@ -65,6 +69,7 @@ export function AgentFeedbackButtons({ turnId }: { turnId: string }) {
             </button>
           ))
         : null}
+      {state === 'error' ? <span className="text-[10px] text-amber-700">No se pudo enviar, probá de nuevo</span> : null}
     </span>
   )
 }

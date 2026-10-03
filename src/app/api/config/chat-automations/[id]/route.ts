@@ -3,6 +3,7 @@
  * update_config only; tenantId from the session (a rule of another business is a plain 404); audited.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { isSameOriginRequest } from '@/lib/same-origin'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { isAssignableChatMember } from '@/lib/chat-conversation-route-helpers'
@@ -25,6 +26,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_config')
     if (!auth.ok) return auth.response
+    if (!isSameOriginRequest(request)) {
+      return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })
+    }
     const { id } = await context.params
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     const existing = await getRule(auth.tenantId, id)
@@ -85,6 +89,9 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_config')
     if (!auth.ok) return auth.response
+    if (!isSameOriginRequest(request)) {
+      return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })
+    }
     const { id } = await context.params
     const existing = await getRule(auth.tenantId, id)
     if (!existing) return notFound()

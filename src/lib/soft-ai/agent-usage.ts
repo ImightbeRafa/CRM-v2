@@ -161,10 +161,14 @@ export function stripSummaryCost(summary: AgentUsageSummary) {
   }
 }
 
+/** Window in days, snapped to 1 / 7 / 30 / 90 so callers can't fan out into dozens of distinct heavy queries. */
 export function clampUsageDays(raw: string | null | undefined): number {
   const n = Number(raw)
   if (!Number.isFinite(n) || n < 1) return 30
-  return Math.min(90, Math.floor(n))
+  if (n <= 1) return 1
+  if (n <= 7) return 7
+  if (n <= 30) return 30
+  return 90
 }
 
 export function parseUsageMode(raw: string | null | undefined): AgentUsageMode {

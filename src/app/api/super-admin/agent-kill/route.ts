@@ -6,6 +6,7 @@
  * billing restriction on the admin's own business can never block an emergency stop.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { isSameOriginJson } from '@/lib/same-origin'
 import { authenticateAPI } from '@/lib/auth-helpers'
 import { getLiveToken } from '@/lib/live-token'
 import { isSuperAdmin } from '@/lib/super-admin-helpers'
@@ -52,6 +53,8 @@ export async function POST(request: NextRequest) {
   const token = await getLiveToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
   const userId = token?.sub
   if (!userId || !(await isSuperAdmin(userId))) return notFound()
+  // Arming/disarming every agent on the platform: JSON from this site only (CSRF defence in depth).
+  if (!isSameOriginJson(request)) return NextResponse.json({ error: 'Origen no permitido.' }, { status: 403, headers: NO_STORE })
   const homeTenantId = (token as { tenantId?: string | null }).tenantId || ''
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null

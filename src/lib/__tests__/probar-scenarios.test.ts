@@ -299,10 +299,24 @@ describe('SecureDog INT-26..29 fixes (static)', () => {
       assert.equal(r.value.steps[0].burst?.length, 3)
     }
     const server = read('src/lib/soft-ai/probar-test-cases.ts')
-    assert.match(server, /redactPiiText\(step\.text\)/)
-    assert.match(server, /redactPiiText\(input\.test\.title\)/)
+    assert.match(server, /const clean = cleanSavedTest\(input\.test\)/)
     assert.match(server, /< \$\{MAX_CASES_PER_TENANT\}/)
     assert.match(read('src/app/api/chat/agents/[id]/test-cases/route.ts'), /casesRateLimit/)
     assert.match(read('src/app/config/agentes/ProbarScenarios.tsx'), /No pegues datos reales/)
+  })
+})
+
+describe('saved tests are masked before storage (behaviour, INT-49)', () => {
+  it('phones, cards and ID numbers are masked; limits hold after masking', async () => {
+    const { cleanSavedTest } = await import('@/lib/soft-ai/probar-test-cases')
+    const clean = cleanSavedTest({
+      title: 'Ana 8888-7777 ' + 'x'.repeat(70),
+      steps: [{ text: 'mi tarjeta 4111 1111 1111 1111 y cédula 1-1234-5678', burst: ['tel 8888 7777'] }],
+    })
+    assert.ok(clean.title.length <= 80)
+    assert.ok(!clean.title.includes('8888-7777'))
+    assert.ok(!clean.steps[0].text.includes('4111 1111'))
+    assert.ok(!clean.steps[0].text.includes('1-1234-5678'))
+    assert.ok(!(clean.steps[0].burst?.[0] ?? '').includes('8888 7777'))
   })
 })

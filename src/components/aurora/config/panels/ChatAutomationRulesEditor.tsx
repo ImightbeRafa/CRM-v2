@@ -57,6 +57,7 @@ export function ChatAutomationRulesEditor() {
   const [canEdit, setCanEdit] = useState(true)
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [loadError, setLoadError] = useState(false)
 
   const [name, setName] = useState('')
   const [triggerKind, setTriggerKind] = useState<TriggerKind>('new_chat')
@@ -75,14 +76,17 @@ export function ChatAutomationRulesEditor() {
         fetch('/api/chat/assignees', { credentials: 'same-origin', cache: 'no-store' }).then((x) => x.json().catch(() => null)),
       ])
       if (r?.success) {
+        setLoadError(false)
         setAvailable(r.available !== false)
         setRules(r.rules ?? [])
+        if (typeof r.canEdit === 'boolean') setCanEdit(r.canEdit)
       } else {
-        setAvailable(false)
+        // A failed load is an error, not "coming with the next update".
+        setLoadError(true)
       }
       setTeam(Array.isArray(people?.assignees) ? people.assignees : [])
     } catch {
-      setAvailable(false)
+      setLoadError(true)
     }
   }, [])
 
@@ -152,11 +156,14 @@ export function ChatAutomationRulesEditor() {
     if (!window.confirm(`¿Borrar la regla "${rule.name}"?`)) return
     setBusy(true)
     try {
-      await fetch(`/api/config/chat-automations/${encodeURIComponent(rule.id)}`, {
+      const res = await fetch(`/api/config/chat-automations/${encodeURIComponent(rule.id)}`, {
         method: 'DELETE',
         credentials: 'same-origin',
       })
+      if (!res.ok) setMessage({ tone: 'error', text: 'No se pudo borrar la regla.' })
       await load()
+    } catch {
+      setMessage({ tone: 'error', text: 'Sin conexión.' })
     } finally {
       setBusy(false)
     }
@@ -172,6 +179,14 @@ export function ChatAutomationRulesEditor() {
           regla nace apagada.
         </p>
       </div>
+      {loadError ? (
+        <p className="mb-3 text-[12.5px] text-amber-800">
+          No se pudieron cargar las reglas.{' '}
+          <button type="button" className="underline" onClick={() => void load()}>
+            Reintentar
+          </button>
+        </p>
+      ) : null}
       {!available ? (
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
           Las automatizaciones se activan con la próxima actualización.

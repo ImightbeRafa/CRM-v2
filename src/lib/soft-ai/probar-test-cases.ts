@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto'
 import { prisma } from '@/lib/db'
 import { isMissingRelation } from '@/lib/db-missing-relation'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
-import { redactPiiText } from '@/lib/soft-ai/llm/redact'
+import { redactPiiText, redactSensitiveForProvider } from '@/lib/soft-ai/llm/redact'
 import {
   MAX_CASES_PER_AGENT,
   MAX_CASES_PER_TENANT,
@@ -26,6 +26,26 @@ export class TestCasesNotReadyError extends Error {
     this.name = 'TestCasesNotReadyError'
   }
 }
+/**
+ * The playground is for SIMULATED customers; if someone pastes a real one by mistake, phones, emails, SINPE, IBAN,
+ * cards and ID numbers are masked. Lengths are cut AFTER masking (masks can be longer than what they hide) so the
+ * SQL 047 limits (title 1–80, text 1000, burst 500, forbid 120) always hold.
+ */
+export function cleanSavedTest(test: SavedTestInput): SavedTestInput {
+  const mask = (text: string, max: number) => redactSensitiveForProvider(redactPiiText(text)).slice(0, max)
+  return {
+    title: mask(test.title, 80),
+    steps: test.steps.map((step) => ({
+      ...step,
+      text: mask(step.text, 1000),
+      burst: step.burst?.map((b) => mask(b, 500)),
+      expect: step.expect?.forbidText
+        ? { ...step.expect, forbidText: step.expect.forbidText.map((f) => mask(f, 120)) }
+        : step.expect,
+    })),
+  }
+}
+
 export class TestCaseLimitError extends Error {
   constructor() {
     super('TEST_CASE_LIMIT')
@@ -73,18 +93,7 @@ export async function createTestCase(input: {
   if (!(await ownsAgent(input.tenantId, input.agentId))) return null
   if (!(await isTableReady(TABLE))) throw new TestCasesNotReadyError()
   const id = randomUUID()
-  // The playground is for SIMULATED customers; if someone pastes a real one by mistake, phones/emails/SINPE/IBAN are masked.
-  const clean: SavedTestInput = {
-    title: redactPiiText(input.test.title),
-    steps: input.test.steps.map((step) => ({
-      ...step,
-      text: redactPiiText(step.text),
-      burst: step.burst?.map(redactPiiText),
-      expect: step.expect?.forbidText
-        ? { ...step.expect, forbidText: step.expect.forbidText.map(redactPiiText) }
-        : step.expect,
-    })),
-  }
+  const clean = cleanSavedTest(input.test)
   const results = await prisma.$transaction([
     prisma.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'cases:' + input.agentId}))`,
     prisma.$queryRaw<Array<{ id: string }>>`

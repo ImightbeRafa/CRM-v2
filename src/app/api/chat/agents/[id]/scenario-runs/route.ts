@@ -4,6 +4,7 @@
  * Probar endpoint (zero Meta); this only records the outcome. update_config; tenant from the session.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { isSameOriginRequest } from '@/lib/same-origin'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { recordScenarioRun } from '@/lib/soft-ai/probar-test-cases'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
@@ -17,6 +18,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_config')
     if (!auth.ok) return auth.response
+    if (!isSameOriginRequest(request)) {
+      return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })
+    }
     const rate = await runsRateLimit(`${auth.tenantId}:${auth.userId}`)
     if (!rate.allowed) return NextResponse.json({ success: false, error: 'Demasiados envíos. Esperá un momento.' }, { status: 429, headers: rate.headers })
     const { id } = await context.params

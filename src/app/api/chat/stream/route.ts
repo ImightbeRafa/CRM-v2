@@ -7,10 +7,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { chatSseEnabled, subscribeChatTicks } from '@/lib/chat-stream-hub'
+import { createIdentifierRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const streamRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 12, identifier: 'chat-stream-open' })
 const HEARTBEAT_MS = 20_000
 const MAX_LIFETIME_MS = 5 * 60_000
 
@@ -25,6 +27,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'disabled' }, { status: 404, headers: { 'Cache-Control': 'no-store' } })
   }
 
+  // Opening a stream costs a DB poller here: 12 opens per minute per person.
+  const rate = await streamRateLimit(`${auth.tenantId}:${auth.userId}`)
+  if (!rate.allowed) {
+    return NextResponse.json({ error: 'rate_limited' }, { status: 429, headers: { ...rate.headers, 'Cache-Control': 'no-store' } })
+  }
   if (request.signal.aborted) return new Response(null, { status: 204 })
   const encoder = new TextEncoder()
   let cleanup: (() => void) | null = null
@@ -40,9 +47,13 @@ export async function GET(request: NextRequest) {
           close()
         }
       }
-      const unsubscribe = subscribeChatTicks(auth.tenantId, (revision) => {
-        send(`event: tick\ndata: ${JSON.stringify({ revision })}\n\n`)
-      })
+      const unsubscribe = subscribeChatTicks(
+        auth.tenantId,
+        (revision) => {
+          send(`event: tick\ndata: ${JSON.stringify({ revision })}\n\n`)
+        },
+        auth.userId,
+      )
       if (!unsubscribe) {
         send('event: full\ndata: {}\n\n')
         closed = true

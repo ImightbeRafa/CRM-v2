@@ -13,11 +13,22 @@ const ANALYTICS_MAX_CONCURRENT = 2
 let analyticsActive = 0
 const analyticsWaiters: Array<() => void> = []
 
+const ANALYTICS_MAX_WAITING = 20
+
+/** Thrown when too many dashboard reads are already queued: the route answers 503 instead of piling up. */
+export class AnalyticsBusyError extends Error {
+  constructor() {
+    super('ANALYTICS_BUSY')
+    this.name = 'AnalyticsBusyError'
+  }
+}
+
 async function acquireAnalyticsSlot(): Promise<void> {
   if (analyticsActive < ANALYTICS_MAX_CONCURRENT) {
     analyticsActive += 1
     return
   }
+  if (analyticsWaiters.length >= ANALYTICS_MAX_WAITING) throw new AnalyticsBusyError()
   await new Promise<void>((resolve) => analyticsWaiters.push(resolve))
 }
 

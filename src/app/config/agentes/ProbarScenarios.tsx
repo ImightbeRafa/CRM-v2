@@ -188,6 +188,8 @@ export function ProbarScenarios({
   configuredModels?: string[]
   conversation: Bubble[]
 }) {
+  const savingRef = useRef(false)
+  const [saving, setSaving] = useState(false)
   const [results, setResults] = useState<Record<string, RunState>>({})
   const [saved, setSaved] = useState<SavedTest[]>([])
   const [savedReady, setSavedReady] = useState(true)
@@ -364,7 +366,10 @@ export function ProbarScenarios({
   }
 
   async function saveCurrent() {
+    if (savingRef.current) return // double click must not save the test twice
     if (!canEdit || customerMessages.length === 0 || customerMessages.length > MAX_SAVE_MESSAGES || !saveTitle.trim()) return
+    savingRef.current = true
+    setSaving(true)
     const steps: ScenarioStep[] = customerMessages.map((text) => ({ text }))
     const expect: NonNullable<ScenarioStep['expect']> = {}
     if (saveRule === 'handoff') expect.handoff = true
@@ -390,10 +395,14 @@ export function ProbarScenarios({
       await loadSaved()
     } catch {
       setMessage('No se pudo guardar. Intentá de nuevo.')
+    } finally {
+      savingRef.current = false
+      setSaving(false)
     }
   }
 
   async function removeSaved(id: string) {
+    if (!window.confirm('¿Borrar esta prueba guardada?')) return
     try {
       const res = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/test-cases/${encodeURIComponent(id)}`, { method: 'DELETE' })
       if (!res.ok) setMessage('No se pudo borrar.')
@@ -554,7 +563,7 @@ export function ProbarScenarios({
                 <button
                   type="button"
                   className={btnPrimary}
-                  disabled={!canEdit || customerMessages.length === 0 || customerMessages.length > MAX_SAVE_MESSAGES || !saveTitle.trim()}
+                  disabled={saving || !canEdit || customerMessages.length === 0 || customerMessages.length > MAX_SAVE_MESSAGES || !saveTitle.trim()}
                   onClick={() => void saveCurrent()}
                 >
                   Guardar prueba

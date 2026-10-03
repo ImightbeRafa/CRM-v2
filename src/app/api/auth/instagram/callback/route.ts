@@ -129,11 +129,29 @@ export async function GET(request: NextRequest) {
     const tokenRes = await fetch(tokenUrl)
     if (!tokenRes.ok) {
       const errText = await tokenRes.text()
-      console.error('[instagram/callback] Token exchange failed', errText.slice(0, 500))
+      let metaErr: { message?: string; code?: number; error_subcode?: number; fbtrace_id?: string } = {}
+      try {
+        metaErr = JSON.parse(errText)?.error ?? {}
+      } catch {
+        /* non-JSON body */
+      }
+      console.error('[instagram/callback] Token exchange failed', {
+        status: tokenRes.status,
+        code: metaErr.code,
+        subcode: metaErr.error_subcode,
+        message: metaErr.message,
+        fbtrace: metaErr.fbtrace_id,
+        redirectUri,
+      })
+      const esc = (s: unknown) =>
+        String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
       return html(
         `<html><body>
           <h2>Error al obtener token</h2>
           <p>No se pudo intercambiar el código por un token de Facebook.</p>
+          <p><small>Meta: ${esc(metaErr.message || `HTTP ${tokenRes.status}`)}
+          (code ${esc(metaErr.code)}${metaErr.error_subcode ? `/${esc(metaErr.error_subcode)}` : ''})<br>
+          redirect_uri: ${esc(redirectUri)}</small></p>
           <p><a href="/config/social">Volver a intentar</a></p>
         </body></html>`,
         500,

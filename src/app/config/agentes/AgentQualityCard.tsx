@@ -74,7 +74,7 @@ export function AgentQualityCard({ agentId, canEdit }: { agentId: string; canEdi
                 .map((f) => f.reason)
                 .join('; ')}.`,
         )
-        if (json.saved === false) setMessage((m) => `${m ?? ''} (Resultado no guardado: falta activar el historial.)`)
+        if (json.saved === false) setMessage((m) => `${m ?? ''} (El resultado se ve aquí, pero todavía no se guarda en el historial.)`)
         await load()
       }
     } catch {
@@ -95,7 +95,7 @@ export function AgentQualityCard({ agentId, canEdit }: { agentId: string; canEdi
             <thead className="text-[10px] uppercase text-slate-500">
               <tr>
                 <th className="py-1 pr-2">Versión</th>
-                <th className="px-2 py-1 text-right">Turnos</th>
+                <th className="px-2 py-1 text-right">Respuestas</th>
                 <th className="px-2 py-1 text-right">Sugerencias usadas</th>
                 <th className="px-2 py-1 text-right">Tomadas por persona</th>
                 <th className="px-2 py-1 text-right">Con pedido en 7 días</th>
@@ -146,7 +146,7 @@ export function AgentQualityCard({ agentId, canEdit }: { agentId: string; canEdi
               ) : null}
               {play ? (
                 <span className="text-[11px] text-slate-500">
-                  Playground (informado por el navegador): v{play.agentVersion} · {pct(play.passRate)} de {play.examined}
+                  Última prueba en Probar: versión {play.agentVersion} · {pct(play.passRate)} de {play.examined}
                 </span>
               ) : null}
             </>

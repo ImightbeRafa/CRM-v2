@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ShoppingBag } from 'lucide-react'
 import { formatCatalogSnippet, stockPhrase, formatColones, type CatalogItem } from '@/lib/chat-catalog'
 
@@ -15,6 +15,26 @@ export function CatalogPicker({
   const [q, setQ] = useState('')
   const [items, setItems] = useState<CatalogItem[] | null>(null)
   const [failed, setFailed] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+
+  // Escape or a click outside closes it (like the emoji picker).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      // The toggle button handles its own click (otherwise it would close and immediately reopen).
+      if (target?.closest?.('[data-popover-toggle]')) return
+      if (rootRef.current && !rootRef.current.contains(target as Node)) onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onDown)
+    }
+  }, [onClose])
 
   useEffect(() => {
     let cancelled = false
@@ -44,6 +64,7 @@ export function CatalogPicker({
 
   return (
     <div
+      ref={rootRef}
       className="aurora-light text-slate-900 absolute bottom-full left-0 right-0 z-40 mb-2 overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
       data-testid="composer-catalog"
     >
@@ -72,11 +93,11 @@ export function CatalogPicker({
       ) : items.length === 0 ? (
         <p className="px-3 py-4 text-[12px] text-slate-500">No hay productos con ese nombre.</p>
       ) : (
-        <ul className="max-h-64 overflow-y-auto py-1" role="listbox" aria-label="Productos">
+        <ul className="max-h-64 overflow-y-auto py-1" aria-label="Productos">
           {items.map((item) => {
             const stock = stockPhrase(item)
             return (
-              <li key={item.id} role="option" aria-selected={false}>
+              <li key={item.id}>
                 <button
                   type="button"
                   onClick={() => onPick(formatCatalogSnippet(item))}

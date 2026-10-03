@@ -81,6 +81,12 @@ export const EXPECTED_TABLES = {
 };
 
 export const EXPECTED_COLUMNS = {
+  // 043–047 use CREATE TABLE IF NOT EXISTS: an older same-named table with other columns must fail the check.
+  '043': [['ChatAutomationRule', 'triggerKind'], ['ChatAutomationRule', 'actionConfig'], ['ChatAutomationRuleRun', 'dedupeKey']],
+  '044': [['PlatformAgentPolicy', 'value'], ['PlatformAgentPolicy', 'updatedBy']],
+  '045': [['ChatAgentVersion', 'snapshotHash'], ['ChatAgentFeedback', 'rating'], ['ChatAgentEvalRun', 'suite']],
+  '046': [['ChatAgentInventoryItem', 'inventoryItemId']],
+  '047': [['ChatAgentTestCase', 'steps'], ['ChatAgentTestCase', 'title']],
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],
   '037': [['ChatConversation', 'repliedInboundCount']],

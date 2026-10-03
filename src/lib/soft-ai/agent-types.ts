@@ -16,7 +16,7 @@ export const CHAT_AGENT_MODEL_ALLOWLIST = ['gpt-6-luna', 'grok-4.7', 'grok-4.6']
 export type ChatAgentModel = (typeof CHAT_AGENT_MODEL_ALLOWLIST)[number]
 
 /**
- * Target live model for Soft agents (OpenAI direct, OPENAI_API_KEY). Agents move to it one at a
+ * Target live model for Soft agents (OpenAI direct, dedicated SOFT_AI_OPENAI_API_KEY; never the staff bot's OPENAI_API_KEY). Agents move to it one at a
  * time from Avanzado once the key is set and the unlock canaries pass again; the default below
  * flips to it in a later one-line change. The Grok ids stay resolvable as the rollback path.
  */

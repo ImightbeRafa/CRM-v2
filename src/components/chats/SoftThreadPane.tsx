@@ -15,6 +15,7 @@ import Link from 'next/link'
 import { Check, CheckCheck, ChevronLeft, Hand, Info, PanelRight, Paperclip, Pause, Play, Send, ShoppingBag, Smile, Sparkles, User, X, Zap } from 'lucide-react'
 import { AgentFeedbackButtons } from '@/components/chats/AgentFeedbackButtons'
 import { CatalogPicker } from '@/components/chats/composer/CatalogPicker'
+import { useAiTermsAccepted } from '@/components/chats/useAiTermsAccepted'
 import {
   initialsFromName,
   isWhatsAppWindowOpen,
@@ -296,6 +297,8 @@ export function SoftThreadPane({
   /** `false` = closed; string = open (optionally pre-filling a new shortcut). */
   const [managerOpen, setManagerOpen] = useState<false | { shortcut?: string }>(false)
   const [catalogOpen, setCatalogOpen] = useState(false)
+  // "IA activa" must not show green while the business has not authorized AI (agents are silent then).
+  const aiTermsAccepted = useAiTermsAccepted(agentMode === 'ai_active')
   useEffect(() => {
     setCatalogOpen(false)
   }, [conversation?.recipientId, conversation?.socialAccountId])
@@ -463,6 +466,7 @@ export function SoftThreadPane({
   const canCreateOrder = Boolean(onCreateOrder) && !conversation.orderId && !conversation.isDemo
   // F37-03: unlock composer whenever paused / human takeover (incl. DEMO).
   const composerEnabled = isSoftHumanComposerEnabled(agentMode)
+  const aiBlocked = agentMode === 'ai_active' && aiTermsAccepted === false
   const canAttach = Boolean(attachments) && conversation.platform === 'whatsapp' && composerEnabled && !sending
 
   /** Stage a dropped / pasted file like the paperclip does (preview + optional caption). */
@@ -1012,11 +1016,23 @@ export function SoftThreadPane({
             <span
               aria-hidden
               className={`h-1.5 w-1.5 rounded-full ${
-                agentMode === 'ai_active' ? 'bg-emerald-500' : agentMode === 'paused' ? 'bg-amber-500' : 'bg-slate-400'
+                aiBlocked
+                  ? 'bg-amber-500'
+                  : agentMode === 'ai_active'
+                    ? 'bg-emerald-500'
+                    : agentMode === 'paused'
+                      ? 'bg-amber-500'
+                      : 'bg-slate-400'
               }`}
             />
             <span className="font-medium text-slate-600">
-              {agentMode === 'ai_active' ? 'IA activa' : agentMode === 'paused' ? 'IA en pausa' : 'Humano'}
+              {aiBlocked
+                ? 'IA detenida: falta autorizar el uso de IA'
+                : agentMode === 'ai_active'
+                  ? 'IA activa'
+                  : agentMode === 'paused'
+                    ? 'IA en pausa'
+                    : 'Humano'}
               {aiBusy ? ' · procesando…' : ''}
             </span>
             {agentMode === 'ai_active' ? (
@@ -1280,6 +1296,7 @@ export function SoftThreadPane({
                 data-popover-toggle
                 onClick={() => {
                   setAttachMenuOpen(false)
+                  setCatalogOpen(false)
                   setEmojiOpen((v) => !v)
                 }}
                 disabled={sending || !composerEnabled}
@@ -1296,6 +1313,7 @@ export function SoftThreadPane({
               {!compact ? (
                 <button
                   type="button"
+                  data-popover-toggle
                   onClick={() => {
                     setEmojiOpen(false)
                     setCatalogOpen((v) => !v)

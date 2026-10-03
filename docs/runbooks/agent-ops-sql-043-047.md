@@ -18,7 +18,7 @@ Cinco archivos, todos **solo crean tablas nuevas**. No modifican ni borran nada 
 
 Propiedades de seguridad de los cinco (verificadas): `CREATE TABLE IF NOT EXISTS` (se puede repetir sin riesgo), sin llaves foráneas (no bloquean tablas ocupadas), `lock_timeout 3 s` y `statement_timeout 30 s`, **RLS activado** en todas las tablas (la API pública de Supabase no puede leerlas), cada archivo dentro de su propio `BEGIN/COMMIT` (si falla, se deshace completo).
 
-**Si no se aplican:** la app sigue funcionando igual. Solo quedan apagadas las funciones nuevas (el panel dice "se activa con la próxima actualización"). El freno de emergencia por variable de entorno (`SOFT_AGENT_KILL=1`) funciona aunque 044 no esté aplicado.
+**Si no se aplican:** la app sigue funcionando igual. Solo quedan apagadas las funciones nuevas (el panel dice "se activa con la próxima actualización"). El freno de emergencia por variable de entorno (`SOFT_AGENT_KILL=1`) funciona aunque 044 no esté aplicado, pero **no es instantáneo**: hay que ponerla con `wrangler secret put` y redesplegar (el contenedor lee las variables al arrancar). El freno del panel (con 044 aplicado) actúa en segundos.
 
 ## 1. Antes de empezar (5 minutos, solo lectura)
 
@@ -55,7 +55,7 @@ node --env-file=.env.local scripts/apply-betsy-v2-additive-sql.mjs
 ```
 
 Qué hace el script (todas son protecciones ya probadas):
-- Exige las tres variables de arriba (si falta una, no hace nada).
+- Exige las tres variables de arriba: si falta una (incluida la lista de archivos), se detiene sin tocar nada.
 - Se niega a correr si el host no coincide o si el puerto no es 5432.
 - Se niega si algún archivo contiene `DROP TABLE`, `TRUNCATE` o `DROP COLUMN`.
 - Aplica los archivos en orden; **se detiene en el primer error**.
@@ -76,12 +76,14 @@ Salida esperada: una línea `ok 043 in …ms` por archivo y al final `All reques
    ```
    Deben salir **8 filas, todas con `relrowsecurity = true`**.
 3. En la app (como super admin):
-   - `/super-admin/agentes`: el panel "Freno de emergencia" ya no responde 409 al armarlo (probalo armando y reanudando con un motivo; queda en auditoría).
+   - `/super-admin/agentes`: el panel "Freno de emergencia" muestra su estado (no armado). **No lo armes para probarlo en producción**: frena a todos los negocios y los mensajes que lleguen en ese minuto no reciben respuesta ni sugerencia de IA. La consulta de solo lectura del punto 2 ya confirma la tabla.
    - `/config/agentes` → un agente → **Avanzado**: aparecen "Productos que puede cotizar" y "Calidad por versión"; en **Probar** aparecen "Escenarios listos", "Mis pruebas" y "Comparar modelos".
    - `/config` → Chats: "Automatizaciones" muestra el formulario (las reglas nacen apagadas).
 4. Al día siguiente: confirmá que corrió el respaldo de las 02:00 UTC.
 
 ## 5. Después de aplicar: cosas que cambian de comportamiento
+
+- **Autorización de IA (importante):** desde este despliegue, los agentes del inbox de cada negocio **no responden ni sugieren** hasta que su propietario o un administrador entre a **Config → Agentes** y haga clic en **"Autorizar el uso de IA"** (versión `ia-2026-10-v3`). En el inbox se ve "IA detenida: falta autorizar el uso de IA". Avisá a los negocios con agentes activos antes de desplegar, y hacelo vos primero en el negocio piloto.
 
 - Con **046** aplicado, un agente **nuevo** (incluido el "Ventas" de arranque) que tenga la herramienta de búsqueda de productos necesita **elegir al menos un producto antes de pasar a "En vivo"**. Los agentes que ya están en vivo no se afectan, pero si uno vuelve a "Borrador" y luego a "En vivo", se le pedirá la lista.
 - Las **reglas de automatización** y el **freno por panel** requieren 043 y 044 respectivamente; el resto funciona con lo ya existente.
@@ -105,7 +107,7 @@ Salida esperada: una línea `ok 043 in …ms` por archivo y al final `All reques
 | Variable | Para qué | Dónde |
 |---|---|---|
 | `SOFT_AI_OPENAI_API_KEY` | Clave **propia** de los agentes del inbox para GPT-6 Luna (proyecto de OpenAI separado, con presupuesto propio). **No** es `OPENAI_API_KEY`. | Cloudflare (`wrangler secret put`) |
-| `SOFT_AGENT_KILL=1` | Freno de emergencia por variable (funciona sin base de datos). | Cloudflare |
+| `SOFT_AGENT_KILL=1` | Freno de emergencia por variable (funciona sin base de datos). Requiere redesplegar para que el contenedor la lea. | Cloudflare |
 | `CHAT_SSE=1` | Actualización en vivo del inbox. Dejar apagado hasta la prueba de carga (INT-25). | Cloudflare |
 | `SOFT_AI_OPENAI_REASONING` | Opcional: nivel de razonamiento (none/low/medium/high). | Cloudflare |
 

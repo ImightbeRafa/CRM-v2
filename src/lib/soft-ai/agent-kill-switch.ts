@@ -2,7 +2,7 @@
  * Platform kill switch for INBOX Soft agents. Two independent triggers, either one arms it:
  *  - env SOFT_AGENT_KILL=1 (works with the database down; needs a secret flip + deploy)
  *  - PlatformAgentPolicy row (SQL 044), toggled by a super admin in Agent Ops (instant)
- * Effect: no model call, no Meta send, no suggestion; inbound stays stored for humans. Probar keeps working.
+ * Effect: no model call, no Meta send, no suggestion; inbound stays stored for humans. A platform-wide stop (env or global) also pauses Probar, unlock canaries and shortcut import (isPlatformAiPaused).
  * Tenant admins cannot write the table (RLS, service role only) — that is why it is not in Tenant.settings.
  */
 import 'server-only'

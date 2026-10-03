@@ -1,4 +1,46 @@
-## 2026-10-02 — Privacy policy v8 + legal pages + compliance docs (claudio/agent-ops, UNPUBLISHED draft)
+## 2026-10-02 — Full-batch review on Opus (4 reviewers) + fixes (claudio/agent-ops)
+
+- Reviewers: correctness (verifier), security (SecureDog INT-43..51), performance, UI/SQL/tests/ops. All four ran on the whole
+  batch vs `claudio/live-next`. Staff bot diff (`src/lib/bot/**`, `src/app/api/bot/**`) still empty.
+- CRITICAL fixed: provider masking regex could freeze the container on a ~120-char crafted message (catastrophic
+  backtracking). Rewritten with linear-time patterns (sticky label walker, digit-only IBAN groups, Luhn cards, dashed cédula
+  only without a label), input capped; tests include a timing test and false-positive cases (SKUs, prices, guías, quantities).
+- HIGH fixed: INT-43 — the ai-terms CSRF check compared with `nextUrl.origin`, which is `http://0.0.0.0:3000` inside the
+  container, so every accept/revoke would 403 in prod. New `src/lib/same-origin.ts` (Host/X-Forwarded-Host/NEXTAUTH_URL),
+  behavioural test, applied to all new state-changing routes (INT-46).
+- Security: INT-44 SSE per-user cap (3), per-tenant 20, open rate limit; INT-45 platform pause also stops Probar, unlock canaries
+  and shortcut import (heuristic only) + import cost now estimated; INT-47 unchanged product list = no new version, rate limit;
+  INT-48 analytics queue cap (503) + day buckets 1/7/30/90; INT-49 saved tests masked with card/ID patterns, length cut after
+  masking, audit stores masked title; INT-51 guía lookup now requires the guía's order to be the customer's.
+- Correctness: kill switch re-checked before saving a suggestion; opt-out regex no longer hands "no quiero una máquina tan grande"
+  to a person; snapshot failures never skip the audit row; PROBAR_BUSY/AI_PAUSED → 429/423 on unlock; scorecard tolerates
+  missing 028.
+- Performance: analytics pool guard (2 per process) + in-flight dedupe; platform usage cached 60 s; dashboard cancels stale
+  requests; scorecard backfill only for agents missing a snapshot (LIMIT 50); rules evaluator pre-filters fired events in one
+  query, uses the lastMessageAt index, rotates rules; run-log retention hourly + `createdAt` index; SSE closes on hidden tabs
+  and coalesces ticks (≥3 s); retention cron loops batches (≤40 s) and purges feedback notes; one config read pre-send.
+- UI: AI terms card self-contained (customer notice inline, no missing policy section), version `ia-2026-10-v3` bound to a
+  wording hash test; inbox shows "IA detenida: falta autorizar el uso de IA"; no dollar costs shown to businesses; model
+  switch only for configured providers, plain names, confirm; thumbs show "Disponible pronto"/error; automations editor
+  canEdit/error/delete checks; Probar save guard + delete confirm + 429 retry; kill panel unknown-state, per-business resume,
+  label; catalog picker Escape/outside-click; plainer wording.
+- Ops: apply script now REQUIRES `BETSY_V2_APPLY_FILES`; column checks for 043–047; runbook corrected (no arming kill switch
+  in prod as a test; env kill needs redeploy; post-deploy "Autorizar el uso de IA" step). SQL 043–047 applied cleanly twice on
+  a throwaway Postgres 17 (RLS on all 8 tables).
+- Proof: tsc 0 errors, lint clean, test:soft-ai-agent 242, test:chat-harden 626, test:security 264, test:ops 24.
+
+## 2026-10-02 — Legal drafts removed from the codebase (Rafael's call)
+- Privacy v8 (EN/ES), terms 12A, DPA annex, compliance docs and their test removed; /privacy, /terms, /data-deletion restored to the pre-batch versions. Drafts kept outside the repo. AI opt-in feature code stays.
+
+## 2026-10-02 — SecureDog round on the AI opt-in (INT-30..42)
+- Fixed: INT-30 (ID/account/IBAN/card masking gaps + tests), INT-31 (revoking AI consent no longer blocked by billing; accepting still is), INT-32 (/data-deletion page matches v8), INT-36 (bare "agente" reaches a person deterministically; unbacked "we ask customers" claim removed), INT-37 (AI terms version → ia-2026-10-v2), INT-39 (JSON-only + same-origin on consent route).
+- Open for Rafael/legal: INT-33 (legacy Vercel dumps/backup row), INT-34 (publish annex + controller identity), INT-35 (durable consent ledger), INT-38 (Probar/import/flow-mining disclosure), INT-40 (OWNER-only accept?), INT-41 (retention batching, feedback notes), INT-42 (coding agents' DB access).
+
+## 2026-10-02 — Opt-in / privacy hardening after verifier review
+- Policy text corrected (EN/ES): history is NOT deleted 24 h after disconnect; Upstash row discloses assistant memory; AI trace retention 90 d; customer-notice text moved into policy §5.6; staff assistant (xAI) disclosed honestly; opt-in checkbox no longer references the unpublished Annex.
+- Code: customer-paste helper follows the AI opt-in; card/account/ID masking before provider calls; opt-in re-checked at pre-send and before suggestion; revocation trail kept in config; retention also purges toolTrace and stale pending suggestions. Bot code untouched.
+
+## 2026-10-02 — Privacy policy v8 + legal pages + compliance docs (claudio/agent-ops) — SUPERSEDED: removed from the codebase, see above
 
 - Decision (Rafael): no selling, no sharing for others' purposes, NO training/improving AI with customer data; tests use own data.
   The Claude-judge/consented-snapshot and chat-distill ideas are cancelled.
@@ -10,7 +52,7 @@
 
 ## 2026-10-02 — AI opt-in for businesses (claudio/agent-ops, no SQL)
 
-- A business must ACCEPT the AI terms (version `ia-2026-10-v1`) before any agent sends customer messages to an AI provider.
+- A business must ACCEPT the AI terms (version `ia-2026-10-v1`, now `ia-2026-10-v3`) before any agent sends customer messages to an AI provider.
   Until then agents neither answer nor suggest (skip reason `ai_terms_not_accepted`, checked before any budget read or model
   call) and the real-send approval is refused. Probar keeps working (it only uses messages the team types).
 - Card at the top of /config/agentes (owners/admins accept; "Revocar" stops agents at once). Recorded: who, when, version,
@@ -1984,14 +2026,3 @@ Append-only. Newest entries at the top.
   Auth screens, onboarding wizard and Ayuda restyled to Aurora; logic untouched.
 - **Global:** `tailwind.config.ts` `darkMode` is now a custom variant that never applies `dark:` inside `.aurora-light`.
 - Prove: `npm run test:site-ui`, `test:security`, `test:pedidos-ui`, `test:stats-ui`, `test:config-ui`; no SQL / Prisma / runtime files touched.
-
-## 2026-10-02 — Opt-in / privacy hardening after verifier review
-- Policy text corrected (EN/ES): history is NOT deleted 24 h after disconnect; Upstash row discloses assistant memory; AI trace retention 90 d; customer-notice text moved into policy §5.6; staff assistant (xAI) disclosed honestly; opt-in checkbox no longer references the unpublished Annex.
-- Code: customer-paste helper follows the AI opt-in; card/account/ID masking before provider calls; opt-in re-checked at pre-send and before suggestion; revocation trail kept in config; retention also purges toolTrace and stale pending suggestions. Bot code untouched.
-
-## 2026-10-02 — SecureDog round on the AI opt-in (INT-30..42)
-- Fixed: INT-30 (ID/account/IBAN/card masking gaps + tests), INT-31 (revoking AI consent no longer blocked by billing; accepting still is), INT-32 (/data-deletion page matches v8), INT-36 (bare "agente" reaches a person deterministically; unbacked "we ask customers" claim removed), INT-37 (AI terms version → ia-2026-10-v2), INT-39 (JSON-only + same-origin on consent route).
-- Open for Rafael/legal: INT-33 (legacy Vercel dumps/backup row), INT-34 (publish annex + controller identity), INT-35 (durable consent ledger), INT-38 (Probar/import/flow-mining disclosure), INT-40 (OWNER-only accept?), INT-41 (retention batching, feedback notes), INT-42 (coding agents' DB access).
-
-## 2026-10-02 — Legal drafts removed from the codebase (Rafael's call)
-- Privacy v8 (EN/ES), terms 12A, DPA annex, compliance docs and their test removed; /privacy, /terms, /data-deletion restored to the pre-batch versions. Drafts kept outside the repo. AI opt-in feature code stays.

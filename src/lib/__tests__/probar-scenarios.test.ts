@@ -284,7 +284,7 @@ describe('SecureDog INT-26..29 fixes (static)', () => {
   })
 
   it('playground runs: own suite label, per-suite pruning, rate limit and audit', () => {
-    assert.match(read('src/app/config/agentes/AgentQualityCard.tsx'), /Playground \(informado por el navegador\)/)
+    assert.match(read('src/app/config/agentes/AgentQualityCard.tsx'), /Última prueba en Probar/)
     assert.match(read('src/lib/soft-ai/agent-improvement.ts'), /"suite" = \$\{EVAL_SUITE_SAFETY\}/)
     const runs = read('src/app/api/chat/agents/[id]/scenario-runs/route.ts')
     assert.match(runs, /createIdentifierRateLimit/)

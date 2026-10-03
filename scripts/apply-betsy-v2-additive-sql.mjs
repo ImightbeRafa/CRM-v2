@@ -4,7 +4,7 @@
  * Safety gates (all required):
  *   BETSY_V2_APPLY_MIGRATIONS=1
  *   BETSY_V2_APPLY_CONFIRM_HOST=<exact DIRECT_URL hostname>
- *   BETSY_V2_APPLY_FILES=018,019,...,024   (optional subset)
+ *   BETSY_V2_APPLY_FILES=018,019,...,024   (REQUIRED: the exact files to apply)
  *
  * Never uses Prisma migrate / db push. Each file has its own BEGIN/COMMIT
  * plus lock_timeout/statement_timeout. Stops on the first failure.
@@ -81,7 +81,12 @@ if (parsed.port && parsed.port !== '5432') {
   fail(`Refusing pooler/non-direct port ${parsed.port}. Use DIRECT_URL on 5432.`);
 }
 
-const requested = (process.env.BETSY_V2_APPLY_FILES || DEFAULT_APPLY_FILES)
+// The file list is REQUIRED: a missing or misspelled variable must never silently re-run the old default set
+// (018–024), which would stop on its first file and apply nothing that was asked for.
+if (!(process.env.BETSY_V2_APPLY_FILES || '').trim()) {
+  fail(`Set BETSY_V2_APPLY_FILES explicitly (the original set was ${DEFAULT_APPLY_FILES}).`);
+}
+const requested = String(process.env.BETSY_V2_APPLY_FILES)
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);

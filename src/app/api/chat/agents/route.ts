@@ -11,6 +11,8 @@ import {
   ensurePilotDefaults,
   mapChatAgentAdminError,
 } from '@/lib/soft-ai/agent-admin'
+import { CHAT_AGENT_MODEL_ALLOWLIST } from '@/lib/soft-ai/agent-types'
+import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,6 +28,8 @@ export async function GET(request: NextRequest) {
       schemaReady: result.schemaReady,
       agents: result.agents,
       canEdit: hasPermission(auth.role as Role, 'update_config'),
+      // Models whose provider key exists on the server (never the keys themselves).
+      configuredModels: CHAT_AGENT_MODEL_ALLOWLIST.filter((m) => isSoftAiProviderConfigured(m)),
     })
   } catch (error) {
     console.error('[chat/agents GET]', error)

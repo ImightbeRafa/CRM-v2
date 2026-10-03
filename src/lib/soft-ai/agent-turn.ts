@@ -36,6 +36,7 @@ import {
 import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import { acquireProbarSlot, releaseProbarSlot } from '@/lib/soft-ai/probar-slots'
 import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
+import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
 import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
 import { estimateCostMicros } from '@/lib/soft-ai/llm/usage'
 import {
@@ -746,7 +747,16 @@ async function finishDeliveryOrSuggest(input: {
     fallbackUsed: input.fallbackUsed || input.usage.fallbackUsed,
     escalate: input.escalate,
   }
-  // Revoked while this turn was running: nothing is suggested or sent.
+  // Kill switch armed or AI terms revoked while this turn was running: nothing is suggested or sent.
+  // (The suggest path never reaches runPreSendGates, so both are re-checked here.)
+  if ((await readAgentKillState(input.row.tenantId)).armed) {
+    return persistDecidedTurn({
+      turnId: input.turnId,
+      outcome: { outcome: 'skip', reason: 'kill_switch' },
+      operationMode: input.agent.operationMode,
+      setMode: false,
+    })
+  }
   if (!(await isAiTermsAcceptedNow(input.row.tenantId))) {
     return persistDecidedTurn({
       turnId: input.turnId,

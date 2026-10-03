@@ -20,6 +20,7 @@ import {
   type VersionSnapshotSource,
 } from '@/lib/soft-ai/agent-scorecard'
 import { SOFT_AI_PROMPT_CODE_VERSION } from '@/lib/soft-ai/agent-types'
+import { isChatSuggestionSchemaReady } from '@/lib/soft-ai/knowledge-schema'
 import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import {
   canSharePaymentFacts,
@@ -162,7 +163,8 @@ export async function loadAgentScorecard(input: {
      GROUP BY t."agentId", t."agentVersion"
      LIMIT 500`)
 
-  const suggestions = await queryWithTimeout<CountRow[]>(Prisma.sql`
+  // ChatAgentSuggestion comes from SQL 028: without it the scorecard still works (suggestion columns at 0).
+  const suggestions = !(await isChatSuggestionSchemaReady()) ? [] : await queryWithTimeout<CountRow[]>(Prisma.sql`
     SELECT t."agentId", t."agentVersion",
            (count(*) FILTER (WHERE s."status" = 'accepted'))::int AS "suggestionsAccepted",
            (count(*) FILTER (WHERE s."status" = 'edited'))::int AS "suggestionsEdited",

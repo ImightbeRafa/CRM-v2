@@ -133,6 +133,9 @@ describe('server and UI wiring (static)', () => {
     assert.match(test, /\{ \.\.\.baseRuntimeAgent, model: input\.modelOverride \}/)
     assert.doesNotMatch(test, /chatAgent\.update/)
     assert.match(test, /estimatedCostUsd/)
+    // ...but the dollar figure never reaches the business (platform-only).
+    assert.match(read('src/app/api/chat/agents/[id]/test/route.ts'), /estimatedCostUsd: _platformOnlyCost/)
+    assert.doesNotMatch(read('src/app/config/agentes/ProbarScenarios.tsx'), /US\$/)
   })
 
   it('saved-test routes: tenant from session, agent ownership checked, writes need update_config and are audited', () => {
@@ -225,7 +228,13 @@ describe('review fixes: scoring is about what the agent would say', () => {
     ]) {
       assert.equal(isOptOutText(t), true, t)
     }
-    for (const t of ['¿cuánto sale?', 'mi agente de seguros me dijo', 'quiero comprar el kit']) {
+    for (const t of [
+      '¿cuánto sale?',
+      'mi agente de seguros me dijo',
+      'quiero comprar el kit',
+      'No quiero una máquina tan grande',
+      'no quiero una maquina de coser, la manual',
+    ]) {
       assert.equal(isOptOutText(t), false, t)
     }
   })

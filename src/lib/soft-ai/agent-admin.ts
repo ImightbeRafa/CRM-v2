@@ -446,14 +446,19 @@ export async function updateChatAgent(input: {
     data,
   })
   if (row.version !== existing.version) {
-    // Immutable snapshot per version (best effort; tolerant of SQL 045 not applied yet).
-    await recordAgentVersionSnapshot({
-      tenantId: input.tenantId,
-      agentId: row.id,
-      version: row.version,
-      agent: { ...row, inventoryItemIds: await loadMappedInventoryIds(input.tenantId, row.id) },
-      actorUserId: input.actorUserId,
-    })
+    // Immutable snapshot per version (best effort; tolerant of SQL 045 not applied yet). The edit is already
+    // committed: a snapshot hiccup must never skip the audit row below or turn the save into a 500.
+    try {
+      await recordAgentVersionSnapshot({
+        tenantId: input.tenantId,
+        agentId: row.id,
+        version: row.version,
+        agent: { ...row, inventoryItemIds: await loadMappedInventoryIds(input.tenantId, row.id) },
+        actorUserId: input.actorUserId,
+      })
+    } catch (error) {
+      console.error('[agent-admin] snapshot skipped', error instanceof Error ? error.name : 'unknown')
+    }
   }
   await logAuditEvent({
     tenantId: input.tenantId,

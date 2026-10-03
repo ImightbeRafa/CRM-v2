@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { AI_CUSTOMER_NOTICE } from '@/lib/soft-ai/ai-terms'
 
 type TermsState = {
   version: string
@@ -9,7 +10,7 @@ type TermsState = {
   title: string
   points: string[]
   checkbox: string
-  links: { privacy: string; privacyEn: string }
+  links: { privacy: string }
 }
 
 /** Business opt-in for AI features: required before any agent sends customer messages to an AI provider. */
@@ -92,14 +93,13 @@ export function AiTermsCard({ canEdit }: { canEdit: boolean }) {
           <li key={i}>{p}</li>
         ))}
       </ul>
+      <details className="mt-2 text-[12.5px]">
+        <summary className="cursor-pointer underline">Aviso sugerido para sus clientes</summary>
+        <p className="mt-1 rounded-lg bg-white/70 p-2 italic">{AI_CUSTOMER_NOTICE}</p>
+      </details>
       <p className="mt-2 text-[12px]">
-        Documentos:{' '}
         <a href={state.links.privacy} className="underline" target="_blank" rel="noreferrer">
-          Política de privacidad (español)
-        </a>{' '}
-        ·{' '}
-        <a href={state.links.privacyEn} className="underline" target="_blank" rel="noreferrer">
-          Privacy Policy (English)
+          Política de privacidad de Betsy (en inglés)
         </a>
       </p>
       {canEdit ? (

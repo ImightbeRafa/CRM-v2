@@ -62,6 +62,12 @@ export async function POST(
     if (msg === 'AGENT_NOT_FOUND') {
       return NextResponse.json({ success: false, error: 'No encontrado' }, { status: 404 })
     }
+    if (msg === 'PROBAR_BUSY') {
+      return NextResponse.json(
+        { success: false, error: 'Hay pruebas en curso para este negocio. Esperá a que terminen y volvé a aprobar.' },
+        { status: 429 },
+      )
+    }
     console.error('[chat/agents/:id/test/unlock]', error)
     return NextResponse.json({ success: false, error: 'No se pudo aprobar el envío' }, { status: 500 })
   }

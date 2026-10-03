@@ -2,9 +2,12 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import {
+  AI_CUSTOMER_NOTICE,
   AI_TERMS_CHECKBOX,
   AI_TERMS_POINTS,
+  AI_TERMS_TITLE,
   AI_TERMS_VERSION,
   isCurrentAiTerms,
 } from '@/lib/soft-ai/ai-terms'
@@ -44,8 +47,17 @@ describe('AI terms acceptance (business opt-in)', () => {
     assert.match(text, /30 días/)
     assert.match(text, /Probar\) usan solo mensajes que su equipo escribe/)
     assert.match(text, /revocar/i)
-    assert.match(AI_TERMS_CHECKBOX, /Política de Privacidad/)
+    assert.match(AI_TERMS_CHECKBOX, /proveedores de inteligencia artificial/)
+    assert.match(AI_CUSTOMER_NOTICE, /escriba «agente»/)
     assert.match(AI_TERMS_VERSION, /^ia-\d{4}-\d{2}-v\d+$/)
+  })
+
+  it('the version is bound to the exact wording: change any text => bump AI_TERMS_VERSION and update this hash', () => {
+    const hash = createHash('sha256')
+      .update([AI_TERMS_TITLE, ...AI_TERMS_POINTS, AI_TERMS_CHECKBOX, AI_CUSTOMER_NOTICE].join('\n'))
+      .digest('hex')
+      .slice(0, 16)
+    assert.deepEqual({ version: AI_TERMS_VERSION, hash }, { version: 'ia-2026-10-v3', hash: 'ad877572cea2895f' })
   })
 })
 

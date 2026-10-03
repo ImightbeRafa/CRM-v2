@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { CHAT_AGENT_MODEL_ALLOWLIST } from '@/lib/soft-ai/agent-types'
+import { CHAT_AGENT_MODEL_ALLOWLIST, modelLabel } from '@/lib/soft-ai/agent-types'
 import {
   BUILT_IN_SCENARIOS,
   GROUP_LABELS,
@@ -19,7 +19,6 @@ type StepOutcome = {
   outcome?: string
   handedOff: boolean
   evaluation: StepEvaluation
-  costUsd: number
   tokens: number
 }
 type RunState = { status: 'idle' | 'running' | 'done'; steps: StepOutcome[]; pass: boolean; notRun: boolean; scored: boolean }
@@ -37,9 +36,7 @@ const card = 'mt-4 rounded-lg border border-slate-200 bg-white p-3'
 const btn = 'rounded-lg px-3 py-1.5 text-xs font-medium ring-1 ring-slate-300 bg-white !text-slate-900 disabled:opacity-50'
 const btnPrimary = 'rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white disabled:bg-indigo-400'
 const MAX_SAVE_MESSAGES = 12
-const TOKENS_PER_STEP_ESTIMATE = 9_000
 
-const usd = (n: number) => (n < 0.01 ? `US$${n.toFixed(4)}` : `US$${n.toFixed(2)}`)
 
 type PlayResult = {
   text?: string
@@ -51,7 +48,6 @@ type PlayResult = {
   tokens?: { input: number; output: number; cached: number }
   latencyMs?: number
   model?: string
-  estimatedCostUsd?: number
 }
 
 async function playStep(args: {
@@ -181,6 +177,7 @@ export function ProbarScenarios({
   canEdit,
   agentModel,
   operationMode,
+  configuredModels,
   conversation,
 }: {
   agentId: string
@@ -188,6 +185,7 @@ export function ProbarScenarios({
   canEdit: boolean
   agentModel?: string
   operationMode?: string
+  configuredModels?: string[]
   conversation: Bubble[]
 }) {
   const [results, setResults] = useState<Record<string, RunState>>({})
@@ -242,7 +240,6 @@ export function ProbarScenarios({
             customer: [],
             reply: '',
             handedOff: false,
-            costUsd: 0,
             tokens: 0,
             evaluation: { pass: false, notRun: true, failures: ['La prueba guardada es inválida: guardala de nuevo.'] },
           },
@@ -275,7 +272,6 @@ export function ProbarScenarios({
         outcome: r.outcome,
         handedOff: Boolean(r.escalate || r.needsHuman),
         evaluation,
-        costUsd: r.estimatedCostUsd ?? 0,
         tokens: (r.tokens?.input ?? 0) + (r.tokens?.output ?? 0),
       })
       const at = new Date().toISOString()
@@ -312,10 +308,9 @@ export function ProbarScenarios({
       ...saved.map((c) => ({ id: `saved:${c.id}`, title: c.title, steps: c.steps })),
     ]
     const stepCount = all.reduce((n, s) => n + s.steps.length, 0)
-    const estimate = stepCount * TOKENS_PER_STEP_ESTIMATE
     if (
       !window.confirm(
-        `Se van a ejecutar ${all.length} pruebas (${stepCount} mensajes, unos ${estimate.toLocaleString('es-CR')} tokens). ` +
+        `Se van a ejecutar ${all.length} pruebas (${stepCount} mensajes). ` +
           'Cuentan contra el tope diario de pruebas, que también usa la aprobación del envío real. ¿Seguir?',
       )
     ) {
@@ -431,10 +426,12 @@ export function ProbarScenarios({
     group: g,
     items: BUILT_IN_SCENARIOS.filter((s) => s.group === g),
   }))
-  const totalCost = Object.values(results).reduce((n, r) => n + r.steps.reduce((m, s) => m + s.costUsd, 0), 0)
   const done = Object.values(results).filter((r) => r.status === 'done' && r.scored && !r.notRun)
   const passedCount = done.filter((r) => r.pass).length
-  const otherModels = (CHAT_AGENT_MODEL_ALLOWLIST as readonly string[]).filter((m) => m !== agentModel)
+  // Only models that are set up on the server (a model without its key would always fail).
+  const otherModels = (CHAT_AGENT_MODEL_ALLOWLIST as readonly string[]).filter(
+    (m) => m !== agentModel && (!configuredModels || configuredModels.includes(m)),
+  )
 
   return (
     <div data-testid="probar-extras">
@@ -468,7 +465,7 @@ export function ProbarScenarios({
         </div>
         {done.length ? (
           <p className="mt-2 text-[12px] text-slate-700" data-testid="probar-summary">
-            {passedCount} de {done.length} pasaron · costo estimado de esta prueba {usd(totalCost)}
+            {passedCount} de {done.length} pasaron
           </p>
         ) : null}
         {!socialAccountId ? <p className="mt-2 text-[12px] text-amber-800">Elegí un canal de WhatsApp para probar.</p> : null}
@@ -583,7 +580,7 @@ export function ProbarScenarios({
             <option value="">Comparar con…</option>
             {otherModels.map((m) => (
               <option key={m} value={m}>
-                {m}
+                {modelLabel(m)}
               </option>
             ))}
           </select>
@@ -600,7 +597,6 @@ export function ProbarScenarios({
                 <p className="mt-1 whitespace-pre-wrap text-slate-900">{r.text || '(no respondió)'}</p>
                 <p className="mt-2 text-[11px] text-slate-500">
                   {(r.latencyMs ?? 0) > 0 ? `${((r.latencyMs ?? 0) / 1000).toFixed(1)} s · ` : ''}
-                  {(r.tokens?.input ?? 0) + (r.tokens?.output ?? 0)} tokens · {usd(r.estimatedCostUsd ?? 0)}
                   {r.escalate || r.needsHuman ? ' · pasa a una persona' : ''}
                   {r.fallbackUsed ? ' · el modelo falló (respuesta de respaldo)' : ''}
                 </p>

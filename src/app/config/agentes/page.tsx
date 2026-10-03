@@ -10,6 +10,7 @@ import {
   AGENT_TOOL_NAMES,
   DEFAULT_CHAT_AGENT_MODEL,
   LUNA_CHAT_AGENT_MODEL,
+  modelLabel,
   TONE_PRESET_LABELS,
   type ChatAgentTonePreset,
 } from '@/lib/soft-ai/agent-types'
@@ -164,6 +165,7 @@ export default function AgentesConfigPage() {
 
   const [agents, setAgents] = useState<AgentRow[]>([])
   const [schemaReady, setSchemaReady] = useState(true)
+  const [configuredModels, setConfiguredModels] = useState<string[] | undefined>(undefined)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [view, setView] = useState<View>('list')
   const [draftMode, setDraftMode] = useState(false)
@@ -206,6 +208,7 @@ export default function AgentesConfigPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(apiErrorMessage(data, 'Error al cargar agentes'))
       setSchemaReady(data.schemaReady !== false)
+      if (Array.isArray(data.configuredModels)) setConfiguredModels(data.configuredModels as string[])
       const nextAgents: AgentRow[] = data.agents || []
       setAgents(nextAgents)
       setLoadFailed(false)
@@ -1130,6 +1133,7 @@ export default function AgentesConfigPage() {
                       onSelectChannel={setChannelId}
                       onUnlocked={() => setChannelReload((value) => value + 1)}
                       agentModel={selected.model}
+                      configuredModels={configuredModels}
                       operationMode={selected.operationMode}
                     />
                   </div>
@@ -1217,42 +1221,41 @@ export default function AgentesConfigPage() {
                       Avanzado
                     </summary>
                     <p className="mt-3 text-sm text-slate-900">
-                      Modelo: <span className="font-mono">{selected.model}</span>
+                      Modelo: <span title={selected.model}>{modelLabel(selected.model)}</span>
                     </p>
                     <AgentUsageCard />
                     <AgentInventoryCard key={`inv-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
                     <AgentQualityCard key={selected.id} agentId={selected.id} canEdit={canEdit} />
-                    {canEdit && selected.model !== LUNA_CHAT_AGENT_MODEL ? (
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => void patch({ model: LUNA_CHAT_AGENT_MODEL })}
-                        className={`mt-3 ${auroraButtonSecondary} disabled:opacity-50`}
-                      >
-                        Cambiar a {LUNA_CHAT_AGENT_MODEL}
-                      </button>
-                    ) : null}
-                    {canEdit &&
-                    selected.model !== LUNA_CHAT_AGENT_MODEL &&
-                    selected.model !== DEFAULT_CHAT_AGENT_MODEL ? (
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => void patch({ model: DEFAULT_CHAT_AGENT_MODEL })}
-                        className={`mt-3 ml-2 ${auroraButtonSecondary} disabled:opacity-50`}
-                      >
-                        Cambiar a {DEFAULT_CHAT_AGENT_MODEL}
-                      </button>
-                    ) : null}
-                    {canEdit && selected.model === LUNA_CHAT_AGENT_MODEL ? (
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => void patch({ model: DEFAULT_CHAT_AGENT_MODEL })}
-                        className={`mt-3 ${auroraButtonSecondary} disabled:opacity-50`}
-                      >
-                        Volver a {DEFAULT_CHAT_AGENT_MODEL}
-                      </button>
+                    {canEdit ? (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        {[LUNA_CHAT_AGENT_MODEL, DEFAULT_CHAT_AGENT_MODEL]
+                          .filter((m) => m !== selected.model)
+                          .map((m) => {
+                            const ready = !configuredModels || configuredModels.includes(m)
+                            return (
+                              <button
+                                key={m}
+                                type="button"
+                                disabled={saving || !ready}
+                                title={ready ? m : 'Este modelo todavía no está disponible en Betsy.'}
+                                onClick={() => {
+                                  if (
+                                    window.confirm(
+                                      `¿Cambiar a ${modelLabel(m)}? Si el agente ya enviaba mensajes solo, ` +
+                                        'tendrá que volver a aprobar el envío real con el nuevo modelo.',
+                                    )
+                                  ) {
+                                    void patch({ model: m })
+                                  }
+                                }}
+                                className={`${auroraButtonSecondary} disabled:opacity-50`}
+                              >
+                                Cambiar a {modelLabel(m)}
+                                {ready ? '' : ' (no disponible todavía)'}
+                              </button>
+                            )
+                          })}
+                      </div>
                     ) : null}
                   </details>
                 </div>

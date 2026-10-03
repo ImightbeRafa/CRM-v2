@@ -45,7 +45,10 @@ export async function POST(
       conversationAiMode: parsed.conversationAiMode,
       modelOverride: parsed.modelOverride,
     })
-    return NextResponse.json({ success: true, ...result })
+    // Provider cost in dollars stays on the platform side (never shown to businesses).
+    const { estimatedCostUsd: _platformOnlyCost, ...visible } = result as typeof result & { estimatedCostUsd?: number }
+    void _platformOnlyCost
+    return NextResponse.json({ success: true, ...visible })
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'error'
     if (msg === 'TEST_REQUEST_INVALID') {

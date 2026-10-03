@@ -90,6 +90,7 @@ export function AgentTestSandbox({
   onUnlocked,
   agentModel,
   operationMode,
+  configuredModels,
 }: {
   agentId: string
   agentName: string
@@ -100,6 +101,7 @@ export function AgentTestSandbox({
   onSelectChannel: (socialAccountId: string) => void
   onUnlocked?: () => void
   agentModel?: string
+  configuredModels?: string[]
   operationMode?: string
 }) {
   const [sessionId] = useState(() => crypto.randomUUID())
@@ -338,6 +340,7 @@ export function AgentTestSandbox({
         canEdit={canEdit}
         agentModel={agentModel}
         operationMode={operationMode}
+        configuredModels={configuredModels}
         conversation={history.map((b) => ({ from: b.from, text: b.text }))}
       />
     </div>

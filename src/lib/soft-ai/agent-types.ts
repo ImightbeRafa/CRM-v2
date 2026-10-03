@@ -23,6 +23,14 @@ export type ChatAgentModel = (typeof CHAT_AGENT_MODEL_ALLOWLIST)[number]
 export const LUNA_CHAT_AGENT_MODEL: ChatAgentModel = 'gpt-6-luna'
 export const DEFAULT_CHAT_AGENT_MODEL: ChatAgentModel = 'grok-4.7'
 
+/** Plain-language name for the business UI (the raw id stays in tooltips/logs). */
+export function modelLabel(model: string): string {
+  if (model === 'gpt-6-luna') return 'Luna (OpenAI, económico)'
+  if (model === 'grok-4.7') return 'Grok 4.7 (xAI, estándar)'
+  if (model === 'grok-4.6') return 'Grok 4.6 (xAI, anterior)'
+  return model
+}
+
 export type SoftAiProvider = 'openai' | 'xai'
 
 export function softAiProviderFor(model: string): SoftAiProvider {

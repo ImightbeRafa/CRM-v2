@@ -67,14 +67,20 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       where: { id: agent.id },
       data: { version: { increment: 1 }, updatedBy: auth.userId },
     })
-    const mappedNow = await loadMappedInventoryIds(auth.tenantId, agent.id)
-    await recordAgentVersionSnapshot({
-      tenantId: auth.tenantId,
-      agentId: agent.id,
-      version: bumped.version,
-      agent: { ...bumped, inventoryItemIds: mappedNow },
-      actorUserId: auth.userId,
-    })
+    // The list is saved: a snapshot hiccup must not skip the audit row or return a 500.
+    let mappedNow: string[] | null = null
+    try {
+      mappedNow = await loadMappedInventoryIds(auth.tenantId, agent.id)
+      await recordAgentVersionSnapshot({
+        tenantId: auth.tenantId,
+        agentId: agent.id,
+        version: bumped.version,
+        agent: { ...bumped, inventoryItemIds: mappedNow },
+        actorUserId: auth.userId,
+      })
+    } catch (error) {
+      console.error('[chat/agents/:id/inventory] snapshot skipped', error instanceof Error ? error.name : 'unknown')
+    }
     await logAuditEvent({
       action: 'UPDATE',
       entityType: 'ChatAgent',

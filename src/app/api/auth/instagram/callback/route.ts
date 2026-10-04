@@ -100,7 +100,12 @@ export async function GET(request: NextRequest) {
     const tenantId = auth.tenantId as string
     const userId = auth.userId as string
     const appId = process.env.META_APP_ID
-    const appSecret = process.env.META_APP_SECRET
+    // The auth-url dialog sends appId = META_APP_ID (the Inbox app). The client secret
+    // used to redeem the code must belong to that SAME app, or Facebook rejects the
+    // exchange with "Error validating client secret". META_WA_APP_SECRET is the Inbox
+    // app secret — do NOT fall back to META_APP_SECRET here, since on live it belongs
+    // to the Staff app.
+    const appSecret = (process.env.META_WA_APP_SECRET || '').trim()
     const redirectUri = `${process.env.NEXTAUTH_URL}/api/auth/instagram/callback`
 
     console.log('[instagram/callback] Token exchange', {
@@ -113,7 +118,7 @@ export async function GET(request: NextRequest) {
       return html(
         `<html><body>
           <h2>Error de configuración</h2>
-          <p>META_APP_ID o META_APP_SECRET no están configurados.</p>
+          <p>META_APP_ID o META_WA_APP_SECRET no están configurados.</p>
         </body></html>`,
         500,
       )

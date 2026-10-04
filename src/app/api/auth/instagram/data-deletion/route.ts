@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { purgeChatOnlyWorkspaceData } from '@/lib/workspace-purge'
+import { getMetaWebhookAppSecrets } from '@/lib/meta-api'
+import { parseMetaSignedRequest, readSignedRequestFromBody } from '@/lib/meta-signed-request'
 import crypto from 'crypto'
 
 export const runtime = 'nodejs'
@@ -10,104 +12,75 @@ export const dynamic = 'force-dynamic'
  * GET handler for Meta verification
  * Meta checks if the endpoint exists before approving the app
  */
-export async function GET(request: NextRequest) {
-  return NextResponse.json({ 
+export async function GET() {
+  return NextResponse.json({
     status: 'ok',
     message: 'Data deletion endpoint is active',
     method: 'POST',
-    description: 'Send a POST request with signed_request parameter to delete user data'
+    description: 'Send a POST request with signed_request parameter to delete user data',
   })
 }
 
 /**
- * Instagram Data Deletion Request endpoint (required for Meta compliance)
- * When a user deletes your app from their Instagram/Facebook account,
- * Meta will call this endpoint to request deletion of their data.
- * 
- * Must return a JSON with { url: "status_url" } or { confirmation_code: "code" }
+ * Meta Data Deletion Request callback (required for App Review).
+ * Meta POSTs `signed_request` form-encoded when a user removes the app. We verify it
+ * against our Meta app secrets (Inbox app first), delete what matches the user, and
+ * answer `{ url, confirmation_code }` — the url is a public status page.
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    console.log('[instagram/data-deletion] Request received', body)
-
-    // Extract user ID from the signed request
-    // Meta sends: { signed_request: "signature.payload" }
-    const signedRequest = body.signed_request
-    
+    const rawBody = (await request.text()).slice(0, 16_384)
+    const signedRequest = readSignedRequestFromBody(rawBody, request.headers.get('content-type'))
     if (!signedRequest) {
       console.error('[instagram/data-deletion] No signed_request provided')
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
     }
 
-    // Parse the signed request (format: signature.base64_payload)
-    const [encodedSig, payload] = signedRequest.split('.')
-    if (!payload || !encodedSig) {
-      console.error('[instagram/data-deletion] Invalid signed_request format')
-      return NextResponse.json({ error: 'Invalid request format' }, { status: 400 })
-    }
-
-    // Verify HMAC signature using Meta app secret
-    const appSecret = (process.env.META_APP_SECRET || '').trim()
-    if (!appSecret) {
-      console.error('[instagram/data-deletion] META_APP_SECRET not configured')
+    const secrets = getMetaWebhookAppSecrets().map((s) => s.secret)
+    if (secrets.length === 0) {
+      console.error('[instagram/data-deletion] No Meta app secret configured')
       return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
     }
-    const expectedSig = crypto.createHmac('sha256', appSecret).update(payload).digest('hex')
-    const providedSig = Buffer.from(encodedSig, 'base64url').toString('hex')
-    if (!crypto.timingSafeEqual(Buffer.from(expectedSig, 'hex'), Buffer.from(providedSig, 'hex'))) {
+
+    const payload = parseMetaSignedRequest(signedRequest, secrets)
+    if (!payload) {
       console.error('[instagram/data-deletion] Signature verification failed')
       return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })
     }
 
-    // Decode the verified payload
-    const decodedPayload = Buffer.from(payload, 'base64').toString('utf-8')
-    const data = JSON.parse(decodedPayload)
-    const userId = data.user_id
+    const userId = String(payload.user_id || '').trim()
+    if (!/^\d{1,30}$/.test(userId)) {
+      return NextResponse.json({ error: 'Invalid user' }, { status: 400 })
+    }
 
-    console.log('[instagram/data-deletion] Processing deletion for user:', userId)
+    const confirmationCode = `BETSY-DEL-${crypto.randomBytes(6).toString('hex').toUpperCase()}`
 
-    // Delete all SocialAccount records for this Instagram user across all tenants
-    const db = prisma as any
-    // Workspace rows that only belong to these chats (chat-only notes / tasks) go with them.
+    // Instagram rows keyed by this Meta user id (Instagram Login–scoped accounts).
     const doomedChats = await prisma.chatConversation.findMany({
-      where: { socialAccount: { platform: 'instagram', accountId: String(userId) } },
+      where: { socialAccount: { platform: 'instagram', accountId: userId } },
       select: { id: true },
     })
     // Never let the cleanup block Meta's deletion itself (it must always complete).
     await purgeChatOnlyWorkspaceData(doomedChats.map((c) => c.id)).catch((error) => {
       console.error('[instagram/data-deletion] workspace purge failed', error instanceof Error ? error.name : 'unknown')
     })
-    const deletedAccounts = await db.socialAccount.deleteMany({
-      where: {
-        platform: 'instagram',
-        accountId: String(userId)
-      }
+    const deletedAccounts = await prisma.socialAccount.deleteMany({
+      where: { platform: 'instagram', accountId: userId },
     })
 
-    console.log('[instagram/data-deletion] Deleted accounts:', deletedAccounts.count)
+    // No tokens, names or message content in logs — code + count only for follow-up.
+    console.log('[instagram/data-deletion] Request processed', {
+      confirmationCode,
+      deletedAccounts: deletedAccounts.count,
+    })
 
-    // Also delete any ChatMessages associated with those accounts
-    // (Note: This is already handled by CASCADE in the schema)
-
-    // Generate a confirmation code
-    const confirmationCode = `BETSY-DELETE-${userId}-${Date.now()}`
-
-    // Return confirmation
-    // You can return either:
-    // 1) { confirmation_code: "code" } - immediate confirmation
-    // 2) { url: "https://yourapp.com/deletion-status/123" } - status URL for async deletion
-    return NextResponse.json({ 
+    const origin = (process.env.NEXTAUTH_URL || 'https://www.betsycrm.com').replace(/\/$/, '')
+    return NextResponse.json({
+      url: `${origin}/data-deletion?code=${encodeURIComponent(confirmationCode)}`,
       confirmation_code: confirmationCode,
-      status: 'deleted',
-      deleted_accounts: deletedAccounts.count
     })
-
-  } catch (e: any) {
-    console.error('[instagram/data-deletion] Error', e)
-    return NextResponse.json({ 
-      error: 'Internal server error',
-      confirmation_code: `BETSY-ERROR-${Date.now()}`
-    }, { status: 500 })
+  } catch (error) {
+    console.error('[instagram/data-deletion] Error', error instanceof Error ? error.name : 'unknown')
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

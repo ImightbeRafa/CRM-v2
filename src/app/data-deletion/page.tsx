@@ -1,6 +1,14 @@
 import Link from 'next/link'
 
-export default function DataDeletionPage() {
+export default async function DataDeletionPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ code?: string }>
+}) {
+  const { code } = await searchParams
+  // Status link returned to Meta by the data-deletion callback.
+  const confirmationCode = code && /^BETSY-DEL-[A-F0-9]{12}$/.test(code) ? code : null
+
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-md p-8">
@@ -9,6 +17,18 @@ export default function DataDeletionPage() {
         </h1>
         
         <div className="space-y-6 text-gray-700">
+          {confirmationCode && (
+            <section className="rounded-md border border-green-200 bg-green-50 p-4">
+              <h2 className="text-lg font-semibold text-green-900 mb-1">Solicitud de eliminación recibida</h2>
+              <p className="text-green-900">
+                Código de confirmación: <strong>{confirmationCode}</strong>
+              </p>
+              <p className="text-sm text-green-800 mt-1">
+                Eliminamos los datos de Instagram asociados a tu cuenta. Si necesitás confirmar el estado,
+                escribí a support@betsycrm.com con este código.
+              </p>
+            </section>
+          )}
           <section>
             <h2 className="text-xl font-semibold mb-3">
               Cómo solicitar la eliminación de tus datos de Betsy CRM

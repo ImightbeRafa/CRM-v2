@@ -127,7 +127,7 @@ export function getMetaChatReadiness() {
 
   const notes = [
     'CRM inbox webhook is /api/chat/webhook. Staff AI bot is /api/bot/whatsapp/webhook on its own Meta app — never share callbacks.',
-    'Instagram inbox uses META_APP_ID / META_APP_SECRET (and optional INSTAGRAM_APP_SECRET for HMAC).',
+    'Instagram inbox: OAuth dialog uses META_APP_ID; code exchange and appsecret_proof use META_WA_APP_SECRET (Inbox app). META_APP_SECRET on live is the Staff bot app.',
     'CRM WhatsApp customer connect prefers META_WA_APP_ID / META_WA_APP_SECRET / NEXT_PUBLIC_META_WA_APP_ID (falls back to META_APP_* if unset). Production should set the dedicated WA Inbox app.',
     'POST /api/chat/webhook HMAC tries META_APP_SECRET, then META_WA_APP_SECRET, then INSTAGRAM_APP_SECRET.',
     'WHATSAPP_ACCESS_TOKEN / PHONE_NUMBER_ID / VERIFY_TOKEN belong to the staff AI bot only — never copy into SocialAccount.',

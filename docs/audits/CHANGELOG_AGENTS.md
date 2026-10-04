@@ -1,3 +1,17 @@
+## 2026-10-03 — Instagram reconnect + Meta data deletion (claudio/ig-secret-live, on agent-ops)
+
+- Root cause: on live META_APP_SECRET is the Staff bot app. The IG OAuth code exchange and every default
+  `appsecret_proof` (IG connect, IG sends, media, token probe) were signed with it, so Meta rejected them
+  ("Error validating client secret", then 0 Pages). Exchange now uses META_WA_APP_SECRET with META_APP_ID; default
+  proof prefers META_WA_APP_SECRET (META_APP_SECRET only last, single-app dev). Staff bot webhook untouched (reads
+  META_APP_SECRET directly, no proof).
+- Page discovery falls back to debug_token granular_scopes (pages_show_list / pages_messaging target ids).
+- Diagnostics: token-exchange error page shows Meta's message/code + redirect_uri; no-pages page lists granted scopes.
+- Data deletion callback rewritten: form-encoded signed_request, HMAC verified against all Meta app secrets (Inbox
+  included), length-safe compare, no body logging, returns `{url, confirmation_code}`; /data-deletion shows the code.
+- Verifier (Opus xhigh): PASS WITH NOTES. Open notes: assumes META_WA_APP_ID == META_APP_ID (true on live);
+  no long-lived user token exchange (check IG expiresAt after connect).
+
 ## 2026-10-02 — Second-pass review of the fixes (claudio/agent-ops)
 
 - Opt-out: bare "no quiero IA / una IA / inteligencia artificial / un asistente virtual" counts again (only "máquina" needs

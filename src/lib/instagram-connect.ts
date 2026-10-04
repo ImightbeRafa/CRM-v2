@@ -128,9 +128,12 @@ export async function describeTokenPermissions(userAccessToken: string): Promise
   }
 }
 
-export async function listFacebookPages(userAccessToken: string): Promise<{
+export async function listFacebookPages(
+  userAccessToken: string,
+  options?: { appAccessToken?: string },
+): Promise<{
   pages: FacebookPageCandidate[]
-  source: 'me/accounts' | 'business_owned_pages' | 'business_client_pages' | 'none'
+  source: 'me/accounts' | 'business_owned_pages' | 'business_client_pages' | 'granular_scopes' | 'none'
 }> {
   const accountsUrl = addAppSecretProofToUrl(
     `${buildMetaGraphUrl('me/accounts')}?fields=${FACEBOOK_PAGE_LIST_FIELDS}&access_token=${encodeURIComponent(userAccessToken)}`,
@@ -183,10 +186,52 @@ export async function listFacebookPages(userAccessToken: string): Promise<{
       }
     }
   } catch {
-    // Fall through to empty
+    // Fall through to granular scopes
+  }
+
+  // Login for Business: the Page picked in the dialog is listed on the token's
+  // granular scopes (pages_show_list target_ids) even when the edges above are empty.
+  if (options?.appAccessToken) {
+    try {
+      const pageIds = await grantedPageIdsFromToken(userAccessToken, options.appAccessToken)
+      const collected: FacebookPageCandidate[] = []
+      for (const pageId of pageIds) {
+        const pageUrl = addAppSecretProofToUrl(
+          `${buildMetaGraphUrl(encodeURIComponent(pageId))}?fields=${FACEBOOK_PAGE_LIST_FIELDS}&access_token=${encodeURIComponent(userAccessToken)}`,
+          userAccessToken,
+        )
+        const pageRes = await fetch(pageUrl)
+        const pageData = await readJson(pageRes)
+        if (!pageRes.ok) continue
+        const mapped = mapPageNode(pageData)
+        if (mapped) collected.push(mapped)
+      }
+      if (collected.length > 0) return { pages: collected, source: 'granular_scopes' }
+    } catch {
+      // Fall through to empty
+    }
   }
 
   return { pages: [], source: 'none' }
+}
+
+/** Page ids granted to a user token (debug_token granular_scopes, pages_* scopes). */
+async function grantedPageIdsFromToken(userAccessToken: string, appAccessToken: string): Promise<string[]> {
+  const url = `${buildMetaGraphUrl('debug_token')}?input_token=${encodeURIComponent(userAccessToken)}&access_token=${encodeURIComponent(appAccessToken)}`
+  const res = await fetch(url, { cache: 'no-store' })
+  const data = await readJson(res)
+  const scopes: Array<{ scope?: string; target_ids?: unknown }> = Array.isArray(data?.data?.granular_scopes)
+    ? data.data.granular_scopes
+    : []
+  const ids = new Set<string>()
+  for (const entry of scopes) {
+    if (entry.scope !== 'pages_show_list' && entry.scope !== 'pages_messaging') continue
+    if (!Array.isArray(entry.target_ids)) continue
+    for (const id of entry.target_ids) {
+      if (/^\d{5,25}$/.test(String(id))) ids.add(String(id))
+    }
+  }
+  return [...ids].slice(0, 25)
 }
 
 export async function findInstagramBusinessOnPages(

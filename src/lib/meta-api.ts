@@ -192,7 +192,16 @@ function resolveAppSecretForProof(
   env: Record<string, string | undefined> = process.env,
 ): string {
   if (purpose === 'whatsapp') return getMetaWhatsAppAppSecret(env)
-  return firstUsable([env.META_APP_SECRET, env.INSTAGRAM_APP_SECRET], isUsableMetaAppSecret)
+  // Every token signed through here (IG connect, IG/WA inbox sends, media, templates,
+  // token health) belongs to the Inbox app (META_APP_ID). On live, META_APP_SECRET is
+  // the Staff bot app secret, and a proof from another app makes Graph reject the call
+  // (empty me/accounts, failed IG sends). Inbox secret first; META_APP_SECRET last
+  // only for single-app dev setups. The Staff bot webhook reads META_APP_SECRET
+  // directly and does not use appsecret_proof.
+  return firstUsable(
+    [env.META_WA_APP_SECRET, env.INSTAGRAM_APP_SECRET, env.META_APP_SECRET],
+    isUsableMetaAppSecret,
+  )
 }
 
 /**

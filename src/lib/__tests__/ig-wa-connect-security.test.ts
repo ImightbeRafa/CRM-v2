@@ -425,3 +425,74 @@ test('social page retries Embedded Signup exchange after in-flight FINISH race',
   // Never burns the code on a fixed timer without waiting for FINISH.
   assert.doesNotMatch(source, /setTimeout\(r, \d+\)/)
 })
+
+test('default appsecret_proof signs with the Inbox secret (META_WA_APP_SECRET), not the Staff META_APP_SECRET', async () => {
+  const { generateAppSecretProof } = await import('../meta-api')
+  const { createHmac } = await import('node:crypto')
+  const keys = ['META_WA_APP_SECRET', 'INSTAGRAM_APP_SECRET', 'META_APP_SECRET'] as const
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]))
+  try {
+    process.env.META_WA_APP_SECRET = 'inbox-app-secret-0123456789'
+    process.env.META_APP_SECRET = 'staff-app-secret-0123456789'
+    delete process.env.INSTAGRAM_APP_SECRET
+    const expected = createHmac('sha256', 'inbox-app-secret-0123456789').update('tok').digest('hex')
+    assert.equal(generateAppSecretProof('tok'), expected)
+    assert.equal(generateAppSecretProof('tok', { purpose: 'whatsapp' }), expected)
+
+    // Single-app dev setups (no Inbox secret) still sign with META_APP_SECRET.
+    delete process.env.META_WA_APP_SECRET
+    const staff = createHmac('sha256', 'staff-app-secret-0123456789').update('tok').digest('hex')
+    assert.equal(generateAppSecretProof('tok'), staff)
+  } finally {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k]
+      else process.env[k] = saved[k]
+    }
+  }
+})
+
+test('listFacebookPages falls back to the Page granted on debug_token granular_scopes', async () => {
+  const { listFacebookPages } = await import('../instagram-connect')
+  const realFetch = globalThis.fetch
+  const calls: string[] = []
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input)
+    calls.push(url)
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 })
+    if (url.includes('/me/accounts')) return json({ data: [] })
+    if (url.includes('/me/businesses')) return json({ data: [] })
+    if (url.includes('/debug_token')) {
+      return json({
+        data: {
+          granular_scopes: [
+            { scope: 'pages_show_list', target_ids: ['1088769440981400'] },
+            { scope: 'instagram_basic', target_ids: ['17841477784563392'] },
+          ],
+        },
+      })
+    }
+    if (url.includes('/1088769440981400?')) {
+      return json({
+        id: '1088769440981400',
+        name: 'Betsycrm',
+        access_token: 'page-token',
+        instagram_business_account: { id: '17841477784563392', username: 'betsy_crm' },
+      })
+    }
+    return new Response('{}', { status: 404 })
+  }) as typeof fetch
+  try {
+    const result = await listFacebookPages('user-token', { appAccessToken: 'app|secret' })
+    assert.equal(result.source, 'granular_scopes')
+    assert.equal(result.pages.length, 1)
+    assert.equal(result.pages[0].id, '1088769440981400')
+    assert.equal(result.pages[0].instagramBusinessAccount?.id, '17841477784563392')
+    // IG business account ids from instagram_basic are not fetched as Pages.
+    assert.ok(!calls.some((u) => u.includes('/17841477784563392?')))
+
+    const without = await listFacebookPages('user-token')
+    assert.equal(without.source, 'none')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})

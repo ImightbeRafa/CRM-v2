@@ -180,7 +180,10 @@ export async function GET(request: NextRequest) {
     }
 
     const facebookUser = await fetchFacebookUserSummary(fbAccessToken)
-    const { pages, source } = await listFacebookPages(fbAccessToken)
+    // App token of the same Inbox app that issued the code (META_APP_ID + META_WA_APP_SECRET).
+    const { pages, source } = await listFacebookPages(fbAccessToken, {
+      appAccessToken: `${appId}|${appSecret}`,
+    })
 
     logInstagramPageDiscovery({
       pageCount: pages.length,

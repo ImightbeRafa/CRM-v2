@@ -36,12 +36,14 @@ test('WhatsApp probe signs appsecret_proof with the WhatsApp app secret (like re
   assert.match(urls[0], new RegExp(`appsecret_proof=${hmac(process.env.META_WA_APP_SECRET, 'EAAtoken')}`))
 })
 
-test('Instagram probe keeps the default (main app) secret', async () => {
+test('Instagram probe signs with the Inbox app secret, not the Staff META_APP_SECRET', async () => {
+  // IG tokens are issued by the Inbox app (META_APP_ID, secret META_WA_APP_SECRET);
+  // on live META_APP_SECRET is the Staff bot app and its proof is rejected by Graph.
   process.env.META_APP_SECRET = 'main-app-secret-aaaaaaaaaaaaaaaa'
   process.env.META_WA_APP_SECRET = 'wa-app-secret-bbbbbbbbbbbbbbbbbb'
   const urls = mockFetch(200, { username: 'shop' })
   await probeSocialAccountToken({ ...wa, platform: 'instagram' })
-  assert.match(urls[0], new RegExp(`appsecret_proof=${hmac(process.env.META_APP_SECRET, 'EAAtoken')}`))
+  assert.match(urls[0], new RegExp(`appsecret_proof=${hmac(process.env.META_WA_APP_SECRET, 'EAAtoken')}`))
 })
 
 test('timeouts, Meta 5xx and rate limits are transient; a revoked token is not', async () => {

@@ -7,6 +7,7 @@ import {
   buildInstagramSuccessHtml,
   buildNoInstagramHtml,
   buildNoPagesHtml,
+  describeTokenPermissions,
   fetchFacebookUserSummary,
   findInstagramBusinessOnPages,
   listFacebookPages,
@@ -189,8 +190,11 @@ export async function GET(request: NextRequest) {
     })
 
     if (pages.length === 0) {
+      const permissionsNote = await describeTokenPermissions(fbAccessToken)
+      console.warn('[instagram/callback] No pages for token', { permissionsNote, facebookUserId: facebookUser.id })
       return html(
         buildNoPagesHtml({
+          permissionsNote,
           facebookUserName: facebookUser.name,
           facebookUserId: facebookUser.id,
           pageCount: 0,

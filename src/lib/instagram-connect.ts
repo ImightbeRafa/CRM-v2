@@ -111,6 +111,23 @@ export async function fetchFacebookUserSummary(userAccessToken: string): Promise
   }
 }
 
+/** Granted/declined scopes of a user token — diagnostics only, no secrets. */
+export async function describeTokenPermissions(userAccessToken: string): Promise<string | null> {
+  try {
+    const url = addAppSecretProofToUrl(
+      `${buildMetaGraphUrl('me/permissions')}?access_token=${encodeURIComponent(userAccessToken)}`,
+      userAccessToken,
+    )
+    const data = await readJson(await fetch(url))
+    if (!Array.isArray(data?.data)) return `sin respuesta (${data?.error?.message ?? 'desconocido'})`
+    const by = (status: string) =>
+      data.data.filter((p: { status?: string }) => p.status === status).map((p: { permission: string }) => p.permission)
+    return `otorgados: ${by('granted').join(', ') || 'ninguno'}; rechazados: ${by('declined').join(', ') || 'ninguno'}`
+  } catch {
+    return null
+  }
+}
+
 export async function listFacebookPages(userAccessToken: string): Promise<{
   pages: FacebookPageCandidate[]
   source: 'me/accounts' | 'business_owned_pages' | 'business_client_pages' | 'none'
@@ -229,6 +246,7 @@ export function buildNoPagesHtml(params: {
   facebookUserId?: string | null
   pageCount: number
   pageSource: string
+  permissionsNote?: string | null
 }): string {
   const userLabel = params.facebookUserName
     ? escHtml(params.facebookUserName)
@@ -259,6 +277,7 @@ export function buildNoPagesHtml(params: {
   <p>Iniciaste sesión como <strong>${userLabel}</strong>, pero Meta no devolvió ninguna Página administrable para vincular Instagram Business.</p>
   ${userIdNote}
   <p class="meta">Páginas detectadas: <strong>${params.pageCount}</strong> (fuente: <code>${escHtml(params.pageSource)}</code>). No se registraron tokens.</p>
+  ${params.permissionsNote ? `<p class="meta">Permisos: ${escHtml(params.permissionsNote)}</p>` : ''}
   <div class="box">
     <strong>Cómo solucionarlo</strong>
     <ol>

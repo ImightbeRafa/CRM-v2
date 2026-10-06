@@ -10,21 +10,93 @@ import {
   getPreviousStatsPeriod,
 } from '@/lib/statistics-dates'
 
-export const AURORA_PERIODS = ['hoy', '7d', '30d', '90d'] as const
+/**
+ * Periods, all in Costa Rica time (weeks start on Monday):
+ * - calendar: hoy, ayer, semana (Monday → today), semana-pasada (Mon–Sun), mes (1st → today), mes-pasado
+ * - rolling: 7d / 30d / 90d (ending today)
+ * - custom: `from` / `to` date keys (YYYY-MM-DD), max CUSTOM_MAX_DAYS days
+ */
+export const AURORA_PERIODS = ['hoy', 'ayer', 'semana', 'semana-pasada', 'mes', 'mes-pasado', '7d', '30d', '90d', 'custom'] as const
 export type AuroraPeriod = (typeof AURORA_PERIODS)[number]
 
 export const DEFAULT_AURORA_PERIOD: AuroraPeriod = '7d'
+export const CUSTOM_MAX_DAYS = 366
 
 export const AURORA_PERIOD_LABELS: Record<AuroraPeriod, string> = {
   hoy: 'Hoy',
-  '7d': '7 días',
-  '30d': '30 días',
-  '90d': '90 días',
+  ayer: 'Ayer',
+  semana: 'Esta semana',
+  'semana-pasada': 'Semana pasada',
+  mes: 'Este mes',
+  'mes-pasado': 'Mes pasado',
+  '7d': 'Últimos 7 días',
+  '30d': 'Últimos 30 días',
+  '90d': 'Últimos 90 días',
+  custom: 'Personalizado',
 }
 
-const PERIOD_DAYS: Record<AuroraPeriod, number> = { hoy: 1, '7d': 7, '30d': 30, '90d': 90 }
+/** Picker groups (the order shown to the user). */
+export const AURORA_PERIOD_GROUPS: Array<{ label: string; periods: AuroraPeriod[] }> = [
+  { label: 'Calendario', periods: ['hoy', 'ayer', 'semana', 'semana-pasada', 'mes', 'mes-pasado'] },
+  { label: 'Últimos días', periods: ['7d', '30d', '90d'] },
+]
+
+const ROLLING_DAYS: Partial<Record<AuroraPeriod, number>> = { '7d': 7, '30d': 30, '90d': 90 }
 
 export type AuroraDateRange = { startDate: string; endDate: string }
+
+/** A period plus, for `custom`, its dates. */
+export type AuroraPeriodSpec = { period: AuroraPeriod; from?: string; to?: string }
+
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/
+
+function isRealDateKey(key: unknown): key is string {
+  if (typeof key !== 'string' || !DATE_KEY.test(key)) return false
+  const [y, m, d] = key.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
+}
+
+function dayCount(range: AuroraDateRange): number {
+  return Math.round((Date.parse(`${range.endDate}T00:00:00Z`) - Date.parse(`${range.startDate}T00:00:00Z`)) / 86_400_000) + 1
+}
+
+/**
+ * Validates a period (+ custom dates). Unknown period, or a custom range that is malformed,
+ * reversed or longer than CUSTOM_MAX_DAYS → null.
+ */
+export function resolveAuroraPeriodSpec(period: unknown, from?: unknown, to?: unknown): AuroraPeriodSpec | null {
+  const p = resolveAuroraPeriod(period)
+  if (!p) return null
+  if (p !== 'custom') return { period: p }
+  if (!isRealDateKey(from) || !isRealDateKey(to) || from > to) return null
+  if (dayCount({ startDate: from, endDate: to }) > CUSTOM_MAX_DAYS) return null
+  return { period: 'custom', from, to }
+}
+
+/** Monday = 0 … Sunday = 6 for a date key. */
+function weekdayMonday0(dateKey: string): number {
+  const [y, m, d] = dateKey.split('-').map(Number)
+  return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7
+}
+
+function monthStart(dateKey: string): string {
+  return `${dateKey.slice(0, 8)}01`
+}
+
+function lastDayOfMonth(y: number, m: number): number {
+  return new Date(Date.UTC(y, m, 0)).getUTCDate()
+}
+
+/** Same day-of-month span in the previous month (clamped: 31 mar → 28/29 feb). */
+function shiftMonthBack(range: AuroraDateRange): AuroraDateRange {
+  const [y, m] = range.startDate.split('-').map(Number)
+  const py = m === 1 ? y - 1 : y
+  const pm = m === 1 ? 12 : m - 1
+  const last = lastDayOfMonth(py, pm)
+  const key = (day: number) => `${py}-${String(pm).padStart(2, '0')}-${String(Math.min(day, last)).padStart(2, '0')}`
+  return { startDate: key(Number(range.startDate.slice(8))), endDate: key(Number(range.endDate.slice(8))) }
+}
 
 /** Known period → itself; anything else → null (callers decide: 400 on the API, default in the UI). */
 export function resolveAuroraPeriod(raw: unknown): AuroraPeriod | null {
@@ -38,15 +110,50 @@ export function normalizeAuroraPeriod(raw: unknown): AuroraPeriod {
   return resolveAuroraPeriod(raw) ?? DEFAULT_AURORA_PERIOD
 }
 
-export function auroraPeriodDays(period: AuroraPeriod): number {
-  return PERIOD_DAYS[period]
+function toSpec(spec: AuroraPeriod | AuroraPeriodSpec): AuroraPeriodSpec {
+  return typeof spec === 'string' ? { period: spec } : spec
 }
 
-/** Inclusive range ending today (Costa Rica time): hoy = [t,t], 7d = [t-6,t], … */
-export function auroraPeriodRange(period: AuroraPeriod, now: Date = new Date()): AuroraDateRange {
-  const endDate = getCurrentStatsDateKey(now)
-  const days = PERIOD_DAYS[period]
-  return { startDate: addDaysToStatsDateKey(endDate, -(days - 1)), endDate }
+/** Days in the period's range (custom needs its dates). */
+export function auroraPeriodDays(spec: AuroraPeriod | AuroraPeriodSpec, now: Date = new Date()): number {
+  return dayCount(auroraPeriodRange(spec, now))
+}
+
+/**
+ * Inclusive range in Costa Rica time: hoy = [t,t], 7d = [t-6,t], semana = [lunes,t],
+ * semana-pasada = lunes–domingo anterior, mes = [día 1,t], mes-pasado = mes calendario anterior.
+ * A `custom` spec without valid dates falls back to the default period.
+ */
+export function auroraPeriodRange(spec: AuroraPeriod | AuroraPeriodSpec, now: Date = new Date()): AuroraDateRange {
+  const { period, from, to } = toSpec(spec)
+  const today = getCurrentStatsDateKey(now)
+  switch (period) {
+    case 'hoy':
+      return { startDate: today, endDate: today }
+    case 'ayer': {
+      const y = addDaysToStatsDateKey(today, -1)
+      return { startDate: y, endDate: y }
+    }
+    case 'semana':
+      return { startDate: addDaysToStatsDateKey(today, -weekdayMonday0(today)), endDate: today }
+    case 'semana-pasada': {
+      const monday = addDaysToStatsDateKey(today, -weekdayMonday0(today) - 7)
+      return { startDate: monday, endDate: addDaysToStatsDateKey(monday, 6) }
+    }
+    case 'mes':
+      return { startDate: monthStart(today), endDate: today }
+    case 'mes-pasado': {
+      const end = addDaysToStatsDateKey(monthStart(today), -1)
+      return { startDate: monthStart(end), endDate: end }
+    }
+    case 'custom':
+      if (isRealDateKey(from) && isRealDateKey(to) && from <= to) return { startDate: from, endDate: to }
+      return auroraPeriodRange(DEFAULT_AURORA_PERIOD, now)
+    default: {
+      const days = ROLLING_DAYS[period] ?? 7
+      return { startDate: addDaysToStatsDateKey(today, -(days - 1)), endDate: today }
+    }
+  }
 }
 
 /** Adjacent range of the same length immediately before `range`. */
@@ -54,6 +161,24 @@ export function auroraPreviousRange(range: AuroraDateRange): AuroraDateRange {
   const prev = getPreviousStatsPeriod(range.startDate, range.endDate)
   if (prev) return prev
   return { startDate: range.startDate, endDate: range.endDate }
+}
+
+/**
+ * The comparison range: weeks compare with the same weekdays a week earlier, months with the
+ * same days of the previous month (a partial "este mes" is never compared with a full month);
+ * everything else with the adjacent range of the same length.
+ */
+export function auroraComparisonRange(spec: AuroraPeriod | AuroraPeriodSpec, range: AuroraDateRange): AuroraDateRange {
+  const { period } = toSpec(spec)
+  if (period === 'semana' || period === 'semana-pasada') {
+    return { startDate: addDaysToStatsDateKey(range.startDate, -7), endDate: addDaysToStatsDateKey(range.endDate, -7) }
+  }
+  if (period === 'mes') return shiftMonthBack(range)
+  if (period === 'mes-pasado') {
+    const end = addDaysToStatsDateKey(range.startDate, -1)
+    return { startDate: monthStart(end), endDate: end }
+  }
+  return auroraPreviousRange(range)
 }
 
 /** Every date key in [startDate, endDate], inclusive. Capped to protect against bad input. */
@@ -100,16 +225,31 @@ export function formatDeltaLabel(pct: number | null): string {
   return `${rounded > 0 ? '+' : '−'}${Math.abs(rounded)}%`
 }
 
-export function periodCompareLabel(period: AuroraPeriod): string {
+export function periodCompareLabel(spec: AuroraPeriod | AuroraPeriodSpec): string {
+  const { period } = toSpec(spec)
   switch (period) {
     case 'hoy':
       return 'vs ayer'
+    case 'ayer':
+      return 'vs anteayer'
+    case 'semana':
+      return 'vs mismos días de la semana pasada'
+    case 'semana-pasada':
+      return 'vs la semana anterior'
+    case 'mes':
+      return 'vs mismos días del mes pasado'
+    case 'mes-pasado':
+      return 'vs el mes anterior'
     case '7d':
       return 'vs 7 días anteriores'
     case '30d':
       return 'vs 30 días anteriores'
     case '90d':
       return 'vs 90 días anteriores'
+    case 'custom': {
+      const days = spec && typeof spec === 'object' && spec.from && spec.to ? dayCount({ startDate: spec.from, endDate: spec.to }) : 0
+      return days === 1 ? 'vs el día anterior' : days > 1 ? `vs ${days} días anteriores` : 'vs período anterior'
+    }
   }
 }
 
@@ -190,13 +330,14 @@ export function formatDayLabel(dateKey: string, style: 'weekday' | 'short' = 'sh
   return `${p.d} ${MONTHS_ES[p.m - 1]}`
 }
 
-/** "20–26 sep", "26 sep", "28 ago – 26 sep". */
+/** "20–26 sep", "26 sep", "28 ago – 26 sep"; across years: "28 dic 2025 – 3 ene 2026". */
 export function formatRangeLabel(startDate: string, endDate: string): string {
   const s = parseKey(startDate)
   const e = parseKey(endDate)
   if (!s || !e || s.m < 1 || s.m > 12 || e.m < 1 || e.m > 12) return ''
   if (startDate === endDate) return `${e.d} ${MONTHS_ES[e.m - 1]}`
-  if (s.m === e.m && s.y === e.y) return `${s.d}–${e.d} ${MONTHS_ES[e.m - 1]}`
+  if (s.y !== e.y) return `${s.d} ${MONTHS_ES[s.m - 1]} ${s.y} – ${e.d} ${MONTHS_ES[e.m - 1]} ${e.y}`
+  if (s.m === e.m) return `${s.d}–${e.d} ${MONTHS_ES[e.m - 1]}`
   return `${s.d} ${MONTHS_ES[s.m - 1]} – ${e.d} ${MONTHS_ES[e.m - 1]}`
 }
 

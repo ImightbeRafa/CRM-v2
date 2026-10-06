@@ -322,9 +322,21 @@ describe('chat-inbox-v2-client reducers', () => {
     assert.match(src, /clientRequestId/)
     assert.match(src, /failedOutboundId/)
     assert.match(src, /onRetryMessage/)
-    // Pack 2 — double-send guard
+    // Pack 2 — double-send guard: media is single-flight; text queues in order without
+    // locking the composer, but a retry already queued or a double Enter never sends twice.
     assert.match(src, /sendInFlightRef/)
-    assert.match(src, /if \(sendInFlightRef\.current\) return/)
+    assert.match(src, /\(queues\.get\(conversationId\) \?\? Promise\.resolve\(\)\)\.then\(deliver, deliver\)/)
+    // Media waits for the chat's queued texts; quick-reply media never awaits the trailing text.
+    assert.match(src, /await textSendQueueRef\.current\.get\(conversationId\)\?\.catch/)
+    assert.match(src, /void handleSendMessage\(\{ preventDefault\(\) \{\} \} as FormEvent\)/)
+    // Stage moves to en_curso even if the operator already switched chats.
+    assert.match(src, /if \(conversationStatus === 'nuevo'\) updateStatus\('en_curso'\)/)
+    // Thread reload keeps queued / failed optimistic bubbles.
+    assert.match(src, /filter\(\(m\) => m\.id\.startsWith\('optimistic:'\)\)/)
+    assert.match(src, /if \(clientRequestId && textInFlightRef\.current\.has\(clientRequestId\)\) return/)
+    assert.match(src, /last\.content === content && Date\.now\(\) - last\.at < 1000\) return/)
+    const pane = readFileSync('src/components/chats/SoftThreadPane.tsx', 'utf8')
+    assert.match(pane, /disabled=\{mediaSending \|\| !composerEnabled\}\s+data-testid="composer-textarea"/)
     // Pack 3 — live inbound poll + skip optimistic cursor
     assert.match(src, /CHAT_INBOX_V2_POLL_MS/)
     assert.match(src, /buildChangesPollQuery/)

@@ -7,6 +7,7 @@ import { MessageSquare, Package, TrendingUp, Wallet } from 'lucide-react'
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext'
 import {
   auroraPeriodRange,
+  resolveAuroraPeriodSpec,
   averageTicket,
   formatCompactMoney,
   formatDeltaLabel,
@@ -17,6 +18,7 @@ import {
   periodCompareLabel,
   safeCount,
   type AuroraPeriod,
+  type AuroraPeriodSpec,
   type DailyPoint,
 } from '@/lib/statistics-aurora'
 import { StatsCard, type CardLoad } from './StatsCard'
@@ -75,9 +77,9 @@ function useJson<T>(url: string | null): [Loaded<T>, () => void] {
   return [result, () => setNonce((n) => n + 1)]
 }
 
-function delta(current: number, previous: number, period: AuroraPeriod): KpiDelta {
+function delta(current: number, previous: number, spec: AuroraPeriodSpec): KpiDelta {
   const pct = pctDelta(current, previous)
-  return { pct, label: `${formatDeltaLabel(pct)} ${periodCompareLabel(period)}` }
+  return { pct, label: `${formatDeltaLabel(pct)} ${periodCompareLabel(spec)}` }
 }
 
 function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
@@ -86,13 +88,28 @@ function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
   const searchParams = useSearchParams()
   const { settings } = useTenantSettings()
   const symbol = settings.currencySymbol || '₡'
-  const period = normalizeAuroraPeriod(searchParams.get('periodo'))
+  // ?periodo=semana, or ?periodo=custom&desde=2026-09-01&hasta=2026-09-15 (invalid → default).
+  const spec = useMemo<AuroraPeriodSpec>(
+    () =>
+      resolveAuroraPeriodSpec(searchParams.get('periodo'), searchParams.get('desde'), searchParams.get('hasta')) ?? {
+        period: normalizeAuroraPeriod(searchParams.get('periodo')) === 'custom' ? '7d' : normalizeAuroraPeriod(searchParams.get('periodo')),
+      },
+    [searchParams],
+  )
+  const period: AuroraPeriod = spec.period
   const [reportOpen, setReportOpen] = useState(false)
 
   const setPeriod = useCallback(
-    (next: AuroraPeriod) => {
+    (next: AuroraPeriodSpec) => {
       const params = new URLSearchParams(searchParams.toString())
-      params.set('periodo', next)
+      params.set('periodo', next.period)
+      if (next.period === 'custom' && next.from && next.to) {
+        params.set('desde', next.from)
+        params.set('hasta', next.to)
+      } else {
+        params.delete('desde')
+        params.delete('hasta')
+      }
       router.replace(`${pathname}?${params.toString()}`, { scroll: false })
     },
     [pathname, router, searchParams],
@@ -101,9 +118,13 @@ function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
   // Same Costa Rica day boundary the API uses; only evaluated in the browser after mount.
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
-  const range = useMemo(() => (mounted ? auroraPeriodRange(period) : null), [mounted, period])
+  const range = useMemo(() => (mounted ? auroraPeriodRange(spec) : null), [mounted, spec])
+  const summaryQuery =
+    spec.period === 'custom' && spec.from && spec.to
+      ? `period=custom&from=${spec.from}&to=${spec.to}`
+      : `period=${spec.period}`
 
-  const [summary, reloadSummary] = useJson<Summary>(range ? `/api/estadisticas/aurora-summary?period=${period}` : null)
+  const [summary, reloadSummary] = useJson<Summary>(range ? `/api/estadisticas/aurora-summary?${summaryQuery}` : null)
   const [status, reloadStatus] = useJson<StatusRow[]>(
     range ? `/api/estadisticas/status-breakdown?startDate=${range.startDate}&endDate=${range.endDate}` : null,
   )
@@ -125,7 +146,7 @@ function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="stats-dashboard">
-      <StatsHeader period={period} onPeriod={setPeriod} />
+      <StatsHeader spec={spec} range={range} onPeriod={setPeriod} />
       <div className="mx-auto w-full max-w-[1200px] space-y-4 px-4 pb-6 pt-5 md:px-7">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <KpiCard
@@ -134,7 +155,7 @@ function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
             label={s?.revenueMode === 'collected' ? 'Ventas cobradas' : 'Ventas'}
             state={kpiState}
             value={formatCompactMoney(rev.current, symbol)}
-            delta={delta(rev.current, rev.previous, period)}
+            delta={delta(rev.current, rev.previous, spec)}
             emptyHint={noPrev}
             onRetry={reloadSummary}
           />
@@ -144,7 +165,7 @@ function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
             label="Pedidos"
             state={kpiState}
             value={String(safeCount(ord.current))}
-            delta={delta(ord.current, ord.previous, period)}
+            delta={delta(ord.current, ord.previous, spec)}
             emptyHint={noPrev}
             onRetry={reloadSummary}
           />
@@ -167,7 +188,7 @@ function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
             label="Ticket promedio"
             state={kpiState}
             value={formatCompactMoney(avgCur, symbol)}
-            delta={delta(avgCur, avgPrev, period)}
+            delta={delta(avgCur, avgPrev, spec)}
             emptyHint={noPrev}
             onRetry={reloadSummary}
           />

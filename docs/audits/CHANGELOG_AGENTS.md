@@ -1,3 +1,21 @@
+## 2026-10-05 — Composer never locks on text sends + Estadísticas calendar periods (claudio/chat-link-orders)
+
+- Chats composer: text sends append the bubble and clear the box at once, then queue per conversation (typing
+  order kept). The box / Enviar lock only while a file or media send uploads (its caption is the box's text).
+  Double-send guards: same clientRequestId in flight, same text within 1 s. Media and "Recientes" wait for that
+  chat's queued texts; quick-reply media no longer awaits its trailing long text (no duplicate media);
+  nuevo → en_curso applies even after switching chats; a thread reload keeps queued / failed bubbles.
+- Estadísticas: Hoy, Ayer, Esta semana, Semana pasada, Este mes, Mes pasado, últimos 7/30/90 días and
+  Personalizado (desde/hasta, ≤ 366 días), Costa Rica time, weeks Monday–Sunday. Weeks compare with the same
+  weekdays a week earlier, Este mes with the same days of last month (clamped), Mes pasado with the month before.
+  URL `?periodo=&desde=&hasta=`; API `period/from/to` validated, cache key has the full range. Header shows the
+  exact dates; picker panel fits a 375 px phone.
+- Verifier (Opus xhigh): FAIL → fixed (duplicate quick-reply media, lost en_curso, mobile panel overflow,
+  text/media order, global queue, lost queued bubbles). Open note: "Mes pasado" chart pairs days by position
+  (31 Aug has no bar vs September). Proof: tsc 0, lint 0, chat-harden 640/640, security 271/271, chat-feedback
+  55/55, stats-ui 48/48, chat-mobile 6/6, site-ui 50/51 (baseline); UI drive `drive-composer-and-periods.mjs`
+  PASS (send intercepted in the browser, nothing sent; 375 px panel inside the screen).
+
 ## 2026-10-05 — Chats › Cliente: attach existing orders to a chat (claudio/chat-link-orders, on ig-secret-live)
 
 - Bug: the Cliente panel only listed orders linked by ChatMessage.orderId or Order.clientId. Website orders have

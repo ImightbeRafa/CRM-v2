@@ -43,8 +43,11 @@ describe('F37-03 soft human composer after Pausar / Tomar control', () => {
       /Boolean\(conversation\.isDemo\) \|\|\s*!composerEnabled/,
     )
     assert.match(src, /disabled=\{sending \|\| !composerEnabled\}/)
-    // Enviar: disabled only while sending, with nothing to send (no text, no attached or recent file), or composer off.
-    assert.match(src, /disabled=\{sending \|\| \(!messageInput\.trim\(\) && !pendingFile && !pendingRecent && !pendingQuickMedia\.length\) \|\| !composerEnabled\}/)
+    // Enviar: disabled only while a file / media send is uploading, with nothing to send (no text, no
+    // attached or recent file), or composer off. A text send in flight never locks it (sends queue).
+    assert.match(src, /const hasAttachment = Boolean\(pendingFile \|\| pendingRecent \|\| pendingQuickMedia\.length\)/)
+    assert.match(src, /const mediaSending = sending && hasAttachment/)
+    assert.match(src, /disabled=\{mediaSending \|\| \(!messageInput\.trim\(\) && !hasAttachment\) \|\| !composerEnabled\}/)
   })
 
   it('SoftCopilotInbox allows DEMO local human send after pause/takeover', () => {

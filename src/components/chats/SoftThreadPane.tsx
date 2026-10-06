@@ -388,6 +388,10 @@ export function SoftThreadPane({
     setSlash(next)
     if (next?.query !== slash?.query) setSlashIndex(0)
   }
+  // Text never waits for a send in flight (they queue in order); only a file / media send
+  // holds the composer until it is uploaded, since its caption is the box's text.
+  const hasAttachment = Boolean(pendingFile || pendingRecent || pendingQuickMedia.length)
+  const mediaSending = sending && hasAttachment
   const submitComposer = (e: FormEvent) => {
     if (pendingQuickMedia.length && attachments?.onSendQuickReplyMedia) {
       e.preventDefault()
@@ -1429,7 +1433,7 @@ export function SoftThreadPane({
                 }
                 if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
                 e.preventDefault()
-                if (sending || !composerEnabled || (!messageInput.trim() && !pendingFile && !pendingRecent && !pendingQuickMedia.length)) return
+                if (mediaSending || !composerEnabled || (!messageInput.trim() && !hasAttachment)) return
                 submitComposer(e as unknown as FormEvent)
               }}
               aria-label={pendingFile || pendingRecent ? 'Texto del archivo (opcional)' : 'Mensaje'}
@@ -1446,7 +1450,7 @@ export function SoftThreadPane({
                     : 'Escribí un mensaje… Enter envía · Shift+Enter nueva línea'
                   : 'Tomá control o pausá el agente para escribir'
               }
-              disabled={sending || !composerEnabled}
+              disabled={mediaSending || !composerEnabled}
               data-testid="composer-textarea"
               className={
                 compact
@@ -1457,14 +1461,14 @@ export function SoftThreadPane({
             <button
               type="submit"
               aria-label="Enviar"
-              disabled={sending || (!messageInput.trim() && !pendingFile && !pendingRecent && !pendingQuickMedia.length) || !composerEnabled}
+              disabled={mediaSending || (!messageInput.trim() && !hasAttachment) || !composerEnabled}
               className={
                 compact
                   ? 'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#5B6CFF] to-[#7C5CFF] text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40'
                   : 'h-[46px] shrink-0 rounded-xl bg-[#5B6CFF] px-4 text-[13px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50'
               }
             >
-              {compact ? <Send className="h-5 w-5" aria-hidden /> : sending ? '…' : 'Enviar'}
+              {compact ? <Send className="h-5 w-5" aria-hidden /> : mediaSending ? '…' : 'Enviar'}
             </button>
           </form>
           {!compact ? (

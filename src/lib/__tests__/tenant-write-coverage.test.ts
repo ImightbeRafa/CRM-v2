@@ -14,6 +14,7 @@ const guardedTenantRoutes = [
   'src/app/api/bot/telegram/sessions/route.ts',
   'src/app/api/chat/order-link/route.ts',
   'src/app/api/chat/conversations/[id]/notes/route.ts',
+  'src/app/api/chat/conversations/[id]/orders/route.ts',
   'src/app/api/chat/conversations/[id]/presence/route.ts',
   'src/app/api/workspace/notifications/route.ts',
   'src/app/api/chat/conversations/[id]/snooze/route.ts',

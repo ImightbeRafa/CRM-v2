@@ -76,10 +76,14 @@ export function canalLabel(
   order: { salesChannel?: string | null; funnel?: string | null },
   line?: OrderLine | null,
 ): CanalLabel {
+  const chip = channelChip({ salesChannel: order.salesChannel, funnel: order.funnel ?? undefined })
+  // A website order later attached to a chat (SINPE receipt sent by WhatsApp) stays "Web".
+  if (line && chip?.family === 'web') {
+    return { label: chip.label, detail: `Chat: ${line.title}`, family: 'web', hasLine: false }
+  }
   if (line) {
     return { label: line.title, detail: line.detail, family: line.platform, hasLine: true }
   }
-  const chip = channelChip({ salesChannel: order.salesChannel, funnel: order.funnel ?? undefined })
   if (!chip) return { label: 'Manual', detail: null, family: 'other', hasLine: false }
   if (chip.family === 'whatsapp') return { label: 'WhatsApp · sin línea', detail: null, family: 'whatsapp', hasLine: false }
   if (chip.family === 'instagram') return { label: 'Instagram · sin línea', detail: null, family: 'instagram', hasLine: false }

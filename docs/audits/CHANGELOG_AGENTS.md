@@ -1,3 +1,20 @@
+## 2026-10-05 — Chats › Cliente: attach existing orders to a chat (claudio/chat-link-orders, on ig-secret-live)
+
+- Bug: the Cliente panel only listed orders linked by ChatMessage.orderId or Order.clientId. Website orders have
+  clientId NULL, so a linked client showing "1 pedido" listed "Todavía no hay pedidos" (PatchHouse, Isidro).
+- Panel now also lists orders with the chat's / client's phone (Costa Rica numbers only: 8 digits or 506+8; other
+  8-digit countries never match), flags `linked`, and offers "Vincular al chat" / "Quitar del chat" per order.
+- New `GET/POST/DELETE /api/chat/conversations/[id]/orders` (update_sales, same-origin + rate limit on writes,
+  tenant-scoped): suggestions (same phone → same name → recent orders no chat has), search by number / name / phone
+  (exact number ranked first), attach via conditional ChatMessage.orderId write (phone mismatch → 409 + confirm),
+  detach clears this chat's links only and expires pending Meta Purchase events for that order + chat. Audit + activity.
+- Pedidos › Canal: a web order attached to a chat stays "Web" (detail "Chat: <line>"). Statistics still count it
+  as a chat-linked order (intended: the sale was closed in the chat).
+- Verifier (Opus xhigh): PASS WITH NOTES; fixed: Canal label, Meta expiry on detach, CR-only phone match, search
+  ranking + full-number search, picker labels, IG confirm copy. Proof: tsc 0, lint 0, chat-harden 640/640,
+  security 271/271, chat-feedback 55/55, site-ui 50/51 (baseline: native confirm in config/agentes), UI drive
+  `drive-chat-attach-order.mjs` PASS on the isolated tenant (attach + detach, tenant left as it was).
+
 ## 2026-10-03 — Instagram reconnect + Meta data deletion (claudio/ig-secret-live, on agent-ops)
 
 - Root cause: on live META_APP_SECRET is the Staff bot app. The IG OAuth code exchange and every default

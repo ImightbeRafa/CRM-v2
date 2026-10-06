@@ -1650,6 +1650,10 @@ export function SoftCopilotInboxV2() {
           if (selectedConversationId) void fetchThreadMessages(selectedConversationId)
           void fetchChanges()
         }}
+        onOrdersChanged={() => {
+          if (selectedConversationId) void fetchThreadMessages(selectedConversationId)
+          void fetchChanges()
+        }}
       />
       </>
     ) : null

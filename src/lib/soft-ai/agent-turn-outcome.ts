@@ -29,7 +29,11 @@ export const PROBAR_NOT_SIMULATED_GATES = [
   'live_daily_cap',
 ] as const
 
-/** Stable skip priority. `ai_full_not_unlocked` is suggest, not skip. */
+/**
+ * Stable skip priority. F1 (Rafael 2026-10-08): there is no suggestion MODE anymore — an agent either answers
+ * (activated: ai_full + Activar record) or stays silent ('not_activated'). A turn the model could not answer
+ * safely (needs_human / fallback / escalate) is still kept as a draft ('suggest') for the team, never sent.
+ */
 const HARD_SKIP_REASONS = [
   'not_bound_to_channel',
   'flag_off',
@@ -85,14 +89,15 @@ export function decideTurnOutcome(input: {
 
   switch (input.effectiveBehavior) {
     case 'suggest':
-      return { outcome: 'suggest', reason: 'ai_suggest' }
+      // Legacy 'ai_suggest' agents are simply not activated (no suggestion mode).
+      return { outcome: 'skip', reason: 'not_activated' }
     case 'human_only':
       return { outcome: 'skip', reason: 'human_only' }
     case 'skip':
       return { outcome: 'skip', reason: 'human_only' }
     case 'send':
       if (!input.unlockedForSend || input.gateBlockers.includes(SUGGEST_ONLY_BLOCKER)) {
-        return { outcome: 'suggest', reason: 'ai_full_not_unlocked' }
+        return { outcome: 'skip', reason: 'not_activated' }
       }
       return { outcome: 'send', reason: null }
     default: {

@@ -1,3 +1,5 @@
+import { recordAiUsage } from '@/lib/ai-usage/record';
+import { estimateAudioSecondsFromBytes } from '@/lib/ai-usage/rate-card';
 /**
  * WhatsApp Cloud API Integration for Betsy AI Assistant
  * 
@@ -522,6 +524,7 @@ export async function transcribeWhatsAppVoice(mediaId: string): Promise<string |
     }
     
     const transcription = await whisperResponse.json();
+    recordAiUsage({ feature: 'staff_bot_voice', model: 'whisper-1', keyLabel: 'OPENAI_API_KEY', audioSeconds: estimateAudioSecondsFromBytes(audioBuffer.byteLength) });
     console.log('[WhatsApp] Transcription received', {
       characterCount: transcription.text?.length || 0,
     });

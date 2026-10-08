@@ -47,6 +47,8 @@ import {
 import { FORGE_WA_V2_FIXTURES, type ReplayFixtureV2 } from '../soft-ai/__fixtures__/forge-wa-v2'
 
 const HASH = FORGE_WA_V2_FIXTURE_SET_HASH
+/** F1 Activar records carry the agent's own suite hash (24 hex). Old named fixture-set records no longer count. */
+const SUITE = 'abcdef0123456789abcdef01'
 const ACCOUNT = 'acct-wa-1'
 const AGENT_ID = 'agent-ventas'
 
@@ -56,12 +58,12 @@ function record(partial: Record<string, unknown> = {}) {
   return {
     passedAt: '2026-09-22T12:00:00.000Z',
     approvedBy: 'user-1',
-    fixtureSetHash: HASH,
+    fixtureSetHash: SUITE,
     passRate: 1,
     agentId: AGENT_ID,
     agentVersion: 3,
     model: 'grok-4.7',
-    canaryCount: 5,
+    canaryCount: 0,
     ...partial,
   }
 }
@@ -120,8 +122,9 @@ describe('hasAiFullUnlock matrix (AT-P-4)', () => {
     const legacy = config({
       aiFullUnlock: { [ACCOUNT]: record({ agentId: undefined, model: undefined, agentVersion: undefined }) },
     })
-    assert.equal(hasAiFullUnlock(legacy, ACCOUNT, CTX), true)
-    assert.equal(hasAiFullUnlock(legacy, ACCOUNT), true)
+    // SecureDog F1: Activar always stores agent + model; a record missing either never unlocks.
+    assert.equal(hasAiFullUnlock(legacy, ACCOUNT, CTX), false)
+    assert.equal(hasAiFullUnlock(legacy, ACCOUNT), false)
 
     const ok = config({ aiFullUnlock: { [ACCOUNT]: record() } })
     assert.equal(hasAiFullUnlock(ok, ACCOUNT, CTX), true)
@@ -130,6 +133,7 @@ describe('hasAiFullUnlock matrix (AT-P-4)', () => {
     const staleHash = config({
       aiFullUnlock: { [ACCOUNT]: record({ fixtureSetHash: 'forge-wa-v1-a1-2026-09-21' }) },
     })
+    // F1: a record from the old named-fixture flow no longer counts — the channel needs "Probar y activar".
     assert.equal(hasAiFullUnlock(staleHash, ACCOUNT, CTX), false)
     assert.equal(aiFullUnlockStatus(staleHash, ACCOUNT, CTX).reason, 'hash')
     assert.equal(
@@ -140,6 +144,9 @@ describe('hasAiFullUnlock matrix (AT-P-4)', () => {
       }).behavior,
       'suggest',
     )
+    // ...while another Activar suite hash (the agent's data changed since) keeps it answering.
+    const otherSuite = config({ aiFullUnlock: { [ACCOUNT]: record({ fixtureSetHash: '0123456789abcdef01234567' }) } })
+    assert.equal(hasAiFullUnlock(otherSuite, ACCOUNT, CTX), true)
 
     const otherAgent = config({ aiFullUnlock: { [ACCOUNT]: record({ agentId: 'other' }) } })
     assert.equal(hasAiFullUnlock(otherAgent, ACCOUNT, CTX), false)
@@ -653,11 +660,14 @@ describe('mutateChatAgentLayerConfig lock', () => {
       join(process.cwd(), 'src/app/api/chat/agents/[id]/test/unlock/route.ts'),
       'utf8',
     )
+    // F1: the old approval is retired (its records no longer unlock, and it could overwrite Activar).
     assert.match(route, /update_config/)
-    assert.match(route, /agentUnlockHttpError/)
-    assert.match(route, /chat_agent_ai_full_unlock|approveAgentAiFullUnlock/)
-    const ui = readFileSync(join(process.cwd(), 'src/app/config/agentes/AgentInternalTests.tsx'), 'utf8')
-    assert.match(ui, /Aprobar envío real/)
-    assert.doesNotMatch(ui, /Soft/)
+    assert.match(route, /status: 410/)
+    assert.doesNotMatch(route, /approveAgentAiFullUnlock/)
+    // F1: the UI activates through "Probar y activar" (agent's own tests); plain words, no internal names.
+    const ui = readFileSync(join(process.cwd(), 'src/app/config/agentes/AgentActivationCard.tsx'), 'utf8')
+    assert.match(ui, /Probar y activar/)
+    assert.match(ui, />\s*Activar\s*</)
+    assert.doesNotMatch(ui, /Soft|ai_full|fixture/i)
   })
 })

@@ -1,3 +1,6 @@
+import { recordAiUsage } from '@/lib/ai-usage/record';
+import { estimateAudioSecondsFromBytes } from '@/lib/ai-usage/rate-card';
+import { withAiUsageContext } from '@/lib/ai-usage/context';
 /**
  * Telegram Bot Webhook Handler
  * 
@@ -306,6 +309,7 @@ async function transcribeVoiceMessage(fileId: string): Promise<string | null> {
     }
     
     const transcription = await whisperResponse.json();
+    recordAiUsage({ feature: 'staff_bot_voice', model: 'whisper-1', keyLabel: 'OPENAI_API_KEY', audioSeconds: estimateAudioSecondsFromBytes(audioBuffer.byteLength) });
     console.log('[Telegram] Transcription received', {
       characterCount: transcription.text?.length || 0,
     });
@@ -655,6 +659,7 @@ async function processQueuedTelegramPayload(
 }
 
 registerBotInboxProcessor('telegram', processQueuedTelegramPayload);
+registerBotInboxProcessor('telegram', (payload, operation) => withAiUsageContext({ tenantId: operation.tenantId, feature: 'staff_bot' }, () => processQueuedTelegramPayload(payload, operation)));
 
 /**
  * Handle /start command - NEW CODE-BASED flow

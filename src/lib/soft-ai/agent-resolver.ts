@@ -28,6 +28,7 @@ import {
   type ReplyStyle,
 } from '@/lib/soft-ai/brand-facts'
 import { shouldUseSoftTenantAiV1 } from '@/lib/feature-flags'
+import { agentsServingUnboundChannels } from '@/lib/soft-ai/agent-settings'
 
 export type ResolvedChatAgent = {
   id: string
@@ -87,7 +88,10 @@ function asStatus(value: string): ChatAgentStatus {
   return 'draft'
 }
 
-/** Exact social-account binding wins. Otherwise the active tenant default. */
+/**
+ * Exact social-account binding wins. A tenant default only answers a channel with no agent of its own when
+ * that agent explicitly allows it (SQL 049 servesUnboundChannels; missing table/row = it does not).
+ */
 export async function findServingAgentBinding(tenantId: string, socialAccountId: string) {
   const accountBinding = await prisma.chatAgentBinding.findFirst({
     where: {
@@ -109,7 +113,7 @@ export async function findServingAgentBinding(tenantId: string, socialAccountId:
     },
     include: { agent: true },
   })
-  if (tenantDefault) {
+  if (tenantDefault && (await agentsServingUnboundChannels(tenantId)).has(tenantDefault.agentId)) {
     return { row: tenantDefault, usedExact: false as const }
   }
   return null

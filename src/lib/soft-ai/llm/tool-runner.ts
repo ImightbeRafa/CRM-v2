@@ -4,7 +4,12 @@
  */
 
 import { prisma } from '@/lib/db'
-import { phoneOwnershipMatch } from '@/lib/soft-ai/phone-ownership'
+import {
+  findOwnedOrder as findOwnedOrderShared,
+  isOrderOwned,
+  latestGuiaForOrderNumber,
+  type OrderOwnershipContext,
+} from '@/lib/soft-ai/order-ownership'
 import {
   AGENT_TOOL_NAMES,
   type AgentToolName,
@@ -13,6 +18,7 @@ import { classifyPaymentText, type PaymentClassification } from '@/lib/soft-ai/p
 import { searchApprovedKnowledge } from '@/lib/soft-ai/knowledge-repository'
 import { renderShortcutTemplate, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import type { BrandFacts } from '@/lib/soft-ai/brand-facts'
+import type { AgentOrderOwnership } from '@/lib/soft-ai/agent-settings'
 import { SANDBOX_ORDERS, type SandboxOrder } from '@/lib/soft-ai/__fixtures__/sandbox'
 
 export type SoftAiToolRunContext = {
@@ -30,8 +36,12 @@ export type SoftAiToolRunContext = {
   brandFacts?: BrandFacts | null
   /** Probar: order/shipping tools read fixtures, never live Order/Client rows. */
   sandbox?: boolean
-  /** Products this agent may quote (SQL 046). null/undefined/empty = whole active catalog (as before). */
+  /** Products this agent may quote (SQL 046). Fail closed: null/undefined/empty = NO products. */
   inventoryItemIds?: string[] | null
+  /** Channel platform (whatsapp / instagram): an Instagram peer id is never treated as a phone. */
+  platform?: string | null
+  /** Business this agent sells for (SQL 049). undefined = only chat-linked orders + phone (no business scope). */
+  orderOwnership?: AgentOrderOwnership
 }
 
 export type SoftAiToolRunResult = {
@@ -57,33 +67,6 @@ function toolAllowed(ctx: SoftAiToolRunContext, name: AgentToolName): boolean {
   return ctx.enabledTools.includes(name)
 }
 
-function normalizePhone(value: string): string {
-  return value.replace(/\D/g, '')
-}
-
-async function ownershipOk(
-  ctx: SoftAiToolRunContext,
-  order: {
-    clientId?: string | null
-    phone?: string | null
-  },
-): Promise<boolean> {
-  const hints = [normalizePhone(ctx.peerId), ...(ctx.peerPhoneHints || []).map(normalizePhone)]
-  // Last-8-digit match; short or placeholder phones ("0", "123") never match anyone (see phone-ownership.ts).
-  const phoneMatches = (raw: string | null | undefined) => phoneOwnershipMatch(hints, raw ? normalizePhone(raw) : '')
-  if (ctx.clientId && order.clientId && ctx.clientId === order.clientId) {
-    // Chats can be linked to a client by hand (Chats › Cliente). The link alone is a human claim:
-    // it proves ownership only when the linked client's phone is this chat's phone.
-    if (ctx.sandbox) return true
-    const client = await prisma.client.findFirst({
-      where: { id: ctx.clientId, tenantId: ctx.tenantId },
-      select: { phone: true, normalizedPhone: true },
-    })
-    if (client && (phoneMatches(client.normalizedPhone) || phoneMatches(client.phone))) return true
-  }
-  return phoneMatches(order.phone)
-}
-
 async function runSearchInventory(
   ctx: SoftAiToolRunContext,
   args: Record<string, unknown>,
@@ -92,13 +75,19 @@ async function runSearchInventory(
   if (!query) {
     return { ok: false, name: 'search_inventory', result: { error: 'query_required' } }
   }
+  // Fail closed: an agent only ever sees the products assigned to it (one tenant can run several businesses).
+  if (!ctx.inventoryItemIds || ctx.inventoryItemIds.length === 0) {
+    return {
+      ok: true,
+      name: 'search_inventory',
+      result: { asOf: new Date().toISOString(), currency: 'CRC', items: [], note: 'sin productos asignados a este agente' },
+    }
+  }
   const rows = await prisma.inventoryItem.findMany({
     where: {
       tenantId: ctx.tenantId,
       isActive: true,
-      ...(ctx.inventoryItemIds && ctx.inventoryItemIds.length > 0
-        ? { id: { in: ctx.inventoryItemIds } }
-        : {}),
+      id: { in: ctx.inventoryItemIds },
       OR: [
         { name: { contains: query, mode: 'insensitive' } },
         { sku: { contains: query, mode: 'insensitive' } },
@@ -185,56 +174,63 @@ function findSandboxOrder(hint: string | null | undefined): SandboxOrder | null 
   )
 }
 
-async function findOwnedOrder(
-  ctx: SoftAiToolRunContext,
-  orderNumberHint?: string | null,
-) {
-  const hint = (orderNumberHint || '').trim()
-  const whereBase = { tenantId: ctx.tenantId }
-  const candidates = []
-  if (ctx.clientId) {
-    const byClient = await prisma.order.findMany({
-      where: { ...whereBase, clientId: ctx.clientId },
-      select: {
-        id: true,
-        orderId: true,
-        status: true,
-        clientId: true,
-        customerName: true,
-        phone: true,
-      },
-      orderBy: { timestamp: 'desc' },
-      take: 5,
-    })
-    candidates.push(...byClient)
+/** Ownership rule shared with the v1 path (see order-ownership.ts). */
+function ownershipCtx(ctx: SoftAiToolRunContext): OrderOwnershipContext {
+  return {
+    tenantId: ctx.tenantId,
+    conversationId: ctx.conversationId,
+    peerId: ctx.peerId,
+    peerPhoneHints: ctx.peerPhoneHints,
+    clientId: ctx.clientId,
+    sandbox: ctx.sandbox,
+    platform: ctx.platform,
+    // Layer agents are always business-scoped; no settings row = empty stamp = only chat-linked orders.
+    ownership: ctx.orderOwnership ?? { salesChannels: [], funnels: [], sources: [] },
   }
-  if (hint) {
-    const byHint = await prisma.order.findMany({
-      where: {
-        ...whereBase,
-        OR: [
-          { orderId: { equals: hint, mode: 'insensitive' } },
-          { orderId: { contains: hint.replace(/^ORDER[-_]?/i, ''), mode: 'insensitive' } },
-          { id: hint },
-        ],
-      },
-      select: {
-        id: true,
-        orderId: true,
-        status: true,
-        clientId: true,
-        customerName: true,
-        phone: true,
-      },
-      take: 5,
-      orderBy: { timestamp: 'desc' },
-    })
-    candidates.push(...byHint)
+}
+
+async function findOwnedOrder(ctx: SoftAiToolRunContext, orderNumberHint?: string | null) {
+  return findOwnedOrderShared(ownershipCtx(ctx), orderNumberHint)
+}
+
+type TrackingSnapshot = { status: string | null; lastEvents: Array<{ when: string; event: string; place: string }> }
+const trackingCache = new Map<string, { at: number; value: TrackingSnapshot | null }>()
+const TRACKING_CACHE_MS = 10 * 60_000
+
+/** Live Correos tracking, cached 10 min per guía (shared platform account), capped at 5s per call. */
+async function correosTrackingEvents(guiaNumber: string): Promise<TrackingSnapshot | null> {
+  if (!/^[A-Za-z0-9-]{4,30}$/.test(guiaNumber)) return null
+  const hit = trackingCache.get(guiaNumber)
+  if (hit && Date.now() - hit.at < TRACKING_CACHE_MS) return hit.value
+  const value = await correosTrackingEventsUncached(guiaNumber)
+  if (trackingCache.size > 2000) trackingCache.clear()
+  trackingCache.set(guiaNumber, { at: Date.now(), value })
+  return value
+}
+
+async function correosTrackingEventsUncached(guiaNumber: string): Promise<TrackingSnapshot | null> {
+  if (!/^[A-Za-z0-9-]{4,30}$/.test(guiaNumber)) return null
+  try {
+    const { resolveCorreosWSCredentials } = await import('@/lib/correos/credentials')
+    const { CorreosWebService } = await import('@/lib/correos/correosWebService')
+    const { credentials } = await resolveCorreosWSCredentials()
+    const ws = new CorreosWebService(credentials)
+    const res = await Promise.race([
+      ws.trackShipment(guiaNumber),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+    ])
+    if (!res || !res.success) return null
+    return {
+      status: res.header?.Estado ? String(res.header.Estado) : null,
+      lastEvents: (res.events || []).slice(-3).map((e) => ({
+        when: String(e.FechaHora || ''),
+        event: String(e.Evento || ''),
+        place: String(e.Unidad || ''),
+      })),
+    }
+  } catch {
+    return null
   }
-  for (const order of candidates) {
-    if (await ownershipOk(ctx, order)) return order
-  }
-  return null
 }
 
 async function runGetOrderStatus(
@@ -323,35 +319,19 @@ async function runGetShippingStatus(
       escalateReason: 'ownership',
     }
   }
-  if (order) {
-    const owned = await ownershipOk(ctx, order)
-    if (!owned) {
-      return {
-        ok: false,
-        name: 'get_shipping_status',
-        result: { error: 'not_shareable', message: 'no puedo compartir eso' },
-        escalate: true,
-        escalateReason: 'ownership',
-      }
-    }
-  }
-  const row = await prisma.shippingGuia.findFirst({
-    where: {
-      tenantId: ctx.tenantId,
-      ...(order ? { orderId: order.id } : {}),
-      ...(guiaNumber
-        ? { OR: [{ guiaNumber }, { trackingNumber: guiaNumber }] }
-        : {}),
-    },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      guiaNumber: true,
-      trackingNumber: true,
-      status: true,
-      carrier: true,
-      orderId: true,
-    },
-  })
+  // findOwnedOrder only returns orders that passed ownership (phone/client/chat link).
+  // ShippingGuia.orderId stores the order NUMBER (Order.orderId), not Order.id (see guia-service writers).
+  const row = order
+    ? await latestGuiaForOrderNumber(ctx.tenantId, order.orderId)
+    : await prisma.shippingGuia.findFirst({
+        where: {
+          tenantId: ctx.tenantId,
+          status: { not: 'failed' },
+          OR: [{ guiaNumber: guiaNumber! }, { trackingNumber: guiaNumber! }],
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { guiaNumber: true, trackingNumber: true, status: true, carrier: true, orderId: true },
+      })
   if (!row) {
     // Guía-only lookups answer the same for "unknown" and "someone else's" (no probing which guías exist).
     if (!order) {
@@ -374,11 +354,11 @@ async function runGetShippingStatus(
   if (!order) {
     const guiaOrder = row.orderId
       ? await prisma.order.findFirst({
-          where: { id: row.orderId, tenantId: ctx.tenantId },
-          select: { clientId: true, phone: true },
+          where: { orderId: row.orderId, tenantId: ctx.tenantId },
+          select: { id: true, clientId: true, phone: true, salesChannel: true, funnel: true, customFields: true },
         })
       : null
-    if (!guiaOrder || !(await ownershipOk(ctx, guiaOrder))) {
+    if (!guiaOrder || !(await isOrderOwned(ownershipCtx(ctx), guiaOrder))) {
       return {
         ok: false,
         name: 'get_shipping_status',
@@ -388,14 +368,18 @@ async function runGetShippingStatus(
       }
     }
   }
+  const guia = String(row.guiaNumber || row.trackingNumber || '')
+  const carrier = row.carrier ? String(row.carrier) : 'correos'
+  const tracking = guia && /correos/i.test(carrier) ? await correosTrackingEvents(guia) : null
   return {
     ok: true,
     name: 'get_shipping_status',
     result: {
-      guiaNumber: String(row.guiaNumber || row.trackingNumber || ''),
-      status: row.status ? String(row.status) : null,
-      carrier: row.carrier ? String(row.carrier) : 'correos',
+      guiaNumber: guia,
+      status: tracking?.status || (row.status ? String(row.status) : null),
+      carrier,
       orderId: row.orderId,
+      lastEvents: tracking?.lastEvents ?? [],
     },
   }
 }

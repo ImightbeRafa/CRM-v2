@@ -5,7 +5,7 @@ import { formatColones, type CatalogItem } from '@/lib/chat-catalog'
 
 type Mapped = { id: string; name: string; sku: string | null; sellingPrice: number; currentStock: number; isActive: boolean }
 
-/** Which products this agent may quote. Empty = the whole catalog (as before). */
+/** Which products this agent may quote. Empty = none (fail closed: one business can run several stores). */
 export function AgentInventoryCard({ agentId, canEdit }: { agentId: string; canEdit: boolean }) {
   const [available, setAvailable] = useState(true)
   const [items, setItems] = useState<Mapped[] | null>(null)
@@ -84,7 +84,7 @@ export function AgentInventoryCard({ agentId, canEdit }: { agentId: string; canE
         <>
           <p className="mt-1 text-[12px] text-slate-500">
             {items.length === 0
-              ? 'Sin elegir: el agente puede cotizar todo el catálogo. Elegí productos para que solo hable de esos.'
+              ? 'Sin productos: el agente no puede cotizar nada todavía. Agregá los productos que vende este canal.'
               : 'El agente solo busca y cotiza estos productos. Precio y stock siempre salen del inventario en vivo.'}
           </p>
           {items.length > 0 ? (

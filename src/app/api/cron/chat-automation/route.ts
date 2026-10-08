@@ -4,6 +4,7 @@ import {
   purgeExpiredAutomationMetadata,
 } from '@/lib/soft-ai/automation-queue'
 import { processClaimedJob } from '@/lib/soft-ai/automation-processor'
+import { drainStaleAgentTestRuns } from '@/lib/soft-ai/test-engine/run'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -32,6 +33,8 @@ export async function GET(request: NextRequest) {
       results.push(await processClaimedJob(row))
     }
     const purged = await purgeExpiredAutomationMetadata()
+    // Agent test runs (Activar) whose step was interrupted resume here; never blocks the claimant.
+    const resumedTestRuns = Date.now() - startedAt < 5_000 ? await drainStaleAgentTestRuns(1).catch(() => 0) : 0
     const counts = results.reduce<Record<string, number>>((summary, result) => {
       summary[result.status] = (summary[result.status] || 0) + 1
       return summary
@@ -42,6 +45,7 @@ export async function GET(request: NextRequest) {
       processed: results.length,
       counts,
       purged: purged.count,
+      resumedTestRuns,
       durationMs: Date.now() - startedAt,
     })
   } catch (error) {

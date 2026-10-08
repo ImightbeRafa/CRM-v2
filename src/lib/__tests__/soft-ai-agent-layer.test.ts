@@ -82,18 +82,34 @@ describe('soft-ai aiFullUnlock (1.15)', () => {
         [FIXTURE_SOCIAL_ACCOUNT_ID]: {
           passedAt: '2026-09-21T00:00:00.000Z',
           approvedBy: 'cos',
+          fixtureSetHash: 'abcdef0123456789abcdef01',
+          passRate: 0.95,
+          agentId: 'agent-1',
+          model: 'grok-4.7',
+        },
+      },
+    })
+    assert.equal(hasAiFullUnlock(unlocked, FIXTURE_SOCIAL_ACCOUNT_ID), true)
+    // F1: an old named-fixture record does not count anymore (needs "Probar y activar").
+    const legacy = parseChatAgentLayerConfig({
+      ...cfg,
+      aiFullUnlock: {
+        [FIXTURE_SOCIAL_ACCOUNT_ID]: {
+          passedAt: '2026-09-21T00:00:00.000Z',
+          approvedBy: 'cos',
           fixtureSetHash: FORGE_WA_V1_FIXTURE_SET_HASH,
           passRate: 0.95,
         },
       },
     })
-    assert.equal(hasAiFullUnlock(unlocked, FIXTURE_SOCIAL_ACCOUNT_ID), true)
+    assert.equal(hasAiFullUnlock(legacy, FIXTURE_SOCIAL_ACCOUNT_ID), false)
 
     const stale = parseChatAgentLayerConfig({
       ...unlocked,
       fixtureSetHash: 'other-hash',
     })
-    assert.equal(hasAiFullUnlock(stale, FIXTURE_SOCIAL_ACCOUNT_ID), false)
+    // F1 Activar: a different tenant-level fixture hash no longer revokes an agent's unlock (agent + model do).
+    assert.equal(hasAiFullUnlock(stale, FIXTURE_SOCIAL_ACCOUNT_ID), true)
   })
 })
 

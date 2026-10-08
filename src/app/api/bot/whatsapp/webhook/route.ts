@@ -1,3 +1,4 @@
+import { withAiUsageContext } from '@/lib/ai-usage/context';
 /**
  * WhatsApp Cloud API Webhook Handler
  * 
@@ -467,6 +468,7 @@ async function processQueuedWhatsAppPayload(
 }
 
 registerBotInboxProcessor('whatsapp', processQueuedWhatsAppPayload);
+registerBotInboxProcessor('whatsapp', (payload, operation) => withAiUsageContext({ tenantId: operation.tenantId, feature: 'staff_bot' }, () => processQueuedWhatsAppPayload(payload, operation)));
 
 /**
  * Send a long message by splitting it if necessary.

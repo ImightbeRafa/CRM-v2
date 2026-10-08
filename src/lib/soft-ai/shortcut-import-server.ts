@@ -103,6 +103,7 @@ export async function runShortcutExtract(input: {
               reasoningEffort: 'low',
               temperature: 0.1,
               maxOutputTokens: 1400,
+              usage: { tenantId: input.tenantId, feature: 'shortcut_import', agentId: agent.id },
             })
             const usage = readSoftAiUsage(response)
             return { text: parseSoftAiResponseText(response), usage }

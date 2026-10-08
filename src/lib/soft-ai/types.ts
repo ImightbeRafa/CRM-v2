@@ -89,11 +89,10 @@ export type SoftAiTurnResult = {
 }
 
 export const DEFAULT_SOFT_AI_CONFIG: SoftAiConfig = {
+  // Neutral default (no business-specific facts): each business sets its own agent data.
   personality:
-    'Sos el agente de atención de Betsy. Español de Costa Rica, claro y breve. Resolvé pedidos, guías y dudas sin inventar precios de pago.',
+    'Sos el agente de atención del negocio. Español de Costa Rica, claro y breve. Resolvé pedidos, guías y dudas sin inventar precios ni condiciones.',
   kb: [
-    'Envíos Correos de Costa Rica: la guía se publica 1–2h después del despacho.',
-    'Kits: confirmar provincia para cotizar envío. No cobrar SINPE automáticamente.',
     'Pagos / SINPE / transferencias: siempre pasar a un humano.',
   ],
   toolAllowlist: [...SOFT_AI_ALL_TOOLS],

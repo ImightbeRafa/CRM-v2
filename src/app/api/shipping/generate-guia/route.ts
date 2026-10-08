@@ -4,7 +4,7 @@ import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { recordActivity } from '@/lib/activity';
-import { generateGuiasForOrders } from '@/lib/bot/guia-service';
+import { generateGuiasForOrders } from '@/lib/shipping/guia-service';
 
 const DELIVERY_TYPES = ['Domicilio', 'Sucursal', 'Punto de correo'] as const;
 
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
     const orderId = new URL(request.url).searchParams.get('orderId');
 
     return withTenantContext({ tenantId, userId, role: userRole, userRole, userName: 'Authenticated user' }, async () => {
-      const tenantPrisma = getTenantPrisma(tenantId);
+      const tenantPrisma = getTenantPrisma(tenantId) as unknown as typeof prisma; // types only (TS2349 on the client union)
       if (orderId) {
         const guia = await tenantPrisma.shippingGuia.findFirst({ where: { tenantId, orderId }, orderBy: { createdAt: 'desc' }, omit: { pdfData: true } });
         return NextResponse.json({ status: 'success', data: guia });

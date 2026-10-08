@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
         orderId: body?.orderId ? String(body.orderId) : null,
         demo,
       },
-      demo ? undefined : buildSoftAiServerDeps(tenantId),
+      demo ? undefined : buildSoftAiServerDeps({ tenantId, staff: true }),
     )
 
     return NextResponse.json({ success: true, result })

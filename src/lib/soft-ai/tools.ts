@@ -138,25 +138,21 @@ export async function runCreateOrLinkOrder(ctx: SoftAiToolContext): Promise<Soft
     }
   }
 
-  // Honest stub when no DB match / no deps — do not invent production orders
-  const stubId = ctx.orderId || (hint ? `LINK-${hint}` : null)
+  // Quarantined (F1): the legacy path never creates, links or "registers" orders. No fake LINK- references and
+  // no claim that something was registered — a person of the team handles it.
   return {
     log: logEntry(
       tool,
       { hint },
-      {
-        orderId: stubId,
-        stub: true,
-        note: 'TODO: persist Order via ventas lifecycle when Soft AI create is enabled for tenant',
-      },
-      Boolean(stubId),
+      { refused: 'quarantined_v1_write', orderId: ctx.orderId ?? null },
+      false,
       ctx.nowMs,
     ),
     tags: ctx.tags,
-    orderId: stubId,
-    replyHint: stubId
-      ? `Registré la referencia ${stubId}; un humano confirma el alta si falta.`
-      : 'Necesito el número de pedido o más datos para vincularlo.',
+    orderId: ctx.orderId ?? null,
+    replyHint: hint
+      ? 'No encuentro ese pedido con tu número; una persona del equipo lo revisa.'
+      : 'Necesito el número de pedido o más datos para buscarlo.',
   }
 }
 

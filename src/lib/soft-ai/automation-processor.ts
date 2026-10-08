@@ -100,9 +100,10 @@ async function dispatchLegacy(row: ClaimedChatAutomationJob) {
     answersMessageId: row.messageId,
     deliveryStatus: delivery.skipped || providerMessageId ? 'sent' : 'sent',
     platform: payload.platform,
-    orderId: turn.orderId || null,
+    // The AI's own reply never links an order to the chat (only a person does): kept in metadata only.
     metadata: {
       softAi: true,
+      orderId: turn.orderId || null,
       toolLog: turn.toolLog,
       agentMode: turn.agentMode,
       to: row.peerId,

@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { aiErrorCode, recordAiUsage } from '@/lib/ai-usage/record';
 import { z } from 'zod';
 import { buildPromptCacheKey, buildXaiResponseBody, parseResponseText } from '@/lib/bot/xai-responses';
 import type { CustomerPasteCandidate } from '@/lib/customer-paste';
@@ -63,11 +64,28 @@ export async function enhanceCustomerPasteWithGrok(input: {
     textFormat: { name: 'customer_paste_candidate', schema: JSON_SCHEMA, strict: true },
   });
 
-  const response = await client.responses.create(
-    body as unknown as OpenAI.Responses.ResponseCreateParamsNonStreaming,
-    { timeout: 9_000, maxRetries: 0 },
-  );
-  return candidateSchema.parse(JSON.parse(parseResponseText(response)));
+  const model = String(body.model || process.env.XAI_MODEL || 'grok-4.6');
+  const started = Date.now();
+  let response: unknown;
+  try {
+    response = await client.responses.create(
+      body as unknown as OpenAI.Responses.ResponseCreateParamsNonStreaming,
+      { timeout: 9_000, maxRetries: 0 },
+    );
+  } catch (error) {
+    recordAiUsage({
+      feature: 'customer_paste', tenantId: input.tenantId, userId: input.userId, model, keyLabel: 'XAI_API_KEY',
+      latencyMs: Date.now() - started, status: 'error', errorCode: aiErrorCode(error),
+    });
+    throw error;
+  }
+  const usage = (response as { usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } } }).usage;
+  recordAiUsage({
+    feature: 'customer_paste', tenantId: input.tenantId, userId: input.userId, model, keyLabel: 'XAI_API_KEY',
+    inputTokens: usage?.input_tokens, outputTokens: usage?.output_tokens,
+    cachedTokens: usage?.input_tokens_details?.cached_tokens, latencyMs: Date.now() - started,
+  });
+  return candidateSchema.parse(JSON.parse(parseResponseText(response as never)));
 }
 
 export type GrokCustomerPasteCandidate = z.infer<typeof candidateSchema>;

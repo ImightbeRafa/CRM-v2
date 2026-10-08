@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { AgentInternalTests } from '@/app/config/agentes/AgentInternalTests'
-import { formatUnlockConfirm, formatUnlockSuccessLine } from '@/lib/soft-ai/agent-config'
+import { AgentActivationCard } from '@/app/config/agentes/AgentActivationCard'
 import { selectWhatsappTestChannel, type TestChannelOption } from '@/lib/soft-ai/test-channel'
 import { ProbarScenarios } from '@/app/config/agentes/ProbarScenarios'
 
@@ -65,23 +65,8 @@ function clock(iso: string): string {
   return date.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })
 }
 
-function replayIsGreen(
-  replay: Record<string, unknown> | null,
-  socialAccountId: string | null,
-  agentId: string,
-): boolean {
-  if (!replay || !socialAccountId) return false
-  if (replay.socialAccountId !== socialAccountId) return false
-  if (replay.boundAgentId !== agentId) return false
-  const passRate = typeof replay.passRate === 'number' ? replay.passRate : Number.NaN
-  const violations = typeof replay.policyViolations === 'number' ? replay.policyViolations : Number.NaN
-  const examined = typeof replay.examined === 'number' ? replay.examined : Number.NaN
-  return passRate === 1 && violations === 0 && replay.capped !== true && examined > 0
-}
-
 export function AgentTestSandbox({
   agentId,
-  agentName,
   canEdit,
   channels,
   channelsLoaded,
@@ -93,7 +78,8 @@ export function AgentTestSandbox({
   configuredModels,
 }: {
   agentId: string
-  agentName: string
+  /** Kept for callers; the activation card names the channel instead. */
+  agentName?: string
   canEdit: boolean
   channels: TestChannelOption[]
   channelsLoaded: boolean
@@ -112,17 +98,8 @@ export function AgentTestSandbox({
   const [conversationAiMode, setConversationAiMode] = useState<'ai_active' | 'human' | 'paused'>('ai_active')
   const [history, setHistory] = useState<WaBubble[]>([])
   const [last, setLast] = useState<TurnResult | null>(null)
-  const [replay, setReplay] = useState<Record<string, unknown> | null>(null)
-  const [confirmingUnlock, setConfirmingUnlock] = useState(false)
-  const [unlockLine, setUnlockLine] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-
-  useEffect(() => {
-    setReplay(null)
-    setConfirmingUnlock(false)
-    setUnlockLine(null)
-  }, [agentId, socialAccountId])
 
   const selection = useMemo(
     () => selectWhatsappTestChannel(channels, socialAccountId),
@@ -131,7 +108,6 @@ export function AgentTestSandbox({
   const channelReady = Boolean(socialAccountId)
   const channelLabel =
     channels.find((row) => row.id === socialAccountId)?.label || 'este canal'
-  const canApprove = replayIsGreen(replay, socialAccountId, agentId)
 
   async function sendTurn() {
     if (!canEdit || !socialAccountId || !text.trim()) return
@@ -182,68 +158,15 @@ export function AgentTestSandbox({
     }
   }
 
-  async function replayAll() {
-    if (!canEdit) return
-    setBusy(true)
-    setError(null)
-    setConfirmingUnlock(false)
-    try {
-      const res = await fetch(`/api/chat/agents/${agentId}/test/replay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(socialAccountId ? { socialAccountId } : {}),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Error en replay')
-      setReplay(data)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function confirmUnlock() {
-    if (!canEdit || !socialAccountId || !replayIsGreen(replay, socialAccountId, agentId)) return
-    setBusy(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/chat/agents/${agentId}/test/unlock`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ socialAccountId }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'No se pudo aprobar')
-      const record = data.record as {
-        fixtureSetHash?: string
-        passRate?: number
-        passedAt?: string
-      } | null
-      const passedAt = typeof record?.passedAt === 'string' ? new Date(record.passedAt) : null
-      const passedAtLabel =
-        passedAt && !Number.isNaN(passedAt.getTime())
-          ? passedAt.toLocaleString('es-CR', { dateStyle: 'medium', timeStyle: 'short' })
-          : ''
-      setUnlockLine(
-        formatUnlockSuccessLine({
-          fixtureSetHash: typeof record?.fixtureSetHash === 'string' ? record.fixtureSetHash : '',
-          passRate: typeof record?.passRate === 'number' ? record.passRate : 0,
-          approvedByName: typeof data.approvedByName === 'string' ? data.approvedByName : '',
-          passedAtLabel,
-        }),
-      )
-      setConfirmingUnlock(false)
-      onUnlocked?.()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <AgentActivationCard
+        agentId={agentId}
+        socialAccountId={socialAccountId}
+        channelLabel={channelLabel}
+        canEdit={canEdit}
+        onChanged={onUnlocked}
+      />
       <h2 className="text-sm font-semibold text-slate-900">Probar conversación</h2>
       <p className={`mt-0.5 ${HINT}`}>WhatsApp · sandbox. No escribe a Meta ni a un chat real.</p>
       {selection.mode === 'pick' ? (
@@ -320,19 +243,10 @@ export function AgentTestSandbox({
         customerName={customerName}
         conversationAiMode={conversationAiMode}
         last={last}
-        replay={replay}
-        canApprove={canApprove}
-        confirmingUnlock={confirmingUnlock}
-        unlockLine={unlockLine}
-        confirmCopy={formatUnlockConfirm(channelLabel, agentName)}
         onMessageType={setMessageType}
         onWindowOpen={setWindowOpen}
         onCustomerName={setCustomerName}
         onConversationAiMode={setConversationAiMode}
-        onReplay={() => void replayAll()}
-        onAskUnlock={() => setConfirmingUnlock(true)}
-        onCancelUnlock={() => setConfirmingUnlock(false)}
-        onConfirmUnlock={() => void confirmUnlock()}
       />
       <ProbarScenarios
         agentId={agentId}

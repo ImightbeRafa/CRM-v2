@@ -182,14 +182,17 @@ describe('unlock records and the OpenAI model', () => {
         acc: {
           passedAt: '2026-10-01T00:00:00.000Z',
           approvedBy: 'u',
-          fixtureSetHash: DEFAULT_CHAT_AGENT_LAYER_CONFIG.fixtureSetHash,
+          // F1: an Activar suite hash (old named fixture-set records no longer count at all)
+          fixtureSetHash: 'abcdef0123456789abcdef01',
           passRate: 1,
           agentId: 'a1',
         },
       },
     }
+    // SecureDog F1: Activar always stores the model; a record without one never unlocks (any provider).
     const grok = aiFullUnlockStatus(config, 'acc', { agentId: 'a1', agentVersion: 1, model: 'grok-4.7' })
-    assert.equal(grok.unlocked, true)
+    assert.equal(grok.unlocked, false)
+    assert.equal(grok.reason, 'model')
     const luna = aiFullUnlockStatus(config, 'acc', { agentId: 'a1', agentVersion: 1, model: 'gpt-6-luna' })
     assert.equal(luna.unlocked, false)
     assert.equal(luna.reason, 'model')

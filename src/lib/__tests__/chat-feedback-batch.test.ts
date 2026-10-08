@@ -155,9 +155,11 @@ describe('client link + order flow', () => {
     assert.match(route, /logAuditEvent/)
   })
   test('a guía only goes to the chat its order belongs to', () => {
-    const route = read('src/app/api/chat/send-guia/route.ts')
-    assert.match(route, /if \(!linkedFromChat && !samePhone && !sameClient\)/)
-    assert.match(route, /Este pedido no es de este chat/)
+    // The rule lives in the shared service (Chats button + automatic guía after a payment is approved).
+    const service = read('src/lib/shipping/send-guia-to-chat.ts')
+    assert.match(service, /if \(!linkedFromChat && !samePhone && !sameClient\)/)
+    assert.match(service, /Este pedido no es de este chat/)
+    assert.match(read('src/app/api/chat/send-guia/route.ts'), /await sendGuiaToChat\(\{/)
   })
   test('next step: RA never needs a guía; EA goes guía → enviar → listo', () => {
     assert.equal(nextOrderStep({ orderType: 'RA', guia: null, guiaSentAt: null }), 'retiro')
@@ -210,13 +212,16 @@ describe('SecureDog / verifier fixes', () => {
   })
   test('manual client link with another phone needs confirmation; guía to another phone too', () => {
     assert.match(read('src/app/api/chat/conversations/[id]/client/route.ts'), /code: 'phone_mismatch'/)
-    const guia = read('src/app/api/chat/send-guia/route.ts')
-    assert.match(guia, /if \(!samePhone && body\?\.confirm !== true\)/)
+    const guia = read('src/lib/shipping/send-guia-to-chat.ts')
+    assert.match(guia, /if \(!samePhone && input\.confirm !== true\)/)
     assert.match(guia, /logAuditEvent/)
+    assert.match(read('src/app/api/chat/send-guia/route.ts'), /confirm: body\?\.confirm === true/)
   })
   test('AI ownership: a linked client counts only when its phone is the chat phone', () => {
-    const runner = read('src/lib/soft-ai/llm/tool-runner.ts')
-    assert.match(runner, /phoneMatches\(client\.normalizedPhone\) \|\| phoneMatches\(client\.phone\)/)
+    // one ownership rule for every agent path (F1): src/lib/soft-ai/order-ownership.ts
+    const ownership = read('src/lib/soft-ai/order-ownership.ts')
+    assert.match(ownership, /phoneMatches\(client\.normalizedPhone\) \|\| phoneMatches\(client\.phone\)/)
+    assert.match(read('src/lib/soft-ai/llm/tool-runner.ts'), /from '@\/lib\/soft-ai\/order-ownership'/)
   })
   test('re-send: only our outbound photos / videos / documents, never guías', () => {
     const core = read('src/lib/chat-send-media-core.ts')

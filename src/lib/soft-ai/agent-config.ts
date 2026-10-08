@@ -169,6 +169,11 @@ export function withoutAccountUnlock(
   return { ...config, aiFullUnlock }
 }
 
+/** Suite hashes written by Activar (test-engine/generate.ts): 24 lowercase hex characters. */
+export function isActivarSuiteHash(value: string | undefined | null): boolean {
+  return typeof value === 'string' && /^[a-f0-9]{24}$/.test(value)
+}
+
 export function aiFullUnlockStatus(
   config: ChatAgentLayerConfig,
   socialAccountId: string,
@@ -176,9 +181,16 @@ export function aiFullUnlockStatus(
 ): AiFullUnlockStatus {
   const record = config.aiFullUnlock[socialAccountId]
   if (!record) return { unlocked: false, reason: 'missing', versionWarning: false }
-  if (record.fixtureSetHash !== config.fixtureSetHash) {
+  // F1 Activar: only records written by Activar count — they carry the agent's own suite hash (24 hex chars).
+  // Records from the old replay/canary flow (named fixture sets) need a new "Probar y activar".
+  if (!isActivarSuiteHash(record.fixtureSetHash)) {
     return { unlocked: false, reason: 'hash', versionWarning: false, record }
   }
+  // Activar always stores the agent and the model: a record missing either never unlocks.
+  if (!record.agentId) return { unlocked: false, reason: 'agent', versionWarning: false, record }
+  if (!record.model) return { unlocked: false, reason: 'model', versionWarning: false, record }
+  // Beyond that the gate checks agent + model only (editing the agent's data later never silences it —
+  // the UI asks to re-test).
   if (ctx && record.agentId && record.agentId !== ctx.agentId) {
     return { unlocked: false, reason: 'agent', versionWarning: false, record }
   }

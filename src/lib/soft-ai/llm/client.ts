@@ -13,6 +13,7 @@ import {
   softAiProviderFor,
   type SoftAiProvider,
 } from '@/lib/soft-ai/agent-types'
+import { aiErrorCode, recordAiUsage, type AiUsageFeature } from '@/lib/ai-usage/record'
 
 export const SOFT_AI_XAI_BASE_URL = 'https://api.x.ai/v1'
 export const SOFT_AI_OPENAI_BASE_URL = 'https://api.openai.com/v1'
@@ -79,6 +80,16 @@ export type SoftAiResponsesCreateArgs = {
   reasoningEffort?: 'none' | 'low' | 'medium' | 'high'
   timeoutMs?: number
   store?: boolean
+  /** Structured output (JSON schema) — used by graders/extractors, never by the customer-facing turn. */
+  textFormat?: { name: string; schema: Record<string, unknown>; strict?: boolean }
+  /** Required: every call is metered (AI usage dashboard). tenantId null only for platform-level calls. */
+  usage: {
+    tenantId: string | null
+    feature: AiUsageFeature
+    agentId?: string | null
+    conversationId?: string | null
+    userId?: string | null
+  }
 }
 
 type OpenAiEffort = 'none' | 'low' | 'medium' | 'high'
@@ -97,7 +108,7 @@ function openAiEffort(requested?: OpenAiEffort): OpenAiEffort {
  * `max_output_tokens` on reasoning (so the cap is raised), and with `store:false` need the
  * encrypted reasoning items to replay a tool loop.
  */
-export function buildSoftAiResponsesBody(args: SoftAiResponsesCreateArgs): Record<string, unknown> {
+export function buildSoftAiResponsesBody(args: Omit<SoftAiResponsesCreateArgs, 'usage'>): Record<string, unknown> {
   const model = resolveSoftAiModel(args.model)
   const provider = softAiProviderFor(model)
   const baseMax = args.maxOutputTokens ?? 700
@@ -122,6 +133,16 @@ export function buildSoftAiResponsesBody(args: SoftAiResponsesCreateArgs): Recor
   }
   if (args.tools && args.tools.length > 0) body.tools = args.tools
   if (args.promptCacheKey) body.prompt_cache_key = args.promptCacheKey
+  if (args.textFormat) {
+    body.text = {
+      format: {
+        type: 'json_schema',
+        name: args.textFormat.name,
+        schema: args.textFormat.schema,
+        strict: args.textFormat.strict !== false,
+      },
+    }
+  }
   return body
 }
 
@@ -130,10 +151,37 @@ export async function softAiResponsesCreate(args: SoftAiResponsesCreateArgs) {
   const timeoutMs = args.timeoutMs ?? SOFT_AI_FIRST_CALL_TIMEOUT_MS
   const client = createSoftAiClient(model, timeoutMs)
   const body = buildSoftAiResponsesBody({ ...args, model })
-  return client.responses.create(
-    body as unknown as OpenAI.Responses.ResponseCreateParamsNonStreaming,
-    { timeout: timeoutMs, maxRetries: 0 },
-  )
+  const started = Date.now()
+  const keyLabel = softAiProviderFor(model) === 'openai' ? 'SOFT_AI_OPENAI_API_KEY' : 'XAI_API_KEY'
+  try {
+    const response = await client.responses.create(
+      body as unknown as OpenAI.Responses.ResponseCreateParamsNonStreaming,
+      { timeout: timeoutMs, maxRetries: 0 },
+    )
+    const used = readSoftAiUsage(response)
+    recordAiUsage({
+      ...args.usage,
+      model,
+      keyLabel,
+      inputTokens: used.inputTokens,
+      cachedTokens: used.cachedInputTokens,
+      outputTokens: used.outputTokens,
+      reasoningTokens: used.reasoningTokens,
+      latencyMs: Date.now() - started,
+    })
+    return response
+  } catch (error) {
+    // Failed calls are metered too (a timeout can still be billed and shows up as an error in the dashboard).
+    recordAiUsage({
+      ...args.usage,
+      model,
+      keyLabel,
+      latencyMs: Date.now() - started,
+      status: 'error',
+      errorCode: aiErrorCode(error),
+    })
+    throw error
+  }
 }
 
 export function parseSoftAiResponseText(response: unknown): string {

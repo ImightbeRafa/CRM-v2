@@ -15,8 +15,12 @@ export type TestChannelSelection = {
   options: TestChannelOption[]
 }
 
+/** Channels an agent can answer (and be tested / activated on): WhatsApp and Instagram (F1). */
 function whatsappChannels(channels: TestChannelOption[]): TestChannelOption[] {
-  return channels.filter((row) => row.platform.toLowerCase() === 'whatsapp' && row.id.trim())
+  return channels.filter((row) => {
+    const platform = row.platform.toLowerCase()
+    return (platform === 'whatsapp' || platform === 'instagram') && row.id.trim()
+  })
 }
 
 /**

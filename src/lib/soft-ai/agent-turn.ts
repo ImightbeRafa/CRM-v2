@@ -34,6 +34,8 @@ import {
   type EffectiveAgentBehavior,
 } from '@/lib/soft-ai/agent-types'
 import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
+import { loadAgentSettings } from '@/lib/soft-ai/agent-settings'
+import { notifyAiNoReply } from '@/lib/soft-ai/ai-no-reply'
 import { acquireProbarSlot, releaseProbarSlot } from '@/lib/soft-ai/probar-slots'
 import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
 import { isPlatformAiPaused, readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
@@ -176,6 +178,25 @@ async function sendMetaText(opts: {
       }
       return { ok: true, providerMessageId: data.messages?.[0]?.id }
     }
+    if (opts.platform === 'instagram') {
+      // Same call as the Chats composer (api/chat/send): RESPONSE inside the 24h window only. The AI never uses
+      // the HUMAN_AGENT tag (Meta allows it for human replies only).
+      const sendPath = opts.pageId ? `${encodeURIComponent(opts.pageId)}/messages` : 'me/messages'
+      const url = addAppSecretProofToUrl(buildMetaGraphUrl(sendPath), token)
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messaging_type: 'RESPONSE', recipient: { id: opts.recipient }, message: { text: opts.text } }),
+        signal: AbortSignal.timeout(7_000),
+      })
+      const data = (await res.json().catch(() => ({}))) as {
+        message_id?: string
+        messages?: Array<{ id?: string }>
+        error?: { message?: string }
+      }
+      if (!res.ok) return { ok: false, error: data.error?.message || `meta_${res.status}` }
+      return { ok: true, providerMessageId: data.message_id || data.messages?.[0]?.id }
+    }
     return { ok: false, error: 'platform_not_supported_for_agent_send' }
   } catch (error) {
     return {
@@ -183,6 +204,14 @@ async function sendMetaText(opts: {
       error: error instanceof Error ? error.message.slice(0, 80) : 'meta_send_failed',
     }
   }
+}
+
+async function channelHasActivationRecord(tenantId: string, socialAccountId: string): Promise<boolean> {
+  const flag = await prisma.tenantFeatureFlag.findFirst({
+    where: { tenantId, scope: tenantId, key: CHAT_AGENT_LAYER_V1_FLAG },
+    select: { config: true },
+  })
+  return Boolean(parseChatAgentLayerConfig(flag?.config).aiFullUnlock[socialAccountId])
 }
 
 async function persistSkippedTurn(input: {
@@ -347,6 +376,7 @@ export async function executeAgentLayerTurn(
   const preModel = await runPreModelGates({
     tenantId: row.tenantId,
     socialAccountId: row.socialAccountId,
+    agentId: resolved.agent.id,
   })
   if (!preModel.ok) {
     await persistSkippedTurn({
@@ -360,7 +390,30 @@ export async function executeAgentLayerTurn(
       skipReason: preModel.skipReason || 'flag_off',
       status: preModel.status,
     })
+    if (preModel.status === 'budget_blocked') {
+      void notifyAiNoReply({ tenantId: row.tenantId, conversationId: row.conversationId, reason: 'budget_blocked' })
+    }
     return { status: 'skipped', reason: preModel.skipReason || preModel.status }
+  }
+
+  // F1: no suggestion mode — a channel that is not activated (Activar) never reaches the model: no provider
+  // call, no cost, no customer text sent to an AI. The team is alerted only when the channel WAS activated and
+  // the activation went stale (agent or model changed), never for channels nobody turned on.
+  if (resolved.agent.operationMode !== 'ai_full' || !resolved.unlockedForSend) {
+    await persistSkippedTurn({
+      tenantId: row.tenantId,
+      conversationId: row.conversationId,
+      socialAccountId: row.socialAccountId,
+      agent: resolved.agent,
+      bindingId: resolved.binding.id,
+      triggerMessageId: row.messageId,
+      deliveryKey: row.deliveryKey,
+      skipReason: 'not_activated',
+    })
+    if (await channelHasActivationRecord(row.tenantId, row.socialAccountId)) {
+      void notifyAiNoReply({ tenantId: row.tenantId, conversationId: row.conversationId, reason: 'not_activated' })
+    }
+    return { status: 'skipped', reason: 'not_activated' }
   }
 
   // Reuse persisted output on lease reclaim (exactly-once contentHash).
@@ -545,6 +598,8 @@ export async function executeAgentLayerTurn(
       peerId: row.peerId,
       clientId: conversation.clientId,
       inventoryItemIds: await loadMappedInventoryIds(row.tenantId, resolved.agent.id),
+      orderOwnership: (await loadAgentSettings(row.tenantId, resolved.agent.id)).orderOwnership,
+      platform: payload.platform || 'whatsapp',
     },
   })
   const llm = await runSoftAiLlmRuntime(runtimeInput)
@@ -704,7 +759,19 @@ async function persistDecidedTurn(input: {
   return { status: 'skipped', reason: input.outcome.reason || input.gateStatus }
 }
 
-async function finishDeliveryOrSuggest(input: {
+/** Delivery decision + "La IA no respondió" alert when an agent that should answer stays silent. */
+async function finishDeliveryOrSuggest(
+  input: Parameters<typeof finishDeliveryOrSuggestInner>[0],
+): Promise<AgentTurnDispatchResult> {
+  const result = await finishDeliveryOrSuggestInner(input)
+  if (result.status === 'suggested' || result.status === 'skipped') {
+    const turn = await prisma.chatAgentTurn.findUnique({ where: { id: input.turnId }, select: { skipReason: true } })
+    void notifyAiNoReply({ tenantId: input.row.tenantId, conversationId: input.row.conversationId, reason: turn?.skipReason })
+  }
+  return result
+}
+
+async function finishDeliveryOrSuggestInner(input: {
   row: ClaimedChatAutomationJob
   payload: JobPayload
   conversation: {

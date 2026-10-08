@@ -7,6 +7,7 @@ import { Badge } from '@/app/components/ui/badge';
 import { Checkbox } from '@/app/components/ui/checkbox';
 import ProductForm from './productForm';
 import { draftProductAddBlockedReason } from './orderFormValidation';
+import { computeOrderTotals } from '@/lib/orders/order-totals';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
 import { sfBtnPrimary } from './sales-form-styles';
@@ -80,21 +81,13 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
   }, []);
 
   // Calculate order totals
-  const orderTotals = useMemo(() => {
-    const subtotal = orderInfo.products.reduce((sum, product) => 
-      sum + (product.productCost * product.cantidad) + (product.optionDeltas || 0), 0
-    );
-    
-    // Use the shipping cost set by ShippingMethodSelector (already includes the priceDelta)
-    // Only for EA (shipping) orders, RA (local pickup) has no shipping cost
-    const shipping = orderType === 'EA' ? (orderInfo.orderShipping || 0) : 0;
-    
-    // Calculate IVA based on order-level setting
-    const iva = orderInfo.applyOrderIVA ? subtotal * 0.13 : 0;
-    const total = subtotal + shipping + iva;
-
-    return { subtotal, shipping, iva, total };
-  }, [orderInfo.products, orderInfo.orderShipping, orderInfo.applyOrderIVA, orderType]);
+  // Shared with AI agents' quotes (lib/orders/order-totals.ts): shipping only for EA, set by ShippingMethodSelector.
+  const orderTotals = useMemo(() => computeOrderTotals({
+    products: orderInfo.products,
+    orderType,
+    orderShipping: orderInfo.orderShipping,
+    applyOrderIVA: orderInfo.applyOrderIVA,
+  }), [orderInfo.products, orderInfo.orderShipping, orderInfo.applyOrderIVA, orderType]);
 
   // Update order totals when products change
   useEffect(() => {

@@ -130,15 +130,16 @@ describe('hasAiFullUnlock matrix (AT-P-4)', () => {
     const staleHash = config({
       aiFullUnlock: { [ACCOUNT]: record({ fixtureSetHash: 'forge-wa-v1-a1-2026-09-21' }) },
     })
-    assert.equal(hasAiFullUnlock(staleHash, ACCOUNT, CTX), false)
-    assert.equal(aiFullUnlockStatus(staleHash, ACCOUNT, CTX).reason, 'hash')
+    // F1 Activar: the record keeps each agent's own suite hash for audit; a different hash never silences it
+    // (editing the agent's data asks for a re-test instead). Agent and model still fail closed (below).
+    assert.equal(hasAiFullUnlock(staleHash, ACCOUNT, CTX), true)
     assert.equal(
       composeEffectiveBehavior({
         conversationAiMode: 'ai_active',
         operationMode: 'ai_full',
         unlockedForSend: hasAiFullUnlock(staleHash, ACCOUNT, CTX),
       }).behavior,
-      'suggest',
+      'send',
     )
 
     const otherAgent = config({ aiFullUnlock: { [ACCOUNT]: record({ agentId: 'other' }) } })
@@ -656,8 +657,10 @@ describe('mutateChatAgentLayerConfig lock', () => {
     assert.match(route, /update_config/)
     assert.match(route, /agentUnlockHttpError/)
     assert.match(route, /chat_agent_ai_full_unlock|approveAgentAiFullUnlock/)
-    const ui = readFileSync(join(process.cwd(), 'src/app/config/agentes/AgentInternalTests.tsx'), 'utf8')
-    assert.match(ui, /Aprobar envío real/)
-    assert.doesNotMatch(ui, /Soft/)
+    // F1: the UI activates through "Probar y activar" (agent's own tests); plain words, no internal names.
+    const ui = readFileSync(join(process.cwd(), 'src/app/config/agentes/AgentActivationCard.tsx'), 'utf8')
+    assert.match(ui, /Probar y activar/)
+    assert.match(ui, />\s*Activar\s*</)
+    assert.doesNotMatch(ui, /Soft|ai_full|fixture/i)
   })
 })

@@ -145,7 +145,9 @@ describe('Probar sandbox', () => {
     assert.match(internals, /Resultado:/)
     assert.match(sandbox, /Enviar/)
     assert.match(internals, /Pruebas internas/)
-    assert.match(internals, /passRate/)
+    // F1: the replay table / "Aprobar envío real" moved to the "Probar y activar" card (agent's own tests).
+    assert.doesNotMatch(internals, /passRate|Aprobar envío real/)
+    assert.match(sandbox, /<AgentActivationCard/)
     assert.match(internals, /Ventana de 24 h abierta/)
     assert.match(page, /Detener agente/)
     assert.match(page, /Cambios recientes/)

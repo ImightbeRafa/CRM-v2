@@ -93,7 +93,8 @@ describe('soft-ai aiFullUnlock (1.15)', () => {
       ...unlocked,
       fixtureSetHash: 'other-hash',
     })
-    assert.equal(hasAiFullUnlock(stale, FIXTURE_SOCIAL_ACCOUNT_ID), false)
+    // F1 Activar: a different tenant-level fixture hash no longer revokes an agent's unlock (agent + model do).
+    assert.equal(hasAiFullUnlock(stale, FIXTURE_SOCIAL_ACCOUNT_ID), true)
   })
 })
 

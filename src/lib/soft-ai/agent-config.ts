@@ -176,9 +176,8 @@ export function aiFullUnlockStatus(
 ): AiFullUnlockStatus {
   const record = config.aiFullUnlock[socialAccountId]
   if (!record) return { unlocked: false, reason: 'missing', versionWarning: false }
-  if (record.fixtureSetHash !== config.fixtureSetHash) {
-    return { unlocked: false, reason: 'hash', versionWarning: false, record }
-  }
+  // F1 Activar: the record keeps the agent's own suite hash for audit; the gate checks agent + model only
+  // (editing the agent's data later never silences it — the UI asks to re-test).
   if (ctx && record.agentId && record.agentId !== ctx.agentId) {
     return { unlocked: false, reason: 'agent', versionWarning: false, record }
   }

@@ -36,6 +36,7 @@ export const FILES = {
   '049': '049_chat_agent_settings.sql',
   '050': '050_chat_agent_test_run.sql',
   '051': '051_ai_budget.sql',
+  '052': '052_agent_studio_sources.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -86,6 +87,7 @@ export const EXPECTED_TABLES = {
   '049': ['ChatAgentSettings'],
   '050': ['ChatAgentTestRun'],
   '051': ['AiBudget'],
+  '052': ['ChatAgentSource', 'ChatAgentProfileDraft'],
 };
 
 export const EXPECTED_COLUMNS = {
@@ -99,6 +101,7 @@ export const EXPECTED_COLUMNS = {
   '049': [['ChatAgentSettings', 'orderOwnership'], ['ChatAgentSettings', 'servesUnboundChannels']],
   '050': [['ChatAgentTestRun', 'suiteHash'], ['ChatAgentTestRun', 'results']],
   '051': [['AiBudget', 'monthlyUsdMicros'], ['AiBudget', 'autoPause']],
+  '052': [['ChatAgentSource', 'sha256'], ['ChatAgentProfileDraft', 'profile']],
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],
   '037': [['ChatConversation', 'repliedInboundCount']],

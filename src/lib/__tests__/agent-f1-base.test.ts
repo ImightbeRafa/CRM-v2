@@ -153,3 +153,17 @@ describe('F1 · agents answer directly; silence alerts a person; Instagram suppo
     assert.match(gates, /if \(!agentWindowOpen\(input\.platform, input\.lastInboundAt\)\) \{/)
   })
 })
+
+describe('F1 · legacy v1 path quarantined, neutral defaults', () => {
+  it('v1 never creates, links or "registers" an order (no fake LINK- references)', () => {
+    const tools = read('src/lib/soft-ai/tools.ts')
+    assert.match(tools, /refused: 'quarantined_v1_write'/)
+    assert.doesNotMatch(tools, /Registré la referencia/)
+    assert.doesNotMatch(tools, /`LINK-\$\{hint\}`/)
+  })
+  it('the default Soft AI config carries no business-specific facts', () => {
+    const types = read('src/lib/soft-ai/types.ts')
+    const block = types.slice(types.indexOf('export const DEFAULT_SOFT_AI_CONFIG'), types.indexOf('export const DEFAULT_SOFT_AI_CONFIG') + 700)
+    assert.doesNotMatch(block, /Kits|Betsy|1–2h/)
+  })
+})

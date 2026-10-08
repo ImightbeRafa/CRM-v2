@@ -2086,3 +2086,33 @@ Append-only. Newest entries at the top.
   Auth screens, onboarding wizard and Ayuda restyled to Aurora; logic untouched.
 - **Global:** `tailwind.config.ts` `darkMode` is now a custom variant that never applies `dark:` inside `.aurora-light`.
 - Prove: `npm run test:site-ui`, `test:security`, `test:pedidos-ui`, `test:stats-ui`, `test:config-ui`; no SQL / Prisma / runtime files touched.
+
+# 2026-10-08 — Agent F1: clean base, isolation, AI meter, Activar (branch `claudio/agent-f1-base`)
+
+Plan: `docs/plans/betsy-agent-studio-sales-flow-2026-10-08.md` (v4). Off `claudio/chat-link-orders` (df0f6f5).
+
+- **Live bug fixed:** "¿dónde viene mi pedido?" looked guías up by `Order.id`; every writer stores the order number.
+  Live Correos tracking added (5s cap).
+- **One ownership rule** (`order-ownership.ts`) for the layer tools and the legacy v1 deps. Only a PERSON's order link
+  counts (AI-written links ignored; AI replies no longer write `ChatMessage.orderId`). v1 customer turns are scoped
+  to the chat peer (were tenant-wide by order number). Instagram ids are never phones.
+- **Isolation between stores of one tenant (SQL 049 `ChatAgentSettings`):** fail-closed product list, business stamp
+  for orders (salesChannel / funnel / website source), `tenant_default` only serves unbound channels when enabled,
+  per-agent daily cap. "Pedidos de este negocio" card + `/api/chat/agents/[id]/settings`.
+- **AI meter (SQL 048 `AiUsageEvent`):** every AI call (inbox agent, Probar, tests, imports, customer paste, staff
+  bot text + Whisper). Staff bot: approved recording lines + tenant scope at its 2 queue entry points only;
+  `staff-bot-boundary.test` pins every bot file.
+- **Orders:** `lib/orders/order-requirements` (same rules as /ventas + required product fields) and one
+  `computeOrderTotals` shared with `/ventas`.
+- **Guía:** production service copied to `lib/shipping/guia-service.ts` (same claim key; parity test);
+  `send-guia-to-chat` service.
+- **No suggestion mode:** not activated = silent; "La IA no respondió" bell alert (assignee or chat team, 30 min).
+  Agents answer on Instagram (RESPONSE only, 24h).
+- **Activar (SQL 050 `ChatAgentTestRun`):** deterministic suite from the agent's own data, fixed rules for
+  money/safety + AI judge; one click after green; gate checks agent + model only. v1 write stub quarantined.
+- Verifier round 1 (S1–S3) fixed: AI-written links, IG phone, inbox badge, 049 VALIDATE split, cap floor, 048/049
+  force-added (migrations folder is gitignored).
+- Prove: tsc clean; test:soft-ai 343, chat-harden 640, security 271, agentes-ui 34, config-ui 30, ops 24,
+  chat-automation 9, lifecycle 11, pedidos-ui 29, chat-feedback 57, bot-inbox 8, bot-grok pass.
+  Baseline failures (also on df0f6f5): test:site-ui 1 (aurora-no-native-dialogs on agentes/page.tsx).
+- **Before deploy (Rafael):** apply SQL 048, 049, 050 (additive, RLS on); read-only checks listed in the PR.

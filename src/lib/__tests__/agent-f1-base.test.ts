@@ -118,3 +118,38 @@ describe('F1 · isolation between businesses of one tenant (SQL 049)', () => {
     assert.match(read('scripts/lib/betsy-v2-additive-manifest.mjs'), /'049': '049_chat_agent_settings\.sql'/)
   })
 })
+
+describe('F1 · agents answer directly; silence alerts a person; Instagram supported', () => {
+  const outcome = read('src/lib/soft-ai/agent-turn-outcome.ts')
+  const turn = read('src/lib/soft-ai/agent-turn.ts')
+  const gates = read('src/lib/soft-ai/agent-claim-gates.ts')
+
+  it('no suggestion mode: not activated / legacy ai_suggest = silent (not_activated)', () => {
+    assert.match(outcome, /case 'suggest':\s*\/\/[^\n]*\n\s*return \{ outcome: 'skip', reason: 'not_activated' \}/)
+    assert.doesNotMatch(outcome, /reason: 'ai_suggest'/)
+    assert.doesNotMatch(outcome, /outcome: 'suggest', reason: 'ai_full_not_unlocked'/)
+  })
+
+  it('a silent turn alerts the assignee (or the chat team) once per chat per 30 min, in plain words', () => {
+    const alert = read('src/lib/soft-ai/ai-no-reply.ts')
+    assert.match(alert, /const BUCKET_MS = 30 \* 60_000/)
+    assert.match(alert, /if \(!AI_NO_REPLY_ALERT_REASONS\.has\(reason\)\) return/)
+    assert.match(alert, /filterChatMembers\(input\.tenantId, userIds\)/)
+    assert.match(turn, /void notifyAiNoReply\(\{ tenantId: input\.row\.tenantId, conversationId: input\.row\.conversationId, reason: turn\?\.skipReason \}\)/)
+    const notes = read('src/lib/workspace-notifications.ts')
+    assert.match(notes, /'ai_no_reply'/)
+    assert.match(notes, /title: `La IA no respondió\$\{where\}`/)
+    // expected silences never alert
+    for (const quiet of ['human_replied', 'paused_before_send', 'human_before_send', 'superseded', 'kill_switch']) {
+      assert.doesNotMatch(notes.slice(notes.indexOf('AI_NO_REPLY_REASONS'), notes.indexOf('const ID_RE')), new RegExp(`\b${quiet}:`))
+    }
+  })
+
+  it('Instagram: the agent sends a RESPONSE (never HUMAN_AGENT) and only inside 24h', () => {
+    assert.match(turn, /if \(opts\.platform === 'instagram'\) \{/)
+    assert.match(turn, /messaging_type: 'RESPONSE'/)
+    assert.doesNotMatch(turn, /HUMAN_AGENT'/)
+    assert.match(gates, /export function agentWindowOpen\(/)
+    assert.match(gates, /if \(!agentWindowOpen\(input\.platform, input\.lastInboundAt\)\) \{/)
+  })
+})

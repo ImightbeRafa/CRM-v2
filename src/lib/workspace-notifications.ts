@@ -14,7 +14,18 @@ import { staffDisplayName } from '@/lib/display-name'
 import { hasPermission, type Role } from '@/lib/rbac'
 
 export const MENTION_MAX = 10
-export type NotificationKind = 'mention' | 'task_assigned' | 'task_due' | 'chat_assigned'
+export type NotificationKind = 'mention' | 'task_assigned' | 'task_due' | 'chat_assigned' | 'ai_no_reply'
+
+/** Plain-word reasons for "La IA no respondió" (the reason travels in the dedupe key; no customer text). */
+export const AI_NO_REPLY_REASONS: Record<string, string> = {
+  needs_human: 'Necesita a una persona (no estaba segura de la respuesta).',
+  fallback_used: 'No pudo armar una respuesta confiable.',
+  escalate: 'El cliente pidió una persona o es un tema delicado.',
+  not_activated: 'El agente de este canal no está activado.',
+  window_closed: 'Pasaron más de 24 h desde el último mensaje del cliente.',
+  budget_blocked: 'Se alcanzó el límite diario de IA.',
+  token_unhealthy: 'La conexión del canal necesita revisión.',
+}
 
 const ID_RE = /^[A-Za-z0-9_-]{8,64}$/
 let tableMissingUntil = 0
@@ -171,6 +182,17 @@ export async function listNotifications(tenantId: string, userId: string, limit 
           title: r.kind === 'task_assigned' ? `${who} te asignó una tarea${where}` : `Tarea vencida${where}`,
           snippet: task.title,
           href: r.conversationId ? chatHref(r.conversationId, r.clientId) : '/tareas',
+        })
+      } else if (r.kind === 'ai_no_reply') {
+        const reason = String(r.dedupeKey || '').split(':')[3] || ''
+        items.push({
+          id: r.id,
+          kind: 'ai_no_reply',
+          read: Boolean(r.readAt),
+          createdAt: r.createdAt.toISOString(),
+          title: `La IA no respondió${where}`,
+          snippet: AI_NO_REPLY_REASONS[reason] || 'Revisá el chat.',
+          href: chatHref(r.conversationId, r.clientId),
         })
       } else {
         items.push({

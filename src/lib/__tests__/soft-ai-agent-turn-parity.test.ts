@@ -196,18 +196,20 @@ describe('agent turn parity', () => {
       gateBlockers: [] as string[],
     }
     assert.deepEqual(decideTurnOutcome(base), { outcome: 'send', reason: null })
+    // F1 (Rafael 2026-10-08): no suggestion MODE — a legacy ai_suggest agent or one not activated stays silent.
     assert.deepEqual(decideTurnOutcome({ ...base, effectiveBehavior: 'suggest' }), {
-      outcome: 'suggest',
-      reason: 'ai_suggest',
+      outcome: 'skip',
+      reason: 'not_activated',
     })
     assert.deepEqual(decideTurnOutcome({ ...base, unlockedForSend: false }), {
-      outcome: 'suggest',
-      reason: 'ai_full_not_unlocked',
+      outcome: 'skip',
+      reason: 'not_activated',
     })
     assert.deepEqual(decideTurnOutcome({ ...base, gateBlockers: ['ai_full_not_unlocked'] }), {
-      outcome: 'suggest',
-      reason: 'ai_full_not_unlocked',
+      outcome: 'skip',
+      reason: 'not_activated',
     })
+    // A turn the model could not answer safely is kept as a draft for the team (never sent).
     assert.deepEqual(decideTurnOutcome({ ...base, needsHuman: true }), {
       outcome: 'suggest',
       reason: 'needs_human',

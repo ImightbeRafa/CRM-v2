@@ -35,6 +35,7 @@ import {
 } from '@/lib/soft-ai/agent-types'
 import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import { loadAgentSettings } from '@/lib/soft-ai/agent-settings'
+import { notifyAiNoReply } from '@/lib/soft-ai/ai-no-reply'
 import { acquireProbarSlot, releaseProbarSlot } from '@/lib/soft-ai/probar-slots'
 import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
 import { isPlatformAiPaused, readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
@@ -176,6 +177,25 @@ async function sendMetaText(opts: {
         return { ok: false, error: data.error?.message || `meta_${res.status}` }
       }
       return { ok: true, providerMessageId: data.messages?.[0]?.id }
+    }
+    if (opts.platform === 'instagram') {
+      // Same call as the Chats composer (api/chat/send): RESPONSE inside the 24h window only. The AI never uses
+      // the HUMAN_AGENT tag (Meta allows it for human replies only).
+      const sendPath = opts.pageId ? `${encodeURIComponent(opts.pageId)}/messages` : 'me/messages'
+      const url = addAppSecretProofToUrl(buildMetaGraphUrl(sendPath), token)
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messaging_type: 'RESPONSE', recipient: { id: opts.recipient }, message: { text: opts.text } }),
+        signal: AbortSignal.timeout(7_000),
+      })
+      const data = (await res.json().catch(() => ({}))) as {
+        message_id?: string
+        messages?: Array<{ id?: string }>
+        error?: { message?: string }
+      }
+      if (!res.ok) return { ok: false, error: data.error?.message || `meta_${res.status}` }
+      return { ok: true, providerMessageId: data.message_id || data.messages?.[0]?.id }
     }
     return { ok: false, error: 'platform_not_supported_for_agent_send' }
   } catch (error) {
@@ -362,6 +382,9 @@ export async function executeAgentLayerTurn(
       skipReason: preModel.skipReason || 'flag_off',
       status: preModel.status,
     })
+    if (preModel.status === 'budget_blocked') {
+      void notifyAiNoReply({ tenantId: row.tenantId, conversationId: row.conversationId, reason: 'budget_blocked' })
+    }
     return { status: 'skipped', reason: preModel.skipReason || preModel.status }
   }
 
@@ -707,7 +730,19 @@ async function persistDecidedTurn(input: {
   return { status: 'skipped', reason: input.outcome.reason || input.gateStatus }
 }
 
-async function finishDeliveryOrSuggest(input: {
+/** Delivery decision + "La IA no respondió" alert when an agent that should answer stays silent. */
+async function finishDeliveryOrSuggest(
+  input: Parameters<typeof finishDeliveryOrSuggestInner>[0],
+): Promise<AgentTurnDispatchResult> {
+  const result = await finishDeliveryOrSuggestInner(input)
+  if (result.status === 'suggested' || result.status === 'skipped') {
+    const turn = await prisma.chatAgentTurn.findUnique({ where: { id: input.turnId }, select: { skipReason: true } })
+    void notifyAiNoReply({ tenantId: input.row.tenantId, conversationId: input.row.conversationId, reason: turn?.skipReason })
+  }
+  return result
+}
+
+async function finishDeliveryOrSuggestInner(input: {
   row: ClaimedChatAutomationJob
   payload: JobPayload
   conversation: {

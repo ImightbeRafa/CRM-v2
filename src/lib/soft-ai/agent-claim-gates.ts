@@ -4,7 +4,6 @@
 
 import { createHash } from 'crypto'
 import { prisma } from '@/lib/db'
-import { waWindowOpenFromInbound } from '@/lib/chat-conversation-api'
 import {
   aiTermsAccepted,
   hasAiFullUnlock,
@@ -19,6 +18,19 @@ import type {
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
 import { agentsServingUnboundChannels, loadAgentSettings } from '@/lib/soft-ai/agent-settings'
+
+const AGENT_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000
+
+/**
+ * May an AI agent send a free-form reply now? WhatsApp and Instagram both allow it only within 24h of the
+ * customer's last message (the AI never uses templates here or Instagram's HUMAN_AGENT tag).
+ * (The inbox UI keeps using waWindowOpenFromInbound: a person may reply on Instagram with HUMAN_AGENT.)
+ */
+export function agentWindowOpen(platform: string, lastInboundAt: Date | null | undefined, nowMs = Date.now()): boolean {
+  if (platform !== 'whatsapp' && platform !== 'instagram') return false
+  if (!lastInboundAt) return false
+  return nowMs - lastInboundAt.getTime() < AGENT_REPLY_WINDOW_MS
+}
 
 export type GateFail = {
   ok: false
@@ -310,7 +322,7 @@ export async function runPreSendGates(input: {
   }
 
   // Gate 7 — WA 24h window
-  if (!waWindowOpenFromInbound(input.platform, input.lastInboundAt)) {
+  if (!agentWindowOpen(input.platform, input.lastInboundAt)) {
     return { ok: false, status: 'window_closed' }
   }
 

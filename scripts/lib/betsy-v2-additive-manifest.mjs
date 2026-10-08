@@ -37,6 +37,7 @@ export const FILES = {
   '050': '050_chat_agent_test_run.sql',
   '051': '051_ai_budget.sql',
   '052': '052_agent_studio_sources.sql',
+  '053': '053_agent_studio_sales_setup.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -88,6 +89,7 @@ export const EXPECTED_TABLES = {
   '050': ['ChatAgentTestRun'],
   '051': ['AiBudget'],
   '052': ['ChatAgentSource', 'ChatAgentProfileDraft'],
+  '053': ['ShippingMethodCoverage'],
 };
 
 export const EXPECTED_COLUMNS = {
@@ -102,6 +104,7 @@ export const EXPECTED_COLUMNS = {
   '050': [['ChatAgentTestRun', 'suiteHash'], ['ChatAgentTestRun', 'results']],
   '051': [['AiBudget', 'monthlyUsdMicros'], ['AiBudget', 'autoPause'], ['AiBudget', 'pausedMonth']],
   '052': [['ChatAgentSource', 'sha256'], ['ChatAgentProfileDraft', 'profile']],
+  '053': [['ChatAgentAsset', 'agentId'], ['ChatAgentAsset', 'inventoryCategory'], ['ShippingMethodCoverage', 'codPlaces'], ['ChatAgentSettings', 'offeredShippingMethodIds'], ['ChatAgentSettings', 'salesRules']],
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],
   '037': [['ChatConversation', 'repliedInboundCount']],

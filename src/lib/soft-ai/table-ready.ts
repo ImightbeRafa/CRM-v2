@@ -29,6 +29,21 @@ export async function isTableReady(table: string): Promise<boolean> {
   return ready
 }
 
+/** Same as isTableReady for a column added by a later additive migration (e.g. SQL 053 on a 049 table). */
+export async function isColumnReady(table: string, column: string): Promise<boolean> {
+  const key = `${table}.${column}`
+  const hit = cache.get(key)
+  if (hit && Date.now() - hit.at < (hit.ready ? READY_TTL_MS : MISSING_TTL_MS)) return hit.ready
+  const rows = await prisma.$queryRaw<Array<{ ok: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = ${table} AND column_name = ${column}
+    ) AS "ok"`
+  const ready = rows[0]?.ok === true
+  cache.set(key, { at: Date.now(), ready })
+  return ready
+}
+
 export function clearTableReadyCache() {
   cache.clear()
 }

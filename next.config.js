@@ -26,7 +26,7 @@ const nextConfig = {
     ignoreBuildErrors: false,
   },
   // Server-side packages that should not be bundled
-  serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium', 'soap', 'axios'],
+  serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium', 'soap', 'axios', 'unpdf'],
 
   experimental: {
     optimizePackageImports: ['lucide-react', 'date-fns', 'recharts', 'framer-motion'],

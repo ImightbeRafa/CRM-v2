@@ -6,7 +6,11 @@ import { cardState, relativeUpdated, sourceStatus, sourceTopic } from '../../com
 
 const read = (rel: string) => readFileSync(join(process.cwd(), rel), 'utf8')
 const AGENTES_DIR = 'src/components/aurora/agentes'
-const agentFiles = () => readdirSync(join(process.cwd(), AGENTES_DIR)).map((f) => `${AGENTES_DIR}/${f}`)
+// Recursive: sub-folders (e.g. studio/) are checked too, never read as files.
+const agentFiles = () =>
+  readdirSync(join(process.cwd(), AGENTES_DIR), { recursive: true, withFileTypes: true })
+    .filter((d) => d.isFile())
+    .map((d) => `${AGENTES_DIR}/${join(d.parentPath ?? d.path, d.name).slice(join(process.cwd(), AGENTES_DIR).length + 1).replace(/\\/g, '/')}`)
 const page = read('src/app/config/agentes/page.tsx')
 
 describe('agent detail page (source)', () => {

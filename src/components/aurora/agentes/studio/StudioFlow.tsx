@@ -116,7 +116,7 @@ export function StudioFlow({
     <div className="rounded-2xl border border-[#5B6CFF]/25 bg-white p-4 md:p-5" data-testid="studio-flow">
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between text-left" aria-expanded={open}>
         <div>
-          <h3 className="text-[14px] font-semibold text-slate-900">✨ Crear desde fuentes</h3>
+          <h3 className="text-[14px] font-semibold text-slate-900">① Tu negocio · Crear desde fuentes</h3>
           <p className="text-[12px] text-slate-500">Sitio web, catálogos, fotos o Instagram → el agente aprende tu negocio.</p>
         </div>
         <span aria-hidden className="text-slate-400">{open ? '▾' : '▸'}</span>

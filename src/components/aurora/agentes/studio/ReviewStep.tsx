@@ -104,7 +104,16 @@ export function ReviewStep({
   const [products, setProducts] = useState(() =>
     x.products.map((pr, i) => {
       const m = p.matches.find((mm) => mm.index === i)
-      return { ...pr, itemId: m?.itemId ?? '', keep: Boolean(m?.itemId), priceDiffers: Boolean(m?.priceDiffers), priceInInventory: m?.priceInInventory ?? null }
+      // No single size matched but the group did (e.g. a product name with no size → its whole category): pre-select the whole group.
+      const groupKey = !m?.itemId && m?.group ? `group:${m.group.category}` : ''
+      return {
+        ...pr,
+        itemId: m?.itemId ?? groupKey,
+        group: m?.group ?? null,
+        keep: Boolean(m?.itemId || groupKey),
+        priceDiffers: Boolean(m?.priceDiffers),
+        priceInInventory: m?.priceInInventory ?? null,
+      }
     }),
   )
   const [busy, setBusy] = useState(false)
@@ -142,7 +151,13 @@ export function ReviewStep({
       ],
       faq: faq.filter((s) => s.keep && s.question && s.answer).map((s) => ({ question: s.question!, answer: s.answer! })),
       quickReplies: replies.filter((s) => s.keep && s.title && s.body).map((s) => ({ title: s.title!, body: s.body! })),
-      inventoryItemIds: [...new Set(products.filter((s) => s.keep && s.itemId).map((s) => s.itemId))],
+      inventoryItemIds: [
+        ...new Set(
+          products
+            .filter((s) => s.keep && s.itemId)
+            .flatMap((s) => (s.itemId.startsWith('group:') ? s.group?.itemIds ?? [] : [s.itemId])),
+        ),
+      ],
       // The selling script is only saved when the owner touched it (AI suggestions never go in unreviewed).
       salesRules: rulesEdited ? { ...rules, mustSay: lines(rules.mustSay), neverSay: lines(rules.neverSay) } : undefined,
     }
@@ -256,6 +271,11 @@ export function ReviewStep({
                   </p>
                   <select className={INPUT} value={pr.itemId} onChange={(e) => setProducts(setAt(products, i, { itemId: e.target.value, keep: Boolean(e.target.value) }))}>
                     <option value="">— No está en el inventario —</option>
+                    {pr.group ? (
+                      <option value={`group:${pr.group.category}`}>
+                        Todo el grupo {pr.group.category} ({pr.group.itemIds.length})
+                      </option>
+                    ) : null}
                     {inventory.map((o) => (
                       <option key={o.id} value={o.id}>
                         {o.name}

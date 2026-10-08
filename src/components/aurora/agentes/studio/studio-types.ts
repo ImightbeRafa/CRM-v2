@@ -39,6 +39,7 @@ export type ProductMatch = {
   priceSeen: number | null
   priceInInventory: number | null
   priceDiffers: boolean
+  group?: { category: string; itemIds: string[] } | null
 }
 
 export type Draft = {

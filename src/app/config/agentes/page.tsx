@@ -750,6 +750,7 @@ export default function AgentesConfigPage() {
               <div className="space-y-4">
                 <div hidden={!detailVisible || tab !== 'resumen'} role="tabpanel" className="space-y-4">
                   <StudioFlow key={`studio-${selected.id}`} agentId={selected.id} canEdit={canEdit} isLive={selected.status === 'live'} onApplied={() => void load({ silent: true })} />
+                  <AgentInventoryCard key={`inv-${selected.id}`} agentId={selected.id} canEdit={canEdit} title="② Productos que vende" />
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className={CARD}>
                       <div className="flex items-center justify-between">
@@ -1222,7 +1223,6 @@ export default function AgentesConfigPage() {
                       Modelo: <span title={selected.model}>{modelLabel(selected.model)}</span>
                     </p>
                     <AgentUsageCard />
-                    <AgentInventoryCard key={`inv-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
                     <AgentBusinessCard key={`biz-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
                     <AgentQualityCard key={selected.id} agentId={selected.id} canEdit={canEdit} />
                     {canEdit ? (

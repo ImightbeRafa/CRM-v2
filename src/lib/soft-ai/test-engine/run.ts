@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
 import { isMissingRelation } from '@/lib/db-missing-relation'
-import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
+import { agentHasInventoryMap, loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import { canSharePaymentFacts, parseBrandFactsSafe } from '@/lib/soft-ai/brand-facts'
 import { runAgentTestTurn } from '@/lib/soft-ai/agent-turn'
 import { resolveSoftAiModel, softAiResponsesCreate, parseSoftAiResponseText, readSoftAiUsage } from '@/lib/soft-ai/llm/client'
@@ -78,6 +78,14 @@ export class TestRunBusyElsewhereError extends Error {
   constructor() {
     super('TEST_RUN_BUSY_ELSEWHERE')
     this.name = 'TestRunBusyElsewhereError'
+  }
+}
+
+/** An agent that searches products but has none chosen cannot sell: no green tests for it (they had no price cases). */
+export class TestRunNoProductsError extends Error {
+  constructor() {
+    super('TEST_RUN_NO_PRODUCTS')
+    this.name = 'TestRunNoProductsError'
   }
 }
 
@@ -177,9 +185,12 @@ export async function startAgentTestRun(input: {
   if (!(await isTableReady(TABLE))) throw new TestRunNotReadyError()
   const agent = await prisma.chatAgent.findFirst({
     where: { id: input.agentId, tenantId: input.tenantId },
-    select: { id: true, name: true, systemInstructions: true, brandFacts: true, model: true, version: true },
+    select: { id: true, name: true, systemInstructions: true, brandFacts: true, model: true, version: true, enabledTools: true },
   })
   if (!agent) throw new Error('AGENT_NOT_FOUND')
+  if (agent.enabledTools.includes('search_inventory') && (await agentHasInventoryMap(input.tenantId, agent.id)) !== true) {
+    throw new TestRunNoProductsError()
+  }
   // Daily limit per business (runs and spend, grader calls included): test runs use Betsy's AI keys.
   const today = await prisma.$queryRaw<Array<{ runs: bigint; spent: bigint | null }>>`
     SELECT COUNT(*)::bigint AS "runs", COALESCE(SUM("spentMicros"), 0)::bigint AS "spent"

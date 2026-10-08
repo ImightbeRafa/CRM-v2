@@ -528,3 +528,39 @@ describe('Final re-verify note: PDF pre-scan bypasses', () => {
     assert.match(read('src/lib/agent-studio/file-parse.ts'), /rss - baseRss > 512 \* 1024 \* 1024/)
   })
 })
+
+describe('Forge 2026-10-08: products by group, typo-tolerant match, no-products gate', () => {
+  const ARNESS = ['M/L', 'XL', '2XL', '3XL', '4XL'].map((z, k) => ({
+    id: `a${k}`,
+    name: `ARNESS FORGE  ${z}`,
+    sku: `ARN-${k}`,
+    category: 'ARNESS',
+    sellingPrice: 14900,
+    currentStock: 5,
+  }))
+  const OTHER = [{ id: 'p1', name: 'Kit Avión Prototipo', sku: 'PRO-1', category: 'KITS', sellingPrice: 9900, currentStock: 3 }]
+  it('"Arnés Forge" (no size) suggests the whole ARNESS group; with a size it picks that size', () => {
+    const m = matchProductsAgainst(
+      [
+        { nameAsSeen: 'Arnés Forge', variantText: null, groupText: null, priceSeen: 14900 },
+        { nameAsSeen: 'Arnés Forge', variantText: 'talla XL', groupText: null, priceSeen: 14900 },
+        { nameAsSeen: 'Kit Avion Prototipo', variantText: null, groupText: null, priceSeen: null },
+      ],
+      [...ARNESS, ...OTHER],
+    )
+    assert.equal(m[0].itemId, null)
+    assert.deepEqual(m[0].group, { category: 'ARNESS', itemIds: ARNESS.map((a) => a.id) })
+    assert.equal(m[1].itemId, 'a1')
+    assert.equal(m[2].itemId, 'p1')
+  })
+  it('product picker groups by category; test run refuses an agent that cannot sell', () => {
+    assert.match(read('src/app/api/chat/agents/[id]/inventory/route.ts'), /searchParams\.get\('catalog'\) === '1'/)
+    assert.match(read('src/app/config/agentes/AgentInventoryCard.tsx'), /Agregar todo/)
+    const run = read('src/lib/soft-ai/test-engine/run.ts')
+    assert.match(run, /agent\.enabledTools\.includes\('search_inventory'\) && \(await agentHasInventoryMap\(input\.tenantId, agent\.id\)\) !== true/)
+    assert.match(read('src/app/api/chat/agents/[id]/activation/route.ts'), /TestRunNoProductsError[\s\S]*NO_PRODUCTS/)
+    // The picker sits on Resumen (step ②), not hidden under Seguridad.
+    const page = read('src/app/config/agentes/page.tsx')
+    assert.ok(page.indexOf('<AgentInventoryCard') < page.indexOf("tab !== 'personalidad'"))
+  })
+})

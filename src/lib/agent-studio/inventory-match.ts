@@ -43,7 +43,8 @@ export function matchProductsAgainst(
     let best: { c: InventoryCandidate; score: number } | null = null
     for (const c of candidates) {
       let score = 0
-      if (c.sku && full && normalizeForMatch(full).split(' ').includes(normalizeForMatch(c.sku))) score = 1
+      // SKU as a whole-word sequence ("AF-XL" normalizes to "af xl").
+      if (c.sku && full && normalizeForMatch(c.sku) && ` ${normalizeForMatch(full)} `.includes(` ${normalizeForMatch(c.sku)} `)) score = 1
       else if (normalizeForMatch(c.name) === normalizeForMatch(full)) score = 0.98
       else {
         score = jaccard(want, tokens(c.name))

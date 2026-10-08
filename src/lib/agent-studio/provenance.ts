@@ -55,7 +55,8 @@ export function verifyProfile(profile: ExtractedProfile, sources: Map<string, st
 export function stripInstructionLike(text: string): string {
   return text
     .split('\n')
-    .filter((line) => !/\b(ignor[aá]|olvid[aá]|ignore|disregard)\b.{0,40}\b(instrucciones|reglas|instructions|rules|prompt)\b/i.test(line))
-    .filter((line) => !/\b(system prompt|eres un|you are an? (ai|assistant))\b/i.test(line))
+    // Unicode-aware word edges (JS \b is ASCII-only and misses "Ignorá", "olvidá").
+    .filter((line) => !/(^|[^\p{L}])(ignor|olvid|disregard)\p{L}*[^\p{L}].{0,40}(instrucciones|reglas|instructions|rules|prompt)/iu.test(line))
+    .filter((line) => !/(system prompt|(^|[^\p{L}])eres un[^\p{L}]|you are an? (ai|assistant))/iu.test(line))
     .join('\n')
 }

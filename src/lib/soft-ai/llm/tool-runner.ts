@@ -185,6 +185,30 @@ function findSandboxOrder(hint: string | null | undefined): SandboxOrder | null 
   )
 }
 
+const ORDER_LOOKUP_SELECT = {
+  id: true,
+  orderId: true,
+  status: true,
+  clientId: true,
+  customerName: true,
+  phone: true,
+} as const
+
+/**
+ * Orders a human linked to THIS conversation (Chats › Vincular pedido sets ChatMessage.orderId = Order.id).
+ * The link itself is the ownership proof: staff already confirmed it (phone mismatch needs an explicit confirm).
+ */
+async function linkedOrderIds(ctx: SoftAiToolRunContext): Promise<Set<string>> {
+  if (!ctx.conversationId) return new Set()
+  const rows = await prisma.chatMessage.findMany({
+    where: { tenantId: ctx.tenantId, conversationId: ctx.conversationId, orderId: { not: null } },
+    select: { orderId: true },
+    orderBy: { sentAt: 'desc' },
+    take: 20,
+  })
+  return new Set(rows.map((r) => r.orderId).filter((id): id is string => Boolean(id)))
+}
+
 async function findOwnedOrder(
   ctx: SoftAiToolRunContext,
   orderNumberHint?: string | null,
@@ -192,6 +216,20 @@ async function findOwnedOrder(
   const hint = (orderNumberHint || '').trim()
   const whereBase = { tenantId: ctx.tenantId }
   const candidates = []
+  const linked = await linkedOrderIds(ctx)
+  if (linked.size > 0) {
+    const byLink = await prisma.order.findMany({
+      where: { ...whereBase, id: { in: [...linked] } },
+      select: ORDER_LOOKUP_SELECT,
+      orderBy: { timestamp: 'desc' },
+      take: 5,
+    })
+    const needle = hint.toLowerCase()
+    const matched = needle
+      ? byLink.find((o) => o.orderId.toLowerCase() === needle || o.orderId.toLowerCase().includes(needle))
+      : byLink[0]
+    if (matched) return matched
+  }
   if (ctx.clientId) {
     const byClient = await prisma.order.findMany({
       where: { ...whereBase, clientId: ctx.clientId },
@@ -232,9 +270,37 @@ async function findOwnedOrder(
     candidates.push(...byHint)
   }
   for (const order of candidates) {
-    if (await ownershipOk(ctx, order)) return order
+    if (linked.has(order.id) || (await ownershipOk(ctx, order))) return order
   }
   return null
+}
+
+/** Live Correos tracking (best effort, capped so a slow SOAP call never stalls the turn). */
+async function correosTrackingEvents(
+  guiaNumber: string,
+): Promise<{ status: string | null; lastEvents: Array<{ when: string; event: string; place: string }> } | null> {
+  if (!/^[A-Za-z0-9-]{4,30}$/.test(guiaNumber)) return null
+  try {
+    const { resolveCorreosWSCredentials } = await import('@/lib/correos/credentials')
+    const { CorreosWebService } = await import('@/lib/correos/correosWebService')
+    const { credentials } = await resolveCorreosWSCredentials()
+    const ws = new CorreosWebService(credentials)
+    const res = await Promise.race([
+      ws.trackShipment(guiaNumber),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+    ])
+    if (!res || !res.success) return null
+    return {
+      status: res.header?.Estado ? String(res.header.Estado) : null,
+      lastEvents: (res.events || []).slice(-3).map((e) => ({
+        when: String(e.FechaHora || ''),
+        event: String(e.Evento || ''),
+        place: String(e.Unidad || ''),
+      })),
+    }
+  } catch {
+    return null
+  }
 }
 
 async function runGetOrderStatus(
@@ -323,22 +389,12 @@ async function runGetShippingStatus(
       escalateReason: 'ownership',
     }
   }
-  if (order) {
-    const owned = await ownershipOk(ctx, order)
-    if (!owned) {
-      return {
-        ok: false,
-        name: 'get_shipping_status',
-        result: { error: 'not_shareable', message: 'no puedo compartir eso' },
-        escalate: true,
-        escalateReason: 'ownership',
-      }
-    }
-  }
+  // findOwnedOrder only returns orders that passed ownership (phone/client/chat link).
+  // ShippingGuia.orderId stores the order NUMBER (Order.orderId), not Order.id (see guia-service writers).
   const row = await prisma.shippingGuia.findFirst({
     where: {
       tenantId: ctx.tenantId,
-      ...(order ? { orderId: order.id } : {}),
+      ...(order ? { orderId: order.orderId } : {}),
       ...(guiaNumber
         ? { OR: [{ guiaNumber }, { trackingNumber: guiaNumber }] }
         : {}),
@@ -374,11 +430,12 @@ async function runGetShippingStatus(
   if (!order) {
     const guiaOrder = row.orderId
       ? await prisma.order.findFirst({
-          where: { id: row.orderId, tenantId: ctx.tenantId },
-          select: { clientId: true, phone: true },
+          where: { orderId: row.orderId, tenantId: ctx.tenantId },
+          select: { id: true, clientId: true, phone: true },
         })
       : null
-    if (!guiaOrder || !(await ownershipOk(ctx, guiaOrder))) {
+    const linked = guiaOrder ? await linkedOrderIds(ctx) : new Set<string>()
+    if (!guiaOrder || !(linked.has(guiaOrder.id) || (await ownershipOk(ctx, guiaOrder)))) {
       return {
         ok: false,
         name: 'get_shipping_status',
@@ -388,14 +445,18 @@ async function runGetShippingStatus(
       }
     }
   }
+  const guia = String(row.guiaNumber || row.trackingNumber || '')
+  const carrier = row.carrier ? String(row.carrier) : 'correos'
+  const tracking = guia && /correos/i.test(carrier) ? await correosTrackingEvents(guia) : null
   return {
     ok: true,
     name: 'get_shipping_status',
     result: {
-      guiaNumber: String(row.guiaNumber || row.trackingNumber || ''),
-      status: row.status ? String(row.status) : null,
-      carrier: row.carrier ? String(row.carrier) : 'correos',
+      guiaNumber: guia,
+      status: tracking?.status || (row.status ? String(row.status) : null),
+      carrier,
       orderId: row.orderId,
+      lastEvents: tracking?.lastEvents ?? [],
     },
   }
 }

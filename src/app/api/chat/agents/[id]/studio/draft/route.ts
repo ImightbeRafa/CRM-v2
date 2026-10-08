@@ -32,7 +32,12 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     // What the agent uses today, shown next to each proposed payment number (owner compares before ticking).
     const agentRow = await prisma.chatAgent.findFirst({ where: { id: g.ctx.agent.id, tenantId: g.ctx.tenantId }, select: { brandFacts: true } })
     const facts = parseBrandFactsSafe(agentRow?.brandFacts)
-    const current = { sinpe: facts.payment?.sinpe?.number ?? null, iban: facts.payment?.transfer?.iban ?? null, website: facts.website ?? null }
+    const current = {
+      sinpe: facts.payment?.sinpe?.number ?? null,
+      iban: facts.payment?.transfer?.iban ?? null,
+      website: facts.website ?? null,
+      share: facts.payment?.shareWithCustomers === true,
+    }
     return NextResponse.json(
       {
         success: true,

@@ -34,7 +34,7 @@ export function StudioFlow({
   const [ig, setIg] = useState<Array<{ id: string; label: string }>>([])
   const [draft, setDraft] = useState<Draft | null>(null)
   const [inventory, setInventory] = useState<InventoryOption[]>([])
-  const [current, setCurrent] = useState<{ sinpe: string | null; iban: string | null; website: string | null } | null>(null)
+  const [current, setCurrent] = useState<{ sinpe: string | null; iban: string | null; website: string | null; share?: boolean } | null>(null)
   const [notReady, setNotReady] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -58,7 +58,7 @@ export function StudioFlow({
   const loadDraft = useCallback(async () => {
     const res = await fetch(`${base}/draft`, { cache: 'no-store' }).catch(() => null)
     if (!res?.ok) return
-    const json = (await res.json()) as { draft: Draft | null; inventory: InventoryOption[]; current?: { sinpe: string | null; iban: string | null; website: string | null } }
+    const json = (await res.json()) as { draft: Draft | null; inventory: InventoryOption[]; current?: { sinpe: string | null; iban: string | null; website: string | null; share?: boolean } }
     setDraft(json.draft)
     setInventory(json.inventory)
     setCurrent(json.current ?? null)

@@ -6,7 +6,7 @@
  */
 import 'server-only'
 
-import { inflateRawSync } from 'node:zlib'
+import { constants as zlibConstants, inflateRawSync, inflateSync } from 'node:zlib'
 import { Worker } from 'node:worker_threads'
 import sharp from 'sharp'
 import { decodeEntities } from '@/lib/agent-studio/html-text'
@@ -160,8 +160,59 @@ if (typeof Promise.withResolvers !== 'function') {
 })().catch(() => parentPort.postMessage({ ok: false, code: 'pdf_unreadable' }));
 `
 
+const PDF_STREAM_BUDGET = 64 * 1024 * 1024
+
+/**
+ * Pre-scan BEFORE pdf.js (the worker's heap limit does not cover pdf.js's decompressed Uint8Arrays): every
+ * compressed content stream is inflated here with a hard budget. Encrypted PDFs (streams we cannot pre-check),
+ * LZW, and doubly-compressed streams are refused. Images are skipped (text extraction never decodes them).
+ */
+export function pdfStreamsWithinBudget(buf: Buffer, budget = PDF_STREAM_BUDGET): boolean {
+  const latin = buf.toString('latin1')
+  if (latin.includes('/Encrypt')) throw new UploadParseError('pdf_protected')
+  if (latin.includes('/LZWDecode')) throw new UploadParseError('pdf_unsupported')
+  let total = 0
+  let i = 0
+  for (;;) {
+    const s = latin.indexOf('stream', i)
+    if (s < 0) break
+    if (s >= 3 && latin.startsWith('end', s - 3)) {
+      i = s + 6
+      continue
+    }
+    let start = s + 6
+    if (latin[start] === '\r') start += 1
+    if (latin[start] === '\n') start += 1
+    const end = latin.indexOf('endstream', start)
+    if (end < 0) break
+    const window = latin.slice(Math.max(0, s - 4000), s)
+    const dictStart = window.lastIndexOf('<<')
+    const dict = dictStart >= 0 ? window.slice(dictStart) : ''
+    i = end + 9
+    if (/\/Subtype\s*\/Image/.test(dict)) continue
+    const flates = (dict.match(/\/FlateDecode|\/Fl\b/g) || []).length
+    if (flates > 1) throw new UploadParseError('pdf_unsupported')
+    if (flates === 1) {
+      try {
+        const out = inflateSync(buf.subarray(start, end), {
+          maxOutputLength: budget - total + 1,
+          finishFlush: zlibConstants.Z_SYNC_FLUSH,
+        })
+        total += out.length
+      } catch (error) {
+        if ((error as { code?: string }).code === 'ERR_BUFFER_TOO_LARGE' || error instanceof RangeError) return false
+        // Corrupt stream: pdf.js fails on it too; nothing big was produced here.
+      }
+    } else {
+      total += end - start
+    }
+    if (total > budget) return false
+  }
+  return true
+}
+
 let activePdfWorkers = 0
-const MAX_PDF_WORKERS = 2
+const MAX_PDF_WORKERS = 1
 
 function parsePdfInWorker(bytes: Buffer): Promise<{ text: string; pages: number }> {
   if (activePdfWorkers >= MAX_PDF_WORKERS) return Promise.reject(new UploadParseError('busy'))
@@ -179,10 +230,16 @@ function parsePdfInWorker(bytes: Buffer): Promise<{ text: string; pages: number 
       if (settled) return
       settled = true
       clearTimeout(timer)
+      clearInterval(watch)
       void worker.terminate()
       fn()
     }
     const timer = setTimeout(() => done(() => reject(new UploadParseError('timeout'))), PARSE_TIMEOUT_MS)
+    // Backstop: memory outside the worker heap (typed arrays) is watched from here; past +1 GB the worker dies.
+    const baseRss = process.memoryUsage().rss
+    const watch = setInterval(() => {
+      if (process.memoryUsage().rss - baseRss > 1024 * 1024 * 1024) done(() => reject(new UploadParseError('pdf_too_big')))
+    }, 100)
     worker.once('message', (m: { ok: boolean; text?: string; pages?: number; code?: string }) =>
       done(() => (m.ok ? resolve({ text: m.text || '', pages: m.pages || 0 }) : reject(new UploadParseError(m.code || 'pdf_unreadable')))),
     )
@@ -199,6 +256,7 @@ export async function parseUpload(bytes: Buffer): Promise<ParsedUpload> {
   const kind = sniffUploadKind(bytes)
   switch (kind) {
     case 'pdf': {
+      if (!pdfStreamsWithinBudget(bytes)) throw new UploadParseError('pdf_too_big')
       const { text, pages } = await parsePdfInWorker(bytes)
       return { kind: 'pdf', mime: 'application/pdf', text: text.slice(0, MAX_TEXT), pageCount: pages }
     }

@@ -39,7 +39,8 @@ const BLOCK_END = new Set(['p', 'div', 'section', 'article', 'li', 'h1', 'h2', '
  */
 export function htmlToText(html: string, baseUrl: string): HtmlExtract {
   const src = html.slice(0, MAX_HTML)
-  const lower = src.toLowerCase()
+  // ASCII-only lowercase: same length as src (toLowerCase can lengthen e.g. 'İ' and shift every index).
+  const lower = src.replace(/[A-Z]+/g, (m) => m.toLowerCase())
   let base: URL | null = null
   try {
     base = new URL(baseUrl)

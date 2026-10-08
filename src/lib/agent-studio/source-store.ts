@@ -8,7 +8,7 @@ import 'server-only'
 import { createHash, randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
-import { chatStoragePut, chatStorageRemove, chatStorageUsage, isChatStorageConfigured } from '@/lib/chat-storage'
+import { chatStoragePut, chatStorageRemove, isChatStorageConfigured } from '@/lib/chat-storage'
 
 export class StudioNotReadyError extends Error {
   constructor() {
@@ -111,12 +111,19 @@ export async function assertCanAddUpload(tenantId: string, agentId: string, opts
     const rows = await prisma.$queryRaw<Array<{ n: bigint }>>`
       SELECT COUNT(*)::bigint AS "n" FROM "ChatAgentSource"
        WHERE "tenantId" = ${tenantId} AND "kind" = 'image' AND "createdAt" >= date_trunc('day', NOW() AT TIME ZONE 'UTC')`
-    if (Number(rows[0]?.n ?? 0) >= PHOTOS_PER_TENANT_PER_DAY) throw new StudioQuotaError('photos')
+    // Paid photo descriptions actually made today (re-uploads of a removed/failed photo reuse their row, so rows
+    // alone undercount). The meter table may be missing on older DBs: then rows are the fallback.
+    const calls = await prisma.$queryRaw<Array<{ n: bigint }>>`
+      SELECT COUNT(*)::bigint AS "n" FROM "AiUsageEvent"
+       WHERE "tenantId" = ${tenantId} AND "feature" = 'vision' AND "createdAt" >= date_trunc('day', NOW() AT TIME ZONE 'UTC')`.catch(() => [{ n: BigInt(0) }])
+    const made = Math.max(Number(rows[0]?.n ?? 0), Number(calls[0]?.n ?? 0))
+    if (made >= PHOTOS_PER_TENANT_PER_DAY) throw new StudioQuotaError('photos')
   }
-  if (isChatStorageConfigured()) {
-    const usage = await chatStorageUsage(`agent-sources/${tenantId}`).catch(() => null)
-    if (usage && usage.bytes + opts.bytes > STORAGE_QUOTA_BYTES) throw new StudioQuotaError('storage')
-  }
+  // Files live one folder deeper (agent-sources/<tenant>/<agent>/…), so the DB is the source of truth for usage.
+  const used = await prisma.$queryRaw<Array<{ bytes: bigint | null }>>`
+    SELECT COALESCE(SUM("sizeBytes"), 0)::bigint AS "bytes" FROM "ChatAgentSource"
+     WHERE "tenantId" = ${tenantId} AND "storagePath" IS NOT NULL`
+  if (Number(used[0]?.bytes ?? 0) + opts.bytes > STORAGE_QUOTA_BYTES) throw new StudioQuotaError('storage')
 }
 
 async function countSources(tenantId: string, agentId: string): Promise<number> {

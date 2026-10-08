@@ -61,7 +61,7 @@ export function ReviewStep({
   onApplied,
 }: {
   agentId: string
-  current?: { sinpe: string | null; iban: string | null; website: string | null } | null
+  current?: { sinpe: string | null; iban: string | null; website: string | null; share?: boolean } | null
   draft: Draft
   inventory: InventoryOption[]
   canEdit: boolean
@@ -75,12 +75,19 @@ export function ReviewStep({
   const src = (id: string | null) => (id ? labelOf.get(id) ?? null : null)
 
   const [brand, setBrand] = useState(() =>
-    Object.fromEntries(BRAND_FIELDS.map((f) => [f.key, { keep: f.apply && Boolean(x.brand[f.key].value), value: x.brand[f.key].value || '' }])) as Record<string, { keep: boolean; value: string }>,
+    Object.fromEntries(
+      BRAND_FIELDS.map((f) => [
+        f.key,
+        // Store details with a phone / link start unticked too (could be planted text on the page).
+        { keep: f.apply && Boolean(x.brand[f.key].value) && (f.key === 'website' || !hasContactLike(x.brand[f.key].value)), value: x.brand[f.key].value || '' },
+      ]),
+    ) as Record<string, { keep: boolean; value: string }>,
   )
   // Payment accounts are NEVER pre-ticked and sharing starts off: the owner confirms each number themselves.
   const [accounts, setAccounts] = useState<Array<Keep<Extracted['paymentAccounts'][number]>>>(() => x.paymentAccounts.map((a) => ({ ...a, keep: false })))
-  const [share, setShare] = useState(false)
-  const [shipping, setShipping] = useState(() => x.shipping.map((s) => ({ ...s, keep: true })))
+  // Starts from what the agent does today (a confirm tick never silently turns sharing off on a live agent).
+  const [share, setShare] = useState(current?.share === true)
+  const [shipping, setShipping] = useState(() => x.shipping.map((s) => ({ ...s, keep: !hasContactLike(`${s.etaText} ${s.coverageText}`) })))
   const [policies, setPolicies] = useState(() => x.policies.map((s) => ({ ...s, keep: !hasContactLike(s.text) })))
   const [faq, setFaq] = useState(() => x.faq.map((s) => ({ ...s, keep: !hasContactLike(`${s.question} ${s.answer}`) })))
   const [replies, setReplies] = useState(() => x.quickReplies.map((s) => ({ ...s, keep: !hasContactLike(s.body) })))
@@ -184,6 +191,8 @@ export function ReviewStep({
             <div className="min-w-0 flex-1 space-y-1">
               <p className="text-[11px] font-medium text-slate-500">{f.label}</p>
               <input className={INPUT} value={brand[f.key].value} disabled={!f.apply} onChange={(e) => setBrand({ ...brand, [f.key]: { ...brand[f.key], value: e.target.value } })} />
+              {f.key === 'website' && current?.website ? <p className="text-[11px] text-slate-600">Ahora el agente usa: {current.website}</p> : null}
+              {f.key !== 'website' ? <ContactWarning show={hasContactLike(brand[f.key].value)} /> : null}
               <ProvenanceChip label={src(x.brand[f.key].sourceId)} snippet={x.brand[f.key].snippet} />
             </div>
           </div>

@@ -25,7 +25,7 @@ export const DRAFTS_PER_TENANT_PER_DAY = 10
 const LEASE_MS = 150_000
 const CALL_TIMEOUT_MS = 90_000
 const MAX_OUTPUT_TOKENS = 12_000
-const APPLY_LEASE_MS = 120_000
+const APPLY_LEASE_MS = 600_000
 const MAX_INPUT_CHARS = 140_000 // ≈ 35–40k tokens across all sources
 
 export class DraftDailyLimitError extends Error {

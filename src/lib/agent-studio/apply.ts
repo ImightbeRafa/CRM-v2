@@ -3,7 +3,8 @@
  * the agent's EXISTING stores through their own admin functions (validation, version bump, audit unchanged):
  *   brand facts (deep merge, only the fields sent) · knowledge (policy / faq, named "<agente> · …", approved + bound)
  *   · guide shortcuts from quick replies · inventory map (UNION with what the agent already sells) · sales rules.
- * Nothing goes live: any change bumps the agent version, so Activar needs a fresh test run.
+ * Any change bumps the agent version. A draft agent must pass Activar's tests before answering; an agent that is
+ * already live uses the applied changes right away (the UI warns the owner before Apply).
  */
 import 'server-only'
 

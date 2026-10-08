@@ -405,7 +405,7 @@ describe('SecureDog 2026-10-08 regressions', () => {
   it('H1 DOCX tag strip is linear; PDF workers are limited per process', async () => {
     const src = read('src/lib/agent-studio/file-parse.ts')
     assert.match(src, /\.replace\(\/<\[\^<>\]\*>\/g, ''\)/)
-    assert.match(src, /MAX_PDF_WORKERS = 2/)
+    assert.match(src, /MAX_PDF_WORKERS = 1/)
     const zip = new JSZip()
     zip.file('word/document.xml', '<'.repeat(2_000_000))
     const bytes = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
@@ -432,7 +432,8 @@ describe('SecureDog 2026-10-08 regressions', () => {
   it('M2 payment accounts are never pre-ticked, sharing starts off, text with contacts starts unticked', () => {
     const ui = read('src/components/aurora/agentes/studio/ReviewStep.tsx')
     assert.match(ui, /x\.paymentAccounts\.map\(\(a\) => \(\{ \.\.\.a, keep: false \}\)\)/)
-    assert.match(ui, /const \[share, setShare\] = useState\(false\)/)
+    // Re-verify: sharing starts from the agent's current setting (never silently switched off on a live agent).
+    assert.match(ui, /const \[share, setShare\] = useState\(current\?\.share === true\)/)
     assert.match(ui, /salesRules: rulesEdited \?/)
     const v = verifyProfile(
       parseExtractedProfile({ brand: { website: { value: 'https://phish.example', sourceId: 's', snippet: 'Forge Costa Rica' } } }),
@@ -452,5 +453,56 @@ describe('SecureDog 2026-10-08 regressions', () => {
   it('M4 storage quota per business; L3 only connected Instagram accounts', () => {
     assert.match(read('src/lib/agent-studio/source-store.ts'), /STORAGE_QUOTA_BYTES = 300 \* 1024 \* 1024/)
     assert.match(read('src/lib/agent-studio/instagram-source.ts'), /where: \{ id: socialAccountId, tenantId, isActive: true \}/)
+  })
+})
+
+describe('Re-verify 2026-10-08 regressions', () => {
+  it('PDF deflate bomb is refused by the pre-scan before pdf.js (no GBs in memory)', async () => {
+    const { deflateSync } = await import('node:zlib')
+    const bomb = deflateSync(Buffer.alloc(200 * 1024 * 1024, 0x20))
+    const head = Buffer.from(
+      '%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n' +
+        '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R >>\nendobj\n' +
+        `4 0 obj\n<< /Length ${bomb.length} /Filter /FlateDecode >>\nstream\n`,
+      'latin1',
+    )
+    const tail = Buffer.from('\nendstream\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF', 'latin1')
+    const pdf = Buffer.concat([head, bomb, tail])
+    assert.ok(pdf.length < 1_000_000)
+    const rss0 = process.memoryUsage().rss
+    const t0 = Date.now()
+    await assert.rejects(parseUpload(pdf), /pdf_too_big/)
+    assert.ok(Date.now() - t0 < 5_000)
+    assert.ok(process.memoryUsage().rss - rss0 < 300 * 1024 * 1024)
+    await assert.rejects(parseUpload(Buffer.from('%PDF-1.4\n1 0 obj\n<< /Encrypt 2 0 R >>\nendobj\n%%EOF', 'latin1')), /pdf_protected/)
+    assert.match(read('src/lib/agent-studio/file-parse.ts'), /MAX_PDF_WORKERS = 1/)
+  })
+  it('DOCX tag strip is timed on a STORED (uncompressed) hostile document', async () => {
+    const zip = new JSZip()
+    zip.file('word/document.xml', '<'.repeat(2_000_000))
+    const bytes = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' })
+    const t0 = Date.now()
+    const parsed = await parseUpload(bytes)
+    assert.equal(parsed.kind, 'docx')
+    assert.ok(Date.now() - t0 < 1_500, `took ${Date.now() - t0} ms`)
+  })
+  it('storage quota is summed from the DB (files live one folder deeper); photo cap counts paid vision calls', () => {
+    const src = read('src/lib/agent-studio/source-store.ts')
+    assert.match(src, /COALESCE\(SUM\("sizeBytes"\), 0\)::bigint AS "bytes" FROM "ChatAgentSource"/)
+    assert.match(src, /"feature" = 'vision'/)
+    assert.doesNotMatch(src, /chatStorageUsage\(/)
+  })
+  it('an invented SKU (not in the source) is dropped before matching', () => {
+    const v = verifyProfile(
+      parseExtractedProfile({ products: [{ nameAsSeen: 'Arnés Forge', skuSeen: 'AF-ZZ', sourceId: 's', snippet: 'Arnés Forge talla M' }] }),
+      new Map([['s', 'Arnés Forge talla M ₡18 900']]),
+    )
+    assert.equal(v.products[0].skuSeen, null)
+  })
+  it('payment sharing starts from the agent setting; uppercase-shifting chars do not break parsing', () => {
+    assert.match(read('src/components/aurora/agentes/studio/ReviewStep.tsx'), /useState\(current\?\.share === true\)/)
+    const out = htmlToText('<p>İİİİ Envío</p><script>x()</script><p>fin</p>', 'https://forge.cr/')
+    assert.match(out.text, /Envío/)
+    assert.doesNotMatch(out.text, /x\(\)/)
   })
 })

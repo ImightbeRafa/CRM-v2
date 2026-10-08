@@ -65,7 +65,10 @@ export function verifyProfile(profile: ExtractedProfile, sources: Map<string, st
     shipping: profile.shipping.filter(ok),
     policies: profile.policies.filter((p) => p.text && ok(p)),
     faq: profile.faq.filter((p) => p.question && p.answer && ok(p)),
-    products: profile.products.filter((p) => p.nameAsSeen && ok(p)),
+    // A SKU only counts if it is really written in the cited source (an invented SKU would be a confident wrong match).
+    products: profile.products
+      .filter((p) => p.nameAsSeen && ok(p))
+      .map((p) => (p.skuSeen && !verifySnippet(p.sourceId ? sources.get(p.sourceId) : undefined, p.skuSeen) ? { ...p, skuSeen: null } : p)),
   }
 }
 

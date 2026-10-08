@@ -122,8 +122,9 @@ describe('hasAiFullUnlock matrix (AT-P-4)', () => {
     const legacy = config({
       aiFullUnlock: { [ACCOUNT]: record({ agentId: undefined, model: undefined, agentVersion: undefined }) },
     })
-    assert.equal(hasAiFullUnlock(legacy, ACCOUNT, CTX), true)
-    assert.equal(hasAiFullUnlock(legacy, ACCOUNT), true)
+    // SecureDog F1: Activar always stores agent + model; a record missing either never unlocks.
+    assert.equal(hasAiFullUnlock(legacy, ACCOUNT, CTX), false)
+    assert.equal(hasAiFullUnlock(legacy, ACCOUNT), false)
 
     const ok = config({ aiFullUnlock: { [ACCOUNT]: record() } })
     assert.equal(hasAiFullUnlock(ok, ACCOUNT, CTX), true)

@@ -84,6 +84,8 @@ describe('soft-ai aiFullUnlock (1.15)', () => {
           approvedBy: 'cos',
           fixtureSetHash: 'abcdef0123456789abcdef01',
           passRate: 0.95,
+          agentId: 'agent-1',
+          model: 'grok-4.7',
         },
       },
     })

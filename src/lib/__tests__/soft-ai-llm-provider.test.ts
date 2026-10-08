@@ -189,8 +189,10 @@ describe('unlock records and the OpenAI model', () => {
         },
       },
     }
+    // SecureDog F1: Activar always stores the model; a record without one never unlocks (any provider).
     const grok = aiFullUnlockStatus(config, 'acc', { agentId: 'a1', agentVersion: 1, model: 'grok-4.7' })
-    assert.equal(grok.unlocked, true)
+    assert.equal(grok.unlocked, false)
+    assert.equal(grok.reason, 'model')
     const luna = aiFullUnlockStatus(config, 'acc', { agentId: 'a1', agentVersion: 1, model: 'gpt-6-luna' })
     assert.equal(luna.unlocked, false)
     assert.equal(luna.reason, 'model')

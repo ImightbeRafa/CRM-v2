@@ -4,6 +4,7 @@ import { chatSendRateLimit, createIdentifierRateLimit } from '@/lib/rate-limit'
 import { isTenantFeatureNotDisabled } from '@/lib/feature-flags'
 import { CHAT_OUTBOUND_MEDIA_FLAG } from '@/lib/chat-outbound-media'
 import { sendGuiaToChat } from '@/lib/shipping/send-guia-to-chat'
+import { isSameOriginRequest } from '@/lib/same-origin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -27,6 +28,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_sales')
     if (!auth.ok) return auth.response
+    if (!isSameOriginRequest(request)) return jsonError('Origen no permitido.', 403)
     const { tenantId, userId } = auth
 
     if (!(await isTenantFeatureNotDisabled(tenantId, CHAT_OUTBOUND_MEDIA_FLAG))) {

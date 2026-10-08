@@ -33,7 +33,9 @@ const PINNED: Record<string, string> = {
   "src/lib/bot/xai-responses.ts": "4650f7967d16d615"
 }
 
-const ALLOWED_LINE = /@\/lib\/ai-usage\/|recordAiUsage\(|withAiUsageContext\(/
+// Whole-line shapes only: an approved import, a single-line recordAiUsage({...}) call, or the processor re-registration.
+const ALLOWED_LINE =
+  /^(import \{[^}]+\} from '@\/lib\/ai-usage\/(record|rate-card|context)';?|\s*recordAiUsage\(\{[^;]*\}\);?|registerBotInboxProcessor\('(telegram|whatsapp)', \(payload, operation\) => withAiUsageContext\(\{ tenantId: operation\.tenantId, feature: 'staff_bot' \}, \(\) => processQueued(Telegram|WhatsApp)Payload\(payload, operation\)\)\);)$/
 
 function walk(dir: string): string[] {
   const out: string[] = []

@@ -27,8 +27,21 @@ async function ownedAgent(tenantId: string, id: string) {
   return prisma.chatAgent.findFirst({ where: { id, tenantId }, select: { id: true, name: true } })
 }
 
-/** Distinct stamps already used on this business's orders (last 180 days), so the owner picks instead of typing. */
-async function knownStamps(tenantId: string) {
+type Stamps = { salesChannels: string[]; funnels: string[]; sources: string[] }
+const stampCache = new Map<string, { at: number; value: Stamps }>()
+const STAMP_CACHE_MS = 10 * 60_000
+
+/** Distinct stamps already used on this business's orders (last 180 days), cached 10 min per business. */
+async function knownStamps(tenantId: string): Promise<Stamps> {
+  const hit = stampCache.get(tenantId)
+  if (hit && Date.now() - hit.at < STAMP_CACHE_MS) return hit.value
+  const value = await loadKnownStamps(tenantId)
+  if (stampCache.size > 500) stampCache.clear()
+  stampCache.set(tenantId, { at: Date.now(), value })
+  return value
+}
+
+async function loadKnownStamps(tenantId: string): Promise<Stamps> {
   const rows = await prisma.$queryRaw<Array<{ kind: string; value: string; n: bigint }>>`
     SELECT kind, value, COUNT(*)::bigint AS n FROM (
       SELECT 'salesChannel' AS kind, NULLIF(TRIM("salesChannel"), '') AS value FROM "Order"
@@ -97,7 +110,14 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       patch.dailyTokenCap = typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
     }
     if ('orderOwnership' in body) patch.orderOwnership = body.orderOwnership as AgentSettingsPatch['orderOwnership']
-    if ('orderDefaults' in body) patch.orderDefaults = body.orderDefaults as AgentSettingsPatch['orderDefaults']
+    if ('orderDefaults' in body) {
+      patch.orderDefaults = body.orderDefaults as AgentSettingsPatch['orderDefaults']
+      const methodId = (body.orderDefaults as { shippingMethodId?: unknown } | null)?.shippingMethodId
+      if (typeof methodId === 'string' && methodId.trim()) {
+        const method = await prisma.shippingMethod.findFirst({ where: { id: methodId, tenantId: auth.tenantId, active: true }, select: { id: true } })
+        if (!method) return NextResponse.json({ success: false, error: 'Ese método de envío no es de este negocio.' }, { status: 400 })
+      }
+    }
     if ('servesUnboundChannels' in body) patch.servesUnboundChannels = body.servesUnboundChannels === true
     const saved = await saveAgentSettings(auth.tenantId, agent.id, patch, auth.userId)
     await logAuditEvent({

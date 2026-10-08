@@ -2123,3 +2123,9 @@ Plan: `docs/plans/betsy-agent-studio-sales-flow-2026-10-08.md` (v4). Off `claudi
   guard; stricter "never confirms payment" rule; v1 Instagram ids are never phones; UI: no "Sugerir", Instagram
   channels can be tested and activated. Not verifiable locally: a real grader call (local XAI key invalid) — first
   run after deploy proves it.
+- SecureDog F1 (verdict at 890e942: no Critical/High open; the High "pre-F1 unlock records valid again" was fixed in
+  ffd6379) — fixed now: per-business daily test-run limit (20 runs / US$3 incl. grader) + per-business rate limit;
+  Correos tracking cached 10 min; known stamps cached 10 min; default shipping method must belong to the business;
+  Desactivar refuses another agent's channel (409, no audit); send-guia same-origin check; unlock needs agent +
+  model; staff-bot boundary test only ignores whole approved lines. Forward notes for F6/F7: link provenance before
+  any auto-link, automation must use isOrderOwned and never confirm:true; new tables need explicit tenant erase.

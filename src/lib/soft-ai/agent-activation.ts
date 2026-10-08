@@ -33,6 +33,7 @@ export type ActivationRefusalCode =
   | 'TESTS_NOT_PASSED'
   | 'TESTS_OUTDATED'
   | 'INVENTORY_MAP_REQUIRED'
+  | 'CHANNEL_OWNED_BY_OTHER_AGENT'
 
 export const ACTIVATION_REFUSAL_COPY: Record<ActivationRefusalCode, string> = {
   CHANNEL_NOT_FOUND: 'Ese canal no es de este negocio.',
@@ -46,6 +47,7 @@ export const ACTIVATION_REFUSAL_COPY: Record<ActivationRefusalCode, string> = {
   TESTS_NOT_PASSED: 'Las pruebas no quedaron en verde. Revisá lo que falló, ajustá y volvé a probar.',
   TESTS_OUTDATED: 'Cambiaste el agente (datos, productos o modelo) después de la prueba, o tiene más de 30 días. Volvé a probar.',
   INVENTORY_MAP_REQUIRED: 'Agregá los productos que vende este canal antes de activarlo.',
+  CHANNEL_OWNED_BY_OTHER_AGENT: 'Este canal está activado para otro agente. Desactivalo desde ese agente.',
 }
 
 export class ActivationRefusal extends Error {
@@ -165,8 +167,8 @@ export async function deactivateAgentChannel(input: {
   if (!account) throw new ActivationRefusal('CHANNEL_NOT_FOUND')
   await mutateChatAgentLayerConfig(input.tenantId, (current) => {
     const record = current.aiFullUnlock[account.id]
-    // Only this agent's activation is removed (never another agent's on the same channel).
-    if (record?.agentId && record.agentId !== input.agentId) return current
+    // Only this agent's activation is removed (never another agent's on the same channel) — and say so.
+    if (record?.agentId && record.agentId !== input.agentId) throw new ActivationRefusal('CHANNEL_OWNED_BY_OTHER_AGENT')
     const aiFullUnlock = { ...current.aiFullUnlock }
     delete aiFullUnlock[account.id]
     return {

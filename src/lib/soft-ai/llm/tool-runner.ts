@@ -193,10 +193,22 @@ async function findOwnedOrder(ctx: SoftAiToolRunContext, orderNumberHint?: strin
   return findOwnedOrderShared(ownershipCtx(ctx), orderNumberHint)
 }
 
-/** Live Correos tracking (best effort, capped so a slow SOAP call never stalls the turn). */
-async function correosTrackingEvents(
-  guiaNumber: string,
-): Promise<{ status: string | null; lastEvents: Array<{ when: string; event: string; place: string }> } | null> {
+type TrackingSnapshot = { status: string | null; lastEvents: Array<{ when: string; event: string; place: string }> }
+const trackingCache = new Map<string, { at: number; value: TrackingSnapshot | null }>()
+const TRACKING_CACHE_MS = 10 * 60_000
+
+/** Live Correos tracking, cached 10 min per guía (shared platform account), capped at 5s per call. */
+async function correosTrackingEvents(guiaNumber: string): Promise<TrackingSnapshot | null> {
+  if (!/^[A-Za-z0-9-]{4,30}$/.test(guiaNumber)) return null
+  const hit = trackingCache.get(guiaNumber)
+  if (hit && Date.now() - hit.at < TRACKING_CACHE_MS) return hit.value
+  const value = await correosTrackingEventsUncached(guiaNumber)
+  if (trackingCache.size > 2000) trackingCache.clear()
+  trackingCache.set(guiaNumber, { at: Date.now(), value })
+  return value
+}
+
+async function correosTrackingEventsUncached(guiaNumber: string): Promise<TrackingSnapshot | null> {
   if (!/^[A-Za-z0-9-]{4,30}$/.test(guiaNumber)) return null
   try {
     const { resolveCorreosWSCredentials } = await import('@/lib/correos/credentials')

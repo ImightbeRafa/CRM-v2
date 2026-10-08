@@ -137,7 +137,8 @@ describe('verifier round 2', () => {
   })
   it('Desactivar removes only this agent record and takes the channel off the allowlist', () => {
     const act = read('src/lib/soft-ai/agent-activation.ts')
-    assert.ok(act.includes('if (record?.agentId && record.agentId !== input.agentId) return current'))
+    // another agent's activation is refused (409) instead of silently skipped
+    assert.ok(act.includes("if (record?.agentId && record.agentId !== input.agentId) throw new ActivationRefusal('CHANNEL_OWNED_BY_OTHER_AGENT')"))
     assert.ok(act.includes('accountAllowlist: current.accountAllowlist.filter((id) => id !== account.id)'))
   })
   it('a channel that is not activated never reaches the model; alerts only for a stale activation', () => {
@@ -161,3 +162,24 @@ describe('verifier round 2', () => {
   })
 })
 
+
+describe('SecureDog F1 fixes', () => {
+  it('test runs have a per-business daily limit (runs and spend) and a per-business rate limit', () => {
+    const run = read('src/lib/soft-ai/test-engine/run.ts')
+    assert.ok(run.includes('export const TEST_RUNS_PER_DAY = 20'))
+    assert.ok(run.includes('if (runsToday >= TEST_RUNS_PER_DAY || spentToday >= TEST_RUN_DAILY_SPEND_MICROS) throw new TestRunDailyLimitError()'))
+    assert.ok(read('src/app/api/chat/agents/[id]/activation/route.ts').includes('await testRunTenantLimit(auth.tenantId)'))
+  })
+  it('Correos tracking is cached; known stamps are cached; default shipping method must be this business', () => {
+    assert.ok(read('src/lib/soft-ai/llm/tool-runner.ts').includes('TRACKING_CACHE_MS = 10 * 60_000'))
+    const settings = read('src/app/api/chat/agents/[id]/settings/route.ts')
+    assert.ok(settings.includes('STAMP_CACHE_MS = 10 * 60_000'))
+    assert.ok(settings.includes('where: { id: methodId, tenantId: auth.tenantId, active: true }'))
+  })
+  it('send-guia checks the origin; unlock needs agent + model', () => {
+    assert.ok(read('src/app/api/chat/send-guia/route.ts').includes('if (!isSameOriginRequest(request))'))
+    const cfg = read('src/lib/soft-ai/agent-config.ts')
+    assert.ok(cfg.includes("if (!record.agentId) return { unlocked: false, reason: 'agent'"))
+    assert.ok(cfg.includes("if (!record.model) return { unlocked: false, reason: 'model'"))
+  })
+})

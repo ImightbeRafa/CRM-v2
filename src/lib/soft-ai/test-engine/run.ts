@@ -28,6 +28,9 @@ import {
 
 const TABLE = 'ChatAgentTestRun'
 export const TEST_RUN_COST_CAP_MICROS = 400_000 // US$0.40 per run
+/** Per business per UTC day: at most this many runs and this much spend (runs + their grader calls). */
+export const TEST_RUNS_PER_DAY = 20
+export const TEST_RUN_DAILY_SPEND_MICROS = 3_000_000 // US$3
 const LEASE_MS = 120_000
 const STEP_BUDGET_MS = 25_000
 
@@ -62,6 +65,13 @@ export type TestRunRow = {
   createdBy: string
   createdAt: Date
   finishedAt: Date | null
+}
+
+export class TestRunDailyLimitError extends Error {
+  constructor() {
+    super('TEST_RUN_DAILY_LIMIT')
+    this.name = 'TestRunDailyLimitError'
+  }
 }
 
 export class TestRunBusyElsewhereError extends Error {
@@ -170,6 +180,13 @@ export async function startAgentTestRun(input: {
     select: { id: true, name: true, systemInstructions: true, brandFacts: true, model: true, version: true },
   })
   if (!agent) throw new Error('AGENT_NOT_FOUND')
+  // Daily limit per business (runs and spend, grader calls included): test runs use Betsy's AI keys.
+  const today = await prisma.$queryRaw<Array<{ runs: bigint; spent: bigint | null }>>`
+    SELECT COUNT(*)::bigint AS "runs", COALESCE(SUM("spentMicros"), 0)::bigint AS "spent"
+      FROM "ChatAgentTestRun"
+     WHERE "tenantId" = ${input.tenantId} AND "createdAt" >= date_trunc('day', NOW() AT TIME ZONE 'UTC')`
+  const runsToday = Number(today[0]?.runs ?? 0)
+  const spentToday = Number(today[0]?.spent ?? 0)
   const active = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT * FROM "ChatAgentTestRun"
      WHERE "tenantId" = ${input.tenantId} AND "agentId" = ${agent.id} AND "status" IN ('queued', 'running')
@@ -180,6 +197,7 @@ export async function startAgentTestRun(input: {
     void drainAgentTestRun(run.tenantId, run.id)
     return run
   }
+  if (runsToday >= TEST_RUNS_PER_DAY || spentToday >= TEST_RUN_DAILY_SPEND_MICROS) throw new TestRunDailyLimitError()
   const { cases, suiteHash } = await buildSuite(input.tenantId, {
     id: agent.id,
     name: agent.name,

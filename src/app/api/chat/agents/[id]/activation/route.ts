@@ -22,6 +22,7 @@ import {
   latestTestRun,
   startAgentTestRun,
   TestRunBusyElsewhereError,
+  TestRunDailyLimitError,
   TestRunNotReadyError,
 } from '@/lib/soft-ai/test-engine/run'
 import { aiFullUnlockStatus, parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
@@ -32,6 +33,8 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const activationRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 10, identifier: 'chat-agent-activation' })
+/** Per business (not per person): starting test runs uses Betsy's AI keys. */
+const testRunTenantLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 4, identifier: 'chat-agent-test-run' })
 
 function actorName(auth: { userId: string; session: { user?: { name?: string | null; email?: string | null } } | null }) {
   return auth.session?.user?.name?.trim() || auth.session?.user?.email?.trim() || auth.userId
@@ -127,6 +130,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const actor = { actorUserId: auth.userId, actorName: actorName(auth), actorRole: String(auth.role) }
 
     if (action === 'test') {
+      const tenantRate = await testRunTenantLimit(auth.tenantId)
+      if (!tenantRate.allowed) {
+        return NextResponse.json({ success: false, error: 'Demasiadas pruebas seguidas. Esperá un momento.' }, { status: 429, headers: tenantRate.headers })
+      }
       if (await isPlatformAiPaused()) {
         return NextResponse.json({ success: false, error: 'La IA está pausada en Betsy en este momento.' }, { status: 409 })
       }
@@ -145,6 +152,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   } catch (error) {
     if (error instanceof ActivationRefusal) {
       return NextResponse.json({ success: false, code: error.code, error: ACTIVATION_REFUSAL_COPY[error.code] }, { status: 409 })
+    }
+    if (error instanceof TestRunDailyLimitError) {
+      return NextResponse.json(
+        { success: false, error: 'Se alcanzó el límite de pruebas de hoy para este negocio. Volvé a intentar mañana.' },
+        { status: 429 },
+      )
     }
     if (error instanceof TestRunBusyElsewhereError) {
       return NextResponse.json(

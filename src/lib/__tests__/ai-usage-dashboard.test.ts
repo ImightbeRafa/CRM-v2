@@ -28,7 +28,10 @@ describe('owner AI usage dashboard', () => {
     assert.match(route, /if \(!\(await isSuperAdmin\(auth\.userId\)\)\) \{\s*return \{ denied: NextResponse\.json\(\{ error: 'Not found' \}, \{ status: 404/)
     assert.match(route, /export async function PUT[\s\S]*isSameOriginRequest\(request\)/)
     assert.match(route, /entityType: 'ai_budget'/)
-    assert.match(read('src/app/super-admin/ia/page.tsx'), /if \(!\(await isSuperAdmin\(userId\)\)\) redirect\('\/dashboard'\)/)
+    // 2026-10-08 (Rafael): the dashboard is the IA tab of the owner's Admin Dashboard; the old page only redirects.
+    // Data stays owner-only through the API guard above (anyone else gets 404 inside the tab).
+    assert.match(read('src/app/super-admin/ia/page.tsx'), /redirect\('\/logistics\/admin\?tab=ia'\)/)
+    assert.match(read('src/app/logistics/admin/page.tsx'), /\{tab === 'ia' && \(/)
   })
   it('filters are validated and always bound; every query goes through the analytics guard', () => {
     assert.match(route, /const ID_RE = \/\^\[A-Za-z0-9_-\]\{1,64\}\$\//)

@@ -118,18 +118,18 @@ export function shouldPause(input: { scope: string; autoPause: boolean; spentMic
 async function notifyOwners(dedupeKey: string): Promise<void> {
   const owners = await prisma.user.findMany({ where: { isSuperAdmin: true, active: true }, select: { id: true }, take: 10 })
   for (const o of owners) {
-    const m = await prisma.membership.findFirst({ where: { userId: o.id, isActive: true }, select: { tenantId: true } })
+    const m = await prisma.membership.findFirst({ where: { userId: o.id, isActive: true }, select: { tenantId: true }, orderBy: { joinedAt: "asc" } })
     if (!m) continue
     await notifyUsers({ tenantId: m.tenantId, actorUserId: null, kind: 'ai_budget', userIds: [o.id], dedupeKey: () => dedupeKey }).catch(() => 0)
   }
 }
 
 /** Bell for the paused business's team: the AI stopped, people must answer. */
-async function notifyBusinessTeam(tenantId: string, month: string): Promise<void> {
+async function notifyBusinessTeam(tenantId: string, month: string, stamp: number): Promise<void> {
   const members = await prisma.membership.findMany({ where: { tenantId, isActive: true, user: { active: true } }, select: { userId: true }, take: 50 })
   const userIds = (await filterChatMembers(tenantId, members.map((m) => m.userId))).slice(0, 20)
   if (!userIds.length) return
-  await notifyUsers({ tenantId, actorUserId: null, kind: 'ai_budget', userIds, dedupeKey: () => `ai_budget:paused:${tenantId}:${month}` }).catch(() => 0)
+  await notifyUsers({ tenantId, actorUserId: null, kind: 'ai_budget', userIds, dedupeKey: () => `ai_budget:paused:${tenantId}:${month}:${stamp}` }).catch(() => 0)
 }
 
 export async function checkAiBudgets(now = new Date()): Promise<{ checked: number; alerts: number; paused: number }> {
@@ -164,7 +164,6 @@ export async function checkAiBudgets(now = new Date()): Promise<{ checked: numbe
               reason: `Presupuesto de IA del mes alcanzado (${month})`,
             })
             await prisma.$executeRaw`UPDATE "AiBudget" SET "pausedMonth" = ${month} WHERE "scope" = ${b.scope}`
-            await notifyBusinessTeam(b.scope, month)
             pausedNow = true
             summary.paused += 1
           } catch (error) {
@@ -172,11 +171,24 @@ export async function checkAiBudgets(now = new Date()): Promise<{ checked: numbe
           }
         }
 
+        // The team bell has its own try: a failed bell never makes the owner think the pause failed.
+        if (pausedNow) await notifyBusinessTeam(b.scope, month, b.monthlyUsdMicros).catch(() => undefined)
+
         // 2) Owner alert (only marked when delivered or email is not configured; a failed send retries).
         const level = budgetAlertLevel({ spentMicros: spent, budgetMicros: b.monthlyUsdMicros, alertedMonth: b.alertedMonth, alertedPct: b.alertedPct, month })
-        if (!level) continue
+        if (!level) {
+          // Pause applied on a later tick than the 100% alert: tell the owner it worked.
+          if (pausedNow) {
+            await sendOpsAlert({
+              key: `ai-budget:${b.scope}:${month}:paused:${b.monthlyUsdMicros}`,
+              subject: `IA: agentes de ${name} en pausa`,
+              lines: ['Pausa aplicada: los agentes de IA de este negocio quedaron en pausa por presupuesto. Reactivalos en Agent Ops.'],
+            }).catch(() => undefined)
+          }
+          continue
+        }
         const result = await sendOpsAlert({
-          key: `ai-budget:${b.scope}:${month}:${level}`,
+          key: `ai-budget:${b.scope}:${month}:${level}:${b.monthlyUsdMicros}`,
           subject: `IA: ${level}% del presupuesto de ${name}`,
           lines: [
             `Gasto estimado del mes: US$${(spent / 1e6).toFixed(2)} de US$${(b.monthlyUsdMicros / 1e6).toFixed(2)}.`,
@@ -187,7 +199,7 @@ export async function checkAiBudgets(now = new Date()): Promise<{ checked: numbe
                 : 'Revisá el detalle en /super-admin/ia.',
           ],
         })
-        await notifyOwners(`ai_budget:${b.scope}:${month}:${level}`)
+        await notifyOwners(`ai_budget:${b.scope}:${month}:${level}:${b.monthlyUsdMicros}`)
         if (result === 'failed') continue
         await prisma.$executeRaw`
           UPDATE "AiBudget" SET "alertedMonth" = ${month}, "alertedPct" = ${level} WHERE "scope" = ${b.scope}`

@@ -21,5 +21,7 @@ CREATE TABLE IF NOT EXISTS public."AiBudget" (
   "updatedBy" text NULL,
   "updatedAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Older drafts of 051 lacked pausedMonth: add it if missing (no-op otherwise).
+ALTER TABLE public."AiBudget" ADD COLUMN IF NOT EXISTS "pausedMonth" text NULL;
 ALTER TABLE public."AiBudget" ENABLE ROW LEVEL SECURITY;
 COMMIT;

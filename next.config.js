@@ -16,6 +16,8 @@ const nextConfig = {
     '/api/logistics/tracking': ['./src/lib/correos/wsdl/**/*'],
     '/api/logistics/tarifa': ['./src/lib/correos/wsdl/**/*'],
     '/api/logistics/correos-test': ['./src/lib/correos/wsdl/**/*'],
+    // PDF reader runs in a worker loaded from a string (invisible to tracing): ship the package explicitly.
+    '/api/chat/agents/[id]/studio/sources/upload': ['./node_modules/unpdf/**/*'],
   },
   compress: true,
   reactStrictMode: true,

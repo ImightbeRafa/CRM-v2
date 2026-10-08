@@ -5,6 +5,7 @@ import {
 } from '@/lib/soft-ai/automation-queue'
 import { processClaimedJob } from '@/lib/soft-ai/automation-processor'
 import { drainStaleAgentTestRuns } from '@/lib/soft-ai/test-engine/run'
+import { drainStaleProfileDrafts } from '@/lib/agent-studio/extract'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -35,6 +36,8 @@ export async function GET(request: NextRequest) {
     const purged = await purgeExpiredAutomationMetadata()
     // Agent test runs (Activar) whose step was interrupted resume here; never blocks the claimant.
     const resumedTestRuns = Date.now() - startedAt < 5_000 ? await drainStaleAgentTestRuns(1).catch(() => 0) : 0
+    // "Crear desde fuentes" drafts interrupted by a restart: kicked, not awaited (one call can take up to 90 s).
+    void drainStaleProfileDrafts(1).catch(() => 0)
     const counts = results.reduce<Record<string, number>>((summary, result) => {
       summary[result.status] = (summary[result.status] || 0) + 1
       return summary

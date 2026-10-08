@@ -266,7 +266,11 @@ export async function executeSoftAiInboundTurn(
       orderId,
       demo: false,
     },
-    buildSoftAiServerDeps(args.tenantId),
+    buildSoftAiServerDeps({
+      tenantId: args.tenantId,
+      peerId: args.senderId,
+      conversationId: args.conversationId ?? null,
+    }),
   )
 
   if (result.skipped || !result.reply) {

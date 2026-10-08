@@ -127,6 +127,13 @@ export default function SuperAdminDashboard() {
           >
             Agent Ops
           </Link>
+          <Link
+            href="/super-admin/ia"
+            className="px-4 py-2 rounded-md ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
+            data-testid="super-admin-ia-link"
+          >
+            Uso de IA
+          </Link>
           <button
             onClick={fetchStats}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"

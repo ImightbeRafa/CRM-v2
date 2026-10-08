@@ -2129,3 +2129,15 @@ Plan: `docs/plans/betsy-agent-studio-sales-flow-2026-10-08.md` (v4). Off `claudi
   Desactivar refuses another agent's channel (409, no audit); send-guia same-origin check; unlock needs agent +
   model; staff-bot boundary test only ignores whole approved lines. Forward notes for F6/F7: link provenance before
   any auto-link, automation must use isOrderOwned and never confirm:true; new tables need explicit tenant erase.
+
+# 2026-10-08 — Agent F2: owner AI usage dashboard (branch `claudio/agent-f2-ai-usage`, on F1)
+
+- `/super-admin/ia` (Betsy platform admins only; 404 for everyone else), linked from Super admin and /logistics/admin.
+  Spend today / 7d / 30d / month + month-end projection; calls, error %, p50/p95 speed; cost per day stacked by
+  function or model; tables by business, function, model, agent; most expensive chats (ids only); recent errors;
+  filters (days, business, function, model); CSV export (audited). Reads only `AiUsageEvent` (SQL 048).
+- Budgets (SQL 051 `AiBudget`): monthly limit per business + global; email alert at 80% / 100% (once per month);
+  optional per-business auto-pause at 100% (agent kill switch). Checked every 5 min (`/api/cron/ai-budget`, added
+  to the Worker */5 cron).
+- `scripts/ai-usage-backfill.mjs`: one-off, idempotent copy of past ChatAgentTurn usage up to the meter cutover.
+- Not done (needs Rafael): provider-side reconciliation (OpenAI admin key / xAI billing API).

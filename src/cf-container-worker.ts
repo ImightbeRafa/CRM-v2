@@ -251,7 +251,8 @@ const CRON_PATHS: Record<string, readonly string[]> = {
   ],
   "0 14 * * *": ["/api/cron/backup/hot"],
   // meta-attribution: no-op unless META_SALES_CAPI_SENDER=1 and a business opted in.
-  "*/5 * * * *": ["/api/cron/bot-inbox", "/api/cron/meta-attribution"],
+  // ai-budget (F2): owner AI budget alerts / optional per-business auto-pause; no-op without budgets.
+  "*/5 * * * *": ["/api/cron/bot-inbox", "/api/cron/meta-attribution", "/api/cron/ai-budget"],
   // chat-workspace (Phase 2b): assignment rules / auto-close / reopen; no-op unless a business turned them on.
   "*/1 * * * *": ["/api/cron/chat-automation", "/api/cron/chat-workspace"],
   "30 3 * * *": ["/api/cron/chat-agent-retention", "/api/cron/workspace-retention"],

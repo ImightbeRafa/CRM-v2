@@ -506,3 +506,25 @@ describe('Re-verify 2026-10-08 regressions', () => {
     assert.doesNotMatch(out.text, /x\(\)/)
   })
 })
+
+describe('Final re-verify note: PDF pre-scan bypasses', () => {
+  const pdfWith = (dict: string, data: Buffer) =>
+    Buffer.concat([
+      Buffer.from(`%PDF-1.4\n4 0 obj\n${dict}\nstream\n`, 'latin1'),
+      data,
+      Buffer.from('\nendstream\nendobj\n%%EOF', 'latin1'),
+    ])
+  it('escaped filter names, odd zlib headers, indirect filters and chains are refused', async () => {
+    const { deflateSync } = await import('node:zlib')
+    const bomb = deflateSync(Buffer.alloc(100 * 1024 * 1024, 0x20))
+    await assert.rejects(parseUpload(pdfWith('<< /Length 1 /Filter /Flat#65Decode >>', bomb)), /pdf_too_big/)
+    const odd = Buffer.from(bomb)
+    odd[0] = 0x88
+    odd[1] = 0x1c
+    await assert.rejects(parseUpload(pdfWith('<< /Length 1 /Filter /FlateDecode >>', odd)), /pdf_too_big/)
+    await assert.rejects(parseUpload(pdfWith('<< /Length 1 /Filter 5 0 R >>', bomb)), /pdf_unsupported/)
+    await assert.rejects(parseUpload(pdfWith('<< /Length 1 /Filter [/ASCIIHexDecode /FlateDecode] >>', bomb)), /pdf_unsupported/)
+    await assert.rejects(parseUpload(pdfWith('<< /Length 1 ' + ' '.repeat(5000) + '/Filter /FlateDecode >>', bomb)), /pdf_unsupported/)
+    assert.match(read('src/lib/agent-studio/file-parse.ts'), /rss - baseRss > 512 \* 1024 \* 1024/)
+  })
+})

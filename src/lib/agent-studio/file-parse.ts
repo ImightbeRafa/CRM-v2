@@ -187,11 +187,19 @@ export function pdfStreamsWithinBudget(buf: Buffer, budget = PDF_STREAM_BUDGET):
     if (end < 0) break
     const window = latin.slice(Math.max(0, s - 4000), s)
     const dictStart = window.lastIndexOf('<<')
-    const dict = dictStart >= 0 ? window.slice(dictStart) : ''
+    // A stream whose dictionary we cannot see (padded past the window) cannot be pre-checked: refuse.
+    if (dictStart < 0) throw new UploadParseError('pdf_unsupported')
+    // PDF names may hide letters as #xx ("/Flat#65Decode"): decode before matching.
+    const dict = window.slice(dictStart).replace(/#([0-9a-fA-F]{2})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)))
     i = end + 9
     if (/\/Subtype\s*\/Image/.test(dict)) continue
-    const flates = (dict.match(/\/FlateDecode|\/Fl\b/g) || []).length
-    if (flates > 1) throw new UploadParseError('pdf_unsupported')
+    const filterMatch = /\/Filter\s*(\[[^\]]*\]|\/[A-Za-z0-9]+|\d+\s+\d+\s+R)/.exec(dict)
+    const filterValue = filterMatch?.[1] ?? ''
+    if (/\d+\s+\d+\s+R/.test(filterValue)) throw new UploadParseError('pdf_unsupported') // indirect filter
+    const filters = filterValue.match(/\/[A-Za-z0-9]+/g) || []
+    const flates = filters.filter((f) => f === '/FlateDecode' || f === '/Fl').length
+    // Flate chained with anything (another Flate, ASCIIHex, …) cannot be budgeted here: refuse.
+    if (flates > 0 && filters.length > 1) throw new UploadParseError('pdf_unsupported')
     if (flates === 1) {
       try {
         const out = inflateSync(buf.subarray(start, end), {
@@ -199,9 +207,9 @@ export function pdfStreamsWithinBudget(buf: Buffer, budget = PDF_STREAM_BUDGET):
           finishFlush: zlibConstants.Z_SYNC_FLUSH,
         })
         total += out.length
-      } catch (error) {
-        if ((error as { code?: string }).code === 'ERR_BUFFER_TOO_LARGE' || error instanceof RangeError) return false
-        // Corrupt stream: pdf.js fails on it too; nothing big was produced here.
+      } catch {
+        // Too big, OR a stream Node refuses but pdf.js would still inflate (e.g. odd zlib header): refuse either way.
+        return false
       }
     } else {
       total += end - start
@@ -235,10 +243,10 @@ function parsePdfInWorker(bytes: Buffer): Promise<{ text: string; pages: number 
       fn()
     }
     const timer = setTimeout(() => done(() => reject(new UploadParseError('timeout'))), PARSE_TIMEOUT_MS)
-    // Backstop: memory outside the worker heap (typed arrays) is watched from here; past +1 GB the worker dies.
+    // Backstop: memory outside the worker heap (typed arrays) is watched from here; past +512 MB the worker dies.
     const baseRss = process.memoryUsage().rss
     const watch = setInterval(() => {
-      if (process.memoryUsage().rss - baseRss > 1024 * 1024 * 1024) done(() => reject(new UploadParseError('pdf_too_big')))
+      if (process.memoryUsage().rss - baseRss > 512 * 1024 * 1024) done(() => reject(new UploadParseError('pdf_too_big')))
     }, 100)
     worker.once('message', (m: { ok: boolean; text?: string; pages?: number; code?: string }) =>
       done(() => (m.ok ? resolve({ text: m.text || '', pages: m.pages || 0 }) : reject(new UploadParseError(m.code || 'pdf_unreadable')))),

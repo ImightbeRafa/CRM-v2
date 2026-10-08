@@ -18,6 +18,7 @@ import type {
 } from '@/lib/soft-ai/agent-types'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
+import { agentsServingUnboundChannels, loadAgentSettings } from '@/lib/soft-ai/agent-settings'
 
 export type GateFail = {
   ok: false
@@ -80,12 +81,14 @@ export async function runClaimGates(input: {
   return { ok: true }
 }
 
-export async function loadDailyBilledTokens(tenantId: string): Promise<number> {
+/** Today's billed live tokens for the tenant, or for one agent when agentId is given (per-agent cap, SQL 049). */
+export async function loadDailyBilledTokens(tenantId: string, agentId?: string): Promise<number> {
   const start = new Date()
   start.setUTCHours(0, 0, 0, 0)
   const rows = await prisma.chatAgentTurn.aggregate({
     where: {
       tenantId,
+      ...(agentId ? { agentId } : {}),
       createdAt: { gte: start },
       status: { notIn: ['skipped'] },
       mode: { not: 'test' },
@@ -143,9 +146,18 @@ export function collectDryRunBlockers(input: {
   return blocked
 }
 
+/** Per-agent daily cap (SQL 049). No settings row / no cap = only the tenant cap applies. */
+async function agentBudgetExceeded(tenantId: string, agentId: string | undefined): Promise<boolean> {
+  if (!agentId) return false
+  const { dailyTokenCap } = await loadAgentSettings(tenantId, agentId)
+  if (!dailyTokenCap) return false
+  return (await loadDailyBilledTokens(tenantId, agentId)) >= dailyTokenCap
+}
+
 export async function runPreModelGates(input: {
   tenantId: string
   socialAccountId: string
+  agentId?: string
 }): Promise<GatePass | GateFail> {
   const [softFlag, layerFlag] = await Promise.all([
     prisma.tenantFeatureFlag.findFirst({
@@ -179,6 +191,9 @@ export async function runPreModelGates(input: {
   }
   const used = await loadDailyBilledTokens(input.tenantId)
   if (used >= config.dailyTokenCap) {
+    return { ok: false, status: 'budget_blocked' }
+  }
+  if (await agentBudgetExceeded(input.tenantId, input.agentId)) {
     return { ok: false, status: 'budget_blocked' }
   }
   return { ok: true }
@@ -240,6 +255,19 @@ export async function runPreSendGates(input: {
   if (!binding || !binding.isActive) {
     return { ok: false, status: 'skipped', skipReason: 'binding_inactive' }
   }
+  // A tenant default only answers channels without their own agent when explicitly enabled (SQL 049).
+  if (binding.scope === 'tenant_default') {
+    const exact = await prisma.chatAgentBinding.findFirst({
+      where: { tenantId: input.tenantId, scope: 'social_account', socialAccountId: input.socialAccountId, isActive: true },
+      select: { agentId: true },
+    })
+    const servesHere = exact
+      ? exact.agentId === input.agentId // the same agent is also this channel's own agent
+      : (await agentsServingUnboundChannels(input.tenantId)).has(binding.agentId)
+    if (!servesHere) {
+      return { ok: false, status: 'skipped', skipReason: 'binding_inactive' }
+    }
+  }
   if (!binding.agent || binding.agent.status !== 'live') {
     return { ok: false, status: 'skipped', skipReason: 'agent_not_live' }
   }
@@ -289,6 +317,9 @@ export async function runPreSendGates(input: {
   // Gate 8 — daily cap (config read at the top of this function)
   const used = await loadDailyBilledTokens(input.tenantId)
   if (used >= config.dailyTokenCap) {
+    return { ok: false, status: 'budget_blocked' }
+  }
+  if (await agentBudgetExceeded(input.tenantId, input.agentId)) {
     return { ok: false, status: 'budget_blocked' }
   }
 

@@ -4,11 +4,15 @@
  * An order is "owned" by the customer of a conversation when:
  *  - a human linked it to THIS conversation (Chats › Vincular pedido; ChatMessage.orderId = Order.id), or
  *  - the chat's phone (or its linked client's verified phone) matches the order's phone (last 8 digits).
+ * Agents of the layer also pass their business stamp (SQL 049 orderOwnership): a phone match then only counts
+ * for orders of THIS agent's business (one tenant can run several businesses on several channels). An empty
+ * stamp means only chat-linked orders. The v1 path / staff route pass no stamp (tenant-level, as before).
  * The Prisma client from '@/lib/db' already hides soft-deleted orders (activeOrderReads extension).
  */
 
 import { prisma } from '@/lib/db'
 import { phoneOwnershipMatch } from '@/lib/soft-ai/phone-ownership'
+import { orderMatchesOwnership, type AgentOrderOwnership } from '@/lib/soft-ai/agent-settings'
 
 export type OrderOwnershipContext = {
   tenantId: string
@@ -18,6 +22,8 @@ export type OrderOwnershipContext = {
   clientId?: string | null
   /** Probar: a hand-linked client counts without re-checking its phone. */
   sandbox?: boolean
+  /** Layer agents: the business this agent sells for. undefined = no business scoping (v1 / staff). */
+  ownership?: AgentOrderOwnership
 }
 
 export type OwnedOrderRow = {
@@ -27,6 +33,9 @@ export type OwnedOrderRow = {
   clientId: string | null
   customerName: string | null
   phone: string | null
+  salesChannel: string | null
+  funnel: string | null
+  customFields: unknown
 }
 
 const ORDER_SELECT = {
@@ -36,6 +45,9 @@ const ORDER_SELECT = {
   clientId: true,
   customerName: true,
   phone: true,
+  salesChannel: true,
+  funnel: true,
+  customFields: true,
 } as const
 
 const digits = (value: string) => value.replace(/\D/g, '')
@@ -73,13 +85,24 @@ export async function phoneOwnsOrder(
   return phoneMatches(order.phone)
 }
 
+export type OwnershipCheckOrder = {
+  id: string
+  clientId?: string | null
+  phone?: string | null
+  salesChannel?: string | null
+  funnel?: string | null
+  customFields?: unknown
+}
+
 export async function isOrderOwned(
   ctx: OrderOwnershipContext,
-  order: { id: string; clientId?: string | null; phone?: string | null },
+  order: OwnershipCheckOrder,
   linked?: Set<string>,
 ): Promise<boolean> {
   const links = linked ?? (await linkedOrderIds(ctx.tenantId, ctx.conversationId))
   if (links.has(order.id)) return true
+  // Business scoping: a phone match only counts for orders stamped with this agent's business.
+  if (ctx.ownership && !orderMatchesOwnership(ctx.ownership, order)) return false
   return phoneOwnsOrder(ctx, order)
 }
 

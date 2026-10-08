@@ -34,6 +34,7 @@ import {
   type EffectiveAgentBehavior,
 } from '@/lib/soft-ai/agent-types'
 import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
+import { loadAgentSettings } from '@/lib/soft-ai/agent-settings'
 import { acquireProbarSlot, releaseProbarSlot } from '@/lib/soft-ai/probar-slots'
 import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
 import { isPlatformAiPaused, readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
@@ -347,6 +348,7 @@ export async function executeAgentLayerTurn(
   const preModel = await runPreModelGates({
     tenantId: row.tenantId,
     socialAccountId: row.socialAccountId,
+    agentId: resolved.agent.id,
   })
   if (!preModel.ok) {
     await persistSkippedTurn({
@@ -545,6 +547,7 @@ export async function executeAgentLayerTurn(
       peerId: row.peerId,
       clientId: conversation.clientId,
       inventoryItemIds: await loadMappedInventoryIds(row.tenantId, resolved.agent.id),
+      orderOwnership: (await loadAgentSettings(row.tenantId, resolved.agent.id)).orderOwnership,
     },
   })
   const llm = await runSoftAiLlmRuntime(runtimeInput)

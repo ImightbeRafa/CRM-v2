@@ -18,6 +18,7 @@ import { classifyPaymentText, type PaymentClassification } from '@/lib/soft-ai/p
 import { searchApprovedKnowledge } from '@/lib/soft-ai/knowledge-repository'
 import { renderShortcutTemplate, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import type { BrandFacts } from '@/lib/soft-ai/brand-facts'
+import type { AgentOrderOwnership } from '@/lib/soft-ai/agent-settings'
 import { SANDBOX_ORDERS, type SandboxOrder } from '@/lib/soft-ai/__fixtures__/sandbox'
 
 export type SoftAiToolRunContext = {
@@ -35,8 +36,10 @@ export type SoftAiToolRunContext = {
   brandFacts?: BrandFacts | null
   /** Probar: order/shipping tools read fixtures, never live Order/Client rows. */
   sandbox?: boolean
-  /** Products this agent may quote (SQL 046). null/undefined/empty = whole active catalog (as before). */
+  /** Products this agent may quote (SQL 046). Fail closed: null/undefined/empty = NO products. */
   inventoryItemIds?: string[] | null
+  /** Business this agent sells for (SQL 049). undefined = only chat-linked orders + phone (no business scope). */
+  orderOwnership?: AgentOrderOwnership
 }
 
 export type SoftAiToolRunResult = {
@@ -70,13 +73,19 @@ async function runSearchInventory(
   if (!query) {
     return { ok: false, name: 'search_inventory', result: { error: 'query_required' } }
   }
+  // Fail closed: an agent only ever sees the products assigned to it (one tenant can run several businesses).
+  if (!ctx.inventoryItemIds || ctx.inventoryItemIds.length === 0) {
+    return {
+      ok: true,
+      name: 'search_inventory',
+      result: { asOf: new Date().toISOString(), currency: 'CRC', items: [], note: 'sin productos asignados a este agente' },
+    }
+  }
   const rows = await prisma.inventoryItem.findMany({
     where: {
       tenantId: ctx.tenantId,
       isActive: true,
-      ...(ctx.inventoryItemIds && ctx.inventoryItemIds.length > 0
-        ? { id: { in: ctx.inventoryItemIds } }
-        : {}),
+      id: { in: ctx.inventoryItemIds },
       OR: [
         { name: { contains: query, mode: 'insensitive' } },
         { sku: { contains: query, mode: 'insensitive' } },
@@ -172,6 +181,8 @@ function ownershipCtx(ctx: SoftAiToolRunContext): OrderOwnershipContext {
     peerPhoneHints: ctx.peerPhoneHints,
     clientId: ctx.clientId,
     sandbox: ctx.sandbox,
+    // Layer agents are always business-scoped; no settings row = empty stamp = only chat-linked orders.
+    ownership: ctx.orderOwnership ?? { salesChannels: [], funnels: [], sources: [] },
   }
 }
 
@@ -329,7 +340,7 @@ async function runGetShippingStatus(
     const guiaOrder = row.orderId
       ? await prisma.order.findFirst({
           where: { orderId: row.orderId, tenantId: ctx.tenantId },
-          select: { id: true, clientId: true, phone: true },
+          select: { id: true, clientId: true, phone: true, salesChannel: true, funnel: true, customFields: true },
         })
       : null
     if (!guiaOrder || !(await isOrderOwned(ownershipCtx(ctx), guiaOrder))) {

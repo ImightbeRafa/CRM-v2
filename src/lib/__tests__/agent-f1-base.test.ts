@@ -76,3 +76,45 @@ describe('F1 · legacy v1 deps no longer leak other customers’ orders', () => 
     assert.match(run, /update_sales/)
   })
 })
+
+describe('F1 · isolation between businesses of one tenant (SQL 049)', () => {
+  const settings = read('src/lib/soft-ai/agent-settings.ts')
+  const own = read('src/lib/soft-ai/order-ownership.ts')
+  const gates = read('src/lib/soft-ai/agent-claim-gates.ts')
+  const resolver = read('src/lib/soft-ai/agent-resolver.ts')
+
+  it('settings are fail-safe: missing table or row = safe defaults', () => {
+    assert.match(settings, /if \(!\(await isTableReady\(TABLE\)\)\) return DEFAULT_AGENT_SETTINGS/)
+    assert.match(settings, /servesUnboundChannels: false,\n\}/)
+    assert.match(settings, /WHERE "tenantId" = \$\{tenantId\} AND "agentId" = \$\{agentId\}/)
+  })
+
+  it('a phone match only counts for orders stamped with this agent’s business; empty stamp never matches', () => {
+    assert.match(own, /if \(ctx\.ownership && !orderMatchesOwnership\(ctx\.ownership, order\)\) return false/)
+    assert.match(settings, /typeof v === 'string' && v\.trim\(\) !== ''/)
+    const runner = read('src/lib/soft-ai/llm/tool-runner.ts')
+    assert.match(runner, /ownership: ctx\.orderOwnership \?\? \{ salesChannels: \[\], funnels: \[\], sources: \[\] \}/)
+    assert.match(read('src/lib/soft-ai/agent-turn.ts'), /orderOwnership: \(await loadAgentSettings\(row\.tenantId, resolved\.agent\.id\)\)\.orderOwnership/)
+  })
+
+  it('tenant_default answers unbound channels only when explicitly enabled (resolver and pre-send gate)', () => {
+    assert.match(resolver, /if \(tenantDefault && \(await agentsServingUnboundChannels\(tenantId\)\)\.has\(tenantDefault\.agentId\)\)/)
+    assert.match(gates, /if \(binding\.scope === 'tenant_default'\)/)
+    assert.match(gates, /exact\.agentId === input\.agentId/)
+  })
+
+  it('per-agent daily budget is checked before the model and again before sending', () => {
+    assert.match(gates, /loadDailyBilledTokens\(tenantId: string, agentId\?: string\)/)
+    assert.equal((gates.match(/await agentBudgetExceeded\(input\.tenantId, input\.agentId\)/g) || []).length, 2)
+    assert.match(read('src/lib/soft-ai/agent-turn.ts'), /runPreModelGates\(\{\s*tenantId: row\.tenantId,\s*socialAccountId: row\.socialAccountId,\s*agentId: resolved\.agent\.id,/)
+  })
+
+  it('SQL 049 is additive, RLS on, registered, and widens (never narrows) the notification kinds', () => {
+    const sql = read('supabase/migrations/049_chat_agent_settings.sql')
+    assert.match(sql, /CREATE TABLE IF NOT EXISTS public\."ChatAgentSettings"/)
+    assert.match(sql, /ALTER TABLE public\."ChatAgentSettings" ENABLE ROW LEVEL SECURITY/)
+    assert.match(sql, /'mention', 'task_assigned', 'task_due', 'chat_assigned',\s*'ai_no_reply', 'payment_review', 'order_review', 'ai_budget'/)
+    assert.doesNotMatch(sql.replace(/--[^\n]*/g, ''), /DROP TABLE|TRUNCATE|DELETE FROM|REFERENCES/i)
+    assert.match(read('scripts/lib/betsy-v2-additive-manifest.mjs'), /'049': '049_chat_agent_settings\.sql'/)
+  })
+})

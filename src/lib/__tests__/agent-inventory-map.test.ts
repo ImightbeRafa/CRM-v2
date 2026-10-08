@@ -6,12 +6,15 @@ import { join } from 'node:path'
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
 
 describe('per-agent inventory map', () => {
-  it('search_inventory only sees mapped products when a map exists, and tenant is always applied', () => {
+  it('search_inventory only ever sees the agent’s mapped products (fail closed), tenant always applied', () => {
     const src = read('src/lib/soft-ai/llm/tool-runner.ts')
     const search = src.slice(src.indexOf('async function runSearchInventory'))
+    // F1: no map / empty map / table missing = NO products (one tenant can run several businesses).
+    assert.match(search, /if \(!ctx\.inventoryItemIds \|\| ctx\.inventoryItemIds\.length === 0\) \{/)
+    assert.match(search, /items: \[\], note: 'sin productos asignados a este agente'/)
     assert.match(search, /tenantId: ctx\.tenantId/)
-    assert.match(search, /ctx\.inventoryItemIds && ctx\.inventoryItemIds\.length > 0/)
     assert.match(search, /id: \{ in: ctx\.inventoryItemIds \}/)
+    assert.doesNotMatch(search, /ctx\.inventoryItemIds && ctx\.inventoryItemIds\.length > 0\s*\?/)
     assert.match(src, /inventoryItemIds\?: string\[\] \| null/)
   })
 

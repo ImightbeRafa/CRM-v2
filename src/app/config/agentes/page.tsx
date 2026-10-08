@@ -19,6 +19,7 @@ import { AgentUsageCard } from '@/app/config/agentes/AgentUsageCard'
 import { AiTermsCard } from '@/app/config/agentes/AiTermsCard'
 import { AgentQualityCard } from '@/app/config/agentes/AgentQualityCard'
 import { AgentInventoryCard } from '@/app/config/agentes/AgentInventoryCard'
+import { AgentBusinessCard } from '@/app/config/agentes/AgentBusinessCard'
 import { BrandFactsEditor } from '@/app/config/agentes/BrandFactsEditor'
 import { ChannelsEditor, type ChannelRow } from '@/app/config/agentes/ChannelsEditor'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
@@ -1225,6 +1226,7 @@ export default function AgentesConfigPage() {
                     </p>
                     <AgentUsageCard />
                     <AgentInventoryCard key={`inv-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
+                    <AgentBusinessCard key={`biz-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
                     <AgentQualityCard key={selected.id} agentId={selected.id} canEdit={canEdit} />
                     {canEdit ? (
                       <div className="mt-3 flex flex-wrap items-center gap-2">

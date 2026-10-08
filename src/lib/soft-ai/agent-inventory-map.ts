@@ -1,6 +1,6 @@
 /**
- * Per-agent inventory map (server): which products an agent may quote. SQL 046; fail-safe when the table is
- * missing. No rows = today's behavior (whole active catalog). With rows, `search_inventory` only finds those.
+ * Per-agent inventory map (server): which products an agent may quote. SQL 046. Fail closed (F1): no rows,
+ * or the table missing, means the agent sees NO products; with rows, `search_inventory` only finds those.
  * Every query is scoped by tenantId and every item id is checked to belong to that tenant before it is stored.
  */
 import 'server-only'

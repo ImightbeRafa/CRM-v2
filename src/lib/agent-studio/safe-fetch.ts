@@ -141,6 +141,7 @@ function requestOnce(url: URL, opts: { timeoutMs: number; maxBytes: number }): P
       (res) => {
         const status = res.statusCode || 0
         if (status >= 300 && status < 400) {
+          clearTimeout(wall)
           res.resume()
           return resolve({ status, headers: res.headers, body: Buffer.alloc(0) })
         }
@@ -159,12 +160,19 @@ function requestOnce(url: URL, opts: { timeoutMs: number; maxBytes: number }): P
           }
           chunks.push(chunk)
         })
-        stream.on('end', () => resolve({ status, headers: res.headers, body: Buffer.concat(chunks) }))
-        stream.on('error', (e) => reject(e))
+        stream.on('end', () => {
+          clearTimeout(wall)
+          resolve({ status, headers: res.headers, body: Buffer.concat(chunks) })
+        })
+        stream.on('error', () => reject(new SafeFetchError('network')))
+        res.on('error', () => reject(new SafeFetchError('network')))
       },
     )
+    // Idle timeout alone lets a server drip one byte every few seconds forever: also a hard wall clock.
+    const wall = setTimeout(() => req.destroy(new SafeFetchError('timeout')), opts.timeoutMs)
     req.on('timeout', () => req.destroy(new SafeFetchError('timeout')))
     req.on('error', (e: NodeJS.ErrnoException) => {
+      clearTimeout(wall)
       if (e instanceof SafeFetchError) return reject(e)
       reject(new SafeFetchError(e.code === 'EBLOCKED' ? 'blocked_address' : 'network'))
     })

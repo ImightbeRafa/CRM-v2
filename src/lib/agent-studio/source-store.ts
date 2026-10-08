@@ -8,7 +8,7 @@ import 'server-only'
 import { createHash, randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
-import { chatStoragePut, isChatStorageConfigured } from '@/lib/chat-storage'
+import { chatStoragePut, chatStorageRemove, isChatStorageConfigured } from '@/lib/chat-storage'
 
 export class StudioNotReadyError extends Error {
   constructor() {
@@ -132,7 +132,12 @@ export async function addSource(input: {
     VALUES (${id}, ${input.tenantId}, ${input.agentId}, ${input.kind}, ${input.status ?? 'parsed'}, ${input.label.slice(0, 200)},
             ${input.url ?? null}, ${storagePath}, ${input.mimeType ?? null}, ${input.bytes ? input.bytes.length : null}, ${sha256},
             ${input.pageCount ?? null}, ${text}, ${JSON.stringify(input.meta ?? {})}::jsonb, ${input.errorCode ?? null}, ${input.createdBy})
-    ON CONFLICT ("agentId", "sha256") DO UPDATE SET "status" = EXCLUDED."status", "updatedAt" = NOW()
+    -- Same content again (re-added after removal, or a retried photo): refresh everything, not just the status.
+    ON CONFLICT ("agentId", "sha256") DO UPDATE SET
+      "status" = EXCLUDED."status", "label" = EXCLUDED."label", "url" = EXCLUDED."url",
+      "storagePath" = COALESCE(EXCLUDED."storagePath", "ChatAgentSource"."storagePath"),
+      "mimeType" = EXCLUDED."mimeType", "sizeBytes" = EXCLUDED."sizeBytes", "pageCount" = EXCLUDED."pageCount",
+      "text" = EXCLUDED."text", "meta" = EXCLUDED."meta", "errorCode" = EXCLUDED."errorCode", "updatedAt" = NOW()
     WHERE "ChatAgentSource"."tenantId" = ${input.tenantId}`
   const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT "id", "kind", "status", "label", "url", "storagePath", "mimeType", "sizeBytes", "pageCount",
@@ -144,8 +149,15 @@ export async function addSource(input: {
 
 export async function removeSource(tenantId: string, agentId: string, sourceId: string): Promise<boolean> {
   await requireStudioReady()
+  const rows = await prisma.$queryRaw<Array<{ storagePath: string | null }>>`
+    SELECT "storagePath" FROM "ChatAgentSource" WHERE "id" = ${sourceId} AND "tenantId" = ${tenantId} AND "agentId" = ${agentId} LIMIT 1`
+  const path = rows[0]?.storagePath
+  // The raw file goes too (only our own agent-sources/<tenant>/ path; best effort).
+  if (path && path.startsWith(`agent-sources/${tenantId}/${agentId}/`) && isChatStorageConfigured()) {
+    await chatStorageRemove([path]).catch(() => undefined)
+  }
   const n = await prisma.$executeRaw`
-    UPDATE "ChatAgentSource" SET "status" = 'removed', "text" = NULL, "updatedAt" = NOW()
+    UPDATE "ChatAgentSource" SET "status" = 'removed', "text" = NULL, "storagePath" = NULL, "updatedAt" = NOW()
      WHERE "id" = ${sourceId} AND "tenantId" = ${tenantId} AND "agentId" = ${agentId}`
   return n > 0
 }

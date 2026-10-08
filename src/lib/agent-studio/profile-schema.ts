@@ -85,8 +85,8 @@ export const PROFILE_JSON_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        properties: { nameAsSeen: S, variantText: S, groupText: S, priceSeen: { type: ['number', 'null'] }, ...SRC },
-        required: ['nameAsSeen', 'variantText', 'groupText', 'priceSeen', 'sourceId', 'snippet'],
+        properties: { nameAsSeen: S, variantText: S, groupText: S, skuSeen: S, priceSeen: { type: ['number', 'null'] }, ...SRC },
+        required: ['nameAsSeen', 'variantText', 'groupText', 'skuSeen', 'priceSeen', 'sourceId', 'snippet'],
       },
     },
   },
@@ -105,7 +105,7 @@ export type ExtractedProfile = {
   mustSay: string[]
   neverSay: string[]
   quickReplies: Array<{ title: string | null; body: string | null }>
-  products: Array<{ nameAsSeen: string | null; variantText: string | null; groupText: string | null; priceSeen: number | null; sourceId: string | null; snippet: string | null }>
+  products: Array<{ nameAsSeen: string | null; variantText: string | null; groupText: string | null; skuSeen: string | null; priceSeen: number | null; sourceId: string | null; snippet: string | null }>
 }
 
 const str = (v: unknown, max: number): string | null => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
@@ -168,7 +168,7 @@ export function parseExtractedProfile(raw: unknown): ExtractedProfile {
     products: arr(r.products, 200).map((x) => {
       const p = rec(x)
       const price = typeof p.priceSeen === 'number' && Number.isFinite(p.priceSeen) && p.priceSeen > 0 ? p.priceSeen : null
-      return { nameAsSeen: str(p.nameAsSeen, 160), variantText: str(p.variantText, 120), groupText: str(p.groupText, 120), priceSeen: price, sourceId: str(p.sourceId, 64), snippet: str(p.snippet, 200) }
+      return { nameAsSeen: str(p.nameAsSeen, 160), variantText: str(p.variantText, 120), groupText: str(p.groupText, 120), skuSeen: str(p.skuSeen, 60), priceSeen: price, sourceId: str(p.sourceId, 64), snippet: str(p.snippet, 200) }
     }),
   }
 }

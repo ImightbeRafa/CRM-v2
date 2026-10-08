@@ -1,12 +1,13 @@
 /**
  * Parse an uploaded source file for "Crear desde fuentes": PDF (unpdf, no native deps, eval disabled),
- * DOCX (jszip + word/document.xml, zip-bomb pre-checks), plain text (UTF-8, no NULs), and product photos
+ * DOCX (own bounded zip reader + word/document.xml, inflate hard-capped), plain text (UTF-8, no NULs), and product photos
  * (sharp normalize → JPEG ≤1600 px, metadata stripped). Type comes from MAGIC BYTES, never the file name.
  * Caps: 10 MB in, 60 PDF pages, 200k chars out, 20 s per parse.
  */
 import 'server-only'
 
-import JSZip from 'jszip'
+import { inflateRawSync } from 'node:zlib'
+import { Worker } from 'node:worker_threads'
 import sharp from 'sharp'
 import { decodeEntities } from '@/lib/agent-studio/html-text'
 
@@ -58,7 +59,8 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   ]).finally(() => clearTimeout(t))
 }
 
-/** Central-directory pre-check before inflating a DOCX (zip bombs). */
+/** Central-directory pre-check before inflating a DOCX (zip bombs). Header sizes are attacker-controlled, so the
+ * real guard is the hard output cap in inflateEntry; this only rejects obviously hostile archives early. */
 export function docxZipLooksSafe(entries: Array<{ compressed: number; uncompressed: number }>): boolean {
   if (entries.length > 1000) return false
   let total = 0
@@ -69,42 +71,117 @@ export function docxZipLooksSafe(entries: Array<{ compressed: number; uncompress
   return total <= 40 * 1024 * 1024
 }
 
-async function parseDocx(bytes: Buffer): Promise<string> {
-  const zip = await JSZip.loadAsync(bytes)
-  const entries = Object.values(zip.files).map((f) => {
-    const d = (f as unknown as { _data?: { compressedSize?: number; uncompressedSize?: number } })._data
-    return { compressed: d?.compressedSize ?? 0, uncompressed: d?.uncompressedSize ?? 0 }
-  })
+const MAX_XML_BYTES = 8 * 1024 * 1024
+
+type ZipEntry = { name: string; method: number; compressed: number; uncompressed: number; localOffset: number }
+
+/** Minimal, bounds-checked zip central-directory reader (no decompression here). */
+export function readZipEntries(buf: Buffer): ZipEntry[] {
+  const minEocd = Math.max(0, buf.length - 65_557)
+  let eocd = -1
+  for (let i = buf.length - 22; i >= minEocd; i -= 1) {
+    if (buf.readUInt32LE(i) === 0x06054b50) {
+      eocd = i
+      break
+    }
+  }
+  if (eocd < 0) throw new UploadParseError('not_docx')
+  const count = buf.readUInt16LE(eocd + 10)
+  let off = buf.readUInt32LE(eocd + 16)
+  if (count > 1000) throw new UploadParseError('docx_too_big')
+  const entries: ZipEntry[] = []
+  for (let n = 0; n < count; n += 1) {
+    if (off + 46 > buf.length || buf.readUInt32LE(off) !== 0x02014b50) throw new UploadParseError('not_docx')
+    const nameLen = buf.readUInt16LE(off + 28)
+    const extraLen = buf.readUInt16LE(off + 30)
+    const commentLen = buf.readUInt16LE(off + 32)
+    if (off + 46 + nameLen > buf.length) throw new UploadParseError('not_docx')
+    entries.push({
+      name: buf.toString('utf8', off + 46, off + 46 + nameLen),
+      method: buf.readUInt16LE(off + 10),
+      compressed: buf.readUInt32LE(off + 20),
+      uncompressed: buf.readUInt32LE(off + 24),
+      localOffset: buf.readUInt32LE(off + 42),
+    })
+    off += 46 + nameLen + extraLen + commentLen
+  }
+  return entries
+}
+
+/** Inflate ONE entry with a hard output cap (zlib stops at maxOutputLength whatever the header claims). */
+function inflateEntry(buf: Buffer, e: ZipEntry): Buffer {
+  const lo = e.localOffset
+  if (lo + 30 > buf.length || buf.readUInt32LE(lo) !== 0x04034b50) throw new UploadParseError('not_docx')
+  const start = lo + 30 + buf.readUInt16LE(lo + 26) + buf.readUInt16LE(lo + 28)
+  const end = start + e.compressed
+  if (end > buf.length) throw new UploadParseError('not_docx')
+  const data = buf.subarray(start, end)
+  if (e.method === 0) {
+    if (data.length > MAX_XML_BYTES) throw new UploadParseError('docx_too_big')
+    return Buffer.from(data)
+  }
+  if (e.method !== 8) throw new UploadParseError('not_docx')
+  try {
+    return inflateRawSync(data, { maxOutputLength: MAX_XML_BYTES })
+  } catch (error) {
+    if ((error as { code?: string }).code === 'ERR_BUFFER_TOO_LARGE' || error instanceof RangeError) throw new UploadParseError('docx_too_big')
+    throw new UploadParseError('not_docx')
+  }
+}
+
+function parseDocx(bytes: Buffer): string {
+  const entries = readZipEntries(bytes)
   if (!docxZipLooksSafe(entries)) throw new UploadParseError('docx_too_big')
-  const doc = zip.file('word/document.xml')
+  const doc = entries.find((e) => e.name === 'word/document.xml')
   if (!doc) throw new UploadParseError('not_docx')
-  const xml = await doc.async('string')
+  const xml = inflateEntry(bytes, doc).toString('utf8')
   const text = xml
     .replace(/<w:tab\/>/g, '\t')
     .replace(/<w:br\/>|<\/w:p>/g, '\n')
-    .replace(/<[^>]+>/g, '')
+    .replace(/<[^>]*>/g, '')
   return decodeEntities(text).replace(/\n{3,}/g, '\n\n').trim()
 }
 
-async function parsePdf(bytes: Buffer): Promise<{ text: string; pages: number }> {
-  // pdf.js (bundled in unpdf) uses Promise.withResolvers (Node 22+); production runs Node 20.
-  const P = Promise as unknown as { withResolvers?: unknown }
-  if (typeof P.withResolvers !== 'function') {
-    ;(Promise as unknown as { withResolvers: () => unknown }).withResolvers = function withResolvers() {
-      let resolve!: (v: unknown) => void
-      let reject!: (e: unknown) => void
-      const promise = new Promise((res, rej) => {
-        resolve = res
-        reject = rej
-      })
-      return { promise, resolve, reject }
+// pdf.js runs in its own thread with a memory ceiling; on timeout the thread is terminated (a promise race alone
+// would leave a hostile PDF burning CPU/memory in the main process).
+const PDF_WORKER_SOURCE = `
+const { parentPort, workerData } = require('node:worker_threads');
+if (typeof Promise.withResolvers !== 'function') {
+  Promise.withResolvers = function () { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } };
+}
+(async () => {
+  const { getDocumentProxy, extractText } = await import('unpdf');
+  const pdf = await getDocumentProxy(new Uint8Array(workerData.bytes), { isEvalSupported: false });
+  if (pdf.numPages > workerData.maxPages) return parentPort.postMessage({ ok: false, code: 'pdf_too_many_pages' });
+  const { text } = await extractText(pdf, { mergePages: true });
+  parentPort.postMessage({ ok: true, text: String(text).slice(0, workerData.maxText), pages: pdf.numPages });
+})().catch(() => parentPort.postMessage({ ok: false, code: 'pdf_unreadable' }));
+`
+
+function parsePdfInWorker(bytes: Buffer): Promise<{ text: string; pages: number }> {
+  return new Promise((resolve, reject) => {
+    const copy = new Uint8Array(bytes)
+    const worker = new Worker(PDF_WORKER_SOURCE, {
+      eval: true,
+      workerData: { bytes: copy, maxPages: MAX_PDF_PAGES, maxText: MAX_TEXT },
+      transferList: [copy.buffer],
+      resourceLimits: { maxOldGenerationSizeMb: 384, maxYoungGenerationSizeMb: 64 },
+    })
+    let settled = false
+    const done = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      void worker.terminate()
+      fn()
     }
-  }
-  const { getDocumentProxy, extractText } = await import('unpdf')
-  const pdf = await getDocumentProxy(new Uint8Array(bytes), { isEvalSupported: false } as never)
-  if (pdf.numPages > MAX_PDF_PAGES) throw new UploadParseError('pdf_too_many_pages')
-  const { text } = await extractText(pdf, { mergePages: true })
-  return { text: String(text), pages: pdf.numPages }
+    const timer = setTimeout(() => done(() => reject(new UploadParseError('timeout'))), PARSE_TIMEOUT_MS)
+    worker.once('message', (m: { ok: boolean; text?: string; pages?: number; code?: string }) =>
+      done(() => (m.ok ? resolve({ text: m.text || '', pages: m.pages || 0 }) : reject(new UploadParseError(m.code || 'pdf_unreadable')))),
+    )
+    worker.once('error', () => done(() => reject(new UploadParseError('pdf_unreadable'))))
+    worker.once('exit', () => done(() => reject(new UploadParseError('pdf_unreadable'))))
+  })
 }
 
 export async function parseUpload(bytes: Buffer): Promise<ParsedUpload> {
@@ -113,11 +190,11 @@ export async function parseUpload(bytes: Buffer): Promise<ParsedUpload> {
   const kind = sniffUploadKind(bytes)
   switch (kind) {
     case 'pdf': {
-      const { text, pages } = await withTimeout(parsePdf(bytes), PARSE_TIMEOUT_MS)
+      const { text, pages } = await parsePdfInWorker(bytes)
       return { kind: 'pdf', mime: 'application/pdf', text: text.slice(0, MAX_TEXT), pageCount: pages }
     }
     case 'zip': {
-      const text = await withTimeout(parseDocx(bytes), PARSE_TIMEOUT_MS)
+      const text = parseDocx(bytes)
       return {
         kind: 'docx',
         mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

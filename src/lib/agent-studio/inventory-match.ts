@@ -21,7 +21,8 @@ export type ProductMatch = {
 }
 
 function tokens(s: string): Set<string> {
-  return new Set(normalizeForMatch(s).split(' ').filter((t) => t.length > 1))
+  // Single letters/digits stay: sizes (S / M / L, 2 / 4) are what tell variants apart.
+  return new Set(normalizeForMatch(s).split(' ').filter(Boolean))
 }
 
 function jaccard(a: Set<string>, b: Set<string>): number {
@@ -33,26 +34,33 @@ function jaccard(a: Set<string>, b: Set<string>): number {
 
 /** Pure matcher (exported for tests). */
 export function matchProductsAgainst(
-  products: Array<{ nameAsSeen: string | null; variantText: string | null; groupText: string | null; priceSeen: number | null }>,
+  products: Array<{ nameAsSeen: string | null; variantText: string | null; groupText: string | null; priceSeen: number | null; skuSeen?: string | null }>,
   candidates: InventoryCandidate[],
 ): ProductMatch[] {
   return products.map((p, index) => {
     const full = [p.nameAsSeen, p.variantText].filter(Boolean).join(' ')
     const want = tokens(full)
     const wantGroup = p.groupText ? normalizeForMatch(p.groupText) : ''
+    const sku = p.skuSeen ? normalizeForMatch(p.skuSeen) : ''
     let best: { c: InventoryCandidate; score: number } | null = null
+    let tie = false
     for (const c of candidates) {
       let score = 0
-      // SKU as a whole-word sequence ("AF-XL" normalizes to "af xl").
-      if (c.sku && full && normalizeForMatch(c.sku) && ` ${normalizeForMatch(full)} `.includes(` ${normalizeForMatch(c.sku)} `)) score = 1
+      // Exact SKU the source wrote > SKU inside the name as a whole-word sequence ("AF-XL" → "af xl") > names.
+      if (sku && c.sku && normalizeForMatch(c.sku) === sku) score = 1.01
+      else if (c.sku && full && normalizeForMatch(c.sku) && ` ${normalizeForMatch(full)} `.includes(` ${normalizeForMatch(c.sku)} `)) score = 1
       else if (normalizeForMatch(c.name) === normalizeForMatch(full)) score = 0.98
       else {
         score = jaccard(want, tokens(c.name))
         if (wantGroup && c.category && normalizeForMatch(c.category) === wantGroup) score += 0.1
       }
-      if (!best || score > best.score) best = { c, score }
+      if (!best || score > best.score + 1e-9) {
+        best = { c, score }
+        tie = false
+      } else if (Math.abs(score - best.score) <= 1e-9) tie = true
     }
-    const matched = best && best.score >= 0.5 ? best.c : null
+    // Two items equally good (e.g. sizes the source did not name): leave it for the owner to pick.
+    const matched = best && best.score >= 0.5 && !tie ? best.c : null
     const priceInInventory = matched ? matched.sellingPrice : null
     return {
       index,

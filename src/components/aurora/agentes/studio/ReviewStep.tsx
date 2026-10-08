@@ -47,12 +47,16 @@ export function ReviewStep({
   draft,
   inventory,
   canEdit,
+  isLive = false,
+  onDiscard,
   onApplied,
 }: {
   agentId: string
   draft: Draft
   inventory: InventoryOption[]
   canEdit: boolean
+  isLive?: boolean
+  onDiscard?: () => void
   onApplied: (summary: string) => void
 }) {
   const p = draft.profile!
@@ -99,7 +103,7 @@ export function ReviewStep({
     const brandSel = Object.fromEntries(
       Object.entries(brand)
         .filter(([, v]) => v.keep && v.value.trim())
-        .map(([k, v]) => [k === 'hours' ? 'hours' : k, v.value.trim()]),
+        .map(([k, v]) => [k, v.value.trim()]),
     )
     const selection = {
       brand: brandSel,
@@ -107,9 +111,11 @@ export function ReviewStep({
       policies: [
         ...shipping
           .filter((s) => s.keep)
+          .filter((s) => s.etaText || s.coverageText || s.contraEntrega)
           .map((s) => ({
             title: `Envío${s.methodName ? `: ${s.methodName}` : ''}`,
-            text: [s.priceText && `Precio: ${s.priceText}`, s.etaText && `Tiempo: ${s.etaText}`, s.coverageText && `Cobertura: ${s.coverageText}`, s.contraEntrega ? 'Acepta contra entrega' : '']
+            // No amounts: the shipping price is always computed by Betsy from the business's shipping methods.
+            text: [s.etaText && `Tiempo: ${s.etaText}`, s.coverageText && `Cobertura: ${s.coverageText}`, s.contraEntrega ? 'Acepta contra entrega' : '']
               .filter(Boolean)
               .join('. '),
           })),
@@ -309,6 +315,16 @@ export function ReviewStep({
       ) : null}
 
       {error ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-[12px] text-rose-800 ring-1 ring-rose-100">{error}</p> : null}
+      {canEdit && isLive ? (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-900 ring-1 ring-amber-100">
+          Este agente ya está respondiendo clientes: lo que apliques cambia sus respuestas de inmediato.
+        </p>
+      ) : null}
+      {canEdit && onDiscard ? (
+        <button type="button" disabled={busy} onClick={onDiscard} className="w-full text-center text-[12px] text-slate-500 hover:text-rose-600">
+          Descartar este borrador y volver a las fuentes
+        </button>
+      ) : null}
       {canEdit ? (
         <button
           type="button"

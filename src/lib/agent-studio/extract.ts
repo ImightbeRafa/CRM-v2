@@ -23,13 +23,20 @@ export const DRAFT_COST_CAP_MICROS = 600_000 // US$0.60 per draft
 export const DRAFTS_PER_TENANT_PER_DAY = 10
 const LEASE_MS = 150_000
 const CALL_TIMEOUT_MS = 90_000
-const MAX_OUTPUT_TOKENS = 6_000
+const MAX_OUTPUT_TOKENS = 12_000
+const APPLY_LEASE_MS = 120_000
 const MAX_INPUT_CHARS = 140_000 // ≈ 35–40k tokens across all sources
 
 export class DraftDailyLimitError extends Error {
   constructor() {
     super('DRAFT_DAILY_LIMIT')
     this.name = 'DraftDailyLimitError'
+  }
+}
+export class DraftBusyError extends Error {
+  constructor() {
+    super('DRAFT_BUSY')
+    this.name = 'DraftBusyError'
   }
 }
 export class NoSourcesError extends Error {
@@ -118,7 +125,7 @@ export const EXTRACT_INSTRUCTIONS = [
   '- Extraé solo lo que está escrito en las fuentes. Nunca inventes precios, números de cuenta, horarios, coberturas ni políticas.',
   '- Cada dato lleva sourceId (el id del bloque) y snippet: una cita LITERAL corta (máx. 200 caracteres) copiada de esa fuente.',
   '- Si un dato no aparece, devolvé null o una lista vacía.',
-  '- products: cada producto/variante visto tal como aparece (nombre, talla/color en variantText, grupo/categoría en groupText, precio visto).',
+  '- products: cada producto/variante visto tal como aparece (nombre, talla/color en variantText, grupo/categoría en groupText, código/SKU en skuSeen si está escrito, precio visto).',
   '- paymentAccounts: SINPE Móvil / IBAN solo si el número está escrito en la fuente.',
   '- voice, howISell, mustSay, neverSay y quickReplies son sugerencias en español de Costa Rica, coherentes con el tono de las fuentes; el dueño las revisa.',
   '- quickReplies: respuestas cortas y útiles para preguntas frecuentes de clientes (envío, pago, tallas, horario).',
@@ -164,6 +171,8 @@ export async function startProfileExtraction(input: {
     // Partial unique index (one active draft per agent): someone started one at the same time.
     const again = await latestDraft(input.tenantId, agent.id)
     if (again && (again.status === 'queued' || again.status === 'extracting')) return again
+    // An apply in progress also holds the one-active-draft slot.
+    if (again && again.status === 'applying') throw new DraftBusyError()
     throw error
   }
   void drainProfileDraft(input.tenantId, id)
@@ -208,7 +217,7 @@ export async function drainProfileDraft(tenantId: string, id: string): Promise<v
 
     const model = resolveSoftAiModel(draft.model)
     // Worst case for this call (all input + full output) must fit in what is left of the cap.
-    const worst = estimateAiCostMicros({ model, inputTokens: Math.ceil(text.length / 3), outputTokens: MAX_OUTPUT_TOKENS })
+    const worst = estimateAiCostMicros({ model, inputTokens: Math.ceil(text.length / 3), outputTokens: MAX_OUTPUT_TOKENS + 800 })
     if (draft.spentMicros + worst > costCap) return await finish('cost_capped', 'cost_cap', null, draft.spentMicros)
 
     let spent = draft.spentMicros
@@ -227,6 +236,8 @@ export async function drainProfileDraft(tenantId: string, id: string): Promise<v
       })
       const u = readSoftAiUsage(response)
       spent += estimateAiCostMicros({ model, inputTokens: u.inputTokens, cachedTokens: u.cachedInputTokens, outputTokens: u.outputTokens })
+      // Output cut at the token cap: say so plainly instead of a generic "bad JSON" (retrying won't help).
+      if ((response as { status?: string }).status === 'incomplete') return await finish('failed', 'too_long', null, spent)
       raw = JSON.parse(parseSoftAiResponseText(response) || 'null')
     } catch (error) {
       const code = error instanceof SyntaxError ? 'bad_json' : 'model_error'
@@ -254,13 +265,26 @@ export async function drainProfileDraft(tenantId: string, id: string): Promise<v
   }
 }
 
-/** Cron: resume drafts whose lease expired (restart mid-extraction). */
+/** Cron: resume drafts whose lease expired (restart mid-extraction); release applies interrupted by a restart. */
 export async function drainStaleProfileDrafts(limit = 1): Promise<number> {
   if (!(await isTableReady(TABLE))) return 0
+  await prisma.$executeRaw`
+    UPDATE "ChatAgentProfileDraft" SET "status" = 'ready', "leaseUntil" = NULL
+     WHERE "status" = 'applying' AND ("leaseUntil" IS NULL OR "leaseUntil" < NOW())`.catch(() => 0)
   const rows = await prisma.$queryRaw<Array<{ id: string; tenantId: string }>>`
     SELECT "id", "tenantId" FROM "ChatAgentProfileDraft"
      WHERE "status" IN ('queued', 'extracting') AND ("leaseUntil" IS NULL OR "leaseUntil" < NOW())
      ORDER BY "createdAt" ASC LIMIT ${limit}`
   for (const r of rows) await drainProfileDraft(r.tenantId, r.id)
   return rows.length
+}
+
+export { APPLY_LEASE_MS }
+
+/** Owner throws a ready draft away (back to sources). */
+export async function discardDraft(tenantId: string, agentId: string, id: string): Promise<boolean> {
+  const n = await prisma.$executeRaw`
+    UPDATE "ChatAgentProfileDraft" SET "status" = 'canceled', "leaseUntil" = NULL
+     WHERE "id" = ${id} AND "tenantId" = ${tenantId} AND "agentId" = ${agentId} AND "status" IN ('ready', 'failed', 'cost_capped')`
+  return n > 0
 }

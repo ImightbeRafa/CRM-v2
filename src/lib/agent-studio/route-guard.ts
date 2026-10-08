@@ -10,7 +10,7 @@ import { isSameOriginRequest } from '@/lib/same-origin'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
 import { prisma } from '@/lib/db'
 import { StudioNotReadyError, TooManySourcesError } from '@/lib/agent-studio/source-store'
-import { DraftDailyLimitError, NoSourcesError } from '@/lib/agent-studio/extract'
+import { DraftBusyError, DraftDailyLimitError, NoSourcesError } from '@/lib/agent-studio/extract'
 import { DraftNotReadyError } from '@/lib/agent-studio/apply'
 import { SafeFetchError } from '@/lib/agent-studio/safe-fetch'
 import { UploadParseError } from '@/lib/agent-studio/file-parse'
@@ -89,6 +89,7 @@ export function studioErrorResponse(error: unknown): NextResponse | null {
   if (error instanceof StudioNotReadyError) return json(409, 'Esta función todavía no está activada en la base de datos.', { code: 'not_ready' })
   if (error instanceof TooManySourcesError) return json(409, 'Este agente ya tiene 30 fuentes. Quitá alguna primero.')
   if (error instanceof DraftDailyLimitError) return json(429, 'Llegaste al límite de borradores de hoy. Probá mañana.')
+  if (error instanceof DraftBusyError) return json(409, 'Se está aplicando un borrador. Esperá un momento.')
   if (error instanceof NoSourcesError) return json(400, 'Agregá al menos una fuente con texto.')
   if (error instanceof DraftNotReadyError) return json(409, 'Este borrador ya no se puede aplicar.')
   if (error instanceof SafeFetchError) return json(400, FETCH_MESSAGES[error.code] || 'No pudimos leer ese enlace.', { code: error.code })

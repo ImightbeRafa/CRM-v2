@@ -11,13 +11,24 @@ const ERROR_TEXT: Record<string, string> = {
   model_error: 'La IA no respondió a tiempo. Probá de nuevo.',
   interrupted: 'Se interrumpió. Probá de nuevo.',
   no_sources: 'No hay fuentes con texto.',
+  too_long: 'Tus fuentes tienen demasiado contenido para un solo borrador. Quitá alguna (por ejemplo el catálogo completo) y probá de nuevo.',
 }
 
 /**
  * "Crear desde fuentes": 1) give the business's material → 2) AI draft with where each fact came from →
  * 3) owner checks and applies → then "Probar y activar" (the agent's own tests) below.
  */
-export function StudioFlow({ agentId, canEdit, onApplied }: { agentId: string; canEdit: boolean; onApplied?: () => void }) {
+export function StudioFlow({
+  agentId,
+  canEdit,
+  isLive = false,
+  onApplied,
+}: {
+  agentId: string
+  canEdit: boolean
+  isLive?: boolean
+  onApplied?: () => void
+}) {
   const [sources, setSources] = useState<StudioSource[]>([])
   const [ig, setIg] = useState<Array<{ id: string; label: string }>>([])
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -57,7 +68,7 @@ export function StudioFlow({ agentId, canEdit, onApplied }: { agentId: string; c
 
   // Poll while the AI is reading (one extraction takes ~20–90 s).
   useEffect(() => {
-    const working = draft?.status === 'queued' || draft?.status === 'extracting'
+    const working = draft?.status === 'queued' || draft?.status === 'extracting' || draft?.status === 'applying'
     if (!working) return
     timer.current = window.setTimeout(() => void loadDraft(), 3000)
     return () => {
@@ -80,8 +91,20 @@ export function StudioFlow({ agentId, canEdit, onApplied }: { agentId: string; c
     }
   }
 
+  async function discard() {
+    if (!draft) return
+    setBusy(true)
+    await fetch(`${base}/draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'discard', draftId: draft.id }),
+    }).catch(() => null)
+    setBusy(false)
+    void loadDraft()
+  }
+
   const parsed = sources.filter((s) => s.status === 'parsed').length
-  const working = draft?.status === 'queued' || draft?.status === 'extracting'
+  const working = draft?.status === 'queued' || draft?.status === 'extracting' || draft?.status === 'applying'
   const step = draft?.status === 'ready' ? 2 : draft?.status === 'applied' ? 3 : 1
 
   if (notReady) return null
@@ -117,7 +140,7 @@ export function StudioFlow({ agentId, canEdit, onApplied }: { agentId: string; c
                   className="min-h-[44px] w-full rounded-xl bg-[#5B6CFF] px-4 text-[14px] font-semibold text-white disabled:opacity-40"
                   data-testid="studio-start"
                 >
-                  {working ? 'La IA está leyendo tus fuentes…' : `Leer ${parsed} fuente(s) con IA`}
+                  {draft?.status === 'applying' ? 'Aplicando el borrador…' : working ? 'La IA está leyendo tus fuentes…' : `Leer ${parsed} fuente(s) con IA`}
                 </button>
               ) : null}
               {draft?.status === 'failed' || draft?.status === 'cost_capped' ? (
@@ -135,6 +158,8 @@ export function StudioFlow({ agentId, canEdit, onApplied }: { agentId: string; c
               draft={draft}
               inventory={inventory}
               canEdit={canEdit}
+              isLive={isLive}
+              onDiscard={() => void discard()}
               onApplied={(summary) => {
                 setMessage(summary)
                 void loadDraft()
@@ -146,7 +171,11 @@ export function StudioFlow({ agentId, canEdit, onApplied }: { agentId: string; c
           {step === 3 ? (
             <div className="space-y-2 rounded-xl bg-emerald-50 px-3 py-3 text-[13px] text-emerald-900 ring-1 ring-emerald-100">
               <p className="font-medium">{message || 'Aplicado al agente.'}</p>
-              <p className="text-[12px]">Ahora usá “Probar y activar” en la línea del agente: corre sus pruebas y, si pasan, lo activás con un clic.</p>
+              <p className="text-[12px]">
+                {isLive
+                  ? 'El agente ya está activo: estos cambios ya los usa. Corré “Probar y activar” para confirmar que sigue pasando sus pruebas.'
+                  : 'Ahora usá “Probar y activar” en la línea del agente: corre sus pruebas y, si pasan, lo activás con un clic.'}
+              </p>
               {canEdit ? (
                 <button type="button" onClick={() => setDraft(null)} className="text-[12px] font-medium text-au-ink-5b6cff">
                   Agregar más fuentes

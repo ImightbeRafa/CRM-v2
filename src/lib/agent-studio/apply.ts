@@ -8,13 +8,14 @@
 import 'server-only'
 
 import { prisma } from '@/lib/db'
-import { parseBrandFactsSafe, type BrandFacts } from '@/lib/soft-ai/brand-facts'
+import { BrandFactsSchema, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import { updateChatAgent } from '@/lib/soft-ai/agent-admin'
 import { approveKnowledgeSource, bindKnowledgeToAgent, createKnowledgeSource } from '@/lib/soft-ai/knowledge-admin'
 import { createShortcut, listShortcuts } from '@/lib/soft-ai/shortcut-admin'
 import { loadMappedInventoryIds, setMappedInventory, MAX_MAPPED_ITEMS } from '@/lib/soft-ai/agent-inventory-map'
 import { saveSalesSetup, SalesSetupNotReadyError, type SalesRules } from '@/lib/soft-ai/agent-sales-setup'
 import { hasConfirmationWording } from '@/lib/soft-ai/shortcuts'
+import { APPLY_LEASE_MS } from '@/lib/agent-studio/extract'
 import { KNOWLEDGE_BODY_MAX } from '@/lib/soft-ai/knowledge-types'
 
 export type ApplySelection = {
@@ -51,10 +52,11 @@ type Actor = { userId: string; name: string; role: string }
 
 const t = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined)
 const httpUrl = (v: unknown) => {
-  const s = t(v, 300)
+  const s = t(v, 400)
   if (!s) return undefined
   const withProto = /^https?:\/\//i.test(s) ? s : `https://${s}`
-  return /^https?:\/\/\S+$/i.test(withProto) ? withProto : undefined
+  // Length checked AFTER adding the scheme (brand facts allow 300).
+  return withProto.length <= 300 && /^https?:\/\/\S+$/i.test(withProto) ? withProto : undefined
 }
 
 /** Pure: merge only the fields the owner sent into the agent's current brand facts (exported for tests). */
@@ -133,9 +135,17 @@ export async function applyProfileDraft(input: {
 }): Promise<ApplyResult> {
   const { tenantId, agentId, actor, selection } = input
   // Claim: only a 'ready' draft of THIS agent can be applied, once.
-  const claimed = await prisma.$executeRaw`
-    UPDATE "ChatAgentProfileDraft" SET "status" = 'applying'
-     WHERE "id" = ${input.draftId} AND "tenantId" = ${tenantId} AND "agentId" = ${agentId} AND "status" = 'ready'`
+  // Leased: a restart mid-apply is released back to 'ready' by the cron (never stuck in 'applying').
+  let claimed = 0
+  try {
+    claimed = await prisma.$executeRaw`
+      UPDATE "ChatAgentProfileDraft"
+         SET "status" = 'applying', "leaseUntil" = NOW() + (${APPLY_LEASE_MS}::int * INTERVAL '1 millisecond')
+       WHERE "id" = ${input.draftId} AND "tenantId" = ${tenantId} AND "agentId" = ${agentId} AND "status" = 'ready'`
+  } catch {
+    // One-active-draft index: another draft of this agent is being read right now.
+    throw new DraftNotReadyError()
+  }
   if (claimed === 0) throw new DraftNotReadyError()
 
   const agent = await prisma.chatAgent.findFirst({ where: { id: agentId, tenantId }, select: { id: true, name: true, brandFacts: true } })
@@ -145,9 +155,13 @@ export async function applyProfileDraft(input: {
     if (!agent) throw new Error('AGENT_NOT_FOUND')
 
     // 1) Brand facts (deep merge; schema + size validated by updateChatAgent → parseBrandFacts).
-    if (selection.brand || selection.payment) {
+    const hasBrand = Boolean(selection.brand && Object.values(selection.brand).some((v) => typeof v === 'string' && v.trim()))
+    if (hasBrand || selection.payment) {
+      const current = BrandFactsSchema.safeParse(agent.brandFacts ?? {})
       try {
-        const merged = mergeBrandFacts(parseBrandFactsSafe(agent.brandFacts), selection)
+        // Never overwrite brand facts we cannot read (merging onto "empty" would lose them).
+        if (!current.success) throw new Error('BRAND_FACTS_UNREADABLE')
+        const merged = mergeBrandFacts(current.data, selection)
         await updateChatAgent({ tenantId, agentId, ...who, patch: { brandFacts: merged } })
         result.brandFacts = true
       } catch {
@@ -210,9 +224,13 @@ export async function applyProfileDraft(input: {
     }
 
     // 5) Selling script.
-    if (selection.salesRules) {
+    // Only fields the owner actually filled: a blank in this draft never wipes a saved rule.
+    const rules = Object.fromEntries(
+      Object.entries(selection.salesRules || {}).filter(([, v]) => (Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.trim())),
+    ) as Partial<SalesRules>
+    if (Object.keys(rules).length) {
       try {
-        await saveSalesSetup(tenantId, agentId, { salesRules: selection.salesRules }, actor.userId)
+        await saveSalesSetup(tenantId, agentId, { salesRules: rules }, actor.userId)
         result.salesRules = true
       } catch (error) {
         result.skipped.push(error instanceof SalesSetupNotReadyError ? 'sales_rules_not_ready' : 'sales_rules')
@@ -221,13 +239,13 @@ export async function applyProfileDraft(input: {
 
     await prisma.$executeRaw`
       UPDATE "ChatAgentProfileDraft"
-         SET "status" = 'applied', "applied" = ${JSON.stringify(result)}::jsonb, "appliedAt" = NOW(), "appliedBy" = ${actor.userId}
+         SET "status" = 'applied', "leaseUntil" = NULL, "applied" = ${JSON.stringify(result)}::jsonb, "appliedAt" = NOW(), "appliedBy" = ${actor.userId}
        WHERE "id" = ${input.draftId} AND "tenantId" = ${tenantId} AND "status" = 'applying'`
     return result
   } catch (error) {
     // Nothing (or only part) applied: release the draft so the owner can retry.
     await prisma.$executeRaw`
-      UPDATE "ChatAgentProfileDraft" SET "status" = 'ready', "applied" = ${JSON.stringify(result)}::jsonb
+      UPDATE "ChatAgentProfileDraft" SET "status" = 'ready', "leaseUntil" = NULL, "applied" = ${JSON.stringify(result)}::jsonb
        WHERE "id" = ${input.draftId} AND "tenantId" = ${tenantId} AND "status" = 'applying'`.catch(() => 0)
     throw error
   }

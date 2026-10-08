@@ -749,7 +749,7 @@ export default function AgentesConfigPage() {
             {selected ? (
               <div className="space-y-4">
                 <div hidden={!detailVisible || tab !== 'resumen'} role="tabpanel" className="space-y-4">
-                  <StudioFlow key={`studio-${selected.id}`} agentId={selected.id} canEdit={canEdit} onApplied={() => void load({ silent: true })} />
+                  <StudioFlow key={`studio-${selected.id}`} agentId={selected.id} canEdit={canEdit} isLive={selected.status === 'live'} onApplied={() => void load({ silent: true })} />
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className={CARD}>
                       <div className="flex items-center justify-between">

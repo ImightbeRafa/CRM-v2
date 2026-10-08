@@ -35,7 +35,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   const { tenantId, userId, agent } = g.ctx
   try {
     await requireStudioReady()
+    // formData() buffers the whole body: refuse bodies without a declared size or above the cap BEFORE reading.
     const declared = Number(request.headers.get('content-length') || 0)
+    if (!declared) return NextResponse.json({ success: false, error: 'Falta el tamaño del archivo.' }, { status: 411 })
     if (declared > MAX_UPLOAD_BYTES + 64_000) {
       return NextResponse.json({ success: false, error: 'El archivo pesa más de 10 MB.' }, { status: 413 })
     }

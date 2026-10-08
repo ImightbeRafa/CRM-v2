@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
+import { hasSessionPermission } from '@/lib/session-permissions'
 
 type Mode = 'all' | 'gam' | 'list'
 type Row = {
@@ -21,6 +23,8 @@ const PLACES_HINT = 'Una zona por línea: Provincia | Cantón | Distrito (cantó
  * code — it never decides coverage itself. Hidden until the database step is applied.
  */
 export function ShippingZonesEditor() {
+  const { data: session } = useSession()
+  const canEdit = hasSessionPermission(session, 'update_config')
   const [rows, setRows] = useState<Row[] | null>(null)
   const [available, setAvailable] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
@@ -115,6 +119,7 @@ export function ShippingZonesEditor() {
               ) : null}
             </div>
           ) : null}
+          {canEdit ? (
           <button
             type="button"
             disabled={saving === r.shippingMethodId}
@@ -123,6 +128,7 @@ export function ShippingZonesEditor() {
           >
             {saving === r.shippingMethodId ? 'Guardando…' : 'Guardar zonas'}
           </button>
+          ) : null}
         </div>
       ))}
       {msg ? <p className="text-sm text-muted-foreground">{msg}</p> : null}

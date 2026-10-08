@@ -52,8 +52,15 @@ export async function crawlSite(
     while (queue.length && pages.length < maxPages && bytes < totalBytes && Date.now() < deadline) {
       const url = queue.shift() as string
       try {
-        const res = await safeFetch(url, { maxBytes: 2_000_000, timeoutMs: 10_000 })
+        const left = deadline - Date.now()
+        if (left < 1_000) break
+        const res = await safeFetch(url, { maxBytes: 2_000_000, timeoutMs: Math.min(10_000, left) })
         bytes += res.body.length
+        // A redirect may leave the business's site: never read or follow another host's pages.
+        if (!sameSite(new URL(res.finalUrl).hostname, host)) {
+          errors.push({ url, code: 'off_site' })
+          continue
+        }
         const page = htmlToText(res.body.toString('utf8'), res.finalUrl)
         if (page.text.length > 40) pages.push({ url: res.finalUrl, title: page.title, text: page.text })
         jsonLdProducts.push(...page.jsonLdProducts)

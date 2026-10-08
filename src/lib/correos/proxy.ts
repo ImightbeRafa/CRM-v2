@@ -1,7 +1,7 @@
 /**
  * Correos proxy configuration.
  *
- * When CORREOS_PROXY_URL is set (production on Vercel), all Correos API
+ * When CORREOS_PROXY_URL is set (production), all Correos API
  * requests are routed through the reverse proxy running on the Jetson
  * Orin Nano via Cloudflare Tunnel. The proxy forwards:
  *   /token/* → https://servicios.correos.go.cr:447/Token/*

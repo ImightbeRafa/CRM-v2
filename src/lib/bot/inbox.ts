@@ -362,9 +362,9 @@ export async function processClaimedBotInboxMessage(row: ClaimedBotInboxMessage)
   } catch (error) {
     const terminal = await failBotInboxMessage(row, error);
     if (error instanceof Error && error.name === 'BotInboxTimeoutError') {
-      // If the serverless invocation remains alive and the timed-out work
+      // If the container process remains alive and the timed-out work
       // finishes before the delayed retry, close the row instead of sending a
-      // duplicate response. If Vercel kills it, the cron retry remains valid.
+      // duplicate response. If the process is killed first, the cron retry remains valid.
       void work.then(
         () => completeLateBotInboxMessage(row),
         () => undefined,

@@ -4,7 +4,7 @@ import { getProxySecret } from './proxy';
 /**
  * Dedicated axios instance for Correos SOAP calls.
  *
- * When CORREOS_PROXY_URL is set (Vercel production), requests go through
+ * When CORREOS_PROXY_URL is set (production), requests go through
  * the Jetson reverse proxy via Cloudflare Tunnel on standard HTTPS port 443.
  *
  * The X-Correos-Secret header authenticates requests to the proxy.

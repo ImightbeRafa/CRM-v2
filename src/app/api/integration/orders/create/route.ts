@@ -8,7 +8,7 @@ import { createIdentifierRateLimit, getClientIP } from '@/lib/rate-limit';
 import { evaluateTenantAccess, markRestrictedBacklog, type TenantAccessEvaluation } from '@/lib/billing-access';
 import { externalOrderIntakeSchema } from '@/lib/website-order-schema';
 
-// Configure route for Vercel deployment
+// Next.js route segment config
 export const maxDuration = 30; // Maximum execution time in seconds
 export const dynamic = 'force-dynamic'; // Disable static optimization
 

@@ -20,9 +20,9 @@ describe('cronsDisabled', () => {
 });
 
 describe('shouldUseSparticuzChromium', () => {
-  it('stays on for Vercel and Lambda, and for an explicit container flag', () => {
+  it('stays on for Lambda and for an explicit container flag; Vercel alone no longer counts', () => {
     assert.equal(shouldUseSparticuzChromium({} as NodeJS.ProcessEnv), false);
-    assert.equal(shouldUseSparticuzChromium(env({ VERCEL: '1' })), true);
+    assert.equal(shouldUseSparticuzChromium(env({ VERCEL: '1' })), false);
     assert.equal(shouldUseSparticuzChromium(env({ AWS_LAMBDA_FUNCTION_NAME: 'fn' })), true);
     assert.equal(shouldUseSparticuzChromium(env({ USE_SPARTICUZ_CHROMIUM: '1' })), true);
     assert.equal(shouldUseSparticuzChromium(env({ USE_SPARTICUZ_CHROMIUM: 'true' })), true);

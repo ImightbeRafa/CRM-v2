@@ -1,6 +1,6 @@
 /**
  * Copy-host kill switch. Set DISABLE_CRONS=1 or true on any process that
- * shares the live database so /api/cron/* cannot run beside Vercel crons.
+ * shares the live database so /api/cron/* cannot run beside the Worker's crons.
  */
 export function cronsDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const raw = env.DISABLE_CRONS;

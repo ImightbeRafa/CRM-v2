@@ -68,6 +68,8 @@ interface Env {
   BETSY_CRM_CONTAINER: DurableObjectNamespace<BetsyCrmContainer>;
   // Kill switch + auth / DB core
   DISABLE_CRONS?: string;
+  /** production | preview | development (src/lib/review-environment.ts); unset/unknown = production. */
+  APP_ENV?: string;
   NEXTAUTH_URL?: string;
   NEXTAUTH_SECRET?: string;
   EMPLOYEE_CODE_SECRET?: string;
@@ -106,13 +108,10 @@ interface Env {
   WHATSAPP_VERIFY_TOKEN?: string;
   WHATSAPP_WEBHOOK_SECRET?: string;
   FB_LOGIN_REDIRECT_URI?: string;
-  // Blob / Telegram / Tilopay / Correos / Finance
-  BLOB_READ_WRITE_TOKEN?: string;
+  // Chat storage / Telegram / Tilopay / Correos / Finance
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
   CHAT_STORAGE_BUCKET?: string;
-  BLOB_STORE_ID?: string;
-  BLOB_WEBHOOK_PUBLIC_KEY?: string;
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_BOT_USERNAME?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
@@ -161,6 +160,7 @@ interface Env {
  */
 const CONTAINER_ENV_KEYS = [
   "DISABLE_CRONS",
+  "APP_ENV",
   "NEXTAUTH_URL",
   "NEXTAUTH_SECRET",
   "EMPLOYEE_CODE_SECRET",
@@ -197,13 +197,10 @@ const CONTAINER_ENV_KEYS = [
   "WHATSAPP_VERIFY_TOKEN",
   "WHATSAPP_WEBHOOK_SECRET",
   "FB_LOGIN_REDIRECT_URI",
-  "BLOB_READ_WRITE_TOKEN",
   // Chat file storage (Supabase Storage, src/lib/chat-storage.ts).
   "SUPABASE_URL",
   "SUPABASE_SERVICE_ROLE_KEY",
   "CHAT_STORAGE_BUCKET",
-  "BLOB_STORE_ID",
-  "BLOB_WEBHOOK_PUBLIC_KEY",
   "TELEGRAM_BOT_TOKEN",
   "TELEGRAM_BOT_USERNAME",
   "TELEGRAM_WEBHOOK_SECRET",
@@ -243,7 +240,7 @@ const CONTAINER_ENV_KEYS = [
   "NEXT_PUBLIC_APP_URL",
 ] as const;
 
-/** Unique cron expressions → internal paths (Vercel vercel.json schedules).
+/** Unique cron expressions → internal paths (see wrangler.jsonc for the Worker cron triggers).
  * "0 2 * * *" fans out to process-subscription-expiry, then backup.
  */
 const CRON_PATHS: Record<string, readonly string[]> = {

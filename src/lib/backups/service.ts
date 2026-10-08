@@ -12,14 +12,13 @@ import {
 } from './config';
 import {
   createMemoryBlobStore,
-  createVercelBlobStore,
   gunzipToString,
   gzipBufferAsync,
   gzipJsonlLinesAsync,
   sha256Hex,
   type BackupBlobStore,
 } from './blob-store';
-import { backupStoreKind, createBackupStore } from './store-factory';
+import { createBackupStore } from './store-factory';
 import {
   computeSchemaHash,
   createBackupSql,
@@ -61,7 +60,7 @@ const BACKUP_LOCK_SUBKEY = 1;
  * production database and must never write or prune backups, even if R2 keys were copied there.
  */
 export function backupWriterAllowed(env: Record<string, string | undefined> = process.env): boolean {
-  return (env.BACKUP_WRITER || '').trim() === '1' && backupStoreKind(env) === 'r2';
+  return (env.BACKUP_WRITER || '').trim() === '1';
 }
 /** Worker cron wall limit is 15 min; stop before it and close the connection (aborts the snapshot). */
 export const BACKUP_DEADLINE_MS = 12 * 60_000;
@@ -320,13 +319,6 @@ export async function performBackup(options: PerformBackupOptions): Promise<Back
       },
     };
 
-    if (typeof store.getAccessMode === 'function' && store.getAccessMode() === 'public') {
-      warnings.push(
-        'Blob store is public-only; backup objects are publicly readable. Create a private Vercel Blob store and set BLOB_READ_WRITE_TOKEN to that store.',
-      );
-      manifest.health.warnings = warnings;
-    }
-
     const manifestPath = `${MANIFEST_PREFIX}/${runId}-${kind}.json`;
     await store.putBytes(
       manifestPath,
@@ -470,7 +462,7 @@ export function forgetBackupStatusCache(): void {
 
 /**
  * Backup health for the platform admin. Never hangs: storage that does not answer within 20 s
- * yields `status: 'unknown'` (2026-10-02 the old version waited forever on Vercel Blob).
+ * yields `status: 'unknown'` (2026-10-02 the old version waited forever on blob storage).
  */
 export async function getBackupStatus(
   store?: BackupBlobStore,
@@ -642,4 +634,4 @@ export async function verifyManifestArtifacts(
   return { ok: errors.length === 0, errors };
 }
 
-export { createMemoryBlobStore, createVercelBlobStore };
+export { createMemoryBlobStore };

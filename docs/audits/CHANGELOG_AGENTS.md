@@ -1,3 +1,32 @@
+## 2026-10-08 — Agent Studio "Crear desde fuentes" + shipping zones (claudio/agent-f3-studio, on agent-f2-ai-usage)
+
+- Agentes › Resumen › "✨ Crear desde fuentes": the owner gives the business's own material (website URL, PDF /
+  Word / text, product photos, a connected Instagram account, pasted text) → one structured AI pass builds a DRAFT
+  where every fact carries the literal quote it came from (unproven facts dropped) → owner reviews / edits / unticks
+  → "Aplicar" writes into the agent's existing stores through their own admin functions (brand facts deep-merge,
+  "<agente> · Políticas / Preguntas frecuentes" knowledge approved + bound, guide shortcuts, inventory map UNION,
+  selling script) → the F1 "Probar y activar" gate. Products matched to InventoryItem (one per variant) by code
+  (SKU seen in the source → exact name → tokens incl. sizes; ties left to the owner). AI never sets prices, stock,
+  shipping cost or coverage. Payment accounts never pre-ticked; text with phones / links starts unticked.
+- Config › Métodos de envío › "Zonas de entrega y contra entrega" (SQL 053 ShippingMethodCoverage): all / GAM
+  (production Correos GAM classifier) / list of zones, and where contra entrega applies. Code answers covered /
+  not / unknown (incomplete address → ask, never guess).
+- Safety: SSRF-safe fetch (IP allow/block lists incl. IPv6 global-unicast only, c-ares DNS with timeout pinned to
+  checked IPs, wall-clock per request, same-site crawl), linear HTML scanner, DOCX via bounded zip reader + 8 MB
+  inflate cap, PDF pre-scan (64 MB inflate budget, encrypted/LZW refused) then pdf.js in a worker (heap limit, RSS
+  backstop, terminate at 20 s, 1 at a time), sizes capped everywhere (bodies, URL, meta, SQL CHECKs), kill switch /
+  budget pause stop Studio spend, $0.60 per draft, 10 drafts and 60 photos per business per day (atomic), 300 MB
+  storage per business, leased extraction + apply (cron recovers), studio routes update_config + same-origin.
+- SQL 052 (ChatAgentSource, ChatAgentProfileDraft) + 053 (asset agentId/inventoryCategory + FK fix SET NULL
+  ("inventoryItemId"), ShippingMethodCoverage, ChatAgentSettings offeredShippingMethodIds/salesRules). Not applied
+  anywhere yet (checked read-only 2026-10-08). unpdf 1.4.0 (Node 20) external + traced into the upload route.
+- Reviews: Verifier FAIL ×2 → fixed; SecureDog BLOCK → OK TO DEPLOY with notes. Register: INFRA-21, DB-06, INT-64..68,
+  DATA-44, DATA-45, AUTH-59. Deferred: offered-methods UI/runtime + photo records (F5), studio injection cases in the
+  test suite (F4), sales rules in the live prompt (F5), platform-wide audit clamp, agent-delete file purge.
+- Proof: tsc 0, lint 0, soft-ai 409/409 (agent-studio 45 incl. one regression per review finding), chat-harden
+  640/640, security 271/271, ops 37/37, site-ui 50/51 (baseline); docker image builds, a real PDF parses in the
+  worker inside the image on Node 20. Real model calls not verified locally (invalid local XAI key).
+
 ## 2026-10-05 — Composer never locks on text sends + Estadísticas calendar periods (claudio/chat-link-orders)
 
 - Chats composer: text sends append the bubble and clear the box at once, then queue per conversation (typing

@@ -571,6 +571,7 @@ export async function executeAgentLayerTurn(
       clientId: conversation.clientId,
       inventoryItemIds: await loadMappedInventoryIds(row.tenantId, resolved.agent.id),
       orderOwnership: (await loadAgentSettings(row.tenantId, resolved.agent.id)).orderOwnership,
+      platform: payload.platform || 'whatsapp',
     },
   })
   const llm = await runSoftAiLlmRuntime(runtimeInput)

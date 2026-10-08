@@ -38,6 +38,8 @@ export type SoftAiToolRunContext = {
   sandbox?: boolean
   /** Products this agent may quote (SQL 046). Fail closed: null/undefined/empty = NO products. */
   inventoryItemIds?: string[] | null
+  /** Channel platform (whatsapp / instagram): an Instagram peer id is never treated as a phone. */
+  platform?: string | null
   /** Business this agent sells for (SQL 049). undefined = only chat-linked orders + phone (no business scope). */
   orderOwnership?: AgentOrderOwnership
 }
@@ -181,6 +183,7 @@ function ownershipCtx(ctx: SoftAiToolRunContext): OrderOwnershipContext {
     peerPhoneHints: ctx.peerPhoneHints,
     clientId: ctx.clientId,
     sandbox: ctx.sandbox,
+    platform: ctx.platform,
     // Layer agents are always business-scoped; no settings row = empty stamp = only chat-linked orders.
     ownership: ctx.orderOwnership ?? { salesChannels: [], funnels: [], sources: [] },
   }

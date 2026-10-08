@@ -80,6 +80,8 @@ export type SoftAiResponsesCreateArgs = {
   reasoningEffort?: 'none' | 'low' | 'medium' | 'high'
   timeoutMs?: number
   store?: boolean
+  /** Structured output (JSON schema) — used by graders/extractors, never by the customer-facing turn. */
+  textFormat?: { name: string; schema: Record<string, unknown>; strict?: boolean }
   /** Required: every call is metered (AI usage dashboard). tenantId null only for platform-level calls. */
   usage: {
     tenantId: string | null
@@ -131,6 +133,16 @@ export function buildSoftAiResponsesBody(args: Omit<SoftAiResponsesCreateArgs, '
   }
   if (args.tools && args.tools.length > 0) body.tools = args.tools
   if (args.promptCacheKey) body.prompt_cache_key = args.promptCacheKey
+  if (args.textFormat) {
+    body.text = {
+      format: {
+        type: 'json_schema',
+        name: args.textFormat.name,
+        schema: args.textFormat.schema,
+        strict: args.textFormat.strict !== false,
+      },
+    }
+  }
   return body
 }
 

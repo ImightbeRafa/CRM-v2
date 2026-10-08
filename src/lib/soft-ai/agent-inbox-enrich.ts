@@ -13,6 +13,7 @@ import {
 } from '@/lib/soft-ai/agent-inbox-projection'
 import { isChatAgentSchemaReady, isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { CHAT_AGENT_LAYER_V1_FLAG } from '@/lib/soft-ai/agent-types'
+import { agentsServingUnboundChannels } from '@/lib/soft-ai/agent-settings'
 
 /** Agent-layer flag per business, 60 s per process (read on every inbox list / poll). */
 const flagCache = new Map<string, { enabled: boolean; at: number }>()
@@ -92,8 +93,12 @@ export async function enrichConversationDtosWithAgents(
       }
     }
 
+    // Same rule as the resolver: a default agent only covers channels without their own when allowed (SQL 049).
+    const defaultServes = tenantDefault?.agentId
+      ? (await agentsServingUnboundChannels(tenantId)).has(tenantDefault.agentId)
+      : false
     return items.map((item) => {
-      const binding = byAccount.get(item.socialAccountId) || tenantDefault
+      const binding = byAccount.get(item.socialAccountId) || (defaultServes ? tenantDefault : null)
       if (!binding?.agent || binding.agent.status !== 'live') {
         return {
           ...item,

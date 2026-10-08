@@ -22,6 +22,8 @@ export type OrderOwnershipContext = {
   clientId?: string | null
   /** Probar: a hand-linked client counts without re-checking its phone. */
   sandbox?: boolean
+  /** Channel platform. Only a WhatsApp peer id is a phone number (an Instagram id never matches a phone). */
+  platform?: string | null
   /** Layer agents: the business this agent sells for. undefined = no business scoping (v1 / staff). */
   ownership?: AgentOrderOwnership
 }
@@ -52,16 +54,31 @@ const ORDER_SELECT = {
 
 const digits = (value: string) => value.replace(/\D/g, '')
 
-/** Orders a human linked to this conversation. The link itself is the ownership proof. */
+/**
+ * Is this message's order link a HUMAN claim? Links written by an AI (legacy v1 replies stamped the order it
+ * looked up, possibly from a number the customer typed) prove nothing and are never trusted.
+ */
+export function isTrustedOrderLink(row: { direction: string; senderUserId: string | null; metadata: unknown }): boolean {
+  const meta = row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+    ? (row.metadata as Record<string, unknown>)
+    : {}
+  if (meta.softAi === true) return false
+  // Inbound: set by Chats › Vincular pedido (a person). Outbound: only a person's own message (guía sends etc.).
+  return row.direction === 'inbound' || Boolean(row.senderUserId)
+}
+
+/** Orders a PERSON linked to this conversation. The human link itself is the ownership proof. */
 export async function linkedOrderIds(tenantId: string, conversationId?: string | null): Promise<Set<string>> {
   if (!conversationId) return new Set()
   const rows = await prisma.chatMessage.findMany({
     where: { tenantId, conversationId, orderId: { not: null } },
-    select: { orderId: true },
+    select: { orderId: true, direction: true, senderUserId: true, metadata: true },
     orderBy: { sentAt: 'desc' },
-    take: 20,
+    take: 50,
   })
-  return new Set(rows.map((r) => r.orderId).filter((id): id is string => Boolean(id)))
+  return new Set(
+    rows.filter(isTrustedOrderLink).map((r) => r.orderId).filter((id): id is string => Boolean(id)),
+  )
 }
 
 /** Phone / verified-client ownership (does not consider chat links; see isOrderOwned). */
@@ -69,7 +86,8 @@ export async function phoneOwnsOrder(
   ctx: OrderOwnershipContext,
   order: { clientId?: string | null; phone?: string | null },
 ): Promise<boolean> {
-  const hints = [digits(ctx.peerId), ...(ctx.peerPhoneHints || []).map(digits)]
+  const peerIsPhone = !ctx.platform || ctx.platform === 'whatsapp'
+  const hints = [...(peerIsPhone ? [digits(ctx.peerId)] : []), ...(ctx.peerPhoneHints || []).map(digits)]
   // Last-8-digit match; short or placeholder phones ("0", "123") never match anyone (see phone-ownership.ts).
   const phoneMatches = (raw: string | null | undefined) => phoneOwnershipMatch(hints, raw ? digits(raw) : '')
   if (ctx.clientId && order.clientId && ctx.clientId === order.clientId) {

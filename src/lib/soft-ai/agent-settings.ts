@@ -162,7 +162,7 @@ export async function saveAgentSettings(
       patch.dailyTokenCap === undefined
         ? current.dailyTokenCap
         : patch.dailyTokenCap && patch.dailyTokenCap > 0
-          ? Math.min(Math.floor(patch.dailyTokenCap), 50_000_000)
+          ? Math.min(Math.max(1, Math.floor(patch.dailyTokenCap)), 50_000_000)
           : null,
     orderOwnership: patch.orderOwnership ? parseOrderOwnership(patch.orderOwnership) : current.orderOwnership,
     orderDefaults: patch.orderDefaults ? parseOrderDefaults(patch.orderDefaults) : current.orderDefaults,

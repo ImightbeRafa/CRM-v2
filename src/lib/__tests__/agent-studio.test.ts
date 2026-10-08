@@ -564,3 +564,30 @@ describe('Forge 2026-10-08: products by group, typo-tolerant match, no-products 
     assert.ok(page.indexOf('<AgentInventoryCard') < page.indexOf("tab !== 'personalidad'"))
   })
 })
+
+describe('Test chat = live reply, with a short "why" line', () => {
+  it('why lines name products / hand-offs / blocks in plain words', async () => {
+    const { probarWhy } = await import('@/lib/soft-ai/probar-why')
+    const why = probarWhy({
+      toolTrace: [{ name: 'search_inventory', ok: true, result: { items: [{ name: 'ARNESS FORGE XL', sellingPrice: 14900, currentStock: 30 }] } }],
+      escalate: true,
+      escalateReason: 'payment',
+      blockedBy: ['not_activated'],
+    })
+    assert.match(why[0], /^usó inventario: ARNESS FORGE XL ₡14[.s ]900 stock 30$/)
+    assert.ok(why.includes('pasó a una persona: pago'))
+    assert.ok(why.some((w) => w.startsWith('un cliente real no recibiría respuesta')))
+    assert.deepEqual(probarWhy({ toolTrace: [{ name: 'search_inventory', ok: true, result: { items: [] } }] }), ['buscó en inventario: no encontró productos'])
+  })
+  it('the test turn passes the same order ownership / platform / intent fallback as the live turn', () => {
+    const turn = read('src/lib/soft-ai/agent-turn.ts')
+    assert.equal((turn.match(/orderOwnership: \(await loadAgentSettings\(/g) || []).length, 2)
+    assert.doesNotMatch(turn, /intent: llm\.intent \|\| 'other'/)
+    assert.match(turn, /why: probarWhy\(/)
+    const ui = read('src/app/config/agentes/AgentTestSandbox.tsx')
+    assert.match(ui, /Nueva conversación/)
+    assert.match(ui, /useState\(''\)/)
+    const page = read('src/app/config/agentes/page.tsx')
+    assert.ok(page.indexOf('id="agent-probar"') < page.indexOf("tab !== 'personalidad'"))
+  })
+})

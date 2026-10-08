@@ -561,8 +561,8 @@ export default function AgentesConfigPage() {
 
   function probar(id: string | null = selectedId) {
     if (!id) return
-    if (id === selectedId && view === 'detail' && !draftMode) goTab('canales')
-    else openAgent(id, 'canales')
+    if (id === selectedId && view === 'detail' && !draftMode) goTab('resumen')
+    else openAgent(id, 'resumen')
     void scrollToProbar()
   }
 
@@ -751,6 +751,26 @@ export default function AgentesConfigPage() {
                 <div hidden={!detailVisible || tab !== 'resumen'} role="tabpanel" className="space-y-4">
                   <StudioFlow key={`studio-${selected.id}`} agentId={selected.id} canEdit={canEdit} isLive={selected.status === 'live'} onApplied={() => void load({ silent: true })} />
                   <AgentInventoryCard key={`inv-${selected.id}`} agentId={selected.id} canEdit={canEdit} title="② Productos que vende" />
+                  <div id="agent-probar">
+                    <p className="mb-2 text-[14px] font-semibold text-slate-900">③ Probar y activar</p>
+                    <AgentTestSandbox
+                      key={selected.id}
+                      agentId={selected.id}
+                      agentName={selected.name}
+                      canEdit={canEdit}
+                      channels={testChannels}
+                      channelsLoaded={channelsLoaded}
+                      socialAccountId={channelId}
+                      onSelectChannel={setChannelId}
+                      onUnlocked={() => setChannelReload((value) => value + 1)}
+                      agentModel={selected.model}
+                      configuredModels={configuredModels}
+                      operationMode={selected.operationMode}
+                    />
+                  </div>
+                  <details className="rounded-2xl border border-slate-200/70 bg-white p-4 md:p-5" data-testid="agent-resumen-avanzado">
+                    <summary className="cursor-pointer text-[13px] font-semibold text-slate-700">Avanzado: personalidad, líneas, conocimiento, herramientas y estado</summary>
+                    <div className="mt-4 space-y-4">
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className={CARD}>
                       <div className="flex items-center justify-between">
@@ -939,6 +959,8 @@ export default function AgentesConfigPage() {
                       </div>
                     </div>
                   </div>
+                    </div>
+                  </details>
                 </div>
 
                 <div hidden={!detailVisible || tab !== 'personalidad'} role="tabpanel" className="space-y-4">
@@ -1120,22 +1142,6 @@ export default function AgentesConfigPage() {
                       setChannelsLoaded(true)
                     }}
                   />
-                  <div id="agent-probar">
-                    <AgentTestSandbox
-                      key={selected.id}
-                      agentId={selected.id}
-                      agentName={selected.name}
-                      canEdit={canEdit}
-                      channels={testChannels}
-                      channelsLoaded={channelsLoaded}
-                      socialAccountId={channelId}
-                      onSelectChannel={setChannelId}
-                      onUnlocked={() => setChannelReload((value) => value + 1)}
-                      agentModel={selected.model}
-                      configuredModels={configuredModels}
-                      operationMode={selected.operationMode}
-                    />
-                  </div>
                 </div>
 
                 {/* Conocimiento — completeness cards, inline wizard, real sources */}

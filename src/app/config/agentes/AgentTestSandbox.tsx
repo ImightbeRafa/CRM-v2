@@ -12,6 +12,9 @@ export type WaBubble = {
   text: string
   at: string
   label?: string
+  /** Agent bubbles: what it used / why (test chat only). */
+  why?: string[]
+  latencyMs?: number
 }
 
 type TurnResult = {
@@ -28,6 +31,7 @@ type TurnResult = {
   intent?: string
   shortcutKey?: string | null
   decisionTrace?: unknown
+  why?: string[]
 }
 
 function BubbleView({ bubble }: { bubble: WaBubble }) {
@@ -43,7 +47,19 @@ function BubbleView({ bubble }: { bubble: WaBubble }) {
           >
             {bubble.label ? <p className="text-[10px] font-medium text-slate-700">{bubble.label}</p> : null}
             <p className="whitespace-pre-wrap">{bubble.text}</p>
-            <p className="mt-1 text-[10px] text-slate-600">{clock(bubble.at)}</p>
+            <p className="mt-1 text-[10px] text-slate-600">
+              {clock(bubble.at)}
+              {typeof bubble.latencyMs === 'number' && bubble.latencyMs > 0 ? ` · ${(bubble.latencyMs / 1000).toFixed(1)} s` : ''}
+            </p>
+            {bubble.why?.length ? (
+              <ul className="mt-1 space-y-0.5 border-t border-slate-100 pt-1">
+                {bubble.why.map((w) => (
+                  <li key={w} className="text-[10.5px] text-slate-500">
+                    {w}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
         </div>
       )
@@ -90,8 +106,8 @@ export function AgentTestSandbox({
   configuredModels?: string[]
   operationMode?: string
 }) {
-  const [sessionId] = useState(() => crypto.randomUUID())
-  const [text, setText] = useState('precio con envío?')
+  const [sessionId, setSessionId] = useState(() => crypto.randomUUID())
+  const [text, setText] = useState('')
   const [messageType, setMessageType] = useState<'text' | 'image' | 'audio' | 'document' | 'video'>('text')
   const [windowOpen, setWindowOpen] = useState(true)
   const [customerName, setCustomerName] = useState('')
@@ -145,7 +161,16 @@ export function AgentTestSandbox({
           ...prev,
           { kind: 'text' as const, from: 'customer' as const, text: inbound, at: now },
           ...(outbound && !blockedBefore
-            ? [{ kind: 'text' as const, from: 'agent' as const, text: outbound, at: now }]
+            ? [
+                {
+                  kind: 'text' as const,
+                  from: 'agent' as const,
+                  text: outbound,
+                  at: now,
+                  why: Array.isArray(data.why) ? (data.why as string[]) : undefined,
+                  latencyMs: typeof data.latencyMs === 'number' ? data.latencyMs : undefined,
+                },
+              ]
             : []),
         ].slice(-40),
       )
@@ -167,8 +192,25 @@ export function AgentTestSandbox({
         canEdit={canEdit}
         onChanged={onUnlocked}
       />
-      <h2 className="text-sm font-semibold text-slate-900">Probar conversación</h2>
-      <p className={`mt-0.5 ${HINT}`}>WhatsApp · sandbox. No escribe a Meta ni a un chat real.</p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-900">Probar como cliente</h2>
+          <p className={`mt-0.5 ${HINT}`}>Escribí como un cliente: recibís la misma respuesta que recibiría en WhatsApp. No escribe a nadie real.</p>
+        </div>
+        <button
+          type="button"
+          disabled={busy || history.length === 0}
+          onClick={() => {
+            setSessionId(crypto.randomUUID())
+            setHistory([])
+            setLast(null)
+            setError(null)
+          }}
+          className="shrink-0 rounded-lg px-2.5 py-1 text-[12px] font-medium text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-40"
+        >
+          Nueva conversación
+        </button>
+      </div>
       {selection.mode === 'pick' ? (
         <div className="mt-3 flex flex-wrap gap-2">
           {selection.options.map((row) => (
@@ -235,6 +277,8 @@ export function AgentTestSandbox({
           {error}
         </p>
       ) : null}
+      <details className="mt-3">
+        <summary className="cursor-pointer text-[12px] font-medium text-slate-500">Opciones de prueba avanzadas</summary>
       <AgentInternalTests
         canEdit={canEdit}
         busy={busy}
@@ -257,6 +301,7 @@ export function AgentTestSandbox({
         configuredModels={configuredModels}
         conversation={history.map((b) => ({ from: b.from, text: b.text }))}
       />
+      </details>
     </div>
   )
 }

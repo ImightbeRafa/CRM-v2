@@ -4,6 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { probarWhy } from '@/lib/soft-ai/probar-why'
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import {
@@ -1072,6 +1073,8 @@ async function runAgentTestTurnInner(input: {
   shortcutKey: string | null
   model: string
   estimatedCostUsd: number
+  /** Short reasons shown under the reply in the test chat (what it used / why it handed off). */
+  why?: string[]
 }> {
   const agent = await prisma.chatAgent.findFirst({
     where: { id: input.agentId, tenantId: input.tenantId },
@@ -1179,6 +1182,9 @@ async function runAgentTestTurnInner(input: {
 
   let text = ''
   let intent = decision.intent
+  let llmTrace: unknown = []
+  let escalateReason: string | null = null
+  let validationReasons: string[] = []
   let shortcutKey = decision.shortcutKey
   let highlightedAmounts = decision.highlightedAmounts
   let tokens = { input: 0, output: 0, cached: 0 }
@@ -1223,12 +1229,18 @@ async function runAgentTestTurnInner(input: {
         clientId: null,
         sandbox: true,
         inventoryItemIds: await loadMappedInventoryIds(input.tenantId, runtimeAgent.id),
+        // Same as the live turn (parity): order tools see this business's order stamps and the line's platform.
+        orderOwnership: (await loadAgentSettings(input.tenantId, runtimeAgent.id)).orderOwnership,
+        platform: account.platform || 'whatsapp',
       },
     })
     const llm = await runSoftAiLlmRuntime(runtimeInput)
+    llmTrace = llm.toolTrace
+    escalateReason = llm.escalateReason ?? null
+    validationReasons = llm.validationReasons ?? []
     const policy = applyFinalOutputPolicy({
       text: llm.text,
-      intent: llm.intent || 'other',
+      intent: llm.intent || decision.intent,
       citedToolNames: llm.citedToolNames,
       inventoryPrices: llm.inventoryPrices,
       brandFacts: runtimeAgent.brandFacts,
@@ -1338,6 +1350,7 @@ async function runAgentTestTurnInner(input: {
     shortcutKey,
     model: runtimeAgent.model,
     estimatedCostUsd: testCostMicros / 1_000_000,
+    why: probarWhy({ toolTrace: llmTrace, escalate, escalateReason, fallbackUsed, validationReasons, shortcutKey, blockedBy }),
   }
 }
 

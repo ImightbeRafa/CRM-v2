@@ -2141,3 +2141,10 @@ Plan: `docs/plans/betsy-agent-studio-sales-flow-2026-10-08.md` (v4). Off `claudi
   to the Worker */5 cron).
 - `scripts/ai-usage-backfill.mjs`: one-off, idempotent copy of past ChatAgentTurn usage up to the meter cutover.
 - Not done (needs Rafael): provider-side reconciliation (OpenAI admin key / xAI billing API).
+- F2 review round (Verifier FAIL + SecureDog FIX BEFORE PROD) fixed: backfill script committed (gitignore
+  exception), UTC-safe cutover, skips its own rows, refuses --until after meter start; every dashboard query through
+  the analytics guard (≤2 at a time, 8 s, busy → 503) with bound Prisma.sql (no queryRawUnsafe); formula-safe CSV
+  (csvCell); budgets: Costa Rica months, pause has its own retried marker, alerts only marked when delivered,
+  business team + owner bell (`ai_budget`), markers reset when a budget changes, explicit DELETE, read fresh;
+  dashboard opens audited (throttled), budget audit rows in the affected business; platform-wide labels on the
+  headline; calls/cost toggle; cached tokens; chats and cost per chat by business/agent; Agent Ops links here.

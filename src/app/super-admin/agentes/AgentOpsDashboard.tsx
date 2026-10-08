@@ -154,6 +154,12 @@ export default function AgentOpsDashboard() {
   const t = data?.summary.totals
   return (
     <div className="space-y-4">
+      <p className="rounded-lg bg-slate-50 px-3 py-2 text-[12.5px] text-slate-700">
+        Costo y uso de TODA la IA de Betsy (incluido el bot del staff), por negocio y modelo:{' '}
+        <a href="/super-admin/ia" className="font-medium text-indigo-700 hover:underline">
+          Uso de IA
+        </a>
+      </p>
       <KillSwitchPanel />
       <div className="flex flex-wrap items-center gap-2">
         {DAY_OPTIONS.map((d) => (

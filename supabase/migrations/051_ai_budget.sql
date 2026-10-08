@@ -1,9 +1,10 @@
 -- 051 AI budgets (owner AI usage dashboard, F2): monthly spend limits per business and one global limit.
 -- Additive only. Gated: BETSY_V2_APPLY_FILES=051 — never DEFAULT_APPLY_FILES. DO NOT run prisma db push / migrate.
 --   scope            'global' or a tenantId
---   monthlyUsdMicros budget for the calendar month (UTC), from AiUsageEvent.costMicros
+--   monthlyUsdMicros budget for the calendar month (Costa Rica time), from AiUsageEvent.costMicros
 --   autoPause        at 100% the business's inbox agents are paused (kill switch) and the owner is alerted
---   alertedMonth/alertedPct  dedupe: one alert per threshold (80 / 100) per month
+--   alertedMonth/alertedPct  dedupe: one alert per threshold (80 / 100) per month (reset when the budget changes)
+--   pausedMonth      the month the auto-pause was applied (separate from alerts; a failed pause is retried)
 -- No foreign keys; only the platform owner (super admin) reads or writes it (code-enforced).
 -- Rollback: deploy previous code; the table can stay (ignored).
 BEGIN;
@@ -16,6 +17,7 @@ CREATE TABLE IF NOT EXISTS public."AiBudget" (
   "autoPause" boolean NOT NULL DEFAULT false,
   "alertedMonth" text NULL,
   "alertedPct" integer NOT NULL DEFAULT 0,
+  "pausedMonth" text NULL,
   "updatedBy" text NULL,
   "updatedAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

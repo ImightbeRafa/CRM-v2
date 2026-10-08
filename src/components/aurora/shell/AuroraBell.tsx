@@ -102,7 +102,7 @@ export function AuroraBell() {
                         className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${n.read ? 'bg-slate-100 text-slate-400' : 'bg-au-tint-eef0ff text-au-ink-5b6cff'}`}
                         aria-hidden
                       >
-                        {n.kind === 'mention' ? <AtSign className="h-3.5 w-3.5" /> : n.kind === 'ai_no_reply' ? <Bot className="h-3.5 w-3.5" /> : <ListChecks className="h-3.5 w-3.5" />}
+                        {n.kind === 'mention' ? <AtSign className="h-3.5 w-3.5" /> : n.kind === 'ai_no_reply' || n.kind === 'ai_budget' ? <Bot className="h-3.5 w-3.5" /> : <ListChecks className="h-3.5 w-3.5" />}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className={`block truncate ${n.read ? '' : 'font-semibold'}`}>{n.title}</span>

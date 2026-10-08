@@ -47,6 +47,8 @@ import {
 import { FORGE_WA_V2_FIXTURES, type ReplayFixtureV2 } from '../soft-ai/__fixtures__/forge-wa-v2'
 
 const HASH = FORGE_WA_V2_FIXTURE_SET_HASH
+/** F1 Activar records carry the agent's own suite hash (24 hex). Old named fixture-set records no longer count. */
+const SUITE = 'abcdef0123456789abcdef01'
 const ACCOUNT = 'acct-wa-1'
 const AGENT_ID = 'agent-ventas'
 
@@ -56,12 +58,12 @@ function record(partial: Record<string, unknown> = {}) {
   return {
     passedAt: '2026-09-22T12:00:00.000Z',
     approvedBy: 'user-1',
-    fixtureSetHash: HASH,
+    fixtureSetHash: SUITE,
     passRate: 1,
     agentId: AGENT_ID,
     agentVersion: 3,
     model: 'grok-4.7',
-    canaryCount: 5,
+    canaryCount: 0,
     ...partial,
   }
 }
@@ -130,17 +132,20 @@ describe('hasAiFullUnlock matrix (AT-P-4)', () => {
     const staleHash = config({
       aiFullUnlock: { [ACCOUNT]: record({ fixtureSetHash: 'forge-wa-v1-a1-2026-09-21' }) },
     })
-    // F1 Activar: the record keeps each agent's own suite hash for audit; a different hash never silences it
-    // (editing the agent's data asks for a re-test instead). Agent and model still fail closed (below).
-    assert.equal(hasAiFullUnlock(staleHash, ACCOUNT, CTX), true)
+    // F1: a record from the old named-fixture flow no longer counts — the channel needs "Probar y activar".
+    assert.equal(hasAiFullUnlock(staleHash, ACCOUNT, CTX), false)
+    assert.equal(aiFullUnlockStatus(staleHash, ACCOUNT, CTX).reason, 'hash')
     assert.equal(
       composeEffectiveBehavior({
         conversationAiMode: 'ai_active',
         operationMode: 'ai_full',
         unlockedForSend: hasAiFullUnlock(staleHash, ACCOUNT, CTX),
       }).behavior,
-      'send',
+      'suggest',
     )
+    // ...while another Activar suite hash (the agent's data changed since) keeps it answering.
+    const otherSuite = config({ aiFullUnlock: { [ACCOUNT]: record({ fixtureSetHash: '0123456789abcdef01234567' }) } })
+    assert.equal(hasAiFullUnlock(otherSuite, ACCOUNT, CTX), true)
 
     const otherAgent = config({ aiFullUnlock: { [ACCOUNT]: record({ agentId: 'other' }) } })
     assert.equal(hasAiFullUnlock(otherAgent, ACCOUNT, CTX), false)

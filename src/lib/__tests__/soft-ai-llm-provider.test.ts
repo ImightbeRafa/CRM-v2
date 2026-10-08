@@ -182,7 +182,8 @@ describe('unlock records and the OpenAI model', () => {
         acc: {
           passedAt: '2026-10-01T00:00:00.000Z',
           approvedBy: 'u',
-          fixtureSetHash: DEFAULT_CHAT_AGENT_LAYER_CONFIG.fixtureSetHash,
+          // F1: an Activar suite hash (old named fixture-set records no longer count at all)
+          fixtureSetHash: 'abcdef0123456789abcdef01',
           passRate: 1,
           agentId: 'a1',
         },

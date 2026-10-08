@@ -82,7 +82,10 @@ describe('F2 review fixes', () => {
   it('a failed pause is retried; alerts only count when delivered; the business team is told', () => {
     assert.ok(budgets.includes('await prisma.$executeRaw`UPDATE "AiBudget" SET "pausedMonth" = ${month} WHERE "scope" = ${b.scope}`'))
     assert.ok(budgets.includes("if (result === 'failed') continue"))
-    assert.ok(budgets.includes('await notifyBusinessTeam(b.scope, month)'))
+    assert.ok(budgets.includes('if (pausedNow) await notifyBusinessTeam(b.scope, month, b.monthlyUsdMicros).catch(() => undefined)'))
+    // Verifier 2026-10-08: keys carry the budget amount, so a changed budget alerts again in the same month.
+    assert.ok(budgets.includes('key: `ai-budget:${b.scope}:${month}:${level}:${b.monthlyUsdMicros}`'))
+    assert.ok(budgets.includes('Pausa aplicada'))
     assert.doesNotMatch(budgets, /writeAgentKill\([\s\S]{0,200}\.catch\(\(\) => \{\}\)/)
   })
   it('changing a budget resets the month markers; delete is explicit; budgets are read fresh', () => {

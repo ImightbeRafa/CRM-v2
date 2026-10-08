@@ -100,7 +100,7 @@ export const EXPECTED_COLUMNS = {
   '048': [['AiUsageEvent', 'sourceKey'], ['AiUsageEvent', 'costMicros']],
   '049': [['ChatAgentSettings', 'orderOwnership'], ['ChatAgentSettings', 'servesUnboundChannels']],
   '050': [['ChatAgentTestRun', 'suiteHash'], ['ChatAgentTestRun', 'results']],
-  '051': [['AiBudget', 'monthlyUsdMicros'], ['AiBudget', 'autoPause']],
+  '051': [['AiBudget', 'monthlyUsdMicros'], ['AiBudget', 'autoPause'], ['AiBudget', 'pausedMonth']],
   '052': [['ChatAgentSource', 'sha256'], ['ChatAgentProfileDraft', 'profile']],
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],

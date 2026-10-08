@@ -1,7 +1,7 @@
 #!/usr/bin/env npx tsx
 /**
- * Restore Betsy backup v1 manifests from the private Cloudflare R2 bucket (BACKUP_STORE=vercel reads
- * the old Vercel Blob dumps; tests use a memory store).
+ * Restore Betsy backup v1 manifests from the private Cloudflare R2 bucket (tests use a memory
+ * store).
  *
  * Usage:
  *   npx tsx scripts/restore-from-backup.ts list

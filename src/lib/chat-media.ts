@@ -1,5 +1,5 @@
 /**
- * Chat-only Meta media fetch + private Vercel Blob cache.
+ * Chat-only Meta media fetch + private Supabase Storage cache.
  * Never import bot modules; never persist Meta CDN URLs on ChatMessage.
  */
 
@@ -243,8 +243,8 @@ export async function downloadMetaMediaWithCap(opts: {
 }
 
 /**
- * Private copy of a chat file (Supabase Storage, see chat-storage.ts). The name is kept from the
- * Vercel Blob era so callers and tests stay unchanged.
+ * Private copy of a chat file (Supabase Storage, see chat-storage.ts). The `*ToBlob` names are
+ * kept so callers and tests stay unchanged.
  */
 export async function putChatMediaToBlob(opts: {
   tenantId: string
@@ -533,7 +533,7 @@ export async function deleteChatBlobs(pathnames: string[]): Promise<void> {
 }
 
 /**
- * Safe category for a Vercel Blob failure (shown to admins / logged). Never includes the token.
+ * Safe category for a chat storage failure (shown to admins / logged). Never includes the token.
  */
 export function describeBlobError(error: unknown): { code: string; message: string; detail: string } {
   const raw = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
@@ -552,14 +552,8 @@ export function describeBlobError(error: unknown): { code: string; message: stri
     }
     return { code: `storage_${error.code}`, message: byCode[error.code] ?? 'error del almacenamiento.', detail }
   }
-  const detail = raw.replace(/vercel_blob_rw_[A-Za-z0-9_]+/g, '[token]').slice(0, 300)
+  const detail = raw.slice(0, 300)
   const m = raw.toLowerCase()
-  if (m.includes('blob_read_write_token is required') || m.includes('no token found')) {
-    return { code: 'token_missing', message: 'falta configurar el almacenamiento (token).', detail }
-  }
-  if (m.includes('private access on a public store') || m.includes('requires a private vercel blob store')) {
-    return { code: 'store_public', message: 'el almacenamiento no es privado.', detail }
-  }
   if (m.includes('access denied') || m.includes('forbidden') || m.includes('unauthorized') || m.includes('invalid token')) {
     return { code: 'token_rejected', message: 'el almacenamiento rechazó la credencial.', detail }
   }

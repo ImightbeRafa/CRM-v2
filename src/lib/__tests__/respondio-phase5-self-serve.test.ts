@@ -169,8 +169,8 @@ describe('Phase 5 — token lifecycle helpers', () => {
     assert.match(src, /CRON_SECRET/)
     assert.match(src, /probeSocialAccountToken/)
     assert.match(src, /tokenStatus/)
-    const vercel = read('vercel.json')
-    assert.match(vercel, /\/api\/cron\/chat-token-health/)
+    const worker = read('src/cf-container-worker.ts')
+    assert.match(worker, /\/api\/cron\/chat-token-health/)
   })
 })
 

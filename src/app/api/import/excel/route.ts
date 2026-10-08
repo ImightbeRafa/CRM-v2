@@ -273,7 +273,7 @@ async function importInventory(rows: any[], tenantId: string): Promise<ImportRes
 // MAIN HANDLER
 // ============================================
 // Increase timeout for large imports (30 minutes)
-export const maxDuration = 300; // 5 minutes for Vercel
+export const maxDuration = 300; // 5 minutes (Next.js route segment config)
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 

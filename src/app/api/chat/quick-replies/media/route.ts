@@ -129,14 +129,13 @@ async function storageDiagnostic(tenantId: string) {
       return false
     }
   }
-  const tokenPresent = Boolean(process.env.BLOB_READ_WRITE_TOKEN)
   const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4a50000000049454e44ae426082', 'hex')
   if (await run('put', () => putChatMediaToBlob({ tenantId, messageId: 'diag', bytes: png, contentType: 'image/png', pathname }))) {
     await run('get', () => readChatMediaFromBlob({ pathname }))
     await run('delete', () => deleteChatBlobs([pathname]))
   }
   await run('list', () => chatBlobUsage(quickReplyMediaPrefix(tenantId)))
-  return { tokenPresent, steps }
+  return { steps }
 }
 
 /** GET /api/chat/quick-replies/media?path= — thumbnail / preview (this business's files only). */

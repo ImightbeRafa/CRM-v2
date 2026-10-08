@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createR2BlobStore, parseListObjectsV2, signV4 } from '../r2-store';
-import { backupStoreKind } from '../store-factory';
 import { createMemoryBlobStore } from '../blob-store';
 import { applyRetention, backupWriterAllowed, getBackupStatus, performBackup } from '../service';
 
@@ -97,7 +96,6 @@ test('put / get / list / delete hit the private bucket path with a signed reques
   await store.deleteMany(['betsy/backups/v1/manifests/run 1-full.json', 'already/gone.json']);
   assert.equal(objects.size, 0);
   await assert.rejects(store.getBytes('missing.json'), /HTTP 404 NoSuchKey/);
-  assert.equal(store.getAccessMode(), 'private');
 });
 
 test('a storage call that never answers is cut off, retried at most 3 times, and leaks no secret', async () => {
@@ -127,8 +125,6 @@ test('missing configuration names the variable, never a value', () => {
     /R2_SECRET_ACCESS_KEY is required/,
   );
   assert.throws(() => createR2BlobStore({ accountId: 'nope', bucket: 'betsy-backups', accessKeyId: KEY_ID, secretAccessKey: SECRET }), /R2_ACCOUNT_ID looks invalid/);
-  assert.equal(backupStoreKind({}), 'r2');
-  assert.equal(backupStoreKind({ BACKUP_STORE: 'vercel' }), 'vercel');
 });
 
 test('backup status never hangs: a stalled store yields "unknown" within the deadline', async () => {
@@ -168,6 +164,7 @@ test('backups run on R2 with a lock, a deadline and alerts; Worker passes the R2
   assert.match(worker, /"0 6 \* \* \*": \["\/api\/cron\/chat-token-health", "\/api\/cron\/ops-daily"\]/);
   assert.match(worker, /envVars\.BACKUP_WRITER = "1";/);
   assert.doesNotMatch(worker, /"BACKUP_STORE",/, 'BACKUP_STORE is a restore-CLI setting, never forwarded');
+  assert.doesNotMatch(worker, /"BLOB_[A-Z_]+",/, 'no BLOB_* key is forwarded');
   assert.match(worker, /"0 2 \* \* \*": \[\s+"\/api\/cron\/process-subscription-expiry",\s+"\/api\/cron\/backup",/);
   const alert = read('src/lib/ops/alert-email.ts');
   assert.match(alert, /if \(result\?\.error\) \{\s+lastSent\.delete\(alert\.key\);/, 'Resend errors are not "sent"');
@@ -224,10 +221,9 @@ test('retention: an unrecognised manifest is kept and blocks artifact deletion; 
   assert.equal(store.objects.size, 3);
 });
 
-test('only the Cloudflare Worker may write / prune backups; Vercel is restore-only', async () => {
+test('only the Cloudflare Worker may write / prune backups', async () => {
   assert.equal(backupWriterAllowed({}), false);
   assert.equal(backupWriterAllowed({ BACKUP_WRITER: '1' }), true);
-  assert.equal(backupWriterAllowed({ BACKUP_WRITER: '1', BACKUP_STORE: 'vercel' }), false);
   const saved = process.env.BACKUP_WRITER;
   delete process.env.BACKUP_WRITER;
   try {

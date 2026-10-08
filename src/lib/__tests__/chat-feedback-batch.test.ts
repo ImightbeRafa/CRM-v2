@@ -65,7 +65,7 @@ describe('media serving', () => {
       purpose: 'whatsapp',
       fetchImpl,
       putFn: async () => {
-        throw new Error('BLOB_READ_WRITE_TOKEN is required for chat media cache')
+        throw new Error('Supabase Storage is not configured for chat media cache')
       },
     })
     assert.equal(res.ok, true)
@@ -73,7 +73,7 @@ describe('media serving', () => {
     assert.equal(res.ref.mediaCacheStatus, 'pending')
     assert.equal(res.ref.mediaMimeType, 'image/jpeg')
     assert.equal(res.bytes.length, bytes.length)
-    assert.match(res.cacheError || '', /BLOB_READ_WRITE_TOKEN/)
+    assert.match(res.cacheError || '', /Supabase Storage/)
   })
   test('route only persists a blob path when the cache really worked', () => {
     const route = read('src/app/api/chat/media/[messageId]/route.ts')

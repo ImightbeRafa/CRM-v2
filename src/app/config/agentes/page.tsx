@@ -887,8 +887,8 @@ export default function AgentesConfigPage() {
                   <div className={CARD}>
                     <h3 className="text-[14px] font-semibold text-slate-900">Estado y modo</h3>
                     <p className={`mt-0.5 ${HINT_CLASS}`}>
-                      El modo y el estado se guardan al cambiarlos. El envío real sigue
-                      bloqueado hasta aprobar cada canal.
+                      El agente responde solo en los canales que activaste en Probar (Probar y activar).
+                      Solo humanos lo apaga en todos sus canales.
                     </p>
                     <div className="mt-3 flex flex-wrap gap-3">
                       <div>
@@ -897,21 +897,16 @@ export default function AgentesConfigPage() {
                           className={`mt-1 ${SELECT_CLASS}`}
                           value={selected.operationMode}
                           disabled={!canEdit || saving}
-                          onChange={async (e) => {
-                            const mode = e.target.value
-                            if (
-                              mode === 'ai_full' &&
-                              !await auroraConfirm(
-                                'Responder (ai_full) queda en Sugerir hasta pasar la prueba dark-run. ¿Continuar?',
-                              )
-                            ) {
-                              return
-                            }
-                            void patch({ operationMode: mode })
+                          onChange={(e) => {
+                            void patch({ operationMode: e.target.value })
                           }}
                         >
-                          <option value="ai_suggest">Sugerir</option>
-                          <option value="ai_full">Responder</option>
+                          {selected.operationMode === 'ai_suggest' ? (
+                            <option value="ai_suggest" disabled>
+                              Sin activar
+                            </option>
+                          ) : null}
+                          <option value="ai_full">Responder (en canales activados)</option>
                           <option value="human_only">Solo humanos</option>
                         </select>
                       </div>

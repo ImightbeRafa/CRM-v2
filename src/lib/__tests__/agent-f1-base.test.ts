@@ -62,7 +62,7 @@ describe('F1 · legacy v1 deps no longer leak other customers’ orders', () => 
   const deps = read('src/lib/soft-ai/server-deps.ts')
 
   it('customer turns are scoped to the chat peer; only the staff route may look up any order', () => {
-    assert.match(deps, /\| \{ tenantId: string; peerId: string; conversationId\?: string \| null \}/)
+    assert.match(deps, /\| \{ tenantId: string; peerId: string; conversationId\?: string \| null; platform\?: string \| null \}/)
     assert.match(deps, /\| \{ tenantId: string; staff: true \}/)
     assert.match(deps, /if \(owner && !\(await isOrderOwned\(owner, row\)\)\) return null/)
     assert.match(deps, /const owned = await findOwnedOrder\(owner, orderNumberHint\)/)

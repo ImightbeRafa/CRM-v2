@@ -2116,3 +2116,10 @@ Plan: `docs/plans/betsy-agent-studio-sales-flow-2026-10-08.md` (v4). Off `claudi
   chat-automation 9, lifecycle 11, pedidos-ui 29, chat-feedback 57, bot-inbox 8, bot-grok pass.
   Baseline failures (also on df0f6f5): test:site-ui 1 (aurora-no-native-dialogs on agentes/page.tsx).
 - **Before deploy (Rafael):** apply SQL 048, 049, 050 (additive, RLS on); read-only checks listed in the PR.
+- Verifier round 2 fixed: Activar needs a green run of the CURRENT agent (version + data-built suite hash) and a
+  product list when it quotes; a non-activated channel never reaches the model (no cost, no alert unless a stale
+  activation exists); Desactivar removes only its own record and leaves the allowlist; old unlock route → 410;
+  only Activar records (24-hex suite hash) unlock; test runs stop on a blocked test budget, count judge cost, cursor
+  guard; stricter "never confirms payment" rule; v1 Instagram ids are never phones; UI: no "Sugerir", Instagram
+  channels can be tested and activated. Not verifiable locally: a real grader call (local XAI key invalid) — first
+  run after deploy proves it.

@@ -206,6 +206,14 @@ async function sendMetaText(opts: {
   }
 }
 
+async function channelHasActivationRecord(tenantId: string, socialAccountId: string): Promise<boolean> {
+  const flag = await prisma.tenantFeatureFlag.findFirst({
+    where: { tenantId, scope: tenantId, key: CHAT_AGENT_LAYER_V1_FLAG },
+    select: { config: true },
+  })
+  return Boolean(parseChatAgentLayerConfig(flag?.config).aiFullUnlock[socialAccountId])
+}
+
 async function persistSkippedTurn(input: {
   tenantId: string
   conversationId: string
@@ -386,6 +394,26 @@ export async function executeAgentLayerTurn(
       void notifyAiNoReply({ tenantId: row.tenantId, conversationId: row.conversationId, reason: 'budget_blocked' })
     }
     return { status: 'skipped', reason: preModel.skipReason || preModel.status }
+  }
+
+  // F1: no suggestion mode — a channel that is not activated (Activar) never reaches the model: no provider
+  // call, no cost, no customer text sent to an AI. The team is alerted only when the channel WAS activated and
+  // the activation went stale (agent or model changed), never for channels nobody turned on.
+  if (resolved.agent.operationMode !== 'ai_full' || !resolved.unlockedForSend) {
+    await persistSkippedTurn({
+      tenantId: row.tenantId,
+      conversationId: row.conversationId,
+      socialAccountId: row.socialAccountId,
+      agent: resolved.agent,
+      bindingId: resolved.binding.id,
+      triggerMessageId: row.messageId,
+      deliveryKey: row.deliveryKey,
+      skipReason: 'not_activated',
+    })
+    if (await channelHasActivationRecord(row.tenantId, row.socialAccountId)) {
+      void notifyAiNoReply({ tenantId: row.tenantId, conversationId: row.conversationId, reason: 'not_activated' })
+    }
+    return { status: 'skipped', reason: 'not_activated' }
   }
 
   // Reuse persisted output on lease reclaim (exactly-once contentHash).

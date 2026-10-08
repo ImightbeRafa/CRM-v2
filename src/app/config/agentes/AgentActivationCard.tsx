@@ -12,7 +12,7 @@ type Run = {
   results: CaseResult[]
   cases: Array<{ id: string; title: string; group: string }>
 }
-type Status = { active: boolean; retestSuggested: boolean; run: Run | null }
+type Status = { active: boolean; retestSuggested: boolean; runCurrent?: boolean; run: Run | null }
 
 const GROUP_LABEL: Record<string, string> = {
   productos: 'Productos',
@@ -95,7 +95,8 @@ export function AgentActivationCard({
 
   if (!socialAccountId) return null
   const run = status?.run ?? null
-  const passed = run?.status === 'passed'
+  const passed = run?.status === 'passed' && status?.runCurrent === true
+  const passedButOld = run?.status === 'passed' && status?.runCurrent === false
   const resultsById = new Map((run?.results ?? []).map((r) => [r.id, r]))
 
   return (
@@ -125,7 +126,9 @@ export function AgentActivationCard({
           <p className="text-[12.5px] text-slate-800">
             {running
               ? `Probando… ${run.done} de ${run.total}`
-              : run.status === 'passed'
+              : run.status === 'passed' && passedButOld
+                ? 'Cambiaste el agente después de esta prueba. Volvé a probar para activarlo.'
+                : run.status === 'passed'
                 ? `Pruebas en verde (${run.results.filter((r) => r.pass).length} de ${run.total}).`
                 : run.status === 'failed'
                   ? `Algunas pruebas fallaron (${run.results.filter((r) => r.pass).length} de ${run.total} bien).`

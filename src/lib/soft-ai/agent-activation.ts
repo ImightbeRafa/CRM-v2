@@ -14,7 +14,8 @@ import { logAuditEvent } from '@/lib/auditLogger'
 import { aiTermsAccepted, parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { mutateChatAgentLayerConfig } from '@/lib/soft-ai/agent-layer-config-mutate'
 import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
-import { latestTestRun } from '@/lib/soft-ai/test-engine/run'
+import { buildSuite, latestTestRun } from '@/lib/soft-ai/test-engine/run'
+import { agentHasInventoryMap } from '@/lib/soft-ai/agent-inventory-map'
 import { CHAT_AGENT_LAYER_V1_FLAG, type AiFullUnlockRecord } from '@/lib/soft-ai/agent-types'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 
@@ -31,6 +32,7 @@ export type ActivationRefusalCode =
   | 'TESTS_NOT_RUN'
   | 'TESTS_NOT_PASSED'
   | 'TESTS_OUTDATED'
+  | 'INVENTORY_MAP_REQUIRED'
 
 export const ACTIVATION_REFUSAL_COPY: Record<ActivationRefusalCode, string> = {
   CHANNEL_NOT_FOUND: 'Ese canal no es de este negocio.',
@@ -42,7 +44,8 @@ export const ACTIVATION_REFUSAL_COPY: Record<ActivationRefusalCode, string> = {
   PROVIDER_NOT_CONFIGURED: 'El modelo de respuestas no está configurado.',
   TESTS_NOT_RUN: 'Primero corré las pruebas de este agente en este canal.',
   TESTS_NOT_PASSED: 'Las pruebas no quedaron en verde. Revisá lo que falló, ajustá y volvé a probar.',
-  TESTS_OUTDATED: 'Las pruebas son de otro modelo o tienen más de 30 días. Volvé a probar.',
+  TESTS_OUTDATED: 'Cambiaste el agente (datos, productos o modelo) después de la prueba, o tiene más de 30 días. Volvé a probar.',
+  INVENTORY_MAP_REQUIRED: 'Agregá los productos que vende este canal antes de activarlo.',
 }
 
 export class ActivationRefusal extends Error {
@@ -79,7 +82,7 @@ export async function activateAgentChannel(input: {
 
   const agent = await prisma.chatAgent.findFirst({
     where: { id: input.agentId, tenantId: input.tenantId },
-    select: { id: true, name: true, model: true, version: true },
+    select: { id: true, name: true, model: true, version: true, systemInstructions: true, brandFacts: true, enabledTools: true },
   })
   if (!agent) throw new ActivationRefusal('AGENT_NOT_FOUND')
   const binding = await prisma.chatAgentBinding.findFirst({
@@ -101,6 +104,14 @@ export async function activateAgentChannel(input: {
   if (run.status !== 'passed') throw new ActivationRefusal('TESTS_NOT_PASSED')
   const ageMs = Date.now() - new Date(run.finishedAt || run.createdAt).getTime()
   if (run.model !== agent.model || ageMs > RUN_MAX_AGE_DAYS * 86_400_000) throw new ActivationRefusal('TESTS_OUTDATED')
+  // The green run must be of TODAY's agent: same version AND the same suite its current data builds (prices,
+  // products, payment number and instructions included — some of those change without a version bump).
+  if (run.agentVersion !== agent.version) throw new ActivationRefusal('TESTS_OUTDATED')
+  const current = await buildSuite(input.tenantId, agent)
+  if (current.suiteHash !== run.suiteHash) throw new ActivationRefusal('TESTS_OUTDATED')
+  if (agent.enabledTools.includes('search_inventory') && (await agentHasInventoryMap(input.tenantId, agent.id)) !== true) {
+    throw new ActivationRefusal('INVENTORY_MAP_REQUIRED')
+  }
 
   const record: AiFullUnlockRecord = {
     passedAt: new Date().toISOString(),
@@ -153,9 +164,17 @@ export async function deactivateAgentChannel(input: {
   })
   if (!account) throw new ActivationRefusal('CHANNEL_NOT_FOUND')
   await mutateChatAgentLayerConfig(input.tenantId, (current) => {
+    const record = current.aiFullUnlock[account.id]
+    // Only this agent's activation is removed (never another agent's on the same channel).
+    if (record?.agentId && record.agentId !== input.agentId) return current
     const aiFullUnlock = { ...current.aiFullUnlock }
     delete aiFullUnlock[account.id]
-    return { ...current, aiFullUnlock }
+    return {
+      ...current,
+      aiFullUnlock,
+      // Off the allowlist too: a deactivated channel never reaches the AI provider.
+      accountAllowlist: current.accountAllowlist.filter((id) => id !== account.id),
+    }
   })
   await logAuditEvent({
     tenantId: input.tenantId,

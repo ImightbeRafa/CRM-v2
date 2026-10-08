@@ -86,7 +86,8 @@ export async function phoneOwnsOrder(
   ctx: OrderOwnershipContext,
   order: { clientId?: string | null; phone?: string | null },
 ): Promise<boolean> {
-  const peerIsPhone = !ctx.platform || ctx.platform === 'whatsapp'
+  // Only a WhatsApp peer id is a phone. Unknown platform = not a phone (fail closed).
+  const peerIsPhone = ctx.platform === 'whatsapp'
   const hints = [...(peerIsPhone ? [digits(ctx.peerId)] : []), ...(ctx.peerPhoneHints || []).map(digits)]
   // Last-8-digit match; short or placeholder phones ("0", "123") never match anyone (see phone-ownership.ts).
   const phoneMatches = (raw: string | null | undefined) => phoneOwnershipMatch(hints, raw ? digits(raw) : '')

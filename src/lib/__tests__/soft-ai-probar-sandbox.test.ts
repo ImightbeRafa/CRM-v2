@@ -184,8 +184,14 @@ describe('Probar sandbox', () => {
       [{ id: 'ig-1', platform: 'instagram', attendedByThisAgent: true, label: 'IG' }],
       null,
     )
-    assert.equal(instagram.mode, 'empty')
-    assert.equal(instagram.selectedId, null)
+    // F1: agents answer (and are tested / activated) on Instagram too.
+    assert.equal(instagram.mode, 'selected')
+    assert.equal(instagram.selectedId, 'ig-1')
+    const messenger = selectWhatsappTestChannel(
+      [{ id: 'fb-1', platform: 'messenger', attendedByThisAgent: true, label: 'FB' }],
+      null,
+    )
+    assert.equal(messenger.mode, 'empty')
 
     const unboundOnly = selectWhatsappTestChannel(
       [{ id: 'wa-9', platform: 'whatsapp', attendedByThisAgent: false, label: 'Suelta' }],

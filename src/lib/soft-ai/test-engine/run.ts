@@ -12,7 +12,8 @@ import { isMissingRelation } from '@/lib/db-missing-relation'
 import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import { canSharePaymentFacts, parseBrandFactsSafe } from '@/lib/soft-ai/brand-facts'
 import { runAgentTestTurn } from '@/lib/soft-ai/agent-turn'
-import { resolveSoftAiModel, softAiResponsesCreate, parseSoftAiResponseText } from '@/lib/soft-ai/llm/client'
+import { resolveSoftAiModel, softAiResponsesCreate, parseSoftAiResponseText, readSoftAiUsage } from '@/lib/soft-ai/llm/client'
+import { estimateCostMicros } from '@/lib/soft-ai/llm/usage'
 import { generateAgentSuite, type TestCase } from '@/lib/soft-ai/test-engine/generate'
 import {
   gradeRuleCase,
@@ -27,8 +28,8 @@ import {
 
 const TABLE = 'ChatAgentTestRun'
 export const TEST_RUN_COST_CAP_MICROS = 400_000 // US$0.40 per run
-const LEASE_MS = 90_000
-const STEP_BUDGET_MS = 40_000
+const LEASE_MS = 120_000
+const STEP_BUDGET_MS = 25_000
 
 export type TestRunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'cost_capped' | 'canceled' | 'error'
 
@@ -61,6 +62,13 @@ export type TestRunRow = {
   createdBy: string
   createdAt: Date
   finishedAt: Date | null
+}
+
+export class TestRunBusyElsewhereError extends Error {
+  constructor() {
+    super('TEST_RUN_BUSY_ELSEWHERE')
+    this.name = 'TestRunBusyElsewhereError'
+  }
 }
 
 export class TestRunNotReadyError extends Error {
@@ -119,7 +127,7 @@ export async function latestTestRun(tenantId: string, agentId: string, socialAcc
 }
 
 /** Builds the suite from THIS agent's data only (its mapped products, its payment facts, its instructions). */
-async function buildSuite(tenantId: string, agent: { id: string; name: string; systemInstructions: string; brandFacts: unknown }) {
+export async function buildSuite(tenantId: string, agent: { id: string; name: string; systemInstructions: string; brandFacts: unknown }) {
   const mapped = (await loadMappedInventoryIds(tenantId, agent.id)) ?? []
   const products = mapped.length
     ? await prisma.inventoryItem.findMany({
@@ -168,6 +176,7 @@ export async function startAgentTestRun(input: {
      LIMIT 1`
   if (active[0]) {
     const run = mapRow(active[0])
+    if (run.socialAccountId !== input.socialAccountId) throw new TestRunBusyElsewhereError()
     void drainAgentTestRun(run.tenantId, run.id)
     return run
   }
@@ -198,7 +207,12 @@ export async function startAgentTestRun(input: {
   return run
 }
 
-async function judge(tc: TestCase, turn: TurnForGrading, rubric: string, ctx: { tenantId: string; agentId: string; model: string }) {
+async function judge(
+  tc: TestCase,
+  turn: TurnForGrading,
+  rubric: string,
+  ctx: { tenantId: string; agentId: string; model: string; cost: { micros: number } },
+) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const response = await softAiResponsesCreate({
@@ -208,10 +222,18 @@ async function judge(tc: TestCase, turn: TurnForGrading, rubric: string, ctx: { 
         store: false,
         temperature: 0,
         reasoningEffort: 'low',
-        maxOutputTokens: 200,
+        // Reasoning models spend part of the cap on reasoning: leave room for the short JSON verdict.
+        maxOutputTokens: 900,
         timeoutMs: 15_000,
         textFormat: { name: 'agent_test_verdict', schema: JUDGE_SCHEMA as unknown as Record<string, unknown> },
         usage: { tenantId: ctx.tenantId, feature: 'agent_test', agentId: ctx.agentId },
+      })
+      const used = readSoftAiUsage(response)
+      ctx.cost.micros += estimateCostMicros({
+        model: ctx.model,
+        inputTokens: used.inputTokens,
+        cachedInputTokens: used.cachedInputTokens,
+        outputTokens: used.outputTokens,
       })
       const verdict = parseJudge(parseSoftAiResponseText(response))
       // A judged case that fails once is re-judged (LLM graders are noisy); two fails = fail.
@@ -241,6 +263,14 @@ async function runCase(run: TestRunRow, tc: TestCase): Promise<{ result: CaseRes
         ignoreLayerFlag: true,
       })
       costMicros = Math.round((out.estimatedCostUsd || 0) * 1_000_000)
+      // A blocked test turn is not an agent answer: stop the run with a plain reason instead of grading silence.
+      const blocked = (out.blockedBy || []).find((b) => b === 'test_budget_blocked' || b === 'not_bound_to_channel')
+      if (blocked) {
+        return {
+          result: { id: tc.id, title: tc.title, group: tc.group, grading: tc.grading, pass: false, reply: '', notes: [], error: blocked },
+          costMicros,
+        }
+      }
       turn = { text: out.text || '', escalate: out.escalate, needsHuman: out.needsHuman, outcome: out.outcome }
       break
     } catch (error) {
@@ -261,7 +291,9 @@ async function runCase(run: TestRunRow, tc: TestCase): Promise<{ result: CaseRes
   if (tc.grading === 'judge') {
     const rubric = tc.expect.find((e) => e.kind === 'judge')
     if (rubric && rubric.kind === 'judge') {
-      const verdict = await judge(tc, turn, rubric.rubric, { tenantId: run.tenantId, agentId: run.agentId, model: run.model })
+      const cost = { micros: 0 }
+      const verdict = await judge(tc, turn, rubric.rubric, { tenantId: run.tenantId, agentId: run.agentId, model: run.model, cost })
+      costMicros += cost.micros
       pass = pass && verdict.pass
       if (!verdict.pass && verdict.reason) notes.push(verdict.reason)
     }
@@ -297,13 +329,19 @@ export async function drainAgentTestRun(tenantId: string, id: string): Promise<v
       const tc = run.cases[run.cursor]
       const { result, costMicros } = await runCase(run, tc)
       const results: CaseResult[] = [...run.results, result]
-      await prisma.$executeRaw`
+      // Cursor guard: if another worker already advanced this run (expired lease), stop — never double-process.
+      const advanced = await prisma.$executeRaw`
         UPDATE "ChatAgentTestRun"
            SET "results" = ${JSON.stringify(results)}::jsonb, "cursor" = ${run.cursor + 1},
                "spentMicros" = "spentMicros" + ${costMicros},
                "leaseUntil" = NOW() + (${LEASE_MS}::int * INTERVAL '1 millisecond')
-         WHERE "id" = ${id} AND "tenantId" = ${tenantId} AND "status" = 'running'`
+         WHERE "id" = ${id} AND "tenantId" = ${tenantId} AND "status" = 'running' AND "cursor" = ${run.cursor}`
+      if (advanced === 0) return
       run = { ...run, results, cursor: run.cursor + 1, spentMicros: run.spentMicros + costMicros }
+      if (result.error === 'test_budget_blocked' || result.error === 'not_bound_to_channel') {
+        await finish(run, 'error')
+        return
+      }
     }
     const summary = summarize(run.results)
     await finish(run, summary.passed ? 'passed' : 'failed', summary)

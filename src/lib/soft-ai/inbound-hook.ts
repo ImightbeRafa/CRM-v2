@@ -270,6 +270,7 @@ export async function executeSoftAiInboundTurn(
       tenantId: args.tenantId,
       peerId: args.senderId,
       conversationId: args.conversationId ?? null,
+      platform: args.platform,
     }),
   )
 

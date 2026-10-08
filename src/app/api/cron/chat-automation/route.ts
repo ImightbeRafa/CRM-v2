@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     }
     const purged = await purgeExpiredAutomationMetadata()
     // Agent test runs (Activar) whose step was interrupted resume here; never blocks the claimant.
-    const resumedTestRuns = Date.now() - startedAt < 10_000 ? await drainStaleAgentTestRuns(1).catch(() => 0) : 0
+    const resumedTestRuns = Date.now() - startedAt < 5_000 ? await drainStaleAgentTestRuns(1).catch(() => 0) : 0
     const counts = results.reduce<Record<string, number>>((summary, result) => {
       summary[result.status] = (summary[result.status] || 0) + 1
       return summary

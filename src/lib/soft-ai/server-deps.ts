@@ -15,7 +15,7 @@ import {
 } from '@/lib/soft-ai/order-ownership'
 
 export type SoftAiServerDepsScope =
-  | { tenantId: string; peerId: string; conversationId?: string | null }
+  | { tenantId: string; peerId: string; conversationId?: string | null; platform?: string | null }
   | { tenantId: string; staff: true }
 
 const ORDER_SELECT = { id: true, orderId: true, status: true, customerName: true, clientId: true, phone: true } as const
@@ -32,7 +32,9 @@ function toFound(row: { id: string; orderId: string; status: string | null; cust
 export function buildSoftAiServerDeps(scope: SoftAiServerDepsScope): SoftAiToolDeps {
   const { tenantId } = scope
   const owner: OrderOwnershipContext | null =
-    'staff' in scope ? null : { tenantId, peerId: scope.peerId, conversationId: scope.conversationId ?? null }
+    'staff' in scope
+      ? null
+      : { tenantId, peerId: scope.peerId, conversationId: scope.conversationId ?? null, platform: scope.platform ?? null }
 
   async function orderById(orderId: string) {
     const row = await prisma.order.findFirst({ where: { id: orderId, tenantId }, select: ORDER_SELECT })

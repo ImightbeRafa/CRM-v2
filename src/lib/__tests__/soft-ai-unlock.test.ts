@@ -659,9 +659,10 @@ describe('mutateChatAgentLayerConfig lock', () => {
       join(process.cwd(), 'src/app/api/chat/agents/[id]/test/unlock/route.ts'),
       'utf8',
     )
+    // F1: the old approval is retired (its records no longer unlock, and it could overwrite Activar).
     assert.match(route, /update_config/)
-    assert.match(route, /agentUnlockHttpError/)
-    assert.match(route, /chat_agent_ai_full_unlock|approveAgentAiFullUnlock/)
+    assert.match(route, /status: 410/)
+    assert.doesNotMatch(route, /approveAgentAiFullUnlock/)
     // F1: the UI activates through "Probar y activar" (agent's own tests); plain words, no internal names.
     const ui = readFileSync(join(process.cwd(), 'src/app/config/agentes/AgentActivationCard.tsx'), 'utf8')
     assert.match(ui, /Probar y activar/)

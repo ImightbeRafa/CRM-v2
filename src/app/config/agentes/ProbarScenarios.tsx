@@ -27,7 +27,7 @@ type Bubble = { from: 'customer' | 'agent'; text: string }
 type Runnable = { id: string; title: string; description?: string; steps: ScenarioStep[]; scored?: boolean }
 
 const MODE_LABEL: Record<string, string> = {
-  ai_suggest: 'Sugerir (una persona revisa)',
+  ai_suggest: 'Sin activar',
   ai_full: 'Responder solo',
   human_only: 'Solo humanos',
 }

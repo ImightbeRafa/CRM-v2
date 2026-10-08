@@ -17,7 +17,13 @@ import {
   activateAgentChannel,
   deactivateAgentChannel,
 } from '@/lib/soft-ai/agent-activation'
-import { latestTestRun, startAgentTestRun, TestRunNotReadyError } from '@/lib/soft-ai/test-engine/run'
+import {
+  buildSuite,
+  latestTestRun,
+  startAgentTestRun,
+  TestRunBusyElsewhereError,
+  TestRunNotReadyError,
+} from '@/lib/soft-ai/test-engine/run'
 import { aiFullUnlockStatus, parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { CHAT_AGENT_LAYER_V1_FLAG } from '@/lib/soft-ai/agent-types'
 import { isPlatformAiPaused } from '@/lib/soft-ai/agent-kill-switch'
@@ -33,7 +39,10 @@ function actorName(auth: { userId: string; session: { user?: { name?: string | n
 
 async function scope(tenantId: string, agentId: string, socialAccountId: string) {
   const [agent, account] = await Promise.all([
-    prisma.chatAgent.findFirst({ where: { id: agentId, tenantId }, select: { id: true, name: true, model: true, version: true } }),
+    prisma.chatAgent.findFirst({
+      where: { id: agentId, tenantId },
+      select: { id: true, name: true, model: true, version: true, systemInstructions: true, brandFacts: true },
+    }),
     socialAccountId
       ? prisma.socialAccount.findFirst({ where: { id: socialAccountId, tenantId }, select: { id: true, platform: true } })
       : null,
@@ -58,13 +67,22 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       }),
     ])
     const config = parseChatAgentLayerConfig(flag?.config)
+    // A green run only activates if it tested TODAY's agent (same version, model and data-built suite).
+    const runCurrent = Boolean(
+      run &&
+        run.status === 'passed' &&
+        run.agentVersion === agent.version &&
+        run.model === agent.model &&
+        run.suiteHash === (await buildSuite(auth.tenantId, agent)).suiteHash,
+    )
     const unlock = aiFullUnlockStatus(config, account.id, { agentId: agent.id, model: agent.model, agentVersion: agent.version })
     return NextResponse.json(
       {
         success: true,
         active: unlock.unlocked && config.accountAllowlist.includes(account.id),
         // Data changed since the tests passed: still answering, but ask to re-test.
-        retestSuggested: Boolean(unlock.unlocked && run && run.agentVersion !== agent.version),
+        retestSuggested: Boolean(unlock.unlocked && run && !runCurrent),
+        runCurrent,
         run: run
           ? {
               id: run.id,
@@ -127,6 +145,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   } catch (error) {
     if (error instanceof ActivationRefusal) {
       return NextResponse.json({ success: false, code: error.code, error: ACTIVATION_REFUSAL_COPY[error.code] }, { status: 409 })
+    }
+    if (error instanceof TestRunBusyElsewhereError) {
+      return NextResponse.json(
+        { success: false, error: 'Ya hay una prueba de este agente corriendo en otro canal. Esperá a que termine.' },
+        { status: 409 },
+      )
     }
     if (error instanceof TestRunNotReadyError) {
       return NextResponse.json({ success: false, error: 'Las pruebas automáticas todavía no están disponibles.' }, { status: 503 })

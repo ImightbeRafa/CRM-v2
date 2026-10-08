@@ -3,25 +3,29 @@
  * names / prices / stock and reason codes — never customer or order data.
  */
 
+// Real codes from the turn (agent-claim-gates / runtime / tool-runner); anything unknown shows as a generic phrase.
 const ESCALATE: Record<string, string> = {
-  payment: 'pago',
-  payment_proof: 'comprobante de pago',
-  complaint: 'queja',
+  payment_or_sinpe: 'pago o comprobante SINPE (lo confirma una persona)',
+  media_inbound: 'mandó foto, audio o archivo',
+  opt_out: 'pidió no hablar con la IA',
+  llm_unavailable: 'la IA no respondió a tiempo',
+  ownership: 'pregunta por un pedido de otra persona o negocio',
+  provenance: 'la respuesta tenía un dato que no salió de tus datos (precio, número…)',
   human_requested: 'pidió una persona',
-  order: 'pedido',
-  out_of_scope: 'fuera de tema',
-  low_confidence: 'no estaba seguro',
+  complaint: 'queja',
   other: 'otro motivo',
 }
 
 const BLOCKED: Record<string, string> = {
-  not_bound_to_channel: 'el agente no atiende esta línea',
   flag_off: 'la IA no está encendida para este negocio',
-  agent_off: 'el agente está apagado',
+  not_bound_to_channel: 'el agente no atiende esta línea',
   window_closed: 'pasaron más de 24 h desde el último mensaje del cliente',
-  human_mode: 'el chat está en modo humano',
-  kill_switch: 'la IA está en pausa',
-  not_activated: 'no está activado en esta línea (falta “Activar”)',
+  account_not_allowlisted: 'esta línea no está activada (falta “Activar”)',
+  ai_full_not_unlocked: 'falta “Activar” en esta línea',
+  agent_not_live: 'el agente está en borrador (falta “Activar”)',
+  human_only: 'el agente está en modo solo personas',
+  paused_before_send: 'el chat se pausó antes de enviar',
+  human_before_send: 'una persona tomó el chat antes de enviar',
 }
 
 const money = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) ? `₡${Math.round(n).toLocaleString('es-CR')}` : '')
@@ -56,11 +60,9 @@ export function probarWhy(input: {
     else if (name === 'use_shortcut') out.push('usó una respuesta rápida')
   }
   if (input.shortcutKey && !out.includes('usó una respuesta rápida')) out.push('usó una respuesta rápida')
-  if (input.escalate) out.push(`pasó a una persona: ${ESCALATE[input.escalateReason || 'other'] || input.escalateReason || 'otro motivo'}`)
-  if (input.fallbackUsed) {
-    const reasons = (input.validationReasons ?? []).slice(0, 3).join(', ')
-    out.push(`respuesta de respaldo${reasons ? ` (no pasó las reglas: ${reasons})` : ''}`)
-  }
-  for (const b of input.blockedBy ?? []) out.push(`un cliente real no recibiría respuesta: ${BLOCKED[b] || b}`)
+  if (input.escalate) out.push(`pasó a una persona: ${ESCALATE[input.escalateReason || 'other'] || 'otro motivo'}`)
+  // Codes are internal; the owner only needs to know the AI's own answer was replaced by a safe one.
+  if (input.fallbackUsed) out.push('respuesta de respaldo: la IA falló o su respuesta no pasó las reglas')
+  for (const b of input.blockedBy ?? []) out.push(`un cliente real no recibiría respuesta: ${BLOCKED[b] || 'una regla del canal lo bloquea'}`)
   return [...new Set(out)].slice(0, 6)
 }

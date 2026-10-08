@@ -4,6 +4,7 @@
  */
 
 import { prisma } from '@/lib/db'
+import { queryFit } from '@/lib/product-words'
 import {
   findOwnedOrder as findOwnedOrderShared,
   isOrderOwned,
@@ -83,7 +84,8 @@ async function runSearchInventory(
       result: { asOf: new Date().toISOString(), currency: 'CRC', items: [], note: 'sin productos asignados a este agente' },
     }
   }
-  const rows = await prisma.inventoryItem.findMany({
+  const select = { name: true, sku: true, category: true, currentStock: true, minStock: true, sellingPrice: true } as const
+  let rows = await prisma.inventoryItem.findMany({
     where: {
       tenantId: ctx.tenantId,
       isActive: true,
@@ -106,6 +108,21 @@ async function runSearchInventory(
     take: 8,
     orderBy: { name: 'asc' },
   })
+  // The customer's own words ("arnés", "arnes forge xl") rarely match the inventory text exactly ("ARNESS FORGE XL"):
+  // score this agent's products word by word (accents, small typos; sizes exact) and keep the best fits.
+  if (rows.length === 0) {
+    const mine = await prisma.inventoryItem.findMany({
+      where: { tenantId: ctx.tenantId, isActive: true, id: { in: ctx.inventoryItemIds } },
+      select,
+      take: 200,
+    })
+    rows = mine
+      .map((r) => ({ r, fit: queryFit(query, [r.name, r.category, r.sku].filter(Boolean).join(' ')) }))
+      .filter((x) => x.fit >= 0.5)
+      .sort((a, b) => b.fit - a.fit || a.r.name.localeCompare(b.r.name))
+      .slice(0, 8)
+      .map((x) => x.r)
+  }
   const asOf = new Date().toISOString()
   return {
     ok: true,

@@ -8,7 +8,7 @@ import { ProbarScenarios } from '@/app/config/agentes/ProbarScenarios'
 
 export type WaBubble = {
   kind: 'text'
-  from: 'customer' | 'agent'
+  from: 'customer' | 'agent' | 'system'
   text: string
   at: string
   label?: string
@@ -38,6 +38,18 @@ function BubbleView({ bubble }: { bubble: WaBubble }) {
   switch (bubble.kind) {
     case 'text': {
       const customer = bubble.from === 'customer'
+      if (bubble.from === 'system') {
+        return (
+          <div className="flex justify-center">
+            <div className="max-w-[90%] rounded-lg bg-amber-50 px-3 py-1.5 text-[11.5px] text-amber-900 ring-1 ring-amber-100">
+              <p className="font-medium">Sin respuesta para el cliente</p>
+              {(bubble.why ?? []).map((w) => (
+                <p key={w}>{w}</p>
+              ))}
+            </div>
+          </div>
+        )
+      }
       return (
         <div className={`flex ${customer ? 'justify-end' : 'justify-start'}`}>
           <div
@@ -140,7 +152,7 @@ export function AgentTestSandbox({
           socialAccountId,
           testSessionId: sessionId,
           messageType,
-          history: history.map((bubble) => ({
+          history: history.filter((bubble) => bubble.from !== 'system').map((bubble) => ({
             direction: bubble.from === 'customer' ? 'inbound' : 'outbound',
             content: bubble.text,
             sentAt: bubble.at,
@@ -171,7 +183,16 @@ export function AgentTestSandbox({
                   latencyMs: typeof data.latencyMs === 'number' ? data.latencyMs : undefined,
                 },
               ]
-            : []),
+            : [
+                // No reply would reach a real client: say why instead of showing nothing.
+                {
+                  kind: 'text' as const,
+                  from: 'system' as const,
+                  text: '',
+                  at: now,
+                  why: Array.isArray(data.why) && data.why.length ? (data.why as string[]) : ['el agente no respondió'],
+                },
+              ]),
         ].slice(-40),
       )
       setLast(data)
@@ -299,7 +320,7 @@ export function AgentTestSandbox({
         agentModel={agentModel}
         operationMode={operationMode}
         configuredModels={configuredModels}
-        conversation={history.map((b) => ({ from: b.from, text: b.text }))}
+        conversation={history.filter((b) => b.from !== 'system').map((b) => ({ from: b.from as 'customer' | 'agent', text: b.text }))}
       />
       </details>
     </div>

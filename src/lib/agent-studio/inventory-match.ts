@@ -8,6 +8,7 @@ import 'server-only'
 
 import { prisma } from '@/lib/db'
 import { normalizeForMatch } from '@/lib/agent-studio/provenance'
+import { wordSimilarity } from '@/lib/product-words'
 
 export type InventoryCandidate = { id: string; name: string; sku: string | null; category: string | null; sellingPrice: number; currentStock: number }
 export type ProductMatch = {
@@ -23,49 +24,6 @@ export type ProductMatch = {
   group: { category: string; itemIds: string[] } | null
 }
 
-/** Doubled letters collapsed ("ARNESS" ≈ "Arnés"): common typos in inventory names. */
-function canon(t: string): string {
-  return t.replace(/(\p{L})\1+/gu, '$1')
-}
-
-function tokens(s: string): Set<string> {
-  // Single letters/digits stay: sizes (S / M / L, 2 / 4) are what tell variants apart.
-  return new Set(normalizeForMatch(s).split(' ').filter(Boolean).map(canon))
-}
-
-/** Same word, allowing one typo (edit distance ≤ 1) for words of 5+ letters. */
-export function sameWord(a: string, b: string): boolean {
-  if (a === b) return true
-  if (a.length < 5 || b.length < 5 || Math.abs(a.length - b.length) > 1) return false
-  let i = 0
-  let j = 0
-  let edits = 0
-  while (i < a.length && j < b.length) {
-    if (a[i] === b[j]) {
-      i += 1
-      j += 1
-      continue
-    }
-    edits += 1
-    if (edits > 1) return false
-    if (a.length > b.length) i += 1
-    else if (b.length > a.length) j += 1
-    else {
-      i += 1
-      j += 1
-    }
-  }
-  return edits + (a.length - i) + (b.length - j) <= 1
-}
-
-function jaccard(a: Set<string>, b: Set<string>): number {
-  if (!a.size || !b.size) return 0
-  const bs = [...b]
-  let inter = 0
-  for (const t of a) if (bs.some((u) => sameWord(t, u))) inter += 1
-  return inter / (a.size + b.size - inter)
-}
-
 /** Pure matcher (exported for tests). */
 export function matchProductsAgainst(
   products: Array<{ nameAsSeen: string | null; variantText: string | null; groupText: string | null; priceSeen: number | null; skuSeen?: string | null }>,
@@ -73,8 +31,7 @@ export function matchProductsAgainst(
 ): ProductMatch[] {
   return products.map((p, index) => {
     const full = [p.nameAsSeen, p.variantText].filter(Boolean).join(' ')
-    const want = tokens(full)
-    const wantGroup = p.groupText ? tokens(p.groupText) : null
+    const wantGroup = p.groupText || ''
     const sku = p.skuSeen ? normalizeForMatch(p.skuSeen) : ''
     let best: { c: InventoryCandidate; score: number } | null = null
     let tie = false
@@ -86,8 +43,9 @@ export function matchProductsAgainst(
       else if (c.sku && full && normalizeForMatch(c.sku) && ` ${normalizeForMatch(full)} `.includes(` ${normalizeForMatch(c.sku)} `)) score = 1
       else if (normalizeForMatch(c.name) === normalizeForMatch(full)) score = 0.98
       else {
-        score = jaccard(want, tokens(c.name))
-        if (wantGroup && c.category && jaccard(wantGroup, tokens(c.category)) >= 0.99) score += 0.1
+        // Shared word matcher: accents / small typos tolerated, sizes exact (XXL ≠ XL); always < 0.98 unless exact.
+        const bonus = wantGroup && c.category && wordSimilarity(wantGroup, c.category) >= 0.9 ? 0.1 : 0
+        score = Math.min(wordSimilarity(full, c.name) + bonus, 0.97)
       }
       scored.push({ c, score })
       if (!best || score > best.score + 1e-9) {

@@ -571,12 +571,14 @@ describe('Test chat = live reply, with a short "why" line', () => {
     const why = probarWhy({
       toolTrace: [{ name: 'search_inventory', ok: true, result: { items: [{ name: 'ARNESS FORGE XL', sellingPrice: 14900, currentStock: 30 }] } }],
       escalate: true,
-      escalateReason: 'payment',
-      blockedBy: ['not_activated'],
+      escalateReason: 'payment_or_sinpe',
+      blockedBy: ['agent_not_live'],
     })
     assert.match(why[0], /^usó inventario: ARNESS FORGE XL ₡14[.s ]900 stock 30$/)
-    assert.ok(why.includes('pasó a una persona: pago'))
-    assert.ok(why.some((w) => w.startsWith('un cliente real no recibiría respuesta')))
+    assert.ok(why.includes('pasó a una persona: pago o comprobante SINPE (lo confirma una persona)'))
+    assert.ok(why.includes('un cliente real no recibiría respuesta: el agente está en borrador (falta “Activar”)'))
+    // Unknown codes never leak raw English to the owner.
+    assert.deepEqual(probarWhy({ toolTrace: [], blockedBy: ['some_new_code'] }), ['un cliente real no recibiría respuesta: una regla del canal lo bloquea'])
     assert.deepEqual(probarWhy({ toolTrace: [{ name: 'search_inventory', ok: true, result: { items: [] } }] }), ['buscó en inventario: no encontró productos'])
   })
   it('the test turn passes the same order ownership / platform / intent fallback as the live turn', () => {
@@ -589,5 +591,36 @@ describe('Test chat = live reply, with a short "why" line', () => {
     assert.match(ui, /useState\(''\)/)
     const page = read('src/app/config/agentes/page.tsx')
     assert.ok(page.indexOf('id="agent-probar"') < page.indexOf("tab !== 'personalidad'"))
+  })
+})
+
+describe('Verifier 2026-10-08 (agent page): shared word matcher, live search fallback', () => {
+  it('customer words find inventory names: accents, doubled letters, one typo; sizes exact', async () => {
+    const { queryFit, wordSimilarity, sameWord } = await import('@/lib/product-words')
+    assert.ok(queryFit('arnés', 'ARNESS FORGE XL ARNESS') >= 0.5)
+    assert.ok(queryFit('precio arnes forge xl', 'ARNESS FORGE XL ARNESS') >= 0.99 * 0.9)
+    assert.ok(queryFit('arnes xl', 'ARNESS FORGE XL') > queryFit('arnes xl', 'ARNESS FORGE 2XL'))
+    assert.equal(queryFit('precio', 'ARNESS FORGE XL'), 0)
+    assert.equal(sameWord('xxl', 'xl'), false)
+    assert.equal(sameWord('arness', 'arnes'), true)
+    assert.ok(wordSimilarity('Camisa XXL', 'Camisa XXL') > wordSimilarity('Camisa XXL', 'Camisa XL'))
+    assert.ok(wordSimilarity('deportivos deportivo', 'deportivo') <= 1)
+  })
+  it('Studio picks XXL over XL and an exact name over a fuzzy one', () => {
+    const items = [
+      { id: 'xl', name: 'Camisa XL', sku: null, category: 'CAMISAS', sellingPrice: 10000, currentStock: 1 },
+      { id: 'xxl', name: 'Camisa XXL', sku: null, category: 'CAMISAS', sellingPrice: 12000, currentStock: 1 },
+    ]
+    const m = matchProductsAgainst([{ nameAsSeen: 'Camisa XXL', variantText: null, groupText: 'Camisas', priceSeen: 12000 }], items)
+    assert.equal(m[0].itemId, 'xxl')
+    assert.equal(m[0].priceDiffers, false)
+    assert.ok(m[0].score < 1.01)
+  })
+  it('live search falls back to word matching over the agent own products; card refreshes after apply', () => {
+    const runner = read('src/lib/soft-ai/llm/tool-runner.ts')
+    assert.match(runner, /if \(rows\.length === 0\) \{[\s\S]*queryFit\(query,/)
+    assert.match(runner, /id: \{ in: ctx\.inventoryItemIds \} \},\s*select,\s*take: 200/)
+    assert.match(read('src/app/config/agentes/page.tsx'), /key=\{`inv-\$\{selected\.id\}-\$\{selected\.version\}`\}/)
+    assert.match(read('src/app/config/agentes/AgentTestSandbox.tsx'), /Sin respuesta para el cliente/)
   })
 })

@@ -750,7 +750,7 @@ export default function AgentesConfigPage() {
               <div className="space-y-4">
                 <div hidden={!detailVisible || tab !== 'resumen'} role="tabpanel" className="space-y-4">
                   <StudioFlow key={`studio-${selected.id}`} agentId={selected.id} canEdit={canEdit} isLive={selected.status === 'live'} onApplied={() => void load({ silent: true })} />
-                  <AgentInventoryCard key={`inv-${selected.id}`} agentId={selected.id} canEdit={canEdit} title="② Productos que vende" />
+                  <AgentInventoryCard key={`inv-${selected.id}-${selected.version}`} agentId={selected.id} canEdit={canEdit} title="② Productos que vende" />
                   <div id="agent-probar">
                     <p className="mb-2 text-[14px] font-semibold text-slate-900">③ Probar y activar</p>
                     <AgentTestSandbox
@@ -1125,7 +1125,10 @@ export default function AgentesConfigPage() {
                     agentId={selected.id}
                     canEdit={canEdit}
                     reloadToken={channelReload}
-                    onUseForTest={setChannelId}
+                    onUseForTest={(id) => {
+                      setChannelId(id)
+                      probar()
+                    }}
                     onChannels={(rows) => {
                       setChannelRows(rows)
                       setTestChannels(

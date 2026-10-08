@@ -38,6 +38,7 @@ export function AgentInventoryCard({ agentId, canEdit, title }: { agentId: strin
   async function save(next: string[]) {
     setBusy(true)
     setMessage(null)
+    if (new Set(next).size > 200) setMessage('Un agente puede vender hasta 200 productos: se guardaron los primeros 200.')
     try {
       const res = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/inventory`, {
         method: 'PUT',
@@ -133,11 +134,32 @@ export function AgentInventoryCard({ agentId, canEdit, title }: { agentId: strin
               })}
             </ul>
           )}
-          {items.some((i) => !i.isActive) ? (
-            <p className="mt-2 text-[11px] text-amber-700">
-              Algunos productos elegidos están inactivos en el inventario: {items.filter((i) => !i.isActive).map((i) => i.name).join(', ')}
-            </p>
-          ) : null}
+          {(() => {
+            // Chosen products not shown in the groups above (inactive, or beyond the list): still removable here.
+            const listed = new Set(catalog.flatMap((g) => g.items.map((i) => i.id)))
+            const others = items.filter((i) => !listed.has(i.id))
+            if (!others.length) return null
+            return (
+              <div className="mt-3 rounded-xl bg-amber-50 p-3 ring-1 ring-amber-100">
+                <p className="text-[12px] font-medium text-amber-900">Otros elegidos (inactivos o fuera de la lista)</p>
+                <ul className="mt-1 space-y-1">
+                  {others.map((i) => (
+                    <li key={i.id} className="flex items-center justify-between gap-2 text-[12px] text-amber-900">
+                      <span className="min-w-0 truncate">
+                        {i.name}
+                        {!i.isActive ? ' (inactivo)' : ''}
+                      </span>
+                      {canEdit ? (
+                        <button type="button" disabled={busy} onClick={() => void save(ids.filter((x) => x !== i.id))} className="shrink-0 text-red-600 hover:underline disabled:opacity-40">
+                          Quitar
+                        </button>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          })()}
           {message ? <p className="mt-2 text-[12px] text-red-700">{message}</p> : null}
         </>
       )}

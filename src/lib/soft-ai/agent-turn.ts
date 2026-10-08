@@ -1166,6 +1166,7 @@ async function runAgentTestTurnInner(input: {
       shortcutKey: null,
       model: runtimeAgent.model,
       estimatedCostUsd: 0,
+      why: ['se acabó el límite diario de pruebas de este negocio: probá mañana'],
     }
   }
 

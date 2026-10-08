@@ -426,7 +426,7 @@ export default function AiUsageDashboard() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="day" fontSize={11} />
                     <YAxis fontSize={11} />
-                    <Tooltip formatter={(v: number, k: string) => [metric === 'cost' ? `US${Number(v).toFixed(4)}` : nf.format(Number(v)), label(k)]} />
+                    <Tooltip formatter={(v: number, k: string) => [metric === 'cost' ? `US$${Number(v).toFixed(4)}` : nf.format(Number(v)), label(k)]} />
                     <Legend formatter={(k: string) => label(k)} wrapperStyle={{ fontSize: 12 }} />
                     {series.keys.map((k, i) => (
                       <Area

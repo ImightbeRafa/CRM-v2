@@ -5,7 +5,7 @@ import { useAuroraViewer } from './useAuroraViewer'
 
 export type WorkspaceNotificationItem = {
   id: string
-  kind: 'mention' | 'task_assigned' | 'task_due' | 'chat_assigned' | 'ai_no_reply'
+  kind: 'mention' | 'task_assigned' | 'task_due' | 'chat_assigned' | 'ai_no_reply' | 'ai_budget'
   read: boolean
   createdAt: string
   title: string

@@ -942,6 +942,9 @@ export default function AdminPage() {
           <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, margin: '4px 0 0' }}>
             Plataforma, ingresos, uso y rentabilidad
           </p>
+          <a href="/super-admin/ia" style={{ color: '#8b5cf6', fontSize: 13, display: 'inline-block', marginTop: 6 }}>
+            Uso y costo de IA (todo Betsy) →
+          </a>
         </div>
         <button onClick={handleRefresh} disabled={loading}
           style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(108,63,255,0.4)', background: 'rgba(108,63,255,0.1)', color: '#8b5cf6', fontWeight: 600, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, opacity: loading ? 0.5 : 1 }}>

@@ -14,7 +14,7 @@ import { staffDisplayName } from '@/lib/display-name'
 import { hasPermission, type Role } from '@/lib/rbac'
 
 export const MENTION_MAX = 10
-export type NotificationKind = 'mention' | 'task_assigned' | 'task_due' | 'chat_assigned' | 'ai_no_reply'
+export type NotificationKind = 'mention' | 'task_assigned' | 'task_due' | 'chat_assigned' | 'ai_no_reply' | 'ai_budget'
 
 /** Plain-word reasons for "La IA no respondió" (the reason travels in the dedupe key; no customer text). */
 export const AI_NO_REPLY_REASONS: Record<string, string> = {
@@ -182,6 +182,21 @@ export async function listNotifications(tenantId: string, userId: string, limit 
           title: r.kind === 'task_assigned' ? `${who} te asignó una tarea${where}` : `Tarea vencida${where}`,
           snippet: task.title,
           href: r.conversationId ? chatHref(r.conversationId, r.clientId) : '/tareas',
+        })
+      } else if (r.kind === 'ai_budget') {
+        // ai_budget:paused:<tenant>:<month> (business team) or ai_budget:<scope>:<month>:<level> (platform owner)
+        const parts = String(r.dedupeKey || '').split(':')
+        const paused = parts[1] === 'paused'
+        items.push({
+          id: r.id,
+          kind: 'ai_budget',
+          read: Boolean(r.readAt),
+          createdAt: r.createdAt.toISOString(),
+          title: paused ? 'La IA de tu negocio quedó en pausa' : `IA: ${parts[3] || ''}% del presupuesto del mes`,
+          snippet: paused
+            ? 'Se alcanzó el límite mensual de IA. Atiendan los chats a mano; Betsy ya fue avisado.'
+            : 'Revisá el detalle en Uso de IA.',
+          href: paused ? '/chats' : '/super-admin/ia',
         })
       } else if (r.kind === 'ai_no_reply') {
         const reason = String(r.dedupeKey || '').split(':')[3] || ''

@@ -35,6 +35,7 @@ export const FILES = {
   '048': '048_ai_usage_event.sql',
   '049': '049_chat_agent_settings.sql',
   '050': '050_chat_agent_test_run.sql',
+  '051': '051_ai_budget.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -84,6 +85,7 @@ export const EXPECTED_TABLES = {
   '048': ['AiUsageEvent'],
   '049': ['ChatAgentSettings'],
   '050': ['ChatAgentTestRun'],
+  '051': ['AiBudget'],
 };
 
 export const EXPECTED_COLUMNS = {
@@ -96,6 +98,7 @@ export const EXPECTED_COLUMNS = {
   '048': [['AiUsageEvent', 'sourceKey'], ['AiUsageEvent', 'costMicros']],
   '049': [['ChatAgentSettings', 'orderOwnership'], ['ChatAgentSettings', 'servesUnboundChannels']],
   '050': [['ChatAgentTestRun', 'suiteHash'], ['ChatAgentTestRun', 'results']],
+  '051': [['AiBudget', 'monthlyUsdMicros'], ['AiBudget', 'autoPause'], ['AiBudget', 'pausedMonth']],
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],
   '037': [['ChatConversation', 'repliedInboundCount']],

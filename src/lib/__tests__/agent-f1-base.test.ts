@@ -85,7 +85,7 @@ describe('F1 · isolation between businesses of one tenant (SQL 049)', () => {
 
   it('settings are fail-safe: missing table or row = safe defaults', () => {
     assert.match(settings, /if \(!\(await isTableReady\(TABLE\)\)\) return DEFAULT_AGENT_SETTINGS/)
-    assert.match(settings, /servesUnboundChannels: false,\n\}/)
+    assert.match(settings, /servesUnboundChannels: false,\r?\n\}/)
     assert.match(settings, /WHERE "tenantId" = \$\{tenantId\} AND "agentId" = \$\{agentId\}/)
   })
 

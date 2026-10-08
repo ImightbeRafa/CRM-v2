@@ -6,7 +6,7 @@ import { hasSessionPermission } from '@/lib/session-permissions'
 import { parseOrder } from '@/app/hooks/useSalesStream'
 import type { Sale } from '@/app/produccion/types/sales'
 import Link from 'next/link'
-import { Check, ExternalLink, FileText, Link2, Loader2, Search, Send, ShoppingBag, Star, Unlink, UserRound } from 'lucide-react'
+import { Check, ExternalLink, FileText, Link2, Loader2, PackageSearch, Search, Send, ShoppingBag, Star, Unlink, UserRound, X } from 'lucide-react'
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext'
 import { pedidoHref } from '@/lib/pedido-url'
 import { nextOrderStep, type ChatFlowOrder } from '@/lib/chat-order-flow'
@@ -73,6 +73,7 @@ export function ChatClientPanel({
   revision,
   onCreateOrder,
   onGuiaSent,
+  onOrdersChanged,
 }: {
   conversationId: string
   platform: 'whatsapp' | 'instagram'
@@ -80,6 +81,8 @@ export function ChatClientPanel({
   revision?: string | number
   onCreateOrder?: () => void
   onGuiaSent?: () => void
+  /** An order was attached to / removed from this chat (list chip, thread). */
+  onOrdersChanged?: () => void
 }) {
   const { formatCurrency } = useTenantSettings()
   const [data, setData] = useState<PanelData | null>(null)
@@ -93,6 +96,7 @@ export function ChatClientPanel({
   // No "your role cannot" hint while the session is still loading (it flashed for Producción users).
   const sessionReady = sessionStatus !== 'loading'
   const [guiaSale, setGuiaSale] = useState<Sale | null>(null)
+  const [orderPickerOpen, setOrderPickerOpen] = useState(false)
   const requestSeq = useRef(0)
 
   const load = useCallback(
@@ -122,6 +126,7 @@ export function ChatClientPanel({
     setData(null)
     setQuery('')
     setSearchOpen(false)
+    setOrderPickerOpen(false)
     setNotice(null)
     void load()
   }, [load, revision])
@@ -165,6 +170,85 @@ export function ChatClientPanel({
       setQuery('')
       setNotice({ tone: 'ok', text: clientId ? 'Chat vinculado al cliente.' : 'Chat desvinculado.' })
       await load()
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  /** "Vincular pedido": attach an existing order (e.g. from the website) to this chat. */
+  async function attachOrder(order: { id: string; orderId: string }, confirmPhoneMismatch = false): Promise<void> {
+    setBusy(`attach:${order.id}`)
+    setNotice(null)
+    try {
+      const res = await fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}/orders`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: order.id, confirmPhoneMismatch }),
+      })
+      const json = (await res.json().catch(() => null)) as {
+        success?: boolean
+        already?: boolean
+        error?: string
+        code?: string
+        orderPhoneMasked?: string | null
+      } | null
+      if (res.status === 409 && json?.code === 'phone_mismatch' && !confirmPhoneMismatch) {
+        setBusy(null)
+        const ok = await auroraConfirm(`¿Vincular el pedido #${order.orderId} a este chat?`, {
+          description:
+            platform === 'whatsapp'
+              ? `El teléfono del pedido (${json.orderPhoneMasked || 'sin teléfono'}) no es el de este chat. Vinculalo solo si confirmaste que es de esta persona (por ejemplo, te mandó el comprobante): desde acá le vas a poder enviar su guía.`
+              : `Este chat no tiene teléfono para compararlo con el del pedido (${json.orderPhoneMasked || 'sin teléfono'}). Vinculalo solo si confirmaste que es de esta persona (por ejemplo, te mandó el comprobante).`,
+          confirmLabel: 'Sí, es de esta persona',
+        })
+        if (ok) await attachOrder(order, true)
+        return
+      }
+      if (!res.ok || !json?.success) {
+        setNotice({ tone: 'error', text: json?.error || 'No se pudo vincular el pedido.' })
+        return
+      }
+      setNotice({
+        tone: 'ok',
+        text: json.already ? `El pedido #${order.orderId} ya estaba en este chat.` : `Pedido #${order.orderId} vinculado al chat.`,
+      })
+      setOrderPickerOpen(false)
+      onOrdersChanged?.()
+      await load(searchOpen ? query.trim() : '')
+    } catch {
+      setNotice({ tone: 'error', text: 'Sin conexión. Probá de nuevo.' })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function detachOrder(order: ChatFlowOrder) {
+    const ok = await auroraConfirm(`¿Quitar el pedido #${order.orderId} de este chat?`, {
+      description:
+        'El pedido no se borra ni cambia: deja de estar vinculado a esta conversación y ya no cuenta como venta de este chat en estadísticas.',
+      confirmLabel: 'Quitar del chat',
+    })
+    if (!ok) return
+    setBusy(`detach:${order.id}`)
+    setNotice(null)
+    try {
+      const res = await fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}/orders`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: order.id }),
+      })
+      const json = (await res.json().catch(() => null)) as { success?: boolean; error?: string } | null
+      if (!res.ok || !json?.success) {
+        setNotice({ tone: 'error', text: json?.error || 'No se pudo quitar el pedido.' })
+        return
+      }
+      setNotice({ tone: 'ok', text: `Pedido #${order.orderId} quitado del chat.` })
+      onOrdersChanged?.()
+      await load(searchOpen ? query.trim() : '')
+    } catch {
+      setNotice({ tone: 'error', text: 'Sin conexión. Probá de nuevo.' })
     } finally {
       setBusy(null)
     }
@@ -391,21 +475,41 @@ export function ChatClientPanel({
       )}
 
       <div>
-        <div className="mb-2 flex items-center justify-between">
-          <p className="text-[11px] font-medium text-slate-400">Pedidos {client ? 'del cliente' : 'de este chat'}</p>
+        <p className="mb-1.5 text-[11px] font-medium text-slate-400">Pedidos {client ? 'del cliente' : 'de este chat'}</p>
+        <div className="mb-2 grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            onClick={() => setOrderPickerOpen((v) => !v)}
+            aria-expanded={orderPickerOpen}
+            data-testid="chat-attach-order-toggle"
+            className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-lg px-2 py-1.5 text-[11px] font-semibold ${
+              orderPickerOpen ? 'bg-au-tint-e2e5ff text-au-ink-4a46e5' : 'bg-au-tint-eef0ff text-au-ink-4a46e5 hover:bg-au-tint-e2e5ff'
+            }`}
+          >
+            <Link2 className="h-3 w-3" aria-hidden /> Vincular pedido
+          </button>
           {onCreateOrder ? (
             <button
               type="button"
               onClick={onCreateOrder}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-au-ink-5b6cff hover:underline"
+              className="inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-lg bg-au-tint-eef0ff px-2 py-1.5 text-[11px] font-semibold text-au-ink-4a46e5 hover:bg-au-tint-e2e5ff"
             >
               <ShoppingBag className="h-3 w-3" aria-hidden /> Crear pedido
             </button>
           ) : null}
         </div>
+        {orderPickerOpen ? (
+          <OrderAttachPicker
+            conversationId={conversationId}
+            busy={busy}
+            onAttach={(o) => void attachOrder(o)}
+            onClose={() => setOrderPickerOpen(false)}
+          />
+        ) : null}
         {orders.length === 0 ? (
           <p className="rounded-lg bg-white px-3 py-3 text-[11.5px] text-slate-400 ring-1 ring-slate-100">
-            Todavía no hay pedidos. Creá uno desde el chat y acá vas a poder generar y enviar la guía.
+            Todavía no hay pedidos. Creá uno desde el chat o vinculá uno que ya existe (por ejemplo, un pedido de la web) y
+            acá vas a poder generar y enviar la guía.
           </p>
         ) : (
           <ul className="space-y-2">
@@ -432,6 +536,40 @@ export function ChatClientPanel({
                       </span>
                     </span>
                   </div>
+
+                  {order.linked ? (
+                    <div className="mt-1.5 flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-px text-[10px] font-semibold text-emerald-700">
+                        <Link2 className="h-2.5 w-2.5" aria-hidden /> En este chat
+                      </span>
+                      <button
+                        type="button"
+                        disabled={busy !== null}
+                        onClick={() => void detachOrder(order)}
+                        data-testid="chat-detach-order"
+                        className="inline-flex items-center gap-1 text-[10.5px] font-medium text-slate-400 hover:text-red-600 disabled:opacity-50"
+                      >
+                        {busy === `detach:${order.id}` ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <Unlink className="h-3 w-3" aria-hidden />}
+                        Quitar del chat
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-1.5 flex items-center justify-between gap-2">
+                      <span className="truncate text-[10.5px] text-slate-400">
+                        {order.phoneMatchesChat ? 'Mismo teléfono que el chat' : 'Pedido del cliente'}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={busy !== null}
+                        onClick={() => void attachOrder(order)}
+                        data-testid="chat-attach-listed-order"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-au-tint-eef0ff px-2 py-1 text-[10.5px] font-semibold text-au-ink-4a46e5 hover:bg-au-tint-e2e5ff disabled:opacity-50"
+                      >
+                        {busy === `attach:${order.id}` ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <Link2 className="h-3 w-3" aria-hidden />}
+                        Vincular al chat
+                      </button>
+                    </div>
+                  )}
 
                   <ol className="mt-2.5 flex items-center gap-1 text-[10px] font-medium text-slate-400" aria-label="Pasos del pedido">
                     <li className="flex items-center gap-1 text-emerald-700">
@@ -518,6 +656,157 @@ export function ChatClientPanel({
           />
         </Suspense>
       ) : null}
+    </div>
+  )
+}
+
+type AttachCandidate = {
+  id: string
+  orderId: string
+  customerName: string
+  phoneMasked: string | null
+  phoneMatchesChat: boolean
+  status: string
+  total: number
+  product: string | null
+  timestamp: string
+  salesChannel: string | null
+  inOtherChat: boolean
+  match: 'phone' | 'name' | 'recent' | 'search'
+}
+
+const MATCH_LABEL: Record<AttachCandidate['match'], string> = {
+  phone: 'Mismo teléfono',
+  name: 'Mismo nombre',
+  recent: 'Reciente sin chat',
+  search: '',
+}
+
+/**
+ * "Vincular pedido": suggestions (same phone / name, then recent orders no chat has yet,
+ * typically website orders) and a search by order number, name or phone.
+ */
+function OrderAttachPicker({
+  conversationId,
+  busy,
+  onAttach,
+  onClose,
+}: {
+  conversationId: string
+  busy: string | null
+  onAttach: (order: AttachCandidate) => void
+  onClose: () => void
+}) {
+  const { formatCurrency } = useTenantSettings()
+  const [query, setQuery] = useState('')
+  const [items, setItems] = useState<AttachCandidate[] | null>(null)
+  const [failed, setFailed] = useState(false)
+  const seq = useRef(0)
+
+  useEffect(() => {
+    const q = query.trim()
+    const n = ++seq.current
+    const t = window.setTimeout(
+      async () => {
+        try {
+          const res = await fetch(
+            `/api/chat/conversations/${encodeURIComponent(conversationId)}/orders${q.length >= 2 ? `?q=${encodeURIComponent(q)}` : ''}`,
+            { credentials: 'same-origin', cache: 'no-store' },
+          )
+          const json = (await res.json().catch(() => null)) as { success?: boolean; orders?: AttachCandidate[] } | null
+          if (n !== seq.current) return
+          if (!res.ok || !json?.success) {
+            setFailed(true)
+            return
+          }
+          setFailed(false)
+          setItems(json.orders ?? [])
+        } catch {
+          if (n === seq.current) setFailed(true)
+        }
+      },
+      q ? 250 : 0,
+    )
+    return () => window.clearTimeout(t)
+  }, [query, conversationId])
+
+  const searching = query.trim().length >= 2
+  return (
+    <div className="mb-2 space-y-2 rounded-xl bg-white p-2.5 ring-1 ring-slate-100" data-testid="chat-attach-order-picker">
+      <div className="flex items-center gap-2">
+        <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-100">
+          <PackageSearch className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') onClose()
+            }}
+            placeholder="N.º de pedido, nombre o teléfono"
+            className="min-w-0 flex-1 bg-transparent text-[12px] text-slate-900 outline-none placeholder:text-slate-400"
+            aria-label="Buscar pedido para vincular"
+          />
+        </label>
+        <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:text-slate-700" aria-label="Cerrar">
+          <X className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </div>
+      <p className="px-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+        {searching ? 'Resultados' : 'Sugeridos para este chat'}
+      </p>
+      {failed ? (
+        <p className="px-1 text-[11px] text-red-600">No se pudieron cargar los pedidos.</p>
+      ) : items === null ? (
+        <div className="h-12 animate-pulse rounded-lg bg-slate-100" aria-busy="true" />
+      ) : items.length === 0 ? (
+        <p className="px-1 text-[11px] text-slate-400">
+          {searching ? 'Sin coincidencias.' : 'No hay pedidos recientes sin chat. Buscá por número, nombre o teléfono.'}
+        </p>
+      ) : (
+        <ul className="max-h-72 space-y-1.5 overflow-y-auto">
+          {items.map((o) => (
+            <li key={o.id} className="flex items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-2 ring-1 ring-slate-100" data-testid="chat-attach-candidate">
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5">
+                  <span className="truncate text-[12px] font-semibold text-slate-800">#{o.orderId}</span>
+                  {MATCH_LABEL[o.match] ? (
+                    <span
+                      className={`shrink-0 rounded px-1 py-px text-[9.5px] font-semibold ${
+                        o.match === 'phone'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : o.match === 'name'
+                            ? 'bg-amber-50 text-amber-700'
+                            : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      {MATCH_LABEL[o.match]}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="block truncate text-[11px] text-slate-500">
+                  {o.customerName}
+                  {o.phoneMasked ? ` · ${o.phoneMasked}` : ''}
+                </span>
+                <span className="block truncate text-[10.5px] text-slate-400">
+                  {[formatCurrency(o.total), shortDate(o.timestamp), o.salesChannel, o.inOtherChat ? 'ya está en otro chat' : null]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              </span>
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => onAttach(o)}
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-au-tint-eef0ff px-2 py-1 text-[11px] font-semibold text-au-ink-4a46e5 hover:bg-au-tint-e2e5ff disabled:opacity-50"
+              >
+                {busy === `attach:${o.id}` ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <Link2 className="h-3 w-3" aria-hidden />}
+                Vincular
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

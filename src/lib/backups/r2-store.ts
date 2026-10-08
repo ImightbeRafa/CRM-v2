@@ -5,7 +5,7 @@ import type { BackupBlobStore, StoredObject } from './blob-store';
  * Cloudflare R2 backup store over the S3 API (AWS Signature V4, signed here with node:crypto, no
  * extra dependency). Private bucket, bucket-scoped token. Every call has a hard timeout and at
  * most 2 retries (5xx / 429 / network only), so a stalled storage call can never hang a backup or
- * the status page (2026-10-02: the Vercel Blob calls had no timeout and backups failed silently).
+ * the status page (2026-10-02: the old blob store calls had no timeout and backups failed silently).
  *
  * Error messages never contain the keys, the Authorization header or a signed URL.
  */
@@ -269,10 +269,6 @@ export function createR2BlobStore(config: R2StoreConfig): BackupBlobStore {
   }
 
   return {
-    getAccessMode() {
-      return 'private';
-    },
-
     async putBytes(pathname, data, contentType) {
       const mb = Math.ceil(data.length / (1024 * 1024));
       await call({

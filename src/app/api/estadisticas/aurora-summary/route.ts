@@ -5,9 +5,9 @@ import { getTenantPrisma } from '@/lib/prisma-tenant'
 import { readTenantUiReadiness } from '@/lib/feature-flags'
 import { buildStatsDateRange, buildStatsOrderDateWhere, getOrderStatsDateKey } from '@/lib/statistics-dates'
 import {
+  auroraComparisonRange,
   auroraPeriodRange,
-  auroraPreviousRange,
-  resolveAuroraPeriod,
+  resolveAuroraPeriodSpec,
   safeAmount,
   summarizeChatOrderLinks,
   type ChatOrderLinkRow,
@@ -74,16 +74,19 @@ export async function GET(request: NextRequest) {
     if (!auth.ok) return auth.response
     const tenantId = auth.tenantId
 
-    const period = resolveAuroraPeriod(request.nextUrl.searchParams.get('period'))
-    if (!period) return NextResponse.json({ error: 'Invalid period' }, { status: 400 })
+    const params = request.nextUrl.searchParams
+    const spec = resolveAuroraPeriodSpec(params.get('period'), params.get('from'), params.get('to'))
+    if (!spec) return NextResponse.json({ error: 'Invalid period' }, { status: 400 })
+    const period = spec.period
 
     const readiness = await readTenantUiReadiness(tenantId)
     const collectedMode = readiness.statistics.enabled && readiness.statistics.mode === 'primary'
     const revenueMode = collectedMode ? 'collected' : 'booked'
 
-    const range = auroraPeriodRange(period)
-    const prevRange = auroraPreviousRange(range)
-    const key = `${tenantId}:${period}:${revenueMode}:${range.endDate}`
+    // Costa Rica calendar; weeks / months compare with the same days of the previous one.
+    const range = auroraPeriodRange(spec)
+    const prevRange = auroraComparisonRange(spec, range)
+    const key = `${tenantId}:${period}:${revenueMode}:${range.startDate}:${range.endDate}`
     const hit = cache.get(key)
     if (hit && Date.now() - hit.at < TTL) return NextResponse.json(hit.data)
 

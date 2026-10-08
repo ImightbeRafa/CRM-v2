@@ -3,7 +3,7 @@ import { sendMessage } from '@/lib/bot/telegram';
 import { prisma } from '@/lib/db';
 
 // GET /api/cron/logistics-report
-// Called by Vercel Cron at 05:00 UTC = 11:00 PM CST (UTC-6)
+// Called by the Cloudflare Worker cron at 05:00 UTC = 11:00 PM CST (UTC-6)
 // Secured with CRON_SECRET bearer token
 export async function GET(request: NextRequest) {
     const authHeader = request.headers.get('authorization');

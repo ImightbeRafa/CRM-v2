@@ -99,3 +99,11 @@ test('GET /api/orders/lines: view_sales, tenant-scoped, capped at 200 ids, read-
   assert.doesNotMatch(src, /\.(create|update|updateMany|delete|deleteMany|upsert)\(/)
   assert.doesNotMatch(src, /process\.env/)
 })
+
+test('a website order attached to a chat stays "Web" and names the chat line', () => {
+  const line = { socialAccountId: 's1', platform: 'whatsapp' as const, title: 'Patch House', detail: '+506 7052 6254' }
+  const web = canalLabel({ salesChannel: 'Website' }, line)
+  assert.equal(web.label, 'Web')
+  assert.equal(web.detail, 'Chat: Patch House')
+  assert.equal(canalLabel({ salesChannel: 'WhatsApp' }, line).label, 'Patch House')
+})

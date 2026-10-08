@@ -8,7 +8,6 @@ import test, { beforeEach, describe } from 'node:test'
 
 process.env.SUPABASE_URL = 'https://proj.supabase.co'
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-key'
-delete process.env.BLOB_READ_WRITE_TOKEN
 
 type Call = { url: string; method: string; headers: Record<string, string>; body?: unknown }
 let calls: Call[] = []
@@ -104,9 +103,22 @@ describe('chat storage (Supabase)', () => {
     assert.match(src, /redirect: 'error'/)
     assert.match(src, /host\.endsWith\('\.supabase\.co'\)/)
   })
-  test('chat-media no longer talks to Vercel Blob directly; backups still do (off-site)', () => {
+  test('chat-media no longer talks to Vercel Blob directly (the package is gone, see backups/blob-store.ts)', () => {
     assert.doesNotMatch(readFileSync('src/lib/chat-media.ts', 'utf8').replace(/\r\n/g, '\n'), /from '@vercel\/blob'/)
-    assert.match(readFileSync('src/lib/backups/blob-store.ts', 'utf8').replace(/\r\n/g, '\n'), /from '@vercel\/blob'/)
+    assert.doesNotMatch(readFileSync('src/lib/backups/blob-store.ts', 'utf8').replace(/\r\n/g, '\n'), /from '@vercel\/blob'/)
+  })
+  test('chat-storage.ts has no Vercel Blob fallback left at all', () => {
+    const src = readFileSync('src/lib/chat-storage.ts', 'utf8').replace(/\r\n/g, '\n')
+    assert.doesNotMatch(src, /@vercel\/blob/)
+    assert.doesNotMatch(src, /BLOB_READ_WRITE_TOKEN/)
+  })
+  test('a 404 from Supabase throws not_found and makes no other fetch call', async () => {
+    const { chatStorageGet, ChatStorageError } = await import('../chat-storage')
+    responder = () => new Response('{"message":"Object not found"}', { status: 404 })
+    const err = await chatStorageGet('chat-media/t1/m1').catch((e) => e)
+    assert.ok(err instanceof ChatStorageError)
+    assert.equal(err.code, 'not_found')
+    assert.equal(calls.filter((c) => c.url.includes('/object/')).length, 1)
   })
 })
 
@@ -131,11 +143,10 @@ describe('quick replies: one change per request, applied under a row lock', () =
 })
 
 describe('delete never hangs (2026-09-29: requests stuck 70–116 s)', () => {
-  test('file cleanup runs in the background and the legacy store is capped at 5 s', () => {
+  test('file cleanup runs in the background', () => {
     const route = readFileSync('src/app/api/chat/quick-replies/route.ts', 'utf8').replace(/\r\n/g, '\n')
     assert.equal((route.match(/void deleteChatBlobs\(removed\)/g) || []).length, 2)
     assert.doesNotMatch(route, /await deleteChatBlobs\(removed\)/)
-    assert.match(readFileSync('src/lib/chat-storage.ts', 'utf8').replace(/\r\n/g, '\n'), /setTimeout\(resolve, 5_000\)/)
   })
 })
 

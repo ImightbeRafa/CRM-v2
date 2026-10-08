@@ -77,9 +77,22 @@ describe('Estadísticas components copy', () => {
     assert.match(read(`${DIR}/StatsCard.tsx`), /onRetry/)
     assert.match(read(`${DIR}/KpiCard.tsx`), /Reintentar/)
   })
-  it('period control scrolls on mobile and mirrors ?periodo=', () => {
-    assert.match(read(`${DIR}/StatsHeader.tsx`), /overflow-x-auto/)
-    assert.match(read(`${DIR}/AuroraStatsDashboard.tsx`), /'periodo'/)
+  it('period control scrolls on mobile and mirrors ?periodo= (+ desde / hasta for custom)', () => {
+    const header = read(`${DIR}/StatsHeader.tsx`)
+    assert.match(header, /overflow-x-auto/)
+    assert.match(header, /'semana', 'semana-pasada', 'mes', 'mes-pasado'/)
+    assert.match(header, /type="date"/)
+    assert.match(header, /hora de Costa Rica/)
+    const dash = read(`${DIR}/AuroraStatsDashboard.tsx`)
+    assert.match(dash, /'periodo'/)
+    assert.match(dash, /params\.set\('desde', next\.from\)/)
+    assert.match(dash, /period=custom&from=\$\{spec\.from\}&to=\$\{spec\.to\}/)
+  })
+  it('summary API validates custom dates and compares calendar periods fairly', () => {
+    const route = read('src/app/api/estadisticas/aurora-summary/route.ts')
+    assert.match(route, /resolveAuroraPeriodSpec\(params\.get\('period'\), params\.get\('from'\), params\.get\('to'\)\)/)
+    assert.match(route, /auroraComparisonRange\(spec, range\)/)
+    assert.match(route, /range\.startDate\}:\$\{range\.endDate\}/, 'cache key includes the whole range')
   })
   it('lines table degrades to card rows below md', () => {
     const lines = read(`${DIR}/LinePerformance.tsx`)

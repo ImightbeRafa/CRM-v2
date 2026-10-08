@@ -156,7 +156,7 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
     const webhook = read('src/app/api/chat/webhook/route.ts')
     const cron = read('src/app/api/cron/chat-automation/route.ts')
     // Production runs on Cloudflare: the */1 safety-net cron lives in wrangler.jsonc and the Worker
-    // maps it to this route (vercel.json crons are empty since the move).
+    // maps it to this route.
     const wrangler = read('wrangler.jsonc')
     const worker = read('src/cf-container-worker.ts')
     assert.match(webhook, /enqueueSoftAiAfterInbound/)

@@ -84,7 +84,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "img-src 'self' data: https: blob:",
               "font-src 'self' data: https://fonts.gstatic.com",
-              "connect-src 'self' https://app.tilopay.com https://api.tilopay.com https://api.tokenex.com https://*.vercel-storage.com https://accounts.google.com https://connect.facebook.net https://graph.facebook.com https://www.facebook.com https://static.cloudflareinsights.com https://challenges.cloudflare.com",
+              "connect-src 'self' https://app.tilopay.com https://api.tilopay.com https://api.tokenex.com https://accounts.google.com https://connect.facebook.net https://graph.facebook.com https://www.facebook.com https://static.cloudflareinsights.com https://challenges.cloudflare.com",
               "worker-src 'self' blob:",
               "frame-src 'self' https://app.tilopay.com https://api.tokenex.com https://accounts.google.com https://www.facebook.com https://web.facebook.com https://challenges.cloudflare.com",
               "object-src 'none'",

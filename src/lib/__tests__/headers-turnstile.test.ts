@@ -15,15 +15,18 @@ test('exactly one Content-Security-Policy source (next.config.js)', () => {
   assert.equal((cfg.match(/key: 'Content-Security-Policy'/g) || []).length, 1)
 })
 
-test('CSP: Turnstile allowed, Vercel preview hosts gone, blob storage kept', () => {
+test('CSP: Turnstile allowed, Vercel hosts gone', () => {
   const cfg = read('next.config.js')
   const csp = cfg.split("key: 'Content-Security-Policy'")[1].split('].join')[0]
   for (const dir of ['script-src', 'frame-src', 'connect-src']) {
     const line = csp.split('\n').find((l) => l.includes(`"${dir} `)) || ''
     assert.match(line, /https:\/\/challenges\.cloudflare\.com/, dir)
   }
-  assert.doesNotMatch(csp, /vercel\.live|\*\.vercel\.app/)
-  assert.match(csp, /\*\.vercel-storage\.com/)
+  assert.doesNotMatch(csp, /vercel\.live|\*\.vercel\.app|vercel-storage\.com/)
+  const connectSrc = csp.split('\n').find((l) => l.includes('"connect-src ')) || ''
+  for (const host of ['app.tilopay.com', 'api.tilopay.com', 'api.tokenex.com', 'accounts.google.com', 'connect.facebook.net', 'graph.facebook.com', 'www.facebook.com', 'static.cloudflareinsights.com']) {
+    assert.match(connectSrc, new RegExp(`https://${host.replace(/\./g, '\\.')}`), host)
+  }
   assert.match(csp, /"form-action 'self'"/)
   assert.match(cfg, /value: 'strict-origin-when-cross-origin'/)
 })

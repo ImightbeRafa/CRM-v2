@@ -99,7 +99,7 @@ describe('Betsy v2 tenant UI', () => {
     const billing = source('src/lib/billing-access.ts');
     const layout = source('src/app/layout.tsx');
     assert.match(env, /arePreviewFeaturesUnlockedForTenant/);
-    assert.match(env, /VERCEL_ENV === 'production'/);
+    assert.match(env, /appEnv === 'production'/);
     assert.match(flags, /arePreviewFeaturesUnlockedForTenant/);
     assert.match(billing, /arePreviewFeaturesUnlockedForTenant/);
     assert.match(layout, /shouldShowPreviewDataWarning/);

@@ -3,14 +3,22 @@
  * can open Ventas/Producción/Estadísticas with real tenants. Writes still hit
  * the shared database — the amber banner is the warning.
  *
- * Production (`VERCEL_ENV=production`) never synthesizes flags. Ordinary
- * production stores stay on TenantFeatureFlag.enabled (first deploy: all off).
+ * Production never synthesizes flags. Ordinary production stores stay on
+ * TenantFeatureFlag.enabled (first deploy: all off).
+ *
+ * `APP_ENV` (normalized with trim().toLowerCase()) replaces the old Vercel
+ * `VERCEL_ENV`: 'preview' or 'development' → non-production; 'production' or
+ * any other non-empty value → production (fail closed on an unknown value).
+ * Unset/empty falls back to `NODE_ENV === 'development'` (local `next dev`
+ * only — the container image always sets NODE_ENV=production, so an unset
+ * APP_ENV on Cloudflare/Railway is production).
  */
 
 function isNonProductionReviewEnv(): boolean {
-  if (process.env.VERCEL_ENV === 'production') return false;
-  if (process.env.VERCEL_ENV === 'preview') return true;
-  if (process.env.VERCEL_ENV === 'development') return true;
+  const appEnv = (process.env.APP_ENV || '').trim().toLowerCase();
+  if (appEnv === 'production') return false;
+  if (appEnv === 'preview' || appEnv === 'development') return true;
+  if (appEnv) return false; // unknown value: fail closed
   return process.env.NODE_ENV === 'development';
 }
 

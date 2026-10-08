@@ -2,7 +2,7 @@
  * Telegram Bot Setup using Grammy.js
  * 
  * This module provides the core Telegram bot functionality for Betsy AI Assistant.
- * Uses webhooks for production (Vercel) instead of polling.
+ * Uses webhooks for production (Cloudflare) instead of polling.
  * 
  * @see https://grammy.dev/guide/deployment-types#webhooks
  */

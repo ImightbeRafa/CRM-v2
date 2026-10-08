@@ -199,6 +199,14 @@ export function SoftCopilotInboxV2() {
   const nearBottomRef = useRef(true)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const sendInFlightRef = useRef(false)
+  /**
+   * Text sends run one after another (WhatsApp order = typing order) but never block the
+   * composer: the bubble appears and the box clears at once, the request queues here.
+   */
+  const textSendQueueRef = useRef<Map<string, Promise<void>>>(new Map())
+  /** Double-send guard: requests already queued, and the last new text (a double Enter fires before the box clears). */
+  const textInFlightRef = useRef<Set<string>>(new Set())
+  const lastQueuedTextRef = useRef<{ conversationId: string; content: string; at: number } | null>(null)
   /** Last quick reply inserted, per chat: reported with that chat's next send (usage metric). */
   const quickReplyUsedRef = useRef<{ conversationId: string; shortcut: string } | null>(null)
 
@@ -400,7 +408,9 @@ export function SoftCopilotInboxV2() {
       ...prev,
       [conversationId]: mergeThreadMessageWindow({
         existing: [],
-        incoming,
+        // Bubbles still queued or failed (not on the server yet) survive a reload of the thread, so
+        // they keep their status and "Reintentar"; once sent they merge by clientRequestId.
+        incoming: [...incoming, ...(prev[conversationId] || []).filter((m) => m.id.startsWith('optimistic:'))],
         mode: 'replace',
       }),
     }))
@@ -1284,9 +1294,9 @@ export function SoftCopilotInboxV2() {
   async function handleSendMessage(e: FormEvent, opts?: { retryClientRequestId?: string }) {
     e.preventDefault()
     if (!selectedConversation || !selectedConversationId) return
-    if (sendInFlightRef.current) return
 
     const conversationId = selectedConversationId
+    const conversationStatus = selectedConversation.status
     const recipient = selectedConversation.recipientId
     const socialAccountId = selectedConversation.socialAccountId
 
@@ -1305,6 +1315,12 @@ export function SoftCopilotInboxV2() {
     }
 
     if (!content) return
+    if (clientRequestId && textInFlightRef.current.has(clientRequestId)) return
+    if (!clientRequestId) {
+      const last = lastQueuedTextRef.current
+      if (last && last.conversationId === conversationId && last.content === content && Date.now() - last.at < 1000) return
+      lastQueuedTextRef.current = { conversationId, content, at: Date.now() }
+    }
 
     // Usage metric: the quick reply inserted in THIS chat since the last send (not on retries).
     const quickReplyShortcut =
@@ -1313,8 +1329,6 @@ export function SoftCopilotInboxV2() {
         : undefined
     quickReplyUsedRef.current = null
 
-    sendInFlightRef.current = true
-    setSending(true)
     setSendError(null)
     setFailedOutboundId(null)
 
@@ -1357,6 +1371,39 @@ export function SoftCopilotInboxV2() {
       }))
     }
 
+    const requestId = clientRequestId
+    textInFlightRef.current.add(requestId)
+    const deliver = () =>
+      deliverTextMessage({ conversationId, conversationStatus, socialAccountId, recipient, content, clientRequestId: requestId, quickReplyShortcut })
+        .finally(() => textInFlightRef.current.delete(requestId))
+    // One queue per chat: order matters inside a conversation, a slow send never holds another chat.
+    const queues = textSendQueueRef.current
+    const queued = (queues.get(conversationId) ?? Promise.resolve()).then(deliver, deliver)
+    queues.set(conversationId, queued)
+    void queued.finally(() => {
+      if (queues.get(conversationId) === queued) queues.delete(conversationId)
+    })
+    await queued
+  }
+
+  /** One queued text send: POST, then reconcile or mark the optimistic bubble as failed. */
+  async function deliverTextMessage({
+    conversationId,
+    conversationStatus,
+    socialAccountId,
+    recipient,
+    content,
+    clientRequestId,
+    quickReplyShortcut,
+  }: {
+    conversationId: string
+    conversationStatus: string | undefined
+    socialAccountId: string
+    recipient: string
+    content: string
+    clientRequestId: string
+    quickReplyShortcut?: string
+  }): Promise<void> {
     try {
       const res = await fetch('/api/chat/send', {
         method: 'POST',
@@ -1390,7 +1437,7 @@ export function SoftCopilotInboxV2() {
           ...prev,
           [conversationId]: markOptimisticOutboundFailed(
             prev[conversationId] || [],
-            clientRequestId!,
+            clientRequestId,
           ),
         }))
         if (stillOnSameThread) {
@@ -1411,13 +1458,15 @@ export function SoftCopilotInboxV2() {
         }))
       }
 
-      if (selectedConversation.status === 'nuevo') updateStatus('en_curso')
+      // updateStatus is bound to the chat of this send (render-time closure), so it still applies
+      // after the operator moved to another chat.
+      if (conversationStatus === 'nuevo') updateStatus('en_curso')
       // Live list/unread via changes poll — no hard thread reload (keeps optimistic UX).
-      await fetchChanges()
+      // Not awaited: the next queued message should not wait for the list refresh.
+      void fetchChanges()
       if (stillOnSameThread) {
         requestAnimationFrame(() => {
           messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-          composerRef.current?.focus()
         })
       }
     } catch (err: unknown) {
@@ -1434,9 +1483,6 @@ export function SoftCopilotInboxV2() {
         )
         setFailedOutboundId(`optimistic:${clientRequestId}`)
       }
-    } finally {
-      sendInFlightRef.current = false
-      setSending(false)
     }
   }
 
@@ -1497,7 +1543,8 @@ export function SoftCopilotInboxV2() {
     for (const key of keys) pendingFileRequestIds.current.delete(key)
     if (usedShortcut) quickReplyUsedRef.current = null
     if (caption && !captionFits) {
-      await handleSendMessage({ preventDefault() {} } as FormEvent)
+      // Queued, not awaited: the media chip clears now, so a second Enter cannot resend the files.
+      void handleSendMessage({ preventDefault() {} } as FormEvent)
     } else {
       setMessageInput('')
     }
@@ -1539,6 +1586,8 @@ export function SoftCopilotInboxV2() {
     setSending(true)
     setSendError(null)
     try {
+      // Texts typed before this file go first (same order the customer sees in the chat).
+      await textSendQueueRef.current.get(conversationId)?.catch(() => {})
       const res = await fetch(url, init)
       const parsed = await parseApiJson<{
         success?: boolean
@@ -1647,6 +1696,10 @@ export function SoftCopilotInboxV2() {
         revision={clientPanelRev}
         onCreateOrder={() => setCreateOrderOpen(true)}
         onGuiaSent={() => {
+          if (selectedConversationId) void fetchThreadMessages(selectedConversationId)
+          void fetchChanges()
+        }}
+        onOrdersChanged={() => {
           if (selectedConversationId) void fetchThreadMessages(selectedConversationId)
           void fetchChanges()
         }}

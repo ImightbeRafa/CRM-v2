@@ -1,5 +1,5 @@
 /**
- * Backup v1 configuration — private Vercel Blob logical dumps.
+ * Backup v1 configuration — private Cloudflare R2 logical dumps.
  * Primary DR without Supabase PITR.
  */
 

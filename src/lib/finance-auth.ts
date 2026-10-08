@@ -9,6 +9,14 @@ const financeRateLimit = createRateLimit({
   identifier: 'finance-api',
 });
 
+// Valid-key callers only: generous ceiling so a full Bitácora sync (~50 calls) and a few
+// manual re-syncs fit, while a leaked key still cannot hammer the DB unbounded.
+const financeTrustedRateLimit = createRateLimit({
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 600,
+  identifier: 'finance-api-trusted',
+});
+
 function digestKey(value: string): Buffer {
   return createHash('sha256').update(value, 'utf8').digest();
 }
@@ -61,7 +69,23 @@ function extractFinanceApiKey(req: NextRequest): string | null {
  * Returns a NextResponse on failure, or null when the request may proceed.
  */
 export async function guardFinanceApi(req: NextRequest): Promise<NextResponse | null> {
-  // Cheap in-memory pre-check before Redis round-trip on obvious abuse.
+  if (getConfiguredFinanceKeys().length === 0) {
+    console.error('[finance-auth] FINANCE_API_KEY is not configured');
+    return NextResponse.json({ error: 'Finance API unavailable' }, { status: 503 });
+  }
+
+  const apiKey = extractFinanceApiKey(req);
+  if (validateFinanceApiKey(apiKey)) {
+    // Trusted caller (Bitácora). One sync fires ~50 requests in a few seconds and the
+    // container is a single instance, so the anonymous 30/min burst limiter must not apply.
+    const trusted = await financeTrustedRateLimit(req);
+    if (trusted instanceof Response) {
+      return trusted as NextResponse;
+    }
+    return null;
+  }
+
+  // Missing or wrong key: keep the strict anonymous-abuse limits, then 401.
   const ip = getClientIP(req);
   const burst = rateLimit(ip, {
     windowMs: 60 * 1000,
@@ -80,20 +104,10 @@ export async function guardFinanceApi(req: NextRequest): Promise<NextResponse | 
     return rl as NextResponse;
   }
 
-  if (getConfiguredFinanceKeys().length === 0) {
-    console.error('[finance-auth] FINANCE_API_KEY is not configured');
-    return NextResponse.json({ error: 'Finance API unavailable' }, { status: 503 });
-  }
-
-  const apiKey = extractFinanceApiKey(req);
-  if (!validateFinanceApiKey(apiKey)) {
-    console.warn('[finance-auth] Unauthorized finance API attempt', {
-      ip,
-      path: req.nextUrl.pathname,
-      hasKey: Boolean(apiKey),
-    });
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  return null;
+  console.warn('[finance-auth] Unauthorized finance API attempt', {
+    ip,
+    path: req.nextUrl.pathname,
+    hasKey: Boolean(apiKey),
+  });
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 }

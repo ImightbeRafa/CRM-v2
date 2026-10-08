@@ -7,6 +7,8 @@ import { getClientStage, type ClientStageDto } from '@/lib/crm-client-stage-serv
 import { normalizeClientPhone } from '@/lib/order-lifecycle'
 import { workspaceWriteRateLimit } from '@/lib/rate-limit'
 import { maskPhone } from '@/lib/chat-order-flow'
+import { phoneTails } from '@/lib/chat-order-attach'
+import { orderIdsByPhoneTails } from '@/lib/chat-order-attach-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -71,7 +73,7 @@ async function loadConversation(tenantId: string, id: string) {
 
 /**
  * GET /api/chat/conversations/[id]/client?q=
- * Linked client (stats + recent orders: the client's and the ones created from this chat),
+ * Linked client (stats + orders: linked to this chat, the client's, and same-phone orders),
  * plus phone-match suggestions and an optional name/phone search to link another client.
  */
 export async function GET(request: NextRequest, context: RouteContext) {
@@ -88,7 +90,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
     ? await prisma.client.findFirst({ where: { id: conversation.clientId, tenantId }, select: linkedClientSelect })
     : null
 
-  // Orders created from this chat (ChatMessage.orderId) + the client's own orders.
+  // Orders of this chat: linked to it (ChatMessage.orderId: created here or "Vincular pedido"),
+  // the linked client's own orders, and orders with the chat's / client's phone (web orders
+  // usually have no clientId, so the phone is what ties them to the person).
   const chatOrderIds = await prisma.chatMessage.findMany({
     where: { tenantId, conversationId: conversation.id, orderId: { not: null } },
     select: { orderId: true },
@@ -96,17 +100,28 @@ export async function GET(request: NextRequest, context: RouteContext) {
     take: 20,
   })
   const linkedIds = chatOrderIds.map((m) => m.orderId).filter((v): v is string => Boolean(v))
+  const linkedSet = new Set(linkedIds)
+  const tails = phoneTails([
+    conversation.socialAccount?.platform === 'whatsapp' ? conversation.peerId : null,
+    client?.phone,
+  ])
+  const phoneIds = await orderIdsByPhoneTails(tenantId, tails, 10).catch((error) => {
+    console.warn('[chat client] phone orders unavailable', error instanceof Error ? error.message : error)
+    return [] as string[]
+  })
   const orderOr: Array<Record<string, unknown>> = []
-  if (linkedIds.length) orderOr.push({ id: { in: linkedIds } })
+  if (linkedIds.length || phoneIds.length) orderOr.push({ id: { in: [...new Set([...linkedIds, ...phoneIds])] } })
   if (client) orderOr.push({ clientId: client.id })
-  const orders = orderOr.length
+  const fetched = orderOr.length
     ? await prisma.order.findMany({
         where: { tenantId, deletedAt: null, OR: orderOr },
         select: orderSelect,
         orderBy: { timestamp: 'desc' },
-        take: 10,
+        take: 30,
       })
     : []
+  // Linked first (they are this chat's), then the rest newest first; 12 max.
+  const orders = [...fetched.filter((o) => linkedSet.has(o.id)), ...fetched.filter((o) => !linkedSet.has(o.id))].slice(0, 12)
 
   // Guía per order (latest) and whether it was already sent in this chat.
   const peerPhone =
@@ -188,6 +203,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         const orderPhone = normalizeClientPhone(phone)
         return {
           ...rest,
+          linked: linkedSet.has(o.id),
           phoneMasked: maskPhone(phone),
           phoneMatchesChat: Boolean(orderPhone && peerPhone && orderPhone === peerPhone),
           timestamp: o.timestamp.toISOString(),

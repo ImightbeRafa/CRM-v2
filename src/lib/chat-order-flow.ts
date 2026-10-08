@@ -16,6 +16,8 @@ export type ChatFlowOrder = {
   timestamp: string
   guia: { id: string; number: string | null; createdAt: string } | null
   guiaSentAt: string | null
+  /** Attached to this chat (ChatMessage.orderId). False: shown because of the client / phone. */
+  linked?: boolean
 }
 
 export type ChatOrderStep = 'guia' | 'enviar-guia' | 'listo' | 'retiro'

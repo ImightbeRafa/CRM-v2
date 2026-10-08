@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  auroraComparisonRange,
   auroraPeriodRange,
   auroraPreviousRange,
+  resolveAuroraPeriodSpec,
   averageTicket,
   barPercent,
   bucketPairedSeries,
@@ -72,6 +74,70 @@ describe('statistics-aurora periods', () => {
   it('compare label per period', () => {
     assert.equal(periodCompareLabel('hoy'), 'vs ayer')
     assert.equal(periodCompareLabel('7d'), 'vs 7 días anteriores')
+    assert.equal(periodCompareLabel('semana'), 'vs mismos días de la semana pasada')
+    assert.equal(periodCompareLabel('mes-pasado'), 'vs el mes anterior')
+    assert.equal(periodCompareLabel({ period: 'custom', from: '2026-09-01', to: '2026-09-15' }), 'vs 15 días anteriores')
+  })
+})
+
+describe('statistics-aurora calendar periods (Costa Rica, weeks start Monday)', () => {
+  const thu = new Date('2026-10-08T18:00:00Z') // Thursday 8 Oct in Costa Rica
+  const both = (period: Parameters<typeof auroraPeriodRange>[0], now: Date) => {
+    const range = auroraPeriodRange(period, now)
+    return { range, previous: auroraComparisonRange(period, range) }
+  }
+
+  it('ayer, esta semana, semana pasada', () => {
+    assert.deepEqual(auroraPeriodRange('ayer', thu), { startDate: '2026-10-07', endDate: '2026-10-07' })
+    assert.deepEqual(both('semana', thu), {
+      range: { startDate: '2026-10-05', endDate: '2026-10-08' },
+      previous: { startDate: '2026-09-28', endDate: '2026-10-01' },
+    })
+    assert.deepEqual(both('semana-pasada', thu), {
+      range: { startDate: '2026-09-28', endDate: '2026-10-04' },
+      previous: { startDate: '2026-09-21', endDate: '2026-09-27' },
+    })
+  })
+
+  it('este mes compares with the same days of last month; mes pasado with the full month before', () => {
+    assert.deepEqual(both('mes', thu), {
+      range: { startDate: '2026-10-01', endDate: '2026-10-08' },
+      previous: { startDate: '2026-09-01', endDate: '2026-09-08' },
+    })
+    assert.deepEqual(both('mes-pasado', thu), {
+      range: { startDate: '2026-09-01', endDate: '2026-09-30' },
+      previous: { startDate: '2026-08-01', endDate: '2026-08-31' },
+    })
+    // 31 March vs February: clamped to 28 Feb, never 3 March.
+    assert.deepEqual(both('mes', new Date('2026-03-31T18:00:00Z')).previous, { startDate: '2026-02-01', endDate: '2026-02-28' })
+  })
+
+  it('week and month edges: Monday, Sunday night in Costa Rica, New Year', () => {
+    assert.deepEqual(auroraPeriodRange('semana', new Date('2026-10-05T18:00:00Z')), { startDate: '2026-10-05', endDate: '2026-10-05' })
+    // 03:00Z Monday = Sunday 21:00 in Costa Rica: still last week.
+    assert.deepEqual(auroraPeriodRange('semana', new Date('2026-10-05T03:00:00Z')), { startDate: '2026-09-28', endDate: '2026-10-04' })
+    const ny = new Date('2026-01-01T18:00:00Z')
+    assert.deepEqual(auroraPeriodRange('semana', ny), { startDate: '2025-12-29', endDate: '2026-01-01' })
+    assert.deepEqual(auroraPeriodRange('mes-pasado', ny), { startDate: '2025-12-01', endDate: '2025-12-31' })
+    assert.deepEqual(auroraComparisonRange('mes', auroraPeriodRange('mes', ny)), { startDate: '2025-12-01', endDate: '2025-12-01' })
+  })
+
+  it('custom ranges: real dates, ordered, at most 366 days; compared with the adjacent range', () => {
+    assert.deepEqual(resolveAuroraPeriodSpec('custom', '2026-09-01', '2026-09-15'), { period: 'custom', from: '2026-09-01', to: '2026-09-15' })
+    assert.equal(resolveAuroraPeriodSpec('custom', '2026-09-15', '2026-09-01'), null)
+    assert.equal(resolveAuroraPeriodSpec('custom', '2026-02-30', '2026-03-01'), null)
+    assert.equal(resolveAuroraPeriodSpec('custom', '2025-01-01', '2026-09-01'), null)
+    assert.equal(resolveAuroraPeriodSpec('custom', null, null), null)
+    assert.deepEqual(resolveAuroraPeriodSpec('semana', 'x', 'y'), { period: 'semana' })
+    const spec = { period: 'custom' as const, from: '2026-09-01', to: '2026-09-15' }
+    assert.deepEqual(both(spec, thu), {
+      range: { startDate: '2026-09-01', endDate: '2026-09-15' },
+      previous: { startDate: '2026-08-17', endDate: '2026-08-31' },
+    })
+  })
+
+  it('range label shows the year when a range crosses it', () => {
+    assert.equal(formatRangeLabel('2025-12-29', '2026-01-04'), '29 dic 2025 – 4 ene 2026')
   })
 })
 

@@ -46,12 +46,13 @@ cover non-obvious setup/run gotchas.
   pooler port 6543, non-loopback URLs, and any database that already has `lm_%`
   tables (break-glass: `ALLOW_LM_DROP=1` on disposable DBs only). Never pass
   `--accept-data-loss`.
-- **Backups:** private Vercel Blob logical dumps (`src/lib/backups/`) cover all
-  `public` tables including `lm_*`. Full cron 02:00 UTC, hot cron 14:00 UTC.
+- **Backups:** private Cloudflare R2 logical dumps (`src/lib/backups/`) cover all
+  `public` tables including `lm_*` (crons run from the Worker: full 02:00 UTC, hot 14:00 UTC).
   Restore via `scripts/restore-from-backup.ts` against `RESTORE_DATABASE_URL`
   (loopback by default). Run `npm run test:backups` and
   `npm run test:backup-roundtrip` (local Postgres) to prove usefulness.
   Do not depend on paid Supabase PITR.
+- `APP_ENV=production|preview|development` (unset/unknown = production; the Worker forwards it).
 - No local PostgreSQL is required; do not point the app at a local DB (it would be
   overridden by the injected secret anyway).
 
@@ -67,8 +68,8 @@ cover non-obvious setup/run gotchas.
   `NEXTAUTH_SECRET` value; choosing a different value immediately invalidates all issued
   employee codes. Do not rotate it without an explicit code reissue plan.
 - All other integrations (Tilopay, Telegram/WhatsApp/Meta, OpenAI/xAI, Upstash Redis,
-  Vercel Blob, Correos SOAP) are optional; features degrade gracefully when unset
-  (Upstash has an in-memory fallback).
+  Supabase Storage (chat files), Correos SOAP) are optional; features degrade gracefully
+  when unset (Upstash has an in-memory fallback).
 
 ### Auth / testing
 - Email verification is non-blocking unless `EMAIL_VERIFICATION_ENFORCE_FROM` (ISO date) is set

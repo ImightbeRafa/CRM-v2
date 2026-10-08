@@ -9,10 +9,8 @@
  * - One PRIVATE bucket; only the server (service role) reads / writes. No public URLs.
  * - Every call has a hard timeout (a storage hang never leaves the UI spinning).
  * - The bucket is created on first use if it does not exist.
- * - Reads fall back to the legacy Vercel Blob store for files cached before the switch.
  */
 import 'server-only'
-import { del as vercelDel, get as vercelGet } from '@vercel/blob'
 
 export const CHAT_STORAGE_BUCKET = process.env.CHAT_STORAGE_BUCKET || 'betsy-chat'
 const WRITE_TIMEOUT_MS = 20_000
@@ -187,43 +185,14 @@ export async function chatStoragePut(pathname: string, bytes: Uint8Array, conten
 
 export async function chatStorageGet(pathname: string): Promise<{ bytes: Buffer; contentType: string | null }> {
   assertPath(pathname)
-  try {
-    return await withBucket(async () => {
-      const res = await call(`object/authenticated/${CHAT_STORAGE_BUCKET}/${encodePath(pathname)}`, {
-        method: 'GET',
-        timeoutMs: READ_TIMEOUT_MS,
-      })
-      if (!res.ok) throw await failure(res, 'download')
-      return { bytes: Buffer.from(await res.arrayBuffer()), contentType: res.headers.get('content-type') }
+  return withBucket(async () => {
+    const res = await call(`object/authenticated/${CHAT_STORAGE_BUCKET}/${encodePath(pathname)}`, {
+      method: 'GET',
+      timeoutMs: READ_TIMEOUT_MS,
     })
-  } catch (error) {
-    // Files cached before the switch live in the old Vercel Blob store.
-    if (error instanceof ChatStorageError && error.code === 'not_found' && process.env.BLOB_READ_WRITE_TOKEN) {
-      const legacy = await legacyVercelGet(pathname)
-      if (legacy) return legacy
-    }
-    throw error
-  }
-}
-
-async function legacyVercelGet(pathname: string): Promise<{ bytes: Buffer; contentType: string | null } | null> {
-  try {
-    const result = await Promise.race([
-      vercelGet(pathname, { access: 'private', token: process.env.BLOB_READ_WRITE_TOKEN }),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), READ_TIMEOUT_MS)),
-    ])
-    if (!result || result.statusCode !== 200 || !result.stream) return null
-    const chunks: Buffer[] = []
-    const reader = result.stream.getReader()
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      chunks.push(Buffer.from(value))
-    }
-    return { bytes: Buffer.concat(chunks), contentType: result.blob?.contentType ?? null }
-  } catch {
-    return null
-  }
+    if (!res.ok) throw await failure(res, 'download')
+    return { bytes: Buffer.from(await res.arrayBuffer()), contentType: res.headers.get('content-type') }
+  })
 }
 
 export async function chatStorageRemove(pathnames: string[]): Promise<void> {
@@ -236,14 +205,6 @@ export async function chatStorageRemove(pathnames: string[]): Promise<void> {
     body: JSON.stringify({ prefixes: safe }),
   })
   if (!res.ok && res.status !== 404) throw await failure(res, 'delete')
-  // Files uploaded before the switch live in Vercel Blob: remove them there too (best effort).
-  // Hard 5 s cap: the legacy store must never hold a request open (it hung for > 1 min).
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
-    await Promise.race([
-      vercelDel(safe, { token: process.env.BLOB_READ_WRITE_TOKEN }).catch(() => undefined),
-      new Promise((resolve) => setTimeout(resolve, 5_000)),
-    ])
-  }
 }
 
 /** Files directly inside a folder (e.g. `chat-quick-replies/<tenant>`): count + bytes. */

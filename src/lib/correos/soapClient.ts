@@ -49,7 +49,7 @@ function sleep(ms: number) {
 /**
  * Resolve the local WSDL path. Tries multiple locations so it works in:
  *  - Local dev (process.cwd() = project root)
- *  - Vercel standalone (files traced via outputFileTracingIncludes)
+ *  - Next.js standalone output (files traced via outputFileTracingIncludes)
  *  - ESM import.meta.url fallback
  */
 function resolveWsdlPath(): string | null {

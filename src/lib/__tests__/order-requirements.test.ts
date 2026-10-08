@@ -69,7 +69,7 @@ describe('missingOrderFields — the agent never assumes order data', () => {
 
   it('the server loader reads only this tenant’s active, required config', () => {
     const src = readFileSync('src/lib/orders/order-requirements-server.ts', 'utf8')
-    assert.match(src, /getTenantPrisma\(tenantId\)/)
+    assert.match(src, /import \{ prisma as db \} from '@\/lib\/db'/)
     assert.match(src, /where: \{ tenantId, isActive: true, required: true \}/)
     assert.match(src, /where: \{ tenantId, active: true, required: true \}/)
     assert.match(src, /options: \{ where: \{ tenantId, active: true \}/)

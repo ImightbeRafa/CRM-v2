@@ -3,7 +3,7 @@
  */
 import 'server-only'
 
-import { getTenantPrisma } from '@/lib/prisma-tenant'
+import { prisma as db } from '@/lib/db'
 import type { OrderRequirements, OrderRequirementField } from '@/lib/orders/order-requirements'
 
 function splitOptions(raw: string | null | undefined): string[] | undefined {
@@ -17,7 +17,7 @@ function splitOptions(raw: string | null | undefined): string[] | undefined {
 }
 
 export async function loadOrderRequirements(tenantId: string): Promise<OrderRequirements> {
-  const db = getTenantPrisma(tenantId)
+
   const [businessInfo, productFields, methods] = await Promise.all([
     db.businessInfo.findMany({
       where: { tenantId, isActive: true, required: true },

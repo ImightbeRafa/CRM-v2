@@ -47,13 +47,14 @@ test('human actions are recorded (fire-and-forget)', () => {
   }
   assert.ok(patch.includes("description: 'Modo de IA del chat cambiado'"), 'aiMode changes also audited')
   assert.ok(read('src/app/api/chat/conversations/[id]/client/route.ts').includes("verb: clientId ? 'chat.client.link' : 'chat.client.unlink'"))
-  assert.ok(read('src/app/api/chat/send-guia/route.ts').includes("verb: 'guia.send_chat'"))
+  // send-guia logic moved to the shared service (Chats button + automatic guía)
+  assert.ok(read('src/lib/shipping/send-guia-to-chat.ts').includes("verb: 'guia.send_chat'"))
   assert.ok(read('src/app/api/shipping/generate-guia/route.ts').includes("verb: 'guia.generate'"))
 })
 
 test('no message text or phone numbers go into activity props', () => {
   const banned = ['.phone', 'peerId', 'normalizedPhone', 'body.text', '.text', 'caption', 'customerName', 'peerName']
-  for (const f of ['src/app/api/chat/conversations/[id]/route.ts', 'src/app/api/chat/send-guia/route.ts', 'src/app/api/chat/conversations/[id]/client/route.ts', 'src/app/api/shipping/generate-guia/route.ts']) {
+  for (const f of ['src/app/api/chat/conversations/[id]/route.ts', 'src/lib/shipping/send-guia-to-chat.ts', 'src/app/api/chat/conversations/[id]/client/route.ts', 'src/app/api/shipping/generate-guia/route.ts']) {
     const calls = read(f).split('recordActivity(').slice(1).map((c) => c.split('})')[0])
     for (const c of calls) for (const b of banned) assert.ok(!c.includes(b), f + ': ' + b)
   }

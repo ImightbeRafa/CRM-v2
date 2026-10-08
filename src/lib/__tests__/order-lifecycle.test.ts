@@ -56,6 +56,7 @@ test('all non-bot adapters use the one tenant lifecycle flag', () => {
     'src/app/api/import/excel/route.ts',
     'src/lib/integration-orders.ts',
     'src/lib/bot/guia-service.ts',
+    'src/lib/shipping/guia-service.ts',
   ];
   for (const file of files) {
     assert.match(source(file), /shouldUseOrderLifecycleV2|createLifecycleOrder|updateLifecycleOrder|setLifecycleOrderStatus/);

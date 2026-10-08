@@ -3,7 +3,7 @@ import { validateApiKey } from '@/lib/integration-auth';
 import { withTenantContext } from '@/lib/tenantContext';
 import { logIntegrationActivity } from '@/lib/integration-logs';
 import { guardTenantWrite } from '@/lib/billing-access';
-import { generateGuiasForOrders } from '@/lib/bot/guia-service';
+import { generateGuiasForOrders } from '@/lib/shipping/guia-service';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';

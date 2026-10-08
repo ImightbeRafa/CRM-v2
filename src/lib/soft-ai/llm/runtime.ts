@@ -150,6 +150,12 @@ export async function runSoftAiLlmRuntime(
         reasoningEffort: 'low',
         store: false,
         maxOutputTokens: 700,
+        usage: {
+          tenantId: input.tenantId,
+          feature: input.toolCtx.sandbox ? 'probar' : 'inbox_agent',
+          agentId: input.agentId,
+          conversationId: input.toolCtx.sandbox ? null : input.toolCtx.conversationId,
+        },
       })
       const usage = readSoftAiUsage(response)
       inputTokens += usage.inputTokens
@@ -229,6 +235,12 @@ export async function runSoftAiLlmRuntime(
         reasoningEffort: 'low',
         store: false,
         maxOutputTokens: 700,
+        usage: {
+          tenantId: input.tenantId,
+          feature: input.toolCtx.sandbox ? 'probar' : 'inbox_agent',
+          agentId: input.agentId,
+          conversationId: input.toolCtx.sandbox ? null : input.toolCtx.conversationId,
+        },
       })
       modelCalls += 1
       const usage = readSoftAiUsage(response)

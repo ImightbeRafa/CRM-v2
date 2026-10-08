@@ -10,6 +10,7 @@
  */
 
 import OpenAI from 'openai';
+import { recordAiUsage } from '@/lib/ai-usage/record';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import {
   toolSchemas,
@@ -145,6 +146,7 @@ async function createXaiResponse(
     outputTokens: response.usage?.output_tokens,
     reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens,
   });
+  recordAiUsage({ feature: 'staff_bot', model: String(body.model), keyLabel: 'XAI_API_KEY', inputTokens: response.usage?.input_tokens, cachedTokens: response.usage?.input_tokens_details?.cached_tokens, outputTokens: response.usage?.output_tokens, reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens, latencyMs: Date.now() - startedAt });
 
   return response;
 }

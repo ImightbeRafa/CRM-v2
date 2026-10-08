@@ -32,6 +32,7 @@ export const FILES = {
   '045': '045_agent_improvement.sql',
   '046': '046_chat_agent_inventory_map.sql',
   '047': '047_chat_agent_test_cases.sql',
+  '048': '048_ai_usage_event.sql',
   '049': '049_chat_agent_settings.sql',
 };
 
@@ -79,6 +80,7 @@ export const EXPECTED_TABLES = {
   '045': ['ChatAgentVersion', 'ChatAgentFeedback', 'ChatAgentEvalRun'],
   '046': ['ChatAgentInventoryItem'],
   '047': ['ChatAgentTestCase'],
+  '048': ['AiUsageEvent'],
   '049': ['ChatAgentSettings'],
 };
 
@@ -89,6 +91,7 @@ export const EXPECTED_COLUMNS = {
   '045': [['ChatAgentVersion', 'snapshotHash'], ['ChatAgentFeedback', 'rating'], ['ChatAgentEvalRun', 'suite']],
   '046': [['ChatAgentInventoryItem', 'inventoryItemId']],
   '047': [['ChatAgentTestCase', 'steps'], ['ChatAgentTestCase', 'title']],
+  '048': [['AiUsageEvent', 'sourceKey'], ['AiUsageEvent', 'costMicros']],
   '049': [['ChatAgentSettings', 'orderOwnership'], ['ChatAgentSettings', 'servesUnboundChannels']],
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],

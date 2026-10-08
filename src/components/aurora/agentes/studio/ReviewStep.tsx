@@ -41,6 +41,14 @@ function Check({ checked, onChange, label }: { checked: boolean; onChange: (v: b
 
 const INPUT = 'w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px]'
 
+/** Phone / account / link inside imported text: could be planted by someone else (reviews, comments). */
+export function hasContactLike(text: string | null | undefined): boolean {
+  return /\d{4}[\s.-]?\d{4}|https?:\/\/|www\.|\bCR\d{2}\s?\d{4}/i.test(text || '')
+}
+function ContactWarning({ show }: { show: boolean }) {
+  return show ? <p className="text-[11px] text-amber-700">Tiene un número o un enlace: revisá que sea tuyo antes de marcarlo.</p> : null
+}
+
 /** Step 2: the owner checks every finding (with where it came from), edits, unticks, then applies. */
 export function ReviewStep({
   agentId,
@@ -48,10 +56,12 @@ export function ReviewStep({
   inventory,
   canEdit,
   isLive = false,
+  current,
   onDiscard,
   onApplied,
 }: {
   agentId: string
+  current?: { sinpe: string | null; iban: string | null; website: string | null } | null
   draft: Draft
   inventory: InventoryOption[]
   canEdit: boolean
@@ -67,12 +77,14 @@ export function ReviewStep({
   const [brand, setBrand] = useState(() =>
     Object.fromEntries(BRAND_FIELDS.map((f) => [f.key, { keep: f.apply && Boolean(x.brand[f.key].value), value: x.brand[f.key].value || '' }])) as Record<string, { keep: boolean; value: string }>,
   )
-  const [accounts, setAccounts] = useState<Array<Keep<Extracted['paymentAccounts'][number]>>>(() => x.paymentAccounts.map((a) => ({ ...a, keep: !a.confirm })))
-  const [share, setShare] = useState(true)
+  // Payment accounts are NEVER pre-ticked and sharing starts off: the owner confirms each number themselves.
+  const [accounts, setAccounts] = useState<Array<Keep<Extracted['paymentAccounts'][number]>>>(() => x.paymentAccounts.map((a) => ({ ...a, keep: false })))
+  const [share, setShare] = useState(false)
   const [shipping, setShipping] = useState(() => x.shipping.map((s) => ({ ...s, keep: true })))
-  const [policies, setPolicies] = useState(() => x.policies.map((s) => ({ ...s, keep: true })))
-  const [faq, setFaq] = useState(() => x.faq.map((s) => ({ ...s, keep: true })))
-  const [replies, setReplies] = useState(() => x.quickReplies.map((s) => ({ ...s, keep: true })))
+  const [policies, setPolicies] = useState(() => x.policies.map((s) => ({ ...s, keep: !hasContactLike(s.text) })))
+  const [faq, setFaq] = useState(() => x.faq.map((s) => ({ ...s, keep: !hasContactLike(`${s.question} ${s.answer}`) })))
+  const [replies, setReplies] = useState(() => x.quickReplies.map((s) => ({ ...s, keep: !hasContactLike(s.body) })))
+  const [rulesEdited, setRulesEdited] = useState(false)
   const [rules, setRules] = useState({
     voice: x.voice.description || '',
     closing: x.howISell.closing || '',
@@ -124,7 +136,8 @@ export function ReviewStep({
       faq: faq.filter((s) => s.keep && s.question && s.answer).map((s) => ({ question: s.question!, answer: s.answer! })),
       quickReplies: replies.filter((s) => s.keep && s.title && s.body).map((s) => ({ title: s.title!, body: s.body! })),
       inventoryItemIds: [...new Set(products.filter((s) => s.keep && s.itemId).map((s) => s.itemId))],
-      salesRules: { ...rules, mustSay: lines(rules.mustSay), neverSay: lines(rules.neverSay) },
+      // The selling script is only saved when the owner touched it (AI suggestions never go in unreviewed).
+      salesRules: rulesEdited ? { ...rules, mustSay: lines(rules.mustSay), neverSay: lines(rules.neverSay) } : undefined,
     }
     try {
       const res = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/studio/draft/apply`, {
@@ -188,6 +201,9 @@ export function ReviewStep({
                   {a.holderName ? <span className="font-normal text-slate-500"> · {a.holderName}</span> : null}
                 </p>
                 {a.confirm ? <p className="text-[11px] text-amber-700">Revisá este número: no aparece igual en la fuente.</p> : null}
+                {current?.[a.kind === 'iban' ? 'iban' : 'sinpe'] ? (
+                  <p className="text-[11px] text-slate-600">Ahora el agente usa: {current[a.kind === 'iban' ? 'iban' : 'sinpe']}</p>
+                ) : null}
                 <ProvenanceChip label={src(a.sourceId)} snippet={a.snippet} />
               </div>
             </div>
@@ -259,6 +275,7 @@ export function ReviewStep({
               <div className="min-w-0 flex-1 space-y-1">
                 <input className={INPUT} value={s.title || ''} onChange={(e) => setPolicies(setAt(policies, i, { title: e.target.value }))} />
                 <textarea className={INPUT} rows={3} value={s.text || ''} onChange={(e) => setPolicies(setAt(policies, i, { text: e.target.value }))} />
+                <ContactWarning show={hasContactLike(s.text)} />
                 <ProvenanceChip label={src(s.sourceId)} snippet={s.snippet} />
               </div>
             </div>
@@ -274,6 +291,7 @@ export function ReviewStep({
               <div className="min-w-0 flex-1 space-y-1">
                 <input className={INPUT} value={s.question || ''} onChange={(e) => setFaq(setAt(faq, i, { question: e.target.value }))} />
                 <textarea className={INPUT} rows={2} value={s.answer || ''} onChange={(e) => setFaq(setAt(faq, i, { answer: e.target.value }))} />
+                <ContactWarning show={hasContactLike(`${s.question} ${s.answer}`)} />
                 <ProvenanceChip label={src(s.sourceId)} snippet={s.snippet} />
               </div>
             </div>
@@ -295,7 +313,10 @@ export function ReviewStep({
         ).map(([k, label]) => (
           <label key={k} className="block space-y-1">
             <span className="text-[11px] font-medium text-slate-500">{label}</span>
-            <textarea className={INPUT} rows={2} value={rules[k]} onChange={(e) => setRules({ ...rules, [k]: e.target.value })} />
+            <textarea className={INPUT} rows={2} value={rules[k]} onChange={(e) => {
+                setRules({ ...rules, [k]: e.target.value })
+                setRulesEdited(true)
+              }} />
           </label>
         ))}
       </Section>
@@ -308,6 +329,7 @@ export function ReviewStep({
               <div className="min-w-0 flex-1 space-y-1">
                 <input className={INPUT} value={s.title || ''} onChange={(e) => setReplies(setAt(replies, i, { title: e.target.value }))} />
                 <textarea className={INPUT} rows={2} value={s.body || ''} onChange={(e) => setReplies(setAt(replies, i, { body: e.target.value }))} />
+                <ContactWarning show={hasContactLike(s.body)} />
               </div>
             </div>
           ))}

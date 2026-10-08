@@ -32,7 +32,7 @@ export async function loadCoverage(tenantId: string): Promise<Array<MethodCovera
   return methods.map((m) => ({ ...(byId.get(m.id) ?? DEFAULT_COVERAGE(m.id)), name: m.name, basePrice: Number(m.basePrice) }))
 }
 
-export async function saveCoverage(tenantId: string, userId: string, input: Partial<MethodCoverage> & { shippingMethodId: string }) {
+export async function saveCoverage(tenantId: string, userId: string, input: Partial<MethodCoverage> & { shippingMethodId: string }): Promise<MethodCoverage> {
   if (!(await isTableReady(TABLE))) throw new CoverageNotReadyError()
   const method = await prisma.shippingMethod.findFirst({ where: { id: input.shippingMethodId, tenantId }, select: { id: true } })
   if (!method) throw new Error('METHOD_NOT_FOUND')
@@ -51,4 +51,5 @@ export async function saveCoverage(tenantId: string, userId: string, input: Part
       "codCoverage" = EXCLUDED."codCoverage", "codPlaces" = EXCLUDED."codPlaces",
       "updatedBy" = EXCLUDED."updatedBy", "updatedAt" = NOW()
     WHERE "ShippingMethodCoverage"."tenantId" = ${tenantId}`
+  return { shippingMethodId: method.id, coverage, places, allowsCod: c.allowsCod === true, codCoverage, codPlaces }
 }

@@ -39,11 +39,17 @@ export function numberLiterallyIn(text: string | undefined, number: string | nul
 export function verifyProfile(profile: ExtractedProfile, sources: Map<string, string>): ExtractedProfile {
   const ok = (x: { sourceId: string | null; snippet: string | null }) => verifySnippet(x.sourceId ? sources.get(x.sourceId) : undefined, x.snippet)
   const fact = (f: Fact): Fact => (f.value && ok(f) ? f : { value: null, sourceId: null, snippet: null })
+  // A website must literally be inside its quote (a planted link elsewhere on the page cannot ride on a real quote).
+  const site = (f: Fact): Fact => {
+    const v = fact(f)
+    const host = (v.value || '').replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase()
+    return v.value && host && (v.snippet || '').toLowerCase().includes(host) ? v : { value: null, sourceId: null, snippet: null }
+  }
   return {
     ...profile,
     brand: {
       storeName: fact(profile.brand.storeName),
-      website: fact(profile.brand.website),
+      website: site(profile.brand.website),
       address: fact(profile.brand.address),
       hours: fact(profile.brand.hours),
       pickupText: fact(profile.brand.pickupText),

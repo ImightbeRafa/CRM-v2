@@ -35,7 +35,8 @@ async function graphGet(path: string, token: string): Promise<Record<string, unk
 
 export async function fetchInstagramProfile(tenantId: string, socialAccountId: string): Promise<InstagramProfile> {
   const account = await prisma.socialAccount.findFirst({
-    where: { id: socialAccountId, tenantId },
+    // Only a still-connected account: a disconnected one's stored token is never used.
+    where: { id: socialAccountId, tenantId, isActive: true },
     select: { platform: true, accountId: true, accessToken: true },
   })
   if (!account) throw new InstagramSourceError('not_found')

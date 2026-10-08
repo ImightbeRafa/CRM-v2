@@ -400,3 +400,57 @@ describe('Verifier 2026-10-08 regressions', () => {
     assert.match(read('src/app/api/chat/agents/[id]/studio/sources/upload/route.ts'), /status: 411/)
   })
 })
+
+describe('SecureDog 2026-10-08 regressions', () => {
+  it('H1 DOCX tag strip is linear; PDF workers are limited per process', async () => {
+    const src = read('src/lib/agent-studio/file-parse.ts')
+    assert.match(src, /\.replace\(\/<\[\^<>\]\*>\/g, ''\)/)
+    assert.match(src, /MAX_PDF_WORKERS = 2/)
+    const zip = new JSZip()
+    zip.file('word/document.xml', '<'.repeat(2_000_000))
+    const bytes = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+    const t0 = Date.now()
+    await parseUpload(bytes).catch(() => null)
+    assert.ok(Date.now() - t0 < 2_000, `took ${Date.now() - t0} ms`)
+  })
+  it('H2 sizes are capped: URL length, stored meta, JSON bodies, audit only cleaned values', () => {
+    assert.throws(() => validateUrl('https://tienda.com/' + 'a'.repeat(2100)), /invalid_url/)
+    const sql = read('supabase/migrations/052_agent_studio_sources.sql')
+    assert.match(sql, /char_length\("url"\) <= 2048/)
+    assert.match(sql, /octet_length\("meta"::text\) <= 16384/)
+    assert.match(read('src/lib/agent-studio/route-guard.ts'), /len > 256_000/)
+    const zones = read('src/app/api/config/shipping/zones/route.ts')
+    assert.match(zones, /len > 64_000/)
+    assert.match(zones, /newValues: \{ coverage: saved\.coverage/)
+  })
+  it('M1 DNS has a timeout through c-ares; IPv6 only global unicast', () => {
+    const src = read('src/lib/agent-studio/safe-fetch.ts')
+    assert.match(src, /new dns\.promises\.Resolver\(\{ timeout: 3_000, tries: 1 \}\)/)
+    for (const a of ['::7f00:1', '64:ff9b:1::1', 'fec0::1', '100::1', '2001::1', '2002:a00::1']) assert.equal(isBlockedAddress(a), true, a)
+    assert.equal(isBlockedAddress('2606:4700:4700::1111'), false)
+  })
+  it('M2 payment accounts are never pre-ticked, sharing starts off, text with contacts starts unticked', () => {
+    const ui = read('src/components/aurora/agentes/studio/ReviewStep.tsx')
+    assert.match(ui, /x\.paymentAccounts\.map\(\(a\) => \(\{ \.\.\.a, keep: false \}\)\)/)
+    assert.match(ui, /const \[share, setShare\] = useState\(false\)/)
+    assert.match(ui, /salesRules: rulesEdited \?/)
+    const v = verifyProfile(
+      parseExtractedProfile({ brand: { website: { value: 'https://phish.example', sourceId: 's', snippet: 'Forge Costa Rica' } } }),
+      new Map([['s', 'Forge Costa Rica — visitá https://phish.example']]),
+    )
+    assert.equal(v.brand.website.value, null)
+  })
+  it('M3 studio AI spend obeys the kill switch / budget pause; daily limit is atomic; spend recorded before the call', () => {
+    const src = read('src/lib/agent-studio/extract.ts')
+    assert.match(src, /readAgentKillState\(input\.tenantId\)\)\.armed\) throw new AiPausedError/)
+    assert.match(src, /pg_advisory_xact_lock\(hashtext\(\$\{'studio-draft:' \+ input\.tenantId\}\)\)/)
+    assert.match(src, /Provisional spend BEFORE the call/)
+    const up = read('src/app/api/chat/agents/[id]/studio/sources/upload/route.ts')
+    assert.ok(up.indexOf('findParsedSourceBySha') < up.indexOf('describeImages({'))
+    assert.ok(up.indexOf('assertCanAddUpload(tenantId, agent.id, { photo: true') < up.indexOf('describeImages({'))
+  })
+  it('M4 storage quota per business; L3 only connected Instagram accounts', () => {
+    assert.match(read('src/lib/agent-studio/source-store.ts'), /STORAGE_QUOTA_BYTES = 300 \* 1024 \* 1024/)
+    assert.match(read('src/lib/agent-studio/instagram-source.ts'), /where: \{ id: socialAccountId, tenantId, isActive: true \}/)
+  })
+})

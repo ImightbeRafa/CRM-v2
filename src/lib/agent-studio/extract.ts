@@ -17,6 +17,7 @@ import { PROFILE_JSON_SCHEMA, parseExtractedProfile, type ExtractedProfile } fro
 import { stripInstructionLike, verifyProfile } from '@/lib/agent-studio/provenance'
 import { matchProducts, type ProductMatch } from '@/lib/agent-studio/inventory-match'
 import { StudioNotReadyError, loadSourceTexts } from '@/lib/agent-studio/source-store'
+import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
 
 const TABLE = 'ChatAgentProfileDraft'
 export const DRAFT_COST_CAP_MICROS = 600_000 // US$0.60 per draft
@@ -37,6 +38,13 @@ export class DraftBusyError extends Error {
   constructor() {
     super('DRAFT_BUSY')
     this.name = 'DraftBusyError'
+  }
+}
+/** Platform kill switch, or this business's AI paused (e.g. monthly AI budget reached): no Studio spend either. */
+export class AiPausedError extends Error {
+  constructor() {
+    super('AI_PAUSED')
+    this.name = 'AiPausedError'
   }
 }
 export class NoSourcesError extends Error {
@@ -144,6 +152,7 @@ export async function startProfileExtraction(input: {
     select: { id: true, model: true, version: true },
   })
   if (!agent) throw new Error('AGENT_NOT_FOUND')
+  if ((await readAgentKillState(input.tenantId)).armed) throw new AiPausedError()
   const active = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT * FROM "ChatAgentProfileDraft"
      WHERE "tenantId" = ${input.tenantId} AND "agentId" = ${agent.id} AND "status" IN ('queued', 'extracting')
@@ -153,21 +162,26 @@ export async function startProfileExtraction(input: {
     void drainProfileDraft(input.tenantId, d.id)
     return d
   }
-  const today = await prisma.$queryRaw<Array<{ n: bigint }>>`
-    SELECT COUNT(*)::bigint AS "n" FROM "ChatAgentProfileDraft"
-     WHERE "tenantId" = ${input.tenantId} AND "createdAt" >= date_trunc('day', NOW() AT TIME ZONE 'UTC')`
-  if (Number(today[0]?.n ?? 0) >= DRAFTS_PER_TENANT_PER_DAY) throw new DraftDailyLimitError()
   const sources = (await loadSourceTexts(input.tenantId, agent.id, input.sourceIds)).filter((s) => s.text && s.text.trim())
   if (!sources.length) throw new NoSourcesError()
   const model = resolveSoftAiModel(agent.model)
   const id = randomUUID()
   try {
-    await prisma.$executeRaw`
-      INSERT INTO "ChatAgentProfileDraft"
-        ("id", "tenantId", "agentId", "status", "sourceIds", "model", "baseAgentVersion", "costCapMicros", "createdBy")
-      VALUES (${id}, ${input.tenantId}, ${agent.id}, 'queued', ${sources.map((s) => s.id)}::text[], ${model},
-              ${agent.version}, ${DRAFT_COST_CAP_MICROS}, ${input.userId})`
+    // Daily limit counted and the draft inserted under one per-business lock (parallel starts cannot pass 10).
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'studio-draft:' + input.tenantId}))`
+      const today = await tx.$queryRaw<Array<{ n: bigint }>>`
+        SELECT COUNT(*)::bigint AS "n" FROM "ChatAgentProfileDraft"
+         WHERE "tenantId" = ${input.tenantId} AND "createdAt" >= date_trunc('day', NOW() AT TIME ZONE 'UTC')`
+      if (Number(today[0]?.n ?? 0) >= DRAFTS_PER_TENANT_PER_DAY) throw new DraftDailyLimitError()
+      await tx.$executeRaw`
+        INSERT INTO "ChatAgentProfileDraft"
+          ("id", "tenantId", "agentId", "status", "sourceIds", "model", "baseAgentVersion", "costCapMicros", "createdBy")
+        VALUES (${id}, ${input.tenantId}, ${agent.id}, 'queued', ${sources.map((s) => s.id)}::text[], ${model},
+                ${agent.version}, ${DRAFT_COST_CAP_MICROS}, ${input.userId})`
+    })
   } catch (error) {
+    if (error instanceof DraftDailyLimitError) throw error
     // Partial unique index (one active draft per agent): someone started one at the same time.
     const again = await latestDraft(input.tenantId, agent.id)
     if (again && (again.status === 'queued' || again.status === 'extracting')) return again
@@ -219,6 +233,12 @@ export async function drainProfileDraft(tenantId: string, id: string): Promise<v
     // Worst case for this call (all input + full output) must fit in what is left of the cap.
     const worst = estimateAiCostMicros({ model, inputTokens: Math.ceil(text.length / 3), outputTokens: MAX_OUTPUT_TOKENS + 800 })
     if (draft.spentMicros + worst > costCap) return await finish('cost_capped', 'cost_cap', null, draft.spentMicros)
+    if ((await readAgentKillState(tenantId)).armed) return await finish('failed', 'ai_paused', null, draft.spentMicros)
+    // Provisional spend BEFORE the call: if the process dies mid-call, the resume sees the worst case already spent
+    // (a draft can never spend more than its cap across a crash). Replaced by the real cost below.
+    await prisma.$executeRaw`
+      UPDATE "ChatAgentProfileDraft" SET "spentMicros" = ${draft.spentMicros + worst}
+       WHERE "id" = ${id} AND "tenantId" = ${tenantId} AND "status" = 'extracting'`
 
     let spent = draft.spentMicros
     let raw: unknown = null

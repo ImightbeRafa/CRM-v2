@@ -6,7 +6,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { addSource, listSources, requireStudioReady } from '@/lib/agent-studio/source-store'
+import { addSource, assertCanAddUpload, listSources, requireStudioReady } from '@/lib/agent-studio/source-store'
 import { crawlSite } from '@/lib/agent-studio/web-crawl'
 import { validateUrl } from '@/lib/agent-studio/safe-fetch'
 import { crawlToText } from '@/lib/agent-studio/source-text'
@@ -62,6 +62,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       const source = await addSource({ tenantId, agentId: agent.id, kind: 'text', label, text, createdBy: userId })
       return NextResponse.json({ success: true, source })
     }
+    if (kind === 'url' || kind === 'instagram') await assertCanAddUpload(tenantId, agent.id, { photo: false, bytes: 0 })
     if (kind === 'url') {
       const url = validateUrl(typeof body?.url === 'string' ? body.url.trim() : '')
       const crawl = await crawlSite(url.toString())
@@ -70,10 +71,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         tenantId,
         agentId: agent.id,
         kind: 'url',
-        label: url.hostname,
-        url: url.toString(),
+        label: url.hostname.slice(0, 200),
+        url: url.toString().slice(0, 2048),
         text: crawlToText(crawl),
-        meta: { pages: crawl.pages.length, urls: crawl.pages.map((p) => p.url).slice(0, 20), products: crawl.jsonLdProducts.length },
+        meta: { pages: crawl.pages.length, urls: crawl.pages.map((p) => p.url.slice(0, 300)).slice(0, 20), products: crawl.jsonLdProducts.length },
         createdBy: userId,
       })
       return NextResponse.json({ success: true, source })
@@ -89,7 +90,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         kind: 'instagram',
         label: profile.username ? `@${profile.username}` : 'Instagram',
         text,
-        meta: { posts: profile.posts.length, socialAccountId },
+        meta: { posts: profile.posts.length, socialAccountId: socialAccountId.slice(0, 64) },
         createdBy: userId,
       })
       return NextResponse.json({ success: true, source })

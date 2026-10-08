@@ -49,9 +49,16 @@ for (const [addr, prefix] of [
   ['fe80::', 10],
   ['ff00::', 8],
   ['2001:db8::', 32],
+  ['2001::', 23], // IETF special-purpose (Teredo, ORCHID, benchmarking…)
+  ['2002::', 16], // 6to4 (also checked for an embedded IPv4 below)
+  ['3fff::', 20], // documentation
 ] as const) {
   blocked.addSubnet(addr, prefix, 'ipv6')
 }
+// IPv6: only global unicast (2000::/3) is ever fetched; everything else (::/96, 64:ff9b:1::/48, fec0::/10, 100::/64…)
+// is refused without needing a list of every special range.
+const globalUnicastV6 = new net.BlockList()
+globalUnicastV6.addSubnet('2000::', 3, 'ipv6')
 
 function embeddedIpv4(ipv6: string): string | null {
   const lower = ipv6.toLowerCase()
@@ -81,12 +88,14 @@ export function isBlockedAddress(address: string): boolean {
   if (family === 6) {
     const v4 = embeddedIpv4(address)
     if (v4 && blocked.check(v4, 'ipv4')) return true
+    if (!globalUnicastV6.check(address, 'ipv6')) return true
     return blocked.check(address, 'ipv6')
   }
   return true
 }
 
 export function validateUrl(raw: string): URL {
+  if (typeof raw !== 'string' || raw.length > 2048) throw new SafeFetchError('invalid_url')
   let url: URL
   try {
     url = new URL(raw)
@@ -106,19 +115,36 @@ export function validateUrl(raw: string): URL {
 
 type LookupCallback = (err: NodeJS.ErrnoException | null, address: string | dns.LookupAddress[], family?: number) => void
 
-/** dns lookup that refuses the host if any resolved address is blocked, and pins the connection to it. */
+/**
+ * DNS through c-ares with a hard timeout (dns.lookup uses libuv's 4-thread pool with no timeout: a slow DNS server
+ * could stall every outbound call of the process). Refuses the host if ANY resolved address is blocked, and pins
+ * the connection to the checked address.
+ */
+async function resolveChecked(hostname: string): Promise<dns.LookupAddress[]> {
+  const resolver = new dns.promises.Resolver({ timeout: 3_000, tries: 1 })
+  const [v4, v6] = await Promise.allSettled([resolver.resolve4(hostname), resolver.resolve6(hostname)])
+  const list: dns.LookupAddress[] = [
+    ...(v4.status === 'fulfilled' ? v4.value.map((address) => ({ address, family: 4 })) : []),
+    ...(v6.status === 'fulfilled' ? v6.value.map((address) => ({ address, family: 6 })) : []),
+  ].slice(0, 16)
+  if (!list.length) {
+    const e = new Error('dns_failed') as NodeJS.ErrnoException
+    e.code = 'ENOTFOUND'
+    throw e
+  }
+  if (list.some((a) => isBlockedAddress(a.address))) {
+    const e = new Error('blocked_address') as NodeJS.ErrnoException
+    e.code = 'EBLOCKED'
+    throw e
+  }
+  return list
+}
+
 function safeLookup(hostname: string, options: dns.LookupOptions, callback: LookupCallback) {
-  dns.lookup(hostname, { all: true, verbatim: true }, (err, addresses) => {
-    if (err) return callback(err, '')
-    const list = addresses as dns.LookupAddress[]
-    if (!list.length || list.some((a) => isBlockedAddress(a.address))) {
-      const e = new Error('blocked_address') as NodeJS.ErrnoException
-      e.code = 'EBLOCKED'
-      return callback(e, '')
-    }
-    if (options.all) return callback(null, list)
-    callback(null, list[0].address, list[0].family)
-  })
+  resolveChecked(hostname).then(
+    (list) => (options.all ? callback(null, list) : callback(null, list[0].address, list[0].family)),
+    (err: NodeJS.ErrnoException) => callback(err, ''),
+  )
 }
 
 export type SafeFetchResult = { finalUrl: string; status: number; contentType: string; body: Buffer }
@@ -131,6 +157,7 @@ function requestOnce(url: URL, opts: { timeoutMs: number; maxBytes: number }): P
       {
         method: 'GET',
         lookup: safeLookup as unknown as typeof dns.lookup,
+        agent: false,
         headers: {
           'User-Agent': 'BetsyCRM-AgentStudio/1.0 (+https://www.betsycrm.com)',
           Accept: 'text/html,text/plain;q=0.9,*/*;q=0.1',
@@ -155,6 +182,8 @@ function requestOnce(url: URL, opts: { timeoutMs: number; maxBytes: number }): P
         stream.on('data', (chunk: Buffer) => {
           total += chunk.length
           if (total > opts.maxBytes) {
+            // Stop the decompressor too (it would keep inflating buffered input).
+            if (stream !== res) (stream as unknown as { destroy?: () => void }).destroy?.()
             req.destroy(new SafeFetchError('too_large'))
             return
           }

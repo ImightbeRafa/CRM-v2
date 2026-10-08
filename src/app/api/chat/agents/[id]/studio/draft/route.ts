@@ -6,6 +6,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { parseBrandFactsSafe } from '@/lib/soft-ai/brand-facts'
 import { discardDraft, latestDraft, startProfileExtraction } from '@/lib/agent-studio/extract'
 import { studioFail, studioGuard } from '@/lib/agent-studio/route-guard'
 
@@ -28,10 +29,15 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
             take: 400,
           })
         : []
+    // What the agent uses today, shown next to each proposed payment number (owner compares before ticking).
+    const agentRow = await prisma.chatAgent.findFirst({ where: { id: g.ctx.agent.id, tenantId: g.ctx.tenantId }, select: { brandFacts: true } })
+    const facts = parseBrandFactsSafe(agentRow?.brandFacts)
+    const current = { sinpe: facts.payment?.sinpe?.number ?? null, iban: facts.payment?.transfer?.iban ?? null, website: facts.website ?? null }
     return NextResponse.json(
       {
         success: true,
         draft,
+        current,
         inventory: inventory.map((i) => ({ ...i, sellingPrice: Number(i.sellingPrice), currentStock: Number(i.currentStock) })),
       },
       { headers: { 'Cache-Control': 'no-store' } },

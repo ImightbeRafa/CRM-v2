@@ -11,7 +11,8 @@ import { Worker } from 'node:worker_threads'
 import sharp from 'sharp'
 import { decodeEntities } from '@/lib/agent-studio/html-text'
 
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+// Below Next's 10 MiB middleware body limit (multipart overhead included).
+export const MAX_UPLOAD_BYTES = 9 * 1024 * 1024
 const MAX_PDF_PAGES = 60
 const MAX_TEXT = 200_000
 const PARSE_TIMEOUT_MS = 20_000
@@ -138,7 +139,8 @@ function parseDocx(bytes: Buffer): string {
   const text = xml
     .replace(/<w:tab\/>/g, '\t')
     .replace(/<w:br\/>|<\/w:p>/g, '\n')
-    .replace(/<[^>]*>/g, '')
+    // [^<>] keeps this linear on hostile input (a run of '<' with no '>' would make [^>]* quadratic).
+    .replace(/<[^<>]*>/g, '')
   return decodeEntities(text).replace(/\n{3,}/g, '\n\n').trim()
 }
 
@@ -158,8 +160,13 @@ if (typeof Promise.withResolvers !== 'function') {
 })().catch(() => parentPort.postMessage({ ok: false, code: 'pdf_unreadable' }));
 `
 
+let activePdfWorkers = 0
+const MAX_PDF_WORKERS = 2
+
 function parsePdfInWorker(bytes: Buffer): Promise<{ text: string; pages: number }> {
-  return new Promise((resolve, reject) => {
+  if (activePdfWorkers >= MAX_PDF_WORKERS) return Promise.reject(new UploadParseError('busy'))
+  activePdfWorkers += 1
+  return new Promise<{ text: string; pages: number }>((resolve, reject) => {
     const copy = new Uint8Array(bytes)
     const worker = new Worker(PDF_WORKER_SOURCE, {
       eval: true,
@@ -181,6 +188,8 @@ function parsePdfInWorker(bytes: Buffer): Promise<{ text: string; pages: number 
     )
     worker.once('error', () => done(() => reject(new UploadParseError('pdf_unreadable'))))
     worker.once('exit', () => done(() => reject(new UploadParseError('pdf_unreadable'))))
+  }).finally(() => {
+    activePdfWorkers -= 1
   })
 }
 

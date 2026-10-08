@@ -35,12 +35,14 @@ export async function PUT(request: NextRequest) {
   if (!isSameOriginRequest(request)) return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })
   const rate = await limit(`${auth.tenantId}:${auth.userId}`)
   if (!rate.allowed) return NextResponse.json({ success: false, error: 'Demasiados cambios. Esperá un momento.' }, { status: 429 })
+  const len = Number(request.headers.get('content-length') || 0)
+  if (!len || len > 64_000) return NextResponse.json({ success: false, error: 'Datos demasiado grandes.' }, { status: 413 })
   try {
     const body = (await request.json().catch(() => null)) as Partial<MethodCoverage> | null
     if (!body || typeof body.shippingMethodId !== 'string') {
       return NextResponse.json({ success: false, error: 'Datos inválidos' }, { status: 400 })
     }
-    await saveCoverage(auth.tenantId, auth.userId, {
+    const saved = await saveCoverage(auth.tenantId, auth.userId, {
       shippingMethodId: body.shippingMethodId,
       coverage: body.coverage,
       places: Array.isArray(body.places) ? body.places : [],
@@ -52,10 +54,11 @@ export async function PUT(request: NextRequest) {
       tenantId: auth.tenantId,
       action: 'UPDATE',
       entityType: 'ShippingMethodCoverage',
-      entityId: body.shippingMethodId,
+      entityId: saved.shippingMethodId,
       entityName: 'Cobertura de envío',
       oldValues: null,
-      newValues: { coverage: body.coverage, allowsCod: body.allowsCod === true, codCoverage: body.codCoverage },
+      // Only the cleaned, stored values (never raw request data) go into the audit log.
+      newValues: { coverage: saved.coverage, places: saved.places.length, allowsCod: saved.allowsCod, codCoverage: saved.codCoverage, codPlaces: saved.codPlaces.length },
       userId: auth.userId,
       userName: auth.userId,
       userRole: String(auth.role),

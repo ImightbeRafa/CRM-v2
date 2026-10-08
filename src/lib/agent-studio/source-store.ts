@@ -8,7 +8,7 @@ import 'server-only'
 import { createHash, randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
-import { chatStoragePut, chatStorageRemove, isChatStorageConfigured } from '@/lib/chat-storage'
+import { chatStoragePut, chatStorageRemove, chatStorageUsage, isChatStorageConfigured } from '@/lib/chat-storage'
 
 export class StudioNotReadyError extends Error {
   constructor() {
@@ -80,6 +80,43 @@ export async function loadSourceTexts(tenantId: string, agentId: string, ids?: s
      ORDER BY "createdAt" ASC LIMIT ${MAX_SOURCES_PER_AGENT}`
   const wanted = ids && ids.length ? new Set(ids) : null
   return rows.filter((r) => !wanted || wanted.has(r.id))
+}
+
+export const STORAGE_QUOTA_BYTES = 300 * 1024 * 1024
+export const PHOTOS_PER_TENANT_PER_DAY = 60
+
+export class StudioQuotaError extends Error {
+  constructor(readonly code: 'storage' | 'photos') {
+    super(`STUDIO_QUOTA_${code}`)
+    this.name = 'StudioQuotaError'
+  }
+}
+
+/** Already have this exact content for this agent (and it was read)? Then no new AI call / upload is needed. */
+export async function findParsedSourceBySha(tenantId: string, agentId: string, bytes: Buffer): Promise<SourceRow | null> {
+  const sha256 = createHash('sha256').update(bytes).digest('hex')
+  const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    SELECT "id", "kind", "status", "label", "url", "storagePath", "mimeType", "sizeBytes", "pageCount",
+           COALESCE(char_length("text"), 0) AS "textChars", "meta", "errorCode", "createdAt"
+      FROM "ChatAgentSource"
+     WHERE "tenantId" = ${tenantId} AND "agentId" = ${agentId} AND "sha256" = ${sha256} AND "status" = 'parsed' LIMIT 1`
+  return rows[0] ? mapRow(rows[0]) : null
+}
+
+/** Checks BEFORE any paid AI call or storage write for an upload: source cap, daily photo cap, storage quota. */
+export async function assertCanAddUpload(tenantId: string, agentId: string, opts: { photo: boolean; bytes: number }) {
+  await requireStudioReady()
+  if ((await countSources(tenantId, agentId)) >= MAX_SOURCES_PER_AGENT) throw new TooManySourcesError()
+  if (opts.photo) {
+    const rows = await prisma.$queryRaw<Array<{ n: bigint }>>`
+      SELECT COUNT(*)::bigint AS "n" FROM "ChatAgentSource"
+       WHERE "tenantId" = ${tenantId} AND "kind" = 'image' AND "createdAt" >= date_trunc('day', NOW() AT TIME ZONE 'UTC')`
+    if (Number(rows[0]?.n ?? 0) >= PHOTOS_PER_TENANT_PER_DAY) throw new StudioQuotaError('photos')
+  }
+  if (isChatStorageConfigured()) {
+    const usage = await chatStorageUsage(`agent-sources/${tenantId}`).catch(() => null)
+    if (usage && usage.bytes + opts.bytes > STORAGE_QUOTA_BYTES) throw new StudioQuotaError('storage')
+  }
 }
 
 async function countSources(tenantId: string, agentId: string): Promise<number> {

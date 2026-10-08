@@ -191,6 +191,58 @@ function BudgetEditor({
   )
 }
 
+function VisionCheck() {
+  const [busy, setBusy] = useState(false)
+  const [results, setResults] = useState<Array<{ model: string; pass: boolean; latencyMs: number; errorCode?: string }>>([])
+  async function run(model: string) {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/super-admin/ai-diagnostics/vision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model }),
+      })
+      const json = (await res.json().catch(() => ({}))) as { model?: string; pass?: boolean; latencyMs?: number; errorCode?: string; error?: string }
+      setResults((r) => [
+        ...r.filter((x) => x.model !== model),
+        { model, pass: json.pass === true, latencyMs: json.latencyMs || 0, errorCode: json.errorCode || json.error },
+      ])
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <h3 className="text-[14px] font-semibold text-slate-900">Lectura de imágenes</h3>
+      <p className="mt-0.5 text-[12px] text-slate-500">
+        Prueba si un modelo puede leer fotos (para fotos de productos). Usa una imagen de prueba, sin datos de clientes.
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {['grok-4.7', 'gpt-6-luna'].map((m) => (
+          <button
+            key={m}
+            type="button"
+            disabled={busy}
+            onClick={() => void run(m)}
+            className="rounded-lg bg-white px-3 py-1.5 text-[12.5px] text-slate-800 ring-1 ring-slate-200 disabled:opacity-50"
+          >
+            Probar {m}
+          </button>
+        ))}
+      </div>
+      {results.length ? (
+        <ul className="mt-2 space-y-1 text-[12.5px]">
+          {results.map((r) => (
+            <li key={r.model} className={r.pass ? 'text-emerald-800' : 'text-red-800'}>
+              {r.model}: {r.pass ? 'lee imágenes ✓' : `no pasó${r.errorCode ? ` (${r.errorCode})` : ''}`} · {(r.latencyMs / 1000).toFixed(1)} s
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
 export default function AiUsageDashboard() {
   const [days, setDays] = useState(30)
   const [tenantId, setTenantId] = useState('')
@@ -394,6 +446,8 @@ export default function AiUsageDashboard() {
           </div>
         </>
       ) : null}
+
+      <VisionCheck />
 
       {payload?.budgets.available ? (
         <BudgetEditor tenants={payload.tenants} budgets={payload.budgets.budgets} onSaved={() => void load()} />

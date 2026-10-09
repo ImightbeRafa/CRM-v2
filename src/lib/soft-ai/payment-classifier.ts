@@ -41,8 +41,12 @@ const CLAIM_CUE_RE = new RegExp(
       String.raw`(tienen|vieron|viste|vio|ven)\s+(mi|el|la|los)\s+${PAY_NOUN}`,
       // Refund / wrong-payment / overcharge only next to money words: "¿puedo devolverlo si no me queda?",
       // "¿cuánto me cobran por el envío?", "te escribí por error" are ordinary questions (Verifier 2026-10-09).
-      near(String.raw`(devol\p{L}*|devuelv\p{L}*|reembols\p{L}*|por\s+error)`, String.raw`(${PAY_NOUN.slice(1, -1)}|plata|dinero)`),
-      String.raw`(me\s+)?cobr(aron|[oó])\s+(doble|de\s+m[aá]s|dos\s+veces)|reembols\p{L}*`,
+      near(String.raw`por\s+error`, String.raw`(${PAY_NOUN.slice(1, -1)}|plata|dinero)`),
+      // Past-tense charges are complaints ("me cobró ₡2000 y era gratis"); present "¿me cobran…?" is a question.
+      String.raw`me\s+cobr(aron|[oó])|reembols\p{L}*|reintegr\p{L}*|no\s+reconozco`,
+      // Charge nouns with an overcharge word: "hay un cargo de más", "el cobro salió doble", "doble cargo" (INT-81).
+      near(String.raw`(cargos?|cobros?|rebajos?|d[eé]bitos?)`, String.raw`(de\s+m[aá]s|dobles?|dos\s+veces|duplicad\p{L}*)`),
+      String.raw`(doble|dos)\s+(cargos?|cobros?)`,
       // "me rebajaron dos veces de la tarjeta", "me descontaron de más de la cuenta": a charge complaint, never info.
       near(String.raw`(cobraron|cobr[oó]|rebajaron|rebaj[oó]|descontaron|descont[oó]|debitaron|debit[oó])`, String.raw`(tarjeta|cuenta|${PAY_NOUN.slice(1, -1)}|plata|dinero|doble|dos\s+veces|de\s+m[aá]s)`),
     ].join('|') +
@@ -60,8 +64,14 @@ const PAYMENT_QUESTION_RE = new RegExp(
   'iu',
 )
 
+/** Refund wording (INT-81): goes to a person unless it is a plain return-policy question. */
+const REFUND_RE = /(?<![\p{L}])(devol\p{L}*|devuelv\p{L}*|regres(en|e|ar|ame|enme)\s+(la\s+plata|el\s+dinero|mi\s+plata|mi\s+dinero))/iu
+const RETURN_POLICY_QUESTION_RE =
+  /^\s*¿?\s*(puedo|se\s+puede|pueden|c[oó]mo|hacen|aceptan|tienen|hay)(?![\p{L}])[^.!\n]*(devol\p{L}*|devuelv\p{L}*|cambi\p{L}*)(?![\s\S]*(plata|dinero|pago|sinpe|reembols))/iu
+
 export function hasPaymentClaimCue(text: string): boolean {
-  return CLAIM_CUE_RE.test(text || '')
+  const value = text || ''
+  return CLAIM_CUE_RE.test(value) || (REFUND_RE.test(value) && !RETURN_POLICY_QUESTION_RE.test(value))
 }
 
 /** Legacy broad net. Ambiguous hits default to human. */
@@ -78,7 +88,7 @@ export function hasPaymentRiskCue(text: string): boolean {
 
 export function classifyPaymentText(text: string): PaymentClassification {
   const value = text || ''
-  if (PROOF_CUE_RE.test(value) || CLAIM_CUE_RE.test(value) || CONFIRM_CUE_RE.test(value) || RISK_CUE_RE.test(value)) {
+  if (PROOF_CUE_RE.test(value) || hasPaymentClaimCue(value) || CONFIRM_CUE_RE.test(value) || RISK_CUE_RE.test(value)) {
     return 'payment_proof_or_risk'
   }
   // Contra entrega / "¿puedo pagar cuando lo recibo?" is a sales question (zone coverage), not payment data:

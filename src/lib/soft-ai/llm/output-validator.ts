@@ -171,6 +171,8 @@ export function applyFinalOutputPolicy(input: {
     reasons.push('template_leak')
   }
   text = extractShortcutTag(text).text
+  // Anything still spelling the internal tag (case-sensitive) is never sent.
+  if (/ATAJO/.test(text)) reasons.push('tag_leak')
   // Nothing left to send = no reply (never an empty WhatsApp message).
   if (!text) reasons.push('empty_output')
   // Payment identifiers come from configuration only (INT-69): fill the token, then every payment-looking number

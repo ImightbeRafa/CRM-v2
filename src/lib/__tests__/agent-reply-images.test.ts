@@ -230,3 +230,14 @@ test('Verifier r3: ordinary text is never altered by tag cleanup; images only on
   assert.deepEqual(extractShortcutTag('Te paso la guía ＡＴＡＪＯ：pb_tallas'), { text: 'Te paso la guía', key: 'pb_tallas' })
   assert.match(readFileSync('src/lib/soft-ai/agent-assets.ts', 'utf8'), /shortcut\.kind !== 'playbook' \|\| shortcut\.key\.startsWith\('sys_'\)/)
 })
+
+test('SecureDog r3 (INT-80 leftover): tag-only brackets stripped whole; bare tag upper-case only', () => {
+  for (const [t, k] of [['Listo [[ATAJO pb_tallas]]', 'pb_tallas'], ['Listo [[ATAJO]]', null], ['Listo [[ATAJO-pb_tallas]]', 'pb_tallas'], ['Listo **ATAJO:** pb_tallas', 'pb_tallas']] as const) {
+    const out = extractShortcutTag(t)
+    assert.equal(out.text, 'Listo', t)
+    assert.equal(out.key, k, t)
+  }
+  const plain = 'Un atajo: escribinos "talla" y te paso la guía.'
+  assert.equal(extractShortcutTag(plain).text, plain)
+  assert.match(readFileSync('src/lib/soft-ai/llm/output-validator.ts', 'utf8'), /if \(\/ATAJO\/\.test\(text\)\) reasons\.push\('tag_leak'\)/)
+})

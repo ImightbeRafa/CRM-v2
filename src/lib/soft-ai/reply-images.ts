@@ -21,11 +21,15 @@ export type ReplyImage = {
 }
 
 // Lenient on spacing / case / any bracket kind (or none) so a near-miss never leaks to the customer (INT-80).
-// 1) Bracketed tag "ATAJO:" / "ATAJO=" (any bracket kind, full-width too): the whole bracket goes, whatever follows
-// the colon. 2) Bare "ATAJO: clave". A plain "(atajo por la 27)" (no colon) is ordinary text and stays.
-const BRACKETED_TAG_RE = /[[【〔{(<［｛（＜]{1,2}\s*ATAJO\s*([:=：＝][^\n\]】〕})>］｝）＞]{0,60})[\]】〕})>］｝）＞]{0,2}/giu
-const BARE_TAG_RE = /(?<![\p{L}])ATAJO\s*[:=：＝]\s*([a-z0-9_-]{2,40})/giu
-const TAG_KEY_RE = /^\s*[:=：＝]\s*([a-z0-9_]{2,40})\s*$/i
+// 1) Tag-only brackets ([[ 【 ［［ 〔 {{): the whole bracket goes, whatever is inside ("[[ATAJO pb_x]]", "[[ATAJO]]").
+// 2) Single ( { < [ brackets: only with a colon — "(atajo por la 27)" is ordinary text and stays.
+// 3) Bare tag: upper-case ATAJO only (also **ATAJO:** k), so "Un atajo: escribinos…" is never touched (INT-80).
+const DOUBLE_TAG_RE = /(?:\[\[|【|［［|〔|\{\{|｛｛)\s*\**\s*ATAJO(?![\p{L}])([^\n\]】］〕}｝]{0,60})[\]】］〕}｝]{0,2}/giu
+const SINGLE_TAG_RE = /[[({<（｛＜［]\s*\**\s*ATAJO\**\s*([:=：＝][^\n\])}>）｝＞］]{0,60})[\])}>）｝＞］]?/giu
+// One pass, left to right, so the first tag in the text names the key.
+const BRACKETED_TAG_RE = new RegExp(`${DOUBLE_TAG_RE.source}|${SINGLE_TAG_RE.source}`, 'giu')
+const BARE_TAG_RE = /(?<![\p{L}])\**ATAJO\**\s*[:=：＝]\s*\**\s*([a-z0-9_-]{2,40})/gu
+const TAG_KEY_RE = /^[\s*]*[:=：＝\s-][\s*]*([a-z0-9_]{2,40})\s*$/i
 
 /** Removes every [[ATAJO:…]] tag; returns the first key named. */
 export function extractShortcutTag(text: string): { text: string; key: string | null } {
@@ -38,8 +42,8 @@ export function extractShortcutTag(text: string): { text: string; key: string | 
   // their exact characters (1º, m², ™ …).
   const source = !/ATAJO/i.test(raw) && /ATAJO/i.test(raw.normalize('NFKC')) ? raw.normalize('NFKC') : raw
   const stripped = source
-    .replace(BRACKETED_TAG_RE, (_m, inner: string) => {
-      take(TAG_KEY_RE.exec(inner)?.[1])
+    .replace(BRACKETED_TAG_RE, (_m: string, double?: string, single?: string) => {
+      take(TAG_KEY_RE.exec(double ?? single ?? '')?.[1])
       return ''
     })
     .replace(BARE_TAG_RE, (_m, k: string) => {

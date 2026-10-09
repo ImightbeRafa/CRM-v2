@@ -103,6 +103,10 @@ it('payment claims / refunds as questions stay with a person', () => {
     'Hola, hice un sinpe por error, ¿me lo pueden devolver?', 'sinpe?', 'Hola cómo están, hice el sinpe',
     'pagué, ¿lo podés revisar?', 'te pagué', 'deposité 14900', 'pagado?', '¿le llegó la transferencia?',
     'me rebajaron dos veces de la tarjeta', 'me descontaron de más de la cuenta',
+    // INT-81: charge complaints and refund requests always reach a person.
+    'Hay un cargo de más en mi tarjeta', 'el mensajero me cobró ₡2000 de envío y era gratis',
+    'quiero devolver el producto y que me regresen la plata', 'quiero la devolución, ya no lo quiero, devuélvanme todo',
+    'no me llegó y quiero que me devuelvan', 'el cobro salió doble', 'me hicieron un doble cargo', 'quiero que me reintegren el dinero',
   ]) {
     assert.equal(classifyPaymentText(text), 'payment_proof_or_risk', text)
   }
@@ -115,6 +119,7 @@ it('explicit how / can-I-pay questions are still answered by the agent', () => {
     // Verifier 2026-10-09: ordinary pre-sale questions never hand off.
     '¿Cuánto me cobran por el envío?', '¿Me cobran el envío a Cartago?', '¿Puedo devolverlo si no me queda la talla?',
     '¿Hacen devoluciones o cambios?', 'Perdón, te escribí por error', '¿El envío tarda de más de 3 días?',
+    'me mandaron una talla de más', '¿hay cobro extra por envío?', '¿tienen descuento?', '¿Se pueden hacer cambios de talla?',
   ]) {
     assert.notEqual(classifyPaymentText(text), 'payment_proof_or_risk', text)
   }

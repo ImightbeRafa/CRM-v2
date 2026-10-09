@@ -176,3 +176,34 @@ test('only replies whose image would really go out are marked "(va con imagen)"'
   assert.match(turn, /replyImageShortcutIds: liveImageReplyIds/)
   assert.doesNotMatch(turn, /replyImageShortcutIds: new Set\(replyAssets\.keys\(\)\)/)
 })
+
+test('SecureDog 2026-10-09: near-miss tags never leak (INT-80)', () => {
+  for (const t of ['Te paso la guía ATAJO:pb_tallas', 'Te paso la guía 【ATAJO:pb_tallas】', 'Te paso la guía ［［ATAJO:pb_tallas］］', 'Te paso la guía {{ATAJO:pb_tallas}}', 'Te paso la guía (ATAJO: pb_tallas)']) {
+    const out = extractShortcutTag(t)
+    assert.doesNotMatch(out.text, /ATAJO/i, t)
+    assert.equal(out.key, 'pb_tallas', t)
+  }
+  assert.equal(extractShortcutTag('Atajos de teclado').text, 'Atajos de teclado')
+})
+
+test('SecureDog 2026-10-09: image decode bounded (MEDIA-11), versions bumped (INT-79), audited (MEDIA-12)', async () => {
+  const { normalizeImage, AgentAssetError } = await import('@/lib/soft-ai/agent-assets')
+  // TIFF / SVG bytes never reach a decoder.
+  for (const bytes of [Buffer.from('49492a00080000000000000000000000', 'hex'), Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>')]) {
+    await assert.rejects(normalizeImage(bytes), (e: unknown) => e instanceof AgentAssetError && e.code === 'not_image')
+  }
+  const assets = readFileSync('src/lib/soft-ai/agent-assets.ts', 'utf8')
+  assert.match(assets, /withImageDecodeSlot\(/)
+  assert.match(assets, /\.timeout\(\{ seconds: 5 \}\)/)
+  assert.match(assets, /failOn: 'error'/)
+  assert.equal((assets.match(/version: \{ increment: 1 \}/g) || []).length, 2)
+  const replies = readFileSync('src/lib/soft-ai/agent-replies.ts', 'utf8')
+  assert.match(replies, /IMPORT_MAX_PHOTOS = 30/)
+  assert.match(replies, /byPath\.has\(photo\.path\)/)
+  assert.match(replies, /have\.size >= MAX_REPLIES_PER_AGENT/)
+  const root = 'src/app/api/chat/agents/[id]'
+  assert.match(readFileSync(`${root}/assets/upload/route.ts`, 'utf8'), /entityType: 'ChatAgentAsset'/)
+  assert.match(readFileSync(`${root}/assets/[assetId]/route.ts`, 'utf8'), /safeMediaServeHeaders\(asset\.mimeType, asset\.name\)/)
+  assert.match(readFileSync(`${root}/assets/route.ts`, 'utf8'), /assets\.map\(publicAgentAsset\)/)
+  assert.match(readFileSync(`${root}/shortcuts/library/route.ts`, 'utf8'), /logAuditEvent\(/)
+})

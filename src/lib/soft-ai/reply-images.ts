@@ -5,33 +5,43 @@
  * chat already got.
  */
 
+// Type-only: this module stays pure (no sharp / DB) so the output validator can use it.
 import type { AgentAsset } from '@/lib/soft-ai/agent-assets'
-import { MAX_IMAGES_PER_REPLY } from '@/lib/soft-ai/agent-assets'
 import { isReservedShortcutKey, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
+
+const MAX_IMAGES_PER_REPLY = 3
 
 export type ReplyImage = {
   assetId: string
   url: string
   mimeType: AgentAsset['mimeType']
-  sha256: string
   name: string
   width: number | null
   height: number | null
 }
 
-// Lenient on spacing / brackets / case so a near-miss never leaks to the customer.
-const TAG_RE = /\[{1,2}\s*ATAJO\s*[:=]\s*([a-z0-9_]{2,40})\s*\]{1,2}/giu
-const TAG_LEFTOVER_RE = /\[{1,2}\s*ATAJO[^\]\n]{0,60}\]{0,2}/giu
+// Lenient on spacing / case / any bracket kind (or none) so a near-miss never leaks to the customer (INT-80).
+// 1) Bracketed (any bracket kind): the whole bracket goes, whatever is inside. 2) Bare "ATAJO: clave".
+const BRACKETED_TAG_RE = /[[【〔{(<]{1,2}\s*ATAJO(?![\p{L}])([^\n\]】〕})>]{0,60})[\]】〕})>]{0,2}/giu
+const BARE_TAG_RE = /(?<![\p{L}])ATAJO\s*[:=]\s*([a-z0-9_-]{2,40})/giu
+const TAG_KEY_RE = /^\s*[:=]\s*([a-z0-9_]{2,40})\s*$/i
 
 /** Removes every [[ATAJO:…]] tag; returns the first key named. */
 export function extractShortcutTag(text: string): { text: string; key: string | null } {
   let key: string | null = null
+  const take = (k: string | undefined) => {
+    if (!key && k && /^[a-z0-9_]{2,40}$/i.test(k)) key = k.toLowerCase()
+  }
   const stripped = (text || '')
-    .replace(TAG_RE, (_m, k: string) => {
-      if (!key) key = k.toLowerCase()
+    .normalize('NFKC')
+    .replace(BRACKETED_TAG_RE, (_m, inner: string) => {
+      take(TAG_KEY_RE.exec(inner)?.[1])
       return ''
     })
-    .replace(TAG_LEFTOVER_RE, '')
+    .replace(BARE_TAG_RE, (_m, k: string) => {
+      take(k)
+      return ''
+    })
     .replace(/[ \t]+\n/g, '\n')
     .replace(/[ \t]{2,}/g, ' ')
     .trim()
@@ -57,7 +67,7 @@ export function selectReplyImages(input: {
   const images = (input.assetsByShortcut.get(row.id) ?? [])
     .filter((a) => !sent.has(a.id) && !sent.has(a.sha256))
     .slice(0, MAX_IMAGES_PER_REPLY)
-    .map((a) => ({ assetId: a.id, url: a.url, mimeType: a.mimeType, sha256: a.sha256, name: a.name, width: a.width, height: a.height }))
+    .map((a) => ({ assetId: a.id, url: a.url, mimeType: a.mimeType, name: a.name, width: a.width, height: a.height }))
   return { key: row.key, images }
 }
 

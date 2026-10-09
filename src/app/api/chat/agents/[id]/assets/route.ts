@@ -4,7 +4,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { studioGuard, studioFail } from '@/lib/agent-studio/route-guard'
-import { agentAssetsReady, listAgentAssets, loadReplyAssets } from '@/lib/soft-ai/agent-assets'
+import { agentAssetsReady, listAgentAssets, loadReplyAssets, publicAgentAsset } from '@/lib/soft-ai/agent-assets'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     ])
     // Which images each saved reply sends (reply id → image ids, in order).
     const links = Object.fromEntries([...byReply].map(([shortcutId, list]) => [shortcutId, list.map((a) => a.id)]))
-    return NextResponse.json({ success: true, available, assets, links }, { headers: { 'Cache-Control': 'no-store' } })
+    return NextResponse.json({ success: true, available, assets: assets.map(publicAgentAsset), links }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     return studioFail('assets GET', error)
   }

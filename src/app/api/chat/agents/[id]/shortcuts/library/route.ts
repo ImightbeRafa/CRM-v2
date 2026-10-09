@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { studioGuard, studioFail } from '@/lib/agent-studio/route-guard'
 import { importTeamQuickReplies, seedSalesReplies } from '@/lib/soft-ai/agent-replies'
 import { shortcutErrorStatus } from '@/lib/soft-ai/shortcut-admin'
+import { logAuditEvent } from '@/lib/auditLogger'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,7 +27,22 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       actorRole: g.ctx.role,
     }
     if (body?.action === 'seed') return NextResponse.json({ success: true, added: await seedSalesReplies(actor) })
-    if (body?.action === 'import') return NextResponse.json({ success: true, ...(await importTeamQuickReplies(actor)) })
+    if (body?.action === 'import') {
+      const result = await importTeamQuickReplies(actor)
+      await logAuditEvent({
+        tenantId: g.ctx.tenantId,
+        action: 'CREATE',
+        entityType: 'ChatAgentShortcut',
+        entityId: g.ctx.agent.id,
+        entityName: g.ctx.agent.name,
+        description: 'Respuestas rápidas del equipo copiadas al agente',
+        newValues: result,
+        userId: g.ctx.userId,
+        userName: g.ctx.actorName,
+        userRole: g.ctx.role,
+      }).catch(() => undefined)
+      return NextResponse.json({ success: true, ...result })
+    }
     return NextResponse.json({ success: false, error: 'Datos inválidos' }, { status: 400 })
   } catch (error) {
     const mapped = shortcutErrorStatus(error)

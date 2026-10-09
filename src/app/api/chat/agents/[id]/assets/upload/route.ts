@@ -4,18 +4,20 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { studioGuard } from '@/lib/agent-studio/route-guard'
-import { AgentAssetError, MAX_ASSET_INPUT_BYTES, storeAgentAsset } from '@/lib/soft-ai/agent-assets'
+import { AgentAssetError, MAX_ASSET_INPUT_BYTES, publicAgentAsset, storeAgentAsset } from '@/lib/soft-ai/agent-assets'
+import { logAuditEvent } from '@/lib/auditLogger'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const MESSAGES: Record<AgentAssetError['code'], [number, string]> = {
   not_ready: [409, 'Las imágenes del agente todavía no están disponibles.'],
-  not_image: [400, 'Ese archivo no es una imagen.'],
+  not_image: [400, 'Subí una foto JPG, PNG o WebP.'],
   too_large: [413, 'La imagen es demasiado grande.'],
   quota: [429, 'Se llenó el espacio para imágenes del negocio (200 MB).'],
   not_found: [404, 'No encontrado'],
   storage: [503, 'No se pudo guardar la imagen. Probá de nuevo.'],
+  busy: [409, 'Estamos procesando otras imágenes. Probá en unos segundos.'],
 }
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -39,7 +41,20 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       caption: typeof caption === 'string' ? caption : null,
       userId: g.ctx.userId,
     })
-    return NextResponse.json({ success: true, asset })
+    // MEDIA-12: who added which image (an image can carry a price or an account number the text checks never see).
+    await logAuditEvent({
+      tenantId: g.ctx.tenantId,
+      action: 'CREATE',
+      entityType: 'ChatAgentAsset',
+      entityId: asset.id,
+      entityName: g.ctx.agent.name,
+      description: 'Imagen para respuestas del agente',
+      newValues: { name: asset.name, sha256: asset.sha256, sizeBytes: asset.sizeBytes, agentId: g.ctx.agent.id },
+      userId: g.ctx.userId,
+      userName: g.ctx.actorName,
+      userRole: g.ctx.role,
+    }).catch(() => undefined)
+    return NextResponse.json({ success: true, asset: publicAgentAsset(asset) })
   } catch (error) {
     if (error instanceof AgentAssetError) {
       const [status, message] = MESSAGES[error.code]

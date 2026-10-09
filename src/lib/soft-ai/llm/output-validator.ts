@@ -3,6 +3,7 @@
  * Monetary amounts must match an authorized provenance class.
  */
 
+import { extractShortcutTag } from '@/lib/soft-ai/reply-images'
 import {
   purchaseSummaryRenderable,
   shippingProvenanceAmounts,
@@ -169,7 +170,7 @@ export function applyFinalOutputPolicy(input: {
     text = text.replace(/\{\{[^}]{0,80}\}\}/g, '').replace(/[ \t]{2,}/g, ' ').trim()
     reasons.push('template_leak')
   }
-  text = text.replace(/\[{1,2}\s*ATAJO[^\]\n]{0,60}\]{0,2}/giu, '').trim()
+  text = extractShortcutTag(text).text
   // Nothing left to send = no reply (never an empty WhatsApp message).
   if (!text) reasons.push('empty_output')
   // Payment identifiers come from configuration only (INT-69): fill the token, then every payment-looking number

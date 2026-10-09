@@ -13,6 +13,7 @@ import sharp from 'sharp'
 import { prisma } from '@/lib/db'
 import { isColumnReady, isTableReady } from '@/lib/soft-ai/table-ready'
 import { chatStorageGet, chatStoragePut, isChatStorageConfigured } from '@/lib/chat-storage'
+import { hasRasterPhotoSignature, withImageDecodeSlot } from '@/lib/chat-media-thumb'
 
 export const MAX_ASSET_INPUT_BYTES = 8 * 1024 * 1024
 export const MAX_ASSET_STORED_BYTES = 5 * 1024 * 1024
@@ -34,7 +35,7 @@ export type AgentAsset = {
 }
 
 export class AgentAssetError extends Error {
-  constructor(readonly code: 'not_ready' | 'not_image' | 'too_large' | 'quota' | 'not_found' | 'storage') {
+  constructor(readonly code: 'not_ready' | 'not_image' | 'too_large' | 'quota' | 'not_found' | 'storage' | 'busy') {
     super(code)
     this.name = 'AgentAssetError'
   }
@@ -67,24 +68,36 @@ function mapAsset(r: Record<string, unknown>, agentId: string): AgentAsset {
   }
 }
 
-/** Re-encode any supported image: jpeg (or png when it has transparency), ≤1600 px, no metadata. */
+/** Decompression-bomb guard: a size guide or flyer never needs more (MEDIA-11). */
+const MAX_INPUT_PIXELS = 25_000_000
+
+/**
+ * Re-encode an image: jpeg (or png when it has transparency), ≤1600 px, no metadata. Only real JPEG / PNG / WebP
+ * BYTES reach sharp (magic numbers; TIFF / HEIF / AVIF / SVG never touch a decoder), inside the process-wide 2-slot
+ * decode limit shared with chat previews, 5 s per decode, refused when the queue is full (MEDIA-11).
+ */
 export async function normalizeImage(bytes: Buffer): Promise<{ bytes: Buffer; mime: 'image/jpeg' | 'image/png'; width: number; height: number }> {
   if (bytes.length === 0 || bytes.length > MAX_ASSET_INPUT_BYTES) throw new AgentAssetError(bytes.length ? 'too_large' : 'not_image')
-  let meta: sharp.Metadata
+  if (!hasRasterPhotoSignature(bytes)) throw new AgentAssetError('not_image')
   try {
-    meta = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata()
-  } catch {
+    return await withImageDecodeSlot(async () => {
+      const meta = await sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS, failOn: 'error' }).metadata()
+      if (!meta.format || !['jpeg', 'png', 'webp'].includes(meta.format)) throw new AgentAssetError('not_image')
+      // Transparency (png / webp) stays png: jpeg would turn it black.
+      const png = Boolean(meta.hasAlpha)
+      const pipeline = sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS, failOn: 'error', animated: false })
+        .rotate()
+        .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
+        .timeout({ seconds: 5 })
+      const out = png ? await pipeline.png({ compressionLevel: 9 }).toBuffer({ resolveWithObject: true }) : await pipeline.jpeg({ quality: 85 }).toBuffer({ resolveWithObject: true })
+      if (out.data.length > MAX_ASSET_STORED_BYTES) throw new AgentAssetError('too_large')
+      return { bytes: out.data, mime: png ? ('image/png' as const) : ('image/jpeg' as const), width: out.info.width, height: out.info.height }
+    })
+  } catch (error) {
+    if (error instanceof AgentAssetError) throw error
+    if (error instanceof Error && error.message === 'IMAGE_BUSY') throw new AgentAssetError('busy')
     throw new AgentAssetError('not_image')
   }
-  if (!meta.format || !['jpeg', 'png', 'webp', 'gif', 'heif', 'avif', 'tiff'].includes(meta.format)) throw new AgentAssetError('not_image')
-  // Transparency (png / webp / gif…) stays png: jpeg would turn it black.
-  const png = Boolean(meta.hasAlpha)
-  const pipeline = sharp(bytes, { limitInputPixels: 40_000_000, animated: false })
-    .rotate()
-    .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
-  const out = png ? await pipeline.png({ compressionLevel: 9 }).toBuffer({ resolveWithObject: true }) : await pipeline.jpeg({ quality: 85 }).toBuffer({ resolveWithObject: true })
-  if (out.data.length > MAX_ASSET_STORED_BYTES) throw new AgentAssetError('too_large')
-  return { bytes: out.data, mime: png ? 'image/png' : 'image/jpeg', width: out.info.width, height: out.info.height }
 }
 
 /** Store (or reuse) an image for this agent. Same image twice → same row (unique per tenant + sha256). */
@@ -139,6 +152,11 @@ export async function storeAgentAsset(input: {
   return mapAsset(row[0], input.agentId)
 }
 
+/** What the browser gets: no storage path, hash or owner fields. */
+export function publicAgentAsset(a: AgentAsset) {
+  return { id: a.id, name: a.name, caption: a.caption, mimeType: a.mimeType, width: a.width, height: a.height, url: a.url }
+}
+
 /** Active images this agent may use (its own + the business's shared ones). */
 export async function listAgentAssets(tenantId: string, agentId: string): Promise<AgentAsset[]> {
   if (!(await agentAssetsReady())) return []
@@ -178,6 +196,8 @@ export async function archiveAgentAsset(tenantId: string, agentId: string, asset
     prisma.$executeRaw`
       UPDATE "ChatAgentAsset" SET "status" = 'archived', "updatedAt" = NOW()
        WHERE "id" = ${assetId} AND "tenantId" = ${tenantId} AND "agentId" = ${agentId}`,
+    // INT-79: an image change is an agent change (re-test / strict unlock see a new version).
+    prisma.chatAgent.updateMany({ where: { id: agentId, tenantId }, data: { version: { increment: 1 } } }),
   ])
   return true
 }
@@ -200,6 +220,8 @@ export async function setReplyAssets(input: { tenantId: string; agentId: string;
         INSERT INTO "ChatAgentShortcutAsset" ("id", "tenantId", "shortcutId", "assetId", "position", "createdAt")
         VALUES (${randomUUID()}, ${input.tenantId}, ${shortcut.id}, ${assetId}, ${position}, NOW())`,
     ),
+    // INT-79: an image change is an agent change (re-test / strict unlock see a new version).
+    prisma.chatAgent.updateMany({ where: { id: input.agentId, tenantId: input.tenantId }, data: { version: { increment: 1 } } }),
   ])
   return valid
 }

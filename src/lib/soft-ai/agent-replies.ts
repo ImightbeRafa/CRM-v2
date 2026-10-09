@@ -58,18 +58,30 @@ export function importedReplyDraft(item: { shortcut: string; text: string; hasIm
 
 export type ImportResult = { added: number; skipped: number; images: number }
 
-/** Copies the team quick replies (≤60) into this agent, with their photos (jpeg/png only, ≤3 each). */
+/** MEDIA-11 bounds: one import never turns into minutes of image decoding on the shared server. */
+const IMPORT_MAX_PHOTOS = 30
+const IMPORT_BUDGET_MS = 40_000
+/** Saved replies per agent (owner + imported + ready-made). */
+export const MAX_REPLIES_PER_AGENT = 120
+
+/** Copies the team quick replies (≤60) into this agent, with their photos (≤3 each, ≤30 per import, each file once). */
 export async function importTeamQuickReplies(actor: Actor): Promise<ImportResult> {
+  const started = Date.now()
   const tenant = await prisma.tenant.findUnique({ where: { id: actor.tenantId }, select: { settings: true } })
   const items = quickRepliesFromSettings(tenant?.settings).slice(0, 60)
   const have = await existingKeys(actor.tenantId, actor.agentId)
   const result: ImportResult = { added: 0, skipped: 0, images: 0 }
+  // The same file referenced by many replies is read and decoded once.
+  const byPath = new Map<string, string | null>()
+  let decoded = 0
+  let stopPhotos = false
   for (const [index, item] of items.entries()) {
-    const photos = (item.media ?? [])
+    const photos = [...new Map((item.media ?? [])
       .filter((m) => /^image\/(jpeg|png)$/.test(m.mime) && isQuickReplyMediaPath(m.path, actor.tenantId))
+      .map((m) => [m.path, m])).values()]
       .slice(0, MAX_IMAGES_PER_REPLY)
     const draft = importedReplyDraft({ shortcut: item.shortcut, text: item.text, hasImages: photos.length > 0 }, 200 + index)
-    if (!draft || have.has(draft.key)) {
+    if (!draft || have.has(draft.key) || have.size >= MAX_REPLIES_PER_AGENT) {
       result.skipped += 1
       continue
     }
@@ -78,6 +90,16 @@ export async function importTeamQuickReplies(actor: Actor): Promise<ImportResult
     result.added += 1
     const assetIds: string[] = []
     for (const photo of photos) {
+      if (byPath.has(photo.path)) {
+        const id = byPath.get(photo.path)
+        if (id) assetIds.push(id)
+        continue
+      }
+      if (stopPhotos || decoded >= IMPORT_MAX_PHOTOS || Date.now() - started > IMPORT_BUDGET_MS) {
+        stopPhotos = true
+        break
+      }
+      decoded += 1
       try {
         const stored = await readChatMediaFromBlob({ pathname: photo.path })
         const asset = await storeAgentAsset({
@@ -87,10 +109,12 @@ export async function importTeamQuickReplies(actor: Actor): Promise<ImportResult
           name: photo.filename,
           userId: actor.actorUserId,
         })
+        byPath.set(photo.path, asset.id)
         assetIds.push(asset.id)
       } catch (error) {
-        // A missing / odd photo never blocks the text; a full quota stops copying photos.
-        if (error instanceof AgentAssetError && (error.code === 'quota' || error.code === 'not_ready')) break
+        byPath.set(photo.path, null)
+        // A missing / odd photo never blocks the text; a full quota or busy decoder stops copying photos.
+        if (error instanceof AgentAssetError && (error.code === 'quota' || error.code === 'not_ready' || error.code === 'busy')) stopPhotos = true
       }
     }
     if (assetIds.length) result.images += (await setReplyAssets({ tenantId: actor.tenantId, agentId: actor.agentId, shortcutId: row.id, assetIds })).length

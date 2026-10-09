@@ -16,7 +16,14 @@
   the claim (failure drops only the image), Meta media id reused 25 days; none on a hand-off. B6 Instagram: not yet.
 - B7: a reply that breaks a rule gets one text-only rewrite (same checks) before any hand-off; test chat says
   "corrigió su respuesta" / which saved reply it used. Rules version bumped → re-run "Probar y activar".
-- No new SQL (tables from 029 / 053). Proof: tsc 0, lint 0 (touched files), soft-ai 460/0.
+- No new SQL (tables from 029 / 053).
+- Review rounds (same day): SecureDog INT-76 (High, payment claims phrased as questions → AI) fixed + verified;
+  INT-77/DATA-48 promo headline/blank rows; MEDIA-11 bounded image decode + import; INT-78..81; INT-82 (High,
+  pre-existing: "ya cancelé", "le pasé la plata", "¿recibiste los ₡X?") fixed + verified. Verifier: tag-only reply
+  could send an empty WhatsApp message (fixed), images only when they really go out, 28 s image deadline, tag rule
+  moved to fixed rule 14, ordinary pre-sale questions ("¿cuánto me cobran por el envío?", "¿puedo devolverlo?")
+  answered again. Open Lows: MEDIA-13 (image quota never frees), DATA-49 (salesRules 8 KB / no CAS).
+- Proof: tsc 0, lint 0, soft-ai 474/0, security 271/0, chat-harden 643/0, soft-ai-agent 308/0, agentes-ui 34/0.
 
 ## 2026-10-09 — Agent: simple 3-step page, products by group, test chat = live, sales flow (claudio/agent-f3-studio)
 

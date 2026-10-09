@@ -207,9 +207,10 @@ export async function setReplyAssets(input: { tenantId: string; agentId: string;
   if (!(await agentAssetsReady())) throw new AgentAssetError('not_ready')
   const shortcut = await prisma.chatAgentShortcut.findFirst({
     where: { id: input.shortcutId, tenantId: input.tenantId, agentId: input.agentId },
-    select: { id: true },
+    select: { id: true, kind: true, key: true },
   })
-  if (!shortcut) throw new AgentAssetError('not_found')
+  // Images only on the owner's own replies — never on fixed sys_* replies (hand-off, payment…).
+  if (!shortcut || shortcut.kind !== 'playbook' || shortcut.key.startsWith('sys_')) throw new AgentAssetError('not_found')
   const wanted = [...new Set(input.assetIds.filter((x) => typeof x === 'string'))].slice(0, MAX_IMAGES_PER_REPLY)
   const valid: string[] = []
   for (const id of wanted) if (await getAgentAsset(input.tenantId, input.agentId, id)) valid.push(id)

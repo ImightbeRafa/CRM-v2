@@ -102,6 +102,7 @@ it('payment claims / refunds as questions stay with a person', () => {
     'el sinpe que te mandé es de 14900, ¿está bien?', 'mi pago no aparece, ¿qué hago?', '¿me devuelven la plata del pago?',
     'Hola, hice un sinpe por error, ¿me lo pueden devolver?', 'sinpe?', 'Hola cómo están, hice el sinpe',
     'pagué, ¿lo podés revisar?', 'te pagué', 'deposité 14900', 'pagado?', '¿le llegó la transferencia?',
+    'me rebajaron dos veces de la tarjeta', 'me descontaron de más de la cuenta',
   ]) {
     assert.equal(classifyPaymentText(text), 'payment_proof_or_risk', text)
   }

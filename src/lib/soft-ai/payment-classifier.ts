@@ -43,6 +43,8 @@ const CLAIM_CUE_RE = new RegExp(
       // "¿cuánto me cobran por el envío?", "te escribí por error" are ordinary questions (Verifier 2026-10-09).
       near(String.raw`(devol\p{L}*|devuelv\p{L}*|reembols\p{L}*|por\s+error)`, String.raw`(${PAY_NOUN.slice(1, -1)}|plata|dinero)`),
       String.raw`(me\s+)?cobr(aron|[oó])\s+(doble|de\s+m[aá]s|dos\s+veces)|reembols\p{L}*`,
+      // "me rebajaron dos veces de la tarjeta", "me descontaron de más de la cuenta": a charge complaint, never info.
+      near(String.raw`(cobraron|cobr[oó]|rebajaron|rebaj[oó]|descontaron|descont[oó]|debitaron|debit[oó])`, String.raw`(tarjeta|cuenta|${PAY_NOUN.slice(1, -1)}|plata|dinero|doble|dos\s+veces|de\s+m[aá]s)`),
     ].join('|') +
     String.raw`)(?![\p{L}\p{N}_])`,
   'iu',

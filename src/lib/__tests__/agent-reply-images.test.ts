@@ -222,3 +222,11 @@ test('Verifier r2: keyword reply with an image that cannot go out → model answ
   const { AI_NO_REPLY_REASONS } = await import('@/lib/workspace-notifications')
   assert.ok(AI_NO_REPLY_REASONS.empty_output)
 })
+
+test('Verifier r3: ordinary text is never altered by tag cleanup; images only on owner replies', () => {
+  for (const t of ['Hay un atajo (atajo por la 27) para retirar', 'Es el 1º de la lista, mide 2 m² ™']) {
+    assert.deepEqual(extractShortcutTag(t), { text: t, key: null })
+  }
+  assert.deepEqual(extractShortcutTag('Te paso la guía ＡＴＡＪＯ：pb_tallas'), { text: 'Te paso la guía', key: 'pb_tallas' })
+  assert.match(readFileSync('src/lib/soft-ai/agent-assets.ts', 'utf8'), /shortcut\.kind !== 'playbook' \|\| shortcut\.key\.startsWith\('sys_'\)/)
+})

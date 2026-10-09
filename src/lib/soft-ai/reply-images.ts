@@ -21,10 +21,11 @@ export type ReplyImage = {
 }
 
 // Lenient on spacing / case / any bracket kind (or none) so a near-miss never leaks to the customer (INT-80).
-// 1) Bracketed (any bracket kind): the whole bracket goes, whatever is inside. 2) Bare "ATAJO: clave".
-const BRACKETED_TAG_RE = /[[【〔{(<]{1,2}\s*ATAJO(?![\p{L}])([^\n\]】〕})>]{0,60})[\]】〕})>]{0,2}/giu
-const BARE_TAG_RE = /(?<![\p{L}])ATAJO\s*[:=]\s*([a-z0-9_-]{2,40})/giu
-const TAG_KEY_RE = /^\s*[:=]\s*([a-z0-9_]{2,40})\s*$/i
+// 1) Bracketed tag "ATAJO:" / "ATAJO=" (any bracket kind, full-width too): the whole bracket goes, whatever follows
+// the colon. 2) Bare "ATAJO: clave". A plain "(atajo por la 27)" (no colon) is ordinary text and stays.
+const BRACKETED_TAG_RE = /[[【〔{(<［｛（＜]{1,2}\s*ATAJO\s*([:=：＝][^\n\]】〕})>］｝）＞]{0,60})[\]】〕})>］｝）＞]{0,2}/giu
+const BARE_TAG_RE = /(?<![\p{L}])ATAJO\s*[:=：＝]\s*([a-z0-9_-]{2,40})/giu
+const TAG_KEY_RE = /^\s*[:=：＝]\s*([a-z0-9_]{2,40})\s*$/i
 
 /** Removes every [[ATAJO:…]] tag; returns the first key named. */
 export function extractShortcutTag(text: string): { text: string; key: string | null } {
@@ -32,8 +33,11 @@ export function extractShortcutTag(text: string): { text: string; key: string | 
   const take = (k: string | undefined) => {
     if (!key && k && /^[a-z0-9_]{2,40}$/i.test(k)) key = k.toLowerCase()
   }
-  const stripped = (text || '')
-    .normalize('NFKC')
+  const raw = text || ''
+  // Normalise only when a tag hides behind full-width / compatibility letters ("ＡＴＡＪＯ"): ordinary replies keep
+  // their exact characters (1º, m², ™ …).
+  const source = !/ATAJO/i.test(raw) && /ATAJO/i.test(raw.normalize('NFKC')) ? raw.normalize('NFKC') : raw
+  const stripped = source
     .replace(BRACKETED_TAG_RE, (_m, inner: string) => {
       take(TAG_KEY_RE.exec(inner)?.[1])
       return ''

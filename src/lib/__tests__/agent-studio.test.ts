@@ -572,11 +572,13 @@ describe('Test chat = live reply, with a short "why" line', () => {
       toolTrace: [{ name: 'search_inventory', ok: true, result: { items: [{ name: 'ARNESS FORGE XL', sellingPrice: 14900, currentStock: 30 }] } }],
       escalate: true,
       escalateReason: 'payment_or_sinpe',
-      blockedBy: ['agent_not_live'],
+      blockedBy: ['agent_not_live', 'not_bound_to_channel'],
     })
     assert.match(why[0], /^usó inventario: ARNESS FORGE XL ₡14[.s ]900 stock 30$/)
     assert.ok(why.includes('pasó a una persona: pago o comprobante SINPE (lo confirma una persona)'))
-    assert.ok(why.includes('un cliente real no recibiría respuesta: el agente está en borrador (falta “Activar”)'))
+    // Draft / not activated is about real chats only: never shown in the test chat.
+    assert.ok(!why.some((w) => w.includes('borrador')))
+    assert.ok(why.includes('un cliente real no recibiría respuesta: el agente no atiende esta línea'))
     // Unknown codes never leak raw English to the owner.
     assert.deepEqual(probarWhy({ toolTrace: [], blockedBy: ['some_new_code'] }), ['un cliente real no recibiría respuesta: una regla del canal lo bloquea'])
     assert.deepEqual(probarWhy({ toolTrace: [{ name: 'search_inventory', ok: true, result: { items: [] } }] }), ['buscó en inventario: no encontró productos'])
@@ -636,5 +638,16 @@ describe('Re-verify notes: card refresh, scroll, looser product search', () => {
     const runner = read('src/lib/soft-ai/llm/tool-runner.ts')
     assert.match(runner, /fitWithDescription/)
     assert.match(runner, /strong\.length \? strong :/)
+  })
+})
+
+describe('2026-10-09: the agent always writes an answer after its lookups', () => {
+  it('after the tool rounds, one final text-only call inside the 40 s turn budget', () => {
+    const rt = read('src/lib/soft-ai/llm/runtime.ts')
+    assert.match(rt, /if \(!finalText && toolCalls > 0 && remainingMs > 3_000\)/)
+    assert.match(rt, /toolChoice: 'none'/)
+    const client = read('src/lib/soft-ai/llm/client.ts')
+    assert.match(client, /if \(args\.toolChoice\) body\.tool_choice = args\.toolChoice/)
+    assert.match(client, /SOFT_AI_TURN_BUDGET_MS = 40_000/)
   })
 })

@@ -9,6 +9,7 @@ import {
   softAiResponsesCreate,
   SOFT_AI_FIRST_CALL_TIMEOUT_MS,
   SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS,
+  SOFT_AI_TURN_BUDGET_MS,
 } from '@/lib/soft-ai/llm/client'
 import {
   SOFT_AI_MAX_MODEL_CALLS,
@@ -135,10 +136,13 @@ export async function runSoftAiLlmRuntime(
 
     while (modelCalls < SOFT_AI_MAX_MODEL_CALLS) {
       modelCalls += 1
-      const timeoutMs =
-        modelCalls === 1
-          ? SOFT_AI_FIRST_CALL_TIMEOUT_MS
-          : SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS
+      const timeoutMs = Math.max(
+        3_000,
+        Math.min(
+          modelCalls === 1 ? SOFT_AI_FIRST_CALL_TIMEOUT_MS : SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS,
+          SOFT_AI_TURN_BUDGET_MS - (Date.now() - started),
+        ),
+      )
       const response = await softAiResponsesCreate({
         model: input.model,
         instructions,
@@ -223,14 +227,19 @@ export async function runSoftAiLlmRuntime(
       }
     }
 
-    if (!finalText && toolCalls > 0 && modelCalls < SOFT_AI_MAX_MODEL_CALLS) {
+    // The model used every round on lookups (e.g. inventory, then shipping knowledge) and never wrote the answer:
+    // one last call that MUST answer in text from what it found (no more tools), inside the turn's time budget.
+    // Before (2026-10-09) this was skipped when the rounds were used up → empty output → human hand-off.
+    const remainingMs = SOFT_AI_TURN_BUDGET_MS - (Date.now() - started)
+    if (!finalText && toolCalls > 0 && remainingMs > 3_000) {
       const response = await softAiResponsesCreate({
         model: input.model,
         instructions,
         input: inputItems,
         tools: tools.length > 0 ? tools : undefined,
+        toolChoice: 'none',
         promptCacheKey,
-        timeoutMs: SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS,
+        timeoutMs: Math.min(SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS, remainingMs),
         temperature: 0.1,
         reasoningEffort: 'low',
         store: false,

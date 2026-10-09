@@ -28,6 +28,12 @@ const BLOCKED: Record<string, string> = {
   human_before_send: 'una persona tomó el chat antes de enviar',
 }
 
+/**
+ * Activation state is about REAL chats only (Rafael 2026-10-09): the test chat answers the same whether the agent is
+ * a draft or active, so these are never shown there.
+ */
+const ACTIVATION_ONLY = new Set(['agent_not_live', 'ai_full_not_unlocked', 'account_not_allowlisted'])
+
 const money = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) ? `₡${Math.round(n).toLocaleString('es-CR')}` : '')
 
 export function probarWhy(input: {
@@ -63,6 +69,6 @@ export function probarWhy(input: {
   if (input.escalate) out.push(`pasó a una persona: ${ESCALATE[input.escalateReason || 'other'] || 'otro motivo'}`)
   // Codes are internal; the owner only needs to know the AI's own answer was replaced by a safe one.
   if (input.fallbackUsed) out.push('respuesta de respaldo: la IA falló o su respuesta no pasó las reglas')
-  for (const b of input.blockedBy ?? []) out.push(`un cliente real no recibiría respuesta: ${BLOCKED[b] || 'una regla del canal lo bloquea'}`)
+  for (const b of (input.blockedBy ?? []).filter((x) => !ACTIVATION_ONLY.has(x))) out.push(`un cliente real no recibiría respuesta: ${BLOCKED[b] || 'una regla del canal lo bloquea'}`)
   return [...new Set(out)].slice(0, 6)
 }

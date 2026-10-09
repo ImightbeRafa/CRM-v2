@@ -1,3 +1,23 @@
+## 2026-10-09 — Agent: saved replies with images, promo, fewer hand-offs (claudio/agent-f3-studio)
+
+- Rafael: the agent should have its own customizable replies (size guide "TALLAS", promo flyer) so it doesn't always
+  "think", handle the chat until payment, and stop handing off answerable chats; the test chat froze while waiting.
+- Test chat: never freezes (customer bubble at once, "escribiendo…", messages queue in order). Timeouts 20 s first /
+  15 s follow-up / 35 s turn, job 42 s. Payment classifier: questions ("¿contra entrega?", "¿cómo pago?") go to the
+  agent; only claims / proofs go to a person.
+- B1 "Promoción activa" (② Productos): free shipping (₡0 by code), special prices, contra entrega highlight; only the
+  enabled deal wording passes the validator, everything else (%, 2x1, "te lo dejo en") stays blocked.
+- B2–B4 "③ Respuestas guardadas": owner replies with up to 3 images (re-encoded jpeg/png ≤1600 px, no metadata,
+  private bucket, 200 MB per business). "+ Respuestas de venta listas" (saludo, tallas, promo, envío, contra entrega,
+  cómo comprar, post-venta — created OFF) and "Copiar mis respuestas rápidas del chat" (text + photos, OFF).
+  "Rápida" = sent as-is on a keyword (no model call); otherwise the agent adapts it and tags [[ATAJO:clave]] (stripped
+  by code). Code picks the images: active owner reply only, never sys_*, never twice in a chat. Test chat shows them.
+- B5 live WhatsApp: images before the text, exactly-once per image (deliverOnce key job+position+hash), upload before
+  the claim (failure drops only the image), Meta media id reused 25 days; none on a hand-off. B6 Instagram: not yet.
+- B7: a reply that breaks a rule gets one text-only rewrite (same checks) before any hand-off; test chat says
+  "corrigió su respuesta" / which saved reply it used. Rules version bumped → re-run "Probar y activar".
+- No new SQL (tables from 029 / 053). Proof: tsc 0, lint 0 (touched files), soft-ai 460/0.
+
 ## 2026-10-09 — Agent: simple 3-step page, products by group, test chat = live, sales flow (claudio/agent-f3-studio)
 
 - Rafael's feedback after F3 went live: Forge didn't answer (0 products mapped; tests 7/7 with no price cases), the

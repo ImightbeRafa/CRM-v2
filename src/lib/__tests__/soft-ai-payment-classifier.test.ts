@@ -93,3 +93,25 @@ describe('decideInbound payment policy', () => {
     assert.equal(blocked.escalateReason, 'payment_or_sinpe')
   })
 })
+
+// INT-76 (SecureDog 2026-10-09): claims phrased as questions, without "ya", refunds and "por error" stay human.
+it('payment claims / refunds as questions stay with a person', () => {
+  for (const text of [
+    '¿ya te llegó mi sinpe?', '¿recibieron el pago?', '¿ya tienen mi pago?', '¿se reflejó el sinpe?',
+    'hice el sinpe, ¿cuándo sale?', 'hice el pago, ¿cuándo me lo envían?', 'te pasé el sinpe, ¿está bien?',
+    'el sinpe que te mandé es de 14900, ¿está bien?', 'mi pago no aparece, ¿qué hago?', '¿me devuelven la plata del pago?',
+    'Hola, hice un sinpe por error, ¿me lo pueden devolver?', 'sinpe?', 'Hola cómo están, hice el sinpe',
+    'pagué, ¿lo podés revisar?', 'te pagué', 'deposité 14900', 'pagado?', '¿le llegó la transferencia?',
+  ]) {
+    assert.equal(classifyPaymentText(text), 'payment_proof_or_risk', text)
+  }
+})
+
+it('explicit how / can-I-pay questions are still answered by the agent', () => {
+  for (const text of [
+    'seria con envio puedo pagar cuando lo recibo?', 'se puede pagar contra entrega?', '¿puedo pagar en efectivo?',
+    '¿cuándo se paga?', '¿se puede pagar con sinpe?', '¿reciben sinpe?', '¿tienen sinpe?', '¿tienen talla XL?',
+  ]) {
+    assert.notEqual(classifyPaymentText(text), 'payment_proof_or_risk', text)
+  }
+})

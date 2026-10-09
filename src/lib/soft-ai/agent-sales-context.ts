@@ -96,7 +96,7 @@ export async function loadAgentSalesContext(input: {
   // Owner promotion in effect: code applies it to prices (the model only repeats them).
   const promo = setup?.salesRules.promo && promoInEffect(setup.salesRules.promo) ? setup.salesRules.promo : null
   const specialFor = (i: { id: string; category: string | null }) =>
-    promo?.specialPrices.find((sp) => (sp.scope === 'item' ? sp.ref === i.id : (i.category || '').trim().toLowerCase() === sp.ref.trim().toLowerCase()))?.price
+    promo?.specialPrices.find((sp) => (sp.ref.trim() !== '' && (sp.scope === 'item' ? sp.ref === i.id : (i.category || '').trim().toLowerCase() === sp.ref.trim().toLowerCase())))?.price
   const freeMethod = (id: string | null) =>
     Boolean(promo?.freeShipping) && (promo!.freeShippingMethodIds.length === 0 || (id !== null && promo!.freeShippingMethodIds.includes(id)))
   const shippingMethods = (

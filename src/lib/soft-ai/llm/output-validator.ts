@@ -27,10 +27,10 @@ const MONEY_RE = /[₡$]\s?\d|\d[\d.,]*\s*(colones|crc|usd)/i
 /** Deals the agent may never invent (fixed rule 12, INT-72): discounts, promos, free shipping, gifts, "te lo dejo en". */
 const DEAL_RE =
   // No bare "gratis" / "%" (free pickup, "100% algodón" are fine); deal phrasing only.
-  /(?<![\p{L}])(descuentos?|promoci[oó]n(es)? especial|oferta especial|precio especial|rebaj\p{L}*|env[ií]o (gratis|sin costo|de regalo|por la casa)|te (lo|la|los|las) (dejo|rebajo|regalo)|te regalo|de regalo|por la casa|sin cobrarte|te hago (un )?precio|2x1|3x2|\d{1,2}\s?%\s*(de\s+)?(descuento|off|menos))(?![\p{L}])/iu
+  /(?<![\p{L}])(descuentos?|promoci[oó]n(es)?\s+especial|oferta\s+especial|precio\s+especial|rebaj\p{L}*|env[ií]os?\s+(gratis|gratuitos?|sin\s+costo|de\s+regalo|por\s+la\s+casa)|(sale|va|queda)\s+gratis\s+el\s+env[ií]o|dos\s+por\s+uno|tres\s+por\s+dos|mitad\s+de\s+precio|medio\s+precio|te (lo|la|los|las) (dejo|rebajo|regalo)|te regalo|de regalo|por la casa|sin cobrarte|te hago (un )?precio|2x1|3x2|\d{1,2}\s?%\s*(de\s+)?(descuento|off|menos))(?![\p{L}])/iu
 const DEAL_ALL_RE = new RegExp(DEAL_RE.source, 'giu')
-const FREE_SHIPPING_DEAL_RE = /^env[ií]o (gratis|sin costo)$/iu
-const SPECIAL_PRICE_DEAL_RE = /^(precio especial|promoci[oó]n(es)? especial|oferta especial)$/iu
+const FREE_SHIPPING_DEAL_RE = /^(env[ií]os?\s+(gratis|gratuitos?|sin\s+costo)|(sale|va|queda)\s+gratis\s+el\s+env[ií]o)$/iu
+const SPECIAL_PRICE_DEAL_RE = /^(precio\s+especial|promoci[oó]n(es)?\s+especial|oferta\s+especial)$/iu
 
 /**
  * Deal wording is blocked unless the owner's active promo enables that exact kind (B1): free shipping and a special

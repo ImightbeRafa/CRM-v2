@@ -328,7 +328,9 @@ export async function runSoftAiLlmRuntime(
     // B7: a reply that breaks a rule (made-up amount, a deal, "ya quedó pagado"…) gets ONE rewrite with the reasons
     // before anything is handed to a person. The rewrite passes the same checks or the original hand-off stands.
     const repairLeftMs = SOFT_AI_TURN_BUDGET_MS - (Date.now() - started)
-    if (validation.needsHuman && !structured.needsHuman && !escalate && repairLeftMs > 5_000) {
+    // Never on payment wording (a "ya quedó pagado" reply means the customer is talking about a payment → person).
+    const repairable = validation.reasons.length > 0 && validation.reasons.every((r) => REPAIRABLE_REASONS.has(r))
+    if (validation.needsHuman && repairable && !structured.needsHuman && !escalate && repairLeftMs > 5_000) {
       try {
         const response = await softAiResponsesCreate({
           model: input.model,
@@ -480,12 +482,22 @@ function logLlmFailure(model: string, error: unknown) {
   })
 }
 
+/** Reasons a rewrite may fix. Not confirmation_wording: payment talk always goes to a person (SecureDog 2026-10-09). */
+export const REPAIRABLE_REASONS: ReadonlySet<string> = new Set([
+  'unsourced_money',
+  'unsourced_amount',
+  'money_mismatch_inventory',
+  'deal_offer',
+  'write_claim',
+  'unit_cost_leak',
+  'style_too_long',
+])
+
 const REPAIR_REASON_TEXT: Record<string, string> = {
   unsourced_money: 'pusiste un monto que no está en los precios / envíos de BETSY_DATOS ni en lo que consultaste',
   unsourced_amount: 'pusiste un número o monto que no sale de los datos',
   money_mismatch_inventory: 'el precio no coincide con el del producto',
   deal_offer: 'ofreciste un descuento o promoción que el negocio no tiene',
-  confirmation_wording: 'dijiste que un pago está confirmado o recibido (eso lo confirma el negocio)',
   write_claim: 'dijiste que ya creaste o registraste algo',
   unit_cost_leak: 'mencionaste un costo interno',
   style_too_long: 'quedó muy largo',

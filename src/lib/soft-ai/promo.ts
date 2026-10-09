@@ -30,6 +30,8 @@ export const EMPTY_PROMO: AgentPromo = {
   headline: null,
 }
 
+import { stripBetsyLookalikes } from '@/lib/soft-ai/sales-state'
+
 const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
 
 export function parsePromo(raw: unknown): AgentPromo {
@@ -44,14 +46,37 @@ export function parsePromo(raw: unknown): AgentPromo {
       : [],
     specialPrices: (Array.isArray(r.specialPrices) ? r.specialPrices : [])
       .map((x) => (x && typeof x === 'object' ? (x as Record<string, unknown>) : {}))
-      .filter((x) => (x.scope === 'item' || x.scope === 'category') && typeof x.ref === 'string' && typeof x.price === 'number')
+      .filter((x) => (x.scope === 'item' || x.scope === 'category') && typeof x.ref === 'string' && x.ref.trim().length > 0 && typeof x.price === 'number')
       .filter((x) => Number.isFinite(x.price as number) && (x.price as number) > 0 && (x.price as number) < 100_000_000)
       .slice(0, 10)
-      .map((x) => ({ scope: x.scope as 'item' | 'category', ref: String(x.ref).slice(0, 120), price: Math.round(x.price as number) })),
+      .map((x) => ({ scope: x.scope as 'item' | 'category', ref: String(x.ref).trim().slice(0, 120), price: Math.round(x.price as number) })),
     codHighlight: r.codHighlight === true,
-    // Headline is shown to the model as data: no digits (prices only ever come from code).
-    headline: str(r.headline, 200)?.replace(/\d[\d.,\s]*/g, '').replace(/₡/g, '').replace(/\s{2,}/g, ' ').trim() || null,
+    headline: sanitizePromoHeadline(r.headline),
   }
+}
+
+/**
+ * Headline is shown to the model as data (INT-77): NFKC first (so ①④⑨ / １４９ become digits), then no numbers of any
+ * script, no ₡, no quotes / brackets / markers that could close the data fence or fake a Betsy line, one line.
+ */
+export function sanitizePromoHeadline(raw: unknown): string | null {
+  const base = str(raw, 200)
+  if (!base) return null
+  const clean = stripBetsyLookalikes(base.normalize('NFKC'))
+    .replace(/[₡$]?\s?\p{N}[\p{N}.,]*\s?%?/gu, '')
+    .replace(/[₡$%]/g, '')
+    .replace(/["“”„«»'‘’`<>{}\[\]]/g, '')
+    .replace(/promoci[oó]n\s+activa|dato\s+de\s+betsy|texto\s+del\s+cliente/giu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return clean || null
+}
+
+/** Amounts / deals written in words ("catorce mil", "dos por uno", "mitad de precio") are refused on save. */
+const NUMBER_WORD_RE =
+  /(?<![\p{L}])(cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|diecis\p{L}+|veinti?\p{L}*|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|quinientos|mil|mill[oó]n\p{L}*|mitad|medio\s+precio|por\s+ciento)(?![\p{L}])/iu
+export function headlineHasNumberWords(headline: string): boolean {
+  return NUMBER_WORD_RE.test(headline)
 }
 
 /** Costa Rica calendar day (UTC-6, no DST). */

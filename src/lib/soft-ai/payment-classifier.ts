@@ -23,9 +23,41 @@ const INFO_CUE_RE =
 const COD_QUESTION_RE =
   /(?<![\p{L}])(contra\s?entrega|pag(o|ar)\s+(al\s+recibir|cuando\s+(lo\s+|la\s+|me\s+)?(recib|lleg))|pago\s+en\s+efectivo\s+al)/iu
 
-/** A question about paying (not a claim of having paid). */
-const PAYMENT_QUESTION_RE =
-  /\?|(?<![\p{L}])(puedo|se\s+puede|pued[eo]n|aceptan|hay\s+que|tengo\s+que|c[oó]mo|cu[aá]ndo|d[oó]nde|qu[eé]\s+formas?)(?![\p{L}])/iu
+const PAY_NOUN = String.raw`(sinpe|pago|plata|dinero|transferencia|dep[oó]sito|comprobante|monto)`
+const W = String.raw`(?:\s+[\p{L}\p{N}₡.,]+){0,4}?\s+`
+const near = (a: string, b: string) => `(?:${a}${W}${b}|${b}${W}${a})`
+/**
+ * Claims, receipts, refunds and disputes — with or without "ya", as a question or not (INT-76, 2026-10-09):
+ * "¿ya te llegó mi sinpe?", "hice el sinpe, ¿cuándo sale?", "hice un sinpe por error, ¿me lo devuelven?".
+ * Checked FIRST; any hit stays with a person.
+ */
+const CLAIM_CUE_RE = new RegExp(
+  String.raw`(?<![\p{L}\p{N}_])(` +
+    [
+      near(String.raw`(hice|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|acabo\s+de\s+(pagar|hacer|mandar|enviar|transferir|depositar))`, PAY_NOUN),
+      String.raw`pagu[eé]|deposit[eé]|transfer[ií]|^\s*¿?\s*pagad[oa]\s*[?!.✅👍]*\s*$`,
+      String.raw`sinpe\s+(hecho|listo|enviado|realizado|mandado)`,
+      near(String.raw`(lleg[oó]|recibi(eron|ste|mos|ó|o)|reflej\p{L}*|aparec\p{L}*|cay[oó]|entr[oó])`, PAY_NOUN),
+      String.raw`(tienen|vieron|viste|vio|ven)\s+(mi|el|la|los)\s+${PAY_NOUN}`,
+      String.raw`devol\p{L}*|devuelv\p{L}*|por\s+error|me\s+cobr\p{L}*|cobraron|de\s+m[aá]s|reembols\p{L}*`,
+    ].join('|') +
+    String.raw`)(?![\p{L}\p{N}_])`,
+  'iu',
+)
+
+/** Only explicit "how / can I pay" questions are answered by the agent (never a bare "?"). */
+const PAYMENT_QUESTION_RE = new RegExp(
+  String.raw`(?<![\p{L}])(` +
+    String.raw`(puedo|se\s+puede|pued[eo]n|aceptan|hay\s+que|tengo\s+que|debo)(\s+\p{L}+){0,2}\s+(pagar|pago|pagarles|pagarte)` +
+    String.raw`|(c[oó]mo|cu[aá]ndo|d[oó]nde|qu[eé]\s+formas?\s+de)(\s+\p{L}+){0,2}\s+(pago|pagar|se\s+paga|pagos)` +
+    String.raw`|(reciben|tienen|aceptan|usan|trabajan\s+con)\s+(sinpe|transferencias?|tarjetas?|efectivo)` +
+    String.raw`)(?![\p{L}])`,
+  'iu',
+)
+
+export function hasPaymentClaimCue(text: string): boolean {
+  return CLAIM_CUE_RE.test(text || '')
+}
 
 /** Legacy broad net. Ambiguous hits default to human. */
 const PAYMENT_RE =
@@ -41,7 +73,7 @@ export function hasPaymentRiskCue(text: string): boolean {
 
 export function classifyPaymentText(text: string): PaymentClassification {
   const value = text || ''
-  if (PROOF_CUE_RE.test(value) || CONFIRM_CUE_RE.test(value) || RISK_CUE_RE.test(value)) {
+  if (PROOF_CUE_RE.test(value) || CLAIM_CUE_RE.test(value) || CONFIRM_CUE_RE.test(value) || RISK_CUE_RE.test(value)) {
     return 'payment_proof_or_risk'
   }
   // Contra entrega / "¿puedo pagar cuando lo recibo?" is a sales question (zone coverage), not payment data:
@@ -52,8 +84,8 @@ export function classifyPaymentText(text: string): PaymentClassification {
   if (INFO_CUE_RE.test(value)) {
     return 'payment_info_safe'
   }
-  // Any other payment-word QUESTION ("¿puedo pagar en efectivo?", "¿se paga antes?") is answered by the agent
-  // under the fixed payment rules; only statements (possible proof / claims) stay with a person.
+  // An explicit "how / can I pay" question ("¿puedo pagar en efectivo?", "¿cuándo se paga?") is answered by the agent
+  // under the fixed payment rules; everything else with payment words stays with a person (fail closed).
   if (PAYMENT_RE.test(value) && PAYMENT_QUESTION_RE.test(value)) {
     return 'non_payment'
   }

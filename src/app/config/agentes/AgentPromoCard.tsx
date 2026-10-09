@@ -61,6 +61,7 @@ export function AgentPromoCard({ agentId, canEdit }: { agentId: string; canEdit:
 
   if (!promo) return null
   const dirty = JSON.stringify(promo) !== JSON.stringify(saved)
+  const blankRow = Boolean(promo?.specialPrices.some((sp) => !sp.ref.trim() || !(sp.price > 0)))
   const set = (p: Partial<Promo>) => setPromo({ ...promo, ...p })
   const toggle = (label: string, value: boolean, onChange: (v: boolean) => void, hint?: string) => (
     <label className="flex items-start gap-2 text-[13px] text-slate-800">
@@ -148,14 +149,17 @@ export function AgentPromoCard({ agentId, canEdit }: { agentId: string; canEdit:
         ) : null}
       </div>
       {canEdit ? (
+        <>
         <button
           type="button"
-          disabled={busy || !dirty}
+          disabled={busy || !dirty || blankRow}
           onClick={() => void save()}
           className="mt-3 rounded-lg bg-[#5B6CFF] px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-40"
         >
           {busy ? 'Guardando…' : 'Guardar promoción'}
         </button>
+        {blankRow ? <p className="mt-1 text-[11px] text-amber-800">Completá la categoría y el precio de cada precio especial (o quitá la fila).</p> : null}
+        </>
       ) : null}
       {msg ? <p className="mt-2 text-[12px] text-slate-600">{msg}</p> : null}
     </div>

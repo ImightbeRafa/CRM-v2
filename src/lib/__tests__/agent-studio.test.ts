@@ -621,7 +621,8 @@ describe('Verifier 2026-10-08 (agent page): shared word matcher, live search fal
     assert.match(runner, /if \(rows\.length === 0\) \{[\s\S]*queryFit\(query,/)
     // Fallback stays inside this agent's own active products, max 200 (now also reads the description).
     assert.match(runner, /id: \{ in: ctx\.inventoryItemIds \} \},\s*select: \{ \.\.\.select, description: true \},\s*take: 200/)
-    assert.match(read('src/app/config/agentes/page.tsx'), /key=\{`inv-\$\{selected\.id\}-\$\{selected\.version\}`\}/)
+    // Card key includes the version AND a Studio-apply counter (checked in the next suite).
+    assert.match(read('src/app/config/agentes/page.tsx'), /key=\{`inv-\$\{selected\.id\}-\$\{selected\.version\}-/)
     assert.match(read('src/app/config/agentes/AgentTestSandbox.tsx'), /Sin respuesta para el cliente/)
   })
 })

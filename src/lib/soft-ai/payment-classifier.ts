@@ -38,9 +38,9 @@ const CLAIM_CUE_RE = new RegExp(
       String.raw`pagu[eé]|deposit[eé]|transfer[ií]|^\s*¿?\s*pagad[oa]\s*[?!.✅👍]*\s*$`,
       // Costa Rica: "cancelar" = to pay ("ya cancelé", "está cancelado"). "Quiero cancelar el pedido" also reaches
       // a person — a safe failure (INT-82).
-      String.raw`cancel[eé]|cancelad[oa]|acabo\s+de\s+cancelar`,
+      String.raw`cancel[eé]|acabo\s+de\s+cancelar|(ya\s+)?(est[aá]|qued[oó])\s+cancelad[oa]|(pedido|monto|saldo|pago)\s+(ya\s+)?(est[aá]\s+|qued[oó]\s+)?cancelad[oa]|ya\s+cancelad[oa]`,
       // An amount the customer says was received / arrived: "¿Recibiste los ₡14900?" (INT-82).
-      near(String.raw`(lleg[oó]|llegaron|recibi(eron|ste|mos|ó|o)|recibieron)`, String.raw`(₡\s?[\d.,]+|[\d.,]+\s*(colones|rojos|mil))`),
+      near(String.raw`(lleg[oó]|llegaron|recibi(eron|ste|mos|ó|o)|recibieron)`, String.raw`((los|mis|esos|estos|sus)\s+(₡\s?[\d.,]+|[\d.,]+\s*(colones|rojos|mil)))`),
       String.raw`sinpe\s+(hecho|listo|enviado|realizado|mandado)`,
       near(String.raw`(lleg[oó]|recibi(eron|ste|mos|ó|o)|reflej\p{L}*|aparec\p{L}*|cay[oó]|entr[oó])`, PAY_NOUN),
       String.raw`(tienen|vieron|viste|vio|ven)\s+(mi|el|la|los)\s+${PAY_NOUN}`,
@@ -74,14 +74,16 @@ const REFUND_RE = /(?<![\p{L}])(devol\p{L}*|devuelv\p{L}*|regres(en|e|ar|ame|enm
 // A greeting may come first ("Hola, ¿puedo devolverlo si no me queda?"); only the FIRST sentence is the question.
 const RETURN_POLICY_QUESTION_RE =
   /^\s*((hola|buenas|buenos\s+d[ií]as|buenas\s+(tardes|noches)|disculpe|una\s+consulta|consulta)[\s,.!]*)?¿?\s*(puedo|se\s+puede|pueden|c[oó]mo|hacen|aceptan|tienen|hay)(?![\p{L}])[^.!?\n]*(devol\p{L}*|devuelv\p{L}*|cambi\p{L}*)/iu
-const MONEY_WORD_RE = /plata|dinero|pago|sinpe|reembols|₡/iu
+const MONEY_WORD_RE = /plata|dinero|pago|sinpe|reembols|₡|lo\s+que\s+(di|pagu[eé])/iu
+/** Returning something TO the customer = money back: never a return-policy question. */
+const REFUND_TO_ME_RE = /(?<![\p{L}])(devolverme|devu[eé]lvanme|devu[eé]lvame|me\s+devuelv\p{L}*|me\s+lo\s+devuelv\p{L}*)/iu
 
 /** A plain return-policy question: nothing about money, and no refund wording after that first question. */
 function isReturnPolicyQuestion(value: string): boolean {
   const m = RETURN_POLICY_QUESTION_RE.exec(value)
   if (!m) return false
   const rest = value.slice(m.index + m[0].length).replace(/^[^?.!\n]*[?.!\n]?/, '')
-  return !MONEY_WORD_RE.test(value) && !REFUND_RE.test(rest)
+  return !MONEY_WORD_RE.test(value) && !REFUND_TO_ME_RE.test(value) && !REFUND_RE.test(rest)
 }
 
 export function hasPaymentClaimCue(text: string): boolean {

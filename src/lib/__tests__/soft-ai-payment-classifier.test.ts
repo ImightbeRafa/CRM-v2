@@ -110,6 +110,7 @@ it('payment claims / refunds as questions stay with a person', () => {
     // INT-82: Costa Rican "cancelar" = pay, "pasar la plata", an amount said to be received; INT-81 leftovers.
     'Ya cancelé', 'ya cancelé el monto', 'Ya está cancelado el pedido', 'Le acabo de pasar la plata', '¿Recibiste los ₡14900?',
     'me han cobrado de más', '¿puedo devolverlo? quiero que me regresen lo que di',
+    'Ya cancelé, ¿me lo mandan hoy?', '¿les llegaron los 15 mil?', '¿Pueden devolverme lo que di?', 'Hola, ¿puedo devolverlo y que me devuelvan lo que di?',
   ]) {
     assert.equal(classifyPaymentText(text), 'payment_proof_or_risk', text)
   }
@@ -124,6 +125,7 @@ it('explicit how / can-I-pay questions are still answered by the agent', () => {
     '¿Hacen devoluciones o cambios?', 'Perdón, te escribí por error', '¿El envío tarda de más de 3 días?',
     'me mandaron una talla de más', '¿hay cobro extra por envío?', '¿tienen descuento?', '¿Se pueden hacer cambios de talla?',
     'Hola, ¿puedo devolverlo si no me queda?', '¿tienen alguno de 10 mil?', '¿Cuánto sale con envío a Heredia?',
+    '¿Ya les llegaron las camisas de ₡8000?', '¿Llegó la talla M de 12 mil?', '¿La promo fue cancelada?', '¿Cómo cancelo?', '¿Si cancelo hoy me llega mañana?', '¿Les llegó mercadería nueva?',
   ]) {
     assert.notEqual(classifyPaymentText(text), 'payment_proof_or_risk', text)
   }
@@ -135,4 +137,11 @@ it('INT-82: confirmation wording also blocks "gracias por tu pago" / "ya tenemos
     assert.equal(hasConfirmationWording(t), true, t)
   }
   assert.equal(hasConfirmationWording('¡Gracias por tu compra! Cualquier cosa me escribís.'), false)
+  for (const t of ['¡Perfecto, gracias! Ya te lo enviamos mañana.', 'Tu pedido ya está en proceso de envío.']) {
+    assert.equal(hasConfirmationWording(t), true, t)
+  }
+  // Ordinary shipping explanations are never blocked (SecureDog 2026-10-09).
+  for (const t of ['Si pagás hoy, enviamos tu pedido mañana.', 'Enviamos el pedido por Correos.', 'Despachamos tu pedido de lunes a viernes.', 'Mandamos el pedido con mensajero.', 'Cuando me pasés la dirección, preparamos tu pedido.', 'Te enviamos el pedido apenas se revise el pago.']) {
+    assert.equal(hasConfirmationWording(t), false, t)
+  }
 })

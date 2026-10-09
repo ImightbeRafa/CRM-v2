@@ -13,6 +13,7 @@ import { loadCoverage } from '@/lib/shipping/coverage-store'
 import type { MethodCoverage } from '@/lib/shipping/coverage'
 import { canSharePaymentFacts, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import type { SalesContext } from '@/lib/soft-ai/sales-state'
+import { promoInEffect } from '@/lib/soft-ai/promo'
 
 const INLINE_CATALOG_MAX = 30
 
@@ -49,7 +50,7 @@ export async function loadAgentSalesContext(input: {
       ? prisma.inventoryItem
           .findMany({
             where: { tenantId: input.tenantId, isActive: true, id: { in: ids } },
-            select: { name: true, sellingPrice: true, currentStock: true, minStock: true },
+            select: { id: true, name: true, category: true, sellingPrice: true, currentStock: true, minStock: true },
             orderBy: { name: 'asc' },
           })
           .catch(() => null)
@@ -92,17 +93,30 @@ export async function loadAgentSalesContext(input: {
     .filter((d) => d.length >= 8)
     .map((d) => d.slice(-8))
 
+  // Owner promotion in effect: code applies it to prices (the model only repeats them).
+  const promo = setup?.salesRules.promo && promoInEffect(setup.salesRules.promo) ? setup.salesRules.promo : null
+  const specialFor = (i: { id: string; category: string | null }) =>
+    promo?.specialPrices.find((sp) => (sp.scope === 'item' ? sp.ref === i.id : (i.category || '').trim().toLowerCase() === sp.ref.trim().toLowerCase()))?.price
+  const freeMethod = (id: string | null) =>
+    Boolean(promo?.freeShipping) && (promo!.freeShippingMethodIds.length === 0 || (id !== null && promo!.freeShippingMethodIds.includes(id)))
+  const shippingMethods = (
+    methods.length
+      ? methods.map((m) => ({ id: m.shippingMethodId as string | null, name: m.name, price: Number(m.basePrice) || 0, coverage: coverageText(m), cod: codText(m) }))
+      : fromFacts.map((m) => ({ id: null as string | null, ...m }))
+  ).map(({ id, ...m }) => (freeMethod(id) && m.price > 0 ? { ...m, price: 0, name: `${m.name} — gratis (promoción)` } : m))
+
   return {
+    promo: promo
+      ? { freeShipping: promo.freeShipping, specialPrice: promo.specialPrices.length > 0, codHighlight: promo.codHighlight, headline: promo.headline }
+      : null,
     catalog: items
       ? items.map((i) => ({
           name: i.name,
-          price: Number(i.sellingPrice),
+          price: specialFor(i) ?? Number(i.sellingPrice),
           stockLabel: i.currentStock <= 0 ? 'agotado' : i.currentStock < i.minStock ? 'pocas unidades' : 'disponible',
         }))
       : null,
-    shippingMethods: methods.length
-      ? methods.map((m) => ({ name: m.name, price: Number(m.basePrice) || 0, coverage: coverageText(m), cod: codText(m) }))
-      : fromFacts,
+    shippingMethods,
     orderFields: [...new Set(orderFields)].slice(0, 20),
     salesScript: setup ? salesRulesForPrompt(setup.salesRules) : '',
     aiDisclosure: setup?.salesRules.aiDisclosure ?? 'discreet',

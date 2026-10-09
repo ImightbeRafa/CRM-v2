@@ -205,13 +205,19 @@ export function assembleAgentRuntimeInputs(input: {
     clientName: input.clientName,
     linkedOrderId: null,
     pricingVersion: DEFAULT_PRICING_VERSION,
-    brandFactsBlock: formatBrandFactsForPrompt(input.agent.brandFacts),
+    // With the sales flow, shipping comes only from Betsy's shipping list (promo applied); the store's own shipping
+    // text would show a second, stale price (e.g. ₡3.000 during a free-shipping promo).
+    brandFactsBlock: formatBrandFactsForPrompt(sales ? { ...input.agent.brandFacts, shipping: undefined } : input.agent.brandFacts),
     shortcutCatalog: guideShortcutCatalog(input.shortcuts),
     replyStyleSnippet: replyStyleSnippet(input.agent.replyStyle),
     salesSystemBlock: sales ? salesSystemBlock(sales) : null,
     salesTurnBlock: sales && salesState ? formatSalesTurnBlock(sales, salesState) : null,
     salesAllowedAmounts: sales ? salesAllowedAmounts(sales) : undefined,
     salesNeedsHuman: Boolean(sales && salesState && salesNeedsHuman(sales, salesState)),
+    salesAllowedDeals: sales?.promo
+      ? [...(sales.promo.freeShipping ? (['free_shipping'] as const) : []), ...(sales.promo.specialPrice ? (['special_price'] as const) : [])]
+      : [],
+    salesFreeShipping: Boolean(sales?.promo?.freeShipping),
     salesTrace: salesState ? { stage: salesState.stage, said: salesState.said } : null,
     toolCtx: {
       ...input.toolCtxBase,

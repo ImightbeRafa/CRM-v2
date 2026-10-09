@@ -28,6 +28,24 @@ const MONEY_RE = /[₡$]\s?\d|\d[\d.,]*\s*(colones|crc|usd)/i
 const DEAL_RE =
   // No bare "gratis" / "%" (free pickup, "100% algodón" are fine); deal phrasing only.
   /(?<![\p{L}])(descuentos?|promoci[oó]n(es)? especial|oferta especial|precio especial|rebaj\p{L}*|env[ií]o (gratis|sin costo|de regalo|por la casa)|te (lo|la|los|las) (dejo|rebajo|regalo)|te regalo|de regalo|por la casa|sin cobrarte|te hago (un )?precio|2x1|3x2|\d{1,2}\s?%\s*(de\s+)?(descuento|off|menos))(?![\p{L}])/iu
+const DEAL_ALL_RE = new RegExp(DEAL_RE.source, 'giu')
+const FREE_SHIPPING_DEAL_RE = /^env[ií]o (gratis|sin costo)$/iu
+const SPECIAL_PRICE_DEAL_RE = /^(precio especial|promoci[oó]n(es)? especial|oferta especial)$/iu
+
+/**
+ * Deal wording is blocked unless the owner's active promo enables that exact kind (B1): free shipping and a special
+ * price can be enabled; discounts, %, 2x1, "te lo dejo en", gifts are always blocked.
+ */
+export function dealProblem(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
+  for (const m of text.matchAll(DEAL_ALL_RE)) {
+    const phrase = m[1].trim()
+    if (allowed.includes('free_shipping') && FREE_SHIPPING_DEAL_RE.test(phrase)) continue
+    if (allowed.includes('special_price') && SPECIAL_PRICE_DEAL_RE.test(phrase)) continue
+    return true
+  }
+  return false
+}
+
 const CREATED_CLAIM_RE = /ya\s+(cre[eé]|registr[eé]|arm[eé])|pedido\s+creado|acabo\s+de\s+crear/i
 const UNIT_COST_RE = /unitCost|costo\s+unitario|precio\s+de\s+costo/i
 const SHIP_CUE_RE = /env[ií]o|retiro|domicilio|\bGAM\b|correos|mensajer/i
@@ -59,6 +77,8 @@ export function validateAgentOutput(input: {
   quoteAmounts?: number[]
   replyStyle?: ReplyStyle | null
   intent?: string | null
+  /** Deal wording enabled by the owner's active promo (promo.ts). */
+  allowedDeals?: Array<'free_shipping' | 'special_price'>
 }): OutputValidationResult {
   const reasons: string[] = []
   const text = input.text || ''
@@ -67,7 +87,7 @@ export function validateAgentOutput(input: {
 
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
   if (CREATED_CLAIM_RE.test(text)) reasons.push('write_claim')
-  if (DEAL_RE.test(text)) reasons.push('deal_offer')
+  if (dealProblem(text, input.allowedDeals ?? [])) reasons.push('deal_offer')
   if (hasConfirmationWording(text)) reasons.push('confirmation_wording')
 
   const inventory =
@@ -133,11 +153,14 @@ export function applyFinalOutputPolicy(input: {
   skipPurchaseSummary?: boolean
   /** The customer's own message (numbers they wrote may be repeated back). */
   customerText?: string
+  allowedDeals?: Array<'free_shipping' | 'special_price'>
+  /** Promo makes shipping free: the store's fixed shipping amounts stop being valid. */
+  freeShipping?: boolean
 }): FinalOutputPolicy {
   const facts = input.brandFacts || { schemaVersion: 1 }
   const style = input.replyStyle || DEFAULT_REPLY_STYLE
   const intent = (input.intent || 'other') as AgentIntent
-  const shippingAmounts = shippingProvenanceAmounts(facts)
+  const shippingAmounts = input.freeShipping ? [] : shippingProvenanceAmounts(facts)
   let text = (input.text || '').trim()
   let purchaseSummaryAppended = false
   const reasons: string[] = []
@@ -179,6 +202,7 @@ export function applyFinalOutputPolicy(input: {
     quoteAmounts: input.quoteAmounts,
     replyStyle: style,
     intent,
+    allowedDeals: input.allowedDeals,
   })
 
   const merged = [...new Set([...reasons, ...validated.reasons])]

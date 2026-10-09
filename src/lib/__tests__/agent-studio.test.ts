@@ -648,6 +648,6 @@ describe('2026-10-09: the agent always writes an answer after its lookups', () =
     assert.match(rt, /toolChoice: 'none'/)
     const client = read('src/lib/soft-ai/llm/client.ts')
     assert.match(client, /if \(args\.toolChoice\) body\.tool_choice = args\.toolChoice/)
-    assert.match(client, /SOFT_AI_TURN_BUDGET_MS = 40_000/)
+    assert.match(client, /SOFT_AI_TURN_BUDGET_MS = 35_000/)
   })
 })

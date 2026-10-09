@@ -59,6 +59,10 @@ export type SoftAiLlmRuntimeInput = {
   salesAllowedAmounts?: number[]
   /** Code says a person must follow up this turn (e.g. close with payment data not shareable). */
   salesNeedsHuman?: boolean
+  /** Deal wording the owner's active promo allows (free shipping / special price); nothing else. */
+  salesAllowedDeals?: Array<'free_shipping' | 'special_price'>
+  /** Promo makes shipping free: the store's fixed shipping amounts are no longer valid prices. */
+  salesFreeShipping?: boolean
   /** Sales state for the turn trace (debug only; not sent to the model separately). */
   salesTrace?: { stage: string; said: Record<string, boolean> } | null
 }
@@ -314,6 +318,7 @@ export async function runSoftAiLlmRuntime(
       inventoryPrices,
       // Prices / shipping / totals listed for this turn by code are sourced (no lookup call needed).
       quoteAmounts: input.salesAllowedAmounts,
+      allowedDeals: input.salesAllowedDeals,
     })
     if (validation.needsHuman || structured.needsHuman) {
       escalate = true

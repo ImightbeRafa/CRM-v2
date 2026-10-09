@@ -7,6 +7,7 @@ import 'server-only'
 
 import { prisma } from '@/lib/db'
 import { isColumnReady, isTableReady } from '@/lib/soft-ai/table-ready'
+import { EMPTY_PROMO, parsePromo, type AgentPromo } from '@/lib/soft-ai/promo'
 
 export type SalesRules = {
   voice: string | null
@@ -18,6 +19,8 @@ export type SalesRules = {
   handoffWhen: string | null
   mustSay: string[]
   neverSay: string[]
+  /** Owner-configured active promotion (promo.ts). Part of the type so saving the script never wipes it. */
+  promo: AgentPromo
 }
 export type SalesSetup = { offeredShippingMethodIds: string[]; salesRules: SalesRules }
 
@@ -30,6 +33,7 @@ export const EMPTY_SALES_RULES: SalesRules = {
   handoffWhen: null,
   mustSay: [],
   neverSay: [],
+  promo: EMPTY_PROMO,
 }
 
 const text = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
@@ -48,6 +52,7 @@ export function parseSalesRules(raw: unknown): SalesRules {
     aiDisclosure: r.aiDisclosure === 'transparent' ? 'transparent' : 'discreet',
     mustSay: list(r.mustSay, 10, 200),
     neverSay: list(r.neverSay, 10, 200),
+    promo: parsePromo(r.promo),
   }
 }
 

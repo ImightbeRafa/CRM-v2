@@ -29,6 +29,7 @@ const CTX: SalesContext = {
   aiDisclosure: 'discreet',
   paymentShareable: true,
   paymentDigits: ['71133720'],
+  promo: null,
 }
 
 let n = 0

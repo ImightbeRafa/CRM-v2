@@ -18,6 +18,7 @@ import {
 import { isTableReady } from '@/lib/soft-ai/table-ready'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
 import { loadSalesSetup, saveSalesSetup, SalesSetupNotReadyError } from '@/lib/soft-ai/agent-sales-setup'
+import { parsePromo } from '@/lib/soft-ai/promo'
 
 const settingsRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 20, identifier: 'chat-agent-settings' })
 
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       loadSalesSetup(auth.tenantId, id).catch(() => null),
     ])
     return NextResponse.json(
-      { success: true, available, settings, knownStamps: stamps, aiDisclosure: sales?.salesRules.aiDisclosure ?? 'discreet' },
+      { success: true, available, settings, knownStamps: stamps, aiDisclosure: sales?.salesRules.aiDisclosure ?? 'discreet', promo: sales?.salesRules.promo ?? null },
       { headers: { 'Cache-Control': 'no-store' } },
     )
   } catch (error) {
@@ -105,6 +106,37 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ success: false, error: 'Datos inválidos' }, { status: 400 })
+    }
+    // Owner's active promotion (B1): validated + bounded by parsePromo; shipping method ids must be this business's.
+    if ('promo' in body) {
+      const promo = parsePromo(body.promo)
+      if (promo.freeShippingMethodIds.length) {
+        const own = await prisma.shippingMethod.findMany({ where: { tenantId: auth.tenantId, id: { in: promo.freeShippingMethodIds } }, select: { id: true } })
+        const ownIds = new Set(own.map((m) => m.id))
+        promo.freeShippingMethodIds = promo.freeShippingMethodIds.filter((x) => ownIds.has(x))
+      }
+      const before = await loadSalesSetup(auth.tenantId, agent.id).catch(() => null)
+      try {
+        await saveSalesSetup(auth.tenantId, agent.id, { salesRules: { promo } }, auth.userId)
+      } catch (error) {
+        if (error instanceof SalesSetupNotReadyError) {
+          return NextResponse.json({ success: false, error: 'Este ajuste todavía no está disponible.' }, { status: 503 })
+        }
+        throw error
+      }
+      await logAuditEvent({
+        action: 'UPDATE',
+        entityType: 'ChatAgent',
+        entityId: agent.id,
+        entityName: agent.name,
+        description: 'Promoción activa del agente',
+        oldValues: { promo: before?.salesRules.promo ?? null },
+        newValues: { promo },
+        userId: auth.userId,
+        userRole: auth.role,
+        tenantId: auth.tenantId,
+      }).catch(() => {})
+      return NextResponse.json({ success: true, promo })
     }
     // "¿Sos un bot?" toggle (stored with the sales script, SQL 053): saved on its own.
     if ('aiDisclosure' in body) {

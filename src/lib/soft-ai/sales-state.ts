@@ -22,6 +22,8 @@ export type SalesContext = {
   paymentShareable: boolean
   /** Last 8 digits of configured payment numbers (to know if they were already given). */
   paymentDigits: string[]
+  /** Owner's promotion in effect this turn (already applied to prices by code), or null. */
+  promo: { freeShipping: boolean; specialPrice: boolean; codHighlight: boolean; headline: string | null } | null
 }
 
 export type SalesStage = 'saludo' | 'descubrir' | 'cotizar' | 'cierre' | 'esperando_comprobante' | 'verificando'
@@ -145,6 +147,14 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
     for (const s of ctx.shippingMethods) {
       lines.push(`- ${oneLine(s.name, 80)}: ${s.price > 0 ? money(s.price) : 'sin costo'} · llega: ${oneLine(s.coverage, 160)} · contra entrega: ${oneLine(s.cod, 80)}`)
     }
+  }
+  if (ctx.promo) {
+    const parts = [
+      ctx.promo.freeShipping ? 'envío gratis en los métodos marcados "gratis (promoción)"' : '',
+      ctx.promo.specialPrice ? 'precio especial ya aplicado en la lista de productos' : '',
+      ctx.promo.codHighlight ? 'pago contra entrega (según zona)' : '',
+    ].filter(Boolean)
+    lines.push(`Promoción activa (dato de Betsy; podés mencionarla tal cual): ${parts.join(' · ')}${ctx.promo.headline ? ` — "${oneLine(ctx.promo.headline, 200)}"` : ''}.`)
   }
   if (ctx.orderFields.length) lines.push(`Datos que necesita un pedido: ${ctx.orderFields.map((f) => oneLine(f, 80)).join(', ')}.`)
   lines.push(

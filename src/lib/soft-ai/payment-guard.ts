@@ -30,18 +30,24 @@ export function paymentDetailsText(facts: BrandFacts): string {
   return parts.join(' · ')
 }
 
+/** Token and its near-misses the model may write ("[DATOS_PAGO]", "[[datos pago]]"). */
+const TOKEN_RE = /\[{1,2}\s*DATOS[\s_-]?PAGO\s*\]{1,2}/giu
+
 /** Replace the token (or drop it when sharing is off → the reply needs a person). */
 export function fillPaymentToken(text: string, facts: BrandFacts): { text: string; needsHuman: boolean } {
-  if (!text.includes(PAYMENT_TOKEN)) return { text, needsHuman: false }
+  if (!TOKEN_RE.test(text)) return { text, needsHuman: false }
+  TOKEN_RE.lastIndex = 0
   const details = paymentDetailsText(facts)
-  if (!details) return { text: text.split(PAYMENT_TOKEN).join('').replace(/[ \t]{2,}/g, ' ').trim(), needsHuman: true }
-  return { text: text.split(PAYMENT_TOKEN).join(details), needsHuman: false }
+  if (!details) return { text: text.replace(TOKEN_RE, '').replace(/[ \t]{2,}/g, ' ').trim(), needsHuman: true }
+  return { text: text.replace(TOKEN_RE, details), needsHuman: false }
 }
 
 const digitsOf = (s: string) => s.replace(/\D/g, '')
-const PAY_WORDS_RE = /sinpe|iban|cuenta|transfer|dep[oó]sit|pag(ar|o|ás|as|ues)|n[uú]mero/iu
-const CR_IBAN_RE = /\bCR\s?\d{2}(?:[\s-]?\d{4}){4}[\s-]?\d{2}\b/giu
-const LONG_NUMBER_RE = /(?:\+?506[\s-]?)?\d(?:[\s-]?\d){7,}/g
+const PAY_WORDS_RE = /sinpe|iban|cuenta|transfer|dep[oó]sit|pag(ar|o|ás|as|ues)|n[uú]mero|plata|dinero|mand[aá]/iu
+// Digits joined by any common separator: spaces, dots, dashes (incl. en/em dash), slashes, middle dots.
+const SEP = '[\\s.\\-\\u2010-\\u2015/·]{0,3}'
+const CR_IBAN_RE = new RegExp(`CR${SEP}\\d{2}(?:${SEP}\\d){18}`, 'giu')
+const LONG_NUMBER_RE = new RegExp(`(?:\\+?506${SEP})?\\d(?:${SEP}\\d){7,}`, 'gu')
 
 function configuredNumbers(facts: BrandFacts): string[] {
   return [facts.payment?.sinpe?.number, facts.payment?.transfer?.iban].map((n) => digitsOf(n || '')).filter((d) => d.length >= 8)
@@ -54,28 +60,27 @@ function sameNumber(a: string, b: string): boolean {
 }
 
 /**
- * Payment-looking numbers in a reply that are neither configured nor written by the customer. Also flags a
- * configured number when sharing is off. Returns the reasons (empty = fine).
+ * Payment-looking numbers in a reply that are not the configured ones. Customer-written numbers are NOT exempt
+ * (re-check 2026-10-09: "sí, el depósito es al 8888-8888" is the fraud). If the reply mentions payment anywhere,
+ * EVERY 8+ digit run in it is checked (no sentence splitting). Also flags a configured number when sharing is off.
  */
 export function paymentNumberProblems(input: { text: string; facts: BrandFacts; customerText?: string }): string[] {
   const reasons = new Set<string>()
+  const text = (input.text || '').normalize('NFKC')
   const configured = configuredNumbers(input.facts)
   const shareable = canSharePaymentFacts(input.facts)
-  const customerDigits = (input.customerText || '').match(LONG_NUMBER_RE)?.map(digitsOf) ?? []
-  const okNumber = (d: string) =>
-    (shareable && configured.some((c) => sameNumber(c, d))) || customerDigits.some((c) => sameNumber(c, d))
+  const okNumber = (d: string) => shareable && configured.some((c) => sameNumber(c, d))
 
-  for (const m of input.text.match(CR_IBAN_RE) ?? []) {
+  for (const m of text.match(CR_IBAN_RE) ?? []) {
     if (!okNumber(digitsOf(m))) reasons.add('payment_number_unsourced')
   }
-  for (const sentence of input.text.split(/(?<=[.!?\n])/)) {
-    if (!PAY_WORDS_RE.test(sentence)) continue
-    for (const m of sentence.match(LONG_NUMBER_RE) ?? []) {
+  if (PAY_WORDS_RE.test(text)) {
+    for (const m of text.match(LONG_NUMBER_RE) ?? []) {
       if (!okNumber(digitsOf(m))) reasons.add('payment_number_unsourced')
     }
   }
   if (!shareable) {
-    const all = digitsOf(input.text)
+    const all = digitsOf(text)
     if (configured.some((c) => all.includes(c.slice(-8)))) reasons.add('payment_number_not_shareable')
   }
   return [...reasons]

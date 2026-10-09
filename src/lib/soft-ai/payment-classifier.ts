@@ -8,7 +8,7 @@ export type PaymentClassification = 'non_payment' | 'payment_info_safe' | 'payme
 
 const PROOF_CUE_RE =
   // "ya te/les/lo pagué", "listo, ya lo pagué", "te mandé el sinpe" (accent-safe start: JS \b misses after á/é).
-  /(?<![\p{L}\p{N}_])(ya\s+((le|te|les|lo|la)\s+)?(pagu[eé]|hice|mand[eé]|transfer[ií]|deposit[eé])|comprobante|adjunto|captura|pantallazo|(le|te|les)\s+(envi[eé]|mand[eé])\s+el\s+(sinpe|pago|comprobante)|pago\s+(realizado|hecho|listo)|listo\s+el\s+(pago|sinpe)|ref(?:erencia)?\s*\d)/iu
+  /(?<![\p{L}\p{N}_])(ya\s+((le|te|les|lo|la)\s+)?(pagu[eé]|hice|mand[eé]|transfer[ií]|deposit[eé])|comprobante|adjunto|captura|pantallazo|(le|te|les)\s+(envi[eé]|mand[eé])\s+(el\s+(sinpe|pago|comprobante)|la\s+plata|el\s+dinero)|pago\s+(realizado|hecho|listo)|listo\s+el\s+(pago|sinpe)|(ya\s+)?(est[aá]|qued[oó])\s+pagad[oa]|^\s*pagad[oa]\s*[!.✅👍]*\s*$|ref(?:erencia)?\s*\d)/iu
 
 /** Unicode-aware: JS \\b treats á/ó as non-word, so "llegó" and "confirman" would miss. */
 const CONFIRM_CUE_RE =

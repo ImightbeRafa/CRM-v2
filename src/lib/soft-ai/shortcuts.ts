@@ -28,7 +28,7 @@ export const VERBATIM_ONLY_KINDS: readonly ShortcutKind[] = [
 
 // Accent-safe word edges (JS \b fails after á/ó) and the first-person forms a seller would use (INT-70, 2026-10-09).
 const CONFIRMATION_WORDING_RE =
-  /(?<![\p{L}\p{N}_])(confirmad[oa]|verificad[oa]|recib(?:í|i|imos)\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia)|recibido|pago\s+(?:recibido|aplicado|acreditado|aprobado|confirmado)|(?:ya\s+)?(?:me\s+|nos\s+)?(?:lleg[oó]|cay[oó]|entr[oó])\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia)|(?:ya\s+)?(?:est[aá]|qued[oó])\s+(?:pagado|acreditado|aplicado|confirmado)|te\s+confirmo\s+que\s+(?:el|tu|su)\s+pago|ya\s+qued[oó])(?=$|[^\p{L}\p{N}_])/iu
+  /(?<![\p{L}\p{N}_])(confirmad[oa]|verificad[oa]|recib(?:í|i|imos)\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|plata|dinero)|recibido|pago\s+(?:recibido|aplicado|acreditado|aprobado|confirmado)|(?:ya\s+)?(?:me\s+|nos\s+)?(?:lleg[oó]|cay[oó]|entr[oó])\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|plata|dinero)|(?:ya\s+)?(?:est[aá]|qued[oó])\s+(?:pagad[oa]|acreditad[oa]|aplicad[oa]|confirmad[oa])|te\s+confirmo\s+que\s+(?:el|tu|su|la)\s+(?:pago|plata|transferencia|sinpe)|todo\s+bien\s+con\s+(?:el|tu|su)\s+pago|ya\s+qued[oó])(?=$|[^\p{L}\p{N}_])/iu
 
 export type ShortcutDraft = {
   key: string

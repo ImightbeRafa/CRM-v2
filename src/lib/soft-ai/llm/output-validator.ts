@@ -26,7 +26,8 @@ export type AuthorizedAmountSource = 'inventory' | 'shipping' | 'quote'
 const MONEY_RE = /[₡$]\s?\d|\d[\d.,]*\s*(colones|crc|usd)/i
 /** Deals the agent may never invent (fixed rule 12, INT-72): discounts, promos, free shipping, gifts, "te lo dejo en". */
 const DEAL_RE =
-  /(?<![\p{L}])(descuentos?|promoci[oó]n(es)?|promo|rebaja|oferta especial|env[ií]o gratis|gratis|de regalo|te lo dejo en|te la dejo en|2x1|\d{1,2}\s?%)(?![\p{L}])/iu
+  // No bare "gratis" / "%" (free pickup, "100% algodón" are fine); deal phrasing only.
+  /(?<![\p{L}])(descuentos?|promoci[oó]n(es)? especial|oferta especial|precio especial|rebaj\p{L}*|env[ií]o (gratis|sin costo|de regalo|por la casa)|te (lo|la|los|las) (dejo|rebajo|regalo)|te regalo|de regalo|por la casa|sin cobrarte|te hago (un )?precio|2x1|3x2|\d{1,2}\s?%\s*(de\s+)?(descuento|off|menos))(?![\p{L}])/iu
 const CREATED_CLAIM_RE = /ya\s+(cre[eé]|registr[eé]|arm[eé])|pedido\s+creado|acabo\s+de\s+crear/i
 const UNIT_COST_RE = /unitCost|costo\s+unitario|precio\s+de\s+costo/i
 const SHIP_CUE_RE = /env[ií]o|retiro|domicilio|\bGAM\b|correos|mensajer/i

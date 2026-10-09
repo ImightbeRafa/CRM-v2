@@ -44,7 +44,7 @@ const BUY_RE = new RegExp(
 )
 const NEGATED_BUY_RE = /(^|[^\p{L}])(no|ya no)\s+(lo|la|los)\s+(quiero|compro|pido)/iu
 const RECEIPT_RE = new RegExp(
-  `${START}(ya (te |les )?(pagu[eé]|deposit[eé]|transfer[ií]|hice el sinpe|envi[eé] el sinpe)|comprobante|te (mand[eé]|envi[eé]) el (sinpe|pago|comprobante)|ya est[aá] pagado)${END}`,
+  `${START}(ya (te |les |lo |la )?(pagu[eé]|deposit[eé]|transfer[ií]|hice el (sinpe|dep[oó]sito)|envi[eé] el sinpe)|comprobante|te (mand[eé]|envi[eé]) (el (sinpe|pago|comprobante)|la plata|el dinero)|(ya )?(est[aá]|qued[oó]) pagad[oa]|^\\s*pagad[oa]\\s*[!.✅👍]*\\s*$)${END}`,
   'iu',
 )
 /** A configured payment number counts as "given" only next to payment words (the SINPE is often the store phone). */
@@ -116,10 +116,11 @@ export function deriveSalesState(input: {
  */
 export function sanitizeOwnerText(text: string, max: number): string {
   return (text || '')
-    .replace(/<\/?\s*[A-Z_]{3,}[^>]*>/g, ' ')
+    .normalize('NFKC')
+    .replace(/<\/?\s*[A-Za-z_]{3,}[^>]*>/g, ' ')
     .replace(/-{3,}|={3,}|#{2,}/g, ' ')
     .replace(/\bCR\s?\d{2}(?:[\s-]?\d{4}){4}[\s-]?\d{2}\b/gi, '[número omitido]')
-    .replace(/(?:\+?506[\s-]?)?\d(?:[\s-]?\d){7,}/g, '[número omitido]')
+    .replace(/(?:\+?506[\s.\-‐-―/·]{0,3})?\d(?:[\s.\-‐-―/·]{0,3}\d){7,}/g, '[número omitido]')
     .split('\n')
     .map((l) => l.replace(/\s+/g, ' ').trim())
     .filter(Boolean)
@@ -162,14 +163,18 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
 
 /** Code-owned rule (L2): at the close with payment data not shareable, a person must follow up — not the model's call. */
 export function salesNeedsHuman(ctx: SalesContext, state: SalesState): boolean {
+  // Any receipt cue → a person checks it, whatever the model writes (re-check INT-70).
+  if (state.receiptCue) return true
   return (state.stage === 'cierre' || state.stage === 'esperando_comprobante') && !ctx.paymentShareable
 }
 
 /** Customer / history text must not be able to imitate Betsy's data block or the store's own lines (prompt rule 13). */
 export function stripBetsyLookalikes(text: string): string {
   return (text || '')
-    .replace(/<\/?\s*BETSY_DATOS\s*>/gi, ' ')
-    .replace(/estado de la venta|siguiente paso\s*:|calculado por betsy|productos que vend[eé]s|\[\s*vos \(tienda\)/gi, '[texto del cliente]')
+    .normalize('NFKC')
+    // The marker word itself, in any brackets / case / spacing, is never allowed from the customer.
+    .replace(/BETSY[\s_-]*DATOS/gi, '[texto del cliente]')
+    .replace(/estado de la venta|siguiente paso\s*:|etapa\s*:|calculado por betsy|productos que vend[eé]s|reglas fijas|\[\s*vos\s*\(\s*tienda\s*\)/gi, '[texto del cliente]')
 }
 
 /** Code-owned selling rules (system instructions; stable per agent version). */

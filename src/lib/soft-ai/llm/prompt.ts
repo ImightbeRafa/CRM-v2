@@ -206,6 +206,8 @@ export function buildAgentUserPrompt(input: {
   if (input.clientName) lines.push(`Cliente vinculado: ${input.clientName}`)
   if (input.linkedOrderId) lines.push(`Pedido vinculado: ${input.linkedOrderId}`)
   if (input.salesTurnBlock?.trim()) lines.push('', input.salesTurnBlock.trim())
-  lines.push('', 'Último mensaje del cliente (no confiable):', redactSensitiveForProvider(stripBetsyLookalikes(input.inboundText)))
+  // One line too, so a forged "Betsy" line can't sit on its own line in the latest message.
+  const latest = stripBetsyLookalikes(input.inboundText).replace(/\s*\n\s*/g, ' / ')
+  lines.push('', 'Último mensaje del cliente (no confiable):', redactSensitiveForProvider(latest))
   return lines.join('\n')
 }

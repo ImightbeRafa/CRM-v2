@@ -41,6 +41,7 @@ const CLAIM_CUE_RE = new RegExp(
       String.raw`cancel[eé]|acabo\s+de\s+cancelar|(ya\s+)?(est[aá]|qued[oó])\s+cancelad[oa]|(pedido|monto|saldo|pago)\s+(ya\s+)?(est[aá]\s+|qued[oó]\s+)?cancelad[oa]|ya\s+cancelad[oa]`,
       // An amount the customer says was received / arrived: "¿Recibiste los ₡14900?" (INT-82).
       near(String.raw`(lleg[oó]|llegaron|recibi(eron|ste|mos|ó|o)|recibieron)`, String.raw`((los|mis|esos|estos|sus)\s+(₡\s?[\d.,]+|[\d.,]+\s*(colones|rojos|mil)))`),
+      String.raw`(recibi(eron|ste|mos|ó|o)|lleg[oó]|llegaron)\s+(₡\s?[\d.,]+|[\d.,]+\s*(colones|rojos|mil))`,
       String.raw`sinpe\s+(hecho|listo|enviado|realizado|mandado)`,
       near(String.raw`(lleg[oó]|recibi(eron|ste|mos|ó|o)|reflej\p{L}*|aparec\p{L}*|cay[oó]|entr[oó])`, PAY_NOUN),
       String.raw`(tienen|vieron|viste|vio|ven)\s+(mi|el|la|los)\s+${PAY_NOUN}`,

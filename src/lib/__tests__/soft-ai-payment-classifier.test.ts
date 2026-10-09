@@ -110,7 +110,7 @@ it('payment claims / refunds as questions stay with a person', () => {
     // INT-82: Costa Rican "cancelar" = pay, "pasar la plata", an amount said to be received; INT-81 leftovers.
     'Ya cancelé', 'ya cancelé el monto', 'Ya está cancelado el pedido', 'Le acabo de pasar la plata', '¿Recibiste los ₡14900?',
     'me han cobrado de más', '¿puedo devolverlo? quiero que me regresen lo que di',
-    'Ya cancelé, ¿me lo mandan hoy?', '¿les llegaron los 15 mil?', '¿Pueden devolverme lo que di?', 'Hola, ¿puedo devolverlo y que me devuelvan lo que di?',
+    'Ya cancelé, ¿me lo mandan hoy?', '¿les llegaron los 15 mil?', '¿Pueden devolverme lo que di?', '¿Recibiste ₡14900?', '¿te llegaron 15 mil colones?', 'Hola, ¿puedo devolverlo y que me devuelvan lo que di?',
   ]) {
     assert.equal(classifyPaymentText(text), 'payment_proof_or_risk', text)
   }

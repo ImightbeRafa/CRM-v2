@@ -260,3 +260,21 @@ describe('SecureDog re-check 2026-10-09 regressions', () => {
     for (const t of ['Camiseta 100% algodón', 'El retiro en tienda es gratis']) assert.equal(deal(t), false, t)
   })
 })
+
+describe('2026-10-09 test feedback: contra entrega questions answered; test chat never freezes', () => {
+  it('payment QUESTIONS reach the agent; payment CLAIMS still go to a person', async () => {
+    const { classifyPaymentText } = await import('@/lib/soft-ai/payment-classifier')
+    for (const t of ['seria con envio puedo pagar cuando lo recibo?', 'se puede pagar contra entrega?', 'puedo pagar en efectivo?']) {
+      assert.equal(classifyPaymentText(t), 'non_payment', t)
+    }
+    for (const t of ['ya te pagué', 'te mandé el sinpe', 'me cobraron doble', 'pago hecho']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+  it('test chat: message shows at once, typing indicator, input never disabled while waiting', () => {
+    const ui = read('src/app/config/agentes/AgentTestSandbox.tsx')
+    assert.match(ui, /queueRef\.current\.push\(inbound\)/)
+    assert.match(ui, /escribiendo…/)
+    assert.doesNotMatch(ui, /disabled=\{!canEdit \|\| busy \|\| !channelReady\}/)
+  })
+})

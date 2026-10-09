@@ -18,8 +18,8 @@ import { aiErrorCode, recordAiUsage, type AiUsageFeature } from '@/lib/ai-usage/
 export const SOFT_AI_XAI_BASE_URL = 'https://api.x.ai/v1'
 export const SOFT_AI_OPENAI_BASE_URL = 'https://api.openai.com/v1'
 // Measured 2026-10-09: grok-4.7 answers after a tool call in >7 s (every follow-up timed out at 7 s → human
-// hand-off). Worst case per turn = 12 s + 18 s = 30 s, inside the 45 s job lease.
-export const SOFT_AI_FIRST_CALL_TIMEOUT_MS = 12_000
+// hand-off); 2026-10-09 a closing turn timed out at 12 s → 20 s. Every call is also capped by the 40 s turn budget.
+export const SOFT_AI_FIRST_CALL_TIMEOUT_MS = 20_000
 export const SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS = 18_000
 export const SOFT_AI_META_SEND_TIMEOUT_MS = 7_000
 /** Whole agent turn (all model calls): stays inside the 45 s automation job lease. */

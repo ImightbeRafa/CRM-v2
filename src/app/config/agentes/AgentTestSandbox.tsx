@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AgentInternalTests } from '@/app/config/agentes/AgentInternalTests'
 import { AgentActivationCard } from '@/app/config/agentes/AgentActivationCard'
 import { selectWhatsappTestChannel, type TestChannelOption } from '@/lib/soft-ai/test-channel'
@@ -137,22 +137,61 @@ export function AgentTestSandbox({
   const channelLabel =
     channels.find((row) => row.id === socialAccountId)?.label || 'este canal'
 
-  async function sendTurn() {
+  // The chat never freezes: the client's message shows at once, the agent "types", and further messages queue up
+  // in order (each one sent with the history as it stands when its turn comes — same as a real chat).
+  const historyRef = useRef<WaBubble[]>([])
+  historyRef.current = history
+  const queueRef = useRef<string[]>([])
+  const runningRef = useRef(false)
+  const sessionRef = useRef(sessionId)
+  sessionRef.current = sessionId
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [history, busy])
+
+  function sendTurn() {
     if (!canEdit || !socialAccountId || !text.trim()) return
     const inbound = text.trim()
-    setBusy(true)
-    setError(null)
     setText('')
+    setError(null)
+    setHistory((prev) => [...prev, { kind: 'text' as const, from: 'customer' as const, text: inbound, at: new Date().toISOString() }].slice(-40))
+    queueRef.current.push(inbound)
+    void drainQueue()
+  }
+
+  async function drainQueue() {
+    if (runningRef.current) return
+    runningRef.current = true
+    setBusy(true)
     try {
+      while (queueRef.current.length) {
+        const inbound = queueRef.current.shift() as string
+        await runTurn(inbound, sessionRef.current)
+      }
+    } finally {
+      runningRef.current = false
+      setBusy(false)
+    }
+  }
+
+  async function runTurn(inbound: string, forSession: string) {
+    try {
+      // History = everything before this message (the message itself is already shown as a bubble).
+      const all = historyRef.current.filter((bubble) => bubble.from !== 'system')
+      const idx = all.map((b) => b.from === 'customer' && b.text === inbound).lastIndexOf(true)
+      const before = idx >= 0 ? all.slice(0, idx) : all
       const res = await fetch(`/api/chat/agents/${agentId}/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           inboundText: inbound,
           socialAccountId,
-          testSessionId: sessionId,
+          testSessionId: forSession,
           messageType,
-          history: history.filter((bubble) => bubble.from !== 'system').map((bubble) => ({
+          history: before.map((bubble) => ({
             direction: bubble.from === 'customer' ? 'inbound' : 'outbound',
             content: bubble.text,
             sentAt: bubble.at,
@@ -164,6 +203,8 @@ export function AgentTestSandbox({
       })
       const data = await res.json()
       if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Error en Probar')
+      // "Nueva conversación" pressed meanwhile: drop the late answer.
+      if (forSession !== sessionRef.current) return
       const outbound = typeof data.text === 'string' ? data.text : ''
       const blockedBefore =
         Array.isArray(data.blockedBy) && data.blockedBy.includes('not_bound_to_channel')
@@ -171,7 +212,6 @@ export function AgentTestSandbox({
       setHistory((prev) =>
         [
           ...prev,
-          { kind: 'text' as const, from: 'customer' as const, text: inbound, at: now },
           ...(outbound && !blockedBefore
             ? [
                 {
@@ -197,10 +237,8 @@ export function AgentTestSandbox({
       )
       setLast(data)
     } catch (e) {
-      setText(inbound)
+      if (forSession !== sessionRef.current) return
       setError(e instanceof Error ? e.message : 'Error')
-    } finally {
-      setBusy(false)
     }
   }
 
@@ -220,8 +258,9 @@ export function AgentTestSandbox({
         </div>
         <button
           type="button"
-          disabled={busy || history.length === 0}
+          disabled={history.length === 0}
           onClick={() => {
+            queueRef.current = []
             setSessionId(crypto.randomUUID())
             setHistory([])
             setLast(null)
@@ -250,7 +289,7 @@ export function AgentTestSandbox({
           ))}
         </div>
       ) : null}
-      <div className="mt-3 min-h-48 space-y-2 rounded-lg bg-au-tint-efeae2 p-3">
+      <div ref={scrollRef} className="mt-3 max-h-[60vh] min-h-48 space-y-2 overflow-y-auto rounded-lg bg-au-tint-efeae2 p-3">
         {history.length === 0 ? (
           <p className="text-sm text-slate-700">Escribí como cliente para ver la respuesta.</p>
         ) : (
@@ -258,6 +297,18 @@ export function AgentTestSandbox({
             <BubbleView key={`${bubble.at}-${index}`} bubble={bubble} />
           ))
         )}
+        {busy ? (
+          <div className="flex justify-start" aria-live="polite">
+            <div className="rounded-2xl bg-white px-3 py-2 text-[12px] text-slate-500 ring-1 ring-slate-200">
+              <span className="inline-flex gap-1">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.2s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.1s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" />
+              </span>
+              <span className="ml-2">escribiendo…</span>
+            </div>
+          </div>
+        ) : null}
       </div>
       {channelsLoaded && selection.mode === 'empty' ? (
         <p className="mt-3 text-sm text-slate-800">
@@ -268,28 +319,28 @@ export function AgentTestSandbox({
           className="mt-3 flex flex-col gap-2 sm:flex-row"
           onSubmit={(e) => {
             e.preventDefault()
-            void sendTurn()
+            sendTurn()
           }}
         >
           <textarea
             className={FIELD}
             rows={2}
             value={text}
-            disabled={!canEdit || busy || !channelReady}
+            disabled={!canEdit || !channelReady}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
-                void sendTurn()
+                sendTurn()
               }
             }}
           />
           <button
             type="submit"
-            disabled={!canEdit || busy || !channelReady || !text.trim()}
+            disabled={!canEdit || !channelReady || !text.trim()}
             className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:bg-indigo-400"
           >
-            {busy ? 'Enviando…' : 'Enviar'}
+            Enviar
           </button>
         </form>
       )}

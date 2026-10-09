@@ -34,8 +34,13 @@ const near = (a: string, b: string) => `(?:${a}${W}${b}|${b}${W}${a})`
 const CLAIM_CUE_RE = new RegExp(
   String.raw`(?<![\p{L}\p{N}_])(` +
     [
-      near(String.raw`(hice|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|acabo\s+de\s+(pagar|hacer|mandar|enviar|transferir|depositar))`, PAY_NOUN),
+      near(String.raw`(hice|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|acabo\s+de\s+(pagar|hacer|mandar|enviar|pasar|transferir|depositar|cancelar))`, PAY_NOUN),
       String.raw`pagu[eé]|deposit[eé]|transfer[ií]|^\s*¿?\s*pagad[oa]\s*[?!.✅👍]*\s*$`,
+      // Costa Rica: "cancelar" = to pay ("ya cancelé", "está cancelado"). "Quiero cancelar el pedido" also reaches
+      // a person — a safe failure (INT-82).
+      String.raw`cancel[eé]|cancelad[oa]|acabo\s+de\s+cancelar`,
+      // An amount the customer says was received / arrived: "¿Recibiste los ₡14900?" (INT-82).
+      near(String.raw`(lleg[oó]|llegaron|recibi(eron|ste|mos|ó|o)|recibieron)`, String.raw`(₡\s?[\d.,]+|[\d.,]+\s*(colones|rojos|mil))`),
       String.raw`sinpe\s+(hecho|listo|enviado|realizado|mandado)`,
       near(String.raw`(lleg[oó]|recibi(eron|ste|mos|ó|o)|reflej\p{L}*|aparec\p{L}*|cay[oó]|entr[oó])`, PAY_NOUN),
       String.raw`(tienen|vieron|viste|vio|ven)\s+(mi|el|la|los)\s+${PAY_NOUN}`,
@@ -43,7 +48,7 @@ const CLAIM_CUE_RE = new RegExp(
       // "¿cuánto me cobran por el envío?", "te escribí por error" are ordinary questions (Verifier 2026-10-09).
       near(String.raw`por\s+error`, String.raw`(${PAY_NOUN.slice(1, -1)}|plata|dinero)`),
       // Past-tense charges are complaints ("me cobró ₡2000 y era gratis"); present "¿me cobran…?" is a question.
-      String.raw`me\s+cobr(aron|[oó])|reembols\p{L}*|reintegr\p{L}*|no\s+reconozco`,
+      String.raw`me\s+cobr(aron|[oó])|me\s+(han|hab[ií]an)\s+(cobrado|rebajado|descontado)|reembols\p{L}*|reintegr\p{L}*|no\s+reconozco`,
       // Charge nouns with an overcharge word: "hay un cargo de más", "el cobro salió doble", "doble cargo" (INT-81).
       near(String.raw`(cargos?|cobros?|rebajos?|d[eé]bitos?)`, String.raw`(de\s+m[aá]s|dobles?|dos\s+veces|duplicad\p{L}*)`),
       String.raw`(doble|dos)\s+(cargos?|cobros?)`,
@@ -65,13 +70,23 @@ const PAYMENT_QUESTION_RE = new RegExp(
 )
 
 /** Refund wording (INT-81): goes to a person unless it is a plain return-policy question. */
-const REFUND_RE = /(?<![\p{L}])(devol\p{L}*|devuelv\p{L}*|regres(en|e|ar|ame|enme)\s+(la\s+plata|el\s+dinero|mi\s+plata|mi\s+dinero))/iu
+const REFUND_RE = /(?<![\p{L}])(devol\p{L}*|devuelv\p{L}*|regres(en|e|ar|ame|enme)\s+(la\s+plata|el\s+dinero|mi\s+plata|mi\s+dinero|lo\s+que\s+(di|pagu[eé])))/iu
+// A greeting may come first ("Hola, ¿puedo devolverlo si no me queda?"); only the FIRST sentence is the question.
 const RETURN_POLICY_QUESTION_RE =
-  /^\s*¿?\s*(puedo|se\s+puede|pueden|c[oó]mo|hacen|aceptan|tienen|hay)(?![\p{L}])[^.!\n]*(devol\p{L}*|devuelv\p{L}*|cambi\p{L}*)(?![\s\S]*(plata|dinero|pago|sinpe|reembols))/iu
+  /^\s*((hola|buenas|buenos\s+d[ií]as|buenas\s+(tardes|noches)|disculpe|una\s+consulta|consulta)[\s,.!]*)?¿?\s*(puedo|se\s+puede|pueden|c[oó]mo|hacen|aceptan|tienen|hay)(?![\p{L}])[^.!?\n]*(devol\p{L}*|devuelv\p{L}*|cambi\p{L}*)/iu
+const MONEY_WORD_RE = /plata|dinero|pago|sinpe|reembols|₡/iu
+
+/** A plain return-policy question: nothing about money, and no refund wording after that first question. */
+function isReturnPolicyQuestion(value: string): boolean {
+  const m = RETURN_POLICY_QUESTION_RE.exec(value)
+  if (!m) return false
+  const rest = value.slice(m.index + m[0].length).replace(/^[^?.!\n]*[?.!\n]?/, '')
+  return !MONEY_WORD_RE.test(value) && !REFUND_RE.test(rest)
+}
 
 export function hasPaymentClaimCue(text: string): boolean {
   const value = text || ''
-  return CLAIM_CUE_RE.test(value) || (REFUND_RE.test(value) && !RETURN_POLICY_QUESTION_RE.test(value))
+  return CLAIM_CUE_RE.test(value) || (REFUND_RE.test(value) && !isReturnPolicyQuestion(value))
 }
 
 /** Legacy broad net. Ambiguous hits default to human. */

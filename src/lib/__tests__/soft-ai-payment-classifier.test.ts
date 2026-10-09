@@ -107,6 +107,9 @@ it('payment claims / refunds as questions stay with a person', () => {
     'Hay un cargo de más en mi tarjeta', 'el mensajero me cobró ₡2000 de envío y era gratis',
     'quiero devolver el producto y que me regresen la plata', 'quiero la devolución, ya no lo quiero, devuélvanme todo',
     'no me llegó y quiero que me devuelvan', 'el cobro salió doble', 'me hicieron un doble cargo', 'quiero que me reintegren el dinero',
+    // INT-82: Costa Rican "cancelar" = pay, "pasar la plata", an amount said to be received; INT-81 leftovers.
+    'Ya cancelé', 'ya cancelé el monto', 'Ya está cancelado el pedido', 'Le acabo de pasar la plata', '¿Recibiste los ₡14900?',
+    'me han cobrado de más', '¿puedo devolverlo? quiero que me regresen lo que di',
   ]) {
     assert.equal(classifyPaymentText(text), 'payment_proof_or_risk', text)
   }
@@ -120,7 +123,16 @@ it('explicit how / can-I-pay questions are still answered by the agent', () => {
     '¿Cuánto me cobran por el envío?', '¿Me cobran el envío a Cartago?', '¿Puedo devolverlo si no me queda la talla?',
     '¿Hacen devoluciones o cambios?', 'Perdón, te escribí por error', '¿El envío tarda de más de 3 días?',
     'me mandaron una talla de más', '¿hay cobro extra por envío?', '¿tienen descuento?', '¿Se pueden hacer cambios de talla?',
+    'Hola, ¿puedo devolverlo si no me queda?', '¿tienen alguno de 10 mil?', '¿Cuánto sale con envío a Heredia?',
   ]) {
     assert.notEqual(classifyPaymentText(text), 'payment_proof_or_risk', text)
   }
+})
+
+it('INT-82: confirmation wording also blocks "gracias por tu pago" / "ya tenemos tu pago" / "ya enviamos tu pedido"', async () => {
+  const { hasConfirmationWording } = await import('../soft-ai/shortcuts')
+  for (const t of ['¡Gracias por tu pago! Ya preparamos tu pedido 😊', 'Gracias, ya tenemos tu pago', 'Tu pedido ya está listo, ya enviamos tu pedido']) {
+    assert.equal(hasConfirmationWording(t), true, t)
+  }
+  assert.equal(hasConfirmationWording('¡Gracias por tu compra! Cualquier cosa me escribís.'), false)
 })

@@ -186,6 +186,8 @@ export default function AgentesConfigPage() {
   const [cardId, setCardId] = useState<string | null>(null)
   const [setupRefresh, setSetupRefresh] = useState(0)
   const [channelReload, setChannelReload] = useState(0)
+  // Bumped when Studio applies a draft: products it added must show in step ② (the version doesn't always change).
+  const [studioApplied, setStudioApplied] = useState(0)
   const [history, setHistory] = useState<unknown[]>([])
   const [introDraft, setIntroDraft] = useState('')
   const [checklist, setChecklist] = useState<KnowledgeCard[]>([])
@@ -551,7 +553,8 @@ export default function AgentesConfigPage() {
   async function scrollToProbar() {
     for (let i = 0; i < 15; i += 1) {
       const el = document.getElementById('agent-probar')
-      if (el) {
+      // Only once its tab panel is visible (a hidden element cannot be scrolled to).
+      if (el && el.offsetParent !== null) {
         el.scrollIntoView({ behavior: 'smooth', block: 'start' })
         return
       }
@@ -749,8 +752,11 @@ export default function AgentesConfigPage() {
             {selected ? (
               <div className="space-y-4">
                 <div hidden={!detailVisible || tab !== 'resumen'} role="tabpanel" className="space-y-4">
-                  <StudioFlow key={`studio-${selected.id}`} agentId={selected.id} canEdit={canEdit} isLive={selected.status === 'live'} onApplied={() => void load({ silent: true })} />
-                  <AgentInventoryCard key={`inv-${selected.id}-${selected.version}`} agentId={selected.id} canEdit={canEdit} title="② Productos que vende" />
+                  <StudioFlow key={`studio-${selected.id}`} agentId={selected.id} canEdit={canEdit} isLive={selected.status === 'live'} onApplied={() => {
+                      setStudioApplied((n) => n + 1)
+                      void load({ silent: true })
+                    }} />
+                  <AgentInventoryCard key={`inv-${selected.id}-${selected.version}-${studioApplied}`} agentId={selected.id} canEdit={canEdit} title="② Productos que vende" />
                   <div id="agent-probar">
                     <p className="mb-2 text-[14px] font-semibold text-slate-900">③ Probar y activar</p>
                     <AgentTestSandbox

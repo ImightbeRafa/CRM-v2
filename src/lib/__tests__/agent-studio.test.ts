@@ -619,8 +619,21 @@ describe('Verifier 2026-10-08 (agent page): shared word matcher, live search fal
   it('live search falls back to word matching over the agent own products; card refreshes after apply', () => {
     const runner = read('src/lib/soft-ai/llm/tool-runner.ts')
     assert.match(runner, /if \(rows\.length === 0\) \{[\s\S]*queryFit\(query,/)
-    assert.match(runner, /id: \{ in: ctx\.inventoryItemIds \} \},\s*select,\s*take: 200/)
+    // Fallback stays inside this agent's own active products, max 200 (now also reads the description).
+    assert.match(runner, /id: \{ in: ctx\.inventoryItemIds \} \},\s*select: \{ \.\.\.select, description: true \},\s*take: 200/)
     assert.match(read('src/app/config/agentes/page.tsx'), /key=\{`inv-\$\{selected\.id\}-\$\{selected\.version\}`\}/)
     assert.match(read('src/app/config/agentes/AgentTestSandbox.tsx'), /Sin respuesta para el cliente/)
+  })
+})
+
+describe('Re-verify notes: card refresh, scroll, looser product search', () => {
+  it('step 2 remounts after any Studio apply; chat scroll waits for its tab; search uses description + a second try', () => {
+    const page = read('src/app/config/agentes/page.tsx')
+    assert.match(page, /key=\{`inv-\$\{selected\.id\}-\$\{selected\.version\}-\$\{studioApplied\}`\}/)
+    assert.match(page, /setStudioApplied\(\(n\) => n \+ 1\)/)
+    assert.match(page, /el\.offsetParent !== null/)
+    const runner = read('src/lib/soft-ai/llm/tool-runner.ts')
+    assert.match(runner, /fitWithDescription/)
+    assert.match(runner, /strong\.length \? strong :/)
   })
 })

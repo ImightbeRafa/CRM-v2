@@ -113,15 +113,22 @@ async function runSearchInventory(
   if (rows.length === 0) {
     const mine = await prisma.inventoryItem.findMany({
       where: { tenantId: ctx.tenantId, isActive: true, id: { in: ctx.inventoryItemIds } },
-      select,
+      select: { ...select, description: true },
       take: 200,
     })
-    rows = mine
-      .map((r) => ({ r, fit: queryFit(query, [r.name, r.category, r.sku].filter(Boolean).join(' ')) }))
-      .filter((x) => x.fit >= 0.5)
+    const scoredRows = mine.map((r) => ({
+      r,
+      fit: queryFit(query, [r.name, r.category, r.sku].filter(Boolean).join(' ')),
+      // Description counts a bit less than the name ("arnés para perro": perro is often only in the description).
+      fitWithDescription: queryFit(query, [r.name, r.category, r.sku, (r.description || '').slice(0, 500)].filter(Boolean).join(' ')) * 0.95,
+    }))
+    const best = scoredRows.map((x) => ({ r: x.r, fit: Math.max(x.fit, x.fitWithDescription) }))
+    const strong = best.filter((x) => x.fit >= 0.5)
+    // Second try: any meaningful word of the product name matched ("arnés xxl" still shows the arnés sizes that exist).
+    rows = (strong.length ? strong : best.filter((x) => x.fit > 0 && queryFit(query, x.r.name) > 0))
       .sort((a, b) => b.fit - a.fit || a.r.name.localeCompare(b.r.name))
       .slice(0, 8)
-      .map((x) => x.r)
+      .map(({ r: { description: _d, ...rest } }) => rest)
   }
   const asOf = new Date().toISOString()
   return {

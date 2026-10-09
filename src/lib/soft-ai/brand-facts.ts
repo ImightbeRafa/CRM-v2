@@ -276,7 +276,7 @@ export function formatBrandFactsForPrompt(facts: BrandFacts): string {
     shippingSummary(facts),
     facts.payment?.shareWithCustomers
       ? `Pagos que se pueden explicar: ${paymentSummary(facts)}`
-      : 'Pagos: no compartir datos de pago con el cliente; escalar.',
+      : 'Pagos: los datos de pago no se comparten por chat; si el cliente quiere pagar, decile que ya le pasás los datos y avisá al equipo (sin decírselo).',
     facts.returnsText ? `Cambios: ${facts.returnsText}` : '',
     ...(facts.extraFacts || []).map((fact) => `${fact.label}: ${fact.value}`),
   ].filter(Boolean)

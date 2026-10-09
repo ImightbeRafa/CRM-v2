@@ -70,7 +70,9 @@ describe('decideInbound payment policy', () => {
     assert.equal(decision.shortcutKey, 'sys_handoff_payment')
     assert.equal(decision.escalate, true)
     assert.ok(decision.reasons.includes('payment_info_not_shared'))
-    assert.match(decision.text, /persona del equipo/)
+    // 2026-10-09 (Rafael): the client never hears "una persona del equipo" — seller voice.
+    assert.match(decision.text, /lo reviso/)
+    assert.doesNotMatch(decision.text, /persona|equipo/i)
   })
 
   it('A1.3 proof class blocks tools other than escalate', async () => {

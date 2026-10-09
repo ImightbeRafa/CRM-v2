@@ -190,7 +190,8 @@ describe('A2 data-not-instructions + safety router (2.7, 2.8, 2.10)', () => {
       assert.equal(route.escalate, true)
       if (route.escalate) {
         assert.equal(route.reason, 'media_inbound')
-        assert.match(route.handoffText, /revisa lo que enviaste/i)
+        assert.match(route.handoffText, /lo reviso/i)
+        assert.doesNotMatch(route.handoffText, /persona|equipo/i)
       }
     }
   })

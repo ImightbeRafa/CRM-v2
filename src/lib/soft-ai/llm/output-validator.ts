@@ -123,6 +123,8 @@ export function applyFinalOutputPolicy(input: {
   brandFacts?: BrandFacts | null
   replyStyle?: ReplyStyle | null
   shortcuts?: RuntimeShortcut[]
+  /** Sales flow active: it decides when shipping/payment are said, so no automatic summary (it repeated itself). */
+  skipPurchaseSummary?: boolean
 }): FinalOutputPolicy {
   const facts = input.brandFacts || { schemaVersion: 1 }
   const style = input.replyStyle || DEFAULT_REPLY_STYLE
@@ -135,6 +137,7 @@ export function applyFinalOutputPolicy(input: {
   const hasMoney = extractMoneyAmounts(text).some((amount) => Math.round(amount) >= 100)
   const purchaseIntent = PURCHASE_INTENTS.has(intent)
   const incomplete =
+    !input.skipPurchaseSummary &&
     purchaseIntent &&
     hasMoney &&
     style.purchaseInfoMustBeComplete &&

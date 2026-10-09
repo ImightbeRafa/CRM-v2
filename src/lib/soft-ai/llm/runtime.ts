@@ -53,6 +53,12 @@ export type SoftAiLlmRuntimeInput = {
   brandFactsBlock?: string | null
   shortcutCatalog?: string | null
   replyStyleSnippet?: string | null
+  /** Sales flow (Phase A): code-owned selling rules, per-turn sales data, and the amounts that data makes valid. */
+  salesSystemBlock?: string | null
+  salesTurnBlock?: string | null
+  salesAllowedAmounts?: number[]
+  /** Sales state for the turn trace (debug only; not sent to the model separately). */
+  salesTrace?: { stage: string; said: Record<string, boolean> } | null
 }
 
 export type SoftAiLlmRuntimeResult = {
@@ -103,6 +109,7 @@ export async function runSoftAiLlmRuntime(
     brandFactsBlock: input.brandFactsBlock,
     shortcutCatalog: input.shortcutCatalog,
     replyStyleSnippet: input.replyStyleSnippet,
+    salesSystemBlock: input.salesSystemBlock,
   })
   const instructions = built.instructions
   const knowledgeVersions = built.knowledgeVersions
@@ -111,6 +118,7 @@ export async function runSoftAiLlmRuntime(
     inboundText: input.inboundText,
     clientName: input.clientName,
     linkedOrderId: input.linkedOrderId,
+    salesTurnBlock: input.salesTurnBlock,
   })
   const tools = softAiToolDefinitions(input.enabledTools)
   const promptCacheKey = buildSoftAiPromptCacheKey({
@@ -302,6 +310,8 @@ export async function runSoftAiLlmRuntime(
       text: finalText,
       citedToolNames,
       inventoryPrices,
+      // Prices / shipping / totals listed for this turn by code are sourced (no lookup call needed).
+      quoteAmounts: input.salesAllowedAmounts,
     })
     if (validation.needsHuman || structured.needsHuman) {
       escalate = true

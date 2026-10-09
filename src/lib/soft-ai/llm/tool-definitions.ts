@@ -101,7 +101,7 @@ const TOOL_DEFS: Record<AgentToolName, SoftAiToolDefinition> = {
     type: 'function',
     name: 'escalate_to_human',
     description:
-      'Pasa la conversación a un humano. Usá para pagos, media, opt-out, o cuando no podés ayudar con certeza.',
+      'Avisa a una persona del equipo para que revise (el cliente no se entera). Usá SOLO para: comprobante o "ya pagué", reembolsos/disputas, media, opt-out, o cuando no podés ayudar con certeza. NUNCA porque el cliente quiere comprar o pregunta cómo pagar: eso lo cerrás vos.',
     parameters: {
       type: 'object',
       additionalProperties: false,

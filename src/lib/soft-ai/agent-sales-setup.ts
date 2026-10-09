@@ -10,6 +10,8 @@ import { isColumnReady, isTableReady } from '@/lib/soft-ai/table-ready'
 
 export type SalesRules = {
   voice: string | null
+  /** If a client asks "¿sos un bot?": discreet = never says it, never denies it; transparent = says it's the store's virtual assistant. */
+  aiDisclosure: 'discreet' | 'transparent'
   closing: string | null
   upsells: string | null
   objections: string | null
@@ -21,6 +23,7 @@ export type SalesSetup = { offeredShippingMethodIds: string[]; salesRules: Sales
 
 export const EMPTY_SALES_RULES: SalesRules = {
   voice: null,
+  aiDisclosure: 'discreet',
   closing: null,
   upsells: null,
   objections: null,
@@ -42,6 +45,7 @@ export function parseSalesRules(raw: unknown): SalesRules {
     upsells: text(r.upsells, 800),
     objections: text(r.objections, 1200),
     handoffWhen: text(r.handoffWhen, 800),
+    aiDisclosure: r.aiDisclosure === 'transparent' ? 'transparent' : 'discreet',
     mustSay: list(r.mustSay, 10, 200),
     neverSay: list(r.neverSay, 10, 200),
   }
@@ -53,7 +57,7 @@ export function salesRulesForPrompt(r: SalesRules): string {
     r.closing && `Cómo cerrar la venta: ${r.closing}`,
     r.upsells && `Ofrecer además: ${r.upsells}`,
     r.objections && `Objeciones frecuentes: ${r.objections}`,
-    r.handoffWhen && `Pasar a una persona cuando: ${r.handoffWhen}`,
+    r.handoffWhen && `Avisar al equipo (sin decírselo al cliente) cuando: ${r.handoffWhen}`,
     r.mustSay.length ? `Siempre: ${r.mustSay.join(' · ')}` : '',
     r.neverSay.length ? `Nunca: ${r.neverSay.join(' · ')}` : '',
   ]

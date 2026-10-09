@@ -23,6 +23,13 @@ import type { InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import { guideShortcutCatalog } from '@/lib/soft-ai/shortcuts'
 import {
+  deriveSalesState,
+  formatSalesTurnBlock,
+  salesAllowedAmounts,
+  salesSystemBlock,
+  type SalesContext,
+} from '@/lib/soft-ai/sales-state'
+import {
   formatBrandFactsForPrompt,
   parseBrandFactsSafe,
   parseReplyStyleSafe,
@@ -164,12 +171,16 @@ export function assembleAgentRuntimeInputs(input: {
   shortcuts: RuntimeShortcut[]
   knowledge: ApprovedKnowledgeSlice | null
   decision: InboundDecision
+  /** Sales flow context (same loader for live and test chat). Null = previous behaviour. */
+  salesContext?: SalesContext | null
   toolCtxBase: Omit<
     SoftAiToolRunContext,
     'enabledTools' | 'inboundText' | 'agentId' | 'paymentClassification' | 'shortcuts' | 'brandFacts'
   >
 }): SoftAiLlmRuntimeInput {
   const enabledTools = effectiveEnabledTools(input.agent.enabledTools)
+  const sales = input.salesContext ?? null
+  const salesState = sales ? deriveSalesState({ history: input.history, inboundText: input.inboundText, ctx: sales }) : null
   return {
     tenantId: input.toolCtxBase.tenantId,
     agentId: input.agent.id,
@@ -196,6 +207,10 @@ export function assembleAgentRuntimeInputs(input: {
     brandFactsBlock: formatBrandFactsForPrompt(input.agent.brandFacts),
     shortcutCatalog: guideShortcutCatalog(input.shortcuts),
     replyStyleSnippet: replyStyleSnippet(input.agent.replyStyle),
+    salesSystemBlock: sales ? salesSystemBlock(sales) : null,
+    salesTurnBlock: sales && salesState ? formatSalesTurnBlock(sales, salesState) : null,
+    salesAllowedAmounts: sales ? salesAllowedAmounts(sales) : undefined,
+    salesTrace: salesState ? { stage: salesState.stage, said: salesState.said } : null,
     toolCtx: {
       ...input.toolCtxBase,
       enabledTools,

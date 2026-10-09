@@ -17,6 +17,7 @@ import {
 } from '@/lib/soft-ai/agent-settings'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
+import { loadSalesSetup, saveSalesSetup, SalesSetupNotReadyError } from '@/lib/soft-ai/agent-sales-setup'
 
 const settingsRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 20, identifier: 'chat-agent-settings' })
 
@@ -71,13 +72,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     if (!(await ownedAgent(auth.tenantId, id))) {
       return NextResponse.json({ success: false, error: 'Agente no encontrado' }, { status: 404 })
     }
-    const [available, settings, stamps] = await Promise.all([
+    const [available, settings, stamps, sales] = await Promise.all([
       isTableReady('ChatAgentSettings'),
       loadAgentSettings(auth.tenantId, id),
       knownStamps(auth.tenantId),
+      loadSalesSetup(auth.tenantId, id).catch(() => null),
     ])
     return NextResponse.json(
-      { success: true, available, settings, knownStamps: stamps },
+      { success: true, available, settings, knownStamps: stamps, aiDisclosure: sales?.salesRules.aiDisclosure ?? 'discreet' },
       { headers: { 'Cache-Control': 'no-store' } },
     )
   } catch (error) {
@@ -103,6 +105,30 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ success: false, error: 'Datos inválidos' }, { status: 400 })
+    }
+    // "¿Sos un bot?" toggle (stored with the sales script, SQL 053): saved on its own.
+    if ('aiDisclosure' in body) {
+      const value = body.aiDisclosure === 'transparent' ? 'transparent' : 'discreet'
+      try {
+        await saveSalesSetup(auth.tenantId, agent.id, { salesRules: { aiDisclosure: value } }, auth.userId)
+      } catch (error) {
+        if (error instanceof SalesSetupNotReadyError) {
+          return NextResponse.json({ success: false, error: 'Este ajuste todavía no está disponible.' }, { status: 503 })
+        }
+        throw error
+      }
+      await logAuditEvent({
+        action: 'UPDATE',
+        entityType: 'ChatAgent',
+        entityId: agent.id,
+        entityName: agent.name,
+        description: 'Cómo responde si le preguntan si es un bot',
+        newValues: { aiDisclosure: value },
+        userId: auth.userId,
+        userRole: auth.role,
+        tenantId: auth.tenantId,
+      }).catch(() => {})
+      return NextResponse.json({ success: true, aiDisclosure: value })
     }
     const patch: AgentSettingsPatch = {}
     if ('dailyTokenCap' in body) {

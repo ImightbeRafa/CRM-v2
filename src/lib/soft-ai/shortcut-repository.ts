@@ -7,6 +7,7 @@ import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
 import {
   RESERVED_SHORTCUT_SEEDS,
+  upgradeLegacyShortcutBody,
   type RuntimeShortcut,
   type ShortcutKind,
 } from '@/lib/soft-ai/shortcuts'
@@ -35,7 +36,7 @@ export async function listRuntimeShortcuts(
       kind: row.kind as ShortcutKind,
       intents: row.intents as AgentIntent[],
       keywords: row.keywords,
-      body: row.body,
+      body: upgradeLegacyShortcutBody(row.body),
       deliveryMode: row.deliveryMode === 'guide' ? 'guide' : 'verbatim',
       isActive: row.isActive,
       sortOrder: row.sortOrder,

@@ -5,6 +5,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { probarWhy } from '@/lib/soft-ai/probar-why'
+import { loadAgentSalesContext } from '@/lib/soft-ai/agent-sales-context'
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import {
@@ -583,6 +584,7 @@ export async function executeAgentLayerTurn(
     socialAccountId: row.socialAccountId,
   })
 
+  const liveInventoryIds = await loadMappedInventoryIds(row.tenantId, resolved.agent.id)
   const runtimeInput = assembleAgentRuntimeInputs({
     agent: resolved.agent,
     account: canal,
@@ -592,13 +594,19 @@ export async function executeAgentLayerTurn(
     shortcuts,
     knowledge,
     decision,
+    salesContext: await loadAgentSalesContext({
+      tenantId: row.tenantId,
+      agentId: resolved.agent.id,
+      inventoryItemIds: liveInventoryIds,
+      brandFacts: resolved.agent.brandFacts,
+    }),
     toolCtxBase: {
       tenantId: row.tenantId,
       conversationId: row.conversationId,
       socialAccountId: row.socialAccountId,
       peerId: row.peerId,
       clientId: conversation.clientId,
-      inventoryItemIds: await loadMappedInventoryIds(row.tenantId, resolved.agent.id),
+      inventoryItemIds: liveInventoryIds,
       orderOwnership: (await loadAgentSettings(row.tenantId, resolved.agent.id)).orderOwnership,
       platform: payload.platform || 'whatsapp',
     },
@@ -610,6 +618,8 @@ export async function executeAgentLayerTurn(
     intent: llm.intent || decision.intent,
     citedToolNames: llm.citedToolNames,
     inventoryPrices: llm.inventoryPrices,
+    quoteAmounts: runtimeInput.salesAllowedAmounts,
+    skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
     brandFacts: resolved.agent.brandFacts,
     replyStyle: resolved.agent.replyStyle,
     shortcuts,
@@ -625,6 +635,7 @@ export async function executeAgentLayerTurn(
     withOutcomeMarkers(
       {
         ...decision.decisionTrace,
+        salesState: runtimeInput.salesTrace ?? null,
         validator: policy.reasons,
         highlightedAmounts: policy.highlightedAmounts,
         purchaseSummaryAppended: policy.purchaseSummaryAppended,
@@ -1184,6 +1195,7 @@ async function runAgentTestTurnInner(input: {
   let text = ''
   let intent = decision.intent
   let llmTrace: unknown = []
+  let salesTrace: unknown = null
   let escalateReason: string | null = null
   let validationReasons: string[] = []
   let shortcutKey = decision.shortcutKey
@@ -1213,6 +1225,7 @@ async function runAgentTestTurnInner(input: {
       socialAccountId: input.socialAccountId,
       fallbackPlatform: account.platform || 'whatsapp',
     })
+    const probarInventoryIds = await loadMappedInventoryIds(input.tenantId, runtimeAgent.id)
     const runtimeInput = assembleAgentRuntimeInputs({
       agent: runtimeAgent,
       account: canal,
@@ -1222,6 +1235,12 @@ async function runAgentTestTurnInner(input: {
       shortcuts,
       knowledge,
       decision,
+      salesContext: await loadAgentSalesContext({
+        tenantId: input.tenantId,
+        agentId: runtimeAgent.id,
+        inventoryItemIds: probarInventoryIds,
+        brandFacts: runtimeAgent.brandFacts,
+      }),
       toolCtxBase: {
         tenantId: input.tenantId,
         conversationId: 'sandbox',
@@ -1229,7 +1248,7 @@ async function runAgentTestTurnInner(input: {
         peerId: 'sandbox-peer',
         clientId: null,
         sandbox: true,
-        inventoryItemIds: await loadMappedInventoryIds(input.tenantId, runtimeAgent.id),
+        inventoryItemIds: probarInventoryIds,
         // Same as the live turn (parity): order tools see this business's order stamps and the line's platform.
         orderOwnership: (await loadAgentSettings(input.tenantId, runtimeAgent.id)).orderOwnership,
         platform: account.platform || 'whatsapp',
@@ -1239,11 +1258,14 @@ async function runAgentTestTurnInner(input: {
     llmTrace = llm.toolTrace
     escalateReason = llm.escalateReason ?? null
     validationReasons = llm.validationReasons ?? []
+    salesTrace = runtimeInput.salesTrace ?? null
     const policy = applyFinalOutputPolicy({
       text: llm.text,
       intent: llm.intent || decision.intent,
       citedToolNames: llm.citedToolNames,
       inventoryPrices: llm.inventoryPrices,
+      quoteAmounts: runtimeInput.salesAllowedAmounts,
+      skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
       brandFacts: runtimeAgent.brandFacts,
       replyStyle: runtimeAgent.replyStyle,
       shortcuts,
@@ -1290,6 +1312,7 @@ async function runAgentTestTurnInner(input: {
         notSimulatedGates,
         highlightedAmounts,
         historyCount: history.length,
+        salesState: salesTrace,
       },
       markers,
     ),

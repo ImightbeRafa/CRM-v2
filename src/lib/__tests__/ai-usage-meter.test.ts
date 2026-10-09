@@ -54,7 +54,10 @@ describe('AI usage meter (SQL 048)', () => {
     assert.match(client, /usage: \{\n?\s*tenantId: string \| null\n?\s*feature: AiUsageFeature/)
     assert.match(client, /status: 'error',\s*errorCode: aiErrorCode\(error\)/)
     const runtime = read('src/lib/soft-ai/llm/runtime.ts')
-    assert.equal((runtime.match(/feature: input\.toolCtx\.sandbox \? 'probar' : 'inbox_agent'/g) || []).length, 2)
+    // Every model call in the runtime (main loop, text-only final call, B7 rewrite) carries its usage tag.
+    const calls = (runtime.match(/await softAiResponsesCreate\(\{/g) || []).length
+    assert.ok(calls >= 3)
+    assert.equal((runtime.match(/feature: input\.toolCtx\.sandbox \? 'probar' : 'inbox_agent'/g) || []).length, calls)
     assert.match(read('src/lib/soft-ai/shortcut-import-server.ts'), /feature: 'shortcut_import'/)
     assert.match(read('src/lib/customer-paste-grok.ts'), /feature: 'customer_paste'/)
   })

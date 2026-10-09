@@ -48,6 +48,8 @@ export function probarWhy(input: {
   const out: string[] = []
   const steps = Array.isArray(input.toolTrace) ? (input.toolTrace as Array<Record<string, unknown>>) : []
   for (const s of steps) {
+    const repair = s.repair as { ok?: unknown } | undefined
+    if (repair) out.push(repair.ok === true ? 'corrigió su respuesta para cumplir las reglas' : 'intentó corregir su respuesta y no pudo')
     const name = typeof s.name === 'string' ? s.name : ''
     if (!name) continue
     if (name === 'search_inventory') {
@@ -65,7 +67,9 @@ export function probarWhy(input: {
     else if (name === 'get_shipping_status') out.push('consultó el estado de un envío')
     else if (name === 'use_shortcut') out.push('usó una respuesta rápida')
   }
-  if (input.shortcutKey && !out.includes('usó una respuesta rápida')) out.push('usó una respuesta rápida')
+  if (input.shortcutKey && !out.includes('usó una respuesta rápida')) {
+    out.push(/^[a-z0-9_]{2,40}$/.test(input.shortcutKey) && !input.shortcutKey.startsWith('sys_') ? `usó la respuesta guardada “${input.shortcutKey}”` : 'usó una respuesta rápida')
+  }
   if (input.escalate) out.push(`pasó a una persona: ${ESCALATE[input.escalateReason || 'other'] || 'otro motivo'}`)
   // Codes are internal; the owner only needs to know the AI's own answer was replaced by a safe one.
   if (input.fallbackUsed) out.push('respuesta de respaldo: la IA falló o su respuesta no pasó las reglas')

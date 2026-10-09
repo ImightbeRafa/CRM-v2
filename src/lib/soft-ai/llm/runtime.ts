@@ -313,16 +313,64 @@ export async function runSoftAiLlmRuntime(
 
     const structured = parseStructuredAgentOutput(finalText)
     // [[ATAJO:clave]] names the saved reply it used (its images are attached by code); never shown to the customer.
-    const tagged = extractShortcutTag(structured.text)
+    let tagged = extractShortcutTag(structured.text)
     finalText = tagged.text
-    const validation = validateAgentOutput({
-      text: finalText,
-      citedToolNames,
-      inventoryPrices,
-      // Prices / shipping / totals listed for this turn by code are sourced (no lookup call needed).
-      quoteAmounts: input.salesAllowedAmounts,
-      allowedDeals: input.salesAllowedDeals,
-    })
+    const validate = (text: string) =>
+      validateAgentOutput({
+        text,
+        citedToolNames,
+        inventoryPrices,
+        // Prices / shipping / totals listed for this turn by code are sourced (no lookup call needed).
+        quoteAmounts: input.salesAllowedAmounts,
+        allowedDeals: input.salesAllowedDeals,
+      })
+    let validation = validate(finalText)
+    // B7: a reply that breaks a rule (made-up amount, a deal, "ya quedó pagado"…) gets ONE rewrite with the reasons
+    // before anything is handed to a person. The rewrite passes the same checks or the original hand-off stands.
+    const repairLeftMs = SOFT_AI_TURN_BUDGET_MS - (Date.now() - started)
+    if (validation.needsHuman && !structured.needsHuman && !escalate && repairLeftMs > 5_000) {
+      try {
+        const response = await softAiResponsesCreate({
+          model: input.model,
+          instructions,
+          input: [
+            ...inputItems,
+            { type: 'message', role: 'assistant', content: finalText },
+            { type: 'message', role: 'user', content: repairInstruction(validation.reasons) },
+          ],
+          tools: tools.length > 0 ? tools : undefined,
+          toolChoice: 'none',
+          promptCacheKey,
+          timeoutMs: Math.min(SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS, repairLeftMs - 1_000),
+          temperature: 0.1,
+          reasoningEffort: 'low',
+          store: false,
+          maxOutputTokens: 500,
+          usage: {
+            tenantId: input.tenantId,
+            feature: input.toolCtx.sandbox ? 'probar' : 'inbox_agent',
+            agentId: input.agentId,
+            conversationId: input.toolCtx.sandbox ? null : input.toolCtx.conversationId,
+          },
+        })
+        const usage = readSoftAiUsage(response)
+        inputTokens += usage.inputTokens
+        cachedInputTokens += usage.cachedInputTokens
+        outputTokens += usage.outputTokens
+        reasoningTokens += usage.reasoningTokens
+        const repairedRaw = parseStructuredAgentOutput(parseSoftAiResponseText(response))
+        const repaired = extractShortcutTag(repairedRaw.text)
+        const recheck = repaired.text ? validate(repaired.text) : null
+        toolTrace.push({ repair: { reasons: validation.reasons, ok: Boolean(recheck?.ok && !repairedRaw.needsHuman) } })
+        if (recheck?.ok && !repairedRaw.needsHuman) {
+          finalText = repaired.text
+          tagged = { text: repaired.text, key: repaired.key || tagged.key }
+          validation = recheck
+        }
+      } catch {
+        // Timeout / provider error: keep the original verdict (hand-off).
+      }
+    }
     if (validation.needsHuman || structured.needsHuman) {
       escalate = true
       escalateReason = escalateReason || 'provenance'
@@ -430,6 +478,27 @@ function logLlmFailure(model: string, error: unknown) {
     requestId: typeof e.request_id === 'string' ? e.request_id : null,
     name: typeof e.name === 'string' ? e.name : null,
   })
+}
+
+const REPAIR_REASON_TEXT: Record<string, string> = {
+  unsourced_money: 'pusiste un monto que no está en los precios / envíos de BETSY_DATOS ni en lo que consultaste',
+  unsourced_amount: 'pusiste un número o monto que no sale de los datos',
+  money_mismatch_inventory: 'el precio no coincide con el del producto',
+  deal_offer: 'ofreciste un descuento o promoción que el negocio no tiene',
+  confirmation_wording: 'dijiste que un pago está confirmado o recibido (eso lo confirma el negocio)',
+  write_claim: 'dijiste que ya creaste o registraste algo',
+  unit_cost_leak: 'mencionaste un costo interno',
+  style_too_long: 'quedó muy largo',
+}
+
+/** Rewrite request (B7): only reason names from code, never customer text. */
+export function repairInstruction(reasons: string[]): string {
+  const why = reasons.map((r) => REPAIR_REASON_TEXT[r]).filter(Boolean)
+  return [
+    `Tu respuesta anterior no se puede enviar: ${why.length ? why.join('; ') : 'rompe una regla fija'}.`,
+    'Reescribila para el cliente arreglando eso: usá solo precios y montos de BETSY_DATOS o de lo que consultaste (si no tenés el dato, preguntá o decí que lo confirmás), sin descuentos inventados y sin decir que un pago está confirmado.',
+    'Mismo tono y corta. Respondé solo el texto final para el cliente.',
+  ].join(' ')
 }
 
 /** Key of the last saved reply the model fetched with use_shortcut (fallback when it forgot the tag). */

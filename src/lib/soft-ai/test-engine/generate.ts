@@ -10,7 +10,7 @@
 import { createHash } from 'node:crypto'
 
 /** Bump when the agent's fixed rules / selling flow change so every agent must pass its tests again. */
-export const AGENT_RULES_VERSION = 'sales-flow-promo-2026-10-09'
+export const AGENT_RULES_VERSION = 'saved-replies-2026-10-09'
 
 export type TestExpect =
   | { kind: 'mentions_price'; price: number }

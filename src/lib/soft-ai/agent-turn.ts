@@ -66,6 +66,9 @@ import { decideInbound } from '@/lib/soft-ai/inbound-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
 import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
 import { selectReplyImages, type ReplyImage } from '@/lib/soft-ai/reply-images'
+import type { AgentAsset } from '@/lib/soft-ai/agent-assets'
+import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
+import { loadSentAgentImageShas, sendAgentImagesOnce } from '@/lib/soft-ai/agent-media-send'
 import { applyFinalOutputPolicy, validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
 import { maskConfiguredPaymentSecrets, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import { redactToolTrace } from '@/lib/soft-ai/llm/redact'
@@ -478,6 +481,7 @@ export async function executeAgentLayerTurn(
 
   const history = await loadHistory(row.conversationId, trigger.id)
   const shortcuts = await listRuntimeShortcuts(row.tenantId, resolved.agent.id)
+  const replyAssets = await loadReplyAssets(row.tenantId, resolved.agent.id)
   const decision = decideInbound({
     inboundText: payload.content || '',
     messageType: trigger.messageType,
@@ -577,6 +581,9 @@ export async function executeAgentLayerTurn(
       needsHuman: decision.needsHuman,
       fallbackUsed: false,
       escalate: decision.escalate,
+      replyShortcutKey: decision.shortcutKey,
+      shortcuts,
+      replyAssets,
     })
   }
 
@@ -594,6 +601,7 @@ export async function executeAgentLayerTurn(
     inboundText: payload.content || '',
     clientName: conversation.peerName,
     shortcuts,
+    replyImageShortcutIds: new Set(replyAssets.keys()),
     knowledge,
     decision,
     salesContext: await loadAgentSalesContext({
@@ -742,6 +750,9 @@ export async function executeAgentLayerTurn(
     needsHuman,
     fallbackUsed: llm.fallbackUsed,
     escalate: llm.escalate,
+    replyShortcutKey: policy.purchaseSummaryAppended ? null : llm.shortcutKey || null,
+    shortcuts,
+    replyAssets,
   })
 }
 
@@ -823,6 +834,10 @@ async function finishDeliveryOrSuggestInner(input: {
   needsHuman: boolean
   fallbackUsed: boolean
   escalate: boolean
+  /** Saved reply this answer used: its images go out first (WhatsApp; never twice in the chat). */
+  replyShortcutKey?: string | null
+  shortcuts?: RuntimeShortcut[]
+  replyAssets?: Map<string, AgentAsset[]>
 }): Promise<AgentTurnDispatchResult> {
   const decisionBase = {
     effectiveBehavior: input.effectiveBehavior,
@@ -933,6 +948,39 @@ async function finishDeliveryOrSuggestInner(input: {
   if (!accessToken) return denyUnhealthyToken()
   const meta = parseSocialRefreshToken(account.refreshToken)
   const contentHash = hashSoftAiDeliveryContent(input.outputText)
+
+  // Images of the saved reply first (like a person sending the size guide, then the text). Code picks them.
+  const platform = input.payload.platform || 'whatsapp'
+  if (platform === 'whatsapp' && account.accountId && input.outputText && !input.escalate && input.replyAssets?.size) {
+    const pick = selectReplyImages({
+      shortcutKey: input.replyShortcutKey,
+      shortcuts: input.shortcuts ?? [],
+      assetsByShortcut: input.replyAssets,
+      alreadySent: await loadSentAgentImageShas(input.row.tenantId, input.row.conversationId),
+    })
+    const byId = new Map([...input.replyAssets.values()].flat().map((a) => [a.id, a]))
+    const assets = pick.images.map((img) => byId.get(img.assetId)).filter((a): a is AgentAsset => Boolean(a))
+    if (assets.length) {
+      await sendAgentImagesOnce(
+        {
+          job: {
+            id: input.row.id,
+            deliveryKey: input.row.deliveryKey,
+            tenantId: input.row.tenantId,
+            socialAccountId: input.row.socialAccountId,
+            peerId: input.row.peerId,
+            messageId: input.row.messageId,
+          },
+          phoneNumberId: account.accountId,
+          accessToken,
+          agent: { id: input.agent.id, version: input.agent.version, name: input.agent.name, emoji: input.agent.emoji },
+          turnId: input.turnId,
+          peerName: input.payload.senderName || input.conversation.peerName || null,
+        },
+        assets,
+      )
+    }
+  }
 
   const delivery = await deliverOnce({
     jobId: input.row.id,

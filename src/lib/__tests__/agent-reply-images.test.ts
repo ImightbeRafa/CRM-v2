@@ -127,3 +127,21 @@ test('runtime strips the tag before validation; test chat gets images, not on ha
   assert.match(turn, /text && !escalate && !notBound\s*\?\s*selectReplyImages/)
   assert.match(turn, /alreadySent: input\.sentImageIds/)
 })
+
+test('live WhatsApp images: before the text, exactly-once keys, never twice per chat, never on hand-off', () => {
+  const send = readFileSync('src/lib/soft-ai/agent-media-send.ts', 'utf8')
+  assert.match(send, /deliveryKey: `\$\{ctx\.job\.deliveryKey\}:img:\$\{index\}:\$\{asset\.sha256\.slice\(0, 16\)\}`/)
+  assert.match(send, /kind: 'image'/)
+  // Upload (no customer effect) happens before the delivery row is claimed; failures never throw to the text send.
+  assert.ok(send.indexOf('uploadToWhatsApp(ctx.phoneNumberId') < send.indexOf('await deliverOnce({'))
+  assert.match(send, /agentAssetSha: asset\.sha256/)
+  assert.match(send, /if \(delivery\.skipped\) continue/)
+  const turn = readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
+  const imagesAt = turn.indexOf('await sendAgentImagesOnce(')
+  const textAt = turn.indexOf('const delivery = await deliverOnce({')
+  assert.ok(imagesAt > 0 && imagesAt < textAt)
+  assert.match(turn, /platform === 'whatsapp' && account\.accountId && input\.outputText && !input\.escalate/)
+  assert.match(turn, /alreadySent: await loadSentAgentImageShas\(input\.row\.tenantId, input\.row\.conversationId\)/)
+  assert.match(turn, /replyShortcutKey: decision\.shortcutKey,/)
+  assert.match(turn, /replyShortcutKey: policy\.purchaseSummaryAppended \? null : llm\.shortcutKey \|\| null/)
+})

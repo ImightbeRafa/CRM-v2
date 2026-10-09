@@ -23,7 +23,7 @@ export function hashSoftAiDeliveryContent(content: string | Buffer) {
 export async function deliverOnce<T>(input: {
   jobId: string
   deliveryKey: string
-  kind: 'text'
+  kind: 'text' | 'image'
   contentHash: string
   send: () => Promise<T>
   providerDeliveryId?: (result: T) => string | undefined

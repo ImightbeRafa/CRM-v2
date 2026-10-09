@@ -1,3 +1,22 @@
+## 2026-10-09 — Agent: simple 3-step page, products by group, test chat = live, sales flow (claudio/agent-f3-studio)
+
+- Rafael's feedback after F3 went live: Forge didn't answer (0 products mapped; tests 7/7 with no price cases), the
+  AI dashboard was a separate page, and the agent page was too complex. Fixed: AI usage is the "IA" tab of his Admin
+  Dashboard (/logistics/admin); agent Resumen = ① Tu negocio (Studio) → ② Productos por grupo (ARNESS = all sizes) →
+  ③ Probar como cliente (+ toggle "¿sos un bot?") ; rest under Avanzado. Test runs refuse an agent with no products.
+- Matching: shared word matcher (accents, doubled letters, one typo; sizes exact XXL≠XL) for Studio and the live
+  product search fallback. Test chat parity with live (order ownership, platform, intent), "why" line per reply.
+- Model timeouts were cutting every answer after a lookup (7 s); now 12 s / 18 s and one final text-only call
+  (tool_choice none) inside a 40 s turn budget — product+shipping questions no longer end in a hand-off.
+- Sales flow (Phase A S1–S3): code-derived sales state (what was already said, stage, next step) so the agent does
+  not repeat itself and always moves to the sale; products/shipping/order fields inline (small catalogs, one call);
+  payment info at close (when shareable; otherwise silent escalation); seller voice — the client never hears
+  "persona del equipo" (new default texts, stored untouched defaults upgraded on read); per-agent "¿sos un bot?"
+  Discreto/Transparente; shipping from Métodos de envío with fallback to store facts (DeepSleep has none yet).
+- Reviews: Verifier PASS WITH NOTES ×3 (all notes fixed). Not done yet: quote_shipping by exact zone, payment
+  classifier split, live "hold" outcome (escalated real chats still only notify staff), "Pago verificado" flow.
+- Proof: tsc 0, lint 0, soft-ai 433/0, chat-harden 640/0, security 271/0, agentes-ui 34/0, site-ui 50/51 (baseline).
+
 ## 2026-10-08 — Agent Studio "Crear desde fuentes" + shipping zones (claudio/agent-f3-studio, on agent-f2-ai-usage)
 
 - Agentes › Resumen › "✨ Crear desde fuentes": the owner gives the business's own material (website URL, PDF /

@@ -76,7 +76,7 @@ const LEGACY_DEFAULT_BODIES = new Map<string, string>([
   ['Una persona del equipo revisa lo que enviaste y te responde en breve.', '¡Gracias! Dame un momento y lo reviso 😊'],
   ['Claro — te paso con una persona del equipo. En un momento te escriben.', 'Claro 😊 en un momento te escribe alguien de la tienda.'],
   ['En un momento te atiende una persona del equipo. Gracias por la paciencia.', 'Perfecto, dame un momento y te confirmo 😊'],
-  ['Podés pagar así: {{brand.payment.summary}}. Un comprobante lo revisa una persona del equipo; por acá no se confirma el pago.', 'Podés pagar por {{brand.payment.summary}}. Cuando lo hagás, mandame el comprobante y lo reviso 😊'],
+  ['Podés pagar así: {{brand.payment.summary}}. Un comprobante lo revisa una persona del equipo; por acá no se confirma el pago.', 'Podés pagar así: {{brand.payment.summary}}. Cuando lo hagás, mandame el comprobante y lo reviso 😊'],
   ['Recibimos tu mensaje de pago. Una persona del equipo lo revisa y te escribe.', '¡Gracias! Ya lo reviso y te confirmo 😊'],
   ['No pudimos aplicar ese pago. Una persona del equipo te explica el siguiente paso.', 'Revisé el pago y todavía no me aparece aplicado. ¿Me reenviás el comprobante? 😊'],
   ['Tu pedido {{order.orderId}} quedó registrado por el equipo. Te escribimos si falta algún dato.', 'Listo, tu pedido {{order.orderId}} quedó registrado 😊 Te aviso cualquier cosa.'],
@@ -140,7 +140,7 @@ export const RESERVED_SHORTCUT_SEEDS: ShortcutDraft[] = [
     intents: ['payment_info'],
     keywords: [],
     deliveryMode: 'verbatim',
-    body: 'Podés pagar por {{brand.payment.summary}}. Cuando lo hagás, mandame el comprobante y lo reviso 😊',
+    body: 'Podés pagar así: {{brand.payment.summary}}. Cuando lo hagás, mandame el comprobante y lo reviso 😊',
   },
   {
     key: 'sys_payment_ack',

@@ -7,7 +7,7 @@ import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import { isChatAgentSchemaReady } from '@/lib/soft-ai/agent-schema'
 import { logAuditEvent } from '@/lib/auditLogger'
-import {
+import { upgradeLegacyShortcutBody,
   RESERVED_SHORTCUT_SEEDS,
   STARTER_SHORTCUT_TEMPLATES,
   isReservedShortcutKey,
@@ -31,7 +31,12 @@ export async function listShortcuts(tenantId: string, agentId: string) {
     where: { tenantId, agentId },
     orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }],
   })
-  return { schemaReady: true as const, shortcuts, templates: STARTER_SHORTCUT_TEMPLATES }
+  // Same text the client gets: untouched old defaults show their upgraded wording (shortcuts.ts).
+  return {
+    schemaReady: true as const,
+    shortcuts: shortcuts.map((row) => ({ ...row, body: upgradeLegacyShortcutBody(row.body) })),
+    templates: STARTER_SHORTCUT_TEMPLATES,
+  }
 }
 
 export async function ensureReservedShortcuts(input: {

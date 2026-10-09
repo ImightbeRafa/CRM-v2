@@ -77,8 +77,9 @@ export async function loadAgentSalesContext(input: {
 
   const orderFields = [
     'Nombre',
-    'Teléfono',
-    'Envío o retiro en tienda',
+    // On WhatsApp the number is already known; ask only if they want another contact number.
+    'Teléfono (si es otro distinto a este chat)',
+    ...(input.brandFacts.shipping?.ra?.enabled ? ['Envío o retiro en tienda'] : []),
     'Provincia, cantón y distrito (si es envío)',
     'Dirección exacta con otras señas (si es envío)',
     ...(requirements?.customerFields ?? []).map((f) => f.label),

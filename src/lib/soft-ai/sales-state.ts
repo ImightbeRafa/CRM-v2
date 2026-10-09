@@ -34,16 +34,28 @@ export type SalesState = {
   nextStep: string
 }
 
-const BUY_RE =
-  /\b(lo quiero|la quiero|los quiero|me lo llevo|me la llevo|lo compro|c[oó]mo (lo |la )?compro|c[oó]mo hago (el )?pedido|quiero (comprar|pedir|ordenar|uno|una)|lo pido|hagamos el pedido|c[oó]mo (le )?pago|c[oó]mo pagar|a d[oó]nde (te )?(deposito|pago|transfiero)|d[aá]me (el|los) datos)\b/i
-const RECEIPT_RE =
-  /\b(ya (te |les )?(pagu[eé]|deposit[eé]|transfer[ií]|hice el sinpe|envi[eé] el sinpe)|comprobante|te (mand[eé]|envi[eé]) el (sinpe|pago|comprobante)|ya est[aá] pagado|pagado)\b/i
+// Unicode-aware word edges (JS \b fails after accented letters: "ya pagué").
+const END = '(?=$|[^\\p{L}\\p{N}_])'
+const START = '(?<![\\p{L}\\p{N}_])'
+// "no lo quiero" / "ya no lo quiero" are NOT buy cues; "quiero una talla/cotización" is a question, not a close.
+const BUY_RE = new RegExp(
+  `${START}(?<!\\bno\\s)(?<!\\bno\\s(?:lo|la|los)\\s)(lo quiero|la quiero|los quiero|me lo llevo|me la llevo|lo compro|c[oó]mo (lo |la )?compro|c[oó]mo hago (el )?pedido|quiero (comprar|pedir|ordenar)|quiero (uno|una)(?!\\s+(talla|cotizaci[oó]n|m[aá]s|otra|otro))|lo pido|hagamos el pedido|c[oó]mo (le )?pago|c[oó]mo pagar|a d[oó]nde (te )?(deposito|pago|transfiero)|d[aá]me (el|los) datos)${END}`,
+  'iu',
+)
+const NEGATED_BUY_RE = /(^|[^\p{L}])(no|ya no)\s+(lo|la|los)\s+(quiero|compro|pido)/iu
+const RECEIPT_RE = new RegExp(
+  `${START}(ya (te |les )?(pagu[eé]|deposit[eé]|transfer[ií]|hice el sinpe|envi[eé] el sinpe)|comprobante|te (mand[eé]|envi[eé]) el (sinpe|pago|comprobante)|ya est[aá] pagado)${END}`,
+  'iu',
+)
+/** A configured payment number counts as "given" only next to payment words (the SINPE is often the store phone). */
+const PAYMENT_WORDS_RE = /sinpe|iban|transferen|cuenta|dep[oó]sit|pag(ar|o|ás|as)\b/iu
 const HOW_TO_BUY_RE = /\b(para (comprar|hacer el pedido|confirmar)|necesito (tu|su|estos) datos|me pas[aá]s (tu|su))\b/i
 
 /** Money amounts written in a message ("₡14.900", "14 900", "17900") as integers. */
 export function amountsIn(text: string): number[] {
   const out: number[] = []
-  for (const m of text.matchAll(/\d{1,3}(?:[.,\s ]\d{3})+|\d{4,7}/g)) {
+  // Thousands separators are . , space or NBSP — never a newline (amounts from separate lines must not merge).
+  for (const m of text.matchAll(/\d{1,3}(?:[.,  ]\d{3})+|\d{4,7}/g)) {
     const n = Number(m[0].replace(/\D/g, ''))
     if (Number.isFinite(n) && n >= 100) out.push(n)
   }
@@ -58,9 +70,9 @@ const NEXT_STEP: Record<SalesStage, string> = {
   cotizar:
     'Ya cotizaste: no repitas precio ni envío. Resolvé la duda puntual y llevá al cierre: preguntá si lo quiere o qué le falta para decidir.',
   cierre:
-    'CERRAR: en 1 línea explicá cómo se compra, pedí SOLO los datos del pedido que todavía no dio (en una sola línea) y, si los datos de pago se pueden compartir y aún no los diste, dalos. No repitas precio/envío salvo el total final una vez.',
+    'Respondé primero lo que preguntó (breve). Después CERRÁ: en 1 línea explicá cómo se compra, pedí SOLO los datos del pedido que todavía no dio (en una sola línea) y, si aún no los diste, dá los datos de pago. No repitas precio/envío salvo el total final una vez.',
   esperando_comprobante:
-    'Ya diste los datos de pago: no los repitas salvo que los pida. Pedí lo que falte del pedido y avisá que cuando haga el pago te mande el comprobante.',
+    'Respondé primero lo que preguntó (breve). Ya diste los datos de pago: no los repitas salvo que los pida. Pedí lo que falte del pedido y avisá que cuando haga el pago te mande el comprobante.',
   verificando:
     'El cliente dice que ya pagó o mandó comprobante: agradecé y decí que lo revisás y le confirmás. Nunca confirmés el pago vos.',
 }
@@ -71,28 +83,26 @@ export function deriveSalesState(input: {
   ctx: SalesContext
 }): SalesState {
   const ours = input.history.filter((m) => m.direction === 'outbound').map((m) => m.content || '')
-  const theirs = [...input.history.filter((m) => m.direction === 'inbound').map((m) => m.content || ''), input.inboundText]
   const oursText = ours.join('\n')
-  const oursAmounts = new Set(amountsIn(oursText))
-  const oursDigits = digits(oursText)
+  const oursAmounts = new Set(ours.flatMap((m) => amountsIn(m)))
   const catalogPrices = (input.ctx.catalog ?? []).map((c) => Math.round(c.price))
   const shipPrices = input.ctx.shippingMethods.map((s) => Math.round(s.price)).filter((p) => p > 0)
 
   const said = {
     price: catalogPrices.some((p) => oursAmounts.has(p)) || (catalogPrices.length === 0 && /₡\s?\d/.test(oursText)),
     shipping: shipPrices.some((p) => oursAmounts.has(p)) || /\benv[ií]o\b[^\n]{0,40}₡\s?\d/i.test(oursText),
-    payment: input.ctx.paymentDigits.some((d) => d.length >= 8 && oursDigits.includes(d)),
+    payment: ours.some((m) => PAYMENT_WORDS_RE.test(m) && input.ctx.paymentDigits.some((d) => d.length >= 8 && digits(m).includes(d))),
     cod: /contra\s?entrega/i.test(oursText),
     howToBuy: HOW_TO_BUY_RE.test(oursText),
   }
   const last = input.inboundText || ''
-  const buyCue = BUY_RE.test(last)
+  const buyCue = BUY_RE.test(last) && !NEGATED_BUY_RE.test(last)
   const receiptCue = RECEIPT_RE.test(last)
 
   let stage: SalesStage
   if (receiptCue) stage = 'verificando'
   else if (said.payment) stage = 'esperando_comprobante'
-  else if (buyCue || (said.price && said.shipping && theirs.length >= 3)) stage = 'cierre'
+  else if (buyCue) stage = 'cierre'
   else if (said.price) stage = 'cotizar'
   else if (ours.length === 0) stage = 'saludo'
   else stage = 'descubrir'
@@ -121,6 +131,12 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
     `Estado de la venta (calculado por Betsy): ya dijiste precio ${tick(state.said.price)} · envío ${tick(state.said.shipping)} · datos de pago ${tick(state.said.payment)} · contra entrega ${tick(state.said.cod)}.`,
     `Etapa: ${state.stage}. Siguiente paso: ${state.nextStep}`,
   )
+  if ((state.stage === 'cierre' || state.stage === 'esperando_comprobante') && !ctx.paymentShareable) {
+    // Payment data not shareable by chat: never promise data nobody will send — notify the team (silently).
+    lines.push(
+      'Los datos de pago NO se comparten por chat: pedí los datos del pedido y llamá escalate_to_human(payment_or_sinpe) para que el equipo se los envíe. Al cliente decile solo que enseguida le pasás cómo pagar.',
+    )
+  }
   return lines.join('\n')
 }
 

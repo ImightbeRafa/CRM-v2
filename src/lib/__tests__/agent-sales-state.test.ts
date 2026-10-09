@@ -114,3 +114,30 @@ describe('wiring: same sales context in live and test chat; seller voice everywh
     assert.match(ctx, /Envío a domicilio \(GAM\)/)
   })
 })
+
+describe('Verifier 2026-10-09 (sales flow) regressions', () => {
+  it('negations and questions are not a close; accented "ya pagué" is a receipt; "pagado" alone is not', () => {
+    const h = [msg('outbound', 'Está en ₡14.900. El envío es ₡3.000.')]
+    for (const t of ['no lo quiero', 'ya no lo quiero', 'quiero una talla más grande', 'quiero una cotización']) {
+      assert.notEqual(deriveSalesState({ history: h, inboundText: t, ctx: CTX }).stage, 'cierre', t)
+    }
+    assert.equal(deriveSalesState({ history: h, inboundText: 'lo quiero', ctx: CTX }).stage, 'cierre')
+    for (const t of ['ya pagué', 'ya deposité', 'ya transferí']) {
+      assert.equal(deriveSalesState({ history: h, inboundText: t, ctx: CTX }).stage, 'verificando', t)
+    }
+    assert.notEqual(deriveSalesState({ history: h, inboundText: '¿el envío va pagado?', ctx: CTX }).stage, 'verificando')
+  })
+  it('amounts on separate lines never merge; the store phone alone is not "payment given"', () => {
+    assert.deepEqual(amountsIn('₡14.900\n300 unidades'), [14900]) // never merged into 14900300
+    const phoneOnly = [msg('outbound', 'Cualquier cosa nos llamás al 7113-3720 😊')]
+    assert.equal(deriveSalesState({ history: phoneOnly, inboundText: 'ok', ctx: CTX }).said.payment, false)
+    const sinpe = [msg('outbound', 'Podés pagar por SINPE Móvil al 7113-3720.')]
+    assert.equal(deriveSalesState({ history: sinpe, inboundText: 'ok', ctx: CTX }).said.payment, true)
+  })
+  it('payment not shareable → close asks for data and notifies the team silently', () => {
+    const ctx = { ...CTX, paymentShareable: false }
+    const s = deriveSalesState({ history: [msg('outbound', 'Está en ₡14.900')], inboundText: 'lo quiero', ctx })
+    assert.match(formatSalesTurnBlock(ctx, s), /escalate_to_human\(payment_or_sinpe\)/)
+    assert.doesNotMatch(formatSalesTurnBlock(CTX, s), /escalate_to_human/)
+  })
+})

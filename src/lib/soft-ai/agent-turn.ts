@@ -620,12 +620,13 @@ export async function executeAgentLayerTurn(
     inventoryPrices: llm.inventoryPrices,
     quoteAmounts: runtimeInput.salesAllowedAmounts,
     skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
+    customerText: payload.content || '',
     brandFacts: resolved.agent.brandFacts,
     replyStyle: resolved.agent.replyStyle,
     shortcuts,
   })
   const finalText = policy.text
-  const needsHuman = policy.needsHuman || llm.needsHuman
+  const needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
   const modelMarkers: OutcomeMarkers = {
     needsHuman,
     fallbackUsed: llm.fallbackUsed,
@@ -1266,6 +1267,7 @@ async function runAgentTestTurnInner(input: {
       inventoryPrices: llm.inventoryPrices,
       quoteAmounts: runtimeInput.salesAllowedAmounts,
       skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
+      customerText: input.inboundText,
       brandFacts: runtimeAgent.brandFacts,
       replyStyle: runtimeAgent.replyStyle,
       shortcuts,
@@ -1276,7 +1278,7 @@ async function runAgentTestTurnInner(input: {
     highlightedAmounts = policy.highlightedAmounts
     tokens = { input: llm.inputTokens, output: llm.outputTokens, cached: llm.cachedInputTokens }
     latencyMs = llm.latencyMs
-    needsHuman = policy.needsHuman || llm.needsHuman
+    needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
     fallbackUsed = llm.fallbackUsed
     escalate = llm.escalate
   } else {

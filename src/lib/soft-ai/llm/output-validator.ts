@@ -12,6 +12,7 @@ import {
 } from '@/lib/soft-ai/brand-facts'
 import { hasConfirmationWording, renderShortcutTemplate, shortcutByKey, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
+import { fillPaymentToken, paymentNumberProblems } from '@/lib/soft-ai/payment-guard'
 
 export type OutputValidationResult = {
   ok: boolean
@@ -23,6 +24,9 @@ export type OutputValidationResult = {
 export type AuthorizedAmountSource = 'inventory' | 'shipping' | 'quote'
 
 const MONEY_RE = /[₡$]\s?\d|\d[\d.,]*\s*(colones|crc|usd)/i
+/** Deals the agent may never invent (fixed rule 12, INT-72): discounts, promos, free shipping, gifts, "te lo dejo en". */
+const DEAL_RE =
+  /(?<![\p{L}])(descuentos?|promoci[oó]n(es)?|promo|rebaja|oferta especial|env[ií]o gratis|gratis|de regalo|te lo dejo en|te la dejo en|2x1|\d{1,2}\s?%)(?![\p{L}])/iu
 const CREATED_CLAIM_RE = /ya\s+(cre[eé]|registr[eé]|arm[eé])|pedido\s+creado|acabo\s+de\s+crear/i
 const UNIT_COST_RE = /unitCost|costo\s+unitario|precio\s+de\s+costo/i
 const SHIP_CUE_RE = /env[ií]o|retiro|domicilio|\bGAM\b|correos|mensajer/i
@@ -62,6 +66,7 @@ export function validateAgentOutput(input: {
 
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
   if (CREATED_CLAIM_RE.test(text)) reasons.push('write_claim')
+  if (DEAL_RE.test(text)) reasons.push('deal_offer')
   if (hasConfirmationWording(text)) reasons.push('confirmation_wording')
 
   const inventory =
@@ -125,6 +130,8 @@ export function applyFinalOutputPolicy(input: {
   shortcuts?: RuntimeShortcut[]
   /** Sales flow active: it decides when shipping/payment are said, so no automatic summary (it repeated itself). */
   skipPurchaseSummary?: boolean
+  /** The customer's own message (numbers they wrote may be repeated back). */
+  customerText?: string
 }): FinalOutputPolicy {
   const facts = input.brandFacts || { schemaVersion: 1 }
   const style = input.replyStyle || DEFAULT_REPLY_STYLE
@@ -133,6 +140,12 @@ export function applyFinalOutputPolicy(input: {
   let text = (input.text || '').trim()
   let purchaseSummaryAppended = false
   const reasons: string[] = []
+  // Payment identifiers come from configuration only (INT-69): fill the token, then every payment-looking number
+  // must be a configured one (when shareable) or one the customer wrote.
+  const filled = fillPaymentToken(text, facts)
+  text = filled.text
+  if (filled.needsHuman) reasons.push('payment_info_not_shared')
+  reasons.push(...paymentNumberProblems({ text, facts, customerText: input.customerText }))
 
   const hasMoney = extractMoneyAmounts(text).some((amount) => Math.round(amount) >= 100)
   const purchaseIntent = PURCHASE_INTENTS.has(intent)

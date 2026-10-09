@@ -11,7 +11,7 @@ import { loadSalesSetup, salesRulesForPrompt } from '@/lib/soft-ai/agent-sales-s
 import { loadOrderRequirements } from '@/lib/orders/order-requirements-server'
 import { loadCoverage } from '@/lib/shipping/coverage-store'
 import type { MethodCoverage } from '@/lib/shipping/coverage'
-import type { BrandFacts } from '@/lib/soft-ai/brand-facts'
+import { canSharePaymentFacts, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import type { SalesContext } from '@/lib/soft-ai/sales-state'
 
 const INLINE_CATALOG_MAX = 30
@@ -106,7 +106,8 @@ export async function loadAgentSalesContext(input: {
     orderFields: [...new Set(orderFields)].slice(0, 20),
     salesScript: setup ? salesRulesForPrompt(setup.salesRules) : '',
     aiDisclosure: setup?.salesRules.aiDisclosure ?? 'discreet',
-    paymentShareable: pay?.shareWithCustomers === true,
+    // Shareable = switch on AND the details exist (never ask the model to give details that aren't configured).
+    paymentShareable: canSharePaymentFacts(input.brandFacts),
     paymentDigits,
   }
 }

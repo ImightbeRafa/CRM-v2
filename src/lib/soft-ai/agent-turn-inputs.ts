@@ -26,6 +26,7 @@ import {
   deriveSalesState,
   formatSalesTurnBlock,
   salesAllowedAmounts,
+  salesNeedsHuman,
   salesSystemBlock,
   type SalesContext,
 } from '@/lib/soft-ai/sales-state'
@@ -210,6 +211,7 @@ export function assembleAgentRuntimeInputs(input: {
     salesSystemBlock: sales ? salesSystemBlock(sales) : null,
     salesTurnBlock: sales && salesState ? formatSalesTurnBlock(sales, salesState) : null,
     salesAllowedAmounts: sales ? salesAllowedAmounts(sales) : undefined,
+    salesNeedsHuman: Boolean(sales && salesState && salesNeedsHuman(sales, salesState)),
     salesTrace: salesState ? { stage: salesState.stage, said: salesState.said } : null,
     toolCtx: {
       ...input.toolCtxBase,

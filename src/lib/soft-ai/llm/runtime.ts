@@ -57,6 +57,8 @@ export type SoftAiLlmRuntimeInput = {
   salesSystemBlock?: string | null
   salesTurnBlock?: string | null
   salesAllowedAmounts?: number[]
+  /** Code says a person must follow up this turn (e.g. close with payment data not shareable). */
+  salesNeedsHuman?: boolean
   /** Sales state for the turn trace (debug only; not sent to the model separately). */
   salesTrace?: { stage: string; said: Record<string, boolean> } | null
 }

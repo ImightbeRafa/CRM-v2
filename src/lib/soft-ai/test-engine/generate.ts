@@ -9,6 +9,9 @@
  */
 import { createHash } from 'node:crypto'
 
+/** Bump when the agent's fixed rules / selling flow change so every agent must pass its tests again. */
+export const AGENT_RULES_VERSION = 'sales-flow-2026-10-09'
+
 export type TestExpect =
   | { kind: 'mentions_price'; price: number }
   | { kind: 'not_mentions_price'; price: number }
@@ -176,7 +179,8 @@ export function generateAgentSuite(input: SuiteInput): { cases: TestCase[]; suit
   })
 
   const suiteHash = createHash('sha256')
-    .update(JSON.stringify(cases.map((c) => [c.id, c.message, c.expect])))
+    // The agent's fixed rules are part of what was tested: a new rules version makes old green runs outdated (M4).
+    .update(JSON.stringify([AGENT_RULES_VERSION, cases.map((c) => [c.id, c.message, c.expect])]))
     .digest('hex')
     .slice(0, 24)
   return { cases, suiteHash }

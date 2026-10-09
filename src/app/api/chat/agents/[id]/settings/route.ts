@@ -108,7 +108,11 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     }
     // "¿Sos un bot?" toggle (stored with the sales script, SQL 053): saved on its own.
     if ('aiDisclosure' in body) {
-      const value = body.aiDisclosure === 'transparent' ? 'transparent' : 'discreet'
+      if (body.aiDisclosure !== 'transparent' && body.aiDisclosure !== 'discreet') {
+        return NextResponse.json({ success: false, error: 'Valor inválido' }, { status: 400 })
+      }
+      const value: 'transparent' | 'discreet' = body.aiDisclosure
+      const before = await loadSalesSetup(auth.tenantId, agent.id).catch(() => null)
       try {
         await saveSalesSetup(auth.tenantId, agent.id, { salesRules: { aiDisclosure: value } }, auth.userId)
       } catch (error) {
@@ -123,6 +127,7 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
         entityId: agent.id,
         entityName: agent.name,
         description: 'Cómo responde si le preguntan si es un bot',
+        oldValues: { aiDisclosure: before?.salesRules.aiDisclosure ?? null },
         newValues: { aiDisclosure: value },
         userId: auth.userId,
         userRole: auth.role,

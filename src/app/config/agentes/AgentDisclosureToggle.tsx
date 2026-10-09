@@ -5,8 +5,8 @@ import { useEffect, useState } from 'react'
 type Mode = 'discreet' | 'transparent'
 
 const OPTIONS: Array<{ key: Mode; label: string; hint: string }> = [
-  { key: 'discreet', label: 'Discreto', hint: 'Nunca dice que es una IA. Si le preguntan, no lo niega: responde que es de la tienda y sigue vendiendo.' },
-  { key: 'transparent', label: 'Transparente', hint: 'Si le preguntan, dice que es el asistente virtual de la tienda y sigue ayudando.' },
+  { key: 'discreet', label: 'Discreto', hint: 'No lo menciona por su cuenta. Si un cliente pregunta en serio, dice que es el asistente virtual de la tienda (nunca dice que es una persona).' },
+  { key: 'transparent', label: 'Transparente', hint: 'Se presenta como el asistente virtual de la tienda desde el primer mensaje.' },
 ]
 
 /** "¿Sos un bot?" — how the agent answers if a client asks directly. Per agent; default Discreto. */

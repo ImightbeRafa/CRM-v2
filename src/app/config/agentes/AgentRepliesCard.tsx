@@ -19,8 +19,14 @@ const ERRORS: Record<string, string> = {
   shortcut_body_invalid: 'El texto no puede quedar vacío (máx. 1500 letras).',
   shortcut_title_invalid: 'Poné un nombre corto (máx. 60 letras).',
   shortcut_exists: 'Ya hay una respuesta con ese nombre.',
+  shortcut_keywords_invalid: 'Máximo 20 palabras clave.',
+  SCHEMA_NOT_READY: 'Esto todavía no está disponible.',
+  AGENT_NOT_FOUND: 'No se encontró el agente.',
+  SHORTCUT_NOT_FOUND: 'Esa respuesta ya no existe. Recargá la página.',
 }
-const errorText = (code: unknown) => (typeof code === 'string' && ERRORS[code]) || (typeof code === 'string' ? code : 'No se pudo guardar.')
+// Spanish messages from the server pass through; internal codes never reach the owner.
+const errorText = (code: unknown) =>
+  (typeof code === 'string' && ERRORS[code]) || (typeof code === 'string' && /\s/.test(code) ? code : 'No se pudo guardar. Probá de nuevo.')
 
 const isOwnerReply = (row: { key: string; kind: string }) => row.kind === 'playbook' && !row.key.startsWith('sys_')
 
@@ -128,7 +134,7 @@ export function AgentRepliesCard({ agentId, canEdit }: { agentId: string; canEdi
 
   async function setImages(row: Reply, assetIds: string[]) {
     const json = await call(row.id, `${base}/shortcuts/${row.id}/assets`, jsonInit('PUT', { assetIds }))
-    if (json) setLinks((prev) => ({ ...prev, [row.id]: assetIds.slice(0, json.stored ?? assetIds.length) }))
+    if (json) setLinks((prev) => ({ ...prev, [row.id]: Array.isArray(json.assetIds) ? (json.assetIds as string[]) : assetIds }))
   }
 
   async function upload(file: File) {

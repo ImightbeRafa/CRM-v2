@@ -65,10 +65,10 @@ import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repositor
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
 import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
-import { selectReplyImages, type ReplyImage } from '@/lib/soft-ai/reply-images'
+import { selectReplyImages, sendableImageReplyIds, type ReplyImage } from '@/lib/soft-ai/reply-images'
 import type { AgentAsset } from '@/lib/soft-ai/agent-assets'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
-import { loadSentAgentImageShas, sendAgentImagesOnce } from '@/lib/soft-ai/agent-media-send'
+import { AGENT_IMAGE_DEADLINE_MS, loadSentAgentImageShas, sendAgentImagesOnce } from '@/lib/soft-ai/agent-media-send'
 import { applyFinalOutputPolicy, validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
 import { maskConfiguredPaymentSecrets, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import { redactToolTrace } from '@/lib/soft-ai/llm/redact'
@@ -297,6 +297,7 @@ export async function executeAgentLayerTurn(
   row: ClaimedChatAutomationJob,
   opts?: { superseded?: boolean },
 ): Promise<AgentTurnDispatchResult> {
+  const turnStartedAt = Date.now()
   const payload = readPayload(row.payload)
   if (!payload.content || !payload.platform) {
     throw new Error('SOFT_AI_PAYLOAD_INVALID')
@@ -482,6 +483,11 @@ export async function executeAgentLayerTurn(
   const history = await loadHistory(row.conversationId, trigger.id)
   const shortcuts = await listRuntimeShortcuts(row.tenantId, resolved.agent.id)
   const replyAssets = await loadReplyAssets(row.tenantId, resolved.agent.id)
+  // Only replies whose image would really go out are marked "(va con imagen)" (WhatsApp, not yet sent in this chat).
+  const liveImageReplyIds =
+    (payload.platform || 'whatsapp') === 'whatsapp' && replyAssets.size
+      ? sendableImageReplyIds(replyAssets, await loadSentAgentImageShas(row.tenantId, row.conversationId))
+      : new Set<string>()
   const decision = decideInbound({
     inboundText: payload.content || '',
     messageType: trigger.messageType,
@@ -584,6 +590,7 @@ export async function executeAgentLayerTurn(
       replyShortcutKey: decision.shortcutKey,
       shortcuts,
       replyAssets,
+      startedAt: turnStartedAt,
     })
   }
 
@@ -601,7 +608,7 @@ export async function executeAgentLayerTurn(
     inboundText: payload.content || '',
     clientName: conversation.peerName,
     shortcuts,
-    replyImageShortcutIds: new Set(replyAssets.keys()),
+    replyImageShortcutIds: liveImageReplyIds,
     knowledge,
     decision,
     salesContext: await loadAgentSalesContext({
@@ -753,6 +760,7 @@ export async function executeAgentLayerTurn(
     replyShortcutKey: policy.purchaseSummaryAppended ? null : llm.shortcutKey || null,
     shortcuts,
     replyAssets,
+    startedAt: turnStartedAt,
   })
 }
 
@@ -838,6 +846,8 @@ async function finishDeliveryOrSuggestInner(input: {
   replyShortcutKey?: string | null
   shortcuts?: RuntimeShortcut[]
   replyAssets?: Map<string, AgentAsset[]>
+  /** When the job started: images are skipped once the turn is late (the job times out at 42 s). */
+  startedAt?: number
 }): Promise<AgentTurnDispatchResult> {
   const decisionBase = {
     effectiveBehavior: input.effectiveBehavior,
@@ -860,6 +870,15 @@ async function finishDeliveryOrSuggestInner(input: {
     return persistDecidedTurn({
       turnId: input.turnId,
       outcome: { outcome: 'skip', reason: 'ai_terms_not_accepted' },
+      operationMode: input.agent.operationMode,
+      setMode: false,
+    })
+  }
+  // Never send (or suggest) an empty message: skipped with a reason, so the "La IA no respondió" alert fires.
+  if (!input.outputText.trim()) {
+    return persistDecidedTurn({
+      turnId: input.turnId,
+      outcome: { outcome: 'skip', reason: 'empty_output' },
       operationMode: input.agent.operationMode,
       setMode: false,
     })
@@ -951,7 +970,11 @@ async function finishDeliveryOrSuggestInner(input: {
 
   // Images of the saved reply first (like a person sending the size guide, then the text). Code picks them.
   const platform = input.payload.platform || 'whatsapp'
-  if (platform === 'whatsapp' && account.accountId && input.outputText && !input.escalate && input.replyAssets?.size) {
+  const textAlreadyClaimed = await prisma.chatAutomationDelivery
+    .findUnique({ where: { jobId_deliveryKey: { jobId: input.row.id, deliveryKey: input.row.deliveryKey } }, select: { id: true } })
+    .then(Boolean)
+  // A re-run of a job whose text was already attempted sends no new images (they belong to that first answer).
+  if (!textAlreadyClaimed && platform === 'whatsapp' && account.accountId && input.outputText && !input.escalate && input.replyAssets?.size) {
     const pick = selectReplyImages({
       shortcutKey: input.replyShortcutKey,
       shortcuts: input.shortcuts ?? [],
@@ -976,6 +999,7 @@ async function finishDeliveryOrSuggestInner(input: {
           agent: { id: input.agent.id, version: input.agent.version, name: input.agent.name, emoji: input.agent.emoji },
           turnId: input.turnId,
           peerName: input.payload.senderName || input.conversation.peerName || null,
+          deadlineAt: (input.startedAt ?? Date.now()) + AGENT_IMAGE_DEADLINE_MS,
         },
         assets,
       )
@@ -1292,7 +1316,8 @@ async function runAgentTestTurnInner(input: {
       inboundText: input.inboundText,
       clientName: input.customerName ?? null,
       shortcuts,
-      replyImageShortcutIds: new Set(replyAssets.keys()),
+      replyImageShortcutIds:
+        (account.platform || 'whatsapp') === 'whatsapp' ? sendableImageReplyIds(replyAssets, input.sentImageIds) : new Set<string>(),
       knowledge,
       decision,
       salesContext: await loadAgentSalesContext({
@@ -1366,7 +1391,8 @@ async function runAgentTestTurnInner(input: {
   decision.decisionTrace.wouldSend = wouldSend
   // Images of the saved reply it used (code-picked, never twice in the same chat; none on a hand-off).
   const images =
-    text && !escalate && !notBound
+    // Same as live: WhatsApp only, never on a hand-off / needs-a-person / fallback answer.
+    text && !escalate && !notBound && !needsHuman && !fallbackUsed && (account.platform || 'whatsapp') === 'whatsapp'
       ? selectReplyImages({ shortcutKey, shortcuts, assetsByShortcut: replyAssets, alreadySent: input.sentImageIds }).images
       : []
   const toolTrace = redactAgentTrace(

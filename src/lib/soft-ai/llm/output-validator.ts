@@ -164,6 +164,14 @@ export function applyFinalOutputPolicy(input: {
   let text = (input.text || '').trim()
   let purchaseSummaryAppended = false
   const reasons: string[] = []
+  // Backstop: an unrendered template ({{brand.…}}) or a leftover [[ATAJO…]] never reaches the customer.
+  if (/\{\{[^}]{0,80}\}\}/.test(text)) {
+    text = text.replace(/\{\{[^}]{0,80}\}\}/g, '').replace(/[ \t]{2,}/g, ' ').trim()
+    reasons.push('template_leak')
+  }
+  text = text.replace(/\[{1,2}\s*ATAJO[^\]\n]{0,60}\]{0,2}/giu, '').trim()
+  // Nothing left to send = no reply (never an empty WhatsApp message).
+  if (!text) reasons.push('empty_output')
   // Payment identifiers come from configuration only (INT-69): fill the token, then every payment-looking number
   // must be a configured one (when shareable) or one the customer wrote.
   const filled = fillPaymentToken(text, facts)

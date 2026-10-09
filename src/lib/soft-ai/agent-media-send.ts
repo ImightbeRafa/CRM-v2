@@ -19,6 +19,10 @@ const META_TIMEOUT_MS = 8_000
 /** Meta keeps uploaded media ~30 days: reuse an id for 25. */
 const MEDIA_ID_REUSE_MS = 25 * 24 * 60 * 60 * 1000
 const SENT_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000
+/** Images only while the turn is early: the job times out at 42 s and the text must still go out. */
+export const AGENT_IMAGE_DEADLINE_MS = 28_000
+/** An uncached upload needs this much time left (upload + send). */
+const UPLOAD_MIN_LEFT_MS = 12_000
 
 /** Image hashes the agent already sent in this chat (last 30 days). */
 export async function loadSentAgentImageShas(tenantId: string, conversationId: string): Promise<string[]> {
@@ -84,19 +88,24 @@ export type AgentImageSend = {
   agent: { id: string; version: number; name: string; emoji?: string | null }
   turnId: string
   peerName: string | null
+  /** Epoch ms after which no more images are attempted. */
+  deadlineAt: number
 }
 
 /** Sends the images in order; returns how many reached WhatsApp. Never throws (the text must still go out). */
 export async function sendAgentImagesOnce(ctx: AgentImageSend, assets: AgentAsset[]): Promise<number> {
   let sent = 0
-  for (const [index, asset] of assets.entries()) {
+  for (const asset of assets) {
     try {
+      if (Date.now() >= ctx.deadlineAt) break
       const cached = await reusableMediaId(ctx.job.tenantId, ctx.job.socialAccountId, asset.sha256)
+      if (!cached && ctx.deadlineAt - Date.now() < UPLOAD_MIN_LEFT_MS) continue
       const mediaId = cached || (await uploadToWhatsApp(ctx.phoneNumberId, ctx.accessToken, asset))
       if (!mediaId) continue
       const delivery = await deliverOnce({
         jobId: ctx.job.id,
-        deliveryKey: `${ctx.job.deliveryKey}:img:${index}:${asset.sha256.slice(0, 16)}`,
+        // Keyed by image only (stable when earlier images are filtered out on a re-run).
+        deliveryKey: `${ctx.job.deliveryKey}:img:${asset.sha256.slice(0, 32)}`,
         kind: 'image',
         contentHash: asset.sha256,
         send: async () => {

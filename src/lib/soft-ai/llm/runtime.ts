@@ -275,6 +275,9 @@ export async function runSoftAiLlmRuntime(
       finalText = parseSoftAiResponseText(response)
     }
 
+    // A reply that is only [[ATAJO:…]] (or empty JSON text) is no reply: fallback / hand-off, never an empty send.
+    if (finalText && !extractShortcutTag(parseStructuredAgentOutput(finalText).text).text) finalText = ''
+
     if (!finalText) {
       const fb = await runAgentFallback({
         inboundText: input.inboundText,
@@ -366,7 +369,7 @@ export async function runSoftAiLlmRuntime(
         toolTrace.push({ repair: { reasons: validation.reasons, ok: Boolean(recheck?.ok && !repairedRaw.needsHuman) } })
         if (recheck?.ok && !repairedRaw.needsHuman) {
           finalText = repaired.text
-          tagged = { text: repaired.text, key: repaired.key || tagged.key }
+          tagged = { text: repaired.text, key: repaired.key }
           validation = recheck
         }
       } catch {

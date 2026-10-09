@@ -761,7 +761,7 @@ export default function AgentesConfigPage() {
                     }} />
                   <AgentInventoryCard key={`inv-${selected.id}-${selected.version}-${studioApplied}`} agentId={selected.id} canEdit={canEdit} title="② Productos que vende" />
                   <AgentPromoCard key={`promo-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
-                  <AgentRepliesCard key={`replies-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
+                  <AgentRepliesCard key={`replies-${selected.id}-${studioApplied}-${setupRefresh}`} agentId={selected.id} canEdit={canEdit} />
                   <div id="agent-probar">
                     <p className="mb-2 text-[14px] font-semibold text-slate-900">④ Probar y activar</p>
                     <AgentDisclosureToggle key={`disc-${selected.id}`} agentId={selected.id} canEdit={canEdit} />

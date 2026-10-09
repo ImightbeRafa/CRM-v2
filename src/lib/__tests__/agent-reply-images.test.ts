@@ -70,7 +70,10 @@ test('catalog lists owner keyword replies too, marks images and asks for the tag
   const catalog = guideShortcutCatalog([reply({}), reply({ id: 's9', key: 'pb_envio', deliveryMode: 'guide', title: 'Envío' })], new Set(['s1']))
   assert.match(catalog, /pb_tallas: Guía de tallas \(va con imagen\)/)
   assert.match(catalog, /pb_envio: Envío\. /)
-  assert.match(catalog, /\[\[ATAJO:clave\]\]/)
+  // The tag rule is code-owned (fixed rule 14), not inside the data block.
+  assert.doesNotMatch(catalog, /ATAJO/)
+  assert.ok(catalog.indexOf('pb_envio') < catalog.indexOf('pb_tallas'), 'guide rows first')
+  assert.match(readFileSync('src/lib/soft-ai/llm/prompt.ts', 'utf8'), /'14\) Si usás una de las respuestas guardadas[^']*\[\[ATAJO:clave\]\]/)
   assert.equal(guideShortcutCatalog([reply({ isActive: false })]), '')
 })
 
@@ -124,13 +127,14 @@ test('runtime strips the tag before validation; test chat gets images, not on ha
   const tagAt = runtime.indexOf('extractShortcutTag(structured.text)')
   assert.ok(tagAt > 0 && tagAt < runtime.indexOf('validateAgentOutput({', tagAt))
   const turn = readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
-  assert.match(turn, /text && !escalate && !notBound\s*\?\s*selectReplyImages/)
+  assert.match(turn, /text && !escalate && !notBound && !needsHuman && !fallbackUsed && \(account\.platform \|\| 'whatsapp'\) === 'whatsapp'\s*\?\s*selectReplyImages/)
   assert.match(turn, /alreadySent: input\.sentImageIds/)
 })
 
 test('live WhatsApp images: before the text, exactly-once keys, never twice per chat, never on hand-off', () => {
   const send = readFileSync('src/lib/soft-ai/agent-media-send.ts', 'utf8')
-  assert.match(send, /deliveryKey: `\$\{ctx\.job\.deliveryKey\}:img:\$\{index\}:\$\{asset\.sha256\.slice\(0, 16\)\}`/)
+  assert.match(send, /deliveryKey: `\$\{ctx\.job\.deliveryKey\}:img:\$\{asset\.sha256\.slice\(0, 32\)\}`/)
+  assert.match(send, /if \(Date\.now\(\) >= ctx\.deadlineAt\) break/)
   assert.match(send, /kind: 'image'/)
   // Upload (no customer effect) happens before the delivery row is claimed; failures never throw to the text send.
   assert.ok(send.indexOf('uploadToWhatsApp(ctx.phoneNumberId') < send.indexOf('await deliverOnce({'))
@@ -140,8 +144,35 @@ test('live WhatsApp images: before the text, exactly-once keys, never twice per 
   const imagesAt = turn.indexOf('await sendAgentImagesOnce(')
   const textAt = turn.indexOf('const delivery = await deliverOnce({')
   assert.ok(imagesAt > 0 && imagesAt < textAt)
-  assert.match(turn, /platform === 'whatsapp' && account\.accountId && input\.outputText && !input\.escalate/)
+  assert.match(turn, /!textAlreadyClaimed && platform === 'whatsapp' && account\.accountId && input\.outputText && !input\.escalate/)
+  assert.match(turn, /if \(!input\.outputText\.trim\(\)\) \{\s*return persistDecidedTurn\(\{[\s\S]{0,80}reason: 'empty_output'/)
   assert.match(turn, /alreadySent: await loadSentAgentImageShas\(input\.row\.tenantId, input\.row\.conversationId\)/)
   assert.match(turn, /replyShortcutKey: decision\.shortcutKey,/)
   assert.match(turn, /replyShortcutKey: policy\.purchaseSummaryAppended \? null : llm\.shortcutKey \|\| null/)
+})
+
+test('Verifier 2026-10-09: tag-only / template replies never become an empty or raw send', async () => {
+  const { applyFinalOutputPolicy } = await import('@/lib/soft-ai/llm/output-validator')
+  const facts = { schemaVersion: 1 } as never
+  const empty = applyFinalOutputPolicy({ text: '[[ATAJO:pb_tallas]]', intent: 'other', citedToolNames: [], brandFacts: facts, shortcuts: [] } as never)
+  assert.equal(empty.text, '')
+  assert.equal(empty.needsHuman, true)
+  assert.ok(empty.reasons.includes('empty_output'))
+  const tpl = applyFinalOutputPolicy({ text: 'Pagás con {{brand.payment.summary}} 😊', intent: 'other', citedToolNames: [], brandFacts: facts, shortcuts: [] } as never)
+  assert.doesNotMatch(tpl.text, /\{\{/)
+  assert.equal(tpl.needsHuman, true)
+  const runtime = readFileSync('src/lib/soft-ai/llm/runtime.ts', 'utf8')
+  const guardAt = runtime.indexOf("if (finalText && !extractShortcutTag(parseStructuredAgentOutput(finalText).text).text) finalText = ''")
+  assert.ok(guardAt > 0 && guardAt < runtime.indexOf('const fb = await runAgentFallback'))
+  assert.match(runtime, /key: repaired\.key \}/)
+})
+
+test('only replies whose image would really go out are marked "(va con imagen)"', async () => {
+  const { sendableImageReplyIds } = await import('@/lib/soft-ai/reply-images')
+  const map = new Map([['s1', [asset('i1')]], ['s2', [asset('i2'), asset('i3')]]])
+  assert.deepEqual([...sendableImageReplyIds(map, ['i1', 'sha-i2'])], ['s2'])
+  assert.deepEqual([...sendableImageReplyIds(map, ['i1', 'i2', 'i3'])], [])
+  const turn = readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
+  assert.match(turn, /replyImageShortcutIds: liveImageReplyIds/)
+  assert.doesNotMatch(turn, /replyImageShortcutIds: new Set\(replyAssets\.keys\(\)\)/)
 })

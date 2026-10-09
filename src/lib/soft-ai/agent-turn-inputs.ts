@@ -21,7 +21,7 @@ import type { ResolvedChatAgent } from '@/lib/soft-ai/agent-resolver'
 import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
 import type { InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
-import { guideShortcutCatalog } from '@/lib/soft-ai/shortcuts'
+import { guideShortcutCatalog, renderShortcutTemplate } from '@/lib/soft-ai/shortcuts'
 import {
   deriveSalesState,
   formatSalesTurnBlock,
@@ -31,6 +31,7 @@ import {
   type SalesContext,
 } from '@/lib/soft-ai/sales-state'
 import {
+  PAYMENT_TOKEN,
   formatBrandFactsForPrompt,
   parseBrandFactsSafe,
   parseReplyStyleSafe,
@@ -210,7 +211,17 @@ export function assembleAgentRuntimeInputs(input: {
     // With the sales flow, shipping comes only from Betsy's shipping list (promo applied); the store's own shipping
     // text would show a second, stale price (e.g. ₡3.000 during a free-shipping promo).
     brandFactsBlock: formatBrandFactsForPrompt(sales ? { ...input.agent.brandFacts, shipping: undefined } : input.agent.brandFacts),
-    shortcutCatalog: guideShortcutCatalog(input.shortcuts, input.replyImageShortcutIds),
+    // Bodies rendered for the model (no raw {{brand.…}}); payment numbers stay out — they become [[DATOS_PAGO]].
+    shortcutCatalog: guideShortcutCatalog(
+      input.shortcuts.map((row) => ({
+        ...row,
+        body: renderShortcutTemplate(row.body.replace(/\{\{\s*brand\.payment\.[a-zA-Z0-9_.]+\s*\}\}/g, PAYMENT_TOKEN), {
+          facts: input.agent.brandFacts,
+          clientFirstName: input.clientName,
+        }),
+      })),
+      input.replyImageShortcutIds,
+    ),
     replyStyleSnippet: replyStyleSnippet(input.agent.replyStyle),
     salesSystemBlock: sales ? salesSystemBlock(sales) : null,
     salesTurnBlock: sales && salesState ? formatSalesTurnBlock(sales, salesState) : null,

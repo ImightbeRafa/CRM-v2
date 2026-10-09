@@ -77,7 +77,8 @@ export async function normalizeImage(bytes: Buffer): Promise<{ bytes: Buffer; mi
     throw new AgentAssetError('not_image')
   }
   if (!meta.format || !['jpeg', 'png', 'webp', 'gif', 'heif', 'avif', 'tiff'].includes(meta.format)) throw new AgentAssetError('not_image')
-  const png = Boolean(meta.hasAlpha) && meta.format === 'png'
+  // Transparency (png / webp / gif…) stays png: jpeg would turn it black.
+  const png = Boolean(meta.hasAlpha)
   const pipeline = sharp(bytes, { limitInputPixels: 40_000_000, animated: false })
     .rotate()
     .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
@@ -129,9 +130,12 @@ export async function storeAgentAsset(input: {
       ("id", "tenantId", "agentId", "kind", "name", "caption", "blobPath", "publicUrl", "mimeType", "sizeBytes",
        "width", "height", "sha256", "status", "createdBy", "createdAt", "updatedAt")
     VALUES (${id}, ${input.tenantId}, ${input.agentId}, 'other', ${name}, ${caption}, ${blobPath}, ${assetUrl(input.agentId, id)},
-            ${img.mime}, ${img.bytes.length}, ${img.width}, ${img.height}, ${sha256}, 'active', ${input.userId}, NOW(), NOW())`
+            ${img.mime}, ${img.bytes.length}, ${img.width}, ${img.height}, ${sha256}, 'active', ${input.userId}, NOW(), NOW())
+    ON CONFLICT DO NOTHING`
+  // Same image uploaded twice at once: the unique (tenant, sha256) row wins; both callers get it.
   const row = await prisma.$queryRaw<Array<Record<string, unknown>>>`
-    SELECT * FROM "ChatAgentAsset" WHERE "id" = ${id} AND "tenantId" = ${input.tenantId} LIMIT 1`
+    SELECT * FROM "ChatAgentAsset" WHERE "tenantId" = ${input.tenantId} AND "sha256" = ${sha256} LIMIT 1`
+  if (!row[0]) throw new AgentAssetError('storage')
   return mapAsset(row[0], input.agentId)
 }
 
@@ -179,7 +183,7 @@ export async function archiveAgentAsset(tenantId: string, agentId: string, asset
 }
 
 /** Set the images (≤3, in order) of one of THIS agent's replies. Every id is re-checked against tenant + agent. */
-export async function setReplyAssets(input: { tenantId: string; agentId: string; shortcutId: string; assetIds: string[] }): Promise<number> {
+export async function setReplyAssets(input: { tenantId: string; agentId: string; shortcutId: string; assetIds: string[] }): Promise<string[]> {
   if (!(await agentAssetsReady())) throw new AgentAssetError('not_ready')
   const shortcut = await prisma.chatAgentShortcut.findFirst({
     where: { id: input.shortcutId, tenantId: input.tenantId, agentId: input.agentId },
@@ -197,7 +201,7 @@ export async function setReplyAssets(input: { tenantId: string; agentId: string;
         VALUES (${randomUUID()}, ${input.tenantId}, ${shortcut.id}, ${assetId}, ${position}, NOW())`,
     ),
   ])
-  return valid.length
+  return valid
 }
 
 /** Images per reply for this agent (active assets only, in position order). */

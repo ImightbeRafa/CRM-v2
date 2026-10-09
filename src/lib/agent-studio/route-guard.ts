@@ -48,7 +48,7 @@ export async function studioGuard(
     if (!rate.allowed) return { ok: false, response: json(429, 'Demasiados cambios. Esperá un momento.') }
     if (mode === 'heavy') {
       const heavy = await heavyLimit(auth.tenantId)
-      if (!heavy.allowed) return { ok: false, response: json(429, 'Demasiadas fuentes seguidas. Probá en unos minutos.') }
+      if (!heavy.allowed) return { ok: false, response: json(429, 'Demasiadas cargas seguidas. Probá en unos minutos.') }
     }
   }
   const agent = await prisma.chatAgent.findFirst({ where: { id: agentId, tenantId: auth.tenantId }, select: { id: true, name: true } })

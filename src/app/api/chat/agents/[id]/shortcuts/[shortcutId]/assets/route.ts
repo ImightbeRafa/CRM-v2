@@ -26,12 +26,12 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       entityId: shortcutId,
       entityName: g.ctx.agent.name,
       description: 'Imágenes de una respuesta del agente',
-      newValues: { assetIds: assetIds.slice(0, stored) },
+      newValues: { assetIds: stored },
       userId: g.ctx.userId,
       userName: g.ctx.actorName,
       userRole: g.ctx.role,
     }).catch(() => undefined)
-    return NextResponse.json({ success: true, stored })
+    return NextResponse.json({ success: true, stored: stored.length, assetIds: stored })
   } catch (error) {
     if (error instanceof AgentAssetError) {
       const status = error.code === 'not_found' ? 404 : error.code === 'not_ready' ? 409 : 400

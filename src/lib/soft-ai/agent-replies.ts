@@ -93,7 +93,7 @@ export async function importTeamQuickReplies(actor: Actor): Promise<ImportResult
         if (error instanceof AgentAssetError && (error.code === 'quota' || error.code === 'not_ready')) break
       }
     }
-    if (assetIds.length) result.images += await setReplyAssets({ tenantId: actor.tenantId, agentId: actor.agentId, shortcutId: row.id, assetIds })
+    if (assetIds.length) result.images += (await setReplyAssets({ tenantId: actor.tenantId, agentId: actor.agentId, shortcutId: row.id, assetIds })).length
   }
   return result
 }

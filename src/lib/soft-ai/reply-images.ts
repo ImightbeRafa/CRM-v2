@@ -60,3 +60,13 @@ export function selectReplyImages(input: {
     .map((a) => ({ assetId: a.id, url: a.url, mimeType: a.mimeType, sha256: a.sha256, name: a.name, width: a.width, height: a.height }))
   return { key: row.key, images }
 }
+
+/** Saved replies that would really send an image now (≥1 not yet sent in this chat). The catalog only marks these. */
+export function sendableImageReplyIds(assetsByShortcut: Map<string, AgentAsset[]>, alreadySent: Iterable<string> = []): Set<string> {
+  const sent = new Set(alreadySent)
+  const out = new Set<string>()
+  for (const [shortcutId, list] of assetsByShortcut) {
+    if (list.some((a) => !sent.has(a.id) && !sent.has(a.sha256))) out.add(shortcutId)
+  }
+  return out
+}

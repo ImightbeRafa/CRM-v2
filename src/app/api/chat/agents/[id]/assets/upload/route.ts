@@ -13,7 +13,7 @@ const MESSAGES: Record<AgentAssetError['code'], [number, string]> = {
   not_ready: [409, 'Las imágenes del agente todavía no están disponibles.'],
   not_image: [400, 'Ese archivo no es una imagen.'],
   too_large: [413, 'La imagen es demasiado grande.'],
-  quota: [429, 'Se llenó el espacio para imágenes del negocio. Quitá alguna primero.'],
+  quota: [429, 'Se llenó el espacio para imágenes del negocio (200 MB).'],
   not_found: [404, 'No encontrado'],
   storage: [503, 'No se pudo guardar la imagen. Probá de nuevo.'],
 }

@@ -494,6 +494,8 @@ export async function executeAgentLayerTurn(
     brandFacts: resolved.agent.brandFacts,
     replyStyle: resolved.agent.replyStyle,
     shortcuts,
+    // A keyword reply WITH images whose image can't go out now ("Te paso la guía 👇" with nothing) → model answers.
+    skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !liveImageReplyIds.has(id))),
   })
   decision.decisionTrace.historyCount = history.length
 
@@ -1265,12 +1267,15 @@ async function runAgentTestTurnInner(input: {
   }
 
   const notSimulatedGates = [...PROBAR_NOT_SIMULATED_GATES]
+  const probarImageReplyIds =
+    (account.platform || 'whatsapp') === 'whatsapp' ? sendableImageReplyIds(replyAssets, input.sentImageIds) : new Set<string>()
   const decision = decideInbound({
     inboundText: input.inboundText,
     messageType: input.messageType || 'text',
     brandFacts: runtimeAgent.brandFacts,
     replyStyle: runtimeAgent.replyStyle,
     shortcuts,
+    skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !probarImageReplyIds.has(id))),
   })
   decision.decisionTrace.historyCount = history.length
   decision.decisionTrace.blockedBy = blockedBy
@@ -1316,8 +1321,7 @@ async function runAgentTestTurnInner(input: {
       inboundText: input.inboundText,
       clientName: input.customerName ?? null,
       shortcuts,
-      replyImageShortcutIds:
-        (account.platform || 'whatsapp') === 'whatsapp' ? sendableImageReplyIds(replyAssets, input.sentImageIds) : new Set<string>(),
+      replyImageShortcutIds: probarImageReplyIds,
       knowledge,
       decision,
       salesContext: await loadAgentSalesContext({

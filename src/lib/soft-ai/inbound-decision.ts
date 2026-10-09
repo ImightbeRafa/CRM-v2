@@ -107,6 +107,8 @@ export function decideInbound(input: {
   brandFacts: BrandFacts
   replyStyle?: ReplyStyle | null
   shortcuts: RuntimeShortcut[]
+  /** Keyword replies not sent as-is this turn (their image would not go out): the model answers instead. */
+  skipVerbatimIds?: ReadonlySet<string>
 }): InboundDecision {
   const paymentClass = classifyPaymentText(input.inboundText)
   const steps: DecisionStep[] = [
@@ -171,7 +173,10 @@ export function decideInbound(input: {
     })
   }
 
-  const verbatim = matchVerbatimShortcut(input.inboundText, input.shortcuts)
+  const verbatim = matchVerbatimShortcut(
+    input.inboundText,
+    input.skipVerbatimIds?.size ? input.shortcuts.filter((row) => !row.id || !input.skipVerbatimIds!.has(row.id)) : input.shortcuts,
+  )
   if (verbatim) {
     steps.push({ step: 'verbatim_shortcut', outcome: verbatim.key })
     const text = renderShortcutTemplate(verbatim.body, { facts: input.brandFacts })

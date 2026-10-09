@@ -207,3 +207,18 @@ test('SecureDog 2026-10-09: image decode bounded (MEDIA-11), versions bumped (IN
   assert.match(readFileSync(`${root}/assets/route.ts`, 'utf8'), /assets\.map\(publicAgentAsset\)/)
   assert.match(readFileSync(`${root}/shortcuts/library/route.ts`, 'utf8'), /logAuditEvent\(/)
 })
+
+test('Verifier r2: keyword reply with an image that cannot go out → model answers; catalog has no customer name', async () => {
+  const { decideInbound } = await import('@/lib/soft-ai/inbound-decision')
+  const facts = { schemaVersion: 1 } as never
+  const shortcuts = [reply({})]
+  assert.equal(decideInbound({ inboundText: '¿qué talla me queda?', brandFacts: facts, shortcuts }).shortcutKey, 'pb_tallas')
+  const skipped = decideInbound({ inboundText: '¿qué talla me queda?', brandFacts: facts, shortcuts, skipVerbatimIds: new Set(['s1']) })
+  assert.equal(skipped.handled, false)
+  const turn = readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
+  assert.equal((turn.match(/skipVerbatimIds: new Set\(\[\.\.\.replyAssets\.keys\(\)\]/g) || []).length, 2)
+  const inputs = readFileSync('src/lib/soft-ai/agent-turn-inputs.ts', 'utf8')
+  assert.match(inputs, /facts: promptFacts,\s*clientFirstName: null,/)
+  const { AI_NO_REPLY_REASONS } = await import('@/lib/workspace-notifications')
+  assert.ok(AI_NO_REPLY_REASONS.empty_output)
+})

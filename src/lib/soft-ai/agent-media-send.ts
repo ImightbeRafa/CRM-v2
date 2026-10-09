@@ -64,8 +64,15 @@ async function reusableMediaId(tenantId: string, socialAccountId: string, sha: s
   return row?.providerMediaId || null
 }
 
-async function uploadToWhatsApp(phoneNumberId: string, accessToken: string, asset: AgentAsset): Promise<string | null> {
-  const bytes = await readAgentAssetBytes(asset)
+async function uploadToWhatsApp(phoneNumberId: string, accessToken: string, asset: AgentAsset, deadlineAt: number): Promise<string | null> {
+  // A slow storage read never pushes the turn past its deadline.
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const bytes = await Promise.race([
+    readAgentAssetBytes(asset),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('ASSET_READ_DEADLINE')), Math.max(1_000, deadlineAt - Date.now()))
+    }),
+  ]).finally(() => clearTimeout(timer))
   const form = new FormData()
   form.append('messaging_product', 'whatsapp')
   form.append('type', asset.mimeType)
@@ -100,7 +107,7 @@ export async function sendAgentImagesOnce(ctx: AgentImageSend, assets: AgentAsse
       if (Date.now() >= ctx.deadlineAt) break
       const cached = await reusableMediaId(ctx.job.tenantId, ctx.job.socialAccountId, asset.sha256)
       if (!cached && ctx.deadlineAt - Date.now() < UPLOAD_MIN_LEFT_MS) continue
-      const mediaId = cached || (await uploadToWhatsApp(ctx.phoneNumberId, ctx.accessToken, asset))
+      const mediaId = cached || (await uploadToWhatsApp(ctx.phoneNumberId, ctx.accessToken, asset, ctx.deadlineAt))
       if (!mediaId) continue
       const delivery = await deliverOnce({
         jobId: ctx.job.id,

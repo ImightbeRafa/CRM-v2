@@ -25,6 +25,7 @@ export const AI_NO_REPLY_REASONS: Record<string, string> = {
   window_closed: 'Pasaron más de 24 h desde el último mensaje del cliente.',
   budget_blocked: 'Se alcanzó el límite diario de IA.',
   token_unhealthy: 'La conexión del canal necesita revisión.',
+  empty_output: 'La respuesta quedó vacía y no se envió.',
 }
 
 const ID_RE = /^[A-Za-z0-9_-]{8,64}$/

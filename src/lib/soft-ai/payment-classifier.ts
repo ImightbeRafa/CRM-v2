@@ -39,7 +39,10 @@ const CLAIM_CUE_RE = new RegExp(
       String.raw`sinpe\s+(hecho|listo|enviado|realizado|mandado)`,
       near(String.raw`(lleg[oó]|recibi(eron|ste|mos|ó|o)|reflej\p{L}*|aparec\p{L}*|cay[oó]|entr[oó])`, PAY_NOUN),
       String.raw`(tienen|vieron|viste|vio|ven)\s+(mi|el|la|los)\s+${PAY_NOUN}`,
-      String.raw`devol\p{L}*|devuelv\p{L}*|por\s+error|me\s+cobr\p{L}*|cobraron|de\s+m[aá]s|reembols\p{L}*`,
+      // Refund / wrong-payment / overcharge only next to money words: "¿puedo devolverlo si no me queda?",
+      // "¿cuánto me cobran por el envío?", "te escribí por error" are ordinary questions (Verifier 2026-10-09).
+      near(String.raw`(devol\p{L}*|devuelv\p{L}*|reembols\p{L}*|por\s+error)`, String.raw`(${PAY_NOUN.slice(1, -1)}|plata|dinero)`),
+      String.raw`(me\s+)?cobr(aron|[oó])\s+(doble|de\s+m[aá]s|dos\s+veces)|reembols\p{L}*`,
     ].join('|') +
     String.raw`)(?![\p{L}\p{N}_])`,
   'iu',

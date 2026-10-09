@@ -111,6 +111,9 @@ it('explicit how / can-I-pay questions are still answered by the agent', () => {
   for (const text of [
     'seria con envio puedo pagar cuando lo recibo?', 'se puede pagar contra entrega?', '¿puedo pagar en efectivo?',
     '¿cuándo se paga?', '¿se puede pagar con sinpe?', '¿reciben sinpe?', '¿tienen sinpe?', '¿tienen talla XL?',
+    // Verifier 2026-10-09: ordinary pre-sale questions never hand off.
+    '¿Cuánto me cobran por el envío?', '¿Me cobran el envío a Cartago?', '¿Puedo devolverlo si no me queda la talla?',
+    '¿Hacen devoluciones o cambios?', 'Perdón, te escribí por error', '¿El envío tarda de más de 3 días?',
   ]) {
     assert.notEqual(classifyPaymentText(text), 'payment_proof_or_risk', text)
   }

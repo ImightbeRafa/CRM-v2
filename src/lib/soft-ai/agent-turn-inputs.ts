@@ -184,6 +184,9 @@ export function assembleAgentRuntimeInputs(input: {
 }): SoftAiLlmRuntimeInput {
   const enabledTools = effectiveEnabledTools(input.agent.enabledTools)
   const sales = input.salesContext ?? null
+  // With the sales flow, shipping comes only from Betsy's shipping list (promo applied); the store's own shipping
+  // text would show a second, stale price (e.g. ₡3.000 during a free-shipping promo).
+  const promptFacts = sales ? { ...input.agent.brandFacts, shipping: undefined } : input.agent.brandFacts
   const salesState = sales ? deriveSalesState({ history: input.history, inboundText: input.inboundText, ctx: sales }) : null
   return {
     tenantId: input.toolCtxBase.tenantId,
@@ -208,16 +211,16 @@ export function assembleAgentRuntimeInputs(input: {
     clientName: input.clientName,
     linkedOrderId: null,
     pricingVersion: DEFAULT_PRICING_VERSION,
-    // With the sales flow, shipping comes only from Betsy's shipping list (promo applied); the store's own shipping
-    // text would show a second, stale price (e.g. ₡3.000 during a free-shipping promo).
-    brandFactsBlock: formatBrandFactsForPrompt(sales ? { ...input.agent.brandFacts, shipping: undefined } : input.agent.brandFacts),
+    brandFactsBlock: formatBrandFactsForPrompt(promptFacts),
     // Bodies rendered for the model (no raw {{brand.…}}); payment numbers stay out — they become [[DATOS_PAGO]].
     shortcutCatalog: guideShortcutCatalog(
       input.shortcuts.map((row) => ({
         ...row,
+        // Same facts as the brand block (no store shipping under the sales flow); no customer name in the system
+        // instructions (it is customer-controlled and would break prompt caching) — the name is in the chat anyway.
         body: renderShortcutTemplate(row.body.replace(/\{\{\s*brand\.payment\.[a-zA-Z0-9_.]+\s*\}\}/g, PAYMENT_TOKEN), {
-          facts: input.agent.brandFacts,
-          clientFirstName: input.clientName,
+          facts: promptFacts,
+          clientFirstName: null,
         }),
       })),
       input.replyImageShortcutIds,

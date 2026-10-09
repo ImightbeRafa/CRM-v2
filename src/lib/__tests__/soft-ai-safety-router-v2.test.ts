@@ -38,7 +38,8 @@ describe('safety router v2', () => {
     if (route.escalate) {
       assert.equal(route.reason, 'media_inbound')
       assert.equal(route.shortcutKey, 'sys_handoff_media')
-      assert.match(route.handoffText, /revisa lo que enviaste/i)
+      assert.match(route.handoffText, /lo reviso/i)
+      assert.doesNotMatch(route.handoffText, /persona|equipo/i)
     }
   })
 

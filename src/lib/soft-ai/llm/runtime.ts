@@ -2,6 +2,7 @@
  * Soft Agent Layer LLM runtime loop — ≤2 model calls, ≤4 tool calls.
  */
 
+import { extractShortcutTag } from '@/lib/soft-ai/reply-images'
 import {
   extractSoftAiFunctionCalls,
   parseSoftAiResponseText,
@@ -9,6 +10,7 @@ import {
   softAiResponsesCreate,
   SOFT_AI_FIRST_CALL_TIMEOUT_MS,
   SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS,
+  SOFT_AI_TURN_BUDGET_MS,
 } from '@/lib/soft-ai/llm/client'
 import {
   SOFT_AI_MAX_MODEL_CALLS,
@@ -52,6 +54,18 @@ export type SoftAiLlmRuntimeInput = {
   brandFactsBlock?: string | null
   shortcutCatalog?: string | null
   replyStyleSnippet?: string | null
+  /** Sales flow (Phase A): code-owned selling rules, per-turn sales data, and the amounts that data makes valid. */
+  salesSystemBlock?: string | null
+  salesTurnBlock?: string | null
+  salesAllowedAmounts?: number[]
+  /** Code says a person must follow up this turn (e.g. close with payment data not shareable). */
+  salesNeedsHuman?: boolean
+  /** Deal wording the owner's active promo allows (free shipping / special price); nothing else. */
+  salesAllowedDeals?: Array<'free_shipping' | 'special_price'>
+  /** Promo makes shipping free: the store's fixed shipping amounts are no longer valid prices. */
+  salesFreeShipping?: boolean
+  /** Sales state for the turn trace (debug only; not sent to the model separately). */
+  salesTrace?: { stage: string; said: Record<string, boolean> } | null
 }
 
 export type SoftAiLlmRuntimeResult = {
@@ -102,6 +116,7 @@ export async function runSoftAiLlmRuntime(
     brandFactsBlock: input.brandFactsBlock,
     shortcutCatalog: input.shortcutCatalog,
     replyStyleSnippet: input.replyStyleSnippet,
+    salesSystemBlock: input.salesSystemBlock,
   })
   const instructions = built.instructions
   const knowledgeVersions = built.knowledgeVersions
@@ -110,6 +125,7 @@ export async function runSoftAiLlmRuntime(
     inboundText: input.inboundText,
     clientName: input.clientName,
     linkedOrderId: input.linkedOrderId,
+    salesTurnBlock: input.salesTurnBlock,
   })
   const tools = softAiToolDefinitions(input.enabledTools)
   const promptCacheKey = buildSoftAiPromptCacheKey({
@@ -135,10 +151,13 @@ export async function runSoftAiLlmRuntime(
 
     while (modelCalls < SOFT_AI_MAX_MODEL_CALLS) {
       modelCalls += 1
-      const timeoutMs =
-        modelCalls === 1
-          ? SOFT_AI_FIRST_CALL_TIMEOUT_MS
-          : SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS
+      const timeoutMs = Math.max(
+        3_000,
+        Math.min(
+          modelCalls === 1 ? SOFT_AI_FIRST_CALL_TIMEOUT_MS : SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS,
+          SOFT_AI_TURN_BUDGET_MS - (Date.now() - started),
+        ),
+      )
       const response = await softAiResponsesCreate({
         model: input.model,
         instructions,
@@ -223,14 +242,19 @@ export async function runSoftAiLlmRuntime(
       }
     }
 
-    if (!finalText && toolCalls > 0 && modelCalls < SOFT_AI_MAX_MODEL_CALLS) {
+    // The model used every round on lookups (e.g. inventory, then shipping knowledge) and never wrote the answer:
+    // one last call that MUST answer in text from what it found (no more tools), inside the turn's time budget.
+    // Before (2026-10-09) this was skipped when the rounds were used up → empty output → human hand-off.
+    const remainingMs = SOFT_AI_TURN_BUDGET_MS - (Date.now() - started)
+    if (!finalText && toolCalls > 0 && remainingMs > 3_000) {
       const response = await softAiResponsesCreate({
         model: input.model,
         instructions,
         input: inputItems,
         tools: tools.length > 0 ? tools : undefined,
+        toolChoice: 'none',
         promptCacheKey,
-        timeoutMs: SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS,
+        timeoutMs: Math.min(SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS, remainingMs),
         temperature: 0.1,
         reasoningEffort: 'low',
         store: false,
@@ -250,6 +274,9 @@ export async function runSoftAiLlmRuntime(
       reasoningTokens += usage.reasoningTokens
       finalText = parseSoftAiResponseText(response)
     }
+
+    // A reply that is only [[ATAJO:…]] (or empty JSON text) is no reply: fallback / hand-off, never an empty send.
+    if (finalText && !extractShortcutTag(parseStructuredAgentOutput(finalText).text).text) finalText = ''
 
     if (!finalText) {
       const fb = await runAgentFallback({
@@ -288,12 +315,67 @@ export async function runSoftAiLlmRuntime(
     }
 
     const structured = parseStructuredAgentOutput(finalText)
-    finalText = structured.text
-    const validation = validateAgentOutput({
-      text: finalText,
-      citedToolNames,
-      inventoryPrices,
-    })
+    // [[ATAJO:clave]] names the saved reply it used (its images are attached by code); never shown to the customer.
+    let tagged = extractShortcutTag(structured.text)
+    finalText = tagged.text
+    const validate = (text: string) =>
+      validateAgentOutput({
+        text,
+        citedToolNames,
+        inventoryPrices,
+        // Prices / shipping / totals listed for this turn by code are sourced (no lookup call needed).
+        quoteAmounts: input.salesAllowedAmounts,
+        allowedDeals: input.salesAllowedDeals,
+      })
+    let validation = validate(finalText)
+    // B7: a reply that breaks a rule (made-up amount, a deal, "ya quedó pagado"…) gets ONE rewrite with the reasons
+    // before anything is handed to a person. The rewrite passes the same checks or the original hand-off stands.
+    const repairLeftMs = SOFT_AI_TURN_BUDGET_MS - (Date.now() - started)
+    // Never on payment wording (a "ya quedó pagado" reply means the customer is talking about a payment → person).
+    const repairable = validation.reasons.length > 0 && validation.reasons.every((r) => REPAIRABLE_REASONS.has(r))
+    if (validation.needsHuman && repairable && !structured.needsHuman && !escalate && repairLeftMs > 5_000) {
+      try {
+        const response = await softAiResponsesCreate({
+          model: input.model,
+          instructions,
+          input: [
+            ...inputItems,
+            { type: 'message', role: 'assistant', content: finalText },
+            { type: 'message', role: 'user', content: repairInstruction(validation.reasons) },
+          ],
+          tools: tools.length > 0 ? tools : undefined,
+          toolChoice: 'none',
+          promptCacheKey,
+          timeoutMs: Math.min(SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS, repairLeftMs - 1_000),
+          temperature: 0.1,
+          reasoningEffort: 'low',
+          store: false,
+          maxOutputTokens: 500,
+          usage: {
+            tenantId: input.tenantId,
+            feature: input.toolCtx.sandbox ? 'probar' : 'inbox_agent',
+            agentId: input.agentId,
+            conversationId: input.toolCtx.sandbox ? null : input.toolCtx.conversationId,
+          },
+        })
+        const usage = readSoftAiUsage(response)
+        inputTokens += usage.inputTokens
+        cachedInputTokens += usage.cachedInputTokens
+        outputTokens += usage.outputTokens
+        reasoningTokens += usage.reasoningTokens
+        const repairedRaw = parseStructuredAgentOutput(parseSoftAiResponseText(response))
+        const repaired = extractShortcutTag(repairedRaw.text)
+        const recheck = repaired.text ? validate(repaired.text) : null
+        toolTrace.push({ repair: { reasons: validation.reasons, ok: Boolean(recheck?.ok && !repairedRaw.needsHuman) } })
+        if (recheck?.ok && !repairedRaw.needsHuman) {
+          finalText = repaired.text
+          tagged = { text: repaired.text, key: repaired.key }
+          validation = recheck
+        }
+      } catch {
+        // Timeout / provider error: keep the original verdict (hand-off).
+      }
+    }
     if (validation.needsHuman || structured.needsHuman) {
       escalate = true
       escalateReason = escalateReason || 'provenance'
@@ -304,7 +386,7 @@ export async function runSoftAiLlmRuntime(
       status: 'generated',
       needsHuman: validation.needsHuman || structured.needsHuman || escalate,
       intent: structured.intent,
-      shortcutKey: structured.shortcutKey,
+      shortcutKey: tagged.key || structured.shortcutKey || lastUsedShortcutKey(toolTrace),
       inventoryPrices,
       escalate,
       escalateReason,
@@ -401,6 +483,47 @@ function logLlmFailure(model: string, error: unknown) {
     requestId: typeof e.request_id === 'string' ? e.request_id : null,
     name: typeof e.name === 'string' ? e.name : null,
   })
+}
+
+/** Reasons a rewrite may fix. Not confirmation_wording: payment talk always goes to a person (SecureDog 2026-10-09). */
+export const REPAIRABLE_REASONS: ReadonlySet<string> = new Set([
+  'unsourced_money',
+  'unsourced_amount',
+  'money_mismatch_inventory',
+  'deal_offer',
+  'write_claim',
+  'unit_cost_leak',
+  'style_too_long',
+])
+
+const REPAIR_REASON_TEXT: Record<string, string> = {
+  unsourced_money: 'pusiste un monto que no está en los precios / envíos de BETSY_DATOS ni en lo que consultaste',
+  unsourced_amount: 'pusiste un número o monto que no sale de los datos',
+  money_mismatch_inventory: 'el precio no coincide con el del producto',
+  deal_offer: 'ofreciste un descuento o promoción que el negocio no tiene',
+  write_claim: 'dijiste que ya creaste o registraste algo',
+  unit_cost_leak: 'mencionaste un costo interno',
+  style_too_long: 'quedó muy largo',
+}
+
+/** Rewrite request (B7): only reason names from code, never customer text. */
+export function repairInstruction(reasons: string[]): string {
+  const why = reasons.map((r) => REPAIR_REASON_TEXT[r]).filter(Boolean)
+  return [
+    `Tu respuesta anterior no se puede enviar: ${why.length ? why.join('; ') : 'rompe una regla fija'}.`,
+    'Reescribila para el cliente arreglando eso: usá solo precios y montos de BETSY_DATOS o de lo que consultaste (si no tenés el dato, preguntá o decí que lo confirmás), sin descuentos inventados y sin decir que un pago está confirmado.',
+    'Mismo tono y corta. Respondé solo el texto final para el cliente.',
+  ].join(' ')
+}
+
+/** Key of the last saved reply the model fetched with use_shortcut (fallback when it forgot the tag). */
+function lastUsedShortcutKey(trace: unknown[]): string | null {
+  for (let i = trace.length - 1; i >= 0; i -= 1) {
+    const row = trace[i] as Record<string, unknown> | null
+    const result = row?.result as { key?: unknown } | undefined
+    if (row?.name === 'use_shortcut' && row.ok === true && typeof result?.key === 'string') return result.key
+  }
+  return null
 }
 
 function parseStructuredAgentOutput(raw: string): {

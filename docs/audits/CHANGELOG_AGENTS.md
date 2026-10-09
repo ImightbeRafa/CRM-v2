@@ -1,3 +1,78 @@
+## 2026-10-09 — Agent: saved replies with images, promo, fewer hand-offs (claudio/agent-f3-studio)
+
+- Rafael: the agent should have its own customizable replies (size guide "TALLAS", promo flyer) so it doesn't always
+  "think", handle the chat until payment, and stop handing off answerable chats; the test chat froze while waiting.
+- Test chat: never freezes (customer bubble at once, "escribiendo…", messages queue in order). Timeouts 20 s first /
+  15 s follow-up / 35 s turn, job 42 s. Payment classifier: questions ("¿contra entrega?", "¿cómo pago?") go to the
+  agent; only claims / proofs go to a person.
+- B1 "Promoción activa" (② Productos): free shipping (₡0 by code), special prices, contra entrega highlight; only the
+  enabled deal wording passes the validator, everything else (%, 2x1, "te lo dejo en") stays blocked.
+- B2–B4 "③ Respuestas guardadas": owner replies with up to 3 images (re-encoded jpeg/png ≤1600 px, no metadata,
+  private bucket, 200 MB per business). "+ Respuestas de venta listas" (saludo, tallas, promo, envío, contra entrega,
+  cómo comprar, post-venta — created OFF) and "Copiar mis respuestas rápidas del chat" (text + photos, OFF).
+  "Rápida" = sent as-is on a keyword (no model call); otherwise the agent adapts it and tags [[ATAJO:clave]] (stripped
+  by code). Code picks the images: active owner reply only, never sys_*, never twice in a chat. Test chat shows them.
+- B5 live WhatsApp: images before the text, exactly-once per image (deliverOnce key job+position+hash), upload before
+  the claim (failure drops only the image), Meta media id reused 25 days; none on a hand-off. B6 Instagram: not yet.
+- B7: a reply that breaks a rule gets one text-only rewrite (same checks) before any hand-off; test chat says
+  "corrigió su respuesta" / which saved reply it used. Rules version bumped → re-run "Probar y activar".
+- No new SQL (tables from 029 / 053).
+- Review rounds (same day): SecureDog INT-76 (High, payment claims phrased as questions → AI) fixed + verified;
+  INT-77/DATA-48 promo headline/blank rows; MEDIA-11 bounded image decode + import; INT-78..81; INT-82 (High,
+  pre-existing: "ya cancelé", "le pasé la plata", "¿recibiste los ₡X?") fixed + verified. Verifier: tag-only reply
+  could send an empty WhatsApp message (fixed), images only when they really go out, 28 s image deadline, tag rule
+  moved to fixed rule 14, ordinary pre-sale questions ("¿cuánto me cobran por el envío?", "¿puedo devolverlo?")
+  answered again. Open Lows: MEDIA-13 (image quota never frees), DATA-49 (salesRules 8 KB / no CAS).
+- Proof: tsc 0, lint 0, soft-ai 474/0, security 271/0, chat-harden 643/0, soft-ai-agent 308/0, agentes-ui 34/0.
+
+## 2026-10-09 — Agent: simple 3-step page, products by group, test chat = live, sales flow (claudio/agent-f3-studio)
+
+- Rafael's feedback after F3 went live: Forge didn't answer (0 products mapped; tests 7/7 with no price cases), the
+  AI dashboard was a separate page, and the agent page was too complex. Fixed: AI usage is the "IA" tab of his Admin
+  Dashboard (/logistics/admin); agent Resumen = ① Tu negocio (Studio) → ② Productos por grupo (ARNESS = all sizes) →
+  ③ Probar como cliente (+ toggle "¿sos un bot?") ; rest under Avanzado. Test runs refuse an agent with no products.
+- Matching: shared word matcher (accents, doubled letters, one typo; sizes exact XXL≠XL) for Studio and the live
+  product search fallback. Test chat parity with live (order ownership, platform, intent), "why" line per reply.
+- Model timeouts were cutting every answer after a lookup (7 s); now 12 s / 18 s and one final text-only call
+  (tool_choice none) inside a 40 s turn budget — product+shipping questions no longer end in a hand-off.
+- Sales flow (Phase A S1–S3): code-derived sales state (what was already said, stage, next step) so the agent does
+  not repeat itself and always moves to the sale; products/shipping/order fields inline (small catalogs, one call);
+  payment info at close (when shareable; otherwise silent escalation); seller voice — the client never hears
+  "persona del equipo" (new default texts, stored untouched defaults upgraded on read); per-agent "¿sos un bot?"
+  Discreto/Transparente; shipping from Métodos de envío with fallback to store facts (DeepSleep has none yet).
+- Reviews: Verifier PASS WITH NOTES ×3 (all notes fixed). Not done yet: quote_shipping by exact zone, payment
+  classifier split, live "hold" outcome (escalated real chats still only notify staff), "Pago verificado" flow.
+- Proof: tsc 0, lint 0, soft-ai 433/0, chat-harden 640/0, security 271/0, agentes-ui 34/0, site-ui 50/51 (baseline).
+
+## 2026-10-08 — Agent Studio "Crear desde fuentes" + shipping zones (claudio/agent-f3-studio, on agent-f2-ai-usage)
+
+- Agentes › Resumen › "✨ Crear desde fuentes": the owner gives the business's own material (website URL, PDF /
+  Word / text, product photos, a connected Instagram account, pasted text) → one structured AI pass builds a DRAFT
+  where every fact carries the literal quote it came from (unproven facts dropped) → owner reviews / edits / unticks
+  → "Aplicar" writes into the agent's existing stores through their own admin functions (brand facts deep-merge,
+  "<agente> · Políticas / Preguntas frecuentes" knowledge approved + bound, guide shortcuts, inventory map UNION,
+  selling script) → the F1 "Probar y activar" gate. Products matched to InventoryItem (one per variant) by code
+  (SKU seen in the source → exact name → tokens incl. sizes; ties left to the owner). AI never sets prices, stock,
+  shipping cost or coverage. Payment accounts never pre-ticked; text with phones / links starts unticked.
+- Config › Métodos de envío › "Zonas de entrega y contra entrega" (SQL 053 ShippingMethodCoverage): all / GAM
+  (production Correos GAM classifier) / list of zones, and where contra entrega applies. Code answers covered /
+  not / unknown (incomplete address → ask, never guess).
+- Safety: SSRF-safe fetch (IP allow/block lists incl. IPv6 global-unicast only, c-ares DNS with timeout pinned to
+  checked IPs, wall-clock per request, same-site crawl), linear HTML scanner, DOCX via bounded zip reader + 8 MB
+  inflate cap, PDF pre-scan (64 MB inflate budget, encrypted/LZW refused) then pdf.js in a worker (heap limit, RSS
+  backstop, terminate at 20 s, 1 at a time), sizes capped everywhere (bodies, URL, meta, SQL CHECKs), kill switch /
+  budget pause stop Studio spend, $0.60 per draft, 10 drafts and 60 photos per business per day (atomic), 300 MB
+  storage per business, leased extraction + apply (cron recovers), studio routes update_config + same-origin.
+- SQL 052 (ChatAgentSource, ChatAgentProfileDraft) + 053 (asset agentId/inventoryCategory + FK fix SET NULL
+  ("inventoryItemId"), ShippingMethodCoverage, ChatAgentSettings offeredShippingMethodIds/salesRules). Not applied
+  anywhere yet (checked read-only 2026-10-08). unpdf 1.4.0 (Node 20) external + traced into the upload route.
+- Reviews: Verifier FAIL ×2 → fixed; SecureDog BLOCK → OK TO DEPLOY with notes. Register: INFRA-21, DB-06, INT-64..68,
+  DATA-44, DATA-45, AUTH-59. Deferred: offered-methods UI/runtime + photo records (F5), studio injection cases in the
+  test suite (F4), sales rules in the live prompt (F5), platform-wide audit clamp, agent-delete file purge.
+- Proof: tsc 0, lint 0, soft-ai 409/409 (agent-studio 45 incl. one regression per review finding), chat-harden
+  640/640, security 271/271, ops 37/37, site-ui 50/51 (baseline); docker image builds, a real PDF parses in the
+  worker inside the image on Node 20. Real model calls not verified locally (invalid local XAI key).
+
 ## 2026-10-05 — Composer never locks on text sends + Estadísticas calendar periods (claudio/chat-link-orders)
 
 - Chats composer: text sends append the bubble and clear the box at once, then queue per conversation (typing

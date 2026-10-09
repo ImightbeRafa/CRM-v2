@@ -1,26 +1,31 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { formatColones, type CatalogItem } from '@/lib/chat-catalog'
+import { formatColones } from '@/lib/chat-catalog'
 
 type Mapped = { id: string; name: string; sku: string | null; sellingPrice: number; currentStock: number; isActive: boolean }
+type Group = { category: string; items: Array<{ id: string; name: string; sku: string | null; sellingPrice: number; currentStock: number }> }
 
-/** Which products this agent may quote. Empty = none (fail closed: one business can run several stores). */
-export function AgentInventoryCard({ agentId, canEdit }: { agentId: string; canEdit: boolean }) {
+/**
+ * Which products this agent may sell, picked by group (inventory category: e.g. "ARNESS" = all sizes) or one by
+ * one. Empty = none (fail closed: one business can run several stores). Price and stock always come from inventory.
+ */
+export function AgentInventoryCard({ agentId, canEdit, title }: { agentId: string; canEdit: boolean; title?: string }) {
   const [available, setAvailable] = useState(true)
   const [items, setItems] = useState<Mapped[] | null>(null)
-  const [q, setQ] = useState('')
-  const [results, setResults] = useState<CatalogItem[]>([])
+  const [catalog, setCatalog] = useState<Group[]>([])
+  const [open, setOpen] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/inventory`, { cache: 'no-store' })
+      const res = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/inventory?catalog=1`, { cache: 'no-store' })
       if (!res.ok) return
-      const json = (await res.json()) as { available?: boolean; items?: Mapped[] }
+      const json = (await res.json()) as { available?: boolean; items?: Mapped[]; catalog?: Group[] }
       setAvailable(json.available !== false)
       setItems(json.items ?? [])
+      setCatalog(json.catalog ?? [])
     } catch {
       /* optional card */
     }
@@ -30,38 +35,15 @@ export function AgentInventoryCard({ agentId, canEdit }: { agentId: string; canE
     void load()
   }, [load])
 
-  useEffect(() => {
-    if (!q.trim()) {
-      setResults([])
-      return
-    }
-    let cancelled = false
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const res = await fetch(`/api/chat/catalog?q=${encodeURIComponent(q)}`, { cache: 'no-store' })
-          if (!res.ok) return
-          const json = (await res.json()) as { items?: CatalogItem[] }
-          if (!cancelled) setResults(json.items ?? [])
-        } catch {
-          /* ignore */
-        }
-      })()
-    }, 250)
-    return () => {
-      cancelled = true
-      window.clearTimeout(timer)
-    }
-  }, [q])
-
   async function save(next: string[]) {
     setBusy(true)
     setMessage(null)
+    if (new Set(next).size > 200) setMessage('Un agente puede vender hasta 200 productos: se guardaron los primeros 200.')
     try {
       const res = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/inventory`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemIds: next }),
+        body: JSON.stringify({ itemIds: [...new Set(next)].slice(0, 200) }),
       })
       const json = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) setMessage(json.error || 'No se pudo guardar.')
@@ -74,75 +56,110 @@ export function AgentInventoryCard({ agentId, canEdit }: { agentId: string; canE
   }
 
   if (items === null) return null
-  const ids = items.map((i) => i.id)
+  const selected = new Set(items.map((i) => i.id))
+  const ids = [...selected]
+
   return (
-    <div className="mt-4 rounded-lg bg-slate-50 p-3" data-testid="agent-inventory-card">
-      <p className="text-[13px] font-semibold text-slate-900">Productos que puede cotizar</p>
+    <div className="rounded-2xl border border-slate-200/70 bg-white p-4 md:p-5" data-testid="agent-inventory-card">
+      <p className="text-[14px] font-semibold text-slate-900">{title || 'Productos que puede vender'}</p>
       {!available ? (
         <p className="mt-1 text-[12px] text-slate-500">Se activa con la próxima actualización.</p>
       ) : (
         <>
-          <p className="mt-1 text-[12px] text-slate-500">
+          <p className={`mt-1 text-[12px] ${items.length === 0 ? 'font-medium text-red-700' : 'text-slate-500'}`}>
             {items.length === 0
-              ? 'Sin productos: el agente no puede cotizar nada todavía. Agregá los productos que vende este canal.'
-              : 'El agente solo busca y cotiza estos productos. Precio y stock siempre salen del inventario en vivo.'}
+              ? '0 productos: este agente no puede vender nada. Elegí un grupo abajo.'
+              : `${items.length} producto(s). Precio y stock siempre salen del inventario en vivo.`}
           </p>
-          {items.length > 0 ? (
-            <ul className="mt-2 space-y-1">
-              {items.map((i) => (
-                <li key={i.id} className="flex items-center justify-between gap-2 text-[12.5px] text-slate-800">
-                  <span className="min-w-0 truncate">
-                    {i.name}
-                    {!i.isActive ? ' (inactivo)' : ''} · {formatColones(i.sellingPrice)}
-                  </span>
-                  {canEdit ? (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void save(ids.filter((x) => x !== i.id))}
-                      className="shrink-0 text-[11.5px] text-red-600 hover:underline disabled:opacity-40"
-                    >
-                      Quitar
-                    </button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {canEdit ? (
-            <div className="mt-2">
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Buscar producto para agregar…"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] text-slate-900"
-                aria-label="Buscar producto"
-              />
-              {results.length > 0 ? (
-                <ul className="mt-1 max-h-40 overflow-y-auto rounded-lg bg-white ring-1 ring-slate-200">
-                  {results
-                    .filter((r) => !ids.includes(r.id))
-                    .map((r) => (
-                      <li key={r.id}>
+          {catalog.length === 0 ? (
+            <p className="mt-2 text-[12px] text-slate-500">Este negocio no tiene productos activos en el inventario.</p>
+          ) : (
+            <ul className="mt-3 divide-y divide-slate-100 rounded-xl ring-1 ring-slate-200/70">
+              {catalog.map((g) => {
+                const inGroup = g.items.filter((i) => selected.has(i.id)).length
+                const all = inGroup === g.items.length
+                return (
+                  <li key={g.category} className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setOpen(open === g.category ? null : g.category)}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                        aria-expanded={open === g.category}
+                      >
+                        <span aria-hidden className="text-slate-400">{open === g.category ? '▾' : '▸'}</span>
+                        <span className="truncate text-[13px] font-medium text-slate-800">{g.category}</span>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${inGroup ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {inGroup}/{g.items.length}
+                        </span>
+                      </button>
+                      {canEdit ? (
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => {
-                            setQ('')
-                            setResults([])
-                            void save([...ids, r.id])
-                          }}
-                          className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-[12.5px] hover:bg-slate-50 disabled:opacity-40"
+                          onClick={() =>
+                            void save(all ? ids.filter((x) => !g.items.some((i) => i.id === x)) : [...ids, ...g.items.map((i) => i.id)])
+                          }
+                          className={`shrink-0 rounded-lg px-2.5 py-1 text-[12px] font-medium disabled:opacity-40 ${
+                            all ? 'text-red-600 hover:bg-red-50' : 'bg-[#5B6CFF] text-white'
+                          }`}
                         >
-                          <span className="min-w-0 truncate">{r.name}</span>
-                          <span className="shrink-0 text-slate-500">{formatColones(r.sellingPrice)}</span>
+                          {all ? 'Quitar todo' : 'Agregar todo'}
                         </button>
-                      </li>
-                    ))}
+                      ) : null}
+                    </div>
+                    {open === g.category ? (
+                      <ul className="mt-2 space-y-1 pl-6">
+                        {g.items.map((i) => (
+                          <li key={i.id}>
+                            <label className="flex items-center gap-2 text-[12.5px] text-slate-800">
+                              <input
+                                type="checkbox"
+                                checked={selected.has(i.id)}
+                                disabled={!canEdit || busy}
+                                onChange={(e) => void save(e.target.checked ? [...ids, i.id] : ids.filter((x) => x !== i.id))}
+                                className="h-4 w-4 accent-[#5B6CFF]"
+                              />
+                              <span className="min-w-0 flex-1 truncate">{i.name}</span>
+                              <span className="shrink-0 text-slate-500">
+                                {formatColones(i.sellingPrice)} · stock {i.currentStock}
+                              </span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {(() => {
+            // Chosen products not shown in the groups above (inactive, or beyond the list): still removable here.
+            const listed = new Set(catalog.flatMap((g) => g.items.map((i) => i.id)))
+            const others = items.filter((i) => !listed.has(i.id))
+            if (!others.length) return null
+            return (
+              <div className="mt-3 rounded-xl bg-amber-50 p-3 ring-1 ring-amber-100">
+                <p className="text-[12px] font-medium text-amber-900">Otros elegidos (inactivos o fuera de la lista)</p>
+                <ul className="mt-1 space-y-1">
+                  {others.map((i) => (
+                    <li key={i.id} className="flex items-center justify-between gap-2 text-[12px] text-amber-900">
+                      <span className="min-w-0 truncate">
+                        {i.name}
+                        {!i.isActive ? ' (inactivo)' : ''}
+                      </span>
+                      {canEdit ? (
+                        <button type="button" disabled={busy} onClick={() => void save(ids.filter((x) => x !== i.id))} className="shrink-0 text-red-600 hover:underline disabled:opacity-40">
+                          Quitar
+                        </button>
+                      ) : null}
+                    </li>
+                  ))}
                 </ul>
-              ) : null}
-            </div>
-          ) : null}
+              </div>
+            )
+          })()}
           {message ? <p className="mt-2 text-[12px] text-red-700">{message}</p> : null}
         </>
       )}

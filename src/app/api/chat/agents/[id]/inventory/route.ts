@@ -38,6 +38,26 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       return NextResponse.json({ success: false, error: 'Agente no encontrado' }, { status: 404 })
     }
     const result = await listMappedInventory(auth.tenantId, id)
+    // ?catalog=1: this business's active products grouped by category, to pick a whole group (all sizes) at once.
+    if (request.nextUrl.searchParams.get('catalog') === '1') {
+      const all = await prisma.inventoryItem.findMany({
+        where: { tenantId: auth.tenantId, isActive: true },
+        select: { id: true, name: true, sku: true, category: true, sellingPrice: true, currentStock: true },
+        orderBy: [{ category: 'asc' }, { name: 'asc' }],
+        take: 400,
+      })
+      const groups = new Map<string, Array<{ id: string; name: string; sku: string | null; sellingPrice: number; currentStock: number }>>()
+      for (const i of all) {
+        const key = (i.category || '').trim() || 'Sin categoría'
+        const list = groups.get(key) ?? []
+        list.push({ id: i.id, name: i.name, sku: i.sku, sellingPrice: Number(i.sellingPrice), currentStock: Number(i.currentStock) })
+        groups.set(key, list)
+      }
+      return NextResponse.json(
+        { success: true, ...result, catalog: [...groups.entries()].map(([category, items]) => ({ category, items })) },
+        { headers: { 'Cache-Control': 'no-store' } },
+      )
+    }
     return NextResponse.json({ success: true, ...result }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     console.error('[chat/agents/inventory GET]', error instanceof Error ? error.name : 'unknown')

@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   RefreshCw, Building2, Users, CreditCard, TrendingUp,
   Bot, DollarSign, Plus, Trash2, MessageSquare, Megaphone,
-  ArrowUpRight, ArrowDownRight, Minus,
+  ArrowUpRight, ArrowDownRight, Minus, Sparkles,
 } from 'lucide-react';
+import AiUsageDashboard from '@/app/super-admin/ia/AiUsageDashboard';
 
 // ────────────────────────────────────────────
 // Types
@@ -95,12 +96,13 @@ interface ChangelogEntry {
 // Constants
 // ────────────────────────────────────────────
 
-type Tab = 'overview' | 'revenue' | 'usage' | 'costs' | 'profitability' | 'workforce' | 'feedback' | 'changelog';
+type Tab = 'overview' | 'revenue' | 'usage' | 'ia' | 'costs' | 'profitability' | 'workforce' | 'feedback' | 'changelog';
 
 const TABS: { key: Tab; label: string; icon: typeof Building2 }[] = [
   { key: 'overview', label: 'Resumen', icon: Building2 },
   { key: 'revenue', label: 'Ingresos', icon: CreditCard },
   { key: 'usage', label: 'Uso', icon: Bot },
+  { key: 'ia', label: 'IA', icon: Sparkles },
   { key: 'costs', label: 'Costos', icon: DollarSign },
   { key: 'profitability', label: 'Rentabilidad', icon: TrendingUp },
   { key: 'workforce', label: 'Workforce', icon: Users },
@@ -796,6 +798,10 @@ function WorkforceTab() {
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('overview');
+  // ?tab=ia opens the IA section directly (after mount: no server/client mismatch).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('tab') === 'ia') setTab('ia');
+  }, []);
   const [loading, setLoading] = useState(false);
 
   const [overview, setOverview] = useState<OverviewData | null>(null);
@@ -873,6 +879,7 @@ export default function AdminPage() {
       costs: () => fetchCosts(),
       profitability: fetchProfitability,
       workforce: async () => {},
+      ia: async () => {},
       feedback: fetchFeedback,
       changelog: fetchChangelog,
     };
@@ -926,6 +933,7 @@ export default function AdminPage() {
       costs: () => fetchCosts(),
       profitability: fetchProfitability,
       workforce: async () => {},
+      ia: async () => {},
       feedback: fetchFeedback,
       changelog: fetchChangelog,
     };
@@ -942,9 +950,6 @@ export default function AdminPage() {
           <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, margin: '4px 0 0' }}>
             Plataforma, ingresos, uso y rentabilidad
           </p>
-          <a href="/super-admin/ia" style={{ color: '#8b5cf6', fontSize: 13, display: 'inline-block', marginTop: 6 }}>
-            Uso y costo de IA (todo Betsy) →
-          </a>
         </div>
         <button onClick={handleRefresh} disabled={loading}
           style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(108,63,255,0.4)', background: 'rgba(108,63,255,0.1)', color: '#8b5cf6', fontWeight: 600, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, opacity: loading ? 0.5 : 1 }}>
@@ -973,6 +978,12 @@ export default function AdminPage() {
       {tab === 'overview' && <OverviewTab data={overview} />}
       {tab === 'revenue' && <RevenueTab data={revenue} />}
       {tab === 'usage' && <UsageTab data={usage} />}
+      {/* IA: every AI use in Betsy (agents, tests, imports, staff bot) — owner only; the API answers 404 to anyone else. */}
+      {tab === 'ia' && (
+        <div style={{ background: '#fff', borderRadius: 14, padding: 16 }}>
+          <AiUsageDashboard />
+        </div>
+      )}
       {tab === 'costs' && <CostsTab data={costs} period={costPeriod} onPeriodChange={handleCostPeriodChange} onAdd={handleAddCost} onDelete={handleDeleteCost} refreshing={loading} />}
       {tab === 'profitability' && <ProfitabilityTab data={profitability} />}
       {tab === 'workforce' && <WorkforceTab />}

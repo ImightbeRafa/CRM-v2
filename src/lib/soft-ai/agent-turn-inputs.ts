@@ -21,8 +21,17 @@ import type { ResolvedChatAgent } from '@/lib/soft-ai/agent-resolver'
 import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
 import type { InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
-import { guideShortcutCatalog } from '@/lib/soft-ai/shortcuts'
+import { guideShortcutCatalog, renderShortcutTemplate } from '@/lib/soft-ai/shortcuts'
 import {
+  deriveSalesState,
+  formatSalesTurnBlock,
+  salesAllowedAmounts,
+  salesNeedsHuman,
+  salesSystemBlock,
+  type SalesContext,
+} from '@/lib/soft-ai/sales-state'
+import {
+  PAYMENT_TOKEN,
   formatBrandFactsForPrompt,
   parseBrandFactsSafe,
   parseReplyStyleSafe,
@@ -162,14 +171,23 @@ export function assembleAgentRuntimeInputs(input: {
   inboundText: string
   clientName: string | null
   shortcuts: RuntimeShortcut[]
+  /** Saved replies (ids) that carry images: the catalog tells the model so it doesn't say it can't send photos. */
+  replyImageShortcutIds?: ReadonlySet<string>
   knowledge: ApprovedKnowledgeSlice | null
   decision: InboundDecision
+  /** Sales flow context (same loader for live and test chat). Null = previous behaviour. */
+  salesContext?: SalesContext | null
   toolCtxBase: Omit<
     SoftAiToolRunContext,
     'enabledTools' | 'inboundText' | 'agentId' | 'paymentClassification' | 'shortcuts' | 'brandFacts'
   >
 }): SoftAiLlmRuntimeInput {
   const enabledTools = effectiveEnabledTools(input.agent.enabledTools)
+  const sales = input.salesContext ?? null
+  // With the sales flow, shipping comes only from Betsy's shipping list (promo applied); the store's own shipping
+  // text would show a second, stale price (e.g. ₡3.000 during a free-shipping promo).
+  const promptFacts = sales ? { ...input.agent.brandFacts, shipping: undefined } : input.agent.brandFacts
+  const salesState = sales ? deriveSalesState({ history: input.history, inboundText: input.inboundText, ctx: sales }) : null
   return {
     tenantId: input.toolCtxBase.tenantId,
     agentId: input.agent.id,
@@ -193,9 +211,30 @@ export function assembleAgentRuntimeInputs(input: {
     clientName: input.clientName,
     linkedOrderId: null,
     pricingVersion: DEFAULT_PRICING_VERSION,
-    brandFactsBlock: formatBrandFactsForPrompt(input.agent.brandFacts),
-    shortcutCatalog: guideShortcutCatalog(input.shortcuts),
+    brandFactsBlock: formatBrandFactsForPrompt(promptFacts),
+    // Bodies rendered for the model (no raw {{brand.…}}); payment numbers stay out — they become [[DATOS_PAGO]].
+    shortcutCatalog: guideShortcutCatalog(
+      input.shortcuts.map((row) => ({
+        ...row,
+        // Same facts as the brand block (no store shipping under the sales flow); no customer name in the system
+        // instructions (it is customer-controlled and would break prompt caching) — the name is in the chat anyway.
+        body: renderShortcutTemplate(row.body.replace(/\{\{\s*brand\.payment\.[a-zA-Z0-9_.]+\s*\}\}/g, PAYMENT_TOKEN), {
+          facts: promptFacts,
+          clientFirstName: null,
+        }),
+      })),
+      input.replyImageShortcutIds,
+    ),
     replyStyleSnippet: replyStyleSnippet(input.agent.replyStyle),
+    salesSystemBlock: sales ? salesSystemBlock(sales) : null,
+    salesTurnBlock: sales && salesState ? formatSalesTurnBlock(sales, salesState) : null,
+    salesAllowedAmounts: sales ? salesAllowedAmounts(sales) : undefined,
+    salesNeedsHuman: Boolean(sales && salesState && salesNeedsHuman(sales, salesState)),
+    salesAllowedDeals: sales?.promo
+      ? [...(sales.promo.freeShipping ? (['free_shipping'] as const) : []), ...(sales.promo.specialPrice ? (['special_price'] as const) : [])]
+      : [],
+    salesFreeShipping: Boolean(sales?.promo?.freeShipping),
+    salesTrace: salesState ? { stage: salesState.stage, said: salesState.said } : null,
     toolCtx: {
       ...input.toolCtxBase,
       enabledTools,

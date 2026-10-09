@@ -34,6 +34,15 @@ export function hasRasterPhotoSignature(bytes: Buffer): boolean {
 let running = 0
 const waiting: Array<() => void> = []
 
+/**
+ * The same 2 decode slots for agent reply images (MEDIA-11): one process-wide limit for every sharp decode.
+ * `maxWaiting` refuses (throws IMAGE_BUSY) instead of queueing forever.
+ */
+export async function withImageDecodeSlot<T>(fn: () => Promise<T>, opts: { maxWaiting?: number } = {}): Promise<T> {
+  if (running >= MAX_CONCURRENT && waiting.length >= (opts.maxWaiting ?? 4)) throw new Error('IMAGE_BUSY')
+  return withSlot(fn)
+}
+
 async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
   // A freed slot is handed straight to the next waiter (never decremented in between), so a new
   // caller can't slip in ahead and exceed the limit.

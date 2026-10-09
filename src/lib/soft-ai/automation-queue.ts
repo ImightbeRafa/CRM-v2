@@ -9,7 +9,8 @@ import { prisma } from '@/lib/db'
 
 export const SOFT_AI_JOB_KIND = 'soft_ai_inbound' as const
 export const LEASE_MS = 45_000
-export const PROCESSING_TIMEOUT_MS = 25_000
+// Must cover the whole agent turn (SOFT_AI_TURN_BUDGET_MS 35 s) + the Meta send (7 s), and stay under the 45 s lease.
+export const PROCESSING_TIMEOUT_MS = 42_000
 export const MAX_ATTEMPTS = 5
 
 export type SoftAiJobStatus =

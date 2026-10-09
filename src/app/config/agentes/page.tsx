@@ -19,6 +19,9 @@ import { AgentUsageCard } from '@/app/config/agentes/AgentUsageCard'
 import { AiTermsCard } from '@/app/config/agentes/AiTermsCard'
 import { AgentQualityCard } from '@/app/config/agentes/AgentQualityCard'
 import { AgentInventoryCard } from '@/app/config/agentes/AgentInventoryCard'
+import { AgentDisclosureToggle } from '@/app/config/agentes/AgentDisclosureToggle'
+import { AgentPromoCard } from '@/app/config/agentes/AgentPromoCard'
+import { AgentRepliesCard } from '@/app/config/agentes/AgentRepliesCard'
 import { AgentBusinessCard } from '@/app/config/agentes/AgentBusinessCard'
 import { BrandFactsEditor } from '@/app/config/agentes/BrandFactsEditor'
 import { ChannelsEditor, type ChannelRow } from '@/app/config/agentes/ChannelsEditor'
@@ -55,6 +58,7 @@ import { channelIdentity, summarizeBind } from '@/lib/agent-channel-bind'
 import { ShortcutPasteImport } from '@/app/config/agentes/ShortcutPasteImport'
 import { ShortcutsEditor } from '@/app/config/agentes/ShortcutsEditor'
 import { selectWhatsappTestChannel, type TestChannelOption } from '@/lib/soft-ai/test-channel'
+import { StudioFlow } from '@/components/aurora/agentes/studio/StudioFlow'
 
 type AgentRow = {
   id: string
@@ -185,6 +189,8 @@ export default function AgentesConfigPage() {
   const [cardId, setCardId] = useState<string | null>(null)
   const [setupRefresh, setSetupRefresh] = useState(0)
   const [channelReload, setChannelReload] = useState(0)
+  // Bumped when Studio applies a draft: products it added must show in step ② (the version doesn't always change).
+  const [studioApplied, setStudioApplied] = useState(0)
   const [history, setHistory] = useState<unknown[]>([])
   const [introDraft, setIntroDraft] = useState('')
   const [checklist, setChecklist] = useState<KnowledgeCard[]>([])
@@ -550,7 +556,8 @@ export default function AgentesConfigPage() {
   async function scrollToProbar() {
     for (let i = 0; i < 15; i += 1) {
       const el = document.getElementById('agent-probar')
-      if (el) {
+      // Only once its tab panel is visible (a hidden element cannot be scrolled to).
+      if (el && el.offsetParent !== null) {
         el.scrollIntoView({ behavior: 'smooth', block: 'start' })
         return
       }
@@ -560,8 +567,8 @@ export default function AgentesConfigPage() {
 
   function probar(id: string | null = selectedId) {
     if (!id) return
-    if (id === selectedId && view === 'detail' && !draftMode) goTab('canales')
-    else openAgent(id, 'canales')
+    if (id === selectedId && view === 'detail' && !draftMode) goTab('resumen')
+    else openAgent(id, 'resumen')
     void scrollToProbar()
   }
 
@@ -748,6 +755,34 @@ export default function AgentesConfigPage() {
             {selected ? (
               <div className="space-y-4">
                 <div hidden={!detailVisible || tab !== 'resumen'} role="tabpanel" className="space-y-4">
+                  <StudioFlow key={`studio-${selected.id}`} agentId={selected.id} canEdit={canEdit} isLive={selected.status === 'live'} onApplied={() => {
+                      setStudioApplied((n) => n + 1)
+                      void load({ silent: true })
+                    }} />
+                  <AgentInventoryCard key={`inv-${selected.id}-${selected.version}-${studioApplied}`} agentId={selected.id} canEdit={canEdit} title="② Productos que vende" />
+                  <AgentPromoCard key={`promo-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
+                  <AgentRepliesCard key={`replies-${selected.id}-${studioApplied}-${setupRefresh}`} agentId={selected.id} canEdit={canEdit} />
+                  <div id="agent-probar">
+                    <p className="mb-2 text-[14px] font-semibold text-slate-900">④ Probar y activar</p>
+                    <AgentDisclosureToggle key={`disc-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
+                    <AgentTestSandbox
+                      key={selected.id}
+                      agentId={selected.id}
+                      agentName={selected.name}
+                      canEdit={canEdit}
+                      channels={testChannels}
+                      channelsLoaded={channelsLoaded}
+                      socialAccountId={channelId}
+                      onSelectChannel={setChannelId}
+                      onUnlocked={() => setChannelReload((value) => value + 1)}
+                      agentModel={selected.model}
+                      configuredModels={configuredModels}
+                      operationMode={selected.operationMode}
+                    />
+                  </div>
+                  <details className="rounded-2xl border border-slate-200/70 bg-white p-4 md:p-5" data-testid="agent-resumen-avanzado">
+                    <summary className="cursor-pointer text-[13px] font-semibold text-slate-700">Avanzado: personalidad, líneas, conocimiento, herramientas y estado</summary>
+                    <div className="mt-4 space-y-4">
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className={CARD}>
                       <div className="flex items-center justify-between">
@@ -936,6 +971,8 @@ export default function AgentesConfigPage() {
                       </div>
                     </div>
                   </div>
+                    </div>
+                  </details>
                 </div>
 
                 <div hidden={!detailVisible || tab !== 'personalidad'} role="tabpanel" className="space-y-4">
@@ -1100,7 +1137,10 @@ export default function AgentesConfigPage() {
                     agentId={selected.id}
                     canEdit={canEdit}
                     reloadToken={channelReload}
-                    onUseForTest={setChannelId}
+                    onUseForTest={(id) => {
+                      setChannelId(id)
+                      probar()
+                    }}
                     onChannels={(rows) => {
                       setChannelRows(rows)
                       setTestChannels(
@@ -1117,22 +1157,6 @@ export default function AgentesConfigPage() {
                       setChannelsLoaded(true)
                     }}
                   />
-                  <div id="agent-probar">
-                    <AgentTestSandbox
-                      key={selected.id}
-                      agentId={selected.id}
-                      agentName={selected.name}
-                      canEdit={canEdit}
-                      channels={testChannels}
-                      channelsLoaded={channelsLoaded}
-                      socialAccountId={channelId}
-                      onSelectChannel={setChannelId}
-                      onUnlocked={() => setChannelReload((value) => value + 1)}
-                      agentModel={selected.model}
-                      configuredModels={configuredModels}
-                      operationMode={selected.operationMode}
-                    />
-                  </div>
                 </div>
 
                 {/* Conocimiento — completeness cards, inline wizard, real sources */}
@@ -1220,7 +1244,6 @@ export default function AgentesConfigPage() {
                       Modelo: <span title={selected.model}>{modelLabel(selected.model)}</span>
                     </p>
                     <AgentUsageCard />
-                    <AgentInventoryCard key={`inv-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
                     <AgentBusinessCard key={`biz-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
                     <AgentQualityCard key={selected.id} agentId={selected.id} canEdit={canEdit} />
                     {canEdit ? (

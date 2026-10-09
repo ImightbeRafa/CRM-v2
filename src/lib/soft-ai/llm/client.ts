@@ -17,9 +17,13 @@ import { aiErrorCode, recordAiUsage, type AiUsageFeature } from '@/lib/ai-usage/
 
 export const SOFT_AI_XAI_BASE_URL = 'https://api.x.ai/v1'
 export const SOFT_AI_OPENAI_BASE_URL = 'https://api.openai.com/v1'
-export const SOFT_AI_FIRST_CALL_TIMEOUT_MS = 9_000
-export const SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS = 7_000
+// Measured 2026-10-09: grok-4.7 answers after a tool call in >7 s (every follow-up timed out at 7 s → human
+// hand-off); 2026-10-09 a closing turn timed out at 12 s → 20 s. Every call is also capped by the 40 s turn budget.
+export const SOFT_AI_FIRST_CALL_TIMEOUT_MS = 20_000
+export const SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS = 15_000
 export const SOFT_AI_META_SEND_TIMEOUT_MS = 7_000
+/** Whole agent turn (all model calls): stays inside the 45 s automation job lease. */
+export const SOFT_AI_TURN_BUDGET_MS = 35_000
 
 export function resolveSoftAiModel(override?: string | null): string {
   const fromEnv =
@@ -74,6 +78,8 @@ export type SoftAiResponsesCreateArgs = {
   instructions: string
   input: unknown[]
   tools?: unknown[]
+  /** 'none' = the model must answer in text now (tools stay declared so earlier tool calls in the input stay valid). */
+  toolChoice?: 'auto' | 'none'
   promptCacheKey?: string
   maxOutputTokens?: number
   temperature?: number
@@ -131,7 +137,10 @@ export function buildSoftAiResponsesBody(args: Omit<SoftAiResponsesCreateArgs, '
     body.max_output_tokens = baseMax
     body.reasoning = { effort: args.reasoningEffort === 'none' ? 'low' : args.reasoningEffort ?? 'low' }
   }
-  if (args.tools && args.tools.length > 0) body.tools = args.tools
+  if (args.tools && args.tools.length > 0) {
+    body.tools = args.tools
+    if (args.toolChoice) body.tool_choice = args.toolChoice
+  }
   if (args.promptCacheKey) body.prompt_cache_key = args.promptCacheKey
   if (args.textFormat) {
     body.text = {

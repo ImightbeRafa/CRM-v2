@@ -23,6 +23,7 @@ import {
   startAgentTestRun,
   TestRunBusyElsewhereError,
   TestRunDailyLimitError,
+  TestRunNoProductsError,
   TestRunNotReadyError,
 } from '@/lib/soft-ai/test-engine/run'
 import { aiFullUnlockStatus, parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
@@ -162,6 +163,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if (error instanceof TestRunBusyElsewhereError) {
       return NextResponse.json(
         { success: false, error: 'Ya hay una prueba de este agente corriendo en otro canal. Esperá a que termine.' },
+        { status: 409 },
+      )
+    }
+    if (error instanceof TestRunNoProductsError) {
+      return NextResponse.json(
+        { success: false, code: 'NO_PRODUCTS', error: 'Este agente no tiene productos: elegí qué vende (② Productos) antes de probar.' },
         { status: 409 },
       )
     }

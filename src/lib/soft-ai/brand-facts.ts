@@ -258,11 +258,29 @@ export function brandFactTemplateValues(facts: BrandFacts): Record<string, strin
     'brand.shipping.summary': shippingSummary(facts),
     'brand.shipping.ea.gamCost': crc(facts.shipping?.ea?.gamCost),
     'brand.shipping.ea.outsideGamCost': crc(facts.shipping?.ea?.outsideGamCost),
-    'brand.payment.summary': paymentSummary(facts),
-    'brand.payment.sinpe.number': facts.payment?.sinpe?.number || '',
-    'brand.payment.sinpe.holderName': facts.payment?.sinpe?.holderName || '',
+    // Payment details only when they may be shared (a shortcut must never print them otherwise).
+    'brand.payment.summary': canSharePaymentFacts(facts) ? paymentSummary(facts) : '',
+    'brand.payment.sinpe.number': canSharePaymentFacts(facts) ? facts.payment?.sinpe?.number || '' : '',
+    'brand.payment.sinpe.holderName': canSharePaymentFacts(facts) ? facts.payment?.sinpe?.holderName || '' : '',
     'brand.returnsText': facts.returnsText || '',
   }
+}
+
+export const PAYMENT_TOKEN = '[[DATOS_PAGO]]'
+
+const PAYMENT_METHOD_LABEL: Record<string, string> = {
+  sinpe: 'SINPE Móvil',
+  transferencia: 'transferencia',
+  tarjeta: 'tarjeta',
+  efectivo: 'efectivo',
+  contra_entrega: 'contra entrega',
+}
+
+/** What the model may know about payments: methods only, never the numbers (code fills [[DATOS_PAGO]]). */
+export function paymentFactsForPrompt(facts: BrandFacts): string {
+  if (!canSharePaymentFacts(facts)) return 'Pagos: los datos de pago no se comparten por chat.'
+  const methods = (facts.payment?.methods || []).map((m) => PAYMENT_METHOD_LABEL[m] || m)
+  return `Pagos aceptados: ${methods.join(', ') || 'según configuración'}. Para dar los datos de pago escribí exactamente ${PAYMENT_TOKEN} (Betsy pone los números; nunca los escribas vos).`
 }
 
 export function formatBrandFactsForPrompt(facts: BrandFacts): string {
@@ -274,9 +292,7 @@ export function formatBrandFactsForPrompt(facts: BrandFacts): string {
     facts.location?.address ? `Dirección: ${facts.location.address}` : '',
     facts.location?.pickupInstructions ? `Retiro: ${facts.location.pickupInstructions}` : '',
     shippingSummary(facts),
-    facts.payment?.shareWithCustomers
-      ? `Pagos que se pueden explicar: ${paymentSummary(facts)}`
-      : 'Pagos: no compartir datos de pago con el cliente; escalar.',
+    paymentFactsForPrompt(facts),
     facts.returnsText ? `Cambios: ${facts.returnsText}` : '',
     ...(facts.extraFacts || []).map((fact) => `${fact.label}: ${fact.value}`),
   ].filter(Boolean)

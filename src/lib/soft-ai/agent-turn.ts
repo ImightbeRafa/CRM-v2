@@ -4,6 +4,8 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { probarWhy } from '@/lib/soft-ai/probar-why'
+import { loadAgentSalesContext } from '@/lib/soft-ai/agent-sales-context'
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import {
@@ -62,6 +64,11 @@ import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
+import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
+import { selectReplyImages, sendableImageReplyIds, type ReplyImage } from '@/lib/soft-ai/reply-images'
+import type { AgentAsset } from '@/lib/soft-ai/agent-assets'
+import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
+import { AGENT_IMAGE_DEADLINE_MS, loadSentAgentImageShas, sendAgentImagesOnce } from '@/lib/soft-ai/agent-media-send'
 import { applyFinalOutputPolicy, validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
 import { maskConfiguredPaymentSecrets, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import { redactToolTrace } from '@/lib/soft-ai/llm/redact'
@@ -290,6 +297,7 @@ export async function executeAgentLayerTurn(
   row: ClaimedChatAutomationJob,
   opts?: { superseded?: boolean },
 ): Promise<AgentTurnDispatchResult> {
+  const turnStartedAt = Date.now()
   const payload = readPayload(row.payload)
   if (!payload.content || !payload.platform) {
     throw new Error('SOFT_AI_PAYLOAD_INVALID')
@@ -474,12 +482,20 @@ export async function executeAgentLayerTurn(
 
   const history = await loadHistory(row.conversationId, trigger.id)
   const shortcuts = await listRuntimeShortcuts(row.tenantId, resolved.agent.id)
+  const replyAssets = await loadReplyAssets(row.tenantId, resolved.agent.id)
+  // Only replies whose image would really go out are marked "(va con imagen)" (WhatsApp, not yet sent in this chat).
+  const liveImageReplyIds =
+    (payload.platform || 'whatsapp') === 'whatsapp' && replyAssets.size
+      ? sendableImageReplyIds(replyAssets, await loadSentAgentImageShas(row.tenantId, row.conversationId))
+      : new Set<string>()
   const decision = decideInbound({
     inboundText: payload.content || '',
     messageType: trigger.messageType,
     brandFacts: resolved.agent.brandFacts,
     replyStyle: resolved.agent.replyStyle,
     shortcuts,
+    // A keyword reply WITH images whose image can't go out now ("Te paso la guía 👇" with nothing) → model answers.
+    skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !liveImageReplyIds.has(id))),
   })
   decision.decisionTrace.historyCount = history.length
 
@@ -573,6 +589,10 @@ export async function executeAgentLayerTurn(
       needsHuman: decision.needsHuman,
       fallbackUsed: false,
       escalate: decision.escalate,
+      replyShortcutKey: decision.shortcutKey,
+      shortcuts,
+      replyAssets,
+      startedAt: turnStartedAt,
     })
   }
 
@@ -582,6 +602,7 @@ export async function executeAgentLayerTurn(
     socialAccountId: row.socialAccountId,
   })
 
+  const liveInventoryIds = await loadMappedInventoryIds(row.tenantId, resolved.agent.id)
   const runtimeInput = assembleAgentRuntimeInputs({
     agent: resolved.agent,
     account: canal,
@@ -589,15 +610,22 @@ export async function executeAgentLayerTurn(
     inboundText: payload.content || '',
     clientName: conversation.peerName,
     shortcuts,
+    replyImageShortcutIds: liveImageReplyIds,
     knowledge,
     decision,
+    salesContext: await loadAgentSalesContext({
+      tenantId: row.tenantId,
+      agentId: resolved.agent.id,
+      inventoryItemIds: liveInventoryIds,
+      brandFacts: resolved.agent.brandFacts,
+    }),
     toolCtxBase: {
       tenantId: row.tenantId,
       conversationId: row.conversationId,
       socialAccountId: row.socialAccountId,
       peerId: row.peerId,
       clientId: conversation.clientId,
-      inventoryItemIds: await loadMappedInventoryIds(row.tenantId, resolved.agent.id),
+      inventoryItemIds: liveInventoryIds,
       orderOwnership: (await loadAgentSettings(row.tenantId, resolved.agent.id)).orderOwnership,
       platform: payload.platform || 'whatsapp',
     },
@@ -609,12 +637,17 @@ export async function executeAgentLayerTurn(
     intent: llm.intent || decision.intent,
     citedToolNames: llm.citedToolNames,
     inventoryPrices: llm.inventoryPrices,
+    quoteAmounts: runtimeInput.salesAllowedAmounts,
+    skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
+    customerText: payload.content || '',
+    allowedDeals: runtimeInput.salesAllowedDeals,
+    freeShipping: runtimeInput.salesFreeShipping,
     brandFacts: resolved.agent.brandFacts,
     replyStyle: resolved.agent.replyStyle,
     shortcuts,
   })
   const finalText = policy.text
-  const needsHuman = policy.needsHuman || llm.needsHuman
+  const needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
   const modelMarkers: OutcomeMarkers = {
     needsHuman,
     fallbackUsed: llm.fallbackUsed,
@@ -624,6 +657,7 @@ export async function executeAgentLayerTurn(
     withOutcomeMarkers(
       {
         ...decision.decisionTrace,
+        salesState: runtimeInput.salesTrace ?? null,
         validator: policy.reasons,
         highlightedAmounts: policy.highlightedAmounts,
         purchaseSummaryAppended: policy.purchaseSummaryAppended,
@@ -725,6 +759,10 @@ export async function executeAgentLayerTurn(
     needsHuman,
     fallbackUsed: llm.fallbackUsed,
     escalate: llm.escalate,
+    replyShortcutKey: policy.purchaseSummaryAppended ? null : llm.shortcutKey || null,
+    shortcuts,
+    replyAssets,
+    startedAt: turnStartedAt,
   })
 }
 
@@ -806,6 +844,12 @@ async function finishDeliveryOrSuggestInner(input: {
   needsHuman: boolean
   fallbackUsed: boolean
   escalate: boolean
+  /** Saved reply this answer used: its images go out first (WhatsApp; never twice in the chat). */
+  replyShortcutKey?: string | null
+  shortcuts?: RuntimeShortcut[]
+  replyAssets?: Map<string, AgentAsset[]>
+  /** When the job started: images are skipped once the turn is late (the job times out at 42 s). */
+  startedAt?: number
 }): Promise<AgentTurnDispatchResult> {
   const decisionBase = {
     effectiveBehavior: input.effectiveBehavior,
@@ -828,6 +872,15 @@ async function finishDeliveryOrSuggestInner(input: {
     return persistDecidedTurn({
       turnId: input.turnId,
       outcome: { outcome: 'skip', reason: 'ai_terms_not_accepted' },
+      operationMode: input.agent.operationMode,
+      setMode: false,
+    })
+  }
+  // Never send (or suggest) an empty message: skipped with a reason, so the "La IA no respondió" alert fires.
+  if (!input.outputText.trim()) {
+    return persistDecidedTurn({
+      turnId: input.turnId,
+      outcome: { outcome: 'skip', reason: 'empty_output' },
       operationMode: input.agent.operationMode,
       setMode: false,
     })
@@ -916,6 +969,44 @@ async function finishDeliveryOrSuggestInner(input: {
   if (!accessToken) return denyUnhealthyToken()
   const meta = parseSocialRefreshToken(account.refreshToken)
   const contentHash = hashSoftAiDeliveryContent(input.outputText)
+
+  // Images of the saved reply first (like a person sending the size guide, then the text). Code picks them.
+  const platform = input.payload.platform || 'whatsapp'
+  const textAlreadyClaimed = await prisma.chatAutomationDelivery
+    .findUnique({ where: { jobId_deliveryKey: { jobId: input.row.id, deliveryKey: input.row.deliveryKey } }, select: { id: true } })
+    .then(Boolean)
+  // A re-run of a job whose text was already attempted sends no new images (they belong to that first answer).
+  if (!textAlreadyClaimed && platform === 'whatsapp' && account.accountId && input.outputText && !input.escalate && input.replyAssets?.size) {
+    const pick = selectReplyImages({
+      shortcutKey: input.replyShortcutKey,
+      shortcuts: input.shortcuts ?? [],
+      assetsByShortcut: input.replyAssets,
+      alreadySent: await loadSentAgentImageShas(input.row.tenantId, input.row.conversationId),
+    })
+    const byId = new Map([...input.replyAssets.values()].flat().map((a) => [a.id, a]))
+    const assets = pick.images.map((img) => byId.get(img.assetId)).filter((a): a is AgentAsset => Boolean(a))
+    if (assets.length) {
+      await sendAgentImagesOnce(
+        {
+          job: {
+            id: input.row.id,
+            deliveryKey: input.row.deliveryKey,
+            tenantId: input.row.tenantId,
+            socialAccountId: input.row.socialAccountId,
+            peerId: input.row.peerId,
+            messageId: input.row.messageId,
+          },
+          phoneNumberId: account.accountId,
+          accessToken,
+          agent: { id: input.agent.id, version: input.agent.version, name: input.agent.name, emoji: input.agent.emoji },
+          turnId: input.turnId,
+          peerName: input.payload.senderName || input.conversation.peerName || null,
+          deadlineAt: (input.startedAt ?? Date.now()) + AGENT_IMAGE_DEADLINE_MS,
+        },
+        assets,
+      )
+    }
+  }
 
   const delivery = await deliverOnce({
     jobId: input.row.id,
@@ -1053,6 +1144,8 @@ async function runAgentTestTurnInner(input: {
    * `flag_off` stays in `blockedBy` but does not force outcome `skip`.
    */
   ignoreLayerFlag?: boolean
+  /** Images this test chat already showed (asset ids). */
+  sentImageIds?: string[]
 }): Promise<{
   text: string
   toolTrace: unknown
@@ -1072,6 +1165,10 @@ async function runAgentTestTurnInner(input: {
   shortcutKey: string | null
   model: string
   estimatedCostUsd: number
+  /** Short reasons shown under the reply in the test chat (what it used / why it handed off). */
+  why?: string[]
+  /** Images sent before the text (saved reply the agent used). */
+  images: ReplyImage[]
 }> {
   const agent = await prisma.chatAgent.findFirst({
     where: { id: input.agentId, tenantId: input.tenantId },
@@ -1107,6 +1204,7 @@ async function runAgentTestTurnInner(input: {
     : baseRuntimeAgent
 
   const shortcuts = await listRuntimeShortcuts(input.tenantId, runtimeAgent.id)
+  const replyAssets = await loadReplyAssets(input.tenantId, runtimeAgent.id)
   const history = windowedAgentHistory(
     (input.history || []).map((message, index) => ({
       id: `test-${index}`,
@@ -1163,22 +1261,31 @@ async function runAgentTestTurnInner(input: {
       shortcutKey: null,
       model: runtimeAgent.model,
       estimatedCostUsd: 0,
+      why: ['se acabó el límite diario de pruebas de este negocio: probá mañana'],
+      images: [],
     }
   }
 
   const notSimulatedGates = [...PROBAR_NOT_SIMULATED_GATES]
+  const probarImageReplyIds =
+    (account.platform || 'whatsapp') === 'whatsapp' ? sendableImageReplyIds(replyAssets, input.sentImageIds) : new Set<string>()
   const decision = decideInbound({
     inboundText: input.inboundText,
     messageType: input.messageType || 'text',
     brandFacts: runtimeAgent.brandFacts,
     replyStyle: runtimeAgent.replyStyle,
     shortcuts,
+    skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !probarImageReplyIds.has(id))),
   })
   decision.decisionTrace.historyCount = history.length
   decision.decisionTrace.blockedBy = blockedBy
 
   let text = ''
   let intent = decision.intent
+  let llmTrace: unknown = []
+  let salesTrace: unknown = null
+  let escalateReason: string | null = null
+  let validationReasons: string[] = []
   let shortcutKey = decision.shortcutKey
   let highlightedAmounts = decision.highlightedAmounts
   let tokens = { input: 0, output: 0, cached: 0 }
@@ -1206,6 +1313,7 @@ async function runAgentTestTurnInner(input: {
       socialAccountId: input.socialAccountId,
       fallbackPlatform: account.platform || 'whatsapp',
     })
+    const probarInventoryIds = await loadMappedInventoryIds(input.tenantId, runtimeAgent.id)
     const runtimeInput = assembleAgentRuntimeInputs({
       agent: runtimeAgent,
       account: canal,
@@ -1213,8 +1321,15 @@ async function runAgentTestTurnInner(input: {
       inboundText: input.inboundText,
       clientName: input.customerName ?? null,
       shortcuts,
+      replyImageShortcutIds: probarImageReplyIds,
       knowledge,
       decision,
+      salesContext: await loadAgentSalesContext({
+        tenantId: input.tenantId,
+        agentId: runtimeAgent.id,
+        inventoryItemIds: probarInventoryIds,
+        brandFacts: runtimeAgent.brandFacts,
+      }),
       toolCtxBase: {
         tenantId: input.tenantId,
         conversationId: 'sandbox',
@@ -1222,15 +1337,27 @@ async function runAgentTestTurnInner(input: {
         peerId: 'sandbox-peer',
         clientId: null,
         sandbox: true,
-        inventoryItemIds: await loadMappedInventoryIds(input.tenantId, runtimeAgent.id),
+        inventoryItemIds: probarInventoryIds,
+        // Same as the live turn (parity): order tools see this business's order stamps and the line's platform.
+        orderOwnership: (await loadAgentSettings(input.tenantId, runtimeAgent.id)).orderOwnership,
+        platform: account.platform || 'whatsapp',
       },
     })
     const llm = await runSoftAiLlmRuntime(runtimeInput)
+    llmTrace = llm.toolTrace
+    escalateReason = llm.escalateReason ?? null
+    validationReasons = llm.validationReasons ?? []
+    salesTrace = runtimeInput.salesTrace ?? null
     const policy = applyFinalOutputPolicy({
       text: llm.text,
-      intent: llm.intent || 'other',
+      intent: llm.intent || decision.intent,
       citedToolNames: llm.citedToolNames,
       inventoryPrices: llm.inventoryPrices,
+      quoteAmounts: runtimeInput.salesAllowedAmounts,
+      skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
+      customerText: input.inboundText,
+      allowedDeals: runtimeInput.salesAllowedDeals,
+      freeShipping: runtimeInput.salesFreeShipping,
       brandFacts: runtimeAgent.brandFacts,
       replyStyle: runtimeAgent.replyStyle,
       shortcuts,
@@ -1241,7 +1368,7 @@ async function runAgentTestTurnInner(input: {
     highlightedAmounts = policy.highlightedAmounts
     tokens = { input: llm.inputTokens, output: llm.outputTokens, cached: llm.cachedInputTokens }
     latencyMs = llm.latencyMs
-    needsHuman = policy.needsHuman || llm.needsHuman
+    needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
     fallbackUsed = llm.fallbackUsed
     escalate = llm.escalate
   } else {
@@ -1266,6 +1393,12 @@ async function runAgentTestTurnInner(input: {
   })
   const wouldSend = outcome.outcome === 'send'
   decision.decisionTrace.wouldSend = wouldSend
+  // Images of the saved reply it used (code-picked, never twice in the same chat; none on a hand-off).
+  const images =
+    // Same as live: WhatsApp only, never on a hand-off / needs-a-person / fallback answer.
+    text && !escalate && !notBound && !needsHuman && !fallbackUsed && (account.platform || 'whatsapp') === 'whatsapp'
+      ? selectReplyImages({ shortcutKey, shortcuts, assetsByShortcut: replyAssets, alreadySent: input.sentImageIds }).images
+      : []
   const toolTrace = redactAgentTrace(
     withOutcomeMarkers(
       {
@@ -1277,6 +1410,8 @@ async function runAgentTestTurnInner(input: {
         notSimulatedGates,
         highlightedAmounts,
         historyCount: history.length,
+        salesState: salesTrace,
+        attachments: images.map((img) => img.assetId),
       },
       markers,
     ),
@@ -1338,6 +1473,8 @@ async function runAgentTestTurnInner(input: {
     shortcutKey,
     model: runtimeAgent.model,
     estimatedCostUsd: testCostMicros / 1_000_000,
+    why: probarWhy({ toolTrace: llmTrace, escalate, escalateReason, fallbackUsed, validationReasons, shortcutKey, blockedBy }),
+    images,
   }
 }
 

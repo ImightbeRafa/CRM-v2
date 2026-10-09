@@ -17,6 +17,10 @@ import {
 } from '@/lib/soft-ai/agent-settings'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
+import { loadSalesSetup, saveSalesSetup, SalesSetupNotReadyError } from '@/lib/soft-ai/agent-sales-setup'
+import { headlineHasNumberWords, parsePromo } from '@/lib/soft-ai/promo'
+import { dealProblem } from '@/lib/soft-ai/llm/output-validator'
+import { hasConfirmationWording } from '@/lib/soft-ai/shortcuts'
 
 const settingsRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 20, identifier: 'chat-agent-settings' })
 
@@ -71,13 +75,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     if (!(await ownedAgent(auth.tenantId, id))) {
       return NextResponse.json({ success: false, error: 'Agente no encontrado' }, { status: 404 })
     }
-    const [available, settings, stamps] = await Promise.all([
+    const [available, settings, stamps, sales] = await Promise.all([
       isTableReady('ChatAgentSettings'),
       loadAgentSettings(auth.tenantId, id),
       knownStamps(auth.tenantId),
+      loadSalesSetup(auth.tenantId, id).catch(() => null),
     ])
     return NextResponse.json(
-      { success: true, available, settings, knownStamps: stamps },
+      { success: true, available, settings, knownStamps: stamps, aiDisclosure: sales?.salesRules.aiDisclosure ?? 'discreet', promo: sales?.salesRules.promo ?? null },
       { headers: { 'Cache-Control': 'no-store' } },
     )
   } catch (error) {
@@ -103,6 +108,81 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ success: false, error: 'Datos inválidos' }, { status: 400 })
+    }
+    // Owner's active promotion (B1): validated + bounded by parsePromo; shipping method ids must be this business's.
+    if ('promo' in body) {
+      const promo = parsePromo(body.promo)
+      const rawPromo = body.promo && typeof body.promo === 'object' ? (body.promo as Record<string, unknown>) : {}
+      const bad = (error: string) => NextResponse.json({ success: false, error }, { status: 400 })
+      // DATA-48: a blank row must never become "every product without a category" (fail closed, not open).
+      if (Array.isArray(rawPromo.specialPrices) && Math.min(rawPromo.specialPrices.length, 10) !== promo.specialPrices.length) {
+        return bad('Cada precio especial necesita su categoría o producto y un precio.')
+      }
+      if (promo.freeShippingMethodIds.length) {
+        const own = await prisma.shippingMethod.findMany({ where: { tenantId: auth.tenantId, id: { in: promo.freeShippingMethodIds } }, select: { id: true } })
+        const ownIds = new Set(own.map((m) => m.id))
+        promo.freeShippingMethodIds = promo.freeShippingMethodIds.filter((x) => ownIds.has(x))
+        // Unknown ids filtered to [] would mean "every method free".
+        if (!promo.freeShippingMethodIds.length) return bad('Elegí métodos de envío de tu negocio para el envío gratis.')
+      }
+      // INT-77: the owner's line is data for the model — no amounts in words, no deals it didn't enable, no confirmations.
+      if (promo.headline) {
+        const enabled = [...(promo.freeShipping ? (['free_shipping'] as const) : []), ...(promo.specialPrices.length ? (['special_price'] as const) : [])]
+        if (headlineHasNumberWords(promo.headline) || dealProblem(promo.headline, enabled) || hasConfirmationWording(promo.headline)) {
+          return bad('La frase de la promo no puede tener montos (ni en palabras), ofertas que no activaste ni “pago confirmado”.')
+        }
+      }
+      const before = await loadSalesSetup(auth.tenantId, agent.id).catch(() => null)
+      try {
+        await saveSalesSetup(auth.tenantId, agent.id, { salesRules: { promo } }, auth.userId)
+      } catch (error) {
+        if (error instanceof SalesSetupNotReadyError) {
+          return NextResponse.json({ success: false, error: 'Este ajuste todavía no está disponible.' }, { status: 503 })
+        }
+        throw error
+      }
+      await logAuditEvent({
+        action: 'UPDATE',
+        entityType: 'ChatAgent',
+        entityId: agent.id,
+        entityName: agent.name,
+        description: 'Promoción activa del agente',
+        oldValues: { promo: before?.salesRules.promo ?? null },
+        newValues: { promo },
+        userId: auth.userId,
+        userRole: auth.role,
+        tenantId: auth.tenantId,
+      }).catch(() => {})
+      return NextResponse.json({ success: true, promo })
+    }
+    // "¿Sos un bot?" toggle (stored with the sales script, SQL 053): saved on its own.
+    if ('aiDisclosure' in body) {
+      if (body.aiDisclosure !== 'transparent' && body.aiDisclosure !== 'discreet') {
+        return NextResponse.json({ success: false, error: 'Valor inválido' }, { status: 400 })
+      }
+      const value: 'transparent' | 'discreet' = body.aiDisclosure
+      const before = await loadSalesSetup(auth.tenantId, agent.id).catch(() => null)
+      try {
+        await saveSalesSetup(auth.tenantId, agent.id, { salesRules: { aiDisclosure: value } }, auth.userId)
+      } catch (error) {
+        if (error instanceof SalesSetupNotReadyError) {
+          return NextResponse.json({ success: false, error: 'Este ajuste todavía no está disponible.' }, { status: 503 })
+        }
+        throw error
+      }
+      await logAuditEvent({
+        action: 'UPDATE',
+        entityType: 'ChatAgent',
+        entityId: agent.id,
+        entityName: agent.name,
+        description: 'Cómo responde si le preguntan si es un bot',
+        oldValues: { aiDisclosure: before?.salesRules.aiDisclosure ?? null },
+        newValues: { aiDisclosure: value },
+        userId: auth.userId,
+        userRole: auth.role,
+        tenantId: auth.tenantId,
+      }).catch(() => {})
+      return NextResponse.json({ success: true, aiDisclosure: value })
     }
     const patch: AgentSettingsPatch = {}
     if ('dailyTokenCap' in body) {

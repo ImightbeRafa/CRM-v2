@@ -3,6 +3,7 @@
  * Monetary amounts must match an authorized provenance class.
  */
 
+import { extractShortcutTag } from '@/lib/soft-ai/reply-images'
 import {
   purchaseSummaryRenderable,
   shippingProvenanceAmounts,
@@ -12,6 +13,7 @@ import {
 } from '@/lib/soft-ai/brand-facts'
 import { hasConfirmationWording, renderShortcutTemplate, shortcutByKey, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
+import { fillPaymentToken, paymentNumberProblems } from '@/lib/soft-ai/payment-guard'
 
 export type OutputValidationResult = {
   ok: boolean
@@ -23,6 +25,28 @@ export type OutputValidationResult = {
 export type AuthorizedAmountSource = 'inventory' | 'shipping' | 'quote'
 
 const MONEY_RE = /[₡$]\s?\d|\d[\d.,]*\s*(colones|crc|usd)/i
+/** Deals the agent may never invent (fixed rule 12, INT-72): discounts, promos, free shipping, gifts, "te lo dejo en". */
+const DEAL_RE =
+  // No bare "gratis" / "%" (free pickup, "100% algodón" are fine); deal phrasing only.
+  /(?<![\p{L}])(descuentos?|promoci[oó]n(es)?\s+especial|oferta\s+especial|precio\s+especial|rebaj\p{L}*|env[ií]os?\s+(gratis|gratuitos?|sin\s+costo|de\s+regalo|por\s+la\s+casa)|(sale|va|queda)\s+gratis\s+el\s+env[ií]o|dos\s+por\s+uno|tres\s+por\s+dos|mitad\s+de\s+precio|medio\s+precio|te (lo|la|los|las) (dejo|rebajo|regalo)|te regalo|de regalo|por la casa|sin cobrarte|te hago (un )?precio|2x1|3x2|\d{1,2}\s?%\s*(de\s+)?(descuento|off|menos))(?![\p{L}])/iu
+const DEAL_ALL_RE = new RegExp(DEAL_RE.source, 'giu')
+const FREE_SHIPPING_DEAL_RE = /^(env[ií]os?\s+(gratis|gratuitos?|sin\s+costo)|(sale|va|queda)\s+gratis\s+el\s+env[ií]o)$/iu
+const SPECIAL_PRICE_DEAL_RE = /^(precio\s+especial|promoci[oó]n(es)?\s+especial|oferta\s+especial)$/iu
+
+/**
+ * Deal wording is blocked unless the owner's active promo enables that exact kind (B1): free shipping and a special
+ * price can be enabled; discounts, %, 2x1, "te lo dejo en", gifts are always blocked.
+ */
+export function dealProblem(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
+  for (const m of text.matchAll(DEAL_ALL_RE)) {
+    const phrase = m[1].trim()
+    if (allowed.includes('free_shipping') && FREE_SHIPPING_DEAL_RE.test(phrase)) continue
+    if (allowed.includes('special_price') && SPECIAL_PRICE_DEAL_RE.test(phrase)) continue
+    return true
+  }
+  return false
+}
+
 const CREATED_CLAIM_RE = /ya\s+(cre[eé]|registr[eé]|arm[eé])|pedido\s+creado|acabo\s+de\s+crear/i
 const UNIT_COST_RE = /unitCost|costo\s+unitario|precio\s+de\s+costo/i
 const SHIP_CUE_RE = /env[ií]o|retiro|domicilio|\bGAM\b|correos|mensajer/i
@@ -54,6 +78,8 @@ export function validateAgentOutput(input: {
   quoteAmounts?: number[]
   replyStyle?: ReplyStyle | null
   intent?: string | null
+  /** Deal wording enabled by the owner's active promo (promo.ts). */
+  allowedDeals?: Array<'free_shipping' | 'special_price'>
 }): OutputValidationResult {
   const reasons: string[] = []
   const text = input.text || ''
@@ -62,6 +88,7 @@ export function validateAgentOutput(input: {
 
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
   if (CREATED_CLAIM_RE.test(text)) reasons.push('write_claim')
+  if (dealProblem(text, input.allowedDeals ?? [])) reasons.push('deal_offer')
   if (hasConfirmationWording(text)) reasons.push('confirmation_wording')
 
   const inventory =
@@ -123,18 +150,42 @@ export function applyFinalOutputPolicy(input: {
   brandFacts?: BrandFacts | null
   replyStyle?: ReplyStyle | null
   shortcuts?: RuntimeShortcut[]
+  /** Sales flow active: it decides when shipping/payment are said, so no automatic summary (it repeated itself). */
+  skipPurchaseSummary?: boolean
+  /** The customer's own message (numbers they wrote may be repeated back). */
+  customerText?: string
+  allowedDeals?: Array<'free_shipping' | 'special_price'>
+  /** Promo makes shipping free: the store's fixed shipping amounts stop being valid. */
+  freeShipping?: boolean
 }): FinalOutputPolicy {
   const facts = input.brandFacts || { schemaVersion: 1 }
   const style = input.replyStyle || DEFAULT_REPLY_STYLE
   const intent = (input.intent || 'other') as AgentIntent
-  const shippingAmounts = shippingProvenanceAmounts(facts)
+  const shippingAmounts = input.freeShipping ? [] : shippingProvenanceAmounts(facts)
   let text = (input.text || '').trim()
   let purchaseSummaryAppended = false
   const reasons: string[] = []
+  // Backstop: an unrendered template ({{brand.…}}) or a leftover [[ATAJO…]] never reaches the customer.
+  if (/\{\{[^}]{0,80}\}\}/.test(text)) {
+    text = text.replace(/\{\{[^}]{0,80}\}\}/g, '').replace(/[ \t]{2,}/g, ' ').trim()
+    reasons.push('template_leak')
+  }
+  text = extractShortcutTag(text).text
+  // Anything still spelling the internal tag (case-sensitive) is never sent.
+  if (/ATAJO/.test(text)) reasons.push('tag_leak')
+  // Nothing left to send = no reply (never an empty WhatsApp message).
+  if (!text) reasons.push('empty_output')
+  // Payment identifiers come from configuration only (INT-69): fill the token, then every payment-looking number
+  // must be a configured one (when shareable) or one the customer wrote.
+  const filled = fillPaymentToken(text, facts)
+  text = filled.text
+  if (filled.needsHuman) reasons.push('payment_info_not_shared')
+  reasons.push(...paymentNumberProblems({ text, facts, customerText: input.customerText }))
 
   const hasMoney = extractMoneyAmounts(text).some((amount) => Math.round(amount) >= 100)
   const purchaseIntent = PURCHASE_INTENTS.has(intent)
   const incomplete =
+    !input.skipPurchaseSummary &&
     purchaseIntent &&
     hasMoney &&
     style.purchaseInfoMustBeComplete &&
@@ -162,6 +213,7 @@ export function applyFinalOutputPolicy(input: {
     quoteAmounts: input.quoteAmounts,
     replyStyle: style,
     intent,
+    allowedDeals: input.allowedDeals,
   })
 
   const merged = [...new Set([...reasons, ...validated.reasons])]

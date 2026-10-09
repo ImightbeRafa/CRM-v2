@@ -24,6 +24,7 @@ import {
 } from '@/components/aurora/config/config-nav'
 import type { OrderStatus } from './components/StatusManager'
 import { useCurrentUser } from '../hooks/useCurrentUser'
+import { ShippingZonesEditor } from '@/app/config/components/ShippingZonesEditor'
 
 const BulkOperations = lazy(() => import('../components/ui/bulk-operations').then(m => ({ default: m.BulkOperations })))
 const SimpleAuditDashboard = lazy(() => import('../components/SimpleAuditDashboard').then(m => ({ default: m.SimpleAuditDashboard })))
@@ -951,6 +952,7 @@ function ConfigPageInner() {
                   </div>
                 )}
               </div>
+            <div className="px-6 pb-6"><ShippingZonesEditor /></div>
             </div>
           </div>
           )}

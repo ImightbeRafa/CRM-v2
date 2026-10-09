@@ -4,6 +4,7 @@
  */
 
 import { prisma } from '@/lib/db'
+import { queryFit } from '@/lib/product-words'
 import {
   findOwnedOrder as findOwnedOrderShared,
   isOrderOwned,
@@ -83,7 +84,8 @@ async function runSearchInventory(
       result: { asOf: new Date().toISOString(), currency: 'CRC', items: [], note: 'sin productos asignados a este agente' },
     }
   }
-  const rows = await prisma.inventoryItem.findMany({
+  const select = { name: true, sku: true, category: true, currentStock: true, minStock: true, sellingPrice: true } as const
+  let rows = await prisma.inventoryItem.findMany({
     where: {
       tenantId: ctx.tenantId,
       isActive: true,
@@ -106,6 +108,28 @@ async function runSearchInventory(
     take: 8,
     orderBy: { name: 'asc' },
   })
+  // The customer's own words ("arnés", "arnes forge xl") rarely match the inventory text exactly ("ARNESS FORGE XL"):
+  // score this agent's products word by word (accents, small typos; sizes exact) and keep the best fits.
+  if (rows.length === 0) {
+    const mine = await prisma.inventoryItem.findMany({
+      where: { tenantId: ctx.tenantId, isActive: true, id: { in: ctx.inventoryItemIds } },
+      select: { ...select, description: true },
+      take: 200,
+    })
+    const scoredRows = mine.map((r) => ({
+      r,
+      fit: queryFit(query, [r.name, r.category, r.sku].filter(Boolean).join(' ')),
+      // Description counts a bit less than the name ("arnés para perro": perro is often only in the description).
+      fitWithDescription: queryFit(query, [r.name, r.category, r.sku, (r.description || '').slice(0, 500)].filter(Boolean).join(' ')) * 0.95,
+    }))
+    const best = scoredRows.map((x) => ({ r: x.r, fit: Math.max(x.fit, x.fitWithDescription) }))
+    const strong = best.filter((x) => x.fit >= 0.5)
+    // Second try: any meaningful word of the product name matched ("arnés xxl" still shows the arnés sizes that exist).
+    rows = (strong.length ? strong : best.filter((x) => x.fit > 0 && queryFit(query, x.r.name) > 0))
+      .sort((a, b) => b.fit - a.fit || a.r.name.localeCompare(b.r.name))
+      .slice(0, 8)
+      .map(({ r: { description: _d, ...rest } }) => rest)
+  }
   const asOf = new Date().toISOString()
   return {
     ok: true,

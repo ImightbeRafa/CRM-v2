@@ -20,8 +20,11 @@ describe('per-agent inventory map', () => {
 
   it('both the live turn and Probar load the map for the agent', () => {
     const turn = read('src/lib/soft-ai/agent-turn.ts')
-    assert.match(turn, /inventoryItemIds: await loadMappedInventoryIds\(row\.tenantId, resolved\.agent\.id\)/)
-    assert.match(turn, /inventoryItemIds: await loadMappedInventoryIds\(input\.tenantId, runtimeAgent\.id\)/)
+    // Loaded once per turn and shared by the tools and the sales context (same list in both).
+    assert.match(turn, /const liveInventoryIds = await loadMappedInventoryIds\(row\.tenantId, resolved\.agent\.id\)/)
+    assert.match(turn, /inventoryItemIds: liveInventoryIds,/)
+    assert.match(turn, /const probarInventoryIds = await loadMappedInventoryIds\(input\.tenantId, runtimeAgent\.id\)/)
+    assert.match(turn, /inventoryItemIds: probarInventoryIds,/)
   })
 
   it('the RESULTING state is checked (live + search on + no list), whatever path gets there', () => {

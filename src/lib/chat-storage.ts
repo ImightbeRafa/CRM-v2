@@ -16,8 +16,8 @@ export const CHAT_STORAGE_BUCKET = process.env.CHAT_STORAGE_BUCKET || 'betsy-cha
 const WRITE_TIMEOUT_MS = 20_000
 const READ_TIMEOUT_MS = 20_000
 const META_TIMEOUT_MS = 10_000
-/** Chat folders only: nothing else may be written through this module. */
-const ALLOWED_PATH = /^(chat-media|chat-quick-replies)\/[A-Za-z0-9._\/-]{1,300}$/
+/** Chat + agent-studio folders only (F3: the business's own sources and product photos). Nothing else. */
+const ALLOWED_PATH = /^(chat-media|chat-quick-replies|agent-sources|agent-assets)\/[A-Za-z0-9._\/-]{1,300}$/
 
 export class ChatStorageError extends Error {
   constructor(

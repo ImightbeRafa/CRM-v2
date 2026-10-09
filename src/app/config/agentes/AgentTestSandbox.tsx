@@ -15,6 +15,8 @@ export type WaBubble = {
   /** Agent bubbles: what it used / why (test chat only). */
   why?: string[]
   latencyMs?: number
+  /** Agent images (saved reply it used), shown before the text like WhatsApp. */
+  images?: Array<{ assetId: string; url: string; name: string }>
 }
 
 type TurnResult = {
@@ -58,7 +60,15 @@ function BubbleView({ bubble }: { bubble: WaBubble }) {
             }`}
           >
             {bubble.label ? <p className="text-[10px] font-medium text-slate-700">{bubble.label}</p> : null}
-            <p className="whitespace-pre-wrap">{bubble.text}</p>
+            {bubble.images?.length ? (
+              <div className="mb-1.5 space-y-1.5">
+                {bubble.images.map((img) => (
+                  // eslint-disable-next-line @next/next/no-img-element -- private, same-origin agent image
+                  <img key={img.assetId} src={img.url} alt={img.name} loading="lazy" className="max-h-72 w-full rounded-lg object-contain bg-slate-50" />
+                ))}
+              </div>
+            ) : null}
+            {bubble.text ? <p className="whitespace-pre-wrap">{bubble.text}</p> : null}
             <p className="mt-1 text-[10px] text-slate-600">
               {clock(bubble.at)}
               {typeof bubble.latencyMs === 'number' && bubble.latencyMs > 0 ? ` · ${(bubble.latencyMs / 1000).toFixed(1)} s` : ''}
@@ -199,6 +209,7 @@ export function AgentTestSandbox({
           windowOpen,
           customerName: customerName.trim() || undefined,
           conversationAiMode,
+          sentImageIds: before.flatMap((bubble) => (bubble.images ?? []).map((img) => img.assetId)).slice(-30),
         }),
       })
       const data = await res.json()
@@ -206,6 +217,11 @@ export function AgentTestSandbox({
       // "Nueva conversación" pressed meanwhile: drop the late answer.
       if (forSession !== sessionRef.current) return
       const outbound = typeof data.text === 'string' ? data.text : ''
+      const images = Array.isArray(data.images)
+        ? (data.images as Array<{ assetId?: unknown; url?: unknown; name?: unknown }>)
+            .filter((img) => typeof img.assetId === 'string' && typeof img.url === 'string' && img.url.startsWith(`/api/chat/agents/${agentId}/assets/`))
+            .map((img) => ({ assetId: String(img.assetId), url: String(img.url), name: typeof img.name === 'string' ? img.name : 'imagen' }))
+        : []
       const blockedBefore =
         Array.isArray(data.blockedBy) && data.blockedBy.includes('not_bound_to_channel')
       const now = new Date().toISOString()
@@ -219,6 +235,7 @@ export function AgentTestSandbox({
                   from: 'agent' as const,
                   text: outbound,
                   at: now,
+                  images: images.length ? images : undefined,
                   why: Array.isArray(data.why) ? (data.why as string[]) : undefined,
                   latencyMs: typeof data.latencyMs === 'number' ? data.latencyMs : undefined,
                 },

@@ -754,6 +754,7 @@ export async function probeAgent(input: {
   customerName?: string
   conversationAiMode?: 'ai_active' | 'human' | 'paused'
   modelOverride?: string
+  sentImageIds?: string[]
 }) {
   return runAgentTestTurn(input)
 }

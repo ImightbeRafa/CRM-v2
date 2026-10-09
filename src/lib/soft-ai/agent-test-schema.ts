@@ -27,6 +27,8 @@ export const AgentTestRequestSchema = z.object({
   conversationAiMode: z.enum(['ai_active', 'human', 'paused']).default('ai_active'),
   /** Compare mode: run THIS test turn on another allowed model (never changes the agent). */
   modelOverride: z.enum(CHAT_AGENT_MODEL_ALLOWLIST).optional(),
+  /** Images this test chat already showed (asset ids): the agent never sends the same image twice. */
+  sentImageIds: z.array(z.string().max(64)).max(30).default([]),
 })
 
 export type AgentTestRequest = z.infer<typeof AgentTestRequestSchema>

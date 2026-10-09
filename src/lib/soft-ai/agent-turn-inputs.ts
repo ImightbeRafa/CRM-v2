@@ -170,6 +170,8 @@ export function assembleAgentRuntimeInputs(input: {
   inboundText: string
   clientName: string | null
   shortcuts: RuntimeShortcut[]
+  /** Saved replies (ids) that carry images: the catalog tells the model so it doesn't say it can't send photos. */
+  replyImageShortcutIds?: ReadonlySet<string>
   knowledge: ApprovedKnowledgeSlice | null
   decision: InboundDecision
   /** Sales flow context (same loader for live and test chat). Null = previous behaviour. */
@@ -208,7 +210,7 @@ export function assembleAgentRuntimeInputs(input: {
     // With the sales flow, shipping comes only from Betsy's shipping list (promo applied); the store's own shipping
     // text would show a second, stale price (e.g. ₡3.000 during a free-shipping promo).
     brandFactsBlock: formatBrandFactsForPrompt(sales ? { ...input.agent.brandFacts, shipping: undefined } : input.agent.brandFacts),
-    shortcutCatalog: guideShortcutCatalog(input.shortcuts),
+    shortcutCatalog: guideShortcutCatalog(input.shortcuts, input.replyImageShortcutIds),
     replyStyleSnippet: replyStyleSnippet(input.agent.replyStyle),
     salesSystemBlock: sales ? salesSystemBlock(sales) : null,
     salesTurnBlock: sales && salesState ? formatSalesTurnBlock(sales, salesState) : null,

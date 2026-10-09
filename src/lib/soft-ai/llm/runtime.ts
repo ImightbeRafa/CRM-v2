@@ -2,6 +2,7 @@
  * Soft Agent Layer LLM runtime loop — ≤2 model calls, ≤4 tool calls.
  */
 
+import { extractShortcutTag } from '@/lib/soft-ai/reply-images'
 import {
   extractSoftAiFunctionCalls,
   parseSoftAiResponseText,
@@ -311,7 +312,9 @@ export async function runSoftAiLlmRuntime(
     }
 
     const structured = parseStructuredAgentOutput(finalText)
-    finalText = structured.text
+    // [[ATAJO:clave]] names the saved reply it used (its images are attached by code); never shown to the customer.
+    const tagged = extractShortcutTag(structured.text)
+    finalText = tagged.text
     const validation = validateAgentOutput({
       text: finalText,
       citedToolNames,
@@ -330,7 +333,7 @@ export async function runSoftAiLlmRuntime(
       status: 'generated',
       needsHuman: validation.needsHuman || structured.needsHuman || escalate,
       intent: structured.intent,
-      shortcutKey: structured.shortcutKey,
+      shortcutKey: tagged.key || structured.shortcutKey || lastUsedShortcutKey(toolTrace),
       inventoryPrices,
       escalate,
       escalateReason,
@@ -427,6 +430,16 @@ function logLlmFailure(model: string, error: unknown) {
     requestId: typeof e.request_id === 'string' ? e.request_id : null,
     name: typeof e.name === 'string' ? e.name : null,
   })
+}
+
+/** Key of the last saved reply the model fetched with use_shortcut (fallback when it forgot the tag). */
+function lastUsedShortcutKey(trace: unknown[]): string | null {
+  for (let i = trace.length - 1; i >= 0; i -= 1) {
+    const row = trace[i] as Record<string, unknown> | null
+    const result = row?.result as { key?: unknown } | undefined
+    if (row?.name === 'use_shortcut' && row.ok === true && typeof result?.key === 'string') return result.key
+  }
+  return null
 }
 
 function parseStructuredAgentOutput(raw: string): {

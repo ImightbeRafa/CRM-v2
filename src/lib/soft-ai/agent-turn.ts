@@ -64,6 +64,8 @@ import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
+import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
+import { selectReplyImages, type ReplyImage } from '@/lib/soft-ai/reply-images'
 import { applyFinalOutputPolicy, validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
 import { maskConfiguredPaymentSecrets, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import { redactToolTrace } from '@/lib/soft-ai/llm/redact'
@@ -1068,6 +1070,8 @@ async function runAgentTestTurnInner(input: {
    * `flag_off` stays in `blockedBy` but does not force outcome `skip`.
    */
   ignoreLayerFlag?: boolean
+  /** Images this test chat already showed (asset ids). */
+  sentImageIds?: string[]
 }): Promise<{
   text: string
   toolTrace: unknown
@@ -1089,6 +1093,8 @@ async function runAgentTestTurnInner(input: {
   estimatedCostUsd: number
   /** Short reasons shown under the reply in the test chat (what it used / why it handed off). */
   why?: string[]
+  /** Images sent before the text (saved reply the agent used). */
+  images: ReplyImage[]
 }> {
   const agent = await prisma.chatAgent.findFirst({
     where: { id: input.agentId, tenantId: input.tenantId },
@@ -1124,6 +1130,7 @@ async function runAgentTestTurnInner(input: {
     : baseRuntimeAgent
 
   const shortcuts = await listRuntimeShortcuts(input.tenantId, runtimeAgent.id)
+  const replyAssets = await loadReplyAssets(input.tenantId, runtimeAgent.id)
   const history = windowedAgentHistory(
     (input.history || []).map((message, index) => ({
       id: `test-${index}`,
@@ -1181,6 +1188,7 @@ async function runAgentTestTurnInner(input: {
       model: runtimeAgent.model,
       estimatedCostUsd: 0,
       why: ['se acabó el límite diario de pruebas de este negocio: probá mañana'],
+      images: [],
     }
   }
 
@@ -1236,6 +1244,7 @@ async function runAgentTestTurnInner(input: {
       inboundText: input.inboundText,
       clientName: input.customerName ?? null,
       shortcuts,
+      replyImageShortcutIds: new Set(replyAssets.keys()),
       knowledge,
       decision,
       salesContext: await loadAgentSalesContext({
@@ -1307,6 +1316,11 @@ async function runAgentTestTurnInner(input: {
   })
   const wouldSend = outcome.outcome === 'send'
   decision.decisionTrace.wouldSend = wouldSend
+  // Images of the saved reply it used (code-picked, never twice in the same chat; none on a hand-off).
+  const images =
+    text && !escalate && !notBound
+      ? selectReplyImages({ shortcutKey, shortcuts, assetsByShortcut: replyAssets, alreadySent: input.sentImageIds }).images
+      : []
   const toolTrace = redactAgentTrace(
     withOutcomeMarkers(
       {
@@ -1319,6 +1333,7 @@ async function runAgentTestTurnInner(input: {
         highlightedAmounts,
         historyCount: history.length,
         salesState: salesTrace,
+        attachments: images.map((img) => img.assetId),
       },
       markers,
     ),
@@ -1381,6 +1396,7 @@ async function runAgentTestTurnInner(input: {
     model: runtimeAgent.model,
     estimatedCostUsd: testCostMicros / 1_000_000,
     why: probarWhy({ toolTrace: llmTrace, escalate, escalateReason, fallbackUsed, validationReasons, shortcutKey, blockedBy }),
+    images,
   }
 }
 

@@ -21,6 +21,7 @@ import { AgentQualityCard } from '@/app/config/agentes/AgentQualityCard'
 import { AgentInventoryCard } from '@/app/config/agentes/AgentInventoryCard'
 import { AgentDisclosureToggle } from '@/app/config/agentes/AgentDisclosureToggle'
 import { AgentPromoCard } from '@/app/config/agentes/AgentPromoCard'
+import { AgentRepliesCard } from '@/app/config/agentes/AgentRepliesCard'
 import { AgentBusinessCard } from '@/app/config/agentes/AgentBusinessCard'
 import { BrandFactsEditor } from '@/app/config/agentes/BrandFactsEditor'
 import { ChannelsEditor, type ChannelRow } from '@/app/config/agentes/ChannelsEditor'
@@ -760,8 +761,9 @@ export default function AgentesConfigPage() {
                     }} />
                   <AgentInventoryCard key={`inv-${selected.id}-${selected.version}-${studioApplied}`} agentId={selected.id} canEdit={canEdit} title="② Productos que vende" />
                   <AgentPromoCard key={`promo-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
+                  <AgentRepliesCard key={`replies-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
                   <div id="agent-probar">
-                    <p className="mb-2 text-[14px] font-semibold text-slate-900">③ Probar y activar</p>
+                    <p className="mb-2 text-[14px] font-semibold text-slate-900">④ Probar y activar</p>
                     <AgentDisclosureToggle key={`disc-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
                     <AgentTestSandbox
                       key={selected.id}

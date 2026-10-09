@@ -17,8 +17,10 @@ import { aiErrorCode, recordAiUsage, type AiUsageFeature } from '@/lib/ai-usage/
 
 export const SOFT_AI_XAI_BASE_URL = 'https://api.x.ai/v1'
 export const SOFT_AI_OPENAI_BASE_URL = 'https://api.openai.com/v1'
-export const SOFT_AI_FIRST_CALL_TIMEOUT_MS = 9_000
-export const SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS = 7_000
+// Measured 2026-10-09: grok-4.7 answers after a tool call in >7 s (every follow-up timed out at 7 s → human
+// hand-off). Worst case per turn = 12 s + 18 s = 30 s, inside the 45 s job lease.
+export const SOFT_AI_FIRST_CALL_TIMEOUT_MS = 12_000
+export const SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS = 18_000
 export const SOFT_AI_META_SEND_TIMEOUT_MS = 7_000
 
 export function resolveSoftAiModel(override?: string | null): string {

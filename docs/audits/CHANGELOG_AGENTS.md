@@ -6,9 +6,10 @@
 - Root cause: since 2026-10-13 06:40Z Cloudflare fires every cron twice per slot (scheduledTime ~:04 and ~:43 in the
   same minute; same Worker version bd3a5009, deployed 05:43Z; /schedules lists 8 unique crons, no duplicates). Before
   06:40 each slot ran once (~:43). Every job (chat automation, reports, logistics finalize…) was running twice.
-- Fix: Worker claims each cron minute once in the primary Durable Object's storage (`claimCronSlot`, RPC, atomic,
+- Fix: Worker claims each cron minute once in the primary Durable Object's storage (`claimCronSlot`, RPC, sync KV — no blockConcurrencyWhile, so a storage error cannot reset the primary,
   does not wake the container; fail-open after 5 s or on error). Backup routes: "already running" = 200
   `{skipped:'already_running'}` (manual POST 409), no alert. Helpers: src/lib/ops/cron-slot.ts.
+- Verifier PASS WITH NOTES (blockConcurrencyWhile removed). Open: skipped hot backup has no staleness alert (pre-existing).
 - Proof: tsc 0, worker tsc 0, eslint 0, test:ops 40/0, test:backups 21/0, esbuild bundle OK. Not deployed.
 
 ## 2026-10-12 — Uptime alert emails say what broke and for how long (claudio/health-alert-detail)

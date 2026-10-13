@@ -320,13 +320,14 @@ export class BetsyCrmContainer extends Container {
    * does not start or wake the container.
    */
   async claimCronSlot(cron: string, minute: number): Promise<boolean> {
+    // Synchronous KV (SQLite-backed object): get + put cannot interleave with another call, and a
+    // storage error only rejects this call (Worker fails open) — no blockConcurrencyWhile, whose
+    // throw would reset the primary object that serves all production traffic.
     const key = cronSlotStorageKey(cron);
-    return this.ctx.blockConcurrencyWhile(async () => {
-      const last = await this.ctx.storage.get<number>(key);
-      if (!shouldRunCronSlot(last, minute)) return false;
-      await this.ctx.storage.put(key, minute);
-      return true;
-    });
+    const last = this.ctx.storage.kv.get<number>(key);
+    if (!shouldRunCronSlot(last, minute)) return false;
+    this.ctx.storage.kv.put(key, minute);
+    return true;
   }
 }
 

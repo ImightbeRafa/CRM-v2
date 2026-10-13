@@ -264,7 +264,8 @@ test('crons: one run per cron per minute (2026-10-13 Cloudflare fired every slot
   const worker = read('src/cf-container-worker.ts')
   assert.match(worker, /if \(!\(await claimCronSlot\(env, controller\.cron, controller\.scheduledTime\)\)\) \{/)
   assert.ok(worker.indexOf('await claimCronSlot(env, controller.cron') < worker.indexOf('await healthWatch(env)'), 'claim before any work')
-  assert.match(worker, /blockConcurrencyWhile/, 'claim is atomic inside the Durable Object')
+  assert.ok(worker.includes('this.ctx.storage.kv.get<number>(key)'), 'claim is atomic (sync KV) inside the Durable Object')
+  assert.doesNotMatch(worker, /blockConcurrencyWhile\(/, 'a storage error must not reset the primary object')
   assert.match(worker, /slot check failed, running cron/, 'fail-open: a stuck object never stops backups')
 })
 

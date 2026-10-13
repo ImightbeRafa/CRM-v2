@@ -1,3 +1,16 @@
+## 2026-10-13 — Every cron ran twice; false "Respaldo parcial (14:00) FALLÓ" (claudio/health-alert-detail)
+
+- Alert 14:01:27Z "Error: Backup already running". Workers Logs (observability API): the real 0 14 run started
+  14:00:04 and finished OK (200, 100 s) at 14:01:44; a second /api/cron/backup/hot request at 14:01:26 hit the
+  advisory lock (correct) and emailed FALLÓ. Backup itself was fine.
+- Root cause: since 2026-10-13 06:40Z Cloudflare fires every cron twice per slot (scheduledTime ~:04 and ~:43 in the
+  same minute; same Worker version bd3a5009, deployed 05:43Z; /schedules lists 8 unique crons, no duplicates). Before
+  06:40 each slot ran once (~:43). Every job (chat automation, reports, logistics finalize…) was running twice.
+- Fix: Worker claims each cron minute once in the primary Durable Object's storage (`claimCronSlot`, RPC, atomic,
+  does not wake the container; fail-open after 5 s or on error). Backup routes: "already running" = 200
+  `{skipped:'already_running'}` (manual POST 409), no alert. Helpers: src/lib/ops/cron-slot.ts.
+- Proof: tsc 0, worker tsc 0, eslint 0, test:ops 40/0, test:backups 21/0, esbuild bundle OK. Not deployed.
+
 ## 2026-10-12 — Uptime alert emails say what broke and for how long (claudio/health-alert-detail)
 
 - Trigger: alert 2026-10-13 03:26Z "NO responde" (HTTP 503 db timeout, SELECT 1 > 3 s on both checks), back

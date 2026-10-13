@@ -248,3 +248,33 @@ test('uptime emails: cause in plain words, CR time, attempts, duration on recove
   assert.match(h.buildUpEmail(null, ok, '2026-10-13T03:30:49.693Z').subject, /^www\.betsycrm\.com volvió a responder$/)
   assert.doesNotMatch(down.text + up.text, /@/, 'no addresses or customer data in the texts')
 })
+
+test('crons: one run per cron per minute (2026-10-13 Cloudflare fired every slot twice, ~:04 and ~:43)', async () => {
+  const c = await import('../ops/cron-slot')
+  const at = (iso: string) => c.cronSlotMinute(Date.parse(iso))
+  // The two copies of the 14:00 hot backup: same minute → the second skips.
+  assert.equal(at('2026-10-13T14:00:04Z'), at('2026-10-13T14:00:43Z'))
+  assert.equal(c.shouldRunCronSlot(undefined, at('2026-10-13T14:00:04Z')), true)
+  assert.equal(c.shouldRunCronSlot(at('2026-10-13T14:00:04Z'), at('2026-10-13T14:00:43Z')), false)
+  // Every-minute crons still run each minute.
+  assert.equal(c.shouldRunCronSlot(at('2026-10-13T14:00:43Z'), at('2026-10-13T14:01:04Z')), true)
+  assert.equal(c.shouldRunCronSlot(Number.NaN, 5), true, 'unreadable storage never blocks a run')
+  assert.equal(c.cronSlotStorageKey('0 14 * * *'), 'betsy-cron-slot:0 14 * * *')
+
+  const worker = read('src/cf-container-worker.ts')
+  assert.match(worker, /if \(!\(await claimCronSlot\(env, controller\.cron, controller\.scheduledTime\)\)\) \{/)
+  assert.ok(worker.indexOf('await claimCronSlot(env, controller.cron') < worker.indexOf('await healthWatch(env)'), 'claim before any work')
+  assert.match(worker, /blockConcurrencyWhile/, 'claim is atomic inside the Durable Object')
+  assert.match(worker, /slot check failed, running cron/, 'fail-open: a stuck object never stops backups')
+})
+
+test('backups: a second copy finding the lock taken is skipped, not a FALLÓ alert', async () => {
+  const s = read('src/lib/backups/service.ts')
+  assert.match(s, /if \(!lock\?\.ok\) throw new Error\(ALREADY_RUNNING\);/)
+  for (const p of ['src/app/api/cron/backup/route.ts', 'src/app/api/cron/backup/hot/route.ts']) {
+    const r = read(p)
+    const skip = r.indexOf('if (isBackupAlreadyRunning(error))')
+    assert.ok(skip > 0 && skip < r.indexOf('await sendOpsAlert('), `${p}: skip before the alert`)
+    assert.match(r, /skipped: 'already_running'/)
+  }
+})

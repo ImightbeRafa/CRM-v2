@@ -67,6 +67,7 @@ import {
   parseDbMs,
   parseOutage,
   planDownRound,
+  UNSENT_EMAIL_AT,
   type HealthCheck,
 } from "./lib/ops/health-watch-text";
 
@@ -365,11 +366,16 @@ async function checkHealthOnce(env: Env): Promise<HealthCheck> {
     const timeout = new Promise<"timeout">((resolve) => {
       timer = setTimeout(() => resolve("timeout"), HEALTH_CHECK_TIMEOUT_MS);
     });
-    const response = await Promise.race([
-      fetchWithFailover(env, new Request("http://container/api/health", { method: "GET" })),
+    // Body read inside the race too: headers then a stalled body still counts as "no answer".
+    const answer = await Promise.race([
+      fetchWithFailover(env, new Request("http://container/api/health", { method: "GET" })).then(async (r) => ({
+        status: r.status,
+        ok: r.ok,
+        text: await r.text().catch(() => ""),
+      })),
       timeout,
     ]);
-    if (response === "timeout") {
+    if (answer === "timeout") {
       return {
         at,
         ok: false,
@@ -379,15 +385,15 @@ async function checkHealthOnce(env: Env): Promise<HealthCheck> {
         detail: `sin respuesta en ${HEALTH_CHECK_TIMEOUT_MS / 1000} s`,
       };
     }
-    const text = await response.text().catch(() => "");
+    const { status, ok, text } = answer;
     return {
       at,
-      ok: response.ok,
-      status: response.status,
+      ok,
+      status,
       ms: Date.now() - started,
       dbMs: parseDbMs(text),
-      cause: classifyHealth(response.status, text),
-      detail: `HTTP ${response.status} ${text.slice(0, 120)}`,
+      cause: classifyHealth(status, text),
+      detail: `HTTP ${status} ${text.slice(0, 120)}`,
     };
   } catch (error) {
     const name = error instanceof Error ? error.name : "error";
@@ -397,11 +403,12 @@ async function checkHealthOnce(env: Env): Promise<HealthCheck> {
   }
 }
 
-async function sendWorkerAlert(env: Env, subject: string, text: string): Promise<void> {
+/** True only when Resend accepted the email. */
+async function sendWorkerAlert(env: Env, subject: string, text: string): Promise<boolean> {
   const to = (env.OPS_ALERT_EMAIL || "").trim();
   const key = (env.RESEND_API_KEY || "").trim();
-  if (!to || !key) return;
-  await fetch("https://api.resend.com/emails", {
+  if (!to || !key) return false;
+  const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -412,6 +419,8 @@ async function sendWorkerAlert(env: Env, subject: string, text: string): Promise
     }),
     signal: AbortSignal.timeout(10_000),
   }).catch(() => undefined);
+  if (res) await res.arrayBuffer().catch(() => undefined);
+  return Boolean(res?.ok);
 }
 
 async function healthWatch(env: Env): Promise<void> {
@@ -431,10 +440,12 @@ async function healthWatch(env: Env): Promise<void> {
     const { outage, email } = planDownRound(Boolean(stored), previous, checks, now);
     if (email) {
       const down = buildDownEmail(outage, checks, now);
-      await sendWorkerAlert(env, down.subject, down.text);
+      // Not accepted by Resend: retry on the next round instead of an hour later.
+      if (!(await sendWorkerAlert(env, down.subject, down.text))) outage.lastEmailAt = UNSENT_EMAIL_AT;
     }
-    // 24 h: the marker must outlive the hourly reminders so the outage start is not lost.
-    await cache.put(marker, new Response(JSON.stringify(outage), { headers: { "Cache-Control": "max-age=86400" } }));
+    // Rewritten every failed round, so 2 h keeps the outage start; a marker left behind (recovery
+    // seen in another data center, crons paused) expires soon instead of faking a long outage.
+    await cache.put(marker, new Response(JSON.stringify(outage), { headers: { "Cache-Control": "max-age=7200" } }));
     return;
   }
   if (stored) {

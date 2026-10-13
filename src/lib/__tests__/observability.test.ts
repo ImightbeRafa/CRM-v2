@@ -188,6 +188,7 @@ test('uptime: public /api/health pings the DB with a 3 s limit; the Worker check
 
 test('uptime emails: cause in plain words, CR time, attempts, duration on recovery, hourly reminder', async () => {
   const h = await import('../ops/health-watch-text')
+  const worker = () => read('src/cf-container-worker.ts')
   assert.equal(h.classifyHealth(503, '{"ok":false,"db":"timeout"}'), 'db_timeout')
   assert.equal(h.classifyHealth(503, '{"ok":false,"db":"error"}'), 'db_error')
   assert.equal(h.classifyHealth(503, '{"error":"Servicio temporalmente no disponible"}'), 'app_unreachable')
@@ -223,6 +224,16 @@ test('uptime emails: cause in plain words, CR time, attempts, duration on recove
   assert.equal(r3.email, true)
   assert.equal(r3.outage.lastEmailAt, '2026-10-13T04:26:30.000Z')
   assert.match(h.buildDownEmail(r3.outage, checks, '2026-10-13T04:26:30.000Z').subject, /SIGUE sin responder \(1 h 1 min\) — base de datos lenta/)
+  // Cause follows the latest failure (Supabase slow → container down).
+  const gone = [{ ...fail, at: '2026-10-13T04:26:10.000Z', status: 0, cause: 'app_unreachable' as const, detail: 'Error' }]
+  const r4 = h.planDownRound(true, r3.outage, gone, '2026-10-13T04:31:00.000Z')
+  assert.equal(r4.outage.cause, 'app_unreachable')
+  assert.equal(r4.outage.since, '2026-10-13T03:25:51.000Z')
+  // Resend did not accept the first email: the next round sends again (not an hour later).
+  const retry = h.planDownRound(true, { ...first.outage, lastEmailAt: h.UNSENT_EMAIL_AT }, checks, '2026-10-13T03:31:12.000Z')
+  assert.equal(retry.email, true)
+  assert.match(worker(), /max-age=7200/)
+  assert.match(worker(), /if \(!\(await sendWorkerAlert\(env, down\.subject, down\.text\)\)\) outage\.lastEmailAt = UNSENT_EMAIL_AT/)
   // Marker from the previous version ("1"): tracked, no duplicate email.
   assert.equal(h.parseOutage('1'), null)
   assert.equal(h.planDownRound(true, null, checks, '2026-10-13T03:26:12.068Z').email, false)

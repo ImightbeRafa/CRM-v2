@@ -5,11 +5,13 @@
 - Worker watchdog (src/cf-container-worker.ts) keeps the same checks (every 5 min, 2 tries 20 s apart, Resend direct)
   and adds: 15 s check limit (a hung container counts as down), cause in plain words (Supabase slow / Supabase error /
   app error / container unreachable / no answer), CR time + UTC, both attempts with timings, what to do, links
-  (CF Worker logs, Supabase + Cloudflare status). Marker now stores the outage (start, cause, rounds, 24 h): hourly
+  (CF Worker logs, Supabase + Cloudflare status). Marker now stores the outage (start, cause, rounds, 2 h, rewritten each round): hourly
   "SIGUE sin responder (N min)" reminder instead of a silent re-alert, and "volvió a responder (caído ~N min)" with
   start/end, cause and DB speed. Old "1" marker handled (no duplicate email).
 - /api/health returns `dbMs` (number only). Texts + decisions in src/lib/ops/health-watch-text.ts (pure, tested).
-- Proof: tsc 0, worker tsc 0, eslint 0 on touched files, test:ops 38/0. Not deployed (needs Rafael's deploy).
+- Verifier PASS WITH NOTES, all fixed: marker 2 h (not 24 h, no stale "caído 6 h"), cause follows the latest
+  failure, body read inside the 15 s limit, unsent Resend email retried next round.
+- Proof: tsc 0, worker tsc 0, eslint 0 on touched files, test:ops 38/0, esbuild bundle OK. Not deployed.
 
 ## 2026-10-09 — Agent: saved replies with images, promo, fewer hand-offs (claudio/agent-f3-studio)
 

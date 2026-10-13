@@ -36,6 +36,8 @@ export type HealthOutage = {
 /** How long the watchdog waits for /api/health before calling it "no answer". */
 export const HEALTH_CHECK_TIMEOUT_MS = 15_000;
 export const HEALTH_REMIND_EVERY_MS = 60 * 60_000;
+/** `lastEmailAt` when Resend did not accept the email: the next failed round sends again. */
+export const UNSENT_EMAIL_AT = "1970-01-01T00:00:00.000Z";
 
 /** Reads what /api/health and the Worker's own 503 page say into one of five causes. */
 export function classifyHealth(status: number, body: string, thrown?: string): HealthCause | undefined {
@@ -203,17 +205,23 @@ export function planDownRound(
   checks: HealthCheck[],
   now: string,
 ): { outage: HealthOutage; email: boolean } {
+  const last = checks[checks.length - 1];
   if (previous) {
     const email = Date.parse(now) - Date.parse(previous.lastEmailAt) >= HEALTH_REMIND_EVERY_MS;
     return {
-      outage: { ...previous, failedRounds: previous.failedRounds + 1, lastEmailAt: email ? now : previous.lastEmailAt },
+      outage: {
+        ...previous,
+        // The cause can change mid-outage (Supabase slow → container down): reminders use the latest.
+        cause: last.cause ?? previous.cause,
+        failedRounds: previous.failedRounds + 1,
+        lastEmailAt: email ? now : previous.lastEmailAt,
+      },
       email,
     };
   }
-  const first = checks[0];
-  const last = checks[checks.length - 1];
   return {
-    outage: { since: first.at, cause: last.cause ?? "app_error", detail: first.detail, lastEmailAt: now, failedRounds: 1 },
+    // `detail` from the same check as `cause`, so both describe one failure.
+    outage: { since: checks[0].at, cause: last.cause ?? "app_error", detail: last.detail, lastEmailAt: now, failedRounds: 1 },
     email: !hadMarker,
   };
 }

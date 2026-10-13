@@ -59,6 +59,16 @@ async function fetchWithFailover(env: Env, request: Request): Promise<Response> 
   }
 }
 import { env } from "cloudflare:workers";
+import {
+  buildDownEmail,
+  buildUpEmail,
+  classifyHealth,
+  HEALTH_CHECK_TIMEOUT_MS,
+  parseDbMs,
+  parseOutage,
+  planDownRound,
+  type HealthCheck,
+} from "./lib/ops/health-watch-text";
 
 // Cloudflare Worker entry for the daytime smoke deploy (see wrangler.jsonc).
 // Not part of the Next.js app: excluded from the root tsconfig, checked by
@@ -341,21 +351,49 @@ async function runCronPaths(
 /**
  * Uptime watchdog (every 5 min, runs in the Worker, so it still works when the container or the
  * database is down): asks the container for /api/health; if two checks 20 s apart both fail,
- * emails OPS_ALERT_EMAIL through Resend's API directly. At most one email per hour (edge cache
- * marker), plus one "back up" email when it recovers.
+ * emails OPS_ALERT_EMAIL through Resend's API directly. The edge-cache marker keeps the outage
+ * (start, cause, failed rounds): first email at once, a reminder at most every hour, and one
+ * "back up" email saying how long it lasted. Texts: src/lib/ops/health-watch-text.ts.
  */
 const HEALTH_ALERT_KEY = "https://betsy-internal.invalid/health-alert";
 
-async function checkHealthOnce(env: Env): Promise<{ ok: boolean; detail: string }> {
+async function checkHealthOnce(env: Env): Promise<HealthCheck> {
+  const at = new Date().toISOString();
+  const started = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const response = await fetchWithFailover(
-      env,
-      new Request("http://container/api/health", { method: "GET" }),
-    );
+    const timeout = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), HEALTH_CHECK_TIMEOUT_MS);
+    });
+    const response = await Promise.race([
+      fetchWithFailover(env, new Request("http://container/api/health", { method: "GET" })),
+      timeout,
+    ]);
+    if (response === "timeout") {
+      return {
+        at,
+        ok: false,
+        status: 0,
+        ms: Date.now() - started,
+        cause: classifyHealth(0, "", "timeout"),
+        detail: `sin respuesta en ${HEALTH_CHECK_TIMEOUT_MS / 1000} s`,
+      };
+    }
     const text = await response.text().catch(() => "");
-    return { ok: response.ok, detail: `HTTP ${response.status} ${text.slice(0, 120)}` };
+    return {
+      at,
+      ok: response.ok,
+      status: response.status,
+      ms: Date.now() - started,
+      dbMs: parseDbMs(text),
+      cause: classifyHealth(response.status, text),
+      detail: `HTTP ${response.status} ${text.slice(0, 120)}`,
+    };
   } catch (error) {
-    return { ok: false, detail: error instanceof Error ? error.name : "error" };
+    const name = error instanceof Error ? error.name : "error";
+    return { at, ok: false, status: 0, ms: Date.now() - started, cause: classifyHealth(0, "", name), detail: name };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -369,7 +407,7 @@ async function sendWorkerAlert(env: Env, subject: string, text: string): Promise
     body: JSON.stringify({
       from: "BetsyCRM Alertas <noreply@betsycrm.com>",
       to,
-      subject: `[Betsy] ${subject}`,
+      subject: `[Betsy] ${subject}`.slice(0, 180),
       text,
     }),
     signal: AbortSignal.timeout(10_000),
@@ -379,29 +417,30 @@ async function sendWorkerAlert(env: Env, subject: string, text: string): Promise
 async function healthWatch(env: Env): Promise<void> {
   const cache = caches.default;
   const marker = new Request(HEALTH_ALERT_KEY);
-  let result = await checkHealthOnce(env);
-  if (!result.ok) {
+  const checks = [await checkHealthOnce(env)];
+  if (!checks[0].ok) {
     await new Promise((r) => setTimeout(r, 20_000));
-    result = await checkHealthOnce(env);
+    checks.push(await checkHealthOnce(env));
   }
-  const alerted = await cache.match(marker);
-  if (!result.ok) {
-    console.error(`[cf-health] DOWN ${result.detail}`);
-    if (alerted) return;
-    await sendWorkerAlert(
-      env,
-      "www.betsycrm.com NO responde",
-      `El sitio o la base de datos no responde (2 intentos con 20 s de diferencia).
-Detalle: ${result.detail}
-Hora: ${new Date().toISOString()}
-Revisá Cloudflare (Worker betsy-crm-daytime-smoke) y Supabase.`,
-    );
-    await cache.put(marker, new Response("1", { headers: { "Cache-Control": "max-age=3600" } }));
+  const last = checks[checks.length - 1];
+  const now = new Date().toISOString();
+  const stored = await cache.match(marker);
+  const previous = stored ? parseOutage(await stored.text().catch(() => "")) : null;
+  if (!last.ok) {
+    console.error(`[cf-health] DOWN ${last.cause} ${last.detail}`);
+    const { outage, email } = planDownRound(Boolean(stored), previous, checks, now);
+    if (email) {
+      const down = buildDownEmail(outage, checks, now);
+      await sendWorkerAlert(env, down.subject, down.text);
+    }
+    // 24 h: the marker must outlive the hourly reminders so the outage start is not lost.
+    await cache.put(marker, new Response(JSON.stringify(outage), { headers: { "Cache-Control": "max-age=86400" } }));
     return;
   }
-  if (alerted) {
+  if (stored) {
     await cache.delete(marker);
-    await sendWorkerAlert(env, "www.betsycrm.com volvió a responder", `Todo responde de nuevo. Hora: ${new Date().toISOString()}`);
+    const up = buildUpEmail(previous, last, now);
+    await sendWorkerAlert(env, up.subject, up.text);
   }
 }
 

@@ -180,6 +180,60 @@ test('uptime: public /api/health pings the DB with a 3 s limit; the Worker check
   const worker = read('src/cf-container-worker.ts')
   assert.match(worker, /if \(controller\.cron === "\*\/5 \* \* \* \*"\) \{\n\s+await healthWatch\(env\)/)
   assert.match(worker, /await new Promise\(\(r\) => setTimeout\(r, 20_000\)\);/, 'second check before alerting')
-  assert.match(worker, /"Cache-Control": "max-age=3600"/, 'at most one alert per hour')
-  assert.match(worker, /volvió a responder/)
+  assert.match(worker, /planDownRound\(Boolean\(stored\), previous, checks, now\)/, 'hourly reminder decided by the tested helper')
+  assert.match(worker, /buildUpEmail\(previous, last, now\)/)
+  assert.match(worker, /HEALTH_CHECK_TIMEOUT_MS/, 'a hung container counts as down')
+  assert.match(health, /dbMs: Date\.now\(\) - started/)
+})
+
+test('uptime emails: cause in plain words, CR time, attempts, duration on recovery, hourly reminder', async () => {
+  const h = await import('../ops/health-watch-text')
+  assert.equal(h.classifyHealth(503, '{"ok":false,"db":"timeout"}'), 'db_timeout')
+  assert.equal(h.classifyHealth(503, '{"ok":false,"db":"error"}'), 'db_error')
+  assert.equal(h.classifyHealth(503, '{"error":"Servicio temporalmente no disponible"}'), 'app_unreachable')
+  assert.equal(h.classifyHealth(500, 'oops'), 'app_error')
+  assert.equal(h.classifyHealth(0, '', 'timeout'), 'no_answer')
+  assert.equal(h.classifyHealth(0, '', 'TypeError'), 'app_unreachable')
+  assert.equal(h.classifyHealth(200, '{"ok":true,"dbMs":12}'), undefined)
+  assert.equal(h.parseDbMs('{"ok":true,"dbMs":42}'), 42)
+  assert.equal(h.crTime('2026-10-13T03:26:12.068Z', true), '12/10 21:26')
+  assert.equal(h.humanDuration(4 * 60_000 + 20_000), '4 min')
+  assert.equal(h.humanDuration(95 * 60_000), '1 h 35 min')
+
+  const fail = { ok: false, status: 503, ms: 3100, cause: 'db_timeout' as const, detail: 'HTTP 503 {"ok":false,"db":"timeout"}' }
+  const checks = [
+    { ...fail, at: '2026-10-13T03:25:51.000Z' },
+    { ...fail, at: '2026-10-13T03:26:11.500Z' },
+  ]
+  const first = h.planDownRound(false, null, checks, '2026-10-13T03:26:12.068Z')
+  assert.equal(first.email, true)
+  assert.equal(first.outage.since, '2026-10-13T03:25:51.000Z')
+  const down = h.buildDownEmail(first.outage, checks, '2026-10-13T03:26:12.068Z')
+  assert.match(down.subject, /NO responde — base de datos lenta/)
+  assert.match(down.text, /Supabase\) tardó más de 3 segundos/)
+  assert.match(down.text, /12\/10 21:25 hora CR \(03:25 UTC\)/)
+  assert.match(down.text, /2\) 21:26 — HTTP 503/)
+  assert.match(down.text, /status\.supabase\.com/)
+
+  // Later rounds inside the hour: no email; after an hour: one reminder.
+  const r2 = h.planDownRound(true, first.outage, checks, '2026-10-13T03:31:12.000Z')
+  assert.equal(r2.email, false)
+  assert.equal(r2.outage.failedRounds, 2)
+  const r3 = h.planDownRound(true, { ...r2.outage, failedRounds: 12 }, checks, '2026-10-13T04:26:30.000Z')
+  assert.equal(r3.email, true)
+  assert.equal(r3.outage.lastEmailAt, '2026-10-13T04:26:30.000Z')
+  assert.match(h.buildDownEmail(r3.outage, checks, '2026-10-13T04:26:30.000Z').subject, /SIGUE sin responder \(1 h 1 min\) — base de datos lenta/)
+  // Marker from the previous version ("1"): tracked, no duplicate email.
+  assert.equal(h.parseOutage('1'), null)
+  assert.equal(h.planDownRound(true, null, checks, '2026-10-13T03:26:12.068Z').email, false)
+
+  const stored = h.parseOutage(JSON.stringify(r2.outage))
+  const ok = { at: '2026-10-13T03:30:49.000Z', ok: true, status: 200, ms: 180, dbMs: 9, detail: 'HTTP 200' }
+  const up = h.buildUpEmail(stored, ok, '2026-10-13T03:30:49.693Z')
+  assert.match(up.subject, /volvió a responder \(caído ~5 min\)/)
+  assert.match(up.text, /de 12\/10 21:25 a 21:30 hora CR/)
+  assert.match(up.text, /base de datos 9 ms/)
+  assert.match(up.text, /Revisiones fallidas: 2/)
+  assert.match(h.buildUpEmail(null, ok, '2026-10-13T03:30:49.693Z').subject, /^www\.betsycrm\.com volvió a responder$/)
+  assert.doesNotMatch(down.text + up.text, /@/, 'no addresses or customer data in the texts')
 })

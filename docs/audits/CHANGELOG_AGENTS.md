@@ -1,3 +1,16 @@
+## 2026-10-12 — Uptime alert emails say what broke and for how long (claudio/health-alert-detail)
+
+- Trigger: alert 2026-10-13 03:26Z "NO responde" (HTTP 503 db timeout, SELECT 1 > 3 s on both checks), back
+  03:30Z. Site + /api/health 200 in < 0.5 s afterwards. Read-only prod DB look was blocked by the auto-mode guard.
+- Worker watchdog (src/cf-container-worker.ts) keeps the same checks (every 5 min, 2 tries 20 s apart, Resend direct)
+  and adds: 15 s check limit (a hung container counts as down), cause in plain words (Supabase slow / Supabase error /
+  app error / container unreachable / no answer), CR time + UTC, both attempts with timings, what to do, links
+  (CF Worker logs, Supabase + Cloudflare status). Marker now stores the outage (start, cause, rounds, 24 h): hourly
+  "SIGUE sin responder (N min)" reminder instead of a silent re-alert, and "volvió a responder (caído ~N min)" with
+  start/end, cause and DB speed. Old "1" marker handled (no duplicate email).
+- /api/health returns `dbMs` (number only). Texts + decisions in src/lib/ops/health-watch-text.ts (pure, tested).
+- Proof: tsc 0, worker tsc 0, eslint 0 on touched files, test:ops 38/0. Not deployed (needs Rafael's deploy).
+
 ## 2026-10-09 — Agent: saved replies with images, promo, fewer hand-offs (claudio/agent-f3-studio)
 
 - Rafael: the agent should have its own customizable replies (size guide "TALLAS", promo flyer) so it doesn't always

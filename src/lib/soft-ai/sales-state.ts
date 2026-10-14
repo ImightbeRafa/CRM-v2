@@ -8,6 +8,8 @@ import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 
 export type SalesCatalogItem = { name: string; price: number; stockLabel: string }
 export type SalesShippingMethod = { name: string; price: number; coverage: string; cod: string }
+/** Owner's combo at a fixed total; shippingIncluded = it reaches the store's free-shipping amount. */
+export type SalesBundle = { name: string; price: number; shippingIncluded: boolean }
 export type AiDisclosure = 'discreet' | 'transparent'
 
 /** Everything the agent needs to sell, loaded once per turn (agent-sales-context.ts). */
@@ -25,6 +27,10 @@ export type SalesContext = {
   paymentDigits: string[]
   /** Owner's promotion in effect this turn (already applied to prices by code), or null. */
   promo: { freeShipping: boolean; specialPrice: boolean; codHighlight: boolean; headline: string | null } | null
+  /** Owner's combos (sales rules), quoted only as listed. */
+  bundles?: SalesBundle[]
+  /** Store rule: shipping is free from this order amount (brand facts). Null = no such rule. */
+  freeShippingOver?: number | null
 }
 
 export type SalesStage = 'saludo' | 'descubrir' | 'cotizar' | 'cierre' | 'esperando_comprobante' | 'verificando'
@@ -88,7 +94,7 @@ export function deriveSalesState(input: {
   const ours = input.history.filter((m) => m.direction === 'outbound').map((m) => m.content || '')
   const oursText = ours.join('\n')
   const oursAmounts = new Set(ours.flatMap((m) => amountsIn(m)))
-  const catalogPrices = (input.ctx.catalog ?? []).map((c) => Math.round(c.price))
+  const catalogPrices = [...(input.ctx.catalog ?? []), ...(input.ctx.bundles ?? [])].map((c) => Math.round(c.price))
   const shipPrices = input.ctx.shippingMethods.map((s) => Math.round(s.price)).filter((p) => p > 0)
 
   const said = {
@@ -132,6 +138,13 @@ export function sanitizeOwnerText(text: string, max: number): string {
 }
 
 const oneLine = (s: string, max: number) => sanitizeOwnerText(s, max).replace(/\n/g, ' ')
+/** Combo names are owner text shown as data: no Betsy markers and no amounts (the price comes only from the number field). */
+const bundleName = (s: string) =>
+  oneLine(stripBetsyLookalikes(s), 120)
+    .replace(/[₡$]\s?\p{N}[\p{N}.,\s]*/gu, '')
+    .replace(/\p{N}[\p{N}.,]{3,}/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim() || 'Combo'
 
 const money = (n: number) => `₡${Math.round(n).toLocaleString('es-CR')}`
 const tick = (b: boolean) => (b ? '✓' : '—')
@@ -143,10 +156,17 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
     lines.push('Productos que vendés (precio y stock en vivo; son tus ÚNICOS precios válidos):')
     for (const c of ctx.catalog) lines.push(`- ${oneLine(c.name, 120)}: ${money(c.price)} · ${c.stockLabel}`)
   }
+  if (ctx.bundles?.length) {
+    lines.push('Combos (precio total del combo; únicos precios de combo válidos, no calcules otros ni hables de ahorro):')
+    for (const b of ctx.bundles) lines.push(`- ${bundleName(b.name)}: ${money(b.price)} · ${b.shippingIncluded ? 'envío incluido' : 'más el envío'}`)
+  }
   if (ctx.shippingMethods.length) {
     lines.push('Envíos (precio al cliente; únicos montos de envío válidos):')
     for (const s of ctx.shippingMethods) {
       lines.push(`- ${oneLine(s.name, 80)}: ${s.price > 0 ? money(s.price) : 'sin costo'} · llega: ${oneLine(s.coverage, 160)} · contra entrega: ${oneLine(s.cod, 80)}`)
+    }
+    if (ctx.freeShippingOver) {
+      lines.push(`Envío gratis desde ${money(ctx.freeShippingOver)} de compra (regla de la tienda; ya aplicada en los combos que dicen "envío incluido"). Un pedido por debajo de ese monto paga el envío.`)
     }
   }
   if (ctx.promo) {
@@ -185,7 +205,7 @@ export function stripBetsyLookalikes(text: string): string {
     .normalize('NFKC')
     // The marker word itself, in any brackets / case / spacing, is never allowed from the customer.
     .replace(/BETSY[\s_-]*DATOS/gi, '[texto del cliente]')
-    .replace(/promoci[oó]n activa|dato de betsy|aplicada por betsy|frase del due[nñ]o|estado de la venta|siguiente paso\s*:|etapa\s*:|calculado por betsy|productos que vend[eé]s|reglas fijas|\[\s*vos\s*\(\s*tienda\s*\)/gi, '[texto del cliente]')
+    .replace(/regla de la tienda|precio total del combo|únicos precios de combo|promoci[oó]n activa|dato de betsy|aplicada por betsy|frase del due[nñ]o|estado de la venta|siguiente paso\s*:|etapa\s*:|calculado por betsy|productos que vend[eé]s|reglas fijas|\[\s*vos\s*\(\s*tienda\s*\)/gi, '[texto del cliente]')
 }
 
 /** Code-owned selling rules (system instructions; stable per agent version). */
@@ -212,12 +232,73 @@ export function salesSystemBlock(ctx: SalesContext): string {
   return lines.join('\n')
 }
 
-/** Amounts the agent may write: product prices, shipping prices and one product + its shipping. */
+/**
+ * Amounts the agent may write: product prices, shipping prices and one product + its shipping; listed combos
+ * (+ one shipping unless included) and the store's free-shipping amount.
+ */
 export function salesAllowedAmounts(ctx: SalesContext): number[] {
   const prices = (ctx.catalog ?? []).map((c) => Math.round(c.price))
   const ships = ctx.shippingMethods.map((s) => Math.round(s.price))
   const out = new Set<number>([...prices, ...ships])
   // Unit price + one shipping only (INT-72): any other total must come from code, never the model's own math.
   for (const p of prices) for (const s of ships) out.add(p + s)
+  for (const b of ctx.bundles ?? []) {
+    out.add(Math.round(b.price))
+    if (!b.shippingIncluded) for (const s of ships) out.add(Math.round(b.price) + s)
+  }
+  if (ctx.freeShippingOver) out.add(Math.round(ctx.freeShippingOver))
   return [...out].filter((n) => n > 0)
+}
+
+type FactsShipping = {
+  ea?: { enabled: boolean; gamCost?: number; outsideGamCost?: number; freeOver?: number; etaText?: string; courierText?: string }
+  ra?: { enabled: boolean; text?: string }
+  contraEntrega?: { enabled: boolean; text?: string }
+} | undefined
+
+/**
+ * A business without Config › Métodos de envío quotes from the agent's own shipping facts (amounts already allowed
+ * by the validator). One flat national price is one line (two identical lines read as two different services).
+ */
+export function shippingFromFacts(shipping: FactsShipping): SalesShippingMethod[] {
+  const ea = shipping?.ea
+  const ra = shipping?.ra
+  const ce = shipping?.contraEntrega
+  const gamCod = ce?.enabled ? (ce.text || 'según zona').slice(0, 120) : 'no'
+  const eta = [ea?.courierText, ea?.etaText].filter(Boolean).join(', ').slice(0, 120)
+  const withEta = (coverage: string) => (eta ? `${coverage} (${eta})` : coverage)
+  const out: SalesShippingMethod[] = []
+  if (ea?.enabled && ea.gamCost != null && ea.outsideGamCost != null && ea.gamCost === ea.outsideGamCost) {
+    out.push({ name: 'Envío a domicilio (todo el país)', price: ea.gamCost, coverage: withEta('todo el país'), cod: gamCod })
+  } else {
+    if (ea?.enabled && ea.gamCost != null) out.push({ name: 'Envío a domicilio (GAM)', price: ea.gamCost, coverage: withEta('GAM'), cod: gamCod })
+    if (ea?.enabled && ea.outsideGamCost != null) out.push({ name: 'Envío a domicilio (fuera de GAM)', price: ea.outsideGamCost, coverage: withEta('fuera de GAM'), cod: 'no' })
+  }
+  if (ra?.enabled) out.push({ name: 'Retiro en tienda', price: 0, coverage: (ra.text || 'en la tienda').slice(0, 120), cod: 'no aplica' })
+  return out
+}
+
+export function freeShippingOverFromFacts(shipping: FactsShipping): number | null {
+  return shipping?.ea?.enabled && shipping.ea.freeOver ? Math.round(shipping.ea.freeOver) : null
+}
+
+/** Deal wording the owner's active promo enables this turn (a free-shipping AMOUNT is a separate, narrower rule). */
+export function salesAllowedDeals(ctx: SalesContext): Array<'free_shipping' | 'special_price'> {
+  const out: Array<'free_shipping' | 'special_price'> = []
+  if (ctx.promo?.freeShipping) out.push('free_shipping')
+  if (ctx.promo?.specialPrice) out.push('special_price')
+  return out
+}
+
+/**
+ * Store rule "free shipping from ₡X": the words "envío gratis" pass the validator only next to that amount or a
+ * combo that includes shipping, and never next to a smaller product/total (output-validator freeShippingRuleOk).
+ */
+export function salesFreeShippingRule(ctx: SalesContext): { over: number; includedPrices: number[]; shippingPrices: number[] } | null {
+  if (!ctx.freeShippingOver) return null
+  return {
+    over: Math.round(ctx.freeShippingOver),
+    includedPrices: (ctx.bundles ?? []).filter((b) => b.shippingIncluded).map((b) => Math.round(b.price)),
+    shippingPrices: ctx.shippingMethods.map((s) => Math.round(s.price)).filter((p) => p > 0),
+  }
 }

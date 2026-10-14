@@ -47,6 +47,57 @@ export function dealProblem(text: string, allowed: ReadonlyArray<'free_shipping'
   return false
 }
 
+/** "desde ₡25.000", "a partir de 25 000", "en compras de ₡25.000" (the amount captured). */
+const THRESHOLD_ANCHOR_RE =
+  /(?:desde|a\s+partir\s+de|en\s+compras\s+(?:de|desde|sobre|mayores\s+a)|arriba\s+de|m[aá]s\s+de)\s+(?:los\s+)?[₡$]?\s?(\d[\d.,\s]*\d)/giu
+/** Wording that turns the rule into an exception for this customer. */
+const FREE_SHIPPING_EXCEPTION_RE =
+  /(?<![\p{L}])(aunque|por\s+esta\s+vez|esta\s+vez|igual(?:mente)?|tambi[eé]n|excepci\p{L}*|normalmente|por\s+lo\s+general|solo\s+(?:hoy|por\s+hoy|a\s+vos|a\s+ti|para\s+vos|para\s+ti)|de\s+todas\s+formas|te\s+lo\s+(?:dejo|mando)\s+igual)(?![\p{L}])/iu
+
+/** Store rule "free shipping from ₡over" (brand facts), with the combo prices that include shipping because of it. */
+export type FreeShippingRule = { over: number; includedPrices: number[]; shippingPrices: number[] }
+
+/**
+ * "Envío gratis" under a store threshold (not a promo) is only true for orders at or above it: the reply must name
+ * the threshold or an included combo, and every other amount below the threshold must be a shipping price
+ * ("₡3.000, gratis desde ₡25.000"). A single product with "envío gratis" is still a deal the agent invented.
+ */
+export function freeShippingRuleOk(text: string, rule: FreeShippingRule): boolean {
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1
+  // Judged per clause (sentence or parenthesis): the free-shipping words must sit in the same clause as
+  // "desde ₡X" (the threshold) or an included combo's price, with no exception wording and no other amount
+  // except shipping prices. Other clauses may quote prices normally ("Son ₡12.900 con envío. Gratis desde ₡25.000").
+  // A period inside an amount (₡25.000) is not a sentence end.
+  const clauses = text.split(/(?:(?<!\d)\.|\.(?!\d)|[!?;()\n])+/)
+  let sawPhrase = false
+  for (const clause of clauses) {
+    const hasPhrase = [...clause.matchAll(DEAL_ALL_RE)].some((m) => FREE_SHIPPING_DEAL_RE.test(m[1].trim()))
+    if (!hasPhrase) continue
+    sawPhrase = true
+    if (FREE_SHIPPING_EXCEPTION_RE.test(clause)) return false
+    const thresholdAnchor = [...clause.matchAll(THRESHOLD_ANCHOR_RE)].some((m) => {
+      const value = extractMoneyAmounts(`₡${m[1]}`)[0]
+      return value != null && near(Math.round(value), rule.over)
+    })
+    const amounts = extractMoneyAmounts(clause).map((a) => Math.round(a)).filter((a) => a >= 100)
+    const comboAnchor = amounts.some((a) => rule.includedPrices.some((p) => near(a, p)))
+    if (!thresholdAnchor && !comboAnchor) return false
+    const other = amounts.filter(
+      (a) => !(thresholdAnchor && near(a, rule.over)) && !rule.includedPrices.some((p) => near(a, p)) && !rule.shippingPrices.some((s) => near(a, s)),
+    )
+    if (other.length) return false
+  }
+  return sawPhrase
+}
+
+/** Deal check with the narrower store free-shipping rule on top of the promo kinds. */
+function dealProblemWithRule(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>, rule: FreeShippingRule | null | undefined): boolean {
+  if (!dealProblem(text, allowed)) return false
+  if (!rule || allowed.includes('free_shipping')) return true
+  // Only free-shipping wording is the problem, and the store rule covers it in this reply.
+  return dealProblem(text, [...allowed, 'free_shipping']) || !freeShippingRuleOk(text, rule)
+}
+
 const CREATED_CLAIM_RE = /ya\s+(cre[eé]|registr[eé]|arm[eé])|pedido\s+creado|acabo\s+de\s+crear/i
 const UNIT_COST_RE = /unitCost|costo\s+unitario|precio\s+de\s+costo/i
 const SHIP_CUE_RE = /env[ií]o|retiro|domicilio|\bGAM\b|correos|mensajer/i
@@ -80,6 +131,8 @@ export function validateAgentOutput(input: {
   intent?: string | null
   /** Deal wording enabled by the owner's active promo (promo.ts). */
   allowedDeals?: Array<'free_shipping' | 'special_price'>
+  /** Store rule "envío gratis desde ₡X" (only valid next to that amount). */
+  freeShippingRule?: FreeShippingRule | null
 }): OutputValidationResult {
   const reasons: string[] = []
   const text = input.text || ''
@@ -88,7 +141,7 @@ export function validateAgentOutput(input: {
 
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
   if (CREATED_CLAIM_RE.test(text)) reasons.push('write_claim')
-  if (dealProblem(text, input.allowedDeals ?? [])) reasons.push('deal_offer')
+  if (dealProblemWithRule(text, input.allowedDeals ?? [], input.freeShippingRule)) reasons.push('deal_offer')
   if (hasConfirmationWording(text)) reasons.push('confirmation_wording')
 
   const inventory =
@@ -157,6 +210,7 @@ export function applyFinalOutputPolicy(input: {
   allowedDeals?: Array<'free_shipping' | 'special_price'>
   /** Promo makes shipping free: the store's fixed shipping amounts stop being valid. */
   freeShipping?: boolean
+  freeShippingRule?: FreeShippingRule | null
 }): FinalOutputPolicy {
   const facts = input.brandFacts || { schemaVersion: 1 }
   const style = input.replyStyle || DEFAULT_REPLY_STYLE
@@ -214,6 +268,7 @@ export function applyFinalOutputPolicy(input: {
     replyStyle: style,
     intent,
     allowedDeals: input.allowedDeals,
+    freeShippingRule: input.freeShippingRule,
   })
 
   const merged = [...new Set([...reasons, ...validated.reasons])]

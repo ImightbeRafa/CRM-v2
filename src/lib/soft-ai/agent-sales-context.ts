@@ -12,7 +12,7 @@ import { loadOrderRequirements } from '@/lib/orders/order-requirements-server'
 import { loadCoverage } from '@/lib/shipping/coverage-store'
 import type { MethodCoverage } from '@/lib/shipping/coverage'
 import { canSharePaymentFacts, type BrandFacts } from '@/lib/soft-ai/brand-facts'
-import type { SalesContext } from '@/lib/soft-ai/sales-state'
+import { freeShippingOverFromFacts, shippingFromFacts, type SalesContext } from '@/lib/soft-ai/sales-state'
 import { promoInEffect } from '@/lib/soft-ai/promo'
 
 const INLINE_CATALOG_MAX = 30
@@ -61,20 +61,9 @@ export async function loadAgentSalesContext(input: {
   const methods = coverage.filter((m) => offered.size === 0 || offered.has(m.shippingMethodId))
   // Config › Métodos de envío is the source of truth (Rafael 2026-10-09). A business without methods yet falls back
   // to the agent's own shipping facts so it can still quote (these amounts are already allowed by the validator).
-  const ea = input.brandFacts.shipping?.ea
-  const ra = input.brandFacts.shipping?.ra
-  const fromFacts =
-    methods.length === 0
-      ? [
-          ...(ea?.enabled && ea.gamCost != null
-            ? [{ name: 'Envío a domicilio (GAM)', price: ea.gamCost, coverage: 'GAM', cod: input.brandFacts.shipping?.contraEntrega?.enabled ? 'según zona' : 'no' }]
-            : []),
-          ...(ea?.enabled && ea.outsideGamCost != null
-            ? [{ name: 'Envío a domicilio (fuera de GAM)', price: ea.outsideGamCost, coverage: 'fuera de GAM', cod: 'no' }]
-            : []),
-          ...(ra?.enabled ? [{ name: 'Retiro en tienda', price: 0, coverage: (ra.text || 'en la tienda').slice(0, 120), cod: 'no aplica' }] : []),
-        ]
-      : []
+  const fromFacts = methods.length === 0 ? shippingFromFacts(input.brandFacts.shipping) : []
+  // Store rule "free shipping from ₡X" (brand facts): shown to the model and applied to combos at or above it.
+  const freeShippingOver = freeShippingOverFromFacts(input.brandFacts.shipping)
 
   const orderFields = [
     'Nombre',
@@ -117,6 +106,13 @@ export async function loadAgentSalesContext(input: {
         }))
       : null,
     shippingMethods,
+    bundles: (setup?.salesRules.bundles ?? []).map((b) => ({
+      name: b.name,
+      price: b.price,
+      // A promo limited to some methods does not make a combo's shipping free everywhere (only the threshold does).
+      shippingIncluded: Boolean(promo?.freeShipping && promo.freeShippingMethodIds.length === 0) || (freeShippingOver !== null && b.price >= freeShippingOver),
+    })),
+    freeShippingOver,
     orderFields: [...new Set(orderFields)].slice(0, 20),
     salesScript: setup ? salesRulesForPrompt(setup.salesRules) : '',
     aiDisclosure: setup?.salesRules.aiDisclosure ?? 'discreet',

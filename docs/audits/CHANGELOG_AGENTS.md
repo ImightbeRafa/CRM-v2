@@ -1,3 +1,30 @@
+## 2026-10-14 — Agent packs: one business folder → one sales agent; combos + "envío gratis desde" (claudio/agent-pack-builder)
+
+- Rafael: build a complete PatchHouse sales agent from the backend, testable in the test chat, as the template for
+  other businesses (Forge, Sleeping…). Prices = website (₡9.900, shipping ₡3.000, free from ₡25.000, combos).
+- Agent pack = a folder OUTSIDE the repo (pack.json + images/): persona, brand facts, payment, products by name,
+  sales script, combos, knowledge docs, saved replies with images, test questions. Business data never in the repo.
+- `scripts/agent-pack/build-agent.ts` (dry run by default, `--apply` writes through the same admin functions as the UI;
+  audit name "<user> (agent-pack script)"). Pre-checks block: live/archived agent, channel served by another agent
+  (unless --replace-binding), channel with an AI unlock, tenant default serving unbound channels, knowledge name used
+  by another agent, products not resolving to exactly one active item, missing tables/storage. Never writes flags,
+  allowlist, unlock, caps, InventoryItem, ShippingMethod or SQL; status stays draft. Re-runs change nothing if the
+  pack didn't change (stable-key compare of parsed stored values).
+- `scripts/agent-pack/probar.ts`: plays the pack tests through runAgentTestTurn (sandbox) + evaluateStep; stops at
+  60 % of the business's remaining daily TEST budget.
+- Combos (salesRules.bundles, max 8; names refused with number words / deal wording): BETSY_DATOS "Combos" section,
+  amounts allowed = combo, combo + one shipping unless included. Store rule brandFacts.shipping.ea.freeOver: shown as
+  "Envío gratis desde ₡X"; combos ≥ X are "envío incluido"; the words "envío gratis" pass the validator ONLY next to
+  ₡X or an included combo and with no smaller non-shipping amount (Verifier F1). Rule 12 wording extended;
+  AGENT_RULES_VERSION bumped → live agents show "re-test suggested" after deploy.
+- Facts shipping fallback (business without Config › Métodos de envío): one line for a flat national price, COD text
+  and courier/ETA from the facts (pure `shippingFromFacts`). salesRules octet guard (exact jsonb::text size) →
+  413 in the settings route, 'sales_rules_too_large' in Studio apply.
+- Proof: test:soft-ai 482/482, test:chat-harden 643/643, test:security 271/271, tsc 0, eslint clean.
+  Advisor GO with corrections (applied); Verifier round 1 FAIL (F1–F12) → fixed.
+- Not yet: no UI to see/edit combos (settings GET doesn't return them); combo prices don't follow product price
+  changes; mixed carts (Trío + 1) hand off; prod test chat needs this branch deployed to show combos.
+
 ## 2026-10-09 — Agent: saved replies with images, promo, fewer hand-offs (claudio/agent-f3-studio)
 
 - Rafael: the agent should have its own customizable replies (size guide "TALLAS", promo flyer) so it doesn't always

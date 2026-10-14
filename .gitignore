@@ -30,6 +30,7 @@ scripts/*
 !scripts/disable-betsy-v2-flags.mjs
 !scripts/ai-usage-backfill.mjs
 !scripts/flow-mining.ts
+!scripts/agent-pack/
 !scripts/chat-inbox-backfill.ts
 !scripts/chat-inbox-verify.ts
 !scripts/chat-inbox-v2-cutover.ts

@@ -23,7 +23,7 @@ import { hashKnowledgeBody } from '@/lib/soft-ai/knowledge-repository'
 import { loadMappedInventoryIds, setMappedInventory } from '@/lib/soft-ai/agent-inventory-map'
 import { loadSalesSetup, saveSalesSetup, parseSalesRules, salesRulesOctets, SALES_RULES_MAX_OCTETS } from '@/lib/soft-ai/agent-sales-setup'
 import { parseBrandFacts, parseBrandFactsSafe, parseReplyStyleSafe, ReplyStyleSchema } from '@/lib/soft-ai/brand-facts'
-import { listTestCases, createTestCase } from '@/lib/soft-ai/probar-test-cases'
+import { listTestCases, createTestCase, cleanSavedTest } from '@/lib/soft-ai/probar-test-cases'
 import { parseSavedTest } from '@/lib/soft-ai/probar-scenarios'
 import { isTableReady, isColumnReady } from '@/lib/soft-ai/table-ready'
 import { isChatStorageConfigured } from '@/lib/chat-storage'
@@ -288,7 +288,8 @@ async function main() {
     const titles = new Set(cases.cases.map((c) => c.title))
     let added = 0
     for (const t of pack.tests) {
-      if (titles.has(t.title)) continue
+      // Titles are stored masked (cleanSavedTest): compare the way they are stored.
+      if (titles.has(t.title) || titles.has(cleanSavedTest({ title: t.title, steps: [] }).title)) continue
       const parsed = parseSavedTest(t)
       if (!parsed.ok) {
         log(`  prueba "${t.title}" omitida: ${parsed.error}`)

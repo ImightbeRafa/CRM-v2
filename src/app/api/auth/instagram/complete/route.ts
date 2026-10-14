@@ -7,7 +7,11 @@ import {
   getInstagramPendingCookieName,
   loadInstagramPendingRecord,
 } from '@/lib/instagram-pending-connect'
-import { upsertInstagramSocialAccount } from '@/lib/instagram-social-account'
+import {
+  InstagramSocialAccountConflictError,
+  instagramAccountOwnedElsewhereHtml,
+  upsertInstagramSocialAccount,
+} from '@/lib/instagram-social-account'
 import { debugMetaTokenExpiry } from '@/lib/social-account-token-health'
 import { getMetaWhatsAppAppId, getMetaWhatsAppAppSecret } from '@/lib/meta-api'
 
@@ -139,6 +143,13 @@ export async function POST(request: NextRequest) {
     })
     return response
   } catch (error) {
+    if (error instanceof InstagramSocialAccountConflictError) {
+      console.warn('[instagram/complete] Instagram account already connected on another tenant')
+      return new NextResponse(instagramAccountOwnedElsewhereHtml(), {
+        status: 409,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
+    }
     console.error('[instagram/complete] Unexpected error', error)
     return new NextResponse('Error inesperado al completar la conexión de Instagram.', { status: 500 })
   }

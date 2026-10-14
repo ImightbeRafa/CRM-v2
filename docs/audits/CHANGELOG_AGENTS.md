@@ -1,3 +1,17 @@
+## 2026-09-23 — Instagram reconnect no longer 500s on SocialAccount P2002
+
+- `upsertInstagramSocialAccount` updates the same-tenant Instagram row (active or
+  inactive) and refreshes token, expiry, user, and channel identity.
+- An active `(platform, accountId)` owned by another tenant — partial unique from
+  `025_chat_inbox_uniques.sql`, or a legacy unique on those two columns — returns
+  `InstagramSocialAccountConflictError`. Callback and complete render Spanish HTML
+  409. The other tenant's row is not modified.
+- Create races that hit P2002 re-read and update the same-tenant row. Unrelated
+  errors still propagate.
+- Prove: `src/lib/__tests__/instagram-social-account.test.ts` (in-memory delegate;
+  no live DB writes). Included in `npm run test:security`.
+- Out of this slice: bot paths, Soft chrome, schema/SQL, Meta Submit.
+
 ## 2026-09-22 — P4: monitor attribution in /chats (AT-WA-3, G23)
 
 - Agent-layer delivery in `agent-turn.ts` snapshots `agentName` and `agentEmoji` onto the

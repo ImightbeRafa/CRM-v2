@@ -1,3 +1,17 @@
+## 2026-10-15 — Why an activated-looking channel stayed quiet; no wasted test runs (claudio/agent-pack-builder)
+
+- PatchHouse looked on (agent En vivo + Responder, channel allowlisted, inbox chip IA) but never answered: the channel had
+  no aiFullUnlock because "Probar y activar" stopped at case 6/14 on the daily TEST budget (100k tokens, 13 test turns,
+  US$0.24 — cached input is billed at full price on Grok per our rate card). Status/mode were set by hand in Avanzado.
+- DeepSleep testDailyTokenCap 100k → 400k (Rafael approved in chat; audited, reason chat_agent_test_cap).
+- startAgentTestRun refuses BEFORE any model call when the suite cannot finish inside today's budget (cases × this
+  agent's real test-turn size + 10 %) → 429 "No se gastó nada". ChannelsEditor: amber "Este canal NO responde todavía"
+  when attended + AI allowed but not unlocked (or stale).
+- Usage: every inbox AI call already meters AiUsageEvent via softAiResponsesCreate (probar, agent_test, agent_import,
+  vision, shortcut_import) + staff bot lines. Open: live dailyTokenCap 250k ≈ 25–30 replies/day for the whole tenant;
+  each turn sends ~7.5k prompt tokens (prompt slimming is the real saver).
+- Proof: test:soft-ai 485/485, test:agentes-ui 34/34, tsc 0, eslint clean.
+
 ## 2026-10-14 — Agent packs: one business folder → one sales agent; combos + "envío gratis desde" (claudio/agent-pack-builder)
 
 - Rafael: build a complete PatchHouse sales agent from the backend, testable in the test chat, as the template for

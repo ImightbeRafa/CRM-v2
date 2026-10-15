@@ -12,6 +12,9 @@ import { isMissingRelation } from '@/lib/db-missing-relation'
 import { agentHasInventoryMap, loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import { canSharePaymentFacts, parseBrandFactsSafe } from '@/lib/soft-ai/brand-facts'
 import { runAgentTestTurn } from '@/lib/soft-ai/agent-turn'
+import { loadDailyTestTokens } from '@/lib/soft-ai/agent-claim-gates'
+import { readChatAgentLayerConfig } from '@/lib/feature-flags'
+import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { resolveSoftAiModel, softAiResponsesCreate, parseSoftAiResponseText, readSoftAiUsage } from '@/lib/soft-ai/llm/client'
 import { estimateCostMicros } from '@/lib/soft-ai/llm/usage'
 import { generateAgentSuite, type TestCase } from '@/lib/soft-ai/test-engine/generate'
@@ -72,6 +75,27 @@ export class TestRunDailyLimitError extends Error {
     super('TEST_RUN_DAILY_LIMIT')
     this.name = 'TestRunDailyLimitError'
   }
+}
+
+/** The suite cannot finish inside today's test budget: refused before any model call (nothing spent). */
+export class TestRunBudgetError extends Error {
+  constructor(readonly remainingTokens: number, readonly neededTokens: number) {
+    super('TEST_RUN_BUDGET')
+    this.name = 'TestRunBudgetError'
+  }
+}
+
+/** Typical test-turn size when this agent has none today (system prompt + knowledge + reply, Grok, 2026-10). */
+export const TEST_TURN_TOKENS_FALLBACK = 12_000
+
+/**
+ * Tokens a full run of `cases` will use: cases × this agent's average test turn today (fallback when none),
+ * +10 % for the grader calls. Pure (exported for tests).
+ */
+export function estimateRunTokens(cases: number, recentTurnTokens: number[]): number {
+  const real = recentTurnTokens.filter((t) => t > 0)
+  const perTurn = real.length ? Math.ceil(real.reduce((a, b) => a + b, 0) / real.length) : TEST_TURN_TOKENS_FALLBACK
+  return Math.ceil(cases * perTurn * 1.1)
 }
 
 export class TestRunBusyElsewhereError extends Error {
@@ -215,6 +239,20 @@ export async function startAgentTestRun(input: {
     systemInstructions: agent.systemInstructions,
     brandFacts: (agent as { brandFacts?: unknown }).brandFacts,
   })
+  // Never start a run that the daily test budget cannot finish: a half run spends money and still can't activate.
+  const [usedTokens, layer, recent] = await Promise.all([
+    loadDailyTestTokens(input.tenantId),
+    readChatAgentLayerConfig(input.tenantId).then((f) => parseChatAgentLayerConfig(f.config)),
+    prisma.chatAgentTurn.findMany({
+      where: { tenantId: input.tenantId, agentId: agent.id, mode: 'test', createdAt: { gte: new Date(Date.now() - 7 * 86_400_000) } },
+      select: { inputTokens: true, outputTokens: true },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    }),
+  ])
+  const needed = estimateRunTokens(cases.length, recent.map((t) => (t.inputTokens || 0) + (t.outputTokens || 0)))
+  const remaining = Math.max(0, layer.testDailyTokenCap - usedTokens)
+  if (needed > remaining) throw new TestRunBudgetError(remaining, needed)
   const id = randomUUID()
   try {
     await prisma.$executeRaw`

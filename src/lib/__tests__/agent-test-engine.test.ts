@@ -183,3 +183,25 @@ describe('SecureDog F1 fixes', () => {
     assert.ok(cfg.includes("if (!record.model) return { unlocked: false, reason: 'model'"))
   })
 })
+
+describe('2026-10-14: no wasted test runs; a quiet channel says why', () => {
+  const read = (p: string) => readFileSync(p, 'utf8')
+  it('a run needs cases × this agent’s real turn size (+10 % grader), fallback when it has none', async () => {
+    const { estimateRunTokens, TEST_TURN_TOKENS_FALLBACK } = await import('@/lib/soft-ai/test-engine/run')
+    assert.equal(estimateRunTokens(14, [10_000, 0, 6_000]), Math.ceil(14 * 8_000 * 1.1))
+    assert.equal(estimateRunTokens(10, []), Math.ceil(10 * TEST_TURN_TOKENS_FALLBACK * 1.1))
+  })
+  it('the budget check runs before the run row exists (nothing spent, nothing half-done)', () => {
+    const src = read('src/lib/soft-ai/test-engine/run.ts')
+    const check = src.indexOf('if (needed > remaining) throw new TestRunBudgetError(remaining, needed)')
+    const insert = src.indexOf('INSERT INTO "ChatAgentTestRun"')
+    assert.ok(check > 0 && insert > check)
+    assert.match(read('src/app/api/chat/agents/[id]/activation/route.ts'), /error instanceof TestRunBudgetError[\s\S]{0,400}No se gastó nada/)
+  })
+  it('a channel attended + AI allowed but not activated shows a plain warning', async () => {
+    const { unactivatedChannelCopy } = await import('@/app/config/agentes/ChannelsEditor')
+    assert.match(unactivatedChannelCopy('locked'), /NO responde todavía: falta «Probar y activar»/)
+    assert.match(unactivatedChannelCopy('stale'), /cambió desde la última activación/)
+    assert.match(read('src/app/config/agentes/ChannelsEditor.tsx'), /row\.attendedByThisAgent && row\.aiAllowed && \(row\.realSend \|\| 'locked'\) !== 'unlocked'/)
+  })
+})

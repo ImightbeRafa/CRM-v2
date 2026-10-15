@@ -199,7 +199,7 @@ describe('2026-10-14: no wasted test runs; a quiet channel says why', () => {
     const insert = src.indexOf('INSERT INTO "ChatAgentTestRun"')
     assert.ok(check > 0 && insert > check)
     assert.match(read('src/app/api/chat/agents/[id]/activation/route.ts'), /error instanceof TestRunBudgetError[\s\S]{0,900}No se gastó nada/)
-    assert.match(read('src/app/api/chat/agents/[id]/activation/route.ts'), /error.neededTokens > error.capTokens[sS]{0,200}hay que subir el presupuesto/)
+    assert.match(read('src/app/api/chat/agents/[id]/activation/route.ts'), /error\.neededTokens > error\.capTokens[\s\S]{0,300}hay que subir el presupuesto/)
   })
   it('a channel attended + AI allowed but not activated shows a plain warning', async () => {
     const { unactivatedChannelCopy } = await import('@/app/config/agentes/ChannelsEditor')

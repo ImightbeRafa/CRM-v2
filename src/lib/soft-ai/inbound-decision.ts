@@ -10,7 +10,7 @@ import {
 } from '@/lib/soft-ai/brand-facts'
 import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
 import { classifyPaymentText, paymentHandoffReason, type PaymentClassification } from '@/lib/soft-ai/payment-classifier'
-import { mediaInboundPlan, routeInboundSafety } from '@/lib/soft-ai/llm/safety-router'
+import { isOptOutText, mediaInboundPlan, routeInboundSafety } from '@/lib/soft-ai/llm/safety-router'
 import { HANDOFF_REASON, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
 import {
   matchVerbatimShortcut,
@@ -135,11 +135,32 @@ export function decideInbound(input: {
   // B6: media never reaches the model. A receipt (payment details already given, or a payment cue in the caption)
   // is a TRUE hand-off; anything else is answered "¿Me contás por escrito…?" and the chat stays on IA (a person is
   // asked to look at photos / files / audios; a sticker needs nobody).
-  const mediaPlan = mediaInboundPlan({
-    messageType: input.messageType,
-    caption: input.inboundText,
-    awaitingReceipt: input.awaitingReceipt,
-  })
+  // MEDIA-14: a photo / audio captioned "quiero hablar con una persona" or "STOP" is an opt-out first.
+  const captionOptOut = isOptOutText(input.inboundText || '')
+  const mediaPlan = captionOptOut
+    ? null
+    : mediaInboundPlan({
+        messageType: input.messageType,
+        caption: input.inboundText,
+        awaitingReceipt: input.awaitingReceipt,
+      })
+  if (captionOptOut && input.messageType && input.messageType !== 'text') {
+    steps.push({ step: 'safety', outcome: 'handoff', reason: 'opt_out' })
+    const shortcut = seedShortcut('sys_handoff_optout', input.shortcuts)
+    return finish({
+      text: renderShortcutTemplate(shortcut.body, { facts: input.brandFacts }),
+      intent: 'human_request',
+      shortcutKey: 'sys_handoff_optout',
+      escalate: true,
+      paymentClass,
+      steps,
+      facts: input.brandFacts,
+      replyStyle: input.replyStyle,
+      shortcuts: input.shortcuts,
+      forceNeedsHuman: true,
+      handoff: { kind: 'handoff', reason: HANDOFF_REASON.optOut },
+    })
+  }
   if (mediaPlan === 'ask_in_writing') {
     steps.push({ step: 'safety', outcome: 'media_ask', reason: 'media_inbound' })
     const shortcut = seedShortcut('sys_media_ask', input.shortcuts)

@@ -76,6 +76,11 @@ export function planModelTurnDelivery(input: {
   const text = (input.text || '').trim()
   const usable = input.textOk && text.length > 0
   if (input.receiptCue) return { text: SAFE_LINE.payment, handoff: { kind: 'handoff', reason: HANDOFF_REASON.payment } }
+  // INT-93: the reply sounded like a payment confirmation (or the model asked for a person about a payment): fixed text,
+  // the chat goes to a person — whatever else is configured.
+  if (input.llmEscalateReason === 'payment_claim') {
+    return { text: SAFE_LINE.payment, handoff: input.llmHandoff ?? { kind: 'handoff', reason: HANDOFF_REASON.payment } }
+  }
   const modelPaymentEscalate = input.llmEscalateReason === 'payment_or_sinpe'
   if (input.llmHandoff?.kind === 'handoff' && !(input.paymentDataByTeam && modelPaymentEscalate)) {
     return {

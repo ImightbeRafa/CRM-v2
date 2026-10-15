@@ -367,6 +367,7 @@ export async function powerOnLine(
 export async function activateAfterQuickRun(run: TestRunRow): Promise<void> {
   const latest = await latestTestRun(run.tenantId, run.agentId, run.socialAccountId)
   if (!latest || latest.id !== run.id) return
+  if (await runVoidedByOff(run.tenantId, run.id).catch(() => true)) return
   const user = await prisma.user.findFirst({ where: { id: run.createdBy }, select: { name: true, email: true } }).catch(() => null)
   try {
     await activateAgentChannel({
@@ -380,6 +381,18 @@ export async function activateAfterQuickRun(run: TestRunRow): Promise<void> {
   } catch (error) {
     const code = error instanceof ActivationRefusal ? error.code : 'ERROR'
     await recordRunActivation(run.tenantId, run.id, { ok: false, code }).catch(() => {})
+    return
+  }
+  // OFF pressed while we were activating: undo, never sweep (SecureDog INT-95).
+  if (await runVoidedByOff(run.tenantId, run.id).catch(() => true)) {
+    await deactivateAgentChannel({
+      tenantId: run.tenantId,
+      agentId: run.agentId,
+      socialAccountId: run.socialAccountId,
+      actorUserId: run.createdBy,
+      actorName: user?.name?.trim() || user?.email?.trim() || run.createdBy,
+      actorRole: 'line_switch',
+    }).catch(() => {})
     return
   }
   await recordRunActivation(run.tenantId, run.id, { ok: true }).catch(() => {})
@@ -396,6 +409,17 @@ export async function powerOffLine(input: { tenantId: string; agentId: string; s
     select: { id: true },
   })
   if (!account) throw new ActivationRefusal('CHANNEL_NOT_FOUND')
+  // SecureDog INT-95: a check that already passed may be activating right now — mark it void first so it undoes
+  // itself (activateAfterQuickRun re-checks this mark after its own write).
+  const latest = await latestTestRun(input.tenantId, input.agentId, account.id).catch(() => null)
+  if (latest) await recordRunActivation(input.tenantId, latest.id, { ok: false, code: 'OFF' }).catch(() => {})
   await cancelLineTestRuns(input.tenantId, input.agentId, account.id)
   await deactivateAgentChannel({ tenantId: input.tenantId, agentId: input.agentId, socialAccountId: account.id, ...actorOf(input) })
+}
+
+/** True when the owner switched the line off after this run started (powerOffLine stamps code 'OFF'). */
+async function runVoidedByOff(tenantId: string, runId: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ code: string | null }>>`
+    SELECT "summary"->'activation'->>'code' AS "code" FROM "ChatAgentTestRun" WHERE "id" = ${runId} AND "tenantId" = ${tenantId} LIMIT 1`
+  return rows[0]?.code === 'OFF'
 }

@@ -30,7 +30,6 @@ import {
   salesCloseWithoutPaymentData,
   salesFreeShippingRule,
   salesNeedsHuman,
-  salesQuantityAmounts,
   salesSystemBlock,
   type SalesContext,
 } from '@/lib/soft-ai/sales-state'
@@ -233,7 +232,8 @@ export function assembleAgentRuntimeInputs(input: {
     salesSystemBlock: sales ? salesSystemBlock(sales) : null,
     salesTurnBlock: sales && salesState ? formatSalesTurnBlock(sales, salesState) : null,
     // B4: + totals for the quantities the customer asked for (computed by code, listed in BETSY_DATOS).
-    salesAllowedAmounts: sales ? [...salesAllowedAmounts(sales), ...(salesState ? salesQuantityAmounts(sales, salesState) : [])] : undefined,
+    // Multi-unit totals are never quotable (SecureDog INT-94): unit prices, shipping, one unit + shipping, combos only.
+    salesAllowedAmounts: sales ? salesAllowedAmounts(sales) : undefined,
     salesNeedsHuman: Boolean(sales && salesState && salesNeedsHuman(sales, salesState)),
     salesReceiptCue: Boolean(salesState?.receiptCue),
     salesPaymentDataByTeam: Boolean(sales && salesState && salesCloseWithoutPaymentData(sales, salesState)),

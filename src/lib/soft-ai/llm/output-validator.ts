@@ -14,6 +14,15 @@ import {
 import { hasConfirmationWording, renderShortcutTemplate, shortcutByKey, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
 import { fillPaymentToken, paymentNumberProblems } from '@/lib/soft-ai/payment-guard'
+import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
+
+/**
+ * Backstop for short payment confirmations the confirmation-wording check misses ("Sí, ya se acreditó", "Sí, lo
+ * recibimos", "Todo en orden con tu sinpe"): to a message that mentions a payment, such a reply is never sent and the
+ * chat goes to a person (SecureDog INT-93). Delivery wording ("te llega en 2 a 4 días") is not matched.
+ */
+const PAYMENT_STATUS_REPLY_RE =
+  /(acredit|se\s+aplic|aplicad[oa]|reflej|(nos|me)\s+(lleg|entr)[oó]|ya\s+(nos\s+|me\s+)?(lleg|entr)[oó]|recibimos|recibido|lo\s+vimos|la\s+vimos|lo\s+tenemos|todo\s+en\s+orden|est[aá]\s+en\s+orden|es\s+correct[oa]|est[aá]\s+confirmad[oa]|qued[oó]\s+(pagad|confirmad))/iu
 
 export type OutputValidationResult = {
   ok: boolean
@@ -192,6 +201,8 @@ export function validateAgentOutput(input: {
   allowedDeals?: Array<'free_shipping' | 'special_price'>
   /** Store rule "envío gratis desde ₡X" (only valid next to that amount). */
   freeShippingRule?: FreeShippingRule | null
+  /** The customer's message: a reply about the state of a payment to a payment message is never sent (INT-93). */
+  customerText?: string
 }): OutputValidationResult {
   const reasons: string[] = []
   const text = input.text || ''
@@ -202,6 +213,9 @@ export function validateAgentOutput(input: {
   if (CREATED_CLAIM_RE.test(text)) reasons.push('write_claim')
   if (dealProblemWithRule(text, input.allowedDeals ?? [], input.freeShippingRule)) reasons.push('deal_offer')
   if (hasConfirmationWording(text)) reasons.push('confirmation_wording')
+  if (input.customerText && hasPaymentWord(input.customerText) && PAYMENT_STATUS_REPLY_RE.test(text)) {
+    reasons.push('payment_status_claim')
+  }
 
   const inventory =
     cited.has('search_inventory') && Array.isArray(input.inventoryPrices)
@@ -265,8 +279,15 @@ export function shortenToMaxLines(text: string, maxLines: number): string {
   }
   if (question >= 0) keep.add(question)
   for (let i = 0; i < lines.length && keep.size < limit; i += 1) keep.add(i)
+  // SecureDog INT-99: never drop a line that qualifies something (an amount, shipping, a negation, the assistant
+  // disclosure) or holds part of a payment token — dropping it can change the meaning. Then the reply is not shortened
+  // (it stays too long → the safe line goes out instead).
+  const dropped = lines.filter((_, i) => !keep.has(i))
+  if (dropped.some((line) => QUALIFYING_LINE_RE.test(line))) return text
   return [...keep].sort((a, b) => a - b).map((i) => lines[i]).join('\n')
 }
+
+const QUALIFYING_LINE_RE = /[₡$]|\d{3}|env[ií]o|(?<![\p{L}])(no|nunca|sin|solo|excepto)(?![\p{L}])|asistente\s+virtual|\[\[|\]\]|DATOS|PAGO/iu
 
 export type FinalOutputPolicy = {
   text: string
@@ -365,6 +386,7 @@ export function applyFinalOutputPolicy(input: {
     intent,
     allowedDeals: input.allowedDeals,
     freeShippingRule: input.freeShippingRule,
+    customerText: input.customerText,
   })
 
   const merged = [...new Set([...reasons, ...validated.reasons])]

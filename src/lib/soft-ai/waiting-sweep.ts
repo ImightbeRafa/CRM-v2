@@ -69,8 +69,8 @@ export const PERIODIC_REARM_SKIP_REASONS: ReadonlySet<string> = new Set([
   'not_activated',
   'ai_full_not_unlocked',
   'stale_version',
-  'ai_terms_not_accepted',
-  'kill_switch',
+  // SecureDog INT-98: never 'kill_switch' / 'ai_terms_not_accepted' — lifting a kill switch must not answer the
+  // incident's messages (up to 24 h old) automatically.
 ])
 
 /** Turn outcomes that already produced (or decided) an answer: never re-run. */
@@ -353,9 +353,12 @@ async function sweepLine(input: {
   mode: SweepMode
   minWaitMs: number
   nowMs: number
+  /** Periodic only: ignore messages that arrived before the line was switched on (no late-reply wave at deploy). */
+  notBeforeMs?: number | null
 }): Promise<{ queued: number; skipped: number; jobIds: string[] }> {
   const maxQueue = input.maxQueue ?? input.limit
-  const since = new Date(input.nowMs - DAY_MS + WINDOW_SAFETY_MS)
+  const windowStart = input.nowMs - DAY_MS + WINDOW_SAFETY_MS
+  const since = new Date(Math.max(windowStart, input.notBeforeMs ?? 0))
   const convs = await prisma.chatConversation.findMany({
     where: {
       tenantId: input.tenantId,
@@ -490,9 +493,14 @@ export async function sweepWaitingChatsPeriodic(opts?: {
         where: { tenantId, id: { in: allowlist } },
         select: { id: true, platform: true },
       })
+      const unlocks = parseChatAgentLayerConfig(flag.config).aiFullUnlock
       for (const line of lines) {
         if (out.queued >= cap || Date.now() > deadline) break
         if (!(await lineAnswersNow(tenantId, line.id))) continue
+        // SecureDog deploy note: the periodic sweep only catches messages that arrived while the line was ON
+        // (switching a line on answers its last 24 h explicitly, via sweepWaitingChats).
+        const passedAt = Date.parse(unlocks[line.id]?.passedAt || '')
+        if (!Number.isFinite(passedAt)) continue
         out.lines++
         const res = await sweepLine({
           tenantId,
@@ -503,6 +511,7 @@ export async function sweepWaitingChatsPeriodic(opts?: {
           mode: 'periodic',
           minWaitMs: PERIODIC_MIN_WAIT_MS,
           nowMs: Date.now(),
+          notBeforeMs: passedAt,
         })
         out.queued += res.queued
         out.skipped += res.skipped

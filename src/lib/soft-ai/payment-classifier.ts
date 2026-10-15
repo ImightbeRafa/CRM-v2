@@ -11,10 +11,12 @@ const PROOF_CUE_RE =
   /(?<![\p{L}\p{N}_])(ya\s+((le|te|les|lo|la)\s+)?(pagu[eé]|hice|mand[eé]|transfer[ií]|deposit[eé])|comprobante|adjunto|captura|pantallazo|(le|te|les)\s+(envi[eé]|mand[eé])\s+(el\s+(sinpe|pago|comprobante)|la\s+plata|el\s+dinero)|pago\s+(realizado|hecho|listo)|listo\s+el\s+(pago|sinpe)|(ya\s+)?(est[aá]|qued[oó])\s+pagad[oa]|^\s*pagad[oa]\s*[!.✅👍]*\s*$|ref(?:erencia)?\s*\d)/iu
 
 /**
- * Unicode-aware: JS \\b treats á/ó as non-word, so "llegó" would miss. A bare "ya llegó" stays a payment claim; the
- * confirm / review verbs count only next to a payment noun (CONFIRM_PAYMENT_RE below — Agentes IA 2.0, B5).
+ * Unicode-aware: JS \\b treats á/ó as non-word, so "llegó" and "confirman" would miss. Bare confirm / review verbs stay
+ * payment cues ("Confirmame que lo recibieron", "Revisen porfa"): narrowing them let payment claims reach the model
+ * (SecureDog INT-93, 2026-10-15 — restored to the INT-70/76 behaviour).
  */
-const CONFIRM_CUE_RE = /(?:^|[^\p{L}\p{N}_])(ya\s+(?:les\s+)?lleg[oó]\p{L}*)/iu
+const CONFIRM_CUE_RE =
+  /(?:^|[^\p{L}\p{N}_])((?:me\s+)?confirm[aáeé]\p{L}*|ya\s+(?:les\s+)?lleg[oó]\p{L}*|revisen)/iu
 
 const RISK_CUE_RE =
   /\b(reembolso|devoluci[oó]n\s+del\s+dinero|me\s+cobraron|doble\s+cobro|reclamo|disputa|fraude)\b/i
@@ -140,10 +142,10 @@ export function classifyPaymentText(text: string): PaymentClassification {
   if (PAYMENT_RE.test(value) && PAYMENT_QUESTION_RE.test(value)) {
     return 'non_payment'
   }
-  // B5 (Agentes IA 2.0): a real question that only mentions a payment word ("¿el pago es por adelantado?",
-  // "¿con qué banco es el sinpe?") goes to the agent. Claims were already caught above; a bare "sinpe?" / "¿y el
-  // pago?" stays with a person (INT-76).
-  if (PAYMENT_RE.test(value) && isPaymentWordQuestion(value)) {
+  // B5 (Agentes IA 2.0), narrowed after SecureDog INT-93: ONLY an explicit list of info questions reaches the agent
+  // ("¿el pago es por adelantado?", "¿con qué banco es el sinpe?", "¿aceptan tarjeta?") and never one that asks about
+  // the state of a payment ("¿se acreditó el pago?", "¿mi sinpe es válido?"). Everything else stays with a person.
+  if (PAYMENT_RE.test(value) && isPaymentInfoQuestion(value)) {
     return 'non_payment'
   }
   if (PAYMENT_RE.test(value)) {
@@ -152,13 +154,15 @@ export function classifyPaymentText(text: string): PaymentClassification {
   return 'non_payment'
 }
 
-/** "¿…?" with a real question word: "es", "se", "cómo", "cuándo", "hay", "puedo", "aceptan"… (not a bare "sinpe?"). */
-const QUESTION_MARK_RE = /[?¿]/
-const QUESTION_WORD_RE =
-  /(?<![\p{L}])(c[oó]mo|cu[aá]ndo|d[oó]nde|cu[aá]l(es)?|cu[aá]nto|es|son|se|hay|puedo|puede|pueden|tienen|aceptan|va|van|incluye|sirve|necesito|ocupo|debo|tengo|qu[eé]\s+(es|son|hago|ocupo|necesito|tengo|banco|bancos|m[eé]todos?|formas?))(?![\p{L}])/iu
+/** Plain info questions about HOW the store takes payment (explicit list — never a generic "question" heuristic). */
+const PAYMENT_INFO_QUESTION_RE =
+  /(adelantad|anticipad|con\s+qu[eé]\s+banco|qu[eé]\s+bancos?|a\s+qu[eé]\s+(n[uú]mero|cuenta)|aceptan\s+(tarjetas?|sinpe|transferencias?|efectivo)|se\s+puede\s+pagar\s+con|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|cu[aá]ndo\s+(se\s+)?paga|pago\s+al\s+recibir|pagar\s+al\s+recibir)/iu
+/** Anything about the STATE of a payment or one already sent: never an info question (INT-93). */
+const PAYMENT_STATUS_CUE_RE =
+  /(acredit|se\s+aplic|aplicad|proces|reflej|v[aá]lid|correct|problema|est[aá]\s+bien|va\s+bien|se\s+hizo|se\s+ve|aparec|qued[oó]|entr[oó]|lleg[oó]|recib|vieron|ya\s+(lo|la|les|te)\s+(envi[eé]|mand[eé]|pas[eé]|hice|deposit[eé]|transfer[ií])|(mi|su)\s+(pago|sinpe|transferencia|dep[oó]sito))/iu
 
-function isPaymentWordQuestion(value: string): boolean {
-  return QUESTION_MARK_RE.test(value) && QUESTION_WORD_RE.test(value)
+function isPaymentInfoQuestion(value: string): boolean {
+  return /[?¿]/.test(value) && PAYMENT_INFO_QUESTION_RE.test(value) && !PAYMENT_STATUS_CUE_RE.test(value)
 }
 
 /** Any payment word at all (media caption check: a photo with "sinpe" / "pago" is treated as a receipt). */

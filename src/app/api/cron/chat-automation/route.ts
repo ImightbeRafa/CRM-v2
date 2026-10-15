@@ -7,6 +7,7 @@ import { processClaimedJob } from '@/lib/soft-ai/automation-processor'
 import { drainStaleAgentTestRuns } from '@/lib/soft-ai/test-engine/run'
 import { drainStaleProfileDrafts } from '@/lib/agent-studio/extract'
 import { sweepWaitingChatsPeriodic } from '@/lib/soft-ai/waiting-sweep'
+import { cronsDisabled } from '@/lib/cron-kill-switch'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -24,6 +25,10 @@ export async function GET(request: NextRequest) {
   }
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  // SecureDog INT-97: this cron now also creates answer jobs (periodic sweep) — a copy host must never send.
+  if (cronsDisabled(process.env)) {
+    return NextResponse.json({ status: 'skipped', reason: 'DISABLE_CRONS' })
   }
 
   const startedAt = Date.now()

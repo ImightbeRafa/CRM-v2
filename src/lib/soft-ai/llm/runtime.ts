@@ -35,7 +35,7 @@ import { softAiProviderFor, type ChatAgentTonePreset } from '@/lib/soft-ai/agent
 import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
 import { isAgentIntent } from '@/lib/soft-ai/agent-intents'
 import { HANDOFF_REASON, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
-import { paymentHandoffReason } from '@/lib/soft-ai/payment-classifier'
+import { hasPaymentWord, paymentHandoffReason } from '@/lib/soft-ai/payment-classifier'
 
 export type SoftAiLlmRuntimeInput = {
   tenantId: string
@@ -421,6 +421,7 @@ export async function runSoftAiLlmRuntime(
         quoteAmounts: input.salesAllowedAmounts,
         allowedDeals: input.salesAllowedDeals,
         freeShippingRule: input.salesFreeShippingRule,
+        customerText: input.inboundText,
       })
     let validation = validate(finalText)
     // B7: a reply that breaks a rule (made-up amount, a deal, "ya quedó pagado"…) gets ONE rewrite with the reasons
@@ -470,6 +471,17 @@ export async function runSoftAiLlmRuntime(
       } catch {
         // Timeout / provider error: keep the original verdict (hand-off).
       }
+    }
+    // SecureDog INT-93: a reply that sounds like it confirms a payment, or the model asking for a person on a message
+    // about a payment, is a real PAYMENT hand-off (fixed "ya lo reviso" text + the chat goes to a person) — never the
+    // "safe line and stay on IA" path, which would let the model try again on the next message.
+    const paymentRisk =
+      validation.reasons.includes('confirmation_wording') ||
+      validation.reasons.includes('payment_status_claim') ||
+      (structured.needsHuman && hasPaymentWord(input.inboundText || ''))
+    if (paymentRisk) {
+      escalate = true
+      escalateReason = 'payment_claim'
     }
     if (validation.needsHuman || structured.needsHuman) {
       // B1: a reply that still breaks a rule is never sent as written and is NOT a hand-off: the customer gets the
@@ -589,6 +601,7 @@ export function escalateKindOf(handoff: TurnHandoff | null): 'technical' | 'hand
 export function modelHandoff(reason: string | undefined, inboundText: string): TurnHandoff {
   switch (reason) {
     case 'payment_or_sinpe':
+    case 'payment_claim':
       return { kind: 'handoff', reason: paymentHandoffReason(inboundText) }
     case 'opt_out':
       return { kind: 'handoff', reason: HANDOFF_REASON.optOut }

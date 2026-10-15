@@ -281,24 +281,34 @@ describe('B4 totals by code for the quantity the customer asked', () => {
     assert.deepEqual(requestedQuantities('a ₡2 000? quiero 10'), [])
     assert.deepEqual(requestedQuantities('¿tienen talla 2?'), [])
   })
-  it('INT-72 kept: no multi-unit total unless the customer asked for that quantity', () => {
+  it('SecureDog INT-94: multi-unit totals are never quotable or printed, even when the customer asked for a quantity', () => {
     assert.ok(!salesAllowedAmounts(CTX).includes(29800))
-    const none = deriveSalesState({ history: [], inboundText: '¿precio?', ctx: CTX })
-    assert.deepEqual(salesQuantityAmounts(CTX, none), [])
     const two = deriveSalesState({ history: [msg('inbound', 'quiero 2')], inboundText: '¿y con envío?', ctx: CTX })
     assert.deepEqual(two.quantities, [2])
-    const amounts = salesQuantityAmounts(CTX, two)
-    assert.ok(amounts.includes(29800) && amounts.includes(32800))
-    assert.ok(!amounts.includes(44700))
-    assert.match(formatSalesTurnBlock(CTX, two), /2 × ARNESS FORGE XL: ₡29[.\s ]800/)
-    assert.match(read('src/lib/soft-ai/agent-turn-inputs.ts'), /salesQuantityAmounts\(sales, salesState\)/)
+    const block = formatSalesTurnBlock(CTX, two)
+    assert.doesNotMatch(block, /₡29[.\s  ]?800/)
+    assert.match(block, /no calcules un total/)
+    assert.doesNotMatch(read('src/lib/soft-ai/agent-turn-inputs.ts'), /salesQuantityAmounts\(/)
+    assert.match(read('src/lib/soft-ai/agent-turn-inputs.ts'), /salesAllowedAmounts: sales \? salesAllowedAmounts\(sales\) : undefined/)
+    // The pure helper stays tested so nobody re-wires it without a quantity-bound check.
+    assert.ok(salesQuantityAmounts(CTX, two).includes(29800))
   })
 })
 
-describe('B5 payment classifier: confirm / review verbs only next to payment nouns; questions go to the agent', () => {
-  it('confirm without a payment noun is a normal question', () => {
-    for (const t of ['¿me confirmás la talla?', 'confirmame el precio porfa', '¿El pago es por adelantado?', '¿Con qué banco es el sinpe?']) {
+describe('B5 payment classifier after SecureDog INT-93: only an explicit list of info questions goes to the agent', () => {
+  it('plain info questions about how to pay reach the agent', () => {
+    for (const t of ['¿El pago es por adelantado?', '¿Con qué banco es el sinpe?', '¿Aceptan tarjeta para el pago?', '¿Cuáles son las formas de pago?']) {
       assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+  it('bare confirm / review verbs and any question about the STATE of a payment stay with a person', () => {
+    for (const t of [
+      '¿me confirmás la talla?', 'confirmame el precio porfa', 'Confirmame que lo recibieron porfa', 'Me confirman cuando les entre',
+      '¿me confirmás?', 'Revisen porfa', '¿Se acreditó el pago?', '¿El pago se aplicó?', '¿El pago ya se hizo?', '¿Se procesó mi pago?',
+      '¿Mi sinpe es válido?', '¿El pago es correcto?', '¿Mi pago va bien?', '¿Hay algún problema con mi pago?',
+      'hola, ¿es normal que el sinpe no aparezca todavía?', '¿Es este el número para el sinpe? Ya lo envié',
+    ]) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
     }
   })
   it('claims stay with a person (INT-70/76/82 + more)', () => {

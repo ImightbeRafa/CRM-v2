@@ -8,7 +8,7 @@ import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 
 export type SalesCatalogItem = { name: string; price: number; stockLabel: string }
 export type SalesShippingMethod = { name: string; price: number; coverage: string; cod: string }
-/** Owner's combo at a fixed total; shippingIncluded = it reaches the store's free-shipping amount. */
+/** Owner's combo at a fixed total; shippingIncluded = the owner says this combo's price includes shipping. */
 export type SalesBundle = { name: string; price: number; shippingIncluded: boolean }
 export type AiDisclosure = 'discreet' | 'transparent'
 
@@ -29,8 +29,6 @@ export type SalesContext = {
   promo: { freeShipping: boolean; specialPrice: boolean; codHighlight: boolean; headline: string | null } | null
   /** Owner's combos (sales rules), quoted only as listed. */
   bundles?: SalesBundle[]
-  /** Store rule: shipping is free from this order amount (brand facts). Null = no such rule. */
-  freeShippingOver?: number | null
 }
 
 export type SalesStage = 'saludo' | 'descubrir' | 'cotizar' | 'cierre' | 'esperando_comprobante' | 'verificando'
@@ -157,16 +155,13 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
     for (const c of ctx.catalog) lines.push(`- ${oneLine(c.name, 120)}: ${money(c.price)} · ${c.stockLabel}`)
   }
   if (ctx.bundles?.length) {
-    lines.push('Combos (precio total del combo; únicos precios de combo válidos, no calcules otros ni hables de ahorro):')
-    for (const b of ctx.bundles) lines.push(`- ${bundleName(b.name)}: ${money(b.price)} · ${b.shippingIncluded ? 'envío incluido' : 'más el envío'}`)
+    lines.push('Combos (dato del dueño; precio total del combo; únicos precios de combo válidos, no calcules otros ni hables de ahorro):')
+    for (const b of ctx.bundles) lines.push(`- «${bundleName(b.name)}»: ${money(b.price)} · ${b.shippingIncluded ? 'envío incluido (solo en este combo)' : 'más el envío'}`)
   }
   if (ctx.shippingMethods.length) {
     lines.push('Envíos (precio al cliente; únicos montos de envío válidos):')
     for (const s of ctx.shippingMethods) {
-      lines.push(`- ${oneLine(s.name, 80)}: ${s.price > 0 ? money(s.price) : 'sin costo'} · llega: ${oneLine(s.coverage, 160)} · contra entrega: ${oneLine(s.cod, 80)}`)
-    }
-    if (ctx.freeShippingOver) {
-      lines.push(`Envío gratis desde ${money(ctx.freeShippingOver)} de compra (regla de la tienda; ya aplicada en los combos que dicen "envío incluido"). Un pedido por debajo de ese monto paga el envío.`)
+      lines.push(`- ${oneLine(stripBetsyLookalikes(s.name), 80)}: ${s.price > 0 ? money(s.price) : 'sin costo'} · llega: ${oneLine(stripBetsyLookalikes(s.coverage), 160)} · contra entrega: ${oneLine(stripBetsyLookalikes(s.cod), 80)}`)
     }
   }
   if (ctx.promo) {
@@ -236,7 +231,7 @@ export function salesSystemBlock(ctx: SalesContext): string {
 
 /**
  * Amounts the agent may write: product prices, shipping prices and one product + its shipping; listed combos
- * (+ one shipping unless included) and the store's free-shipping amount.
+ * (+ one shipping unless the owner marked it as including shipping). Never a free-shipping threshold (INT-84).
  */
 export function salesAllowedAmounts(ctx: SalesContext): number[] {
   const prices = (ctx.catalog ?? []).map((c) => Math.round(c.price))
@@ -248,7 +243,6 @@ export function salesAllowedAmounts(ctx: SalesContext): number[] {
     out.add(Math.round(b.price))
     if (!b.shippingIncluded) for (const s of ships) out.add(Math.round(b.price) + s)
   }
-  if (ctx.freeShippingOver) out.add(Math.round(ctx.freeShippingOver))
   return [...out].filter((n) => n > 0)
 }
 
@@ -280,11 +274,7 @@ export function shippingFromFacts(shipping: FactsShipping): SalesShippingMethod[
   return out
 }
 
-export function freeShippingOverFromFacts(shipping: FactsShipping): number | null {
-  return shipping?.ea?.enabled && shipping.ea.freeOver ? Math.round(shipping.ea.freeOver) : null
-}
-
-/** Deal wording the owner's active promo enables this turn (a free-shipping AMOUNT is a separate, narrower rule). */
+/** Deal wording the owner's active promo enables this turn (combos that include shipping are a narrower rule). */
 export function salesAllowedDeals(ctx: SalesContext): Array<'free_shipping' | 'special_price'> {
   const out: Array<'free_shipping' | 'special_price'> = []
   if (ctx.promo?.freeShipping) out.push('free_shipping')
@@ -293,14 +283,11 @@ export function salesAllowedDeals(ctx: SalesContext): Array<'free_shipping' | 's
 }
 
 /**
- * Store rule "free shipping from ₡X": the words "envío gratis" pass the validator only next to that amount or a
- * combo that includes shipping, and never next to a smaller product/total (output-validator freeShippingRuleOk).
+ * Combos the owner marked as including shipping: "envío incluido/gratis" passes the validator only in a clause that
+ * says "combo" and quotes one of these exact prices, nothing else (output-validator freeShippingRuleOk). Store-wide
+ * "free shipping from ₡X" is NOT offered to the model at all (SecureDog INT-84/85: not checkable from wording).
  */
-export function salesFreeShippingRule(ctx: SalesContext): { over: number; includedPrices: number[]; shippingPrices: number[] } | null {
-  if (!ctx.freeShippingOver) return null
-  return {
-    over: Math.round(ctx.freeShippingOver),
-    includedPrices: (ctx.bundles ?? []).filter((b) => b.shippingIncluded).map((b) => Math.round(b.price)),
-    shippingPrices: ctx.shippingMethods.map((s) => Math.round(s.price)).filter((p) => p > 0),
-  }
+export function salesFreeShippingRule(ctx: SalesContext): { includedPrices: number[] } | null {
+  const includedPrices = (ctx.bundles ?? []).filter((b) => b.shippingIncluded).map((b) => Math.round(b.price))
+  return includedPrices.length ? { includedPrices } : null
 }

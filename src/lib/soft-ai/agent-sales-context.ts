@@ -12,7 +12,7 @@ import { loadOrderRequirements } from '@/lib/orders/order-requirements-server'
 import { loadCoverage } from '@/lib/shipping/coverage-store'
 import type { MethodCoverage } from '@/lib/shipping/coverage'
 import { canSharePaymentFacts, type BrandFacts } from '@/lib/soft-ai/brand-facts'
-import { freeShippingOverFromFacts, shippingFromFacts, type SalesContext } from '@/lib/soft-ai/sales-state'
+import { shippingFromFacts, type SalesContext } from '@/lib/soft-ai/sales-state'
 import { promoInEffect } from '@/lib/soft-ai/promo'
 
 const INLINE_CATALOG_MAX = 30
@@ -62,8 +62,6 @@ export async function loadAgentSalesContext(input: {
   // Config › Métodos de envío is the source of truth (Rafael 2026-10-09). A business without methods yet falls back
   // to the agent's own shipping facts so it can still quote (these amounts are already allowed by the validator).
   const fromFacts = methods.length === 0 ? shippingFromFacts(input.brandFacts.shipping) : []
-  // Store rule "free shipping from ₡X" (brand facts): shown to the model and applied to combos at or above it.
-  const freeShippingOver = freeShippingOverFromFacts(input.brandFacts.shipping)
 
   const orderFields = [
     'Nombre',
@@ -109,10 +107,9 @@ export async function loadAgentSalesContext(input: {
     bundles: (setup?.salesRules.bundles ?? []).map((b) => ({
       name: b.name,
       price: b.price,
-      // A promo limited to some methods does not make a combo's shipping free everywhere (only the threshold does).
-      shippingIncluded: Boolean(promo?.freeShipping && promo.freeShippingMethodIds.length === 0) || (freeShippingOver !== null && b.price >= freeShippingOver),
+      // The owner's own flag; a promo counts only when it frees EVERY method (a GAM-only promo is not "included").
+      shippingIncluded: b.shippingIncluded === true || Boolean(promo?.freeShipping && promo.freeShippingMethodIds.length === 0),
     })),
-    freeShippingOver,
     orderFields: [...new Set(orderFields)].slice(0, 20),
     salesScript: setup ? salesRulesForPrompt(setup.salesRules) : '',
     aiDisclosure: setup?.salesRules.aiDisclosure ?? 'discreet',

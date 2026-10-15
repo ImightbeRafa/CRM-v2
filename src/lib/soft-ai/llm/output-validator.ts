@@ -34,67 +34,99 @@ const FREE_SHIPPING_DEAL_RE = /^(env[ií]os?\s+(gratis|gratuitos?|sin\s+costo)|(
 const SPECIAL_PRICE_DEAL_RE = /^(precio\s+especial|promoci[oó]n(es)?\s+especial|oferta\s+especial)$/iu
 
 /**
+ * Every way of saying "you don't pay shipping" (SecureDog INT-86): free, included, "no te cobro el envío", ₡0, on us,
+ * "te lo mando gratis". "Más el envío" / "retiro sin costo" are not matches. Negated forms ("el envío no es gratis")
+ * are dropped in freeShippingWording.
+ */
+const FREE_SHIPPING_WORDING_RE = new RegExp(
+  [
+    'env[ií]os?\\s+(?:\\p{L}+\\s+){0,2}?(?:gratis|gratuitos?|sin\\s+costo|incluidos?|de\\s+regalo|por\\s+(?:la\\s+casa|nuestra\\s+cuenta|mi\\s+cuenta))',
+    '(?:sale|va|queda)\\s+gratis\\s+el\\s+env[ií]o',
+    'env[ií]o\\s+corre\\s+por\\s+(?:nuestra|mi)\\s+cuenta',
+    'incluye(?:n)?\\s+(?:el\\s+)?env[ií]o',
+    'no\\s+(?:te\\s+|le\\s+|les\\s+)?(?:cobr\\p{L}*|pag\\p{L}*)\\s+(?:el\\s+|nada\\s+de\\s+|nada\\s+por\\s+el\\s+)?env[ií]o',
+    'sin\\s+(?:cargo|costo|cobro)\\s+(?:de|por|del)\\s+env[ií]o',
+    'env[ií]o\\s*[:(]?\\s*(?:₡\\s?0(?![\\d.,])|gratis)',
+    'te\\s+(?:lo|la|los|las)\\s+(?:mando|env[ií]o|llevo)\\s+gratis',
+  ].map((p) => `(?:${p})`).join('|'),
+  'giu',
+)
+const NEGATED_FREE_SHIPPING_RE = /(?<![\p{L}])no(?![\p{L}])\s+(?:es|va|sale|queda|est[aá]|incluye|viene)/iu
+
+/** Free-shipping phrases in a text (with their position), negations removed. */
+export function freeShippingWording(text: string): Array<{ index: number; end: number; phrase: string }> {
+  const out: Array<{ index: number; end: number; phrase: string }> = []
+  for (const m of text.matchAll(FREE_SHIPPING_WORDING_RE)) {
+    const phrase = m[0]
+    if (NEGATED_FREE_SHIPPING_RE.test(phrase) && !/^no\s/i.test(phrase)) continue
+    out.push({ index: m.index ?? 0, end: (m.index ?? 0) + phrase.length, phrase })
+  }
+  return out
+}
+
+/**
  * Deal wording is blocked unless the owner's active promo enables that exact kind (B1): free shipping and a special
  * price can be enabled; discounts, %, 2x1, "te lo dejo en", gifts are always blocked.
  */
 export function dealProblem(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
   for (const m of text.matchAll(DEAL_ALL_RE)) {
     const phrase = m[1].trim()
-    if (allowed.includes('free_shipping') && FREE_SHIPPING_DEAL_RE.test(phrase)) continue
+    // Free-shipping phrasing is judged below with the wider wording list.
+    if (FREE_SHIPPING_DEAL_RE.test(phrase)) continue
     if (allowed.includes('special_price') && SPECIAL_PRICE_DEAL_RE.test(phrase)) continue
     return true
   }
+  if (!allowed.includes('free_shipping') && freeShippingWording(text).length > 0) return true
   return false
 }
 
-/** "desde ₡25.000", "a partir de 25 000", "en compras de ₡25.000" (the amount captured). */
-const THRESHOLD_ANCHOR_RE =
-  /(?:desde|a\s+partir\s+de|en\s+compras\s+(?:de|desde|sobre|mayores\s+a)|arriba\s+de|m[aá]s\s+de)\s+(?:los\s+)?[₡$]?\s?(\d[\d.,\s]*\d)/giu
-/** Wording that turns the rule into an exception for this customer. */
+/** Wording that turns a combo fact into a promise for this customer or this order. */
 const FREE_SHIPPING_EXCEPTION_RE =
-  /(?<![\p{L}])(aunque|por\s+esta\s+vez|esta\s+vez|igual(?:mente)?|tambi[eé]n|excepci\p{L}*|normalmente|por\s+lo\s+general|solo\s+(?:hoy|por\s+hoy|a\s+vos|a\s+ti|para\s+vos|para\s+ti)|de\s+todas\s+formas|te\s+lo\s+(?:dejo|mando)\s+igual)(?![\p{L}])/iu
+  /(?<![\p{L}])(aunque|pero|hoy|primera|cortes[ií]a|regal\p{L}*|por\s+esta\s+vez|esta\s+vez|igual(?:mente)?|tambi[eé]n|excepci\p{L}*|normalmente|por\s+lo\s+general|de\s+todas\s+formas|a\s+vos|a\s+ti|para\s+vos|para\s+ti|tu\s+(?:pedido|compra|orden)|califica\p{L}*|aplica\p{L}*|te\s+lo\s+(?:dejo|mando)\s+igual|te\s+(?:lo|la|los|las)\s+(?:dejo|mando))(?![\p{L}])/iu
 
-/** Store rule "free shipping from ₡over" (brand facts), with the combo prices that include shipping because of it. */
-export type FreeShippingRule = { over: number; includedPrices: number[]; shippingPrices: number[] }
+/** Combos the owner marked as including shipping (exact prices). */
+export type FreeShippingRule = { includedPrices: number[] }
+
+/** Clause spans: sentence ends, parentheses, line breaks (a period inside ₡25.000 is not an end). */
+function clauseSpans(text: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = []
+  let start = 0
+  for (const m of text.matchAll(/(?:(?<!\d)\.|\.(?!\d)|[!?;()\n])+/g)) {
+    spans.push([start, m.index ?? 0])
+    start = (m.index ?? 0) + m[0].length
+  }
+  spans.push([start, text.length])
+  return spans
+}
 
 /**
- * "Envío gratis" under a store threshold (not a promo) is only true for orders at or above it: the reply must name
- * the threshold or an included combo, and every other amount below the threshold must be a shipping price
- * ("₡3.000, gratis desde ₡25.000"). A single product with "envío gratis" is still a deal the agent invented.
+ * "Envío incluido / gratis" without a promo is only true for a combo the owner marked as including shipping: every
+ * such phrase must sit in ONE clause (never split across a break) that says "combo", quotes only included-combo
+ * prices (at least one), and has no wording that makes it personal or an exception (SecureDog INT-84/85).
  */
 export function freeShippingRuleOk(text: string, rule: FreeShippingRule): boolean {
   const near = (a: number, b: number) => Math.abs(a - b) <= 1
-  // Judged per clause (sentence or parenthesis): the free-shipping words must sit in the same clause as
-  // "desde ₡X" (the threshold) or an included combo's price, with no exception wording and no other amount
-  // except shipping prices. Other clauses may quote prices normally ("Son ₡12.900 con envío. Gratis desde ₡25.000").
-  // A period inside an amount (₡25.000) is not a sentence end.
-  const clauses = text.split(/(?:(?<!\d)\.|\.(?!\d)|[!?;()\n])+/)
-  let sawPhrase = false
-  for (const clause of clauses) {
-    const hasPhrase = [...clause.matchAll(DEAL_ALL_RE)].some((m) => FREE_SHIPPING_DEAL_RE.test(m[1].trim()))
-    if (!hasPhrase) continue
-    sawPhrase = true
+  const matches = freeShippingWording(text)
+  if (matches.length === 0 || rule.includedPrices.length === 0) return false
+  const spans = clauseSpans(text)
+  for (const m of matches) {
+    const span = spans.find(([s, e]) => m.index >= s && m.index < e)
+    if (!span || m.end > span[1]) return false
+    const clause = text.slice(span[0], span[1])
+    if (!/(?<![\p{L}])combos?(?![\p{L}])/iu.test(clause)) return false
     if (FREE_SHIPPING_EXCEPTION_RE.test(clause)) return false
-    const thresholdAnchor = [...clause.matchAll(THRESHOLD_ANCHOR_RE)].some((m) => {
-      const value = extractMoneyAmounts(`₡${m[1]}`)[0]
-      return value != null && near(Math.round(value), rule.over)
-    })
     const amounts = extractMoneyAmounts(clause).map((a) => Math.round(a)).filter((a) => a >= 100)
-    const comboAnchor = amounts.some((a) => rule.includedPrices.some((p) => near(a, p)))
-    if (!thresholdAnchor && !comboAnchor) return false
-    const other = amounts.filter(
-      (a) => !(thresholdAnchor && near(a, rule.over)) && !rule.includedPrices.some((p) => near(a, p)) && !rule.shippingPrices.some((s) => near(a, s)),
-    )
-    if (other.length) return false
+    if (amounts.length === 0) return false
+    if (!amounts.every((a) => rule.includedPrices.some((p) => near(a, p)))) return false
   }
-  return sawPhrase
+  return true
 }
 
-/** Deal check with the narrower store free-shipping rule on top of the promo kinds. */
+/** Deal check with the narrower included-combo rule on top of the promo kinds. */
 function dealProblemWithRule(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>, rule: FreeShippingRule | null | undefined): boolean {
   if (!dealProblem(text, allowed)) return false
   if (!rule || allowed.includes('free_shipping')) return true
-  // Only free-shipping wording is the problem, and the store rule covers it in this reply.
+  // Only free-shipping wording is the problem, and every phrase is an included-combo fact.
   return dealProblem(text, [...allowed, 'free_shipping']) || !freeShippingRuleOk(text, rule)
 }
 

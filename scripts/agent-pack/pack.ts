@@ -82,7 +82,11 @@ export function loadPack(dir: string): { pack: AgentPack; dir: string } {
     if (s.title !== s.title.trim() || s.body !== s.body.trim()) problems.push(`atajo ${s.key}: sin espacios al inicio o al final`)
     if (keys.has(s.key)) problems.push(`atajo repetido: ${s.key}`)
     keys.add(s.key)
-    for (const img of s.images || []) if (!existsSync(join(root, 'images', img))) problems.push(`falta la imagen ${img}`)
+    for (const img of s.images || []) {
+      // A bare file name inside images/ — never a path out of the pack folder.
+      if (!/^[\w.-]+\.(?:jpe?g|png|webp)$/i.test(img) || img.includes('..')) problems.push(`nombre de imagen inválido: ${img}`)
+      else if (!existsSync(join(root, 'images', img))) problems.push(`falta la imagen ${img}`)
+    }
     if ((s.images || []).length > 3) problems.push(`${s.key}: máximo 3 imágenes`)
   }
   for (const [key, body] of Object.entries(pack.systemReplies ?? {})) {

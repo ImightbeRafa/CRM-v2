@@ -1,3 +1,19 @@
+## 2026-10-15 — SecureDog release BLOCK fixed: no store-wide free-shipping rule; every free-shipping synonym checked (claudio/agent-pack-builder)
+
+- INT-84 (High): the threshold amount was an allowed price anywhere ("los 3 en ₡25.000") → threshold removed from the agent entirely
+  (not shown, not an allowed amount; brandFacts.freeOver stays stored and unused as before).
+- INT-85/86: free-shipping wording now covers every synonym (incluido, no te cobro, ₡0, por nuestra cuenta, te lo mando
+  gratis…, negations excluded). Without a promo it passes only for a combo the OWNER marked shippingIncluded: one
+  clause, says "combo", only that combo's exact price, no personal/exception words. Also closes the production gap
+  where "con envío incluido" was never checked.
+- INT-87: combo names ≤60, no markers/sentence punctuation/shipping/payment/confirmation/deal words; shown «quoted» as
+  owner data; shipping facts text stripped of Betsy look-alikes. INT-88: grader told the facts are data. DATA-50:
+  .gitignore only un-ignores scripts/agent-pack/*.ts. INT-90: probar.ts checks OWNER/ADMIN; pack image names are bare
+  file names. Also: grader gets real prices (buy-intent false fail), selling rule never answers off-topic, test-run
+  budget pre-check, "Estado y modo" / Líneas warnings when En vivo still answers no line.
+- Proof: test:soft-ai 486/486, test:chat-harden 643/643, test:security 271/271, test:agentes-ui 34/34, tsc 0, lint 0,
+  next build OK.
+
 ## 2026-10-15 — Why an activated-looking channel stayed quiet; no wasted test runs (claudio/agent-pack-builder)
 
 - PatchHouse looked on (agent En vivo + Responder, channel allowlisted, inbox chip IA) but never answered: the channel had

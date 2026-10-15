@@ -9,6 +9,7 @@ import { prisma } from '@/lib/db'
 import { isColumnReady, isTableReady } from '@/lib/soft-ai/table-ready'
 import { EMPTY_PROMO, headlineHasNumberWords, parsePromo, type AgentPromo } from '@/lib/soft-ai/promo'
 import { dealProblem } from '@/lib/soft-ai/llm/output-validator'
+import { hasConfirmationWording } from '@/lib/soft-ai/shortcuts'
 
 export type SalesRules = {
   voice: string | null
@@ -25,7 +26,9 @@ export type SalesRules = {
   /** Owner's combos at a fixed total (quoted only as listed). Optional so older callers keep compiling. */
   bundles?: SalesRuleBundle[]
 }
-export type SalesRuleBundle = { name: string; price: number }
+/** shippingIncluded: the owner says this combo's total already includes shipping (never inferred from a threshold). */
+export type SalesRuleBundle = { name: string; price: number; shippingIncluded: boolean }
+export const BUNDLE_NAME_MAX = 60
 
 export const MAX_BUNDLES = 8
 /** SQL 053 CHECK: octet_length("salesRules"::text) <= 8000. */
@@ -55,17 +58,30 @@ export function salesRulesOctets(rules: SalesRules): number {
 }
 
 /**
- * Combos the owner sells at a fixed total. Names are shown to the model as data: amounts in words and deal phrasing
- * ("antes 30 mil", "2x1", "descuento") are refused like the promo headline (INT-77), so the model never repeats them.
+ * Combos the owner sells at a fixed total. Names are shown to the model as data, so they must read like a product
+ * name and nothing else: no amounts in words, deal / free-shipping / confirmation wording, markers or sentence
+ * punctuation that could pose as a rule (INT-77, INT-87). Refused names drop the combo.
  */
+export function bundleNameAllowed(name: string): boolean {
+  if (!name || name.length > BUNDLE_NAME_MAX) return false
+  if (/[\[\]<>{}:;.\n\r«»"`]/.test(name)) return false
+  if (headlineHasNumberWords(name) || dealProblem(name, []) || hasConfirmationWording(name)) return false
+  if (/\bantes\b|ahorr|regla|confirm|pag[oóa]|gratis|incluid|env[ií]o/i.test(name)) return false
+  return true
+}
+
 export function parseBundles(raw: unknown): SalesRuleBundle[] {
   if (!Array.isArray(raw)) return []
   return raw
     .map((x) => (x && typeof x === 'object' ? (x as Record<string, unknown>) : {}))
-    .filter((x) => typeof x.name === 'string' && x.name.trim() && typeof x.price === 'number' && Number.isFinite(x.price))
+    .filter((x) => typeof x.name === 'string' && typeof x.price === 'number' && Number.isFinite(x.price))
     .filter((x) => (x.price as number) > 0 && (x.price as number) < 100_000_000)
-    .map((x) => ({ name: String(x.name).replace(/\s+/g, ' ').trim().slice(0, 120), price: Math.round(x.price as number) }))
-    .filter((b) => !headlineHasNumberWords(b.name) && !dealProblem(b.name, []) && !/\bantes\b|ahorr/i.test(b.name))
+    .map((x) => ({
+      name: String(x.name).replace(/\s+/g, ' ').trim(),
+      price: Math.round(x.price as number),
+      shippingIncluded: x.shippingIncluded === true,
+    }))
+    .filter((b) => bundleNameAllowed(b.name))
     .slice(0, MAX_BUNDLES)
 }
 export type SalesSetup = { offeredShippingMethodIds: string[]; salesRules: SalesRules }

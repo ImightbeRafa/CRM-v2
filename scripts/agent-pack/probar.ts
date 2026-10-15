@@ -27,6 +27,8 @@ async function main() {
   if (!agent) throw new Error('El agente no existe: corré build-agent.ts --apply primero')
   const user = await prisma.user.findUnique({ where: { email: pack.target.actorEmail }, select: { id: true } })
   if (!user) throw new Error('Usuario del pack no encontrado')
+  const member = await prisma.membership.findFirst({ where: { userId: user.id, tenantId, isActive: true }, select: { role: true } })
+  if (!member || !['OWNER', 'ADMIN'].includes(String(member.role))) throw new Error('El usuario del pack debe ser OWNER o ADMIN activo del negocio')
   const socialAccountId = pack.target.socialAccountIds[0]
   if (!socialAccountId) throw new Error('El pack necesita target.socialAccountIds (el chat de prueba usa ese canal)')
   const only = (arg('only') || '').toLowerCase()

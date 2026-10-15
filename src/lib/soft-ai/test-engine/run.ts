@@ -11,6 +11,8 @@ import { isTableReady } from '@/lib/soft-ai/table-ready'
 import { isMissingRelation } from '@/lib/db-missing-relation'
 import { agentHasInventoryMap, loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import { canSharePaymentFacts, parseBrandFactsSafe } from '@/lib/soft-ai/brand-facts'
+import { loadAgentSalesContext } from '@/lib/soft-ai/agent-sales-context'
+import { salesAllowedAmounts } from '@/lib/soft-ai/sales-state'
 import { runAgentTestTurn } from '@/lib/soft-ai/agent-turn'
 import { loadDailyTestTokens } from '@/lib/soft-ai/agent-claim-gates'
 import { readChatAgentLayerConfig } from '@/lib/feature-flags'
@@ -211,6 +213,8 @@ export async function buildSuite(tenantId: string, agent: { id: string; name: st
       })
     : null
   const facts = parseBrandFactsSafe(agent.brandFacts)
+  // The grader sees the same selling data the agent sees (shipping, combos, allowed amounts) — 2026-10-15 quick check.
+  const salesCtx = await loadAgentSalesContext({ tenantId, agentId: agent.id, inventoryItemIds: mapped, brandFacts: facts }).catch(() => null)
   return generateAgentSuite({
     agentName: agent.name,
     systemInstructions: agent.systemInstructions || '',
@@ -220,6 +224,13 @@ export async function buildSuite(tenantId: string, agent: { id: string; name: st
       shareable: canSharePaymentFacts(facts),
       sinpeNumber: facts.payment?.sinpe?.number ?? null,
     },
+    sales: salesCtx
+      ? {
+          shipping: salesCtx.shippingMethods.map((s) => ({ name: s.name, price: s.price })),
+          bundles: (salesCtx.bundles ?? []).map((b) => ({ name: b.name, price: b.price, shippingIncluded: b.shippingIncluded })),
+          allowedAmounts: salesAllowedAmounts(salesCtx),
+        }
+      : null,
   })
 }
 

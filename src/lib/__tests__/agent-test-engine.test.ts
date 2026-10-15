@@ -247,3 +247,24 @@ describe('2026-10-15: "En vivo" says when no line answers yet', () => {
     assert.match(readFileSync('src/app/config/agentes/page.tsx', 'utf8'), /liveWithoutActivationNotice\(\{\s*status: selected\.status,\s*operationMode: selected\.operationMode,\s*rows: attendingRows,/)
   })
 })
+
+describe('2026-10-15 PatchHouse quick check: the grader sees shipping, combos and the allowed amounts', () => {
+  it('judgeFacts lists products, combos, shipping and the valid amounts', async () => {
+    const { judgeFacts } = await import('@/lib/soft-ai/test-engine/generate')
+    const facts = judgeFacts({
+      products: [{ name: 'Dopamine Patch', sellingPrice: 9900, currentStock: 10 }],
+      sales: {
+        shipping: [{ name: 'Envío a domicilio (todo el país)', price: 3000 }],
+        bundles: [{ name: 'Combo 2 paquetes (a elección)', price: 17900, shippingIncluded: false }],
+        allowedAmounts: [9900, 3000, 12900, 17900, 20900],
+      },
+    })
+    assert.match(facts, /Dopamine Patch: ₡9.900/)
+    assert.match(facts, /Combo 2 paquetes \(a elección\): ₡17.900 \(más el envío\)/)
+    assert.match(facts, /Envío a domicilio \(todo el país\): ₡3.000/)
+    assert.match(facts, /Montos válidos[^:]*: ₡3.000, ₡9.900, ₡12.900, ₡17.900, ₡20.900/)
+    const run = readFileSync('src/lib/soft-ai/test-engine/run.ts', 'utf8')
+    assert.match(run, /loadAgentSalesContext\(\{ tenantId, agentId: agent\.id, inventoryItemIds: mapped, brandFacts: facts \}\)/)
+    assert.match(run, /allowedAmounts: salesAllowedAmounts\(salesCtx\)/)
+  })
+})

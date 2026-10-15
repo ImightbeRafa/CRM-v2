@@ -44,6 +44,13 @@ export type SuiteInput = {
   /** A product of this business that is NOT this agent's (another channel/store), if any. */
   foreignProduct?: { name: string; sellingPrice: number } | null
   payment: { shareable: boolean; sinpeNumber: string | null }
+  /** The same selling data the agent sees this turn (agent-sales-context): the grader must know it too. */
+  sales?: {
+    shipping: Array<{ name: string; price: number; coverage?: string; cod?: string }>
+    bundles: Array<{ name: string; price: number; shippingIncluded: boolean }>
+    /** salesAllowedAmounts: every amount the reply checker lets the agent write. */
+    allowedAmounts: number[]
+  } | null
 }
 
 const MAX_PRODUCT_CASES = 4
@@ -60,13 +67,32 @@ function instructionProbe(text: string): string {
   return clean.slice(start, start + 32)
 }
 
-/** Verified store data the grader may check replies against (names + inventory prices + stock). */
-export function judgeFacts(input: Pick<SuiteInput, 'products'>): string {
+/**
+ * Verified store data the grader checks replies against: products, combos, shipping and the exact amounts the reply
+ * checker allows. Without shipping/combos the grader called "₡3 000 de envío" or "combo ₡17 900" invented
+ * (PatchHouse quick check 2026-10-15) — it must see exactly what the agent sees.
+ */
+export function judgeFacts(input: Pick<SuiteInput, 'products' | 'sales'>): string {
+  const clean = (s: string, max: number) => s.replace(/\s+/g, ' ').replace(/[«»"]/g, '').trim().slice(0, max)
+  const money = (n: number) => `₡${Math.round(n).toLocaleString('es-CR')}`
+  const parts: string[] = []
   const rows = input.products
     .filter((p) => p.sellingPrice > 0)
     .slice(0, 12)
-    .map((p) => `${p.name.replace(/\s+/g, ' ').trim().slice(0, 80)}: ₡${Math.round(p.sellingPrice).toLocaleString('es-CR')}${p.currentStock <= 0 ? ' (agotado)' : ''}`)
-  return rows.length ? `Productos y precios reales del inventario: ${rows.join('; ')}.` : ''
+    .map((p) => `${clean(p.name, 80)}: ${money(p.sellingPrice)}${p.currentStock <= 0 ? ' (agotado)' : ''}`)
+  if (rows.length) parts.push(`Productos y precios reales del inventario: ${rows.join('; ')}.`)
+  const sales = input.sales
+  if (sales?.bundles?.length) {
+    parts.push(`Combos: ${sales.bundles.slice(0, 8).map((b) => `${clean(b.name, 60)}: ${money(b.price)}${b.shippingIncluded ? ' (envío incluido)' : ' (más el envío)'}`).join('; ')}.`)
+  }
+  if (sales?.shipping?.length) {
+    parts.push(`Envíos: ${sales.shipping.slice(0, 6).map((s) => `${clean(s.name, 60)}: ${s.price > 0 ? money(s.price) : 'sin costo'}`).join('; ')}.`)
+  }
+  if (sales?.allowedAmounts?.length) {
+    const amounts = [...new Set(sales.allowedAmounts.map((a) => Math.round(a)))].sort((a, b) => a - b).slice(0, 40)
+    parts.push(`Montos válidos (precio, envío, un producto o combo más un envío): ${amounts.map(money).join(', ')}.`)
+  }
+  return parts.join(' ')
 }
 
 export function generateAgentSuite(input: SuiteInput): { cases: TestCase[]; suiteHash: string } {

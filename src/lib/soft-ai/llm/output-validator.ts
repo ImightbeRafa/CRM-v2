@@ -48,6 +48,16 @@ const FREE_SHIPPING_WORDING_RE = new RegExp(
     'sin\\s+(?:cargo|costo|cobro)\\s+(?:de|por|del)\\s+env[ií]o',
     'env[ií]o\\s*[:(]?\\s*(?:₡\\s?0(?![\\d.,])|gratis)',
     'te\\s+(?:lo|la|los|las)\\s+(?:mando|env[ií]o|llevo)\\s+gratis',
+    // INT-92: more ways to say it.
+    'env[ií]o\\s+(?:no\\s+tiene|sin)\\s+(?:ning[uú]n\\s+)?(?:costo|cargo|cobro)',
+    '(?:te|se|le|les)\\s+(?:lo|la|los|las)\\s+(?:mand|envi|env[ií]|llev|despach)\\p{L}*\\s+gratis',
+    'gratis\\s+(?:el|la)\\s+(?:env[ií]o|entrega|despacho)',
+    '(?:entrega|despacho|delivery)\\s+(?:\\p{L}+\\s+){0,2}?(?:gratis|gratuit\\p{L}*|sin\\s+costo|incluid\\p{L}*)',
+    'sin\\s+(?:costo|cargo|cobro)\\s+(?:el|del|de|por)\\s+(?:env[ií]o|entrega|despacho)',
+    'no\\s+se\\s+(?:cobr|pag)\\p{L}*\\s+(?:el\\s+)?(?:env[ií]o|entrega|despacho)',
+    'env[ií]o\\s+(?:\\p{L}+\\s+){0,3}?₡\\s?0(?![\\d.,])',
+    'por\\s+cuenta\\s+nuestra',
+    'free\\s+(?:shipping|delivery)',
   ].map((p) => `(?:${p})`).join('|'),
   'giu',
 )
@@ -84,8 +94,16 @@ export function dealProblem(text: string, allowed: ReadonlyArray<'free_shipping'
 const FREE_SHIPPING_EXCEPTION_RE =
   /(?<![\p{L}])(aunque|pero|hoy|primera|cortes[ií]a|regal\p{L}*|por\s+esta\s+vez|esta\s+vez|igual(?:mente)?|tambi[eé]n|excepci\p{L}*|normalmente|por\s+lo\s+general|de\s+todas\s+formas|a\s+vos|a\s+ti|para\s+vos|para\s+ti|tu\s+(?:pedido|compra|orden)|califica\p{L}*|aplica\p{L}*|te\s+lo\s+(?:dejo|mando)\s+igual|te\s+(?:lo|la|los|las)\s+(?:dejo|mando))(?![\p{L}])/iu
 
-/** Combos the owner marked as including shipping (exact prices). */
-export type FreeShippingRule = { includedPrices: number[] }
+/**
+ * Combos the owner marked as including shipping (exact prices), plus words that name other things the agent sells
+ * (catalog items): a clause that names one of them is not only about the included combo (INT-91).
+ */
+export type FreeShippingRule = { includedPrices: number[]; otherNames?: string[] }
+
+/** Words that stretch one combo's fact to more items, anywhere in the reply (INT-91). */
+const FREE_SHIPPING_SPREAD_RE = /(?<![\p{L}])(tambi[eé]n|igual(?:mente)?|lo\s+mismo|ambos|ambas|los\s+dos|las\s+dos|todos|todas|van|incluyen|traen|vienen)(?![\p{L}])/iu
+/** Bare amounts too ("17.900", "17900"), not only ₡ ones. */
+const BARE_AMOUNT_RE = /\d{1,3}(?:[.,   ]\d{3})+|\d{4,7}/g
 
 /** Clause spans: sentence ends, parentheses, line breaks (a period inside ₡25.000 is not an end). */
 function clauseSpans(text: string): Array<[number, number]> {
@@ -108,14 +126,23 @@ export function freeShippingRuleOk(text: string, rule: FreeShippingRule): boolea
   const near = (a: number, b: number) => Math.abs(a - b) <= 1
   const matches = freeShippingWording(text)
   if (matches.length === 0 || rule.includedPrices.length === 0) return false
+  // One included combo per fact: nothing in the reply may stretch it to other items.
+  if (FREE_SHIPPING_SPREAD_RE.test(text)) return false
+  const others = (rule.otherNames ?? []).map((n) => n.trim().toLowerCase()).filter((n) => n.length >= 3)
   const spans = clauseSpans(text)
   for (const m of matches) {
     const span = spans.find(([s, e]) => m.index >= s && m.index < e)
     if (!span || m.end > span[1]) return false
     const clause = text.slice(span[0], span[1])
-    if (!/(?<![\p{L}])combos?(?![\p{L}])/iu.test(clause)) return false
+    // Exactly one combo named in the clause (not "el Combo Trío y el Combo 2").
+    if ((clause.match(/(?<![\p{L}])combos?(?![\p{L}])/giu) || []).length !== 1) return false
     if (FREE_SHIPPING_EXCEPTION_RE.test(clause)) return false
-    const amounts = extractMoneyAmounts(clause).map((a) => Math.round(a)).filter((a) => a >= 100)
+    const lower = clause.toLowerCase()
+    if (others.some((n) => new RegExp(`(?<![\\p{L}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, 'iu').test(lower))) return false
+    const amounts = [
+      ...extractMoneyAmounts(clause).map((a) => Math.round(a)),
+      ...[...clause.matchAll(BARE_AMOUNT_RE)].map((x) => Number(x[0].replace(/\D/g, ''))),
+    ].filter((a) => a >= 100)
     if (amounts.length === 0) return false
     if (!amounts.every((a) => rule.includedPrices.some((p) => near(a, p)))) return false
   }

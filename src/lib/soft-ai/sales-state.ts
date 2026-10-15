@@ -287,7 +287,10 @@ export function salesAllowedDeals(ctx: SalesContext): Array<'free_shipping' | 's
  * says "combo" and quotes one of these exact prices, nothing else (output-validator freeShippingRuleOk). Store-wide
  * "free shipping from ₡X" is NOT offered to the model at all (SecureDog INT-84/85: not checkable from wording).
  */
-export function salesFreeShippingRule(ctx: SalesContext): { includedPrices: number[] } | null {
+export function salesFreeShippingRule(ctx: SalesContext): { includedPrices: number[]; otherNames: string[] } | null {
   const includedPrices = (ctx.bundles ?? []).filter((b) => b.shippingIncluded).map((b) => Math.round(b.price))
-  return includedPrices.length ? { includedPrices } : null
+  if (!includedPrices.length) return null
+  // First word of each catalog item ("Focus", "GLP"): naming one next to "envío incluido" is not a combo fact (INT-91).
+  const otherNames = [...new Set((ctx.catalog ?? []).map((c) => (c.name.trim().split(/[\s\-–—]+/)[0] || '').toLowerCase()).filter((w) => w.length >= 3))]
+  return { includedPrices, otherNames }
 }

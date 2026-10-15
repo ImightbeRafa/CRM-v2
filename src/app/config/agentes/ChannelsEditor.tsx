@@ -25,7 +25,7 @@ export type ChannelRow = {
 const HINT = 'text-[11px] text-slate-500'
 
 /**
- * A channel can look "on" (this agent attends it, AI allowed, agent En vivo) and still stay quiet: real replies need
+ * A channel can look "on" (agent En vivo + Responder, attends it, AI allowed) and still stay quiet: real replies need
  * a green "Probar y activar" for this agent version. Say it plainly instead of a grey hint (Rafael 2026-10-14).
  */
 export function unactivatedChannelCopy(realSend: RealSendStatus): string {
@@ -40,12 +40,15 @@ export function ChannelsEditor({
   reloadToken = 0,
   onUseForTest,
   onChannels,
+  agentAnswers = false,
 }: {
   agentId: string
   canEdit: boolean
   reloadToken?: number
   onUseForTest: (socialAccountId: string) => void
   onChannels?: (channels: ChannelRow[]) => void
+  /** Agent is En vivo + Responder: only then is a not-activated channel a surprise (Solo humanos / Borrador are on purpose). */
+  agentAnswers?: boolean
 }) {
   const [channels, setChannels] = useState<ChannelRow[]>([])
   const [schemaReady, setSchemaReady] = useState(true)
@@ -176,7 +179,7 @@ export function ChannelsEditor({
                       approvedVersion: row.approvedVersion ?? null,
                     })}
                   </p>
-                  {row.attendedByThisAgent && row.aiAllowed && (row.realSend || 'locked') !== 'unlocked' ? (
+                  {agentAnswers && row.attendedByThisAgent && row.aiAllowed && (row.realSend || 'locked') !== 'unlocked' ? (
                     <p role="status" className="mt-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[12px] text-amber-800 ring-1 ring-amber-200">
                       {unactivatedChannelCopy(row.realSend || 'locked')}
                     </p>

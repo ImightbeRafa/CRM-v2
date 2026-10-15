@@ -1135,6 +1135,7 @@ export default function AgentesConfigPage() {
                 <div hidden={!detailVisible || tab !== 'canales'} role="tabpanel" className="space-y-4">
                   <ChannelsEditor
                     agentId={selected.id}
+                    agentAnswers={selected.status === 'live' && selected.operationMode === 'ai_full'}
                     canEdit={canEdit}
                     reloadToken={channelReload}
                     onUseForTest={(id) => {

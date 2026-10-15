@@ -188,20 +188,25 @@ describe('2026-10-14: no wasted test runs; a quiet channel says why', () => {
   const read = (p: string) => readFileSync(p, 'utf8')
   it('a run needs cases × this agent’s real turn size (+10 % grader), fallback when it has none', async () => {
     const { estimateRunTokens, TEST_TURN_TOKENS_FALLBACK } = await import('@/lib/soft-ai/test-engine/run')
-    assert.equal(estimateRunTokens(14, [10_000, 0, 6_000]), Math.ceil(14 * 8_000 * 1.1))
-    assert.equal(estimateRunTokens(10, []), Math.ceil(10 * TEST_TURN_TOKENS_FALLBACK * 1.1))
+    // The last case may start just under the cap (per-turn gate), so a run needs (cases − 1) turns free.
+    assert.equal(estimateRunTokens(14, [10_000, 0, 6_000]), 13 * 8_000)
+    assert.equal(estimateRunTokens(10, []), 9 * TEST_TURN_TOKENS_FALLBACK)
+    assert.equal(estimateRunTokens(0, []), 0)
   })
   it('the budget check runs before the run row exists (nothing spent, nothing half-done)', () => {
     const src = read('src/lib/soft-ai/test-engine/run.ts')
-    const check = src.indexOf('if (needed > remaining) throw new TestRunBudgetError(remaining, needed)')
+    const check = src.indexOf('if (needed > remaining) throw new TestRunBudgetError(remaining, needed, layer.testDailyTokenCap)')
     const insert = src.indexOf('INSERT INTO "ChatAgentTestRun"')
     assert.ok(check > 0 && insert > check)
     assert.match(read('src/app/api/chat/agents/[id]/activation/route.ts'), /error instanceof TestRunBudgetError[\s\S]{0,400}No se gastó nada/)
+    assert.match(read('src/app/api/chat/agents/[id]/activation/route.ts'), /error.neededTokens > error.capTokens[sS]{0,200}hay que subir el presupuesto/)
   })
   it('a channel attended + AI allowed but not activated shows a plain warning', async () => {
     const { unactivatedChannelCopy } = await import('@/app/config/agentes/ChannelsEditor')
     assert.match(unactivatedChannelCopy('locked'), /NO responde todavía: falta «Probar y activar»/)
     assert.match(unactivatedChannelCopy('stale'), /cambió desde la última activación/)
-    assert.match(read('src/app/config/agentes/ChannelsEditor.tsx'), /row\.attendedByThisAgent && row\.aiAllowed && \(row\.realSend \|\| 'locked'\) !== 'unlocked'/)
+    assert.match(read('src/app/config/agentes/ChannelsEditor.tsx'), /agentAnswers && row\.attendedByThisAgent && row\.aiAllowed && \(row\.realSend \|\| 'locked'\) !== 'unlocked'/)
+    // Solo humanos / Borrador are on purpose: no "NO responde" nudge then.
+    assert.match(read('src/app/config/agentes/page.tsx'), /agentAnswers=\{selected\.status === 'live' && selected\.operationMode === 'ai_full'\}/)
   })
 })

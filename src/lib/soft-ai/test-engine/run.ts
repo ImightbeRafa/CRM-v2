@@ -79,23 +79,24 @@ export class TestRunDailyLimitError extends Error {
 
 /** The suite cannot finish inside today's test budget: refused before any model call (nothing spent). */
 export class TestRunBudgetError extends Error {
-  constructor(readonly remainingTokens: number, readonly neededTokens: number) {
+  constructor(readonly remainingTokens: number, readonly neededTokens: number, readonly capTokens: number) {
     super('TEST_RUN_BUDGET')
     this.name = 'TestRunBudgetError'
   }
 }
 
-/** Typical test-turn size when this agent has none today (system prompt + knowledge + reply, Grok, 2026-10). */
-export const TEST_TURN_TOKENS_FALLBACK = 12_000
+/** Typical test-turn size when this agent has none recently (system prompt + knowledge + reply, Grok, 2026-10). */
+export const TEST_TURN_TOKENS_FALLBACK = 9_000
 
 /**
- * Tokens a full run of `cases` will use: cases × this agent's average test turn today (fallback when none),
- * +10 % for the grader calls. Pure (exported for tests).
+ * Test-budget tokens a run of `cases` must find free to finish: the per-turn gate (agent-turn.ts) only checks the
+ * budget BEFORE each turn, so the last case may still start just under the cap → (cases − 1) × this agent's
+ * average test turn. Grader calls are metered as AI usage, not against this budget. Pure (exported for tests).
  */
 export function estimateRunTokens(cases: number, recentTurnTokens: number[]): number {
   const real = recentTurnTokens.filter((t) => t > 0)
   const perTurn = real.length ? Math.ceil(real.reduce((a, b) => a + b, 0) / real.length) : TEST_TURN_TOKENS_FALLBACK
-  return Math.ceil(cases * perTurn * 1.1)
+  return Math.max(0, cases - 1) * perTurn
 }
 
 export class TestRunBusyElsewhereError extends Error {
@@ -252,7 +253,7 @@ export async function startAgentTestRun(input: {
   ])
   const needed = estimateRunTokens(cases.length, recent.map((t) => (t.inputTokens || 0) + (t.outputTokens || 0)))
   const remaining = Math.max(0, layer.testDailyTokenCap - usedTokens)
-  if (needed > remaining) throw new TestRunBudgetError(remaining, needed)
+  if (needed > remaining) throw new TestRunBudgetError(remaining, needed, layer.testDailyTokenCap)
   const id = randomUUID()
   try {
     await prisma.$executeRaw`

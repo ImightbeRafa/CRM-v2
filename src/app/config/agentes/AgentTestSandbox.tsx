@@ -5,6 +5,7 @@ import { AgentInternalTests } from '@/app/config/agentes/AgentInternalTests'
 import { AgentActivationCard } from '@/app/config/agentes/AgentActivationCard'
 import { selectWhatsappTestChannel, type TestChannelOption } from '@/lib/soft-ai/test-channel'
 import { ProbarScenarios } from '@/app/config/agentes/ProbarScenarios'
+import { CorrectionPanel } from '@/components/aurora/agentes/CorrectionPanel'
 
 export type WaBubble = {
   kind: 'text'
@@ -138,6 +139,9 @@ export function AgentTestSandbox({
   const [last, setLast] = useState<TurnResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /** "Corregir" open under this agent bubble; 👍 given on these. */
+  const [correcting, setCorrecting] = useState<WaBubble | null>(null)
+  const [liked, setLiked] = useState<WaBubble[]>([])
 
   const selection = useMemo(
     () => selectWhatsappTestChannel(channels, socialAccountId),
@@ -162,14 +166,31 @@ export function AgentTestSandbox({
     if (el) el.scrollTop = el.scrollHeight
   }, [history, busy])
 
-  function sendTurn() {
-    if (!canEdit || !socialAccountId || !text.trim()) return
-    const inbound = text.trim()
-    setText('')
+  /** `again`: "Volver a preguntar" re-sends that customer message (the composer text stays). */
+  function sendTurn(again?: string) {
+    const inbound = (again ?? text).trim()
+    if (!canEdit || !socialAccountId || !inbound) return
+    if (again === undefined) setText('')
     setError(null)
     setHistory((prev) => [...prev, { kind: 'text' as const, from: 'customer' as const, text: inbound, at: new Date().toISOString() }].slice(-40))
     queueRef.current.push(inbound)
     void drainQueue()
+  }
+
+  /**
+   * "Volver a preguntar" after a correction: rewind the chat to just before that customer message (the old answer
+   * goes away, so the agent does not see it) and send the same message again.
+   */
+  function askAgain(reply: WaBubble, asked: string) {
+    const current = historyRef.current
+    const at = current.indexOf(reply)
+    const customerIdx = at < 0 ? -1 : current.slice(0, at).map((b) => b.from === 'customer' && b.text === asked).lastIndexOf(true)
+    if (customerIdx >= 0 && !runningRef.current) {
+      const rewound = current.slice(0, customerIdx)
+      historyRef.current = rewound
+      setHistory(rewound)
+    }
+    sendTurn(asked)
   }
 
   async function drainQueue() {
@@ -280,6 +301,8 @@ export function AgentTestSandbox({
             queueRef.current = []
             setSessionId(crypto.randomUUID())
             setHistory([])
+            setCorrecting(null)
+            setLiked([])
             setLast(null)
             setError(null)
           }}
@@ -310,9 +333,45 @@ export function AgentTestSandbox({
         {history.length === 0 ? (
           <p className="text-sm text-slate-700">Escribí como cliente para ver la respuesta.</p>
         ) : (
-          history.map((bubble, index) => (
-            <BubbleView key={`${bubble.at}-${index}`} bubble={bubble} />
-          ))
+          history.map((bubble, index) => {
+            const canTune = canEdit && bubble.from === 'agent' && Boolean(bubble.text)
+            // The customer message this reply answered: the last one before it.
+            const asked = canTune ? [...history.slice(0, index)].reverse().find((b) => b.from === 'customer')?.text ?? '' : ''
+            return (
+              <div key={`${bubble.at}-${index}`}>
+                <BubbleView bubble={bubble} />
+                {canTune && asked ? (
+                  <div className="ml-1 mt-0.5 flex gap-3 text-[11px]" data-testid="probar-tune-actions">
+                    {liked.includes(bubble) ? (
+                      <span className="text-emerald-700">👍 Anotado</span>
+                    ) : (
+                      <button type="button" onClick={() => setLiked((prev) => [...prev, bubble])} className="text-slate-500 hover:text-slate-800">
+                        👍 Bien
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setCorrecting(correcting === bubble ? null : bubble)}
+                      className="font-medium text-indigo-700 hover:underline"
+                    >
+                      Corregir
+                    </button>
+                  </div>
+                ) : null}
+                {correcting === bubble && asked ? (
+                  <div className="max-w-[90%]">
+                    <CorrectionPanel
+                      agentId={agentId}
+                      customerMessage={asked}
+                      agentReply={bubble.text}
+                      onClose={() => setCorrecting(null)}
+                      onAskAgain={() => askAgain(bubble, asked)}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            )
+          })
         )}
         {busy ? (
           <div className="flex justify-start" aria-live="polite">

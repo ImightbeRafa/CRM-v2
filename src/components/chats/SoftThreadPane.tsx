@@ -14,6 +14,7 @@ import {
 import Link from 'next/link'
 import { Check, CheckCheck, ChevronLeft, Hand, Info, PanelRight, Paperclip, Pause, Play, Send, ShoppingBag, Smile, Sparkles, User, X, Zap } from 'lucide-react'
 import { AgentFeedbackButtons } from '@/components/chats/AgentFeedbackButtons'
+import { CorrectionPanel } from '@/components/aurora/agentes/CorrectionPanel'
 import { CatalogPicker } from '@/components/chats/composer/CatalogPicker'
 import { useAiTermsAccepted } from '@/components/chats/useAiTermsAccepted'
 import {
@@ -86,6 +87,8 @@ interface SoftThreadPaneProps {
   conversation: SoftConversation | null
   /** Teammates in this chat right now ("Ana está respondiendo…"); empty when nobody. */
   presence?: string
+  /** "Corregir" on AI messages (update_config). Undefined = shown; the API's 403 explains. */
+  canTuneAgent?: boolean
   /** "Posponer" (Phase 2b). Hidden when absent (e.g. before migration 036). */
   snooze?: {
     until: string | null
@@ -282,6 +285,7 @@ export function SoftThreadPane({
   quickReplies,
   presence,
   snooze,
+  canTuneAgent = true,
 }: SoftThreadPaneProps) {
   // Stage labels / colours from Config › Chats (custom stages).
   const { chatStages, chatStageLabel, tags: tagDefs } = useCrmCatalog()
@@ -439,6 +443,21 @@ export function SoftThreadPane({
       ),
     [conversation?.messages],
   )
+  /** "Corregir" open under this AI message (Agentes IA 2.0 · E). */
+  const [tuningId, setTuningId] = useState<string | null>(null)
+  useEffect(() => {
+    setTuningId(null)
+  }, [conversation?.recipientId, conversation?.socialAccountId])
+  /** The customer message an AI reply answered: the last inbound text before it. */
+  const askedBefore = (messageId: string): string => {
+    const all = conversation?.messages ?? []
+    const at = all.findIndex((m) => m.id === messageId)
+    for (let i = at - 1; i >= 0; i -= 1) {
+      const m = all[i]
+      if (m.direction === 'inbound' && m.content && !isPlaceholderToken(m.content)) return m.content
+    }
+    return ''
+  }
 
   if (!conversation) {
     return (
@@ -862,6 +881,23 @@ export function SoftThreadPane({
               softAi && msg.metadata && typeof msg.metadata === 'object' && !Array.isArray(msg.metadata)
                 ? ((msg.metadata as Record<string, unknown>).turnId as unknown)
                 : null
+            // "Corregir": the agent that sent it (send snapshot), else the one serving the line now.
+            const tuneAgentId =
+              softAi && outbound && canTuneAgent && !msg.id?.startsWith('demo-ai-') && msg.content && !isPlaceholderToken(msg.content)
+                ? (msg.metadata && typeof msg.metadata === 'object' && !Array.isArray(msg.metadata) && typeof (msg.metadata as Record<string, unknown>).agentId === 'string'
+                    ? ((msg.metadata as Record<string, unknown>).agentId as string)
+                    : null) || conversation.agentId || null
+                : null
+            const tuneButton = tuneAgentId ? (
+              <button
+                type="button"
+                onClick={() => setTuningId(tuningId === msg.id ? null : msg.id)}
+                className="ml-1 rounded px-1 text-[10.5px] font-medium text-au-ink-5b6cff hover:underline"
+                data-testid="soft-thread-tune"
+              >
+                Corregir
+              </button>
+            ) : null
             const showMedia = messageHasMedia(msg)
             // Any stored `[type]` token (media, share, story_mention, ig_reel…) is never shown
             // as text next to the media (it stays after IG media gets cached).
@@ -930,6 +966,7 @@ export function SoftThreadPane({
                             {typeof feedbackTurnId === 'string' && feedbackTurnId ? (
                               <AgentFeedbackButtons turnId={feedbackTurnId} />
                             ) : null}
+                            {tuneButton}
                             <span aria-hidden>·</span>
                           </>
                         ) : null}
@@ -958,6 +995,7 @@ export function SoftThreadPane({
                           {!compact && typeof feedbackTurnId === 'string' && feedbackTurnId ? (
                             <AgentFeedbackButtons turnId={feedbackTurnId} />
                           ) : null}
+                          {!compact ? tuneButton : null}
                         </>
                       ) : failed || msg.deliveryStatus === 'failed' ? (
                         <>
@@ -990,6 +1028,14 @@ export function SoftThreadPane({
                         </>
                       )}
                     </p>
+                  ) : null}
+                  {tuneAgentId && tuningId === msg.id ? (
+                    <CorrectionPanel
+                      agentId={tuneAgentId}
+                      customerMessage={askedBefore(msg.id)}
+                      agentReply={msg.content || ''}
+                      onClose={() => setTuningId(null)}
+                    />
                   ) : null}
                   </div>
                 </div>

@@ -1080,6 +1080,7 @@ export function SoftCopilotInboxV2() {
               ...incoming,
               linkedOrder: incoming.linkedOrder ?? before.linkedOrder,
               agentLabel: incoming.agentLabel ?? before.agentLabel,
+              agentId: incoming.agentId ?? before.agentId,
               agentEmoji: incoming.agentEmoji ?? before.agentEmoji,
               agentStateDot: incoming.agentStateDot ?? before.agentStateDot,
               pendingSuggestionText: incoming.pendingSuggestionText ?? before.pendingSuggestionText,
@@ -1714,6 +1715,8 @@ export function SoftCopilotInboxV2() {
 
   const threadSharedProps = {
     presence: presenceText,
+    // "Corregir" on AI messages: only people who can edit agents (the API checks update_config again).
+    canTuneAgent: canManageQuickReplies,
     snooze: snoozeAvailable
       ? {
           until: selectedConversationId ? dtoMap.get(selectedConversationId)?.snooze?.until ?? null : null,

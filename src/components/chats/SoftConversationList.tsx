@@ -398,7 +398,9 @@ export function SoftConversationList({
               const isDemo = Boolean(conv.isDemo)
               if (compact) {
                 const name = conversationDisplayName(conv)
-                const aiHandled = conv.agentStateDot === 'IA'
+                // Agentes IA 2.0: "IA" only when the line answers this chat; otherwise who has it ("Con Ana", "Sin IA").
+                const aiHandled = conv.aiStatus ? conv.aiStatus.state === 'ia' : conv.agentStateDot === 'IA'
+                const aiChip = conv.aiStatus ? conv.aiStatus.label : conv.agentStateDot
                 return (
                   <li key={key}>
                     <button
@@ -459,12 +461,13 @@ export function SoftConversationList({
                               <Sparkles className="h-3 w-3" aria-hidden />
                               IA
                             </span>
-                          ) : conv.agentStateDot ? (
+                          ) : aiChip ? (
                             <span
-                              className="shrink-0 rounded-lg bg-slate-100 px-2 py-1 text-[12px] font-semibold text-slate-600"
+                              className="max-w-[9rem] shrink-0 truncate rounded-lg bg-slate-100 px-2 py-1 text-[12px] font-semibold text-slate-600"
                               data-testid="soft-agent-dot"
+                              title={conv.aiStatus?.reason}
                             >
-                              {conv.agentStateDot}
+                              {aiChip}
                             </span>
                           ) : null}
                           {conv.status === 'nuevo' && !conv.assignee ? (
@@ -542,13 +545,15 @@ export function SoftConversationList({
                               #{conv.orderNumber}
                             </span>
                           ) : null}
-                          {conv.agentEmoji || conv.agentStateDot ? (
+                          {conv.agentEmoji || conv.agentStateDot || conv.aiStatus ? (
                             <span
                               className="ml-1 shrink-0 rounded bg-slate-100 px-1 py-px text-[9px] font-semibold text-slate-600"
                               data-testid="soft-agent-dot"
+                              title={conv.aiStatus?.reason}
                             >
                               {conv.agentEmoji ? `${conv.agentEmoji} ` : ''}
-                              {conv.agentStateDot || ''}
+                              {/* Agentes IA 2.0: "IA" only when the line answers it; else "Con Ana" / "Sin IA". */}
+                              {conv.aiStatus ? conv.aiStatus.label : conv.agentStateDot || ''}
                             </span>
                           ) : null}
                         </p>

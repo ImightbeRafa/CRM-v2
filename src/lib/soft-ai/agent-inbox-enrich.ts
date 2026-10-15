@@ -7,10 +7,11 @@ import 'server-only'
 
 import { prisma } from '@/lib/db'
 import type { ChatConversationListItemDto } from '@/lib/chat-conversation-api'
-import {
-  agentStateDot,
-  formatAgentHeaderLabel,
-} from '@/lib/soft-ai/agent-inbox-projection'
+import { formatAgentHeaderLabel } from '@/lib/soft-ai/agent-inbox-projection'
+import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
+import { resolvePersistedAgentMode, softAiConversationKey } from '@/lib/soft-ai/agent-mode-server'
+import { chatAiStatus, dotFromChatAiStatus, type ChatLineAi } from '@/lib/soft-ai/agent-status'
+import { conversationsWithRecentHuman, loadLinesAiStatus } from '@/lib/soft-ai/agent-status-server'
 import { isChatAgentSchemaReady, isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { CHAT_AGENT_LAYER_V1_FLAG } from '@/lib/soft-ai/agent-types'
 import { agentsServingUnboundChannels } from '@/lib/soft-ai/agent-settings'
@@ -30,6 +31,23 @@ async function agentLayerEnabled(tenantId: string): Promise<boolean> {
   if (flagCache.size > 5_000) flagCache.clear()
   flagCache.set(tenantId, { enabled, at: Date.now() })
   return enabled
+}
+
+/**
+ * Line truth for the inbox, loaded once per line per request and kept 10 s per process (the list polls; a switch
+ * change shows within seconds, and a local "Tomar" is recomputed client-side from aiMode at once).
+ */
+const linesCache = new Map<string, { at: number; value: Awaited<ReturnType<typeof loadLinesAiStatus>> }>()
+const LINES_TTL_MS = 10_000
+
+async function cachedLines(tenantId: string, accountIds: string[]) {
+  const key = `${tenantId}|${[...accountIds].sort().join(',')}`
+  const hit = linesCache.get(key)
+  if (hit && Date.now() - hit.at < LINES_TTL_MS) return hit.value
+  const value = await loadLinesAiStatus(tenantId, accountIds)
+  if (linesCache.size > 2_000) linesCache.clear()
+  linesCache.set(key, { at: Date.now(), value })
+  return value
 }
 
 export async function enrichConversationDtosWithAgents(
@@ -97,30 +115,62 @@ export async function enrichConversationDtosWithAgents(
     const defaultServes = tenantDefault?.agentId
       ? (await agentsServingUnboundChannels(tenantId)).has(tenantDefault.agentId)
       : false
+    // Agentes IA 2.0 — the truth: line status once per line, legacy agentState, and "a person wrote in 24 h" only for
+    // the NULL-mode chats on lines that are on (the only ones it can change).
+    const [lines, softFlag] = await Promise.all([
+      cachedLines(tenantId, accountIds),
+      prisma.tenantFeatureFlag.findFirst({
+        where: { tenantId, scope: tenantId, key: SOFT_TENANT_AI_V1_FLAG },
+        select: { config: true },
+      }),
+    ])
+    const softConfig =
+      softFlag?.config && typeof softFlag.config === 'object' && !Array.isArray(softFlag.config)
+        ? (softFlag.config as Record<string, unknown>)
+        : null
+    const persistedFor = (item: ChatConversationListItemDto) =>
+      resolvePersistedAgentMode(softConfig, softAiConversationKey(item.socialAccountId, item.peerId))
+    const needsHumanCheck = items
+      .filter((i) => !i.aiMode && !persistedFor(i) && lines.get(i.socialAccountId)?.status.state === 'on')
+      .map((i) => i.id)
+    const recentHuman = await conversationsWithRecentHuman(tenantId, needsHumanCheck)
+
     return items.map((item) => {
       const binding = byAccount.get(item.socialAccountId) || (defaultServes ? tenantDefault : null)
+      const line = lines.get(item.socialAccountId)?.status ?? null
+      const aiLine: ChatLineAi | null = line ? { state: line.state, code: line.code, label: line.label, hint: line.hint } : null
+      const aiPersistedMode = persistedFor(item)
+      const aiHumanRecent = recentHuman.has(item.id)
+      const aiStatus = chatAiStatus({
+        line: aiLine,
+        conversationAiMode: item.aiMode,
+        persistedAiMode: aiPersistedMode,
+        humanWroteRecently: aiHumanRecent,
+        assignedUserName: item.assignedUser?.name ?? null,
+      })
+      const truth = { aiLine, aiPersistedMode, aiHumanRecent, aiStatus }
       if (!binding?.agent || binding.agent.status !== 'live') {
         return {
           ...item,
+          ...truth,
           agentLabel: 'Sin agente',
           agentEmoji: null,
-          agentStateDot: null,
+          // "IA" only when the chat is really answered by the AI (never for a line without a live agent).
+          agentStateDot: aiStatus.state === 'ia' ? dotFromChatAiStatus(aiStatus) : null,
           pendingSuggestionText: suggestionByConvo.get(item.id) || null,
         }
       }
       const agent = binding.agent
       return {
         ...item,
+        ...truth,
         agentLabel: formatAgentHeaderLabel({
           emoji: agent.emoji,
           name: agent.name,
           operationMode: agent.operationMode,
         }),
         agentEmoji: agent.emoji,
-        agentStateDot: agentStateDot({
-          operationMode: agent.operationMode,
-          conversationAiMode: item.aiMode,
-        }),
+        agentStateDot: dotFromChatAiStatus(aiStatus),
         pendingSuggestionText: suggestionByConvo.get(item.id) || null,
       }
     })

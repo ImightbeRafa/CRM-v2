@@ -4,6 +4,7 @@
  */
 
 import type { ChatConversation, ChatInboxMessage } from '@/lib/chat-inbox'
+import type { ChatAiStatus } from '@/lib/soft-ai/agent-status'
 import {
   channelSecondaryAddress,
   resolveChannelDisplayName,
@@ -44,6 +45,8 @@ export interface SoftConversation extends ChatConversation {
   agentEmoji?: string | null
   agentStateDot?: 'IA' | 'Sug' | 'Hum' | null
   pendingSuggestionText?: string | null
+  /** Agentes IA 2.0: who really has this chat ("IA" only when the line answers it). */
+  aiStatus?: ChatAiStatus | null
 }
 
 export interface SoftSocialAccount {

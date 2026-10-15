@@ -8,6 +8,7 @@ import {
 import type { ChatConversationListItemDto, ChatMessageItemDto } from '@/lib/chat-conversation-api'
 import { isClosedCategory } from '@/lib/crm-stages'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
+import { chatAiStatus, type ChatAiStatus } from '@/lib/soft-ai/agent-status'
 
 export const CHAT_INBOX_V2_IMPORTED_KEY = 'betsy.softCopilot.inboxV2Imported.v1'
 export const CHAT_INBOX_V2_POLL_MS = 5000
@@ -135,9 +136,32 @@ export function listDtoToSoftConversation(
       : null,
     agentLabel: dto.agentLabel ?? null,
     agentEmoji: dto.agentEmoji ?? null,
-    agentStateDot: dto.agentStateDot ?? null,
+    agentStateDot: dto.aiLine !== undefined ? dotForDto(dto) : dto.agentStateDot ?? null,
     pendingSuggestionText: dto.pendingSuggestionText ?? null,
+    aiStatus: aiStatusFromDto(dto),
   }
+}
+
+/**
+ * Agentes IA 2.0: the chat's truth from the DTO. Recomputed from the line + the CURRENT aiMode (a PATCH or a local
+ * "Tomar" changes aiMode before the next enrich), so the chip never shows a stale "IA". Null when the server did not
+ * enrich (agent layer off): callers keep their old behaviour.
+ */
+export function aiStatusFromDto(dto: ChatConversationListItemDto): ChatAiStatus | null {
+  if (dto.aiLine === undefined) return dto.aiStatus ?? null
+  return chatAiStatus({
+    line: dto.aiLine,
+    conversationAiMode: dto.aiMode,
+    persistedAiMode: dto.aiPersistedMode ?? null,
+    humanWroteRecently: dto.aiHumanRecent === true,
+    assignedUserName: dto.assignedUser?.name ?? null,
+  })
+}
+
+function dotForDto(dto: ChatConversationListItemDto): 'IA' | 'Hum' | null {
+  // 'IA' only when the chat is really the AI's; otherwise 'Hum' where an agent is shown at all.
+  if (aiStatusFromDto(dto)?.state === 'ia') return 'IA'
+  return dto.agentStateDot ? 'Hum' : null
 }
 
 export function softConversationKeyFromDto(dto: ChatConversationListItemDto): string {

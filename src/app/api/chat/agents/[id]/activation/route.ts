@@ -15,7 +15,7 @@ import {
   ACTIVATION_REFUSAL_COPY,
   ActivationRefusal,
   activateAgentChannel,
-  deactivateAgentChannel,
+  powerOffLine,
 } from '@/lib/soft-ai/agent-activation'
 import {
   buildSuite,
@@ -28,6 +28,7 @@ import {
   TestRunNotReadyError,
 } from '@/lib/soft-ai/test-engine/run'
 import { aiFullUnlockStatus, parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
+import { selectQuickSuite } from '@/lib/soft-ai/test-engine/generate'
 import { CHAT_AGENT_LAYER_V1_FLAG } from '@/lib/soft-ai/agent-types'
 import { isPlatformAiPaused } from '@/lib/soft-ai/agent-kill-switch'
 
@@ -72,13 +73,15 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       }),
     ])
     const config = parseChatAgentLayerConfig(flag?.config)
-    // A green run only activates if it tested TODAY's agent (same version, model and data-built suite).
+    // A green run only activates if it tested TODAY's agent (same version, model and data-built suite — the full
+    // suite or the one switch's quick check of it).
+    const full = run && run.status === 'passed' ? await buildSuite(auth.tenantId, agent) : null
     const runCurrent = Boolean(
       run &&
-        run.status === 'passed' &&
+        full &&
         run.agentVersion === agent.version &&
         run.model === agent.model &&
-        run.suiteHash === (await buildSuite(auth.tenantId, agent)).suiteHash,
+        (run.suiteHash === full.suiteHash || run.suiteHash === selectQuickSuite(full).suiteHash),
     )
     const unlock = aiFullUnlockStatus(config, account.id, { agentId: agent.id, model: agent.model, agentVersion: agent.version })
     return NextResponse.json(
@@ -147,7 +150,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       return NextResponse.json({ success: true, active: true, agentName: result.agentName })
     }
     if (action === 'deactivate') {
-      await deactivateAgentChannel({ tenantId: auth.tenantId, agentId: agent.id, socialAccountId: account.id, ...actor })
+      // Same as the line switch OFF: pending checks are canceled too (a later green run never turns it back on).
+      await powerOffLine({ tenantId: auth.tenantId, agentId: agent.id, socialAccountId: account.id, ...actor })
       return NextResponse.json({ success: true, active: false })
     }
     return NextResponse.json({ success: false, error: 'Acción inválida' }, { status: 400 })

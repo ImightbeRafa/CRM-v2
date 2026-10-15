@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { isSameOriginRequest } from '@/lib/same-origin'
 import {
   listAgentChannels,
   setAgentBinding,
@@ -40,6 +41,10 @@ export async function POST(
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_config')
     if (!auth.ok) return auth.response
+    // Binding / allowlist writes change who answers customers: same-origin like the activation and power routes.
+    if (!isSameOriginRequest(request)) {
+      return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })
+    }
     const { id } = await context.params
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object') {

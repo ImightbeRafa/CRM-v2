@@ -263,7 +263,7 @@ export function SoftThreadPane({
   onOpenTemplatePicker,
   onCloseTemplatePicker,
   onSendTemplate,
-  agentMode = 'human',
+  agentMode: agentModeProp = 'human',
   onTakeOver,
   onPauseAi,
   onResumeAi,
@@ -297,6 +297,16 @@ export function SoftThreadPane({
   /** `false` = closed; string = open (optionally pre-filling a new shortcut). */
   const [managerOpen, setManagerOpen] = useState<false | { shortcut?: string }>(false)
   const [catalogOpen, setCatalogOpen] = useState(false)
+  // Agentes IA 2.0 — the truth: "IA activa" (and the composer lock) only when the line really answers this chat.
+  // A chat on a line that is off is the team's (composer open); 'human' / 'paused' still win.
+  const aiTruth = conversation?.aiStatus ?? null
+  const agentMode: SoftAiAgentMode = aiTruth
+    ? aiTruth.state === 'ia'
+      ? 'ai_active'
+      : aiTruth.state === 'paused'
+        ? 'paused'
+        : 'human'
+    : agentModeProp
   // "IA activa" must not show green while the business has not authorized AI (agents are silent then).
   const aiTermsAccepted = useAiTermsAccepted(agentMode === 'ai_active')
   useEffect(() => {
@@ -658,8 +668,12 @@ export function SoftThreadPane({
                 >
                   {chatStageLabel(conversation.status)}
                 </span>
-                <span className="rounded-md bg-au-tint-eef0ff px-2 py-0.5 text-[10px] font-medium text-au-ink-4a46e5">
-                  {agentModeLabel(agentMode)}
+                <span
+                  className="rounded-md bg-au-tint-eef0ff px-2 py-0.5 text-[10px] font-medium text-au-ink-4a46e5"
+                  title={aiTruth?.reason}
+                  data-testid="soft-ai-truth-chip"
+                >
+                  {aiTruth && aiTruth.state !== 'ia' ? aiTruth.label : agentModeLabel(agentMode)}
                 </span>
                 {conversation.tags.map((t) => {
                   const def = tagDefs.find((d) => d.key === t)
@@ -752,10 +766,14 @@ export function SoftThreadPane({
                     ? `${conversation.agentLabel || 'Agente'} está atendiendo`
                     : agentMode === 'paused'
                       ? 'Agente en pausa'
-                      : 'Control humano'}
+                      : aiTruth
+                        ? aiTruth.state === 'off'
+                          ? 'Sin IA'
+                          : aiTruth.label
+                        : 'Control humano'}
                 </p>
-                <p className="truncate text-[12px] text-slate-500">
-                  {agentModeLabel(agentMode)}
+                <p className="truncate text-[12px] text-slate-500" title={aiTruth?.reason}>
+                  {aiTruth && aiTruth.state !== 'ia' ? aiTruth.reason : agentModeLabel(agentMode)}
                   {aiBusy ? ' · procesando…' : ` · ${agentActionsToday} ${agentActionsToday === 1 ? 'acción' : 'acciones'} hoy`}
                 </p>
               </div>
@@ -769,18 +787,19 @@ export function SoftThreadPane({
                 >
                   <Pause className="h-4 w-4" aria-hidden />
                 </button>
-              ) : (
+              ) : !aiTruth || aiTruth.canReturnToAi ? (
+                // "Devolver a IA" only when the line answers; on a line that is off the chat stays with the team.
                 <button
                   type="button"
                   onClick={onResumeAi}
                   disabled={aiBusy}
-                  aria-label="Reanudar IA"
+                  aria-label={aiTruth ? 'Devolver a IA' : 'Reanudar IA'}
                   className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-white px-3 text-[13px] font-semibold text-emerald-800 ring-1 ring-emerald-200 disabled:opacity-50"
                 >
                   <Play className="h-4 w-4" aria-hidden />
-                  Reanudar
+                  {aiTruth ? 'Devolver a IA' : 'Reanudar'}
                 </button>
-              )}
+              ) : null}
               {agentMode !== 'human' ? (
                 <button
                   type="button"
@@ -1038,7 +1057,9 @@ export function SoftThreadPane({
                   ? 'IA activa'
                   : agentMode === 'paused'
                     ? 'IA en pausa'
-                    : 'Humano'}
+                    : aiTruth
+                      ? `${aiTruth.label} · ${aiTruth.reason}`
+                      : 'Humano'}
               {aiBusy ? ' · procesando…' : ''}
             </span>
             {agentMode === 'ai_active' ? (
@@ -1053,15 +1074,19 @@ export function SoftThreadPane({
               </>
             ) : (
               <>
-                <span aria-hidden className="text-slate-300">·</span>
+                {agentMode === 'paused' || !aiTruth || aiTruth.canReturnToAi ? (
+                  <span aria-hidden className="text-slate-300">·</span>
+                ) : null}
                 {agentMode === 'paused' ? (
                   <button type="button" onClick={onTakeOver} disabled={aiBusy} className="font-medium text-slate-600 hover:text-slate-900 disabled:opacity-40">
                     Tomar control
                   </button>
                 ) : null}
-                <button type="button" onClick={onResumeAi} disabled={aiBusy} className="font-medium text-slate-600 hover:text-emerald-700 disabled:opacity-40">
-                  {agentMode === 'paused' ? 'Reanudar IA' : 'Activar IA'}
-                </button>
+                {!aiTruth || aiTruth.canReturnToAi ? (
+                  <button type="button" onClick={onResumeAi} disabled={aiBusy} className="font-medium text-slate-600 hover:text-emerald-700 disabled:opacity-40">
+                    {aiTruth ? 'Devolver a IA' : agentMode === 'paused' ? 'Reanudar IA' : 'Activar IA'}
+                  </button>
+                ) : null}
               </>
             )}
           </div>

@@ -1,3 +1,17 @@
+## 2026-10-15 — Agentes IA 2.0 Phase 1 · A "One switch and the truth" (claudio/agents2-a-status)
+
+- One switch per line: POST /api/chat/agents/[id]/lines/[socialAccountId]/power {on, takeOver?}; GET /lines gives each
+  line's truth (lineAiStatus off/checking/on/problem + single fix) and the check progress / failed answers. ON never
+  writes tenant flags (409 AI_NOT_ENABLED), refuses terms/pause/model/provider/products/other agent, reuses a valid
+  green run (< 30 d, same version+model+suite) or starts the 6-case quick check; a green quick run activates the line
+  (conditional finish, still-latest run) and then sweeps waiting chats. OFF cancels pending checks and deactivates.
+- No SQL: the quick run (cases marked quick, own 24-hex hash) is the intent; outcome in summary.activation.
+- Chats follow the line: effectiveConversationAiMode (column > agentState > line unless a person wrote in 24 h) used by
+  the resolver (opt-in via conversationId) and the inbox (aiLine/aiStatus DTO); chip "IA" only when the line answers.
+- Tests: honesty case ("¿sos un bot?"), off-topic must not answer trivia; agents2-a-status.test.ts 27/27.
+- Proof: tsc 0, eslint 0 on touched files, test:soft-ai 488/488, test:chat-harden 643/643, test:security 271/271,
+  test:soft-ai-agent 314/314.
+
 ## 2026-10-15 — SecureDog release BLOCK fixed: no store-wide free-shipping rule; every free-shipping synonym checked (claudio/agent-pack-builder)
 
 - INT-84 (High): the threshold amount was an allowed price anywhere ("los 3 en ₡25.000") → threshold removed from the agent entirely

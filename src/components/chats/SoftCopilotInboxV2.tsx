@@ -1083,6 +1083,11 @@ export function SoftCopilotInboxV2() {
               agentEmoji: incoming.agentEmoji ?? before.agentEmoji,
               agentStateDot: incoming.agentStateDot ?? before.agentStateDot,
               pendingSuggestionText: incoming.pendingSuggestionText ?? before.pendingSuggestionText,
+              // Agentes IA 2.0: keep the line truth; the chat status is recomputed from it + the new aiMode.
+              aiLine: incoming.aiLine !== undefined ? incoming.aiLine : before.aiLine,
+              aiPersistedMode: incoming.aiPersistedMode !== undefined ? incoming.aiPersistedMode : before.aiPersistedMode,
+              aiHumanRecent: incoming.aiHumanRecent ?? before.aiHumanRecent,
+              aiStatus: incoming.aiStatus ?? before.aiStatus,
               // PATCH never changes the snooze; keep what the list knew.
               snooze: incoming.snooze !== undefined ? incoming.snooze : before.snooze,
             }

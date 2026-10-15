@@ -1071,6 +1071,7 @@ export default function AgentesConfigPage() {
                             }}
                           >
                             <input
+                              autoComplete="off" data-lpignore="true"
                               className={`w-36 ${FIELD_CLASS} px-2.5 py-1.5`}
                               placeholder="Agregar nombre"
                               value={introDraft}

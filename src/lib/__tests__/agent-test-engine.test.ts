@@ -210,3 +210,27 @@ describe('2026-10-14: no wasted test runs; a quiet channel says why', () => {
     assert.match(read('src/app/config/agentes/page.tsx'), /agentAnswers=\{selected\.status === 'live' && selected\.operationMode === 'ai_full'\}/)
   })
 })
+
+describe('2026-10-15 PatchHouse activation run: grader knows real prices; agent stays on topic', () => {
+  it('every judged case carries the verified product list; the grader prompt includes it', async () => {
+    const { generateAgentSuite: gen, judgeFacts } = await import('@/lib/soft-ai/test-engine/generate')
+    const { judgePrompt: jp, JUDGE_INSTRUCTIONS } = await import('@/lib/soft-ai/test-engine/grade')
+    const input = { agentName: 'X', systemInstructions: 'x'.repeat(80), products: [{ name: 'Dopamine Patch', sellingPrice: 9900, currentStock: 10 }], payment: { shareable: false, sinpeNumber: null } }
+    const facts = judgeFacts(input)
+    assert.match(facts, /Dopamine Patch: ₡9.900/)
+    const { cases } = gen(input)
+    const judged = cases.filter((c) => c.grading === 'judge')
+    assert.ok(judged.length > 0)
+    for (const c of judged) assert.ok(c.expect.some((e) => e.kind === 'judge' && e.facts === facts), c.id)
+    const buy = cases.find((c) => c.id === 'buy-intent')!
+    const prompt = JSON.parse(jp(buy, { text: 'El Dopamine Patch sale en ₡9 900', escalate: false, needsHuman: false } as never, 'r', facts))
+    assert.equal(prompt.datos_verificados_del_negocio, facts)
+    assert.match(JUDGE_INSTRUCTIONS, /NO es inventado/)
+    assert.match(readFileSync('src/lib/soft-ai/test-engine/run.ts', 'utf8'), /judge\(tc, turn, rubric\.rubric, \{[^}]*\}, rubric\.facts\)/)
+  })
+  it('selling rules forbid answering off-topic questions', async () => {
+    const { salesSystemBlock } = await import('@/lib/soft-ai/sales-state')
+    const block = salesSystemBlock({ catalog: [], shippingMethods: [], orderFields: [], salesScript: '', aiDisclosure: 'discreet', paymentShareable: true, paymentDigits: [], promo: null })
+    assert.match(block, /ajeno a la tienda[\s\S]*NO lo respondas/)
+  })
+})

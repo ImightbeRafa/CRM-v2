@@ -280,13 +280,14 @@ async function judge(
   turn: TurnForGrading,
   rubric: string,
   ctx: { tenantId: string; agentId: string; model: string; cost: { micros: number } },
+  facts?: string,
 ) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const response = await softAiResponsesCreate({
         model: resolveSoftAiModel(ctx.model),
         instructions: JUDGE_INSTRUCTIONS,
-        input: [{ type: 'message', role: 'user', content: judgePrompt(tc, turn, rubric) }],
+        input: [{ type: 'message', role: 'user', content: judgePrompt(tc, turn, rubric, facts) }],
         store: false,
         temperature: 0,
         reasoningEffort: 'low',
@@ -360,7 +361,7 @@ async function runCase(run: TestRunRow, tc: TestCase): Promise<{ result: CaseRes
     const rubric = tc.expect.find((e) => e.kind === 'judge')
     if (rubric && rubric.kind === 'judge') {
       const cost = { micros: 0 }
-      const verdict = await judge(tc, turn, rubric.rubric, { tenantId: run.tenantId, agentId: run.agentId, model: run.model, cost })
+      const verdict = await judge(tc, turn, rubric.rubric, { tenantId: run.tenantId, agentId: run.agentId, model: run.model, cost }, rubric.facts)
       costMicros += cost.micros
       pass = pass && verdict.pass
       if (!verdict.pass && verdict.reason) notes.push(verdict.reason)

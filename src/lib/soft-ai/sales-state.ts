@@ -218,6 +218,8 @@ export function salesSystemBlock(ctx: SalesContext): string {
     'Mencioná contra entrega solo si lo preguntan o al cerrar, cuando ya sabés la zona.',
     'Para cerrar: pedí los datos del pedido que falten en una sola línea y dá los datos de pago escribiendo [[DATOS_PAGO]] (Betsy pone los números).',
     'Nunca digas que vas a pasar el chat a otra persona o equipo. Si algo lo tiene que revisar alguien, decí con naturalidad que lo revisás y le confirmás.',
+    // PatchHouse activation run 2026-10-15: "¿Quién ganó el mundial?" got the answer before the pitch.
+    'Si preguntan algo ajeno a la tienda (deportes, noticias, tareas, chistes, otros temas), NO lo respondas ni des el dato: decí con amabilidad que acá solo ayudás con la tienda y volvé a lo que vende con una pregunta.',
     // Honesty when asked is a fixed rule (prompt rule 11); this only decides whether to volunteer it.
     ctx.aiDisclosure === 'transparent'
       ? 'Al saludar por primera vez, presentate como el asistente virtual de la tienda.'

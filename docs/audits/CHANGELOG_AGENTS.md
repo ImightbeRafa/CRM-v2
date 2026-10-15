@@ -1,3 +1,16 @@
+## 2026-10-15 — Agentes IA 2.0 Phase 1 integrated: one switch, honest status, better salesperson, never left waiting (claudio/agents2-phase1)
+
+- Plan: https://claude.ai/artifact/8kwFLUxjE529JXRpsBLYf1 (Rafael approved: quick 6-case check must pass; answer waiting chats of the last
+  24 h on power-on; a handed-off chat stays with the person until "Devolver a IA"). Built by three parallel builders (A status, B sales,
+  C waiting) from one spec + Advisor corrections; integrated here (B/A stub commits dropped; C's real waiting-sweep/handoff-notify kept).
+- B: technical failures send "Dame un momento y te confirmo 😊", keep the chat on IA and notify (loop cap 1/30 min); true hand-offs send
+  first, then flip to a person + notify; one model retry when it fits the budget; long replies shortened; quantity totals the customer
+  asked for; narrower payment cues (past-tense claims stay human); photos/voice notes ask in writing unless it is a receipt.
+- C: sweepWaitingChats on power-on (24 h window, budget-capped, newest first, re-arms the skipped job), periodic sweep in the chat
+  cron, notifyHandoff assigns + notifies per message, Devolver a IA answers the waiting message.
+- Proof (integration): test:soft-ai 568/568, chat-harden 643/643, security 271/271, ops 40/40, backups 21/21, agentes-ui 34/34,
+  soft-ai-agent 314/314, tsc 0, lint 0.
+
 ## 2026-10-15 — Agentes IA 2.0 Phase 1 · A "One switch and the truth" (claudio/agents2-a-status)
 
 - One switch per line: POST /api/chat/agents/[id]/lines/[socialAccountId]/power {on, takeOver?}; GET /lines gives each

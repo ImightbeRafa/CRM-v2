@@ -38,6 +38,34 @@
   Advisor GO with corrections (applied); Verifier round 1 FAIL (F1–F12) → fixed.
 - Not yet: no UI to see/edit combos (settings GET doesn't return them); combo prices don't follow product price
   changes; mixed carts (Trío + 1) hand off; prod test chat needs this branch deployed to show combos.
+## 2026-10-13 — Every cron ran twice; false "Respaldo parcial (14:00) FALLÓ" (claudio/health-alert-detail)
+
+- Alert 14:01:27Z "Error: Backup already running". Workers Logs (observability API): the real 0 14 run started
+  14:00:04 and finished OK (200, 100 s) at 14:01:44; a second /api/cron/backup/hot request at 14:01:26 hit the
+  advisory lock (correct) and emailed FALLÓ. Backup itself was fine.
+- Root cause: since 2026-10-13 06:40Z Cloudflare fires every cron twice per slot (scheduledTime ~:04 and ~:43 in the
+  same minute; same Worker version bd3a5009, deployed 05:43Z; /schedules lists 8 unique crons, no duplicates). Before
+  06:40 each slot ran once (~:43). Every job (chat automation, reports, logistics finalize…) was running twice.
+- Fix: Worker claims each cron minute once in the primary Durable Object's storage (`claimCronSlot`, RPC, sync KV — no blockConcurrencyWhile, so a storage error cannot reset the primary,
+  does not wake the container; fail-open after 5 s or on error). Backup routes: "already running" = 200
+  `{skipped:'already_running'}` (manual POST 409), no alert. Helpers: src/lib/ops/cron-slot.ts.
+- Verifier PASS WITH NOTES (blockConcurrencyWhile removed). Open: skipped hot backup has no staleness alert (pre-existing).
+- Proof: tsc 0, worker tsc 0, eslint 0, test:ops 40/0, test:backups 21/0, esbuild bundle OK. Not deployed.
+
+## 2026-10-12 — Uptime alert emails say what broke and for how long (claudio/health-alert-detail)
+
+- Trigger: alert 2026-10-13 03:26Z "NO responde" (HTTP 503 db timeout, SELECT 1 > 3 s on both checks), back
+  03:30Z. Site + /api/health 200 in < 0.5 s afterwards. Read-only prod DB look was blocked by the auto-mode guard.
+- Worker watchdog (src/cf-container-worker.ts) keeps the same checks (every 5 min, 2 tries 20 s apart, Resend direct)
+  and adds: 15 s check limit (a hung container counts as down), cause in plain words (Supabase slow / Supabase error /
+  app error / container unreachable / no answer), CR time + UTC, both attempts with timings, what to do, links
+  (CF Worker logs, Supabase + Cloudflare status). Marker now stores the outage (start, cause, rounds, 2 h, rewritten each round): hourly
+  "SIGUE sin responder (N min)" reminder instead of a silent re-alert, and "volvió a responder (caído ~N min)" with
+  start/end, cause and DB speed. Old "1" marker handled (no duplicate email).
+- /api/health returns `dbMs` (number only). Texts + decisions in src/lib/ops/health-watch-text.ts (pure, tested).
+- Verifier PASS WITH NOTES, all fixed: marker 2 h (not 24 h, no stale "caído 6 h"), cause follows the latest
+  failure, body read inside the 15 s limit, unsent Resend email retried next round.
+- Proof: tsc 0, worker tsc 0, eslint 0 on touched files, test:ops 38/0, esbuild bundle OK. Not deployed.
 
 ## 2026-10-09 — Agent: saved replies with images, promo, fewer hand-offs (claudio/agent-f3-studio)
 

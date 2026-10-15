@@ -55,6 +55,13 @@ export interface PerformBackupOptions {
 const BACKUP_LOCK_KEY = 815_420_026;
 const BACKUP_LOCK_SUBKEY = 1;
 
+const ALREADY_RUNNING = 'Backup already running';
+
+/** Another run holds the lock: not a failure (that run is doing the work), so no alert. */
+export function isBackupAlreadyRunning(error: unknown): boolean {
+  return error instanceof Error && error.message === ALREADY_RUNNING;
+}
+
 /**
  * Only the Cloudflare Worker sets BACKUP_WRITER=1 (in its own code). The Railway preview shares the
  * production database and must never write or prune backups, even if R2 keys were copied there.
@@ -148,7 +155,7 @@ export async function performBackup(options: PerformBackupOptions): Promise<Back
       await tx`SET LOCAL idle_in_transaction_session_timeout = '120s'`;
       await tx`SET LOCAL application_name = 'betsy-backup'`;
       const [lock] = await tx<{ ok: boolean }[]>`SELECT pg_try_advisory_xact_lock(${BACKUP_LOCK_KEY}, ${BACKUP_LOCK_SUBKEY}) AS ok`;
-      if (!lock?.ok) throw new Error('Backup already running');
+      if (!lock?.ok) throw new Error(ALREADY_RUNNING);
       const discovered = await discoverPublicTables(tx);
       const discoveredNames = discovered.map((t) => t.tableName);
       const requiredLmMissing = REQUIRED_LM_TABLES.filter((t) => !discoveredNames.includes(t));

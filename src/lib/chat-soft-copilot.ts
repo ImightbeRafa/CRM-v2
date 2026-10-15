@@ -42,6 +42,8 @@ export interface SoftConversation extends ChatConversation {
   isDemo?: boolean
   /** Soft Agent Layer trust labels (optional; A1). */
   agentLabel?: string | null
+  /** Live agent serving this chat's line (read-only; "Corregir" falls back to it when a message has no snapshot). */
+  agentId?: string | null
   agentEmoji?: string | null
   agentStateDot?: 'IA' | 'Sug' | 'Hum' | null
   pendingSuggestionText?: string | null

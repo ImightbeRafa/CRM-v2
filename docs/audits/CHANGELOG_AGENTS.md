@@ -1,3 +1,16 @@
+## 2026-10-15 — Agentes IA 2.0 · E "Corregir" (live tuning) (claudio/agents2-tuning)
+
+- Owner fixes a wrong AI answer in the test chat ("👍 Bien" / "Corregir" under each reply, "Volver a preguntar" rewinds and re-sends)
+  and in real chats ("Corregir" on AI messages; update_config only). Shared panel: components/aurora/agentes/CorrectionPanel.tsx.
+- POST /api/chat/agents/[id]/tune (update_config, same-origin, 12/min per person, tenant from session, audited 'chat_agent_tune').
+  Save as: example (default; P/R pair in the agent's own FAQ "<agent> · Correcciones", same question replaced, oldest dropped, kept
+  ≤ 2 400 chars so it fits the 3 000-char FAQ prompt budget; new approved version bound at priority 10, old unbound), saved reply
+  (guide playbook fix_<slug>), or rule (note → Siempre/Nunca, max 10 each, 8 KB guard). Refuses confirmation wording, payment
+  numbers (8+ digits / IBAN; use [[DATOS_PAGO]]) and ₡ amounts the agent can't quote (named). Customer phones/emails masked.
+- Inbox DTO gains read-only agentId (live agent of the line); the message's own send snapshot agentId wins.
+- No SQL, no AI call to save. Tests: agents2-tuning.test.ts 17/17 (integrator registers it).
+- Proof: tsc 0, eslint 0 on touched files, test:soft-ai 584/584, test:chat-harden 643/643, test:security 271/271, test:agentes-ui 34/34.
+
 ## 2026-10-15 — Agentes IA 2.0 Phase 1 integrated: one switch, honest status, better salesperson, never left waiting (claudio/agents2-phase1)
 
 - Plan: https://claude.ai/artifact/8kwFLUxjE529JXRpsBLYf1 (Rafael approved: quick 6-case check must pass; answer waiting chats of the last

@@ -154,6 +154,7 @@ export async function enrichConversationDtosWithAgents(
           ...item,
           ...truth,
           agentLabel: 'Sin agente',
+          agentId: null,
           agentEmoji: null,
           // "IA" only when the chat is really answered by the AI (never for a line without a live agent).
           agentStateDot: aiStatus.state === 'ia' ? dotFromChatAiStatus(aiStatus) : null,
@@ -169,6 +170,7 @@ export async function enrichConversationDtosWithAgents(
           name: agent.name,
           operationMode: agent.operationMode,
         }),
+        agentId: agent.id,
         agentEmoji: agent.emoji,
         agentStateDot: dotFromChatAiStatus(aiStatus),
         pendingSuggestionText: suggestionByConvo.get(item.id) || null,

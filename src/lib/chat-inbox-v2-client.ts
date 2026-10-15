@@ -135,6 +135,7 @@ export function listDtoToSoftConversation(
       ? { id: dto.assignedUser.id, name: dto.assignedUser.name, image: dto.assignedUser.image ?? null }
       : null,
     agentLabel: dto.agentLabel ?? null,
+    agentId: dto.agentId ?? null,
     agentEmoji: dto.agentEmoji ?? null,
     agentStateDot: dto.aiLine !== undefined ? dotForDto(dto) : dto.agentStateDot ?? null,
     pendingSuggestionText: dto.pendingSuggestionText ?? null,

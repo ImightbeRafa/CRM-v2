@@ -113,6 +113,8 @@ export type ChatConversationListItemDto = {
   }
   clientId: string | null
   agentLabel?: string | null
+  /** Live agent serving the line (agent-inbox-enrich.ts); read-only, used by "Corregir". */
+  agentId?: string | null
   agentEmoji?: string | null
   agentStateDot?: 'IA' | 'Sug' | 'Hum' | null
   pendingSuggestionText?: string | null

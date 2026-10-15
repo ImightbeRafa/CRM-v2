@@ -126,9 +126,12 @@ describe('lineAiStatus: one truth per line', () => {
     assert.equal(drift.retestSuggested, true)
     assert.match(drift.hint, /conviene volver a probar/)
   })
-  it('real outcomes: an unexpected skip of the last AI turn is a problem in plain Spanish', () => {
+  it('real outcomes: an unexpected skip of the last AI turn is a warning on a line that still answers (Verifier F2)', () => {
     const s = line({ lastTurnProblem: { status: 'skipped', reason: 'token_unhealthy' } })
-    assert.equal(s.code, 'LAST_TURN')
+    assert.equal(s.state, 'on')
+    assert.equal(s.lastTurnWarning, true)
+    assert.equal(chatAiStatus({ line: s as never, conversationAiMode: null, persistedAiMode: null, humanWroteRecently: false }).state, 'ia')
+    assert.equal(isUnexpectedTurnOutcome({ status: 'skipped', skipReason: 'safe_line_repeat' }), false)
     assert.match(s.hint, /perdió la conexión/)
     assert.equal(isUnexpectedTurnOutcome({ status: 'delivered', skipReason: null }), false)
     assert.equal(isUnexpectedTurnOutcome({ status: 'skipped', skipReason: 'human_before_send' }), false)

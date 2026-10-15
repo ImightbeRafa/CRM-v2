@@ -219,12 +219,14 @@ export function decideInbound(input: {
       })
     }
     steps.push({ step: 'payment_info', outcome: 'handoff', reason: 'payment_info_not_shared' })
-    const shortcut = seedShortcut('sys_handoff_payment', input.shortcuts)
+    // A how-to-pay QUESTION is not a payment claim: "Enseguida te paso cómo pagar 😊" (same line as the model path),
+    // never "¡Gracias! … ya lo reviso" (Rafael 2026-10-09; Verifier 2026-10-15 F3).
+    const shortcut = seedShortcut('sys_payment_soon', input.shortcuts)
     const text = renderShortcutTemplate(shortcut.body, { facts: input.brandFacts })
     return finish({
       text,
       intent: 'payment_info',
-      shortcutKey: 'sys_handoff_payment',
+      shortcutKey: 'sys_payment_soon',
       escalate: true,
       paymentClass,
       steps,

@@ -309,6 +309,21 @@ async function persistSkippedTurn(input: {
   }
 }
 
+/**
+ * Daily token caps sum turns by createdAt (agent-claim-gates loadDailyBilledTokens). A swept / resumed message re-runs
+ * on the row first written when it was skipped (same delivery key), so the answering run re-stamps the row: today's
+ * date and the agent that actually answers (Verifier 2026-10-15 F1).
+ */
+export function rebillTurnFields(input: { agentId: string; bindingId: string | null; model: string; agentVersion: number }) {
+  return {
+    createdAt: new Date(),
+    agentId: input.agentId,
+    bindingId: input.bindingId,
+    model: input.model,
+    agentVersion: input.agentVersion,
+  }
+}
+
 export type AgentTurnDispatchResult =
   | { status: 'skipped'; reason?: string }
   | { status: 'suggested'; turnId: string }
@@ -633,6 +648,8 @@ export async function executeAgentLayerTurn(
         errorCode: decision.escalate ? decision.shortcutKey : null,
       },
       update: {
+        // A re-armed (swept) message reuses its skipped row: bill it today, to the agent that answers now (Verifier F1).
+        ...rebillTurnFields({ agentId: resolved.agent.id, bindingId: resolved.binding.id, model: resolved.agent.model, agentVersion: resolved.agent.version }),
         status: 'generated',
         outputText: handledText,
         outputHash,
@@ -808,6 +825,8 @@ export async function executeAgentLayerTurn(
       errorCode: llm.errorCode || (needsHuman ? policy.reasons[0] || null : null),
     },
     update: {
+      // Re-armed (swept) message: its row was created when it was skipped — bill these tokens today, to this agent (F1).
+      ...rebillTurnFields({ agentId: resolved.agent.id, bindingId: resolved.binding.id, model: resolved.agent.model, agentVersion: resolved.agent.version }),
       status: 'generated',
       outputText: finalText,
       outputHash,

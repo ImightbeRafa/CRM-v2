@@ -59,6 +59,8 @@ export type LineAiStatus = {
   failedCases?: string[]
   /** On, but the agent changed since its check (version drift): it keeps answering; re-testing is suggested. */
   retestSuggested?: boolean
+  /** On and answering, but the last real AI turn in the past hour was skipped for an unexpected reason (see hint). */
+  lastTurnWarning?: boolean
 }
 
 export type LineRunInput = {
@@ -128,6 +130,8 @@ export const EXPECTED_TURN_SKIPS = new Set([
   'window_closed',
   'trigger_missing',
   'conversation_missing',
+  // B's loop cap: a second technical failure handed the chat to a person on purpose.
+  'safe_line_repeat',
 ])
 
 const TURN_REASON_COPY: Record<string, string> = {
@@ -278,8 +282,12 @@ export function lineAiStatus(input: LineAiInput): LineAiStatus {
   if (input.budget.tenantExhausted || input.budget.agentExhausted) {
     return st('problem', 'NO_BUDGET', 'Sin presupuesto de IA hoy', 'Se renueva a las 6:00 pm (hora de Costa Rica) o pedí subir el presupuesto.')
   }
+  // Every switch above is fine, so the line answers: a recent odd skip is a warning, never "Sin IA" on every chat
+  // (the line keeps answering — showing it off would break "if it says IA, it answers" the other way; Verifier F2).
   if (input.lastTurnProblem) {
-    return st('problem', 'LAST_TURN', 'La IA no respondió', `En el último chat ${turnProblemCopy(input.lastTurnProblem)}. Revisá la línea.`)
+    return st('on', 'ON', 'IA respondiendo', `Atención: en el último chat ${turnProblemCopy(input.lastTurnProblem)}.`, {
+      lastTurnWarning: true,
+    })
   }
   if (input.unlock.versionWarning) {
     return st('on', 'ON', 'IA respondiendo', 'Cambiaste el agente desde la prueba: sigue respondiendo, conviene volver a probar.', {

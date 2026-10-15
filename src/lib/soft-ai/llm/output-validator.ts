@@ -243,6 +243,31 @@ export function validateAgentOutput(input: {
   }
 }
 
+const PAYMENT_TOKEN_LINE_RE = /\[\[?\s*DATOS[_\s]PAGO\s*\]?\]/i
+
+/**
+ * B3: keep the reply within maxLines (non-empty lines): the first lines, the [[DATOS_PAGO]] line and the last question
+ * (the next step of the sale) are kept, in their original order. Pure; never adds words.
+ */
+export function shortenToMaxLines(text: string, maxLines: number): string {
+  const lines = (text || '').split(/\n/).filter((line) => line.trim().length > 0)
+  const limit = Math.max(1, Math.floor(maxLines))
+  if (lines.length <= limit + 2) return text
+  const keep = new Set<number>()
+  const tokenLine = lines.findIndex((line) => PAYMENT_TOKEN_LINE_RE.test(line))
+  if (tokenLine >= 0) keep.add(tokenLine)
+  let question = -1
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (/[?¿]/.test(lines[i])) {
+      question = i
+      break
+    }
+  }
+  if (question >= 0) keep.add(question)
+  for (let i = 0; i < lines.length && keep.size < limit; i += 1) keep.add(i)
+  return [...keep].sort((a, b) => a - b).map((i) => lines[i]).join('\n')
+}
+
 export type FinalOutputPolicy = {
   text: string
   ok: boolean
@@ -270,6 +295,11 @@ export function applyFinalOutputPolicy(input: {
   /** Promo makes shipping free: the store's fixed shipping amounts stop being valid. */
   freeShipping?: boolean
   freeShippingRule?: FreeShippingRule | null
+  /**
+   * Agentes IA 2.0 (B3): a model reply longer than the style allows is shortened by code (first lines + the payment
+   * line + the final question) instead of being held for a person. Off for the owner's own saved replies.
+   */
+  shortenLongReply?: boolean
 }): FinalOutputPolicy {
   const facts = input.brandFacts || { schemaVersion: 1 }
   const style = input.replyStyle || DEFAULT_REPLY_STYLE
@@ -284,6 +314,13 @@ export function applyFinalOutputPolicy(input: {
     reasons.push('template_leak')
   }
   text = extractShortcutTag(text).text
+  if (input.shortenLongReply) {
+    const short = shortenToMaxLines(text, style.maxLines)
+    if (short !== text) {
+      text = short
+      reasons.push('shortened')
+    }
+  }
   // Anything still spelling the internal tag (case-sensitive) is never sent.
   if (/ATAJO/.test(text)) reasons.push('tag_leak')
   // Nothing left to send = no reply (never an empty WhatsApp message).
@@ -331,7 +368,7 @@ export function applyFinalOutputPolicy(input: {
   })
 
   const merged = [...new Set([...reasons, ...validated.reasons])]
-  const blocking = merged.filter((reason) => reason !== 'purchase_summary_appended')
+  const blocking = merged.filter((reason) => reason !== 'purchase_summary_appended' && reason !== 'shortened')
   return {
     text,
     ok: blocking.length === 0,

@@ -53,6 +53,8 @@ export const RESERVED_SHORTCUT_KEYS = [
   'sys_handoff_media',
   'sys_handoff_optout',
   'sys_handoff_unavailable',
+  'sys_media_ask',
+  'sys_payment_soon',
   'sys_purchase_summary',
   'sys_payment_info',
   'sys_payment_ack',
@@ -82,6 +84,8 @@ const LEGACY_DEFAULT_BODIES = new Map<string, string>([
   ['No pudimos aplicar ese pago. Una persona del equipo te explica el siguiente paso.', 'Revisé el pago y todavía no me aparece aplicado. ¿Me reenviás el comprobante? 😊'],
   ['Tu pedido {{order.orderId}} quedó registrado por el equipo. Te escribimos si falta algún dato.', 'Listo, tu pedido {{order.orderId}} quedó registrado 😊 Te aviso cualquier cosa.'],
   ['El precio sale del inventario. Envío: {{brand.shipping.summary}}. Pago: {{brand.payment.summary}}. ¿Cuál producto te interesa?', 'Envío: {{brand.shipping.summary}}. Pago: {{brand.payment.summary}}. ¿Cuál producto te interesa?'],
+  // Agentes IA 2.0: previous default of the safe line (sys_handoff_unavailable).
+  ['Perfecto, dame un momento y te confirmo 😊', 'Dame un momento y te confirmo 😊'],
 ])
 
 export function upgradeLegacyShortcutBody(body: string): string {
@@ -123,7 +127,28 @@ export const RESERVED_SHORTCUT_SEEDS: ShortcutDraft[] = [
     intents: ['other'],
     keywords: [],
     deliveryMode: 'verbatim',
-    body: 'Perfecto, dame un momento y te confirmo 😊',
+    // Agentes IA 2.0 (Rafael 2026-10-15): the safe line for a reply that cannot go out as written; chat stays on IA.
+    body: 'Dame un momento y te confirmo 😊',
+  },
+  {
+    // Agentes IA 2.0 (B6): a photo / audio / sticker that is not a receipt: ask in writing, the chat stays on IA.
+    key: 'sys_media_ask',
+    title: 'Recibí un audio o imagen',
+    kind: 'handoff',
+    intents: ['other'],
+    keywords: [],
+    deliveryMode: 'verbatim',
+    body: '¡Gracias! 😊 ¿Me contás por escrito qué necesitás?',
+  },
+  {
+    // Agentes IA 2.0 (B7): payment details are not shared by chat; the team sends them and the chat stays on IA.
+    key: 'sys_payment_soon',
+    title: 'Te paso cómo pagar',
+    kind: 'handoff',
+    intents: ['payment_info'],
+    keywords: [],
+    deliveryMode: 'verbatim',
+    body: 'Enseguida te paso cómo pagar 😊',
   },
   {
     key: 'sys_purchase_summary',

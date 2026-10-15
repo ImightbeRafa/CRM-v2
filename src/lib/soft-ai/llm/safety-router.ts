@@ -5,6 +5,7 @@
 
 import {
   classifyPaymentText,
+  hasPaymentWord,
   type PaymentClassification,
 } from '@/lib/soft-ai/payment-classifier'
 import { reservedShortcutBody } from '@/lib/soft-ai/shortcuts'
@@ -87,4 +88,29 @@ export function routeInboundSafety(input: {
     }
   }
   return { escalate: false, paymentClass }
+}
+
+/** Webhook placeholders for media without a caption ("[image]", "[sticker]"): not customer words. */
+const MEDIA_PLACEHOLDER_RE = /^\s*\[(image|video|audio|voice|document|sticker|imagen|archivo)\]\s*$/i
+
+/**
+ * Agentes IA 2.0 (B6). Media never reaches the model (no OCR). It is a receipt — a person checks it, the chat goes to
+ * the team — when the sale already gave the payment details (stage esperando_comprobante) or the caption / file name
+ * has a payment cue. Anything else (a product photo, an audio, a sticker) gets "¿Me contás por escrito…?" and the
+ * chat stays on IA.
+ */
+export type MediaInboundPlan = 'receipt' | 'ask_in_writing' | null
+
+export function mediaInboundPlan(input: {
+  messageType?: string | null
+  caption?: string | null
+  awaitingReceipt?: boolean
+}): MediaInboundPlan {
+  // Explicit (B6): a sticker is never a receipt and needs no person; a voice note is an audio.
+  if (input.messageType === 'sticker') return 'ask_in_writing'
+  if (!isMediaMessageType(input.messageType) && input.messageType !== 'voice') return null
+  const caption = MEDIA_PLACEHOLDER_RE.test(input.caption || '') ? '' : (input.caption || '')
+  if (input.awaitingReceipt) return 'receipt'
+  if (caption && (hasPaymentWord(caption) || classifyPaymentText(caption) !== 'non_payment')) return 'receipt'
+  return 'ask_in_writing'
 }

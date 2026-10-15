@@ -74,7 +74,8 @@ export const FORGE_WA_V2_FIXTURES: ReplayFixtureV2[] = [
   { id: 'v44', text: '¿Tienen catálogo en línea?', tag: 'website', expect: { paymentClass: 'non_payment', handoff: false } },
   { id: 'v45', text: '¿Abren los sábados?', tag: 'hours_location', expect: { paymentClass: 'non_payment', handoff: false } },
   { id: 'v46', text: 'Listo el SINPE', tag: 'payment_proof', expect: { paymentClass: 'payment_proof_or_risk', handoff: true } },
-  { id: 'v47', text: 'imagen simulada', tag: 'media', messageType: 'image', expect: { paymentClass: 'non_payment', handoff: true, messageType: 'image' } },
+  // Agentes IA 2.0 (B6): a photo with no payment cue is answered «¿Me contás por escrito…?» and stays on IA.
+  { id: 'v47', text: 'imagen simulada', tag: 'media', messageType: 'image', expect: { paymentClass: 'non_payment', handoff: false, messageType: 'image' } },
   { id: 'v48', text: '¿Cuál es la cuenta IBAN?', tag: 'payment_info', expect: { paymentClass: 'payment_info_safe', handoff: true, handoffWhenShared: false } },
 ]
 

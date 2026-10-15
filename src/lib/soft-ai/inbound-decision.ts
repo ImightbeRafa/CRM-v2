@@ -9,8 +9,9 @@ import {
   type ReplyStyle,
 } from '@/lib/soft-ai/brand-facts'
 import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
-import { classifyPaymentText, type PaymentClassification } from '@/lib/soft-ai/payment-classifier'
-import { routeInboundSafety } from '@/lib/soft-ai/llm/safety-router'
+import { classifyPaymentText, paymentHandoffReason, type PaymentClassification } from '@/lib/soft-ai/payment-classifier'
+import { mediaInboundPlan, routeInboundSafety } from '@/lib/soft-ai/llm/safety-router'
+import { HANDOFF_REASON, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
 import {
   matchVerbatimShortcut,
   renderShortcutTemplate,
@@ -21,6 +22,8 @@ import {
 
 export type DecisionStep = { step: string; outcome: string; reason?: string }
 
+export { HANDOFF_REASON, type TurnHandoff }
+
 export type InboundDecision = {
   handled: boolean
   text: string
@@ -28,6 +31,9 @@ export type InboundDecision = {
   shortcutKey: string | null
   escalate: boolean
   needsHuman: boolean
+  /** The reply text itself passed the output checks (it can be sent even when a person must also look). */
+  textOk: boolean
+  handoff: TurnHandoff | null
   reasons: string[]
   paymentClass: PaymentClassification
   highlightedAmounts: number[]
@@ -68,6 +74,7 @@ function finish(input: {
   shortcuts: RuntimeShortcut[]
   forceNeedsHuman?: boolean
   extraReasons?: string[]
+  handoff?: TurnHandoff | null
 }): InboundDecision {
   const policy = applyFinalOutputPolicy({
     text: input.text,
@@ -91,6 +98,9 @@ function finish(input: {
     shortcutKey: input.shortcutKey,
     escalate: input.escalate,
     needsHuman,
+    textOk: !policy.needsHuman,
+    // A reply that failed the checks is never sent as-is: a person reviews it (the customer gets the safe line).
+    handoff: input.handoff ?? (policy.needsHuman ? { kind: 'review', reason: HANDOFF_REASON.review } : null),
     reasons,
     paymentClass: input.paymentClass,
     highlightedAmounts: policy.highlightedAmounts,
@@ -109,6 +119,8 @@ export function decideInbound(input: {
   shortcuts: RuntimeShortcut[]
   /** Keyword replies not sent as-is this turn (their image would not go out): the model answers instead. */
   skipVerbatimIds?: ReadonlySet<string>
+  /** The sale already gave the payment details: a photo / file now is treated as the receipt (B6). */
+  awaitingReceipt?: boolean
 }): InboundDecision {
   const paymentClass = classifyPaymentText(input.inboundText)
   const steps: DecisionStep[] = [
@@ -119,6 +131,48 @@ export function decideInbound(input: {
     messageType: input.messageType,
     paymentClass,
   })
+
+  // B6: media never reaches the model. A receipt (payment details already given, or a payment cue in the caption)
+  // is a TRUE hand-off; anything else is answered "¿Me contás por escrito…?" and the chat stays on IA (a person is
+  // asked to look at photos / files / audios; a sticker needs nobody).
+  const mediaPlan = mediaInboundPlan({
+    messageType: input.messageType,
+    caption: input.inboundText,
+    awaitingReceipt: input.awaitingReceipt,
+  })
+  if (mediaPlan === 'ask_in_writing') {
+    steps.push({ step: 'safety', outcome: 'media_ask', reason: 'media_inbound' })
+    const shortcut = seedShortcut('sys_media_ask', input.shortcuts)
+    return finish({
+      text: renderShortcutTemplate(shortcut.body, { facts: input.brandFacts }),
+      intent: 'other',
+      shortcutKey: 'sys_media_ask',
+      escalate: false,
+      paymentClass,
+      steps,
+      facts: input.brandFacts,
+      replyStyle: input.replyStyle,
+      shortcuts: input.shortcuts,
+      handoff: input.messageType === 'sticker' ? null : { kind: 'review', reason: HANDOFF_REASON.review },
+    })
+  }
+  if (mediaPlan === 'receipt') {
+    steps.push({ step: 'safety', outcome: 'handoff', reason: 'media_inbound' })
+    const shortcut = seedShortcut('sys_handoff_media', input.shortcuts)
+    return finish({
+      text: renderShortcutTemplate(shortcut.body, { facts: input.brandFacts }),
+      intent: 'payment_proof',
+      shortcutKey: 'sys_handoff_media',
+      escalate: true,
+      paymentClass,
+      steps,
+      facts: input.brandFacts,
+      replyStyle: input.replyStyle,
+      shortcuts: input.shortcuts,
+      forceNeedsHuman: true,
+      handoff: { kind: 'handoff', reason: HANDOFF_REASON.payment },
+    })
+  }
 
   if (safety.escalate) {
     steps.push({ step: 'safety', outcome: 'handoff', reason: safety.reason })
@@ -135,6 +189,15 @@ export function decideInbound(input: {
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
+      handoff: {
+        kind: 'handoff',
+        reason:
+          safety.reason === 'opt_out'
+            ? HANDOFF_REASON.optOut
+            : safety.reason === 'media_inbound'
+              ? HANDOFF_REASON.payment
+              : paymentHandoffReason(input.inboundText),
+      },
     })
   }
 
@@ -170,6 +233,8 @@ export function decideInbound(input: {
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
       extraReasons: ['payment_info_not_shared'],
+      // B7: nobody can share the payment data by chat: the team sends it, the chat stays on IA.
+      handoff: { kind: 'review', reason: HANDOFF_REASON.paymentData },
     })
   }
 
@@ -192,6 +257,7 @@ export function decideInbound(input: {
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: verbatim.kind === 'handoff',
+      handoff: verbatim.kind === 'handoff' ? { kind: 'handoff', reason: HANDOFF_REASON.ownerReply } : undefined,
     })
   }
 
@@ -203,6 +269,8 @@ export function decideInbound(input: {
     shortcutKey: null,
     escalate: false,
     needsHuman: false,
+    textOk: false,
+    handoff: null,
     reasons: [],
     paymentClass,
     highlightedAmounts: [],

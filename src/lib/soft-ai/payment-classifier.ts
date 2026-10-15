@@ -118,8 +118,13 @@ export function hasPaymentRiskCue(text: string): boolean {
   return RISK_CUE_RE.test(text || '')
 }
 
+/** "Le envié 15 mil", "Te mandé ₡20.000", "Envié 15000 hace un rato": a payment claim even with no payment word (MEDIA-15). */
+const SENT_AMOUNT_CLAIM_RE =
+  /(?<![\p{L}])(envi[eé]|mand[eé]|pas[eé]|deposit[eé]|transfer[ií]|pagu[eé]|hice)(?:\s+\p{L}+){0,2}?\s+(?:₡\s?\d|\d+(?:[.,\s]\d{3})*\s*(?:mil|k|colones|rojos)(?![\p{L}])|\d{4,})/iu
+
 export function classifyPaymentText(text: string): PaymentClassification {
   const value = text || ''
+  if (SENT_AMOUNT_CLAIM_RE.test(value)) return 'payment_proof_or_risk'
   if (
     PROOF_CUE_RE.test(value) ||
     hasPaymentClaimCue(value) ||
@@ -159,7 +164,7 @@ const PAYMENT_INFO_QUESTION_RE =
   /(adelantad|anticipad|con\s+qu[eé]\s+banco|qu[eé]\s+bancos?|a\s+qu[eé]\s+(n[uú]mero|cuenta)|aceptan\s+(tarjetas?|sinpe|transferencias?|efectivo)|se\s+puede\s+pagar\s+con|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|cu[aá]ndo\s+(se\s+)?paga|pago\s+al\s+recibir|pagar\s+al\s+recibir)/iu
 /** Anything about the STATE of a payment or one already sent: never an info question (INT-93). */
 const PAYMENT_STATUS_CUE_RE =
-  /(acredit|se\s+aplic|aplicad|proces|reflej|v[aá]lid|correct|problema|est[aá]\s+bien|va\s+bien|se\s+hizo|se\s+ve|aparec|qued[oó]|entr[oó]|lleg[oó]|recib|vieron|ya\s+(lo|la|les|te)\s+(envi[eé]|mand[eé]|pas[eé]|hice|deposit[eé]|transfer[ií])|(mi|su)\s+(pago|sinpe|transferencia|dep[oó]sito))/iu
+  /(acredit|se\s+aplic|aplicad|proces|reflej|v[aá]lid|correct|problema|est[aá]\s+bien|va\s+bien|se\s+hizo|se\s+ve|aparec|qued[oó]|entr[oó]|lleg[oó]|recib|vieron|ya\s+(lo|la|les|te)\s+(envi[eé]|mand[eé]|pas[eé]|hice|deposit[eé]|transfer[ií])|(mi|su)\s+(pago|sinpe|transferencia|dep[oó]sito)|envi[eé]|mand[eé]|pas[eé]|hice|deposit[eé]|transfer[ií]|pagu[eé]|pagamos|cancel[eé]|(le|les|se\s+l[oa]s?)\s+(envi|mand|pas)|todo\s+bien|ya\s+est[aá])/iu
 
 function isPaymentInfoQuestion(value: string): boolean {
   return /[?¿]/.test(value) && PAYMENT_INFO_QUESTION_RE.test(value) && !PAYMENT_STATUS_CUE_RE.test(value)

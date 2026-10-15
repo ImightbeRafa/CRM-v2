@@ -108,3 +108,39 @@ describe('INT-95..99 hardening', () => {
     assert.ok(shortenToMaxLines(plain, 2).split('\n').length < plain.split('\n').length)
   })
 })
+
+describe('SecureDog re-review 2026-10-15: INT-100..102, MEDIA-15', () => {
+  it('INT-100: an info question that also claims a payment stays with a person', () => {
+    for (const t of [
+      '¿A qué número le hago el sinpe? Ya le envié 15 mil',
+      '¿A qué número es el sinpe? ayer les envié 15 mil',
+      '¿Con qué banco es el sinpe? Envié ₡15.000',
+      '¿El pago es adelantado? porque ya le envié todo',
+      '¿A qué número es el sinpe? Ya se los envié, ¿todo bien?',
+    ]) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+  it('INT-100: more "it is fine" replies are blocked in a payment conversation', () => {
+    for (const reply of ['Sí, todo bien 😊', 'Sí, llegó bien', 'Sí señor, ya está', 'Sí, ya se hizo', 'No hay ningún problema con tu pago', 'Perfecto, ya está listo tu pago', 'Sí, todo salió bien']) {
+      assert.ok(validateAgentOutput({ text: reply, citedToolNames: [], customerText: '¿A qué número es el sinpe?' }).reasons.includes('payment_status_claim'), reply)
+    }
+  })
+  it('MEDIA-15: claims with an amount but no payment word; context-wide backstop; any store payment talk = waiting for a receipt', async () => {
+    for (const t of ['Le envié 15 mil', 'Te mandé 20 mil', 'Envié ₡15.000 hace un rato']) assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    const { conversationPaymentContext } = await import('@/lib/soft-ai/llm/runtime')
+    assert.equal(conversationPaymentContext([{ direction: 'inbound', content: '[image]' }], '¿Les llegó?'), true)
+    assert.equal(conversationPaymentContext([{ direction: 'outbound', content: 'Hacé el SINPE a este mismo número 😊' }], '¿Ya lo vieron?'), true)
+    assert.equal(conversationPaymentContext([{ direction: 'inbound', content: 'hola' }], '¿tienen talla M?'), false)
+    assert.ok(validateAgentOutput({ text: 'Sí, ya lo vimos 😊', citedToolNames: [], customerText: '¿Ya lo vieron?', paymentContext: true }).reasons.includes('payment_status_claim'))
+    const { mediaAwaitingReceipt } = await import('@/lib/soft-ai/sales-state')
+    assert.equal(mediaAwaitingReceipt('image', [{ id: '1', direction: 'outbound', content: 'Hacé el SINPE a este mismo número 😊', sentAt: '' }], null), true)
+    assert.equal(mediaAwaitingReceipt('image', [{ id: '1', direction: 'outbound', content: '¿Qué talla buscás?', sentAt: '' }], null), false)
+  })
+  it('INT-101: OFF cancels before stamping; INT-102: periodic sweep never re-answers flag_off / missing_mode', () => {
+    const src = read('src/lib/soft-ai/agent-activation.ts')
+    assert.ok(src.indexOf('await cancelLineTestRuns(input.tenantId, input.agentId, account.id)') < src.indexOf("code: 'OFF' }"))
+    assert.equal(PERIODIC_REARM_SKIP_REASONS.has('flag_off'), false)
+    assert.equal(PERIODIC_REARM_SKIP_REASONS.has('missing_mode'), false)
+  })
+})

@@ -411,9 +411,10 @@ export async function powerOffLine(input: { tenantId: string; agentId: string; s
   if (!account) throw new ActivationRefusal('CHANNEL_NOT_FOUND')
   // SecureDog INT-95: a check that already passed may be activating right now — mark it void first so it undoes
   // itself (activateAfterQuickRun re-checks this mark after its own write).
+  // INT-101: cancel first (a finish() landing now can no longer overwrite the mark), then stamp OFF.
+  await cancelLineTestRuns(input.tenantId, input.agentId, account.id)
   const latest = await latestTestRun(input.tenantId, input.agentId, account.id).catch(() => null)
   if (latest) await recordRunActivation(input.tenantId, latest.id, { ok: false, code: 'OFF' }).catch(() => {})
-  await cancelLineTestRuns(input.tenantId, input.agentId, account.id)
   await deactivateAgentChannel({ tenantId: input.tenantId, agentId: input.agentId, socialAccountId: account.id, ...actorOf(input) })
 }
 

@@ -22,7 +22,7 @@ import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
  * chat goes to a person (SecureDog INT-93). Delivery wording ("te llega en 2 a 4 días") is not matched.
  */
 const PAYMENT_STATUS_REPLY_RE =
-  /(acredit|se\s+aplic|aplicad[oa]|reflej|(nos|me)\s+(lleg|entr)[oó]|ya\s+(nos\s+|me\s+)?(lleg|entr)[oó]|recibimos|recibido|lo\s+vimos|la\s+vimos|lo\s+tenemos|todo\s+en\s+orden|est[aá]\s+en\s+orden|es\s+correct[oa]|est[aá]\s+confirmad[oa]|qued[oó]\s+(pagad|confirmad))/iu
+  /(acredit|se\s+aplic|aplicad[oa]|reflej|(nos|me)\s+(lleg|entr)[oó]|ya\s+(nos\s+|me\s+)?(lleg|entr)[oó]|recibimos|recibido|lo\s+vimos|la\s+vimos|lo\s+tenemos|todo\s+en\s+orden|est[aá]\s+en\s+orden|es\s+correct[oa]|est[aá]\s+confirmad[oa]|qued[oó]\s+(pagad|confirmad)|lleg[oó]\s+bien|todo\s+(bien|listo|sali[oó])|ya\s+est[aá](?![\p{L}])|ya\s+se\s+hizo|(ning[uú]n|sin)\s+problema|list[oa]\s+(tu|el|su)\s+pago)/iu
 
 export type OutputValidationResult = {
   ok: boolean
@@ -203,6 +203,8 @@ export function validateAgentOutput(input: {
   freeShippingRule?: FreeShippingRule | null
   /** The customer's message: a reply about the state of a payment to a payment message is never sent (INT-93). */
   customerText?: string
+  /** The conversation is about a payment (recent payment words / media / payment already discussed): same backstop. */
+  paymentContext?: boolean
 }): OutputValidationResult {
   const reasons: string[] = []
   const text = input.text || ''
@@ -213,7 +215,7 @@ export function validateAgentOutput(input: {
   if (CREATED_CLAIM_RE.test(text)) reasons.push('write_claim')
   if (dealProblemWithRule(text, input.allowedDeals ?? [], input.freeShippingRule)) reasons.push('deal_offer')
   if (hasConfirmationWording(text)) reasons.push('confirmation_wording')
-  if (input.customerText && hasPaymentWord(input.customerText) && PAYMENT_STATUS_REPLY_RE.test(text)) {
+  if ((input.paymentContext || (input.customerText && hasPaymentWord(input.customerText))) && PAYMENT_STATUS_REPLY_RE.test(text)) {
     reasons.push('payment_status_claim')
   }
 

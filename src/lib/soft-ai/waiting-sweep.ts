@@ -56,8 +56,9 @@ const KICK_CONCURRENCY = 3
 export type SweepMode = 'explicit' | 'periodic'
 
 /** Turn skip reasons that mean "the line was not on yet" — they can clear by themselves. */
+// SecureDog INT-102: no 'flag_off' (Betsy's admin switched AI off on purpose) and no 'missing_mode' (old fail-closed
+// skips from before chats followed their line) — the periodic sweep must not send a late-reply wave after deploy.
 export const PERIODIC_REARM_SKIP_REASONS: ReadonlySet<string> = new Set([
-  'flag_off',
   'account_not_allowlisted',
   'binding_inactive',
   'agent_not_live',
@@ -65,7 +66,6 @@ export const PERIODIC_REARM_SKIP_REASONS: ReadonlySet<string> = new Set([
   'draft_agent',
   'model_not_allowed',
   'schema_not_ready',
-  'missing_mode',
   'not_activated',
   'ai_full_not_unlocked',
   'stale_version',

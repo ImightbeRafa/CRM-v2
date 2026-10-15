@@ -374,6 +374,8 @@ const MEDIA_LIKE_TYPES = new Set(['image', 'document', 'audio', 'video', 'voice'
 export function mediaAwaitingReceipt(messageType: string | null | undefined, history: SoftAiHistoryMessage[], ctx: SalesContext | null): boolean {
   if (!MEDIA_LIKE_TYPES.has(messageType || '')) return false
   if (history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || ''))) return true
+  // MEDIA-15: the store already talked about paying ("hacé el SINPE a este número") — a photo now is likely a receipt.
+  if (history.some((m) => m.direction === 'outbound' && PAYMENT_WORDS_RE.test(m.content || ''))) return true
   return ctx ? salesAwaitingReceipt(deriveSalesState({ history, inboundText: '', ctx }), history) : false
 }
 

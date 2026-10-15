@@ -422,6 +422,7 @@ export async function runSoftAiLlmRuntime(
         allowedDeals: input.salesAllowedDeals,
         freeShippingRule: input.salesFreeShippingRule,
         customerText: input.inboundText,
+        paymentContext: conversationPaymentContext(input.history, input.inboundText),
       })
     let validation = validate(finalText)
     // B7: a reply that breaks a rule (made-up amount, a deal, "ya quedó pagado"…) gets ONE rewrite with the reasons
@@ -596,6 +597,17 @@ export function retryFits(startedAt: number, timeoutMs: number, now = Date.now()
 /** Explicit kind of a non-answer: 'handoff' (a person takes the chat) or 'technical' (safe line, chat stays on IA). */
 export function escalateKindOf(handoff: TurnHandoff | null): 'technical' | 'handoff' | null {
   return handoff ? (handoff.kind === 'handoff' ? 'handoff' : 'technical') : null
+}
+
+/**
+ * MEDIA-15: the payment-status backstop also applies when the conversation (not only this message) is about a
+ * payment: a payment word or a photo / file / audio in the last 3 customer messages, or the store talked about paying.
+ */
+export function conversationPaymentContext(history: Array<{ direction: string; content?: string | null }>, inboundText: string): boolean {
+  const inbound = history.filter((m) => m.direction === 'inbound').slice(-3).map((m) => m.content || '')
+  const mediaRe = /\[(image|imagen|foto|audio|voice|video|document|documento|archivo|sticker)/i
+  if ([inboundText, ...inbound].some((t) => hasPaymentWord(t) || mediaRe.test(t))) return true
+  return history.some((m) => m.direction === 'outbound' && hasPaymentWord(m.content || ''))
 }
 
 export function modelHandoff(reason: string | undefined, inboundText: string): TurnHandoff {

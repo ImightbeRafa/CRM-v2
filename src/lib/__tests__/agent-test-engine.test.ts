@@ -183,3 +183,67 @@ describe('SecureDog F1 fixes', () => {
     assert.ok(cfg.includes("if (!record.model) return { unlocked: false, reason: 'model'"))
   })
 })
+
+describe('2026-10-14: no wasted test runs; a quiet channel says why', () => {
+  const read = (p: string) => readFileSync(p, 'utf8')
+  it('a run needs cases × this agent’s real turn size (+10 % grader), fallback when it has none', async () => {
+    const { estimateRunTokens, TEST_TURN_TOKENS_FALLBACK } = await import('@/lib/soft-ai/test-engine/run')
+    // The last case may start just under the cap (per-turn gate), so a run needs (cases − 1) turns free.
+    assert.equal(estimateRunTokens(14, [10_000, 0, 6_000]), 13 * 8_000)
+    assert.equal(estimateRunTokens(10, []), 9 * TEST_TURN_TOKENS_FALLBACK)
+    assert.equal(estimateRunTokens(0, []), 0)
+  })
+  it('the budget check runs before the run row exists (nothing spent, nothing half-done)', () => {
+    const src = read('src/lib/soft-ai/test-engine/run.ts')
+    const check = src.indexOf('if (needed > remaining) throw new TestRunBudgetError(remaining, needed, layer.testDailyTokenCap)')
+    const insert = src.indexOf('INSERT INTO "ChatAgentTestRun"')
+    assert.ok(check > 0 && insert > check)
+    assert.match(read('src/app/api/chat/agents/[id]/activation/route.ts'), /error instanceof TestRunBudgetError[\s\S]{0,900}No se gastó nada/)
+    assert.match(read('src/app/api/chat/agents/[id]/activation/route.ts'), /error\.neededTokens > error\.capTokens[\s\S]{0,300}hay que subir el presupuesto/)
+  })
+  it('a channel attended + AI allowed but not activated shows a plain warning', async () => {
+    const { unactivatedChannelCopy } = await import('@/app/config/agentes/ChannelsEditor')
+    assert.match(unactivatedChannelCopy('locked'), /NO responde todavía: falta «Probar y activar»/)
+    assert.match(unactivatedChannelCopy('stale'), /cambió desde la última activación/)
+    assert.match(read('src/app/config/agentes/ChannelsEditor.tsx'), /agentAnswers && row\.attendedByThisAgent && row\.aiAllowed && \(row\.realSend \|\| 'locked'\) !== 'unlocked'/)
+    // Solo humanos / Borrador are on purpose: no "NO responde" nudge then.
+    assert.match(read('src/app/config/agentes/page.tsx'), /agentAnswers=\{selected\.status === 'live' && selected\.operationMode === 'ai_full'\}/)
+  })
+})
+
+describe('2026-10-15 PatchHouse activation run: grader knows real prices; agent stays on topic', () => {
+  it('every judged case carries the verified product list; the grader prompt includes it', async () => {
+    const { generateAgentSuite: gen, judgeFacts } = await import('@/lib/soft-ai/test-engine/generate')
+    const { judgePrompt: jp, JUDGE_INSTRUCTIONS } = await import('@/lib/soft-ai/test-engine/grade')
+    const input = { agentName: 'X', systemInstructions: 'x'.repeat(80), products: [{ name: 'Dopamine Patch', sellingPrice: 9900, currentStock: 10 }], payment: { shareable: false, sinpeNumber: null } }
+    const facts = judgeFacts(input)
+    assert.match(facts, /Dopamine Patch: ₡9.900/)
+    const { cases } = gen(input)
+    const judged = cases.filter((c) => c.grading === 'judge')
+    assert.ok(judged.length > 0)
+    for (const c of judged) assert.ok(c.expect.some((e) => e.kind === 'judge' && e.facts === facts), c.id)
+    const buy = cases.find((c) => c.id === 'buy-intent')!
+    const prompt = JSON.parse(jp(buy, { text: 'El Dopamine Patch sale en ₡9 900', escalate: false, needsHuman: false } as never, 'r', facts))
+    assert.equal(prompt.datos_verificados_del_negocio, facts)
+    assert.match(JUDGE_INSTRUCTIONS, /NO es inventado/)
+    assert.match(readFileSync('src/lib/soft-ai/test-engine/run.ts', 'utf8'), /judge\(tc, turn, rubric\.rubric, \{[^}]*\}, rubric\.facts\)/)
+  })
+  it('selling rules forbid answering off-topic questions', async () => {
+    const { salesSystemBlock } = await import('@/lib/soft-ai/sales-state')
+    const block = salesSystemBlock({ catalog: [], shippingMethods: [], orderFields: [], salesScript: '', aiDisclosure: 'discreet', paymentShareable: true, paymentDigits: [], promo: null })
+    assert.match(block, /ajeno a la tienda[\s\S]*NO lo respondas/)
+  })
+})
+
+describe('2026-10-15: "En vivo" says when no line answers yet', () => {
+  it('notice only for En vivo + Responder with lines not activated', async () => {
+    const { liveWithoutActivationNotice: n } = await import('@/app/config/agentes/ChannelsEditor')
+    assert.equal(n({ status: 'draft', operationMode: 'ai_full', rows: [] }), null)
+    assert.equal(n({ status: 'live', operationMode: 'human_only', rows: [] }), null)
+    assert.match(n({ status: 'live', operationMode: 'ai_full', rows: [] })!, /no atiende ninguna línea/)
+    assert.match(n({ status: 'live', operationMode: 'ai_full', rows: [{ aiAllowed: true, realSend: 'locked' }] })!, /NO responde en ninguna línea/)
+    assert.match(n({ status: 'live', operationMode: 'ai_full', rows: [{ aiAllowed: true, realSend: 'unlocked' }, { aiAllowed: true, realSend: 'stale' }] })!, /1 de 2 líneas/)
+    assert.equal(n({ status: 'live', operationMode: 'ai_full', rows: [{ aiAllowed: true, realSend: 'unlocked' }] }), null)
+    assert.match(readFileSync('src/app/config/agentes/page.tsx', 'utf8'), /liveWithoutActivationNotice\(\{\s*status: selected\.status,\s*operationMode: selected\.operationMode,\s*rows: attendingRows,/)
+  })
+})

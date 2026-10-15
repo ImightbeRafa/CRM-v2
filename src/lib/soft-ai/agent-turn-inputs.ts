@@ -26,6 +26,8 @@ import {
   deriveSalesState,
   formatSalesTurnBlock,
   salesAllowedAmounts,
+  salesAllowedDeals,
+  salesFreeShippingRule,
   salesNeedsHuman,
   salesSystemBlock,
   type SalesContext,
@@ -230,10 +232,9 @@ export function assembleAgentRuntimeInputs(input: {
     salesTurnBlock: sales && salesState ? formatSalesTurnBlock(sales, salesState) : null,
     salesAllowedAmounts: sales ? salesAllowedAmounts(sales) : undefined,
     salesNeedsHuman: Boolean(sales && salesState && salesNeedsHuman(sales, salesState)),
-    salesAllowedDeals: sales?.promo
-      ? [...(sales.promo.freeShipping ? (['free_shipping'] as const) : []), ...(sales.promo.specialPrice ? (['special_price'] as const) : [])]
-      : [],
+    salesAllowedDeals: sales ? salesAllowedDeals(sales) : [],
     salesFreeShipping: Boolean(sales?.promo?.freeShipping),
+    salesFreeShippingRule: sales ? salesFreeShippingRule(sales) : null,
     salesTrace: salesState ? { stage: salesState.stage, said: salesState.said } : null,
     toolCtx: {
       ...input.toolCtxBase,

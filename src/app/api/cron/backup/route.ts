@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { performBackup } from '@/lib/backups/service';
+import { isBackupAlreadyRunning, performBackup } from '@/lib/backups/service';
 import { safeErrorCode, sendOpsAlert } from '@/lib/ops/alert-email';
 import { requireApiKey, requireCronBearer } from '@/lib/ops/cron-auth';
 
@@ -10,6 +10,14 @@ async function run(kind: 'full' | 'hot', trigger: 'cron' | 'manual') {
     const result = await performBackup({ kind });
     return NextResponse.json(result);
   } catch (error) {
+    if (isBackupAlreadyRunning(error)) {
+      // A second copy of the same run (e.g. a duplicated cron): the first one is doing the backup.
+      console.warn(`⏭️ ${kind} backup skipped: another run is in progress`);
+      return NextResponse.json(
+        { success: true, skipped: 'already_running', timestamp: new Date().toISOString() },
+        { status: trigger === 'cron' ? 200 : 409 },
+      );
+    }
     const code = safeErrorCode(error);
     console.error(`❌ ${trigger === 'cron' ? 'Scheduled' : 'Manual'} ${kind} backup failed:`, code);
     await sendOpsAlert({

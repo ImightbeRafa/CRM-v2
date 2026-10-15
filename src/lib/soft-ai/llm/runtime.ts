@@ -19,7 +19,7 @@ import {
 } from '@/lib/soft-ai/llm/model-policy'
 import { softAiToolDefinitions } from '@/lib/soft-ai/llm/tool-definitions'
 import { runA1Tool, type SoftAiToolRunContext } from '@/lib/soft-ai/llm/tool-runner'
-import { validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
+import { validateAgentOutput, type FreeShippingRule } from '@/lib/soft-ai/llm/output-validator'
 import { runAgentFallback } from '@/lib/soft-ai/llm/fallback'
 import { redactToolTrace } from '@/lib/soft-ai/llm/redact'
 import { billedTokens, estimateCostMicros } from '@/lib/soft-ai/llm/usage'
@@ -64,6 +64,8 @@ export type SoftAiLlmRuntimeInput = {
   salesAllowedDeals?: Array<'free_shipping' | 'special_price'>
   /** Promo makes shipping free: the store's fixed shipping amounts are no longer valid prices. */
   salesFreeShipping?: boolean
+  /** Store rule "envío gratis desde ₡X": the words pass only next to that amount (output-validator). */
+  salesFreeShippingRule?: FreeShippingRule | null
   /** Sales state for the turn trace (debug only; not sent to the model separately). */
   salesTrace?: { stage: string; said: Record<string, boolean> } | null
 }
@@ -326,6 +328,7 @@ export async function runSoftAiLlmRuntime(
         // Prices / shipping / totals listed for this turn by code are sourced (no lookup call needed).
         quoteAmounts: input.salesAllowedAmounts,
         allowedDeals: input.salesAllowedDeals,
+        freeShippingRule: input.salesFreeShippingRule,
       })
     let validation = validate(finalText)
     // B7: a reply that breaks a rule (made-up amount, a deal, "ya quedó pagado"…) gets ONE rewrite with the reasons

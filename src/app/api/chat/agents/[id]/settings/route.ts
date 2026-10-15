@@ -17,7 +17,7 @@ import {
 } from '@/lib/soft-ai/agent-settings'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
-import { loadSalesSetup, saveSalesSetup, SalesSetupNotReadyError } from '@/lib/soft-ai/agent-sales-setup'
+import { loadSalesSetup, saveSalesSetup, SalesRulesTooLargeError, SalesSetupNotReadyError } from '@/lib/soft-ai/agent-sales-setup'
 import { headlineHasNumberWords, parsePromo } from '@/lib/soft-ai/promo'
 import { dealProblem } from '@/lib/soft-ai/llm/output-validator'
 import { hasConfirmationWording } from '@/lib/soft-ai/shortcuts'
@@ -136,6 +136,9 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       try {
         await saveSalesSetup(auth.tenantId, agent.id, { salesRules: { promo } }, auth.userId)
       } catch (error) {
+        if (error instanceof SalesRulesTooLargeError) {
+          return NextResponse.json({ success: false, error: 'El guion de venta es demasiado largo: acortá algún texto o combo.' }, { status: 413 })
+        }
         if (error instanceof SalesSetupNotReadyError) {
           return NextResponse.json({ success: false, error: 'Este ajuste todavía no está disponible.' }, { status: 503 })
         }
@@ -165,6 +168,9 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       try {
         await saveSalesSetup(auth.tenantId, agent.id, { salesRules: { aiDisclosure: value } }, auth.userId)
       } catch (error) {
+        if (error instanceof SalesRulesTooLargeError) {
+          return NextResponse.json({ success: false, error: 'El guion de venta es demasiado largo: acortá algún texto o combo.' }, { status: 413 })
+        }
         if (error instanceof SalesSetupNotReadyError) {
           return NextResponse.json({ success: false, error: 'Este ajuste todavía no está disponible.' }, { status: 503 })
         }

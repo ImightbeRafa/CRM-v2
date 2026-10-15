@@ -16,9 +16,11 @@ export async function GET() {
     const timeout = new Promise<'timeout'>((resolve) => {
       timer = setTimeout(() => resolve('timeout'), 3_000)
     })
+    const started = Date.now()
     const db = await Promise.race([prisma.$queryRaw`SELECT 1`.then(() => 'ok' as const), timeout])
     if (db !== 'ok') return NextResponse.json({ ok: false, db: 'timeout' }, { status: 503, headers: NO_STORE })
-    return NextResponse.json({ ok: true }, { headers: NO_STORE })
+    // dbMs: database answer time, shown in the watchdog emails (a number only, no data).
+    return NextResponse.json({ ok: true, dbMs: Date.now() - started }, { headers: NO_STORE })
   } catch {
     return NextResponse.json({ ok: false, db: 'error' }, { status: 503, headers: NO_STORE })
   } finally {

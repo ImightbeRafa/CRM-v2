@@ -21,6 +21,7 @@ import {
   buildSuite,
   latestTestRun,
   startAgentTestRun,
+  TestRunBudgetError,
   TestRunBusyElsewhereError,
   TestRunDailyLimitError,
   TestRunNoProductsError,
@@ -157,6 +158,21 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if (error instanceof TestRunDailyLimitError) {
       return NextResponse.json(
         { success: false, error: 'Se alcanzó el límite de pruebas de hoy para este negocio. Volvé a intentar mañana.' },
+        { status: 429 },
+      )
+    }
+    if (error instanceof TestRunBudgetError) {
+      const k = (n: number) => `${Math.round(n / 1000).toLocaleString('es-CR')} mil`
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'TEST_BUDGET',
+          // Bigger than the whole day: waiting never helps, only a bigger budget does.
+          error:
+            error.neededTokens > error.capTokens
+              ? `Esta prueba necesita unos ${k(error.neededTokens)} tokens y el presupuesto diario de pruebas es de ${k(error.capTokens)}. No se gastó nada; hay que subir el presupuesto de pruebas.`
+              : `No alcanza el presupuesto de pruebas de hoy (quedan ${k(error.remainingTokens)} tokens, la prueba necesita unos ${k(error.neededTokens)}). No se gastó nada; se renueva a las 6:00 pm (hora de Costa Rica) o pedí subir el presupuesto.`,
+        },
         { status: 429 },
       )
     }

@@ -24,7 +24,7 @@ import { AgentPromoCard } from '@/app/config/agentes/AgentPromoCard'
 import { AgentRepliesCard } from '@/app/config/agentes/AgentRepliesCard'
 import { AgentBusinessCard } from '@/app/config/agentes/AgentBusinessCard'
 import { BrandFactsEditor } from '@/app/config/agentes/BrandFactsEditor'
-import { ChannelsEditor, type ChannelRow } from '@/app/config/agentes/ChannelsEditor'
+import { ChannelsEditor, liveWithoutActivationNotice, type ChannelRow } from '@/app/config/agentes/ChannelsEditor'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
 import { useConfigTrail } from '@/components/aurora/config/ConfigShell'
 import {
@@ -925,6 +925,19 @@ export default function AgentesConfigPage() {
                       El agente responde solo en los canales que activaste en Probar (Probar y activar).
                       Solo humanos lo apaga en todos sus canales.
                     </p>
+                    {(() => {
+                      // "En vivo + Responder" is not enough on its own: each channel needs a green Probar y activar.
+                      const notice = liveWithoutActivationNotice({
+                        status: selected.status,
+                        operationMode: selected.operationMode,
+                        rows: attendingRows,
+                      })
+                      return notice ? (
+                        <p role="status" className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-900 ring-1 ring-amber-200">
+                          {notice}
+                        </p>
+                      ) : null
+                    })()}
                     <div className="mt-3 flex flex-wrap gap-3">
                       <div>
                         <p className="text-xs font-medium text-slate-700">Operación</p>
@@ -1135,6 +1148,7 @@ export default function AgentesConfigPage() {
                 <div hidden={!detailVisible || tab !== 'canales'} role="tabpanel" className="space-y-4">
                   <ChannelsEditor
                     agentId={selected.id}
+                    agentAnswers={selected.status === 'live' && selected.operationMode === 'ai_full'}
                     canEdit={canEdit}
                     reloadToken={channelReload}
                     onUseForTest={(id) => {

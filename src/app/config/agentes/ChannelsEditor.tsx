@@ -24,18 +24,46 @@ export type ChannelRow = {
 
 const HINT = 'text-[11px] text-slate-500'
 
+/**
+ * A channel can look "on" (agent En vivo + Responder, attends it, AI allowed) and still stay quiet: real replies need
+ * a green "Probar y activar" for this agent version. Say it plainly instead of a grey hint (Rafael 2026-10-14).
+ */
+export function unactivatedChannelCopy(realSend: RealSendStatus): string {
+  return realSend === 'stale'
+    ? 'Este canal NO responde todavía: el agente cambió desde la última activación. Corré «Probar y activar» otra vez.'
+    : 'Este canal NO responde todavía: falta «Probar y activar» para este canal. Hasta entonces los mensajes quedan para una persona.'
+}
+
+/** Agent page "Estado y modo": say plainly when En vivo + Responder still answers nobody (no channel activated). */
+export function liveWithoutActivationNotice(input: {
+  status: string
+  operationMode: string
+  rows: Array<Pick<ChannelRow, 'aiAllowed' | 'realSend'>>
+}): string | null {
+  if (input.status !== 'live' || input.operationMode !== 'ai_full') return null
+  if (input.rows.length === 0) return 'En vivo, pero no atiende ninguna línea: elegí una en «Líneas» y después corré «Probar y activar».'
+  const off = input.rows.filter((r) => !r.aiAllowed || (r.realSend || 'locked') !== 'unlocked').length
+  if (off === 0) return null
+  return off === input.rows.length
+    ? 'En vivo, pero todavía NO responde en ninguna línea: falta «Probar y activar» (botón Probar arriba). Hasta entonces los chats quedan para una persona.'
+    : `${off} de ${input.rows.length} líneas todavía no responden: falta «Probar y activar» en esas líneas.`
+}
+
 export function ChannelsEditor({
   agentId,
   canEdit,
   reloadToken = 0,
   onUseForTest,
   onChannels,
+  agentAnswers = false,
 }: {
   agentId: string
   canEdit: boolean
   reloadToken?: number
   onUseForTest: (socialAccountId: string) => void
   onChannels?: (channels: ChannelRow[]) => void
+  /** Agent is En vivo + Responder: only then is a not-activated channel a surprise (Solo humanos / Borrador are on purpose). */
+  agentAnswers?: boolean
 }) {
   const [channels, setChannels] = useState<ChannelRow[]>([])
   const [schemaReady, setSchemaReady] = useState(true)
@@ -166,6 +194,11 @@ export function ChannelsEditor({
                       approvedVersion: row.approvedVersion ?? null,
                     })}
                   </p>
+                  {agentAnswers && row.attendedByThisAgent && row.aiAllowed && (row.realSend || 'locked') !== 'unlocked' ? (
+                    <p role="status" className="mt-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[12px] text-amber-800 ring-1 ring-amber-200">
+                      {unactivatedChannelCopy(row.realSend || 'locked')}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-4 text-[12px] text-slate-700">
                   <span className="inline-flex items-center gap-2">

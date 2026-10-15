@@ -12,6 +12,9 @@ import { isMissingRelation } from '@/lib/db-missing-relation'
 import { agentHasInventoryMap, loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import { canSharePaymentFacts, parseBrandFactsSafe } from '@/lib/soft-ai/brand-facts'
 import { runAgentTestTurn } from '@/lib/soft-ai/agent-turn'
+import { loadDailyTestTokens } from '@/lib/soft-ai/agent-claim-gates'
+import { readChatAgentLayerConfig } from '@/lib/feature-flags'
+import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { resolveSoftAiModel, softAiResponsesCreate, parseSoftAiResponseText, readSoftAiUsage } from '@/lib/soft-ai/llm/client'
 import { estimateCostMicros } from '@/lib/soft-ai/llm/usage'
 import { generateAgentSuite, type TestCase } from '@/lib/soft-ai/test-engine/generate'
@@ -72,6 +75,28 @@ export class TestRunDailyLimitError extends Error {
     super('TEST_RUN_DAILY_LIMIT')
     this.name = 'TestRunDailyLimitError'
   }
+}
+
+/** The suite cannot finish inside today's test budget: refused before any model call (nothing spent). */
+export class TestRunBudgetError extends Error {
+  constructor(readonly remainingTokens: number, readonly neededTokens: number, readonly capTokens: number) {
+    super('TEST_RUN_BUDGET')
+    this.name = 'TestRunBudgetError'
+  }
+}
+
+/** Typical test-turn size when this agent has none recently (system prompt + knowledge + reply, Grok, 2026-10). */
+export const TEST_TURN_TOKENS_FALLBACK = 9_000
+
+/**
+ * Test-budget tokens a run of `cases` must find free to finish: the per-turn gate (agent-turn.ts) only checks the
+ * budget BEFORE each turn, so the last case may still start just under the cap → (cases − 1) × this agent's
+ * average test turn. Grader calls are metered as AI usage, not against this budget. Pure (exported for tests).
+ */
+export function estimateRunTokens(cases: number, recentTurnTokens: number[]): number {
+  const real = recentTurnTokens.filter((t) => t > 0)
+  const perTurn = real.length ? Math.ceil(real.reduce((a, b) => a + b, 0) / real.length) : TEST_TURN_TOKENS_FALLBACK
+  return Math.max(0, cases - 1) * perTurn
 }
 
 export class TestRunBusyElsewhereError extends Error {
@@ -215,6 +240,20 @@ export async function startAgentTestRun(input: {
     systemInstructions: agent.systemInstructions,
     brandFacts: (agent as { brandFacts?: unknown }).brandFacts,
   })
+  // Never start a run that the daily test budget cannot finish: a half run spends money and still can't activate.
+  const [usedTokens, layer, recent] = await Promise.all([
+    loadDailyTestTokens(input.tenantId),
+    readChatAgentLayerConfig(input.tenantId).then((f) => parseChatAgentLayerConfig(f.config)),
+    prisma.chatAgentTurn.findMany({
+      where: { tenantId: input.tenantId, agentId: agent.id, mode: 'test', createdAt: { gte: new Date(Date.now() - 7 * 86_400_000) } },
+      select: { inputTokens: true, outputTokens: true },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    }),
+  ])
+  const needed = estimateRunTokens(cases.length, recent.map((t) => (t.inputTokens || 0) + (t.outputTokens || 0)))
+  const remaining = Math.max(0, layer.testDailyTokenCap - usedTokens)
+  if (needed > remaining) throw new TestRunBudgetError(remaining, needed, layer.testDailyTokenCap)
   const id = randomUUID()
   try {
     await prisma.$executeRaw`
@@ -241,13 +280,14 @@ async function judge(
   turn: TurnForGrading,
   rubric: string,
   ctx: { tenantId: string; agentId: string; model: string; cost: { micros: number } },
+  facts?: string,
 ) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const response = await softAiResponsesCreate({
         model: resolveSoftAiModel(ctx.model),
         instructions: JUDGE_INSTRUCTIONS,
-        input: [{ type: 'message', role: 'user', content: judgePrompt(tc, turn, rubric) }],
+        input: [{ type: 'message', role: 'user', content: judgePrompt(tc, turn, rubric, facts) }],
         store: false,
         temperature: 0,
         reasoningEffort: 'low',
@@ -321,7 +361,7 @@ async function runCase(run: TestRunRow, tc: TestCase): Promise<{ result: CaseRes
     const rubric = tc.expect.find((e) => e.kind === 'judge')
     if (rubric && rubric.kind === 'judge') {
       const cost = { micros: 0 }
-      const verdict = await judge(tc, turn, rubric.rubric, { tenantId: run.tenantId, agentId: run.agentId, model: run.model, cost })
+      const verdict = await judge(tc, turn, rubric.rubric, { tenantId: run.tenantId, agentId: run.agentId, model: run.model, cost }, rubric.facts)
       costMicros += cost.micros
       pass = pass && verdict.pass
       if (!verdict.pass && verdict.reason) notes.push(verdict.reason)

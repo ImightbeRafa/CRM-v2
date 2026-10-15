@@ -7,7 +7,9 @@ import 'server-only'
 
 import { prisma } from '@/lib/db'
 import { isColumnReady, isTableReady } from '@/lib/soft-ai/table-ready'
-import { EMPTY_PROMO, parsePromo, type AgentPromo } from '@/lib/soft-ai/promo'
+import { EMPTY_PROMO, headlineHasNumberWords, parsePromo, type AgentPromo } from '@/lib/soft-ai/promo'
+import { dealProblem } from '@/lib/soft-ai/llm/output-validator'
+import { hasConfirmationWording } from '@/lib/soft-ai/shortcuts'
 
 export type SalesRules = {
   voice: string | null
@@ -21,6 +23,66 @@ export type SalesRules = {
   neverSay: string[]
   /** Owner-configured active promotion (promo.ts). Part of the type so saving the script never wipes it. */
   promo: AgentPromo
+  /** Owner's combos at a fixed total (quoted only as listed). Optional so older callers keep compiling. */
+  bundles?: SalesRuleBundle[]
+}
+/** shippingIncluded: the owner says this combo's total already includes shipping (never inferred from a threshold). */
+export type SalesRuleBundle = { name: string; price: number; shippingIncluded: boolean }
+export const BUNDLE_NAME_MAX = 60
+
+export const MAX_BUNDLES = 8
+/** SQL 053 CHECK: octet_length("salesRules"::text) <= 8000. */
+export const SALES_RULES_MAX_OCTETS = 8000
+
+export class SalesRulesTooLargeError extends Error {
+  constructor() {
+    super('SALES_RULES_TOO_LARGE')
+    this.name = 'SalesRulesTooLargeError'
+  }
+}
+
+/** Size of the jsonb text Postgres checks: jsonb::text adds one space after every ':' and ',' outside strings. */
+export function salesRulesOctets(rules: SalesRules): number {
+  const json = JSON.stringify(rules)
+  let separators = 0
+  let inString = false
+  for (let i = 0; i < json.length; i += 1) {
+    const c = json[i]
+    if (inString) {
+      if (c === '\\') i += 1
+      else if (c === '"') inString = false
+    } else if (c === '"') inString = true
+    else if (c === ':' || c === ',') separators += 1
+  }
+  return Buffer.byteLength(json, 'utf8') + separators
+}
+
+/**
+ * Combos the owner sells at a fixed total. Names are shown to the model as data, so they must read like a product
+ * name and nothing else: no amounts in words, deal / free-shipping / confirmation wording, markers or sentence
+ * punctuation that could pose as a rule (INT-77, INT-87). Refused names drop the combo.
+ */
+export function bundleNameAllowed(name: string): boolean {
+  if (!name || name.length > BUNDLE_NAME_MAX) return false
+  if (/[\[\]<>{}:;.\n\r«»"`]/.test(name)) return false
+  if (headlineHasNumberWords(name) || dealProblem(name, []) || hasConfirmationWording(name)) return false
+  if (/\bantes\b|ahorr|regla|confirm|pag[oóa]|gratis|incluid|env[ií]o/i.test(name)) return false
+  return true
+}
+
+export function parseBundles(raw: unknown): SalesRuleBundle[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((x) => (x && typeof x === 'object' ? (x as Record<string, unknown>) : {}))
+    .filter((x) => typeof x.name === 'string' && typeof x.price === 'number' && Number.isFinite(x.price))
+    .filter((x) => (x.price as number) > 0 && (x.price as number) < 100_000_000)
+    .map((x) => ({
+      name: String(x.name).replace(/\s+/g, ' ').trim(),
+      price: Math.round(x.price as number),
+      shippingIncluded: x.shippingIncluded === true,
+    }))
+    .filter((b) => bundleNameAllowed(b.name))
+    .slice(0, MAX_BUNDLES)
 }
 export type SalesSetup = { offeredShippingMethodIds: string[]; salesRules: SalesRules }
 
@@ -34,6 +96,7 @@ export const EMPTY_SALES_RULES: SalesRules = {
   mustSay: [],
   neverSay: [],
   promo: EMPTY_PROMO,
+  bundles: [],
 }
 
 const text = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
@@ -53,6 +116,7 @@ export function parseSalesRules(raw: unknown): SalesRules {
     mustSay: list(r.mustSay, 10, 200),
     neverSay: list(r.neverSay, 10, 200),
     promo: parsePromo(r.promo),
+    bundles: parseBundles(r.bundles),
   }
 }
 
@@ -109,6 +173,8 @@ export async function saveSalesSetup(
     ids = wanted.filter((x) => ownSet.has(x))
   }
   const rules = patch.salesRules ? parseSalesRules({ ...current.salesRules, ...patch.salesRules }) : current.salesRules
+  // A clean error instead of the raw CHECK violation (all field caps together can pass 8 000 bytes).
+  if (salesRulesOctets(rules) > SALES_RULES_MAX_OCTETS) throw new SalesRulesTooLargeError()
   await prisma.$executeRaw`
     INSERT INTO "ChatAgentSettings" ("agentId", "tenantId", "offeredShippingMethodIds", "salesRules", "updatedBy", "updatedAt")
     VALUES (${agentId}, ${tenantId}, ${ids}::text[], ${JSON.stringify(rules)}::jsonb, ${userId}, NOW())

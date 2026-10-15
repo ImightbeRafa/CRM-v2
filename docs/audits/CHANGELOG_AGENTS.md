@@ -1,3 +1,88 @@
+## 2026-10-15 — SecureDog release BLOCK fixed: no store-wide free-shipping rule; every free-shipping synonym checked (claudio/agent-pack-builder)
+
+- INT-84 (High): the threshold amount was an allowed price anywhere ("los 3 en ₡25.000") → threshold removed from the agent entirely
+  (not shown, not an allowed amount; brandFacts.freeOver stays stored and unused as before).
+- INT-85/86: free-shipping wording now covers every synonym (incluido, no te cobro, ₡0, por nuestra cuenta, te lo mando
+  gratis…, negations excluded). Without a promo it passes only for a combo the OWNER marked shippingIncluded: one
+  clause, says "combo", only that combo's exact price, no personal/exception words. Also closes the production gap
+  where "con envío incluido" was never checked.
+- INT-87: combo names ≤60, no markers/sentence punctuation/shipping/payment/confirmation/deal words; shown «quoted» as
+  owner data; shipping facts text stripped of Betsy look-alikes. INT-88: grader told the facts are data. DATA-50:
+  .gitignore only un-ignores scripts/agent-pack/*.ts. INT-90: probar.ts checks OWNER/ADMIN; pack image names are bare
+  file names. Also: grader gets real prices (buy-intent false fail), selling rule never answers off-topic, test-run
+  budget pre-check, "Estado y modo" / Líneas warnings when En vivo still answers no line.
+- Proof: test:soft-ai 486/486, test:chat-harden 643/643, test:security 271/271, test:agentes-ui 34/34, tsc 0, lint 0,
+  next build OK.
+
+## 2026-10-15 — Why an activated-looking channel stayed quiet; no wasted test runs (claudio/agent-pack-builder)
+
+- PatchHouse looked on (agent En vivo + Responder, channel allowlisted, inbox chip IA) but never answered: the channel had
+  no aiFullUnlock because "Probar y activar" stopped at case 6/14 on the daily TEST budget (100k tokens, 13 test turns,
+  US$0.24 — cached input is billed at full price on Grok per our rate card). Status/mode were set by hand in Avanzado.
+- DeepSleep testDailyTokenCap 100k → 400k (Rafael approved in chat; audited, reason chat_agent_test_cap).
+- startAgentTestRun refuses BEFORE any model call when the suite cannot finish inside today's budget (cases × this
+  agent's real test-turn size + 10 %) → 429 "No se gastó nada". ChannelsEditor: amber "Este canal NO responde todavía"
+  when attended + AI allowed but not unlocked (or stale).
+- Usage: every inbox AI call already meters AiUsageEvent via softAiResponsesCreate (probar, agent_test, agent_import,
+  vision, shortcut_import) + staff bot lines. Open: live dailyTokenCap 250k ≈ 25–30 replies/day for the whole tenant;
+  each turn sends ~7.5k prompt tokens (prompt slimming is the real saver).
+- Proof: test:soft-ai 485/485, test:agentes-ui 34/34, tsc 0, eslint clean.
+
+## 2026-10-14 — Agent packs: one business folder → one sales agent; combos + "envío gratis desde" (claudio/agent-pack-builder)
+
+- Rafael: build a complete PatchHouse sales agent from the backend, testable in the test chat, as the template for
+  other businesses (Forge, Sleeping…). Prices = website (₡9.900, shipping ₡3.000, free from ₡25.000, combos).
+- Agent pack = a folder OUTSIDE the repo (pack.json + images/): persona, brand facts, payment, products by name,
+  sales script, combos, knowledge docs, saved replies with images, test questions. Business data never in the repo.
+- `scripts/agent-pack/build-agent.ts` (dry run by default, `--apply` writes through the same admin functions as the UI;
+  audit name "<user> (agent-pack script)"). Pre-checks block: live/archived agent, channel served by another agent
+  (unless --replace-binding), channel with an AI unlock, tenant default serving unbound channels, knowledge name used
+  by another agent, products not resolving to exactly one active item, missing tables/storage. Never writes flags,
+  allowlist, unlock, caps, InventoryItem, ShippingMethod or SQL; status stays draft. Re-runs change nothing if the
+  pack didn't change (stable-key compare of parsed stored values).
+- `scripts/agent-pack/probar.ts`: plays the pack tests through runAgentTestTurn (sandbox) + evaluateStep; stops at
+  60 % of the business's remaining daily TEST budget.
+- Combos (salesRules.bundles, max 8; names refused with number words / deal wording): BETSY_DATOS "Combos" section,
+  amounts allowed = combo, combo + one shipping unless included. Store rule brandFacts.shipping.ea.freeOver: shown as
+  "Envío gratis desde ₡X"; combos ≥ X are "envío incluido"; the words "envío gratis" pass the validator ONLY next to
+  ₡X or an included combo and with no smaller non-shipping amount (Verifier F1). Rule 12 wording extended;
+  AGENT_RULES_VERSION bumped → live agents show "re-test suggested" after deploy.
+- Facts shipping fallback (business without Config › Métodos de envío): one line for a flat national price, COD text
+  and courier/ETA from the facts (pure `shippingFromFacts`). salesRules octet guard (exact jsonb::text size) →
+  413 in the settings route, 'sales_rules_too_large' in Studio apply.
+- Proof: test:soft-ai 482/482, test:chat-harden 643/643, test:security 271/271, tsc 0, eslint clean.
+  Advisor GO with corrections (applied); Verifier round 1 FAIL (F1–F12) → fixed.
+- Not yet: no UI to see/edit combos (settings GET doesn't return them); combo prices don't follow product price
+  changes; mixed carts (Trío + 1) hand off; prod test chat needs this branch deployed to show combos.
+## 2026-10-13 — Every cron ran twice; false "Respaldo parcial (14:00) FALLÓ" (claudio/health-alert-detail)
+
+- Alert 14:01:27Z "Error: Backup already running". Workers Logs (observability API): the real 0 14 run started
+  14:00:04 and finished OK (200, 100 s) at 14:01:44; a second /api/cron/backup/hot request at 14:01:26 hit the
+  advisory lock (correct) and emailed FALLÓ. Backup itself was fine.
+- Root cause: since 2026-10-13 06:40Z Cloudflare fires every cron twice per slot (scheduledTime ~:04 and ~:43 in the
+  same minute; same Worker version bd3a5009, deployed 05:43Z; /schedules lists 8 unique crons, no duplicates). Before
+  06:40 each slot ran once (~:43). Every job (chat automation, reports, logistics finalize…) was running twice.
+- Fix: Worker claims each cron minute once in the primary Durable Object's storage (`claimCronSlot`, RPC, sync KV — no blockConcurrencyWhile, so a storage error cannot reset the primary,
+  does not wake the container; fail-open after 5 s or on error). Backup routes: "already running" = 200
+  `{skipped:'already_running'}` (manual POST 409), no alert. Helpers: src/lib/ops/cron-slot.ts.
+- Verifier PASS WITH NOTES (blockConcurrencyWhile removed). Open: skipped hot backup has no staleness alert (pre-existing).
+- Proof: tsc 0, worker tsc 0, eslint 0, test:ops 40/0, test:backups 21/0, esbuild bundle OK. Not deployed.
+
+## 2026-10-12 — Uptime alert emails say what broke and for how long (claudio/health-alert-detail)
+
+- Trigger: alert 2026-10-13 03:26Z "NO responde" (HTTP 503 db timeout, SELECT 1 > 3 s on both checks), back
+  03:30Z. Site + /api/health 200 in < 0.5 s afterwards. Read-only prod DB look was blocked by the auto-mode guard.
+- Worker watchdog (src/cf-container-worker.ts) keeps the same checks (every 5 min, 2 tries 20 s apart, Resend direct)
+  and adds: 15 s check limit (a hung container counts as down), cause in plain words (Supabase slow / Supabase error /
+  app error / container unreachable / no answer), CR time + UTC, both attempts with timings, what to do, links
+  (CF Worker logs, Supabase + Cloudflare status). Marker now stores the outage (start, cause, rounds, 2 h, rewritten each round): hourly
+  "SIGUE sin responder (N min)" reminder instead of a silent re-alert, and "volvió a responder (caído ~N min)" with
+  start/end, cause and DB speed. Old "1" marker handled (no duplicate email).
+- /api/health returns `dbMs` (number only). Texts + decisions in src/lib/ops/health-watch-text.ts (pure, tested).
+- Verifier PASS WITH NOTES, all fixed: marker 2 h (not 24 h, no stale "caído 6 h"), cause follows the latest
+  failure, body read inside the 15 s limit, unsent Resend email retried next round.
+- Proof: tsc 0, worker tsc 0, eslint 0 on touched files, test:ops 38/0, esbuild bundle OK. Not deployed.
+
 ## 2026-10-09 — Agent: saved replies with images, promo, fewer hand-offs (claudio/agent-f3-studio)
 
 - Rafael: the agent should have its own customizable replies (size guide "TALLAS", promo flyer) so it doesn't always

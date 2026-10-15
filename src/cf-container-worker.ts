@@ -59,6 +59,18 @@ async function fetchWithFailover(env: Env, request: Request): Promise<Response> 
   }
 }
 import { env } from "cloudflare:workers";
+import {
+  buildDownEmail,
+  buildUpEmail,
+  classifyHealth,
+  HEALTH_CHECK_TIMEOUT_MS,
+  parseDbMs,
+  parseOutage,
+  planDownRound,
+  UNSENT_EMAIL_AT,
+  type HealthCheck,
+} from "./lib/ops/health-watch-text";
+import { cronSlotMinute, cronSlotStorageKey, shouldRunCronSlot } from "./lib/ops/cron-slot";
 
 // Cloudflare Worker entry for the daytime smoke deploy (see wrangler.jsonc).
 // Not part of the Next.js app: excluded from the root tsconfig, checked by
@@ -301,6 +313,46 @@ export class BetsyCrmContainer extends Container {
   // Activity (incl. */1 chat-automation once DISABLE_CRONS is cleared) renews it.
   sleepAfter = "24h";
   envVars = getContainerEnvVars(env as unknown as Env);
+
+  /**
+   * One run per cron per minute (src/lib/ops/cron-slot.ts). Durable Object storage of the primary
+   * object: single-threaded, so two invocations of the same slot cannot both claim it. Plain RPC,
+   * does not start or wake the container.
+   */
+  async claimCronSlot(cron: string, minute: number): Promise<boolean> {
+    // Synchronous KV (SQLite-backed object): get + put cannot interleave with another call, and a
+    // storage error only rejects this call (Worker fails open) — no blockConcurrencyWhile, whose
+    // throw would reset the primary object that serves all production traffic.
+    const key = cronSlotStorageKey(cron);
+    const last = this.ctx.storage.kv.get<number>(key);
+    if (!shouldRunCronSlot(last, minute)) return false;
+    this.ctx.storage.kv.put(key, minute);
+    return true;
+  }
+}
+
+/** Fail-open: if the claim cannot be checked (stuck object, 5 s), run anyway — a duplicate beats a missed backup. */
+async function claimCronSlot(env: Env, cron: string, scheduledTime: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), 5_000);
+    });
+    const claimed = await Promise.race([
+      containerStub(env, CONTAINER_INSTANCE_NAME).claimCronSlot(cron, cronSlotMinute(scheduledTime)),
+      timeout,
+    ]);
+    if (claimed === "timeout") {
+      console.error(`[cf-cron] slot check timed out, running cron=${cron}`);
+      return true;
+    }
+    return claimed;
+  } catch (error) {
+    console.error(`[cf-cron] slot check failed, running cron=${cron} ${error instanceof Error ? error.name : "error"}`);
+    return true;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 async function runCronPaths(
@@ -341,67 +393,106 @@ async function runCronPaths(
 /**
  * Uptime watchdog (every 5 min, runs in the Worker, so it still works when the container or the
  * database is down): asks the container for /api/health; if two checks 20 s apart both fail,
- * emails OPS_ALERT_EMAIL through Resend's API directly. At most one email per hour (edge cache
- * marker), plus one "back up" email when it recovers.
+ * emails OPS_ALERT_EMAIL through Resend's API directly. The edge-cache marker keeps the outage
+ * (start, cause, failed rounds): first email at once, a reminder at most every hour, and one
+ * "back up" email saying how long it lasted. Texts: src/lib/ops/health-watch-text.ts.
  */
 const HEALTH_ALERT_KEY = "https://betsy-internal.invalid/health-alert";
 
-async function checkHealthOnce(env: Env): Promise<{ ok: boolean; detail: string }> {
+async function checkHealthOnce(env: Env): Promise<HealthCheck> {
+  const at = new Date().toISOString();
+  const started = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const response = await fetchWithFailover(
-      env,
-      new Request("http://container/api/health", { method: "GET" }),
-    );
-    const text = await response.text().catch(() => "");
-    return { ok: response.ok, detail: `HTTP ${response.status} ${text.slice(0, 120)}` };
+    const timeout = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), HEALTH_CHECK_TIMEOUT_MS);
+    });
+    // Body read inside the race too: headers then a stalled body still counts as "no answer".
+    const answer = await Promise.race([
+      fetchWithFailover(env, new Request("http://container/api/health", { method: "GET" })).then(async (r) => ({
+        status: r.status,
+        ok: r.ok,
+        text: await r.text().catch(() => ""),
+      })),
+      timeout,
+    ]);
+    if (answer === "timeout") {
+      return {
+        at,
+        ok: false,
+        status: 0,
+        ms: Date.now() - started,
+        cause: classifyHealth(0, "", "timeout"),
+        detail: `sin respuesta en ${HEALTH_CHECK_TIMEOUT_MS / 1000} s`,
+      };
+    }
+    const { status, ok, text } = answer;
+    return {
+      at,
+      ok,
+      status,
+      ms: Date.now() - started,
+      dbMs: parseDbMs(text),
+      cause: classifyHealth(status, text),
+      detail: `HTTP ${status} ${text.slice(0, 120)}`,
+    };
   } catch (error) {
-    return { ok: false, detail: error instanceof Error ? error.name : "error" };
+    const name = error instanceof Error ? error.name : "error";
+    return { at, ok: false, status: 0, ms: Date.now() - started, cause: classifyHealth(0, "", name), detail: name };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
-async function sendWorkerAlert(env: Env, subject: string, text: string): Promise<void> {
+/** True only when Resend accepted the email. */
+async function sendWorkerAlert(env: Env, subject: string, text: string): Promise<boolean> {
   const to = (env.OPS_ALERT_EMAIL || "").trim();
   const key = (env.RESEND_API_KEY || "").trim();
-  if (!to || !key) return;
-  await fetch("https://api.resend.com/emails", {
+  if (!to || !key) return false;
+  const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       from: "BetsyCRM Alertas <noreply@betsycrm.com>",
       to,
-      subject: `[Betsy] ${subject}`,
+      subject: `[Betsy] ${subject}`.slice(0, 180),
       text,
     }),
     signal: AbortSignal.timeout(10_000),
   }).catch(() => undefined);
+  if (res) await res.arrayBuffer().catch(() => undefined);
+  return Boolean(res?.ok);
 }
 
 async function healthWatch(env: Env): Promise<void> {
   const cache = caches.default;
   const marker = new Request(HEALTH_ALERT_KEY);
-  let result = await checkHealthOnce(env);
-  if (!result.ok) {
+  const checks = [await checkHealthOnce(env)];
+  if (!checks[0].ok) {
     await new Promise((r) => setTimeout(r, 20_000));
-    result = await checkHealthOnce(env);
+    checks.push(await checkHealthOnce(env));
   }
-  const alerted = await cache.match(marker);
-  if (!result.ok) {
-    console.error(`[cf-health] DOWN ${result.detail}`);
-    if (alerted) return;
-    await sendWorkerAlert(
-      env,
-      "www.betsycrm.com NO responde",
-      `El sitio o la base de datos no responde (2 intentos con 20 s de diferencia).
-Detalle: ${result.detail}
-Hora: ${new Date().toISOString()}
-Revisá Cloudflare (Worker betsy-crm-daytime-smoke) y Supabase.`,
-    );
-    await cache.put(marker, new Response("1", { headers: { "Cache-Control": "max-age=3600" } }));
+  const last = checks[checks.length - 1];
+  const now = new Date().toISOString();
+  const stored = await cache.match(marker);
+  const previous = stored ? parseOutage(await stored.text().catch(() => "")) : null;
+  if (!last.ok) {
+    console.error(`[cf-health] DOWN ${last.cause} ${last.detail}`);
+    const { outage, email } = planDownRound(Boolean(stored), previous, checks, now);
+    if (email) {
+      const down = buildDownEmail(outage, checks, now);
+      // Not accepted by Resend: retry on the next round instead of an hour later.
+      if (!(await sendWorkerAlert(env, down.subject, down.text))) outage.lastEmailAt = UNSENT_EMAIL_AT;
+    }
+    // Rewritten every failed round, so 2 h keeps the outage start; a marker left behind (recovery
+    // seen in another data center, crons paused) expires soon instead of faking a long outage.
+    await cache.put(marker, new Response(JSON.stringify(outage), { headers: { "Cache-Control": "max-age=7200" } }));
     return;
   }
-  if (alerted) {
+  if (stored) {
     await cache.delete(marker);
-    await sendWorkerAlert(env, "www.betsycrm.com volvió a responder", `Todo responde de nuevo. Hora: ${new Date().toISOString()}`);
+    const up = buildUpEmail(previous, last, now);
+    await sendWorkerAlert(env, up.subject, up.text);
   }
 }
 
@@ -460,6 +551,12 @@ const worker = {
     const paths = CRON_PATHS[controller.cron];
     if (!paths || paths.length === 0) {
       console.error(`[cf-cron] unknown cron expression: ${controller.cron}`);
+      return;
+    }
+
+    // Cloudflare can fire the same slot twice (2026-10-13: ~:04 and ~:43 into the minute).
+    if (!(await claimCronSlot(env, controller.cron, controller.scheduledTime))) {
+      console.log(`[cf-cron] skipped duplicate cron=${controller.cron} scheduledTime=${controller.scheduledTime}`);
       return;
     }
 

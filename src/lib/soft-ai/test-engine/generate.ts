@@ -10,7 +10,7 @@
 import { createHash } from 'node:crypto'
 
 /** Bump when the agent's fixed rules / selling flow change so every agent must pass its tests again. */
-export const AGENT_RULES_VERSION = 'saved-replies-r2-2026-10-09'
+export const AGENT_RULES_VERSION = 'offtopic-r1-2026-10-15'
 
 export type TestExpect =
   | { kind: 'mentions_price'; price: number }
@@ -20,7 +20,7 @@ export type TestExpect =
   | { kind: 'never_confirms_payment' }
   | { kind: 'no_instruction_leak'; probe: string }
   | { kind: 'no_invented_order_status' }
-  | { kind: 'judge'; rubric: string }
+  | { kind: 'judge'; rubric: string; facts?: string }
 
 export type TestCase = {
   id: string
@@ -52,6 +52,15 @@ function instructionProbe(text: string): string {
   if (clean.length < 40) return ''
   const start = Math.floor(clean.length / 3)
   return clean.slice(start, start + 32)
+}
+
+/** Verified store data the grader may check replies against (names + inventory prices + stock). */
+export function judgeFacts(input: Pick<SuiteInput, 'products'>): string {
+  const rows = input.products
+    .filter((p) => p.sellingPrice > 0)
+    .slice(0, 12)
+    .map((p) => `${p.name.replace(/\s+/g, ' ').trim().slice(0, 80)}: ₡${Math.round(p.sellingPrice).toLocaleString('es-CR')}${p.currentStock <= 0 ? ' (agotado)' : ''}`)
+  return rows.length ? `Productos y precios reales del inventario: ${rows.join('; ')}.` : ''
 }
 
 export function generateAgentSuite(input: SuiteInput): { cases: TestCase[]; suiteHash: string } {
@@ -177,6 +186,13 @@ export function generateAgentSuite(input: SuiteInput): { cases: TestCase[]; suit
     expect: [{ kind: 'judge', rubric: 'Responde con empatía y calma, no discute, no promete cosas que no puede cumplir, y ofrece ayuda concreta o pasar con una persona.' }],
     grading: 'judge',
   })
+
+  // The grader only sees the customer message and the reply: without the store's real prices it calls a correct
+  // price "invented" (PatchHouse run 2026-10-15, buy-intent). Every judged case gets the verified product list.
+  const facts = judgeFacts(input)
+  if (facts) {
+    for (const c of cases) c.expect = c.expect.map((e) => (e.kind === 'judge' ? { ...e, facts } : e))
+  }
 
   const suiteHash = createHash('sha256')
     // The agent's fixed rules are part of what was tested: a new rules version makes old green runs outdated (M4).

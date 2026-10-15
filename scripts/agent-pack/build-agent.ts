@@ -1,0 +1,319 @@
+/**
+ * Build (or update) a business's inbox sales agent from its pack, through the same admin functions the UI uses
+ * (validation, version bump, audit). Dry run by default: prints the pre-checks and what would change.
+ *
+ *   node --env-file=.env.local --import tsx --import ./scripts/shim-server-only.mjs \
+ *     scripts/agent-pack/build-agent.ts --pack=<carpeta del pack> [--apply] [--replace-binding]
+ *
+ * SAFETY: it never activates anything (status stays draft, no flags / allowlist / unlock / caps), never writes
+ * InventoryItem or ShippingMethod (shared with /ventas), never runs SQL. It refuses to touch a live agent, a channel
+ * served by another agent (unless --replace-binding), a channel with an AI unlock, or knowledge another agent uses.
+ * Writes go to the database DATABASE_URL points to (production for this repo's .env.local).
+ */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { createHash } from 'node:crypto'
+import { prisma } from '@/lib/db'
+import { isChatAgentSchemaReady } from '@/lib/soft-ai/agent-schema'
+import { createChatAgent, updateChatAgent, setAgentBinding } from '@/lib/soft-ai/agent-admin'
+import { listShortcuts, createShortcut, updateShortcut } from '@/lib/soft-ai/shortcut-admin'
+import { agentAssetsReady, storeAgentAsset, setReplyAssets, loadReplyAssets } from '@/lib/soft-ai/agent-assets'
+import { createKnowledgeSource, approveKnowledgeSource, bindKnowledgeToAgent, unbindKnowledgeFromAgent } from '@/lib/soft-ai/knowledge-admin'
+import { hashKnowledgeBody } from '@/lib/soft-ai/knowledge-repository'
+import { loadMappedInventoryIds, setMappedInventory } from '@/lib/soft-ai/agent-inventory-map'
+import { loadSalesSetup, saveSalesSetup, parseSalesRules, salesRulesOctets, SALES_RULES_MAX_OCTETS } from '@/lib/soft-ai/agent-sales-setup'
+import { parseBrandFacts, parseBrandFactsSafe, parseReplyStyleSafe, ReplyStyleSchema } from '@/lib/soft-ai/brand-facts'
+import { listTestCases, createTestCase, cleanSavedTest } from '@/lib/soft-ai/probar-test-cases'
+import { parseSavedTest } from '@/lib/soft-ai/probar-scenarios'
+import { isTableReady, isColumnReady } from '@/lib/soft-ai/table-ready'
+import { isChatStorageConfigured } from '@/lib/chat-storage'
+import { loadOrderRequirements } from '@/lib/orders/order-requirements-server'
+import { readChatAgentLayerConfig } from '@/lib/feature-flags'
+import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
+import { loadDailyTestTokens } from '@/lib/soft-ai/agent-claim-gates'
+import { agentsServingUnboundChannels } from '@/lib/soft-ai/agent-settings'
+import { arg, flag, loadPack } from './pack'
+
+const APPLY = flag('apply')
+const blockers: string[] = []
+const warnings: string[] = []
+const log = (s: string) => console.log(s)
+/** Order-insensitive for object keys (jsonb re-sorts them), order-sensitive for arrays. */
+const stable = (v: unknown): unknown =>
+  Array.isArray(v) ? v.map(stable) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([k, x]) => [k, stable(x)])) : v
+const same = (a: unknown, b: unknown) => JSON.stringify(stable(a)) === JSON.stringify(stable(b))
+
+async function main() {
+  const packDir = arg('pack')
+  if (!packDir) throw new Error('Falta --pack=<carpeta del pack>')
+  const { pack, dir } = loadPack(packDir)
+  const tenantId = pack.target.tenantId
+  log(`Pack: ${pack.agent.name} → tenant ${tenantId} (${APPLY ? 'APLICAR' : 'solo revisar'})`)
+
+  // ---- Who acts (real user, honest audit name)
+  const user = await prisma.user.findUnique({ where: { email: pack.target.actorEmail }, select: { id: true, name: true } })
+  const member = user ? await prisma.membership.findFirst({ where: { userId: user.id, tenantId, isActive: true }, select: { role: true } }) : null
+  if (!user || !member) blockers.push(`${pack.target.actorEmail} no es miembro activo del negocio`)
+  if (member && !['OWNER', 'ADMIN'].includes(String(member.role))) blockers.push('El usuario debe ser OWNER o ADMIN')
+  const actor = { actorUserId: user?.id ?? '', actorName: `${user?.name || 'Owner'} (agent-pack script)`, actorRole: String(member?.role ?? '') }
+
+  // ---- Tables / storage
+  if (!(await isChatAgentSchemaReady(true))) blockers.push('Tablas de agentes no listas')
+  if (!(await agentAssetsReady())) blockers.push('Tablas de imágenes de respuestas no listas (SQL 029/053)')
+  if (!(await isTableReady('ChatAgentInventoryItem'))) blockers.push('Tabla ChatAgentInventoryItem no lista (SQL 046)')
+  if (!(await isColumnReady('ChatAgentSettings', 'salesRules'))) blockers.push('Columna ChatAgentSettings.salesRules no lista (SQL 053)')
+  if (!(await isTableReady('ChatAgentTestCase'))) warnings.push('Tabla de pruebas guardadas no lista: no se guardan pruebas')
+  if (pack.shortcuts.some((s) => s.images?.length) && !isChatStorageConfigured()) blockers.push('Almacenamiento de imágenes no configurado')
+
+  // ---- Existing agent
+  const existing = await prisma.chatAgent.findFirst({ where: { tenantId, name: pack.agent.name.trim() } })
+  if (existing?.status === 'archived') blockers.push(`"${existing.name}" está archivado: restauralo o cambiá el nombre en el pack`)
+  if (existing?.status === 'live') blockers.push(`"${existing.name}" está activo: este script no modifica agentes activos`)
+  log(existing ? `Agente existente ${existing.id} (v${existing.version}, ${existing.status})` : 'Agente nuevo')
+
+  // ---- Brand facts + sales rules validate locally first
+  let brandFacts: ReturnType<typeof parseBrandFacts> | null = null
+  try {
+    brandFacts = parseBrandFacts(pack.brandFacts)
+  } catch (e) {
+    blockers.push(`brandFacts inválidos: ${(e as Error).message.slice(0, 300)}`)
+  }
+  const rules = parseSalesRules(pack.salesRules)
+  if (salesRulesOctets(rules) > SALES_RULES_MAX_OCTETS) blockers.push('salesRules demasiado grandes (> 8 000 bytes)')
+  if ((rules.bundles?.length ?? 0) !== ((pack.salesRules.bundles as unknown[]) ?? []).length) warnings.push('Algún combo fue descartado (nombre o precio inválido)')
+
+  // ---- Products: read only (shared with /ventas)
+  const itemIds: string[] = []
+  for (const name of pack.inventory.names) {
+    const rows = await prisma.inventoryItem.findMany({
+      where: { tenantId, name: { equals: name, mode: 'insensitive' } },
+      select: { id: true, name: true, sellingPrice: true, currentStock: true, isActive: true },
+    })
+    const active = rows.filter((r) => r.isActive)
+    if (active.length !== 1) {
+      blockers.push(`Producto "${name}": ${active.length} activos con ese nombre (debe ser 1)`)
+      continue
+    }
+    const r = active[0]
+    itemIds.push(r.id)
+    log(`  producto ${r.name}: ₡${Number(r.sellingPrice)} · stock ${r.currentStock}`)
+    if (r.currentStock <= 0) warnings.push(`"${r.name}" sin stock: el agente lo dirá agotado`)
+  }
+
+  // ---- Shipping + order fields (read only)
+  const methodCount = await prisma.shippingMethod.count({ where: { tenantId, active: true } })
+  if (methodCount > 0) warnings.push(`El negocio tiene ${methodCount} métodos de envío: el agente usará esos, no los del pack`)
+  const req = await loadOrderRequirements(tenantId).catch(() => null)
+  const extraFields = [...(req?.customerFields ?? []), ...(req?.productFields ?? [])].map((f) => f.label)
+  log(`  datos extra que pide /ventas: ${extraFields.length ? extraFields.join(', ') : '(ninguno)'}`)
+
+  // ---- Channels: never take one over silently
+  const layer = parseChatAgentLayerConfig((await readChatAgentLayerConfig(tenantId)).config)
+  const unbound = await agentsServingUnboundChannels(tenantId).catch(() => new Set<string>())
+  const tenantDefault = await prisma.chatAgentBinding.findFirst({ where: { tenantId, scope: 'tenant_default', isActive: true }, select: { agentId: true } })
+  const bindPlan: string[] = []
+  for (const accountId of pack.target.socialAccountIds) {
+    const acc = await prisma.socialAccount.findFirst({ where: { id: accountId, tenantId }, select: { id: true, platform: true, displayName: true } })
+    if (!acc) {
+      blockers.push(`Canal ${accountId} no es de este negocio`)
+      continue
+    }
+    if (layer.aiFullUnlock[accountId]) blockers.push(`El canal ${acc.displayName} tiene la IA activada: no se toca`)
+    const current = await prisma.chatAgentBinding.findFirst({
+      where: { tenantId, socialAccountId: accountId, scope: 'social_account', isActive: true },
+      select: { agentId: true },
+    })
+    if (current && current.agentId !== existing?.id) {
+      if (flag('replace-binding')) warnings.push(`El canal ${acc.displayName} deja de usar el agente ${current.agentId}`)
+      else blockers.push(`El canal ${acc.displayName} ya está atado a otro agente (${current.agentId}); usa --replace-binding si es a propósito`)
+    }
+    if (!current || current.agentId !== existing?.id) bindPlan.push(accountId)
+    log(`  canal ${acc.platform} ${acc.displayName}: ${current ? (current.agentId === existing?.id ? 'ya atado a este agente' : 'atado a otro agente') : 'sin agente'}`)
+  }
+
+  if (bindPlan.length && tenantDefault && unbound.has(tenantDefault.agentId)) {
+    blockers.push('El agente predeterminado atiende canales sin agente: atar este canal a un borrador lo dejaría sin respuesta')
+  }
+
+  // ---- Knowledge names are tenant-wide: never archive another agent's document
+  for (const k of pack.knowledge) {
+    const sources = await prisma.chatKnowledgeSource.findMany({ where: { tenantId, kind: k.kind, name: k.name, status: 'approved' }, select: { id: true } })
+    if (!sources.length) continue
+    const links = await prisma.chatAgentKnowledgeSource.findMany({ where: { tenantId, sourceId: { in: sources.map((s) => s.id) } }, select: { agentId: true } })
+    if (links.some((l) => l.agentId !== existing?.id)) blockers.push(`Otro agente usa el documento "${k.name}": cambiá el nombre en el pack`)
+  }
+
+  // ---- Test budget (shared by the business)
+  const used = await loadDailyTestTokens(tenantId).catch(() => 0)
+  log(`  pruebas hoy: ${used.toLocaleString('es-CR')} de ${layer.testDailyTokenCap.toLocaleString('es-CR')} tokens`)
+
+  for (const w of warnings) log(`AVISO: ${w}`)
+  if (blockers.length) {
+    for (const b of blockers) log(`BLOQUEA: ${b}`)
+    process.exitCode = 1
+    return
+  }
+  if (!APPLY) {
+    log('Revisión OK. Nada se escribió. Para crear/actualizar: agregá --apply')
+    return
+  }
+
+  // ================= APPLY =================
+  const agentPatch = {
+    emoji: pack.agent.emoji,
+    description: pack.agent.description ?? null,
+    systemInstructions: pack.agent.systemInstructions.trim(),
+    tonePreset: pack.agent.tonePreset,
+    introductionNames: pack.agent.introductionNames ?? [],
+    model: pack.agent.model,
+    brandFacts,
+    replyStyle: pack.agent.replyStyle ? ReplyStyleSchema.parse(pack.agent.replyStyle) : undefined,
+  }
+  let agentId = existing?.id
+  if (!agentId) {
+    const created = await createChatAgent({
+      tenantId,
+      ...actor,
+      name: pack.agent.name,
+      emoji: pack.agent.emoji,
+      description: pack.agent.description,
+      systemInstructions: pack.agent.systemInstructions,
+      tonePreset: pack.agent.tonePreset,
+      introductionNames: pack.agent.introductionNames,
+    })
+    agentId = created.id
+    log(`✔ agente creado ${agentId}`)
+  }
+  const now = await prisma.chatAgent.findFirstOrThrow({ where: { id: agentId, tenantId } })
+  // Compare what is stored the way it is read back (parsed, defaults filled), so an unchanged pack changes nothing.
+  const stored: Record<string, unknown> = { ...now, brandFacts: parseBrandFactsSafe(now.brandFacts), replyStyle: parseReplyStyleSafe(now.replyStyle) }
+  const changed = Object.entries(agentPatch).filter(([k, v]) => v !== undefined && !same(stored[k], v))
+  if (changed.length) {
+    await updateChatAgent({ tenantId, agentId, ...actor, patch: Object.fromEntries(changed) })
+    log(`✔ agente: ${changed.map(([k]) => k).join(', ')}`)
+  }
+
+  // Saved replies (system wording + the business's own) and their images
+  const listed = await listShortcuts(tenantId, agentId)
+  const byKey = new Map(listed.shortcuts.map((s) => [s.key, s]))
+  for (const [key, body] of Object.entries(pack.systemReplies ?? {})) {
+    const row = byKey.get(key)
+    if (row && row.body !== body) {
+      await updateShortcut({ tenantId, agentId, shortcutId: row.id, ...actor, patch: { body } })
+      log(`✔ respuesta del sistema ${key}`)
+    }
+  }
+  const assetCache = new Map<string, string>()
+  const replyAssets = await loadReplyAssets(tenantId, agentId)
+  let sort = 10
+  for (const s of pack.shortcuts) {
+    const draft = {
+      key: s.key,
+      title: s.title,
+      kind: 'playbook' as const,
+      intents: s.intents ?? [],
+      keywords: s.keywords ?? [],
+      body: s.body,
+      deliveryMode: s.deliveryMode ?? 'guide',
+      isActive: true,
+      sortOrder: (sort += 10),
+    }
+    const row = byKey.get(s.key)
+    let id = row?.id
+    if (!row) {
+      id = (await createShortcut({ tenantId, agentId, ...actor, draft })).id
+      log(`✔ respuesta ${s.key}`)
+    } else if (!same([row.title, row.intents, row.keywords, row.body, row.deliveryMode, row.isActive], [draft.title, draft.intents, draft.keywords, draft.body, draft.deliveryMode, true])) {
+      await updateShortcut({ tenantId, agentId, shortcutId: row.id, ...actor, patch: draft })
+      log(`✔ respuesta ${s.key} (actualizada)`)
+    }
+    const wanted: string[] = []
+    for (const file of s.images ?? []) {
+      if (!assetCache.has(file)) {
+        const bytes = readFileSync(join(dir, 'images', file))
+        const asset = await storeAgentAsset({ tenantId, agentId, bytes, name: file, caption: s.title, userId: actor.actorUserId })
+        assetCache.set(file, asset.id)
+      }
+      wanted.push(assetCache.get(file)!)
+    }
+    const have = (replyAssets.get(id!) ?? []).map((a) => a.id)
+    if (!same(have, wanted)) {
+      await setReplyAssets({ tenantId, agentId, shortcutId: id!, assetIds: wanted })
+      log(`✔ imágenes de ${s.key}: ${wanted.length}`)
+    }
+  }
+
+  // Knowledge: unchanged → nothing; changed → new approved version bound, old one unbound
+  const boundRows = await prisma.chatAgentKnowledgeSource.findMany({ where: { tenantId, agentId }, select: { sourceId: true } })
+  const bound = new Set(boundRows.map((r) => r.sourceId))
+  for (const k of pack.knowledge) {
+    const current = await prisma.chatKnowledgeSource.findMany({ where: { tenantId, kind: k.kind, name: k.name, status: 'approved' }, select: { id: true, contentHash: true } })
+    if (current.some((c) => c.contentHash === hashKnowledgeBody(k.body.trim()) && bound.has(c.id))) continue
+    const created = await createKnowledgeSource({ tenantId, ...actor, kind: k.kind, name: k.name, body: k.body, metadata: { agentPack: true } })
+    await approveKnowledgeSource({ tenantId, sourceId: created.id, ...actor })
+    await bindKnowledgeToAgent({ tenantId, agentId, sourceId: created.id, ...actor })
+    for (const old of current) if (bound.has(old.id)) await unbindKnowledgeFromAgent({ tenantId, agentId, sourceId: old.id, ...actor })
+    log(`✔ conocimiento "${k.name}"`)
+  }
+
+  // Products the agent may sell (exactly the pack's list)
+  const mapped = (await loadMappedInventoryIds(tenantId, agentId)) ?? []
+  if (!same([...mapped].sort(), [...itemIds].sort())) {
+    await setMappedInventory({ tenantId, agentId, itemIds, actorUserId: actor.actorUserId })
+    log(`✔ productos: ${itemIds.length}`)
+  }
+
+  // Selling script + combos
+  const setup = await loadSalesSetup(tenantId, agentId)
+  // The owner's promo and "¿sos un bot?" choice (UI) stay unless the pack sets them.
+  const wantedRules = {
+    ...rules,
+    promo: setup.salesRules.promo,
+    aiDisclosure: pack.salesRules.aiDisclosure ? rules.aiDisclosure : setup.salesRules.aiDisclosure,
+  }
+  if (!same(setup.salesRules, wantedRules)) {
+    await saveSalesSetup(tenantId, agentId, { salesRules: wantedRules }, actor.actorUserId)
+    log('✔ guion de venta y combos')
+  }
+
+  // Channel binding (test chat needs it; a draft never answers customers)
+  for (const accountId of bindPlan) {
+    await setAgentBinding({ tenantId, agentId, socialAccountId: accountId, active: true, ...actor })
+    log(`✔ atado al canal ${accountId}`)
+  }
+
+  // Saved tests (the test chat keeps plain-phrase checks; the full checks run in probar.ts)
+  const cases = await listTestCases(tenantId, agentId)
+  if (cases?.available) {
+    const titles = new Set(cases.cases.map((c) => c.title))
+    let added = 0
+    for (const t of pack.tests) {
+      // Titles are stored masked (cleanSavedTest): compare the way they are stored.
+      if (titles.has(t.title) || titles.has(cleanSavedTest({ title: t.title, steps: [] }).title)) continue
+      const parsed = parseSavedTest(t)
+      if (!parsed.ok) {
+        log(`  prueba "${t.title}" omitida: ${parsed.error}`)
+        continue
+      }
+      try {
+        await createTestCase({ tenantId, agentId, userId: actor.actorUserId, test: parsed.value })
+        added += 1
+      } catch (e) {
+        log(`  pruebas: ${(e as Error).message} (se guardaron ${added})`)
+        break
+      }
+    }
+    if (added) log(`✔ pruebas guardadas: ${added}`)
+  }
+
+  const final = await prisma.chatAgent.findFirstOrThrow({ where: { id: agentId, tenantId }, select: { id: true, version: true, status: true, operationMode: true } })
+  log(`Listo: ${final.id} · v${final.version} · ${final.status} · ${final.operationMode}`)
+  log(`Huella del pack: ${createHash('sha256').update(JSON.stringify(pack)).digest('hex').slice(0, 12)}`)
+}
+
+main()
+  .catch((e) => {
+    console.error(`ERROR: ${(e as Error).message}`)
+    process.exitCode = 1
+  })
+  .finally(() => prisma.$disconnect())

@@ -14,7 +14,7 @@ import { updateChatAgent } from '@/lib/soft-ai/agent-admin'
 import { approveKnowledgeSource, bindKnowledgeToAgent, createKnowledgeSource } from '@/lib/soft-ai/knowledge-admin'
 import { createShortcut, listShortcuts } from '@/lib/soft-ai/shortcut-admin'
 import { loadMappedInventoryIds, setMappedInventory, MAX_MAPPED_ITEMS } from '@/lib/soft-ai/agent-inventory-map'
-import { saveSalesSetup, SalesSetupNotReadyError, type SalesRules } from '@/lib/soft-ai/agent-sales-setup'
+import { saveSalesSetup, SalesRulesTooLargeError, SalesSetupNotReadyError, type SalesRules } from '@/lib/soft-ai/agent-sales-setup'
 import { hasConfirmationWording } from '@/lib/soft-ai/shortcuts'
 import { APPLY_LEASE_MS } from '@/lib/agent-studio/extract'
 import { KNOWLEDGE_BODY_MAX } from '@/lib/soft-ai/knowledge-types'
@@ -234,7 +234,7 @@ export async function applyProfileDraft(input: {
         await saveSalesSetup(tenantId, agentId, { salesRules: rules }, actor.userId)
         result.salesRules = true
       } catch (error) {
-        result.skipped.push(error instanceof SalesSetupNotReadyError ? 'sales_rules_not_ready' : 'sales_rules')
+        result.skipped.push(error instanceof SalesSetupNotReadyError ? 'sales_rules_not_ready' : error instanceof SalesRulesTooLargeError ? 'sales_rules_too_large' : 'sales_rules')
       }
     }
 

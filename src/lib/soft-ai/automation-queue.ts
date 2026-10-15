@@ -101,6 +101,42 @@ export async function persistJob(input: {
   }
 }
 
+/**
+ * "Never left waiting" (Agentes IA 2.0 · C): put a finished job for the SAME customer message back in
+ * the queue, keeping its delivery key, so a chat that was skipped (line off, chat with a person, budget)
+ * gets answered once the reason is gone. Safe by construction:
+ * - only a job of THIS tenant that is `completed` / `failed` (never pending, processing or ambiguous);
+ * - only when the job never created any outbound delivery claim (nothing was ever sent for it);
+ * - one conditional UPDATE, so a concurrent claim or delivery makes it a no-op (count 0).
+ * The claim gates still skip it if a person replies before it runs.
+ */
+export async function rearmFinishedJob(input: {
+  id: string
+  tenantId: string
+  payload: Record<string, unknown>
+}): Promise<boolean> {
+  const res = await prisma.chatAutomationJob.updateMany({
+    where: {
+      id: input.id,
+      tenantId: input.tenantId,
+      status: { in: ['completed', 'failed'] },
+      deliveries: { none: {} },
+    },
+    data: {
+      status: 'pending',
+      availableAt: new Date(),
+      payload: input.payload as Prisma.InputJsonValue,
+      processedAt: null,
+      failedAt: null,
+      lastErrorCode: null,
+      lastErrorAt: null,
+      leaseToken: null,
+      leaseExpiresAt: null,
+    },
+  })
+  return res.count === 1
+}
+
 async function supersedeOlderJobs(conversationId: string, keepId: string) {
   await prisma.chatAutomationJob.updateMany({
     where: {

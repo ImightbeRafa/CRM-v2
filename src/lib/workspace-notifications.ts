@@ -28,6 +28,30 @@ export const AI_NO_REPLY_REASONS: Record<string, string> = {
   empty_output: 'La respuesta quedó vacía y no se envió.',
 }
 
+/**
+ * Agentes IA 2.0 · C — why the AI passed a chat to a person ('handoff') or asks a person to look ('review').
+ * Codes travel in the dedupe key (`ai_handoff:` / `ai_review:` prefix, kind 'ai_no_reply'); no customer text.
+ */
+export const HANDOFF_REASON_LABELS: Record<string, string> = {
+  payment: 'Comprobante de pago',
+  payment_details: 'Hay que pasarle los datos de pago',
+  human_request: 'Pidió hablar con una persona',
+  complaint: 'Reclamo o devolución',
+  owner_reply: 'Respuesta que debe dar una persona',
+  escalate: 'Necesita a una persona',
+  review: 'Revisar respuesta de la IA',
+}
+
+/** Handoff / review alerts reuse kind 'ai_no_reply' (already allowed by SQL 049); the key prefix tells them apart. */
+export function handoffNotificationText(dedupeKey: string, where: string): { title: string; snippet: string } | null {
+  const parts = String(dedupeKey || '').split(':')
+  if (parts[0] !== 'ai_handoff' && parts[0] !== 'ai_review') return null
+  const snippet = HANDOFF_REASON_LABELS[parts[3] || ''] || (parts[0] === 'ai_handoff' ? 'Necesita a una persona' : 'Revisá el chat.')
+  return parts[0] === 'ai_handoff'
+    ? { title: `La IA te pasó un chat${where}`, snippet }
+    : { title: `Revisá un chat de la IA${where}`, snippet }
+}
+
 const ID_RE = /^[A-Za-z0-9_-]{8,64}$/
 let tableMissingUntil = 0
 const MISSING_TTL_MS = 5 * 60_000
@@ -198,6 +222,17 @@ export async function listNotifications(tenantId: string, userId: string, limit 
             ? 'Se alcanzó el límite mensual de IA. Atiendan los chats a mano; Betsy ya fue avisado.'
             : 'Revisá el detalle en Uso de IA.',
           href: paused ? '/chats' : '/super-admin/ia',
+        })
+      } else if (r.kind === 'ai_no_reply' && handoffNotificationText(r.dedupeKey, where)) {
+        const text = handoffNotificationText(r.dedupeKey, where) as { title: string; snippet: string }
+        items.push({
+          id: r.id,
+          kind: 'ai_no_reply',
+          read: Boolean(r.readAt),
+          createdAt: r.createdAt.toISOString(),
+          title: text.title,
+          snippet: text.snippet,
+          href: chatHref(r.conversationId, r.clientId),
         })
       } else if (r.kind === 'ai_no_reply') {
         const reason = String(r.dedupeKey || '').split(':')[3] || ''

@@ -6,6 +6,7 @@ import {
 import { processClaimedJob } from '@/lib/soft-ai/automation-processor'
 import { drainStaleAgentTestRuns } from '@/lib/soft-ai/test-engine/run'
 import { drainStaleProfileDrafts } from '@/lib/agent-studio/extract'
+import { sweepWaitingChatsPeriodic } from '@/lib/soft-ai/waiting-sweep'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -38,6 +39,12 @@ export async function GET(request: NextRequest) {
     const resumedTestRuns = Date.now() - startedAt < 5_000 ? await drainStaleAgentTestRuns(1).catch(() => 0) : 0
     // "Crear desde fuentes" drafts interrupted by a restart: kicked, not awaited (one call can take up to 90 s).
     void drainStaleProfileDrafts(1).catch(() => 0)
+    // Never left waiting: chats on lines that answer, waiting > 90 s with no job in flight, are queued and
+    // kicked (bounded per run, newest first). Skipped when this run is already slow.
+    const waiting =
+      Date.now() - startedAt < 20_000
+        ? await sweepWaitingChatsPeriodic({ deadlineMs: 8_000 }).catch(() => null)
+        : null
     const counts = results.reduce<Record<string, number>>((summary, result) => {
       summary[result.status] = (summary[result.status] || 0) + 1
       return summary
@@ -49,6 +56,7 @@ export async function GET(request: NextRequest) {
       counts,
       purged: purged.count,
       resumedTestRuns,
+      waitingQueued: waiting?.queued ?? 0,
       durationMs: Date.now() - startedAt,
     })
   } catch (error) {

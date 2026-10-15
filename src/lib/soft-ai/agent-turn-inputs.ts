@@ -27,8 +27,10 @@ import {
   formatSalesTurnBlock,
   salesAllowedAmounts,
   salesAllowedDeals,
+  salesCloseWithoutPaymentData,
   salesFreeShippingRule,
   salesNeedsHuman,
+  salesQuantityAmounts,
   salesSystemBlock,
   type SalesContext,
 } from '@/lib/soft-ai/sales-state'
@@ -230,8 +232,11 @@ export function assembleAgentRuntimeInputs(input: {
     replyStyleSnippet: replyStyleSnippet(input.agent.replyStyle),
     salesSystemBlock: sales ? salesSystemBlock(sales) : null,
     salesTurnBlock: sales && salesState ? formatSalesTurnBlock(sales, salesState) : null,
-    salesAllowedAmounts: sales ? salesAllowedAmounts(sales) : undefined,
+    // B4: + totals for the quantities the customer asked for (computed by code, listed in BETSY_DATOS).
+    salesAllowedAmounts: sales ? [...salesAllowedAmounts(sales), ...(salesState ? salesQuantityAmounts(sales, salesState) : [])] : undefined,
     salesNeedsHuman: Boolean(sales && salesState && salesNeedsHuman(sales, salesState)),
+    salesReceiptCue: Boolean(salesState?.receiptCue),
+    salesPaymentDataByTeam: Boolean(sales && salesState && salesCloseWithoutPaymentData(sales, salesState)),
     salesAllowedDeals: sales ? salesAllowedDeals(sales) : [],
     salesFreeShipping: Boolean(sales?.promo?.freeShipping),
     salesFreeShippingRule: sales ? salesFreeShippingRule(sales) : null,

@@ -10,9 +10,11 @@ const PROOF_CUE_RE =
   // "ya te/les/lo pagué", "listo, ya lo pagué", "te mandé el sinpe" (accent-safe start: JS \b misses after á/é).
   /(?<![\p{L}\p{N}_])(ya\s+((le|te|les|lo|la)\s+)?(pagu[eé]|hice|mand[eé]|transfer[ií]|deposit[eé])|comprobante|adjunto|captura|pantallazo|(le|te|les)\s+(envi[eé]|mand[eé])\s+(el\s+(sinpe|pago|comprobante)|la\s+plata|el\s+dinero)|pago\s+(realizado|hecho|listo)|listo\s+el\s+(pago|sinpe)|(ya\s+)?(est[aá]|qued[oó])\s+pagad[oa]|^\s*pagad[oa]\s*[!.✅👍]*\s*$|ref(?:erencia)?\s*\d)/iu
 
-/** Unicode-aware: JS \\b treats á/ó as non-word, so "llegó" and "confirman" would miss. */
-const CONFIRM_CUE_RE =
-  /(?:^|[^\p{L}\p{N}_])((?:me\s+)?confirm[aáeé]\p{L}*|ya\s+(?:les\s+)?lleg[oó]\p{L}*|revisen)/iu
+/**
+ * Unicode-aware: JS \\b treats á/ó as non-word, so "llegó" would miss. A bare "ya llegó" stays a payment claim; the
+ * confirm / review verbs count only next to a payment noun (CONFIRM_PAYMENT_RE below — Agentes IA 2.0, B5).
+ */
+const CONFIRM_CUE_RE = /(?:^|[^\p{L}\p{N}_])(ya\s+(?:les\s+)?lleg[oó]\p{L}*)/iu
 
 const RISK_CUE_RE =
   /\b(reembolso|devoluci[oó]n\s+del\s+dinero|me\s+cobraron|doble\s+cobro|reclamo|disputa|fraude)\b/i
@@ -26,6 +28,16 @@ const COD_QUESTION_RE =
 const PAY_NOUN = String.raw`(sinpe|pago|plata|dinero|transferencia|dep[oó]sito|comprobante|monto)`
 const W = String.raw`(?:\s+[\p{L}\p{N}₡.,]+){0,4}?\s+`
 const near = (a: string, b: string) => `(?:${a}${W}${b}|${b}${W}${a})`
+/**
+ * "¿me confirmás el sinpe?", "revisen el comprobante", "confirmame si entró la plata": a payment claim. Without a
+ * payment noun ("¿me confirmás la talla?", "confirmame el precio") it is a normal question for the agent (B5).
+ */
+const CONFIRM_PAYMENT_RE = new RegExp(
+  String.raw`(?<![\p{L}\p{N}_])` +
+    near(String.raw`(confirm\p{L}*|revis\p{L}*)`, String.raw`(sinpe|pagos?|plata|dinero|transferencias?|dep[oó]sitos?|comprobantes?)`) +
+    String.raw`(?![\p{L}\p{N}_])`,
+  'iu',
+)
 /**
  * Claims, receipts, refunds and disputes — with or without "ya", as a question or not (INT-76, 2026-10-09):
  * "¿ya te llegó mi sinpe?", "hice el sinpe, ¿cuándo sale?", "hice un sinpe por error, ¿me lo devuelven?".
@@ -106,7 +118,13 @@ export function hasPaymentRiskCue(text: string): boolean {
 
 export function classifyPaymentText(text: string): PaymentClassification {
   const value = text || ''
-  if (PROOF_CUE_RE.test(value) || hasPaymentClaimCue(value) || CONFIRM_CUE_RE.test(value) || RISK_CUE_RE.test(value)) {
+  if (
+    PROOF_CUE_RE.test(value) ||
+    hasPaymentClaimCue(value) ||
+    CONFIRM_CUE_RE.test(value) ||
+    CONFIRM_PAYMENT_RE.test(value) ||
+    RISK_CUE_RE.test(value)
+  ) {
     return 'payment_proof_or_risk'
   }
   // Contra entrega / "¿puedo pagar cuando lo recibo?" is a sales question (zone coverage), not payment data:
@@ -122,8 +140,35 @@ export function classifyPaymentText(text: string): PaymentClassification {
   if (PAYMENT_RE.test(value) && PAYMENT_QUESTION_RE.test(value)) {
     return 'non_payment'
   }
+  // B5 (Agentes IA 2.0): a real question that only mentions a payment word ("¿el pago es por adelantado?",
+  // "¿con qué banco es el sinpe?") goes to the agent. Claims were already caught above; a bare "sinpe?" / "¿y el
+  // pago?" stays with a person (INT-76).
+  if (PAYMENT_RE.test(value) && isPaymentWordQuestion(value)) {
+    return 'non_payment'
+  }
   if (PAYMENT_RE.test(value)) {
     return 'payment_proof_or_risk'
   }
   return 'non_payment'
+}
+
+/** "¿…?" with a real question word: "es", "se", "cómo", "cuándo", "hay", "puedo", "aceptan"… (not a bare "sinpe?"). */
+const QUESTION_MARK_RE = /[?¿]/
+const QUESTION_WORD_RE =
+  /(?<![\p{L}])(c[oó]mo|cu[aá]ndo|d[oó]nde|cu[aá]l(es)?|cu[aá]nto|es|son|se|hay|puedo|puede|pueden|tienen|aceptan|va|van|incluye|sirve|necesito|ocupo|debo|tengo|qu[eé]\s+(es|son|hago|ocupo|necesito|tengo|banco|bancos|m[eé]todos?|formas?))(?![\p{L}])/iu
+
+function isPaymentWordQuestion(value: string): boolean {
+  return QUESTION_MARK_RE.test(value) && QUESTION_WORD_RE.test(value)
+}
+
+/** Any payment word at all (media caption check: a photo with "sinpe" / "pago" is treated as a receipt). */
+export function hasPaymentWord(text: string): boolean {
+  return PAYMENT_RE.test(text || '') || hasPaymentProofCue(text) || hasPaymentClaimCue(text || '')
+}
+
+/** notifyHandoff reason code when a payment message goes to a person: 'complaint' (refund / dispute) or 'payment'. */
+export function paymentHandoffReason(text: string): 'payment' | 'complaint' {
+  const value = text || ''
+  if (RISK_CUE_RE.test(value) || (REFUND_RE.test(value) && !isReturnPolicyQuestion(value))) return 'complaint'
+  return 'payment'
 }

@@ -193,6 +193,26 @@ export async function softAiResponsesCreate(args: SoftAiResponsesCreateArgs) {
   }
 }
 
+/** Smallest turn time left for the one retry (B2): a retry that cannot finish only delays the safe line. */
+export const SOFT_AI_RETRY_MIN_LEFT_MS = 6_000
+
+/**
+ * Agentes IA 2.0 (B2): worth ONE more try — timeout / abort, rate limit (429), provider 5xx, network failure. Never a
+ * missing key, a rejected key (401/403) or a bad request (400/404/422): those fail the same way again.
+ */
+export function isRetryableSoftAiError(error: unknown): boolean {
+  if (!error) return false
+  const message = error instanceof Error ? error.message : ''
+  if (message === 'XAI_NOT_CONFIGURED' || message === 'LLM_NOT_CONFIGURED' || message === 'SOFT_AI_MODEL_NOT_ALLOWED') {
+    return false
+  }
+  const status = (error as { status?: unknown }).status
+  if (typeof status === 'number') return status === 408 || status === 409 || status === 429 || status >= 500
+  return /timed? ?out|abort|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket|network|fetch failed|connection/i.test(
+    message + ' ' + String((error as { name?: unknown }).name ?? ''),
+  )
+}
+
 export function parseSoftAiResponseText(response: unknown): string {
   if (!response || typeof response !== 'object') return ''
   const r = response as {

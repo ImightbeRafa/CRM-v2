@@ -63,3 +63,38 @@ export function maySoftAiMetaReply(mode: SoftAiAgentMode | null): boolean {
 export function softAiConversationKey(socialAccountId: string, recipientId: string): string {
   return `${socialAccountId}::${recipientId}`
 }
+
+/**
+ * STUB (stream B worktree): stream A owns the real versions of effectiveConversationAiMode / humanWroteRecently
+ * (claudio/agents2-a-status). Same names and semantics; A's implementation wins at integration.
+ * Column wins, then the persisted agentState; a NULL chat follows its line: line on → 'ai_active', unless a person
+ * wrote in it recently → 'human'; line off → null (fail closed).
+ */
+export function effectiveConversationAiMode(input: {
+  column: string | null | undefined
+  persisted: SoftAiAgentMode | null
+  lineOn: boolean
+  humanWroteRecently: boolean
+}): { mode: SoftAiAgentMode | null; via: 'column' | 'state' | 'line' | 'none' } {
+  const fromColumn = normalizeConversationAiMode(input.column)
+  if (fromColumn) return { mode: fromColumn, via: 'column' }
+  if (input.persisted) return { mode: input.persisted, via: 'state' }
+  if (input.lineOn) return { mode: input.humanWroteRecently ? 'human' : 'ai_active', via: 'line' }
+  return { mode: null, via: 'none' }
+}
+
+/** A person (outbound without softAi metadata) wrote in this chat in the last `hours` (tenant-scoped). */
+export async function humanWroteRecently(tenantId: string, conversationId: string, hours = 24): Promise<boolean> {
+  const { prisma } = await import('@/lib/db')
+  const since = new Date(Date.now() - hours * 3_600_000)
+  const rows = await prisma.chatMessage.findMany({
+    where: { tenantId, conversationId, direction: 'outbound', sentAt: { gte: since } },
+    orderBy: { sentAt: 'desc' },
+    take: 50,
+    select: { metadata: true },
+  })
+  return rows.some((row) => {
+    const meta = row.metadata
+    return !(meta && typeof meta === 'object' && !Array.isArray(meta) && (meta as Record<string, unknown>).softAi === true)
+  })
+}

@@ -234,3 +234,16 @@ describe('2026-10-15 PatchHouse activation run: grader knows real prices; agent 
     assert.match(block, /ajeno a la tienda[\s\S]*NO lo respondas/)
   })
 })
+
+describe('2026-10-15: "En vivo" says when no line answers yet', () => {
+  it('notice only for En vivo + Responder with lines not activated', async () => {
+    const { liveWithoutActivationNotice: n } = await import('@/app/config/agentes/ChannelsEditor')
+    assert.equal(n({ status: 'draft', operationMode: 'ai_full', rows: [] }), null)
+    assert.equal(n({ status: 'live', operationMode: 'human_only', rows: [] }), null)
+    assert.match(n({ status: 'live', operationMode: 'ai_full', rows: [] })!, /no atiende ninguna línea/)
+    assert.match(n({ status: 'live', operationMode: 'ai_full', rows: [{ aiAllowed: true, realSend: 'locked' }] })!, /NO responde en ninguna línea/)
+    assert.match(n({ status: 'live', operationMode: 'ai_full', rows: [{ aiAllowed: true, realSend: 'unlocked' }, { aiAllowed: true, realSend: 'stale' }] })!, /1 de 2 líneas/)
+    assert.equal(n({ status: 'live', operationMode: 'ai_full', rows: [{ aiAllowed: true, realSend: 'unlocked' }] }), null)
+    assert.match(readFileSync('src/app/config/agentes/page.tsx', 'utf8'), /liveWithoutActivationNotice\(\{\s*status: selected\.status,\s*operationMode: selected\.operationMode,\s*rows: attendingRows,/)
+  })
+})

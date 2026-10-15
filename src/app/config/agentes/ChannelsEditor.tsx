@@ -34,6 +34,21 @@ export function unactivatedChannelCopy(realSend: RealSendStatus): string {
     : 'Este canal NO responde todavía: falta «Probar y activar» para este canal. Hasta entonces los mensajes quedan para una persona.'
 }
 
+/** Agent page "Estado y modo": say plainly when En vivo + Responder still answers nobody (no channel activated). */
+export function liveWithoutActivationNotice(input: {
+  status: string
+  operationMode: string
+  rows: Array<Pick<ChannelRow, 'aiAllowed' | 'realSend'>>
+}): string | null {
+  if (input.status !== 'live' || input.operationMode !== 'ai_full') return null
+  if (input.rows.length === 0) return 'En vivo, pero no atiende ninguna línea: elegí una en «Líneas» y después corré «Probar y activar».'
+  const off = input.rows.filter((r) => !r.aiAllowed || (r.realSend || 'locked') !== 'unlocked').length
+  if (off === 0) return null
+  return off === input.rows.length
+    ? 'En vivo, pero todavía NO responde en ninguna línea: falta «Probar y activar» (botón Probar arriba). Hasta entonces los chats quedan para una persona.'
+    : `${off} de ${input.rows.length} líneas todavía no responden: falta «Probar y activar» en esas líneas.`
+}
+
 export function ChannelsEditor({
   agentId,
   canEdit,

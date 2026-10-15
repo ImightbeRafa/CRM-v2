@@ -56,7 +56,7 @@ export function NewAgentForm({
             <label htmlFor="new-agent-name" className="text-xs font-medium text-slate-700">
               Nombre interno *
             </label>
-            <input
+            <input autoComplete="off" data-lpignore="true"
               id="new-agent-name"
               className={FIELD}
               value={draft.name}
@@ -70,7 +70,7 @@ export function NewAgentForm({
             <label htmlFor="new-agent-emoji" className="text-xs font-medium text-slate-700">
               Emoji
             </label>
-            <input
+            <input autoComplete="off" data-lpignore="true"
               id="new-agent-emoji"
               className={`${FIELD} w-20 text-center`}
               value={draft.emoji}
@@ -83,7 +83,7 @@ export function NewAgentForm({
         <label htmlFor="new-agent-desc" className="mt-3 block text-xs font-medium text-slate-700">
           Descripción
         </label>
-        <input
+        <input autoComplete="off" data-lpignore="true"
           id="new-agent-desc"
           className={FIELD}
           value={draft.description}
@@ -125,7 +125,7 @@ export function NewAgentForm({
           Nombres de presentación
         </label>
         <p className="mt-0.5 text-[11px] text-slate-500">1–3 nombres separados por coma (ej. Sofía, Ana).</p>
-        <input
+        <input autoComplete="off" data-lpignore="true"
           id="new-agent-intro"
           className={FIELD}
           value={draft.introductionNames}
@@ -136,7 +136,7 @@ export function NewAgentForm({
           Instrucciones de voz
         </label>
         <p className="mt-0.5 text-[11px] text-slate-500">Nunca anulan las reglas fijas de seguridad.</p>
-        <textarea
+        <textarea autoComplete="off" data-lpignore="true"
           id="new-agent-voz"
           className={`${FIELD} leading-relaxed`}
           rows={7}

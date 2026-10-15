@@ -205,7 +205,7 @@ export function ReviewStep({
             {f.apply ? <Check checked={brand[f.key].keep} onChange={(v) => setBrand({ ...brand, [f.key]: { ...brand[f.key], keep: v } })} label={f.label} /> : <span className="w-4" />}
             <div className="min-w-0 flex-1 space-y-1">
               <p className="text-[11px] font-medium text-slate-500">{f.label}</p>
-              <input className={INPUT} value={brand[f.key].value} disabled={!f.apply} onChange={(e) => setBrand({ ...brand, [f.key]: { ...brand[f.key], value: e.target.value } })} />
+              <input autoComplete="off" data-lpignore="true" className={INPUT} value={brand[f.key].value} disabled={!f.apply} onChange={(e) => setBrand({ ...brand, [f.key]: { ...brand[f.key], value: e.target.value } })} />
               {f.key === 'website' && current?.website ? <p className="text-[11px] text-slate-600">Ahora el agente usa: {current.website}</p> : null}
               {f.key !== 'website' ? <ContactWarning show={hasContactLike(brand[f.key].value)} /> : null}
               <ProvenanceChip label={src(x.brand[f.key].sourceId)} snippet={x.brand[f.key].snippet} />
@@ -302,8 +302,8 @@ export function ReviewStep({
             <div key={i} className="flex items-start gap-2">
               <Check checked={s.keep} onChange={(v) => setPolicies(setAt(policies, i, { keep: v }))} label="Guardar" />
               <div className="min-w-0 flex-1 space-y-1">
-                <input className={INPUT} value={s.title || ''} onChange={(e) => setPolicies(setAt(policies, i, { title: e.target.value }))} />
-                <textarea className={INPUT} rows={3} value={s.text || ''} onChange={(e) => setPolicies(setAt(policies, i, { text: e.target.value }))} />
+                <input autoComplete="off" data-lpignore="true" className={INPUT} value={s.title || ''} onChange={(e) => setPolicies(setAt(policies, i, { title: e.target.value }))} />
+                <textarea autoComplete="off" data-lpignore="true" className={INPUT} rows={3} value={s.text || ''} onChange={(e) => setPolicies(setAt(policies, i, { text: e.target.value }))} />
                 <ContactWarning show={hasContactLike(s.text)} />
                 <ProvenanceChip label={src(s.sourceId)} snippet={s.snippet} />
               </div>
@@ -318,8 +318,8 @@ export function ReviewStep({
             <div key={i} className="flex items-start gap-2">
               <Check checked={s.keep} onChange={(v) => setFaq(setAt(faq, i, { keep: v }))} label="Guardar" />
               <div className="min-w-0 flex-1 space-y-1">
-                <input className={INPUT} value={s.question || ''} onChange={(e) => setFaq(setAt(faq, i, { question: e.target.value }))} />
-                <textarea className={INPUT} rows={2} value={s.answer || ''} onChange={(e) => setFaq(setAt(faq, i, { answer: e.target.value }))} />
+                <input autoComplete="off" data-lpignore="true" className={INPUT} value={s.question || ''} onChange={(e) => setFaq(setAt(faq, i, { question: e.target.value }))} />
+                <textarea autoComplete="off" data-lpignore="true" className={INPUT} rows={2} value={s.answer || ''} onChange={(e) => setFaq(setAt(faq, i, { answer: e.target.value }))} />
                 <ContactWarning show={hasContactLike(`${s.question} ${s.answer}`)} />
                 <ProvenanceChip label={src(s.sourceId)} snippet={s.snippet} />
               </div>
@@ -342,7 +342,7 @@ export function ReviewStep({
         ).map(([k, label]) => (
           <label key={k} className="block space-y-1">
             <span className="text-[11px] font-medium text-slate-500">{label}</span>
-            <textarea className={INPUT} rows={2} value={rules[k]} onChange={(e) => {
+            <textarea autoComplete="off" data-lpignore="true" className={INPUT} rows={2} value={rules[k]} onChange={(e) => {
                 setRules({ ...rules, [k]: e.target.value })
                 setRulesEdited(true)
               }} />
@@ -356,8 +356,8 @@ export function ReviewStep({
             <div key={i} className="flex items-start gap-2">
               <Check checked={s.keep} onChange={(v) => setReplies(setAt(replies, i, { keep: v }))} label="Guardar" />
               <div className="min-w-0 flex-1 space-y-1">
-                <input className={INPUT} value={s.title || ''} onChange={(e) => setReplies(setAt(replies, i, { title: e.target.value }))} />
-                <textarea className={INPUT} rows={2} value={s.body || ''} onChange={(e) => setReplies(setAt(replies, i, { body: e.target.value }))} />
+                <input autoComplete="off" data-lpignore="true" className={INPUT} value={s.title || ''} onChange={(e) => setReplies(setAt(replies, i, { title: e.target.value }))} />
+                <textarea autoComplete="off" data-lpignore="true" className={INPUT} rows={2} value={s.body || ''} onChange={(e) => setReplies(setAt(replies, i, { body: e.target.value }))} />
                 <ContactWarning show={hasContactLike(s.body)} />
               </div>
             </div>

@@ -4,6 +4,7 @@ import { projectRawMessageForClient } from '@/lib/chat-message-display'
 import type { Prisma } from '@prisma/client'
 import { type SoftTag } from '@/lib/chat-soft-copilot'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
+import type { ChatAiStatus, ChatLineAi } from '@/lib/soft-ai/agent-status'
 import {
   channelLogoKey,
   channelSecondaryAddress,
@@ -115,6 +116,15 @@ export type ChatConversationListItemDto = {
   agentEmoji?: string | null
   agentStateDot?: 'IA' | 'Sug' | 'Hum' | null
   pendingSuggestionText?: string | null
+  /**
+   * Agentes IA 2.0 — the truth (set by the list/changes enrich, agent-inbox-enrich.ts): the line's status, the legacy
+   * per-thread mode, whether a person wrote in the last 24 h, and the resulting chat status. The client recomputes
+   * aiStatus with chatAiStatus() from these + aiMode after a local mode change.
+   */
+  aiLine?: ChatLineAi | null
+  aiPersistedMode?: SoftAiAgentMode | null
+  aiHumanRecent?: boolean
+  aiStatus?: ChatAiStatus | null
 }
 
 export type ChatMessageItemDto = {

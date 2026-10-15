@@ -17,7 +17,7 @@ import { readChatAgentLayerConfig } from '@/lib/feature-flags'
 import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { resolveSoftAiModel, softAiResponsesCreate, parseSoftAiResponseText, readSoftAiUsage } from '@/lib/soft-ai/llm/client'
 import { estimateCostMicros } from '@/lib/soft-ai/llm/usage'
-import { generateAgentSuite, type TestCase } from '@/lib/soft-ai/test-engine/generate'
+import { generateAgentSuite, selectQuickSuite, type TestCase } from '@/lib/soft-ai/test-engine/generate'
 import {
   gradeRuleCase,
   judgePrompt,
@@ -65,9 +65,30 @@ export type TestRunRow = {
   costCapMicros: number
   spentMicros: number
   summary: SuiteSummary | null
+  /**
+   * The one switch's 6-case check (its cases carry `quick: true`). A quick run IS the "turn the line on when it
+   * passes" intent; its actor is createdBy. No new SQL, nothing stored in the layer config.
+   */
+  quick: boolean
+  /** Outcome of the automatic activation after a green quick run (summary.activation; set by finish()). */
+  activation: RunActivationResult | null
   createdBy: string
   createdAt: Date
   finishedAt: Date | null
+}
+
+export type RunActivationResult = { ok: boolean; code: string | null; at: string }
+
+export function parseRunActivation(raw: unknown): RunActivationResult | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const r = raw as Record<string, unknown>
+  if (typeof r.ok !== 'boolean') return null
+  return { ok: r.ok, code: typeof r.code === 'string' ? r.code : null, at: typeof r.at === 'string' ? r.at : '' }
+}
+
+/** Pure: a run whose cases are the quick suite (generate.ts marks them). */
+export function isQuickRunCases(cases: unknown): boolean {
+  return Array.isArray(cases) && cases.length > 0 && cases.every((c) => Boolean(c && typeof c === 'object' && (c as { quick?: unknown }).quick === true))
 }
 
 export class TestRunDailyLimitError extends Error {
@@ -137,6 +158,8 @@ function mapRow(r: Record<string, unknown>): TestRunRow {
     costCapMicros: Number(r.costCapMicros || 0),
     spentMicros: Number(r.spentMicros || 0),
     summary: (r.summary as SuiteSummary | null) ?? null,
+    quick: isQuickRunCases(r.cases),
+    activation: parseRunActivation((r.summary as { activation?: unknown } | null)?.activation),
     createdBy: String(r.createdBy),
     createdAt: r.createdAt as Date,
     finishedAt: (r.finishedAt as Date | null) ?? null,
@@ -206,6 +229,8 @@ export async function startAgentTestRun(input: {
   agentId: string
   socialAccountId: string
   userId: string
+  /** The one switch's 6-case check (selectQuickSuite): when it passes, the line turns on by itself. */
+  quick?: boolean
 }): Promise<TestRunRow> {
   if (!(await isTableReady(TABLE))) throw new TestRunNotReadyError()
   const agent = await prisma.chatAgent.findFirst({
@@ -234,12 +259,13 @@ export async function startAgentTestRun(input: {
     return run
   }
   if (runsToday >= TEST_RUNS_PER_DAY || spentToday >= TEST_RUN_DAILY_SPEND_MICROS) throw new TestRunDailyLimitError()
-  const { cases, suiteHash } = await buildSuite(input.tenantId, {
+  const full = await buildSuite(input.tenantId, {
     id: agent.id,
     name: agent.name,
     systemInstructions: agent.systemInstructions,
     brandFacts: (agent as { brandFacts?: unknown }).brandFacts,
   })
+  const { cases, suiteHash } = input.quick ? selectQuickSuite(full) : full
   // Never start a run that the daily test budget cannot finish: a half run spends money and still can't activate.
   const [usedTokens, layer, recent] = await Promise.all([
     loadDailyTestTokens(input.tenantId),
@@ -424,10 +450,39 @@ export async function drainAgentTestRun(tenantId: string, id: string): Promise<v
 
 async function finish(run: TestRunRow, status: TestRunStatus, summary?: SuiteSummary) {
   const s = summary ?? summarize(run.results)
-  await prisma.$executeRaw`
+  // Conditional: only the worker that moves the run out of 'running' acts on it (a run switched off meanwhile is
+  // already 'canceled' and is left alone).
+  const finished = await prisma.$executeRaw`
     UPDATE "ChatAgentTestRun"
        SET "status" = ${status}, "summary" = ${JSON.stringify(s)}::jsonb, "leaseUntil" = NULL, "finishedAt" = NOW()
      WHERE "id" = ${run.id} AND "tenantId" = ${run.tenantId} AND "status" = 'running'`
+  if (finished === 0 || status !== 'passed' || !run.quick) return
+  // A green quick run is the one switch's intent: turn the line on (activation re-checks everything).
+  try {
+    const { activateAfterQuickRun } = await import('@/lib/soft-ai/agent-activation')
+    await activateAfterQuickRun({ ...run, status, summary: s })
+  } catch (error) {
+    console.error('[soft-ai/test-run] power-on', error instanceof Error ? error.name : 'unknown')
+  }
+}
+
+/** Store the automatic activation outcome next to the run's summary (read by the line status). */
+export async function recordRunActivation(tenantId: string, runId: string, result: { ok: boolean; code?: string | null }) {
+  const value = JSON.stringify({ ok: result.ok, code: result.code ?? null, at: new Date().toISOString() })
+  await prisma.$executeRaw`
+    UPDATE "ChatAgentTestRun"
+       SET "summary" = jsonb_set(COALESCE("summary", '{}'::jsonb), '{activation}', ${value}::jsonb, true)
+     WHERE "id" = ${runId} AND "tenantId" = ${tenantId}`
+}
+
+/** Switching a line off cancels its queued/running checks: a run that would pass later never turns it back on. */
+export async function cancelLineTestRuns(tenantId: string, agentId: string, socialAccountId: string): Promise<number> {
+  if (!(await isTableReady(TABLE))) return 0
+  return prisma.$executeRaw`
+    UPDATE "ChatAgentTestRun"
+       SET "status" = 'canceled', "leaseUntil" = NULL, "finishedAt" = NOW()
+     WHERE "tenantId" = ${tenantId} AND "agentId" = ${agentId} AND "socialAccountId" = ${socialAccountId}
+       AND "status" IN ('queued', 'running')`
 }
 
 /** Cron: resume runs whose lease expired (server restart, long run). At most a couple per tick. */

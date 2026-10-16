@@ -143,7 +143,7 @@ const firstWords = (text: string) => (text.match(/^\S+(?:\s+\S+){0,3}/)?.[0] ?? 
 
 /** Betsy's own line forms (BETSY_DATOS block / fixed rules) at the start of a line or sentence (N9). */
 const BETSY_LINE_RE =
-  /(?:^|\n|[.!?]\s+)[ \t]*((?:promoci[oó]n\s+activa|siguiente\s+paso|etapa|estado\s+de\s+la\s+venta|reglas?\s+fijas?)\s*:)/iu
+  /(?:^|\n|[.!?]\s+)[ \t]*((?:promoci[oó]n\s+activa|siguiente\s+paso|etapa|estado\s+de\s+la\s+venta|reglas?\s+fijas?|fuera\s+de\s+horario)\s*:)/iu
 
 /** The payment tokens an owner may write in a correction (Betsy fills them; agents2-format adds one per method). */
 const OWNER_PAYMENT_TOKEN_RE = /^\[\[\s*(?:DATOS[\s_-]?PAGO|PAGO[\s_-]?(?:SINPE|TRANSFERENCIA|TARJETA|EFECTIVO|CONTRA[\s_-]?ENTREGA))\s*\]\]$/i

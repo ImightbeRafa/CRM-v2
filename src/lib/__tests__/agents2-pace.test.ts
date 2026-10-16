@@ -20,7 +20,14 @@ import {
   type ReplyPace,
 } from '@/lib/soft-ai/reply-pace'
 import { REPLY_PART_GAP_MS } from '@/lib/soft-ai/reply-parts'
-import { caseWhy, isTechnicalOnlyFailure, probarOutcomeCodes, shouldRetryCase } from '@/lib/soft-ai/test-engine/why'
+import {
+  attemptCostMicros,
+  caseWhy,
+  isTechnicalOnlyFailure,
+  probarOutcomeCodes,
+  shouldRetryCase,
+  TIMEOUT_ATTEMPT_COST_MICROS,
+} from '@/lib/soft-ai/test-engine/why'
 
 const read = (p: string) => readFileSync(path.join(process.cwd(), p), 'utf8')
 
@@ -137,9 +144,17 @@ describe('agents2-pace: setting (salesRules.replyPace)', () => {
 describe('agents2-pace: live loop only (source)', () => {
   const turn = read('src/lib/soft-ai/agent-turn.ts')
   it('the live send loop paces, re-checks the gates after each wait, and re-runs go out at once', () => {
-    assert.match(turn, /const replyPace: ReplyPace = textAlreadyClaimed \? 'instant' : await loadReplyPace\(input\.row\.tenantId, input\.agent\.id\)/)
+    assert.match(turn, /const paceSetup = textAlreadyClaimed \? \{ pace: 'instant' as const, typing: false \} : await loadPaceSetup\(input\.row\.tenantId, input\.agent\.id\)/)
     assert.match(turn, /const wait = planPartWait\(\{/)
-    assert.match(turn, /pacedSoFarMs \+= wait\.waitMs\s*\/\/ Gate re-check after the wait[\s\S]{0,200}pacedFirstPartStop\(input\.row\.tenantId, input\.row\.conversationId\)[\s\S]{0,300}\} else if \(await stopRemainingParts\(input\.row\.tenantId, input\.row\.conversationId\)\) \{\s*partial = true\s*break/)
+    // F2 / INT-123: after every wait a person's reply also stops (first part = skip, later parts = partial).
+    assert.match(
+      turn,
+      /pacedSoFarMs \+= wait\.waitMs\s*\/\/ Gate re-check after the wait[\s\S]{0,200}pacedFirstPartStop\(input\.row\.tenantId, input\.row\.conversationId, input\.trigger\.sentAt\)[\s\S]{0,300}\} else if \(\s*\(await stopRemainingParts\(input\.row\.tenantId, input\.row\.conversationId\)\) \|\|\s*\(await humanRepliedSinceTrigger\(input\.row\.conversationId, input\.trigger\.sentAt\)\)\s*\) \{\s*partial = true\s*break/,
+    )
+    assert.match(turn, /if \(await hasHumanRepliedAfter\(\{ conversationId, triggerSentAt \}\)\) return 'human_replied'/)
+    // F3: a read error after the wait is never a silent drop (the reply goes out; gates passed seconds before).
+    assert.match(turn, /async function pacedFirstPartStop[\s\S]{0,900}\} catch \(error\) \{\s*console\.error\('\[soft-ai pace recheck\]'[^\n]*\n\s*return null\s*\}/)
+    assert.doesNotMatch(turn, /pace_recheck_failed/)
     assert.match(turn, /lastSentAt = Date\.now\(\)/)
     assert.match(turn, /let lastSentAt = input\.trigger\.sentAt\.getTime\(\)/)
   })
@@ -148,7 +163,7 @@ describe('agents2-pace: live loop only (source)', () => {
     const end = turn.indexOf('type ProbarInput')
     assert.ok(start > 0 && end > start)
     const probar = turn.slice(start, end)
-    assert.doesNotMatch(probar, /setTimeout|planPartWait|sendWhatsappTypingIndicator|loadReplyPace/)
+    assert.doesNotMatch(probar, /setTimeout|planPartWait|sendWhatsappTypingIndicator|loadPaceSetup/)
     const run = read('src/lib/soft-ai/test-engine/run.ts')
     assert.doesNotMatch(run, /reply-pace|planPartWait|typing-indicator/)
     const sandbox = read('src/app/config/agentes/AgentTestSandbox.tsx')
@@ -156,7 +171,12 @@ describe('agents2-pace: live loop only (source)', () => {
     assert.doesNotMatch(sandbox, /planPartWait|typingDelayMs/)
   })
   it('typing indicator: WhatsApp only, not instant, best effort (never throws, 2 s cap), wamid only', () => {
-    assert.match(turn, /const showTyping = replyPace !== 'instant' && platform === 'whatsapp'/)
+    assert.match(turn, /const showTyping = replyPace !== 'instant' && platform === 'whatsapp' && paceSetup\.typing/)
+    // Extra (a): per-agent "Mostrar 'escribiendo…' en WhatsApp", default on.
+    assert.match(turn, /typing: rules\.typingIndicator !== false/)
+    const route = read('src/app/api/chat/agents/[id]/settings/route.ts')
+    assert.match(route, /if \('typingIndicator' in body\) \{\s*if \(typeof body\.typingIndicator !== 'boolean'\)/)
+    assert.match(read('src/app/config/agentes/AgentReplyPaceToggle.tsx'), /Mostrar “escribiendo…” en WhatsApp[\s\S]{0,120}Marca el mensaje como leído \(✓✓ azul\)/)
     assert.match(turn, /if \(showTyping\) \{\s*await sendWhatsappTypingIndicator\(\{ accessToken, phoneNumberId: account\.accountId, inboundMessageId: input\.trigger\.providerMessageId \}\)/)
     // The wait is measured from before the indicator call: the indicator never adds time.
     assert.match(turn, /const waitUntil = now \+ wait\.waitMs/)
@@ -205,10 +225,21 @@ describe('agents2-pace: quick check "why" + technical retry', () => {
     assert.equal(shouldRetryCase({ ...failed, error: 'test_budget_blocked' }, 0, 400_000), false)
     assert.equal(shouldRetryCase(failed, 400_000, 400_000), false)
     assert.equal(shouldRetryCase({ ...failed, codes: ['write_claim'] }, 0, 400_000), false)
+    // INT-124: no retry once the leased step's time is used up; a timed-out attempt is charged an estimate.
+    assert.equal(shouldRetryCase(failed, 0, 400_000, 5_000), true)
+    assert.equal(shouldRetryCase(failed, 0, 400_000, 0), false)
+    assert.equal(shouldRetryCase(failed, 0, 400_000, -1), false)
+    assert.equal(attemptCostMicros(['XAI_TIMEOUT', 'review'], 0), TIMEOUT_ATTEMPT_COST_MICROS)
+    assert.equal(attemptCostMicros(['XAI_TIMEOUT'], 90_000), 90_000)
+    assert.equal(attemptCostMicros(['unsourced_amount'], 1_234), 1_234)
   })
   it('run.ts stores why / codes / retried; the UI shows why under a failed case', () => {
     const run = read('src/lib/soft-ai/test-engine/run.ts')
-    assert.match(run, /if \(!shouldRetryCase\(first\.result, run\.spentMicros \+ first\.costMicros, run\.costCapMicros\)\) return first/)
+    assert.match(run, /first\.costMicros = attemptCostMicros\(first\.result\.codes \?\? \[\], first\.costMicros\)/)
+    assert.match(run, /if \(!shouldRetryCase\(first\.result, run\.spentMicros \+ first\.costMicros, run\.costCapMicros, STEP_BUDGET_MS - \(Date\.now\(\) - stepStarted\)\)\) \{\s*return first/)
+    // INT-124: the lease is refreshed before the retry, only while this worker still owns the cursor.
+    assert.match(run, /SET "leaseUntil" = NOW\(\)[^\n]*\n\s*WHERE "id" = \$\{run\.id\} AND "tenantId" = \$\{run\.tenantId\} AND "status" = 'running' AND "cursor" = \$\{run\.cursor\}`\s*if \(leased === 0\) return first/)
+    assert.match(run, /runCase\(run, tc, started\)/)
     assert.match(run, /if \(second\.result\.error\) return \{ result: first\.result, costMicros \}/)
     assert.match(run, /retried: true/)
     assert.match(run, /why: caseWhy\(codes\), codes/)
@@ -217,5 +248,22 @@ describe('agents2-pace: quick check "why" + technical retry', () => {
     }
     assert.match(read('src/lib/soft-ai/agent-status-server.ts'), /why: typeof x\.why === 'string' \? x\.why\.slice\(0, 300\) : null/)
     assert.match(read('src/lib/soft-ai/agent-turn.ts'), /codes: probarOutcomeCodes\(\{ validationReasons, policyReasons, errorCode: llmErrorCode, escalate, escalateReason, handoff \}\)/)
+  })
+})
+
+describe('agents2-pace F1: the next message of the same chat is not left for the cron', () => {
+  const proc = read('src/lib/soft-ai/automation-processor.ts')
+  it('after complete / fail, the newest waiting job of the same conversation (tenant-scoped) is kicked once', () => {
+    assert.match(proc, /export async function kickNextConversationJob\(/)
+    assert.match(proc, /where: \{\s*tenantId: row\.tenantId,\s*conversationId: row\.conversationId,\s*id: \{ not: row\.id \},\s*status: \{ in: \['pending', 'retry'\] \},\s*availableAt: \{ lte: new Date\(\) \},/)
+    assert.match(proc, /orderBy: \[\{ createdAt: 'desc' \}, \{ id: 'desc' \}\]/)
+    // One kick, no chain: the kicked job runs with kick: false.
+    assert.match(proc, /if \(next\) void processJobById\(next\.id, \{ kick: false \}\)\.catch\(\(\) => undefined\)/)
+    assert.match(proc, /await completeJob\(row\)\s*if \(kick\) void kickNextConversationJob\(row\)/)
+    // Not after a timeout (that turn may still be sending in the background).
+    assert.match(proc, /if \(kick && !timedOut\) void kickNextConversationJob\(row\)/)
+    // Best effort: never throws.
+    assert.match(proc, /export async function kickNextConversationJob[\s\S]{0,900}\} catch \{\s*\/\* the cron picks it up \*\/\s*\}/)
+    assert.match(proc, /export async function processJobById\(id: string, opts\?: \{ kick\?: boolean \}\)/)
   })
 })

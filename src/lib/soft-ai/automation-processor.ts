@@ -22,6 +22,7 @@ import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
 import { dualWriteChatMessage } from '@/lib/chat-conversation-write'
 import { executeAgentLayerTurn } from '@/lib/soft-ai/agent-turn'
 import { resolveChatAgent } from '@/lib/soft-ai/agent-resolver'
+import { prisma } from '@/lib/db'
 
 type JobPayload = {
   platform?: string | null
@@ -147,20 +148,50 @@ async function dispatch(row: ClaimedChatAutomationJob) {
   return result
 }
 
-export async function processClaimedJob(row: ClaimedChatAutomationJob) {
+/**
+ * Verifier F1 (agents2-pace): while a paced reply is going out, the customer's next message is queued behind it
+ * (single-flight per conversation) and would wait for the once-a-minute cron. When this job is done, kick the newest
+ * waiting job of the same conversation (tenant-scoped) once. Best effort, never throws; the kicked job does not kick
+ * again (no chain / storm) — anything after it is the cron's.
+ */
+export async function kickNextConversationJob(row: Pick<ClaimedChatAutomationJob, 'id' | 'tenantId' | 'conversationId'>): Promise<void> {
+  try {
+    const next = await prisma.chatAutomationJob.findFirst({
+      where: {
+        tenantId: row.tenantId,
+        conversationId: row.conversationId,
+        id: { not: row.id },
+        status: { in: ['pending', 'retry'] },
+        availableAt: { lte: new Date() },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { id: true },
+    })
+    if (next) void processJobById(next.id, { kick: false }).catch(() => undefined)
+  } catch {
+    /* the cron picks it up */
+  }
+}
+
+export async function processClaimedJob(row: ClaimedChatAutomationJob, opts?: { kick?: boolean }) {
+  const kick = opts?.kick !== false
   const work = dispatch(row)
   try {
     await withProcessingTimeout(work)
     await completeJob(row)
+    if (kick) void kickNextConversationJob(row)
     return { id: row.id, status: 'completed' as const }
   } catch (error) {
     const terminal = await failJob(row, error)
-    if (error instanceof Error && error.name === 'ChatAutomationTimeoutError') {
+    const timedOut = error instanceof Error && error.name === 'ChatAutomationTimeoutError'
+    if (timedOut) {
       void work.then(
         () => completeLateJob(row),
         () => undefined,
       )
     }
+    // Not after a timeout: that turn may still be sending in the background (the next one waits for the cron).
+    if (kick && !timedOut) void kickNextConversationJob(row)
     return {
       id: row.id,
       status: terminal ? ('failed' as const) : ('retry' as const),
@@ -168,10 +199,10 @@ export async function processClaimedJob(row: ClaimedChatAutomationJob) {
   }
 }
 
-export async function processJobById(id: string) {
+export async function processJobById(id: string, opts?: { kick?: boolean }) {
   const row = await claimJobById(id)
   if (!row) return { id, status: 'not_claimed' as const }
-  return processClaimedJob(row)
+  return processClaimedJob(row, opts)
 }
 
 export async function processAutomationBatch(limit = 2) {

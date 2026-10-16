@@ -22,6 +22,7 @@ import { headlineHasNumberWords, parsePromo } from '@/lib/soft-ai/promo'
 import { dealProblem } from '@/lib/soft-ai/llm/output-validator'
 import { hasConfirmationWording } from '@/lib/soft-ai/shortcuts'
 import { DEFAULT_REPLY_PACE, replyPaceSchema } from '@/lib/soft-ai/reply-pace'
+import { afterHoursNoteRejected, normalizeAfterHoursNote } from '@/lib/soft-ai/after-hours-note'
 import { BUSINESS_HOURS_TIMEZONE, businessHoursSchema, DEFAULT_BUSINESS_HOURS, type BusinessHours } from '@/lib/soft-ai/business-hours'
 import { ownerTextProblem } from '@/lib/soft-ai/agent-tuning-core'
 
@@ -85,7 +86,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       loadSalesSetup(auth.tenantId, id).catch(() => null),
     ])
     return NextResponse.json(
-      { success: true, available, settings, knownStamps: stamps, aiDisclosure: sales?.salesRules.aiDisclosure ?? 'discreet', replyPace: sales?.salesRules.replyPace ?? DEFAULT_REPLY_PACE, businessHours: sales?.salesRules.businessHours ?? DEFAULT_BUSINESS_HOURS, promo: sales?.salesRules.promo ?? null },
+      { success: true, available, settings, knownStamps: stamps, aiDisclosure: sales?.salesRules.aiDisclosure ?? 'discreet', replyPace: sales?.salesRules.replyPace ?? DEFAULT_REPLY_PACE, typingIndicator: sales?.salesRules.typingIndicator !== false, businessHours: sales?.salesRules.businessHours ?? DEFAULT_BUSINESS_HOURS, promo: sales?.salesRules.promo ?? null },
       { headers: { 'Cache-Control': 'no-store' } },
     )
   } catch (error) {
@@ -194,6 +195,33 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       return NextResponse.json({ success: true, aiDisclosure: value })
     }
     // agents2-pace: "Velocidad de respuesta" (stored with the sales script, like aiDisclosure): saved on its own.
+    // agents2-pace extra: "Mostrar 'escribiendo…' en WhatsApp" (same jsonb), saved on its own.
+    if ('typingIndicator' in body) {
+      if (typeof body.typingIndicator !== 'boolean') {
+        return NextResponse.json({ success: false, error: 'Valor inválido' }, { status: 400 })
+      }
+      const typing = body.typingIndicator
+      try {
+        await saveSalesSetup(auth.tenantId, agent.id, { salesRules: { typingIndicator: typing } }, auth.userId)
+      } catch (error) {
+        if (error instanceof SalesSetupNotReadyError) {
+          return NextResponse.json({ success: false, error: 'Este ajuste todavía no está disponible.' }, { status: 503 })
+        }
+        throw error
+      }
+      await logAuditEvent({
+        action: 'UPDATE',
+        entityType: 'ChatAgent',
+        entityId: agent.id,
+        entityName: agent.name,
+        description: 'Indicador “escribiendo…” en WhatsApp',
+        newValues: { typingIndicator: typing },
+        userId: auth.userId,
+        userRole: auth.role,
+        tenantId: auth.tenantId,
+      }).catch(() => {})
+      return NextResponse.json({ success: true, typingIndicator: typing })
+    }
     if ('replyPace' in body) {
       const parsed = replyPaceSchema.safeParse(body.replyPace)
       if (!parsed.success) {
@@ -231,21 +259,33 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     if ('businessHours' in body) {
       const parsed = businessHoursSchema.safeParse(body.businessHours)
       if (!parsed.success) {
-        return NextResponse.json({ success: false, error: 'Horario inválido: revisá las horas de cada día.' }, { status: 400 })
+        return NextResponse.json({ success: false, error: 'Horario inválido: revisá las horas y abrí al menos un día.' }, { status: 400 })
       }
       let note: string | null = parsed.data.afterHoursNote?.trim() || null
+      const refuse = () =>
+        NextResponse.json(
+          { success: false, error: 'La nota va tal cual al cliente: sin números, [ ], { }, < >, enlaces, ofertas ni “pago confirmado”.' },
+          { status: 400 },
+        )
+      // Verifier F5 / SecureDog INT-120: no markers / tokens, any-script digits, deals, confirmations, validator reasons.
+      if (note && afterHoursNoteRejected(note)) return refuse()
       if (note) {
         const checked = ownerTextProblem(note, 'La nota fuera de horario')
         if (!checked.ok) return NextResponse.json({ success: false, error: checked.error }, { status: 400 })
-        note = checked.text.trim()
-        if (hasConfirmationWording(note) || dealProblem(note, []) || headlineHasNumberWords(note) || /\d/.test(note)) {
-          return NextResponse.json({ success: false, error: 'La nota no puede tener montos ni números, ofertas ni “pago confirmado”.' }, { status: 400 })
-        }
+        // DATA-55: normalized (NFKC) text is what is stored — checked and length-validated again.
+        note = normalizeAfterHoursNote(checked.text) || null
+        if (note && afterHoursNoteRejected(note)) return refuse()
       }
       const value: BusinessHours = { enabled: parsed.data.enabled, timezone: BUSINESS_HOURS_TIMEZONE, windows: parsed.data.windows, afterHoursNote: note }
+      if (!businessHoursSchema.safeParse(value).success) {
+        return NextResponse.json({ success: false, error: 'Horario inválido: revisá las horas y la nota.' }, { status: 400 })
+      }
       const before = await loadSalesSetup(auth.tenantId, agent.id).catch(() => null)
+      let stored: BusinessHours = value
       try {
-        await saveSalesSetup(auth.tenantId, agent.id, { salesRules: { businessHours: value } }, auth.userId)
+        const saved = await saveSalesSetup(auth.tenantId, agent.id, { salesRules: { businessHours: value } }, auth.userId)
+        // DATA-55: return and audit what was actually stored (parsed back), not the request value.
+        stored = saved.salesRules.businessHours ?? DEFAULT_BUSINESS_HOURS
       } catch (error) {
         if (error instanceof SalesRulesTooLargeError) {
           return NextResponse.json({ success: false, error: 'El guion de venta es demasiado largo: acortá algún texto o combo.' }, { status: 413 })
@@ -262,12 +302,12 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
         entityName: agent.name,
         description: 'Horario de atención del agente',
         oldValues: { businessHours: before?.salesRules.businessHours ?? null },
-        newValues: { businessHours: value },
+        newValues: { businessHours: stored },
         userId: auth.userId,
         userRole: auth.role,
         tenantId: auth.tenantId,
       }).catch(() => {})
-      return NextResponse.json({ success: true, businessHours: value })
+      return NextResponse.json({ success: true, businessHours: stored })
     }
     const patch: AgentSettingsPatch = {}
     if ('dailyTokenCap' in body) {

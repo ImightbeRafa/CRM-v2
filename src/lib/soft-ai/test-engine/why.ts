@@ -93,10 +93,22 @@ export function shouldRetryCase(
   result: { pass: boolean; error?: string | null; codes?: string[]; retried?: boolean },
   spentMicros: number,
   costCapMicros: number,
+  /** INT-124: time left in this leased step; none left = no retry (the next step / cron runs the next case). */
+  stepTimeLeftMs: number = Number.POSITIVE_INFINITY,
 ): boolean {
   if (result.pass || result.error || result.retried) return false
   if (spentMicros >= costCapMicros) return false
+  if (!(stepTimeLeftMs > 0)) return false
   return isTechnicalOnlyFailure(result.codes ?? [])
+}
+
+/** INT-124: a timed-out attempt may report no usage; the run cap still counts it at this estimate (US$0.02). */
+export const TIMEOUT_ATTEMPT_COST_MICROS = 20_000
+const TIMEOUT_CODES = new Set(['LLM_TIMEOUT', 'XAI_TIMEOUT'])
+
+export function attemptCostMicros(codes: string[], measuredMicros: number): number {
+  const measured = Math.max(0, Math.round(measuredMicros || 0))
+  return codes.some((c) => TIMEOUT_CODES.has(c)) ? Math.max(measured, TIMEOUT_ATTEMPT_COST_MICROS) : measured
 }
 
 /** Plain-Spanish reason for a case (null when nothing unusual happened). Up to two reasons. */

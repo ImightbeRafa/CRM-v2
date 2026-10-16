@@ -1,3 +1,27 @@
+## 2026-10-16 — agents2-pace/hours: Verifier F1–F7 + SecureDog INT-120..124, DATA-55/56 (claudio/agents2-pace)
+
+- F1: automation-processor kicks the newest waiting job of the same conversation (tenant-scoped) once after a job
+  completes / fails (not after a timeout); the kicked job does not kick again. Best effort.
+- F2 / INT-123: after every pacing wait, a person's reply (hasHumanRepliedAfter) stops: first part → skip
+  'human_replied'; later parts → partial (review alert).
+- F3: a read error in the first-part re-check is logged and the reply goes out (gates passed seconds before) — never a
+  silent drop.
+- F4 / INT-121: true hand-offs never offer the bot; opt-out keeps the owner's text + "El equipo te escribe <label>".
+- F5 / INT-120: after-hours note refused on save if it has [ ] { } < > 【 】, any \p{Nd} digit, confirmation / deal /
+  amount words, or any reply-validator reason (payment context, order closing, no links); re-checked at send (dropped
+  on failure) + leftover check on the composed text. DATA-55: NFKC-normalized note re-validated; the route returns and
+  audits what was stored.
+- F6: enabled ⇒ at least one window (schema + UI save disabled with a message).
+- F7: discreet disclosure → neutral wording ("el equipo no está disponible") in texts and the prompt line;
+  "asistente automático" only when transparent.
+- After hours the safe line / "Enseguida te paso cómo pagar" get after-hours wording; the safe-line loop cap matches
+  both. INT-122: "Fuera de horario:" stripped as a Betsy lookalike. INT-124: quick-check retry refreshes the lease
+  (cursor-conditional), skips when the step time is used, charges US$0.02 per timed-out attempt. DATA-56: Studio apply
+  writes only script keys. Trigger message scoped by tenant + conversation.
+- Extras: per-agent "Mostrar 'escribiendo…' en WhatsApp" (default on); morning toast "Revisalos en el inbox".
+- Proof: tsc 0, lint 0, test:soft-ai 806/806, chat-harden 643/643, security 271/271, soft-ai-agent 319/319,
+  agentes-ui 34/34. Not deployed.
+
 ## 2026-10-16 — agents2-hours: "Horario de atención" per agent (claudio/agents2-pace)
 
 - New per-agent `businessHours` {enabled, timezone 'America/Costa_Rica', windows [{day 0–6, open, close}] (≤ 3 per

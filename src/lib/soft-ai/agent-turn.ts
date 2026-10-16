@@ -6,7 +6,9 @@
 import { randomUUID } from 'node:crypto'
 import { probarWhy } from '@/lib/soft-ai/probar-why'
 import { probarOutcomeCodes } from '@/lib/soft-ai/test-engine/why'
+import { afterHoursNoteRejected } from '@/lib/soft-ai/after-hours-note'
 import {
+  AFTER_HOURS_REVIEW_PREFIX,
   afterHoursPromptLine,
   afterHoursState,
   applyAfterHoursText,
@@ -26,6 +28,7 @@ import type { ClaimedChatAutomationJob } from '@/lib/soft-ai/automation-queue'
 import {
   collectDryRunBlockers,
   hashSoftAiOutput,
+  hasHumanRepliedAfter,
   loadDailyTestTokens,
   runClaimGates,
   runPreModelGates,
@@ -137,11 +140,26 @@ function readPayload(payload: unknown): JobPayload {
   }
 }
 
+/** Verifier F5: the composed after-hours text (with the owner's note) has no leftover token / template / tag. */
+const AFTER_HOURS_LEFTOVER = new Set(['unknown_token', 'template_leak', 'tag_leak'])
+function afterHoursComposedOk(text: string): boolean {
+  return !validateAgentOutput({ text, citedToolNames: [] }).reasons.some((r) => AFTER_HOURS_LEFTOVER.has(r))
+}
+/** Live and Probar: same after-hours text rules (INT-120: the owner's note is re-checked at send). */
+const AFTER_HOURS_TEXT_OPTS = {
+  safeReview: SAFE_LINE.review,
+  paymentSoon: SAFE_LINE.paymentSoon,
+  noteOk: (note: string) => !afterHoursNoteRejected(note),
+  composedOk: afterHoursComposedOk,
+}
+
 /** A planned reply (B1) gets the sweep apology when the customer waited > 30 min (B9). Never on a payment hand-off. */
 function finalizePlannedText(plan: TurnDeliveryPlan, payload: JobPayload, triggerSentAt: Date, hours: AfterHoursState = IN_HOURS): string {
-  // agents2-hours: after hours a TRUE hand-off tells the customer when the team answers (code-owned text).
-  if (plan.handoff?.kind === 'handoff') return applyAfterHoursText(plan, hours, SAFE_LINE.review)
-  return withDelayApology(plan.text, { sweep: Boolean(payload.sweep), messageAgeMs: Date.now() - triggerSentAt.getTime() })
+  // agents2-hours: after hours a TRUE hand-off tells the customer when the team answers (code-owned text), and the
+  // safe lines that promise immediacy get the after-hours wording. In hours / off: unchanged.
+  const text = applyAfterHoursText(plan, hours, AFTER_HOURS_TEXT_OPTS)
+  if (plan.handoff?.kind === 'handoff') return text
+  return withDelayApology(text, { sweep: Boolean(payload.sweep), messageAgeMs: Date.now() - triggerSentAt.getTime() })
 }
 
 /** B1 loop cap: did this chat already get the safe line in the last 30 min (another job)? */
@@ -152,7 +170,8 @@ async function safeLineSentRecently(tenantId: string, conversationId: string, de
         tenantId,
         conversationId,
         status: 'delivered',
-        outputText: SAFE_LINE.review,
+        // agents2-hours: the after-hours safe line counts too (same loop cap at night).
+        OR: [{ outputText: SAFE_LINE.review }, { outputText: { startsWith: AFTER_HOURS_REVIEW_PREFIX } }],
         completedAt: { gte: new Date(Date.now() - 30 * 60_000) },
         NOT: { automationDeliveryKey: deliveryKey },
       },
@@ -195,9 +214,10 @@ async function loadHistory(
     }))
 }
 
-async function loadTriggerMessage(messageId: string) {
-  return prisma.chatMessage.findUnique({
-    where: { id: messageId },
+async function loadTriggerMessage(messageId: string, tenantId: string, conversationId: string) {
+  // SecureDog: scoped to this job's business and chat (never another tenant's message by id).
+  return prisma.chatMessage.findFirst({
+    where: { id: messageId, tenantId, conversationId },
     select: {
       id: true,
       sentAt: true,
@@ -451,7 +471,7 @@ export async function executeAgentLayerTurn(
     return { status: 'skipped', reason: resolved.skipReason }
   }
 
-  const trigger = await loadTriggerMessage(row.messageId)
+  const trigger = await loadTriggerMessage(row.messageId, row.tenantId, row.conversationId)
   if (!trigger) {
     return { status: 'skipped', reason: 'trigger_missing' }
   }
@@ -522,7 +542,8 @@ export async function executeAgentLayerTurn(
   }
 
   // agents2-hours: "Horario de atención" of this agent (off = 24/7, nothing changes).
-  const hours = afterHoursState(await loadBusinessHours(row.tenantId, resolved.agent.id), new Date())
+  const hoursSetup = await loadHoursSetup(row.tenantId, resolved.agent.id)
+  const hours = afterHoursState(hoursSetup.hours, new Date(), { aiDisclosure: hoursSetup.aiDisclosure })
 
   // Reuse persisted output on lease reclaim (exactly-once contentHash).
   const existing = await prisma.chatAgentTurn.findUnique({
@@ -1238,8 +1259,9 @@ async function finishDeliveryOrSuggestInner(input: {
   const partsDeadlineAt = (input.startedAt ?? Date.now()) + AGENT_PARTS_DEADLINE_MS
   // agents2-pace: "Velocidad de respuesta" — a typing wait before each message; the time since the customer wrote
   // (model included) counts. A re-run of a job whose text was already attempted goes out at once (no new waits).
-  const replyPace: ReplyPace = textAlreadyClaimed ? 'instant' : await loadReplyPace(input.row.tenantId, input.agent.id)
-  const showTyping = replyPace !== 'instant' && platform === 'whatsapp'
+  const paceSetup = textAlreadyClaimed ? { pace: 'instant' as const, typing: false } : await loadPaceSetup(input.row.tenantId, input.agent.id)
+  const replyPace: ReplyPace = paceSetup.pace
+  const showTyping = replyPace !== 'instant' && platform === 'whatsapp' && paceSetup.typing
   let pacedSoFarMs = 0
   let lastSentAt = input.trigger.sentAt.getTime()
   let firstSkipped = false
@@ -1278,11 +1300,14 @@ async function finishDeliveryOrSuggestInner(input: {
       pacedSoFarMs += wait.waitMs
       // Gate re-check after the wait: kill switch / a person took or paused the chat meanwhile.
       if (i === 0) {
-        const stop = await pacedFirstPartStop(input.row.tenantId, input.row.conversationId)
+        const stop = await pacedFirstPartStop(input.row.tenantId, input.row.conversationId, input.trigger.sentAt)
         if (stop) {
           return persistDecidedTurn({ turnId: input.turnId, outcome: { outcome: 'skip', reason: stop }, operationMode: input.agent.operationMode, setMode: false })
         }
-      } else if (await stopRemainingParts(input.row.tenantId, input.row.conversationId)) {
+      } else if (
+        (await stopRemainingParts(input.row.tenantId, input.row.conversationId)) ||
+        (await humanRepliedSinceTrigger(input.row.conversationId, input.trigger.sentAt))
+      ) {
         partial = true
         break
       }
@@ -1413,36 +1438,57 @@ async function stopRemainingParts(tenantId: string, conversationId: string): Pro
 
 /**
  * agents2-pace: after the typing wait before the FIRST message (nothing sent yet), why not to send it: kill switch,
- * or a person took / paused the chat meanwhile. Fail-safe: a read error stops too.
+ * a person took / paused the chat, or a person already answered the customer (same as the pre-send gate).
+ * Verifier F3: a read error is never a silent drop — every gate passed seconds before the wait, so the reply goes out.
  */
-async function pacedFirstPartStop(tenantId: string, conversationId: string): Promise<string | null> {
+async function pacedFirstPartStop(tenantId: string, conversationId: string, triggerSentAt: Date): Promise<string | null> {
   try {
     if ((await readAgentKillState(tenantId)).armed) return 'kill_switch'
     const conv = await prisma.chatConversation.findFirst({ where: { id: conversationId, tenantId }, select: { aiMode: true } })
     if (!conv) return 'conversation_missing'
     if (conv.aiMode === 'human') return 'human_before_send'
     if (conv.aiMode === 'paused') return 'paused_before_send'
+    if (await hasHumanRepliedAfter({ conversationId, triggerSentAt })) return 'human_replied'
     return null
-  } catch {
-    return 'pace_recheck_failed'
+  } catch (error) {
+    console.error('[soft-ai pace recheck]', { code: error instanceof Error ? error.name : 'error' })
+    return null
   }
 }
 
-/** agents2-hours: this agent's "Horario de atención" (salesRules.businessHours). Never throws; default off (24/7). */
-async function loadBusinessHours(tenantId: string, agentId: string): Promise<BusinessHours> {
+/** Verifier F2: a person wrote to the customer during the wait (the AI's own parts are softAi and don't count). */
+async function humanRepliedSinceTrigger(conversationId: string, triggerSentAt: Date): Promise<boolean> {
   try {
-    return (await loadSalesSetup(tenantId, agentId)).salesRules.businessHours ?? DEFAULT_BUSINESS_HOURS
+    return await hasHumanRepliedAfter({ conversationId, triggerSentAt })
   } catch {
-    return DEFAULT_BUSINESS_HOURS
+    // Fail-safe like stopRemainingParts: stop the remaining parts (partial → a person is asked to review).
+    return true
   }
 }
 
-/** agents2-pace: this agent's "Velocidad de respuesta" (salesRules.replyPace). Never throws; default 'natural'. */
-async function loadReplyPace(tenantId: string, agentId: string): Promise<ReplyPace> {
+/**
+ * agents2-hours: this agent's "Horario de atención" (salesRules.businessHours) and its "¿Sos un bot?" setting (the
+ * after-hours wording follows it). Never throws; default off (24/7), discreet.
+ */
+async function loadHoursSetup(tenantId: string, agentId: string): Promise<{ hours: BusinessHours; aiDisclosure: 'transparent' | 'discreet' }> {
   try {
-    return (await loadSalesSetup(tenantId, agentId)).salesRules.replyPace ?? DEFAULT_REPLY_PACE
+    const rules = (await loadSalesSetup(tenantId, agentId)).salesRules
+    return { hours: rules.businessHours ?? DEFAULT_BUSINESS_HOURS, aiDisclosure: rules.aiDisclosure }
   } catch {
-    return DEFAULT_REPLY_PACE
+    return { hours: DEFAULT_BUSINESS_HOURS, aiDisclosure: 'discreet' }
+  }
+}
+
+/**
+ * agents2-pace: this agent's "Velocidad de respuesta" (salesRules.replyPace, default 'natural') and whether WhatsApp
+ * shows "escribiendo…" (salesRules.typingIndicator, default on). Never throws.
+ */
+async function loadPaceSetup(tenantId: string, agentId: string): Promise<{ pace: ReplyPace; typing: boolean }> {
+  try {
+    const rules = (await loadSalesSetup(tenantId, agentId)).salesRules
+    return { pace: rules.replyPace ?? DEFAULT_REPLY_PACE, typing: rules.typingIndicator !== false }
+  } catch {
+    return { pace: DEFAULT_REPLY_PACE, typing: true }
   }
 }
 
@@ -1647,7 +1693,7 @@ async function runAgentTestTurnInner(input: {
   const notSimulatedGates = [...PROBAR_NOT_SIMULATED_GATES]
   // agents2-hours: Probar answers in hours unless the owner simulates the night (the quick check never does).
   const probarHours = input.simulateAfterHours === true
-    ? afterHoursState(await loadBusinessHours(input.tenantId, runtimeAgent.id), new Date(), { simulate: true })
+    ? await loadHoursSetup(input.tenantId, runtimeAgent.id).then((h) => afterHoursState(h.hours, new Date(), { simulate: true, aiDisclosure: h.aiDisclosure }))
     : IN_HOURS
   const probarInventoryIds = await loadMappedInventoryIds(input.tenantId, runtimeAgent.id)
   const probarMediaSalesContext = isMediaLikeMessageType(input.messageType)
@@ -1775,7 +1821,7 @@ async function runAgentTestTurnInner(input: {
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
     })
-    text = applyAfterHoursText(plan, probarHours, SAFE_LINE.review)
+    text = applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS)
     handoff = plan.handoff
     intent = policy.intent
     shortcutKey = plan.text !== policy.text ? null : policy.purchaseSummaryAppended ? 'sys_purchase_summary' : llm.shortcutKey || null
@@ -1791,7 +1837,7 @@ async function runAgentTestTurnInner(input: {
     ]
   } else {
     const plan = planDecisionDelivery({ text: decision.text, textOk: decision.textOk, handoff: decision.handoff })
-    text = applyAfterHoursText(plan, probarHours, SAFE_LINE.review)
+    text = applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS)
     handoff = plan.handoff
     needsHuman = decision.needsHuman
     escalate = decision.escalate

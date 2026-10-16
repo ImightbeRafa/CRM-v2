@@ -30,7 +30,7 @@ import {
   type SuiteSummary,
   type TurnForGrading,
 } from '@/lib/soft-ai/test-engine/grade'
-import { caseWhy, shouldRetryCase } from '@/lib/soft-ai/test-engine/why'
+import { attemptCostMicros, caseWhy, shouldRetryCase } from '@/lib/soft-ai/test-engine/why'
 
 const TABLE = 'ChatAgentTestRun'
 export const TEST_RUN_COST_CAP_MICROS = 400_000 // US$0.40 per run
@@ -367,10 +367,20 @@ async function judge(
  * run once more before it counts (shouldRetryCase: within the run's cost cap; the test budget is re-checked by the
  * turn itself). If the retry is blocked or errors, the first result stands.
  */
-async function runCase(run: TestRunRow, tc: TestCase): Promise<{ result: CaseResult; costMicros: number }> {
+async function runCase(run: TestRunRow, tc: TestCase, stepStarted: number): Promise<{ result: CaseResult; costMicros: number }> {
   const first = await runCaseOnce(run, tc)
-  if (!shouldRetryCase(first.result, run.spentMicros + first.costMicros, run.costCapMicros)) return first
+  // INT-124: a timed-out attempt is charged a fixed estimate (the run cap must see it); no retry once the step's time
+  // is used up; the lease is refreshed first, only while this worker still owns the cursor.
+  first.costMicros = attemptCostMicros(first.result.codes ?? [], first.costMicros)
+  if (!shouldRetryCase(first.result, run.spentMicros + first.costMicros, run.costCapMicros, STEP_BUDGET_MS - (Date.now() - stepStarted))) {
+    return first
+  }
+  const leased = await prisma.$executeRaw`
+    UPDATE "ChatAgentTestRun" SET "leaseUntil" = NOW() + (${LEASE_MS}::int * INTERVAL '1 millisecond')
+     WHERE "id" = ${run.id} AND "tenantId" = ${run.tenantId} AND "status" = 'running' AND "cursor" = ${run.cursor}`
+  if (leased === 0) return first
   const second = await runCaseOnce(run, tc)
+  second.costMicros = attemptCostMicros(second.result.codes ?? [], second.costMicros)
   const costMicros = first.costMicros + second.costMicros
   if (second.result.error) return { result: first.result, costMicros }
   return { result: { ...second.result, retried: true }, costMicros }
@@ -460,7 +470,7 @@ export async function drainAgentTestRun(tenantId: string, id: string): Promise<v
         return
       }
       const tc = run.cases[run.cursor]
-      const { result, costMicros } = await runCase(run, tc)
+      const { result, costMicros } = await runCase(run, tc, started)
       const results: CaseResult[] = [...run.results, result]
       // Cursor guard: if another worker already advanced this run (expired lease), stop — never double-process.
       const advanced = await prisma.$executeRaw`

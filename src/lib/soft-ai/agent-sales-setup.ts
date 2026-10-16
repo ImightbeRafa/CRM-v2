@@ -20,6 +20,8 @@ export type SalesRules = {
   aiDisclosure: 'discreet' | 'transparent'
   /** agents2-pace: how fast the reply goes out in a real chat (reply-pace.ts). Missing / unknown = 'natural'. */
   replyPace?: ReplyPace
+  /** agents2-pace: WhatsApp "escribiendo…" before a paced message (marks the message read). Missing = on. */
+  typingIndicator?: boolean
   /** agents2-hours: "Horario de atención" (business-hours.ts). Missing / invalid = off (24/7). */
   businessHours?: BusinessHours
   closing: string | null
@@ -97,6 +99,7 @@ export const EMPTY_SALES_RULES: SalesRules = {
   voice: null,
   aiDisclosure: 'discreet',
   replyPace: DEFAULT_REPLY_PACE,
+  typingIndicator: true,
   businessHours: DEFAULT_BUSINESS_HOURS,
   closing: null,
   upsells: null,
@@ -123,6 +126,7 @@ export function parseSalesRules(raw: unknown): SalesRules {
     handoffWhen: text(r.handoffWhen, 800),
     aiDisclosure: r.aiDisclosure === 'transparent' ? 'transparent' : 'discreet',
     replyPace: parseReplyPace(r.replyPace),
+    typingIndicator: r.typingIndicator !== false,
     businessHours: parseBusinessHours(r.businessHours),
     mustSay: list(r.mustSay, 10, 200),
     neverSay: list(r.neverSay, 10, 200),

@@ -136,10 +136,13 @@ export function AgentBusinessHoursCard({ agentId, canEdit }: { agentId: string; 
             />
           </label>
           {preview ? <p className="text-[11px] text-slate-600" data-testid="business-hours-now">{preview}</p> : null}
+          {!hours.windows.length ? (
+            <p className="text-[11px] text-red-700" data-testid="business-hours-empty">Abrí al menos un día para guardar el horario.</p>
+          ) : null}
           {canEdit ? (
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !hours.windows.length}
               onClick={() => void save({ ...hours, timezone: BUSINESS_HOURS_TIMEZONE, afterHoursNote: hours.afterHoursNote?.trim() || null })}
               className="mt-1 rounded-full bg-[#5B6CFF] px-3 py-1 text-[12px] font-medium text-white disabled:opacity-60"
             >

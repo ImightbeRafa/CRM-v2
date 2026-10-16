@@ -37,6 +37,17 @@ export const businessHoursSchema = z
   .refine((h) => [0, 1, 2, 3, 4, 5, 6].every((d) => h.windows.filter((w) => w.day === d).length <= MAX_WINDOWS_PER_DAY), {
     message: 'too_many_windows',
   })
+  // Verifier F6: a schedule that is on must open at least once a week (otherwise it is "always closed").
+  .refine((h) => !h.enabled || h.windows.length > 0, { message: 'enabled_without_windows' })
+
+/**
+ * Verifier F5: the after-hours note goes to the customer as-is (code text, no token filling): no [[…]] / [ … ]
+ * markers, {{…}} templates or < > tags.
+ */
+export const NOTE_MARKER_RE = /[[\]{}<>【】]/
+export function afterHoursNoteHasMarker(note: string | null | undefined): boolean {
+  return NOTE_MARKER_RE.test(String(note || ''))
+}
 
 export type BusinessHoursWindow = z.infer<typeof businessHoursWindowSchema>
 export type BusinessHours = {
@@ -124,18 +135,34 @@ export type AfterHoursState = {
   /** "mañana a las 8:00 a. m." — used in the customer texts and the prompt line. */
   label: string
   note: string | null
+  /**
+   * Verifier F7: the agent's "¿Sos un bot?" setting is 'transparent' — only then do the texts / prompt line say
+   * "asistente automático". Discreet = neutral wording ("el equipo no está disponible"), never claims to be a person.
+   */
+  transparent: boolean
 }
 
-export const IN_HOURS: AfterHoursState = { afterHours: false, opensAt: null, label: '', note: null }
+export const IN_HOURS: AfterHoursState = { afterHours: false, opensAt: null, label: '', note: null, transparent: false }
 
 /** Fallback when no opening can be computed (simulated night in Probar with no schedule). */
 const SOON_LABEL = 'apenas vuelva a estar disponible'
 
-export function afterHoursState(schedule: BusinessHours | null | undefined, now: Date, opts?: { simulate?: boolean }): AfterHoursState {
+export function afterHoursState(
+  schedule: BusinessHours | null | undefined,
+  now: Date,
+  opts?: { simulate?: boolean; aiDisclosure?: 'transparent' | 'discreet' | null },
+): AfterHoursState {
   const outside = opts?.simulate === true || !isWithinBusinessHours(schedule, now)
   if (!outside) return IN_HOURS
   const next = nextOpening(schedule, now)
-  return { afterHours: true, opensAt: next?.date ?? null, label: next?.label ?? SOON_LABEL, note: schedule?.afterHoursNote?.trim() || null }
+  const note = schedule?.afterHoursNote?.trim() || null
+  return {
+    afterHours: true,
+    opensAt: next?.date ?? null,
+    label: next?.label ?? SOON_LABEL,
+    note: note && !afterHoursNoteHasMarker(note) ? note : null,
+    transparent: opts?.aiDisclosure === 'transparent',
+  }
 }
 
 /** "mañana a las 8:00 a. m." already ends a sentence; never "a. m.." */
@@ -144,9 +171,12 @@ const sentenceEnd = (label: string) => (label.endsWith('.') ? label : `${label}.
 /** Code-owned prompt line (per turn, only after hours). */
 export function afterHoursPromptLine(state: AfterHoursState): string | null {
   if (!state.afterHours) return null
+  const who = state.transparent
+    ? 'que te atiende el asistente automático y que el equipo responde'
+    : 'que a esta hora el equipo no está disponible y que responde'
   return (
-    `Fuera de horario: si el cliente pregunta por alguien o algo que requiere al equipo, decí con claridad que te ` +
-    `atiende el asistente automático y que el equipo responde ${sentenceEnd(state.label)} Nunca prometas revisar o confirmar ahora. ` +
+    `Fuera de horario: si el cliente pregunta por alguien o algo que requiere al equipo, decí con claridad ${who} ` +
+    `${sentenceEnd(state.label)} Nunca prometas revisar o confirmar ahora. ` +
     `(Esto reemplaza "lo revisás y le confirmás". Precios, productos, envíos y métodos de pago los respondés normal.)`
   )
 }
@@ -165,28 +195,87 @@ export function afterHoursHandoffKind(reason: string | null | undefined): 'payme
 }
 
 /** Customer texts after hours (no "confirmado" / "registrado" claims: they pass the write-claim / confirmation checks). */
-export function afterHoursHandoffLine(kind: 'payment' | 'order' | 'person', label: string): string {
-  if (kind === 'payment') return `¡Gracias! 🙌 Te atiende el asistente automático a esta hora. El equipo revisa tu pago ${label} y te escribe por aquí 😊`
+export function afterHoursHandoffLine(kind: 'payment' | 'order' | 'person', label: string, transparent = false): string {
   if (kind === 'order') return `¡Gracias! Recibí los datos de tu pedido. El equipo lo revisa ${label} y te escribe por aquí 😊`
-  return `A esta hora te atiende el asistente automático 🌙 El equipo te escribe ${sentenceEnd(label)} Mientras tanto, ¿te ayudo con algo?`
+  if (kind === 'payment') {
+    return transparent
+      ? `¡Gracias! 🙌 Te atiende el asistente automático a esta hora. El equipo revisa tu pago ${label} y te escribe por aquí 😊`
+      : `¡Gracias! 🙌 A esta hora el equipo no está disponible. Revisan tu pago ${label} y te escriben por aquí 😊`
+  }
+  // Verifier F4: the chat goes to a person (opt-out included) — never "¿te ayudo con algo?" from the bot.
+  return transparent
+    ? `A esta hora te atiende el asistente automático 🌙 El equipo te escribe ${label} 😊`
+    : `A esta hora el equipo no está disponible; te escriben ${label} 😊`
+}
+
+/** After-hours replacement for the in-hours safe line ("Dame un momento y te confirmo"): same prefix for both wordings. */
+export const AFTER_HOURS_REVIEW_PREFIX = 'Gracias por escribir 😊 A esta hora'
+
+export function afterHoursReviewLine(label: string, transparent = false): string {
+  return transparent
+    ? `${AFTER_HOURS_REVIEW_PREFIX} te atiende el asistente automático; el equipo te escribe ${sentenceEnd(label)}`
+    : `${AFTER_HOURS_REVIEW_PREFIX} el equipo no está disponible; te escriben ${sentenceEnd(label)}`
+}
+
+/** "Enseguida te paso cómo pagar" promises immediacy: after hours the team sends it at the next opening. */
+export function afterHoursPaymentSoonLine(label: string): string {
+  return `El equipo te pasa cómo pagar ${label} 😊`
+}
+
+/** INT-121: added after the owner's opt-out text ("en un momento te escribe alguien") — keeps their words. */
+export function afterHoursTeamLine(label: string): string {
+  return `El equipo te escribe ${sentenceEnd(label)}`
+}
+
+export type AfterHoursTextOptions = {
+  /** SAFE_LINE.review ("Dame un momento y te confirmo 😊"). */
+  safeReview: string
+  /** SAFE_LINE.paymentSoon ("Enseguida te paso cómo pagar 😊"). */
+  paymentSoon?: string
+  /** F5 / INT-120: the owner's note must pass this check at send time too; false = the note is dropped. */
+  noteOk?: (note: string) => boolean
+  /** F5: leftover check on the composed text; false = drop the note. */
+  composedOk?: (text: string) => boolean
 }
 
 /**
- * After hours, a TRUE hand-off's customer text becomes the after-hours variant (+ the owner's note). An order close
- * keeps its checked reply (the order details) and adds the line; the safe line is replaced. Everything else unchanged.
+ * After hours (pure):
+ * - a TRUE hand-off's customer text becomes the after-hours variant (+ the owner's note). An order close keeps its
+ *   checked reply and adds the line; an opt-out keeps the owner's text and adds "El equipo te escribe <label>";
+ *   payment / escalate / complaint get the code text; owner_reply is unchanged;
+ * - the in-hours safe lines that promise immediacy (safe line, "Enseguida te paso cómo pagar") get the after-hours
+ *   wording. Everything else (normal answers) is unchanged.
  */
 export function applyAfterHoursText(
   plan: { text: string; handoff: { kind: 'handoff' | 'review'; reason: string } | null },
   state: AfterHoursState,
-  safeReviewLine: string,
+  opts: AfterHoursTextOptions,
 ): string {
-  if (!state.afterHours || plan.handoff?.kind !== 'handoff') return plan.text
-  const kind = afterHoursHandoffKind(plan.handoff.reason)
-  if (!kind) return plan.text
-  const line = afterHoursHandoffLine(kind, state.label)
-  const keep = kind === 'order' && plan.text.trim() && plan.text.trim() !== safeReviewLine.trim()
-  const body = keep ? `${plan.text.trim()}\n\n${line}` : line
-  return state.note ? `${body}\n${state.note}` : body
+  if (!state.afterHours) return plan.text
+  const text = plan.text.trim()
+  let body: string | null = null
+  if (plan.handoff?.kind === 'handoff') {
+    const kind = afterHoursHandoffKind(plan.handoff.reason)
+    if (!kind) return plan.text
+    if (kind === 'person' && plan.handoff.reason === 'human_request' && text && text !== opts.safeReview.trim()) {
+      body = `${text}\n${afterHoursTeamLine(state.label)}`
+    } else {
+      const line = afterHoursHandoffLine(kind, state.label, state.transparent)
+      const keep = kind === 'order' && text && text !== opts.safeReview.trim()
+      body = keep ? `${text}\n\n${line}` : line
+    }
+  } else if (text === opts.safeReview.trim()) {
+    body = afterHoursReviewLine(state.label, state.transparent)
+  } else if (opts.paymentSoon && text.endsWith(opts.paymentSoon.trim())) {
+    const before = text.slice(0, text.length - opts.paymentSoon.trim().length).trim()
+    body = before ? `${before}\n${afterHoursPaymentSoonLine(state.label)}` : afterHoursPaymentSoonLine(state.label)
+  }
+  if (body === null) return plan.text
+  // The owner's note only rides on a hand-off text.
+  if (plan.handoff?.kind !== 'handoff' || !state.note || afterHoursNoteHasMarker(state.note)) return body
+  if (opts.noteOk && !opts.noteOk(state.note)) return body
+  const withNote = `${body}\n${state.note}`
+  return !opts.composedOk || opts.composedOk(withNote) ? withNote : body
 }
 
 /** Team alerts for a hand-off after hours: the dedupe key carries `:night-<opening unix seconds>` (quiet until then). */

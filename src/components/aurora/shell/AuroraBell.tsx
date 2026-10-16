@@ -53,7 +53,7 @@ export function AuroraBell() {
     playNotificationChime()
     toast({
       title: `🌙 ${morningSummaryText(night.length)}`,
-      description: 'Llegaron fuera de horario; la IA ya les avisó cuándo los atienden.',
+      description: 'Revisalos en el inbox',
       duration: 20_000,
       action: (
         <ToastAction altText="Ver chats" onClick={() => router.push('/chats')}>

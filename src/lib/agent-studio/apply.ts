@@ -51,6 +51,9 @@ export class DraftNotReadyError extends Error {
 
 type Actor = { userId: string; name: string; role: string }
 
+/** DATA-56: the selling-script keys Studio may write into salesRules (nothing else). */
+export const STUDIO_SCRIPT_KEYS: ReadonlySet<string> = new Set(['voice', 'closing', 'upsells', 'objections', 'handoffWhen', 'mustSay', 'neverSay'])
+
 const t = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined)
 const httpUrl = (v: unknown) => {
   const s = t(v, 400)
@@ -226,8 +229,12 @@ export async function applyProfileDraft(input: {
 
     // 5) Selling script.
     // Only fields the owner actually filled: a blank in this draft never wipes a saved rule.
+    // SecureDog DATA-56: only the selling-script keys — never replyPace / aiDisclosure / businessHours / promo /
+    // typingIndicator / bundles (those have their own audited settings).
     const rules = Object.fromEntries(
-      Object.entries(selection.salesRules || {}).filter(([, v]) => (Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.trim())),
+      Object.entries(selection.salesRules || {})
+        .filter(([k]) => STUDIO_SCRIPT_KEYS.has(k))
+        .filter(([, v]) => (Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.trim())),
     ) as Partial<SalesRules>
     if (Object.keys(rules).length) {
       try {

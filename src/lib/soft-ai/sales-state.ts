@@ -547,7 +547,7 @@ export function stripBetsyLookalikes(text: string, label = '[texto del cliente]'
     .replace(/BETSY[\s_.-]*DATOS/gi, label)
     // SecureDog INT-118b: Betsy's own tokens ([[PAGO_SINPE]], [[DATOS_PAGO]], [[ATAJO:…]]) never come from chat text.
     .replace(/[[【]{1,2}\s*(?:PAGO[\s_-]*[\p{L}_ -]{0,30}|DATOS[\s_-]*(?:DE[\s_-]*)?PAGO|ATAJO[^\]】\n]{0,60})\s*[\]】]{1,2}/giu, label)
-    .replace(/regla de la tienda|precio total del combo|únicos precios de combo|promoci[oó]n activa|dato de betsy|aplicada por betsy|frase del due[nñ]o|estado de la venta|siguiente paso\s*:|etapa\s*:|calculado por betsy|productos que vend[eé]s|reglas? fijas?|\[\s*vos\s*\(\s*tienda\s*\)/gi, label)
+    .replace(/regla de la tienda|precio total del combo|únicos precios de combo|promoci[oó]n activa|dato de betsy|aplicada por betsy|frase del due[nñ]o|estado de la venta|siguiente paso\s*:|etapa\s*:|calculado por betsy|productos que vend[eé]s|reglas? fijas?|fuera\s+de\s+horario\s*:|\[\s*vos\s*\(\s*tienda\s*\)/gi, label)
     // Notes addressed to the assistant, or posing as the business's own note in a correction (INT-103). Whole words
     // only, and not "modelo" / "sistema" (N2: "¿trae instrucciones del modelo X100?" is a normal question).
     .replace(/nota\s+(?:para|al|a\s+la)\s+(?:el\s+|la\s+)?(?:asistente|agente|bot|ia)(?![\p{L}])|nota\s+del\s+negocio|instrucci[oó]n(?:es)?\s+(?:para|del|de\s+la|al)\s+(?:el\s+|la\s+)?(?:asistente|agente|bot|ia)(?![\p{L}])/giu, label)

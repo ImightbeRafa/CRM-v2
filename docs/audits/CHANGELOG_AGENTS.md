@@ -1,3 +1,15 @@
+## 2026-10-16 — notify SecureDog follow-ups DATA-53 / DATA-54 / INFRA (claudio/agents2-notify)
+
+- DATA-53: inbox tag toggles send PATCH { addTag } / { removeTag } (array_append only when absent and under 20 tags,
+  catalog check for non-built-ins; array_remove), tenant-scoped, update_sales; removing a built-in review tag (either
+  way) is audit-logged with actor, chat id and tag.
+- DATA-54: customer name in review alerts sanitized (stripFormatChars + Cc/Cf, spaces collapsed, 40 chars); native
+  browser notifications say "un cliente" (no name / number on the lock screen).
+- INFRA: GET /api/workspace/notifications rate limited 30/min per tenant:user (429 ignored by the bell); router.push
+  only for "/" paths (not "//", "/\\").
+- Proof: tsc 0, lint 0, test:soft-ai 695/695, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34.
+
 ## 2026-10-16 — notify verifier fixes F8 / F10 (claudio/agents2-notify)
 
 - F8: payment alerts say "Mandó el comprobante…" only when the customer message was a photo / file (derived in

@@ -1073,6 +1073,8 @@ export function SoftCopilotInboxV2() {
     tags?: SoftTag[]
     /** Server removes just this tag (array_remove), never a whole-array write. */
     removeTag?: SoftTag
+    /** Server adds just this tag (array_append when absent, 20-tag cap). */
+    addTag?: SoftTag
     assignedUserId?: string | null
   }): Promise<boolean> {
     if (!selectedConversationId) return false
@@ -1167,11 +1169,10 @@ export function SoftCopilotInboxV2() {
 
   function toggleTag(tag: SoftTag) {
     if (!selectedConversation) return
-    const nextTags = selectedConversation.tags.includes(tag)
-      ? selectedConversation.tags.filter((t) => t !== tag)
-      : [...selectedConversation.tags, tag]
-    void patchConversation({ tags: nextTags }).catch(() => false).then((ok) => {
-      if (!ok) toast({ variant: 'destructive', title: 'No se pudo cambiar la etiqueta', description: 'Puede que la hayan archivado. Recargá la página.' })
+    // SecureDog DATA-53: one tag in / out atomically on the server, never a whole array from a stale copy.
+    const change = selectedConversation.tags.includes(tag) ? { removeTag: tag } : { addTag: tag }
+    void patchConversation(change).catch(() => false).then((ok) => {
+      if (!ok) toast({ variant: 'destructive', title: 'No se pudo cambiar la etiqueta', description: 'Puede que la hayan archivado o que el chat tenga 20 etiquetas. Recargá la página.' })
     })
   }
 

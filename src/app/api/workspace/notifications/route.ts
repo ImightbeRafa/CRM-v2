@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { listNotifications, markNotificationsRead } from '@/lib/workspace-notifications'
 import { countOverdueForUser } from '@/lib/crm-tasks'
-import { workspaceWriteRateLimit } from '@/lib/rate-limit'
+import { workspaceNotificationsReadRateLimit, workspaceWriteRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -11,6 +11,9 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   const auth = await authenticateAPIWithPermission(request, 'update_sales')
   if (!auth.ok) return auth.response
+  // The bell polls every 15 s per visible tab: generous per-user cap (the client ignores a 429).
+  const rate = await workspaceNotificationsReadRateLimit(`${auth.tenantId}:${auth.userId}`)
+  if (!rate.allowed) return NextResponse.json({ success: false, error: 'rate_limited' }, { status: 429, headers: rate.headers })
   const [result, overdueTasks] = await Promise.all([
     listNotifications(auth.tenantId, auth.userId),
     countOverdueForUser(auth.tenantId, auth.userId),

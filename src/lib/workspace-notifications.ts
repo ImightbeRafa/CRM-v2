@@ -12,6 +12,7 @@ import { prisma } from '@/lib/db'
 import { isMissingRelation } from '@/lib/db-missing-relation'
 import { staffDisplayName } from '@/lib/display-name'
 import { hasPermission, type Role } from '@/lib/rbac'
+import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 
 export const MENTION_MAX = 10
 export type NotificationKind =
@@ -96,13 +97,30 @@ export function paymentVariantFromDedupeKey(dedupeKey: string | null | undefined
   return String(dedupeKey || '').endsWith(PAYMENT_CLAIM_KEY_SUFFIX) ? 'claim' : 'receipt'
 }
 
+/**
+ * SecureDog DATA-54: a customer-controlled display name / number shown in the bell and toast. No control,
+ * format or bidi characters (no RTL spoofing, no fake line breaks), spaces collapsed, at most 40 characters.
+ */
+export const NOTIFICATION_NAME_MAX = 40
+export function sanitizeNotificationName(who: string | null | undefined): string {
+  return Array.from(
+    stripFormatChars(String(who || ''))
+      .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  )
+    .slice(0, NOTIFICATION_NAME_MAX)
+    .join('')
+    .trim()
+}
+
 /** Bell / toast text for a review alert. `who` = customer name, else number / handle. No message text. */
 export function reviewNotificationText(
   kind: ReviewNotificationKind,
   who: string | null | undefined,
   variant: PaymentReviewVariant = 'receipt',
 ): { title: string; snippet: string } {
-  const name = String(who || '').trim().slice(0, 60) || 'un cliente'
+  const name = sanitizeNotificationName(who) || 'un cliente'
   if (kind === 'payment_review') {
     return {
       title: `💳 Verificá un pago · ${name}`,

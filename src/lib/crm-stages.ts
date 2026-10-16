@@ -55,6 +55,32 @@ export const DEFAULT_CHAT_TAGS: TagDef[] = [
   { key: 'Nuevo', label: 'Nuevo', color: 'emerald', position: 2, isSystem: true, archived: false },
 ]
 
+/**
+ * Agentes IA 2.0 · notify — tags the AI puts on a chat when a person must act (receipt to verify,
+ * cash-on-delivery order to confirm). Always valid for every business (not part of the editable
+ * catalog in Config › Chats); a person removes them with the buttons in the chat.
+ */
+export const PAYMENT_REVIEW_TAG = 'Pago por verificar'
+export const ORDER_REVIEW_TAG = 'Pedido por confirmar'
+export const BUILTIN_CHAT_TAGS: TagDef[] = [
+  { key: PAYMENT_REVIEW_TAG, label: PAYMENT_REVIEW_TAG, color: 'rose', position: 1000, isSystem: true, archived: false },
+  { key: ORDER_REVIEW_TAG, label: ORDER_REVIEW_TAG, color: 'orange', position: 1001, isSystem: true, archived: false },
+]
+
+export function isBuiltinChatTag(key: string | null | undefined): boolean {
+  return key === PAYMENT_REVIEW_TAG || key === ORDER_REVIEW_TAG
+}
+
+/** The tenant's tags plus the built-in review tags (always active, built-in colour wins). */
+export function withBuiltinTags(tags: TagDef[]): TagDef[] {
+  return [...tags.filter((t) => !isBuiltinChatTag(t.key)), ...BUILTIN_CHAT_TAGS.map((t) => ({ ...t }))]
+}
+
+/** Tag keys a person may ADD to a chat: the active catalog + the built-in review tags. */
+export function allowedChatTagKeys(tags: TagDef[]): Set<string> {
+  return new Set(withBuiltinTags(tags).filter((t) => !t.archived).map((t) => t.key))
+}
+
 export function defaultStages(pipeline: StagePipeline): StageDef[] {
   return (pipeline === 'chat' ? DEFAULT_CHAT_STAGES : DEFAULT_CLIENT_STAGES).map((s) => ({ ...s }))
 }

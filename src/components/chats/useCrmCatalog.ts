@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import {
   DEFAULT_CHAT_STAGES,
   DEFAULT_CHAT_TAGS,
+  withBuiltinTags,
   DEFAULT_CLIENT_STAGES,
   stageLabelOf,
   type StageDef,
@@ -17,7 +18,7 @@ import {
  */
 type Catalog = { chatStages: StageDef[]; clientStages: StageDef[]; tags: TagDef[] }
 
-const DEFAULTS: Catalog = { chatStages: DEFAULT_CHAT_STAGES, clientStages: DEFAULT_CLIENT_STAGES, tags: DEFAULT_CHAT_TAGS }
+const DEFAULTS: Catalog = { chatStages: DEFAULT_CHAT_STAGES, clientStages: DEFAULT_CLIENT_STAGES, tags: withBuiltinTags(DEFAULT_CHAT_TAGS) }
 let cached: Catalog | null = null
 let inflight: Promise<Catalog> | null = null
 const listeners = new Set<(c: Catalog) => void>()
@@ -48,7 +49,8 @@ function load(): Promise<Catalog> {
       cached = {
         chatStages: chatStages ?? DEFAULTS.chatStages,
         clientStages: clientStages ?? DEFAULTS.clientStages,
-        tags: tags ?? DEFAULTS.tags,
+        // Built-in review tags (Pago por verificar / Pedido por confirmar) are always available.
+        tags: tags ? withBuiltinTags(tags) : DEFAULTS.tags,
       }
       listeners.forEach((l) => l(cached!))
       return cached

@@ -76,6 +76,7 @@ import {
   type ChatInboxMessage,
 } from '@/lib/chat-inbox'
 import { stageChipClass, useCrmCatalog } from '@/components/chats/useCrmCatalog'
+import { ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
 import { ChatSnoozeButton } from '@/components/chats/ChatSnoozeButton'
 
 export type SoftWaTemplateOption = {
@@ -163,6 +164,11 @@ interface SoftThreadPaneProps {
     /** A quick reply was inserted (the next send reports it as a usage metric). */
     onUsed?: (shortcut: string) => void
   }
+  /**
+   * agents2-notify: "Pago verificado" / "Confirmado" in the review banner (removes the built-in tag).
+   * The banner shows whenever the chat has the tag; without this prop it has no resolve button.
+   */
+  reviewTags?: { onResolve: (tag: SoftTag) => void; busy?: boolean }
   /** Chat owner picker (Asignarme / teammates / Sin asignar). Hidden when absent. */
   assignment?: {
     assignees: ChatAssignee[]
@@ -189,6 +195,36 @@ function DeliveryTicks({ status }: { status?: string | null }) {
     />
   )
 }
+
+/** agents2-notify: banners for the built-in review tags (the AI added them; a person removes them). */
+const REVIEW_BANNERS: Array<{
+  tag: SoftTag
+  title: string
+  detail: string
+  resolveLabel: string
+  className: string
+  buttonClass: string
+  testId: string
+}> = [
+  {
+    tag: PAYMENT_REVIEW_TAG,
+    title: '💳 Pago por verificar',
+    detail: 'el cliente mandó el comprobante',
+    resolveLabel: 'Pago verificado',
+    className: 'border-rose-200 bg-rose-50 text-rose-900',
+    buttonClass: 'bg-rose-600 hover:bg-rose-700',
+    testId: 'chat-review-banner-payment',
+  },
+  {
+    tag: ORDER_REVIEW_TAG,
+    title: '📦 Pedido por confirmar',
+    detail: 'pidió contra entrega, confirmá los datos',
+    resolveLabel: 'Confirmado',
+    className: 'border-orange-200 bg-orange-50 text-orange-950',
+    buttonClass: 'bg-orange-600 hover:bg-orange-700',
+    testId: 'chat-review-banner-order',
+  },
+]
 
 function tagChip(tag: SoftTag, label: string = tag, color: string | null = null) {
   return (
@@ -287,6 +323,7 @@ export function SoftThreadPane({
   presence,
   snooze,
   canTuneAgent = true,
+  reviewTags,
 }: SoftThreadPaneProps) {
   // Stage labels / colours from Config › Chats (custom stages).
   const { chatStages, chatStageLabel, tags: tagDefs } = useCrmCatalog()
@@ -760,6 +797,46 @@ export function SoftThreadPane({
           </div>
         </header>
       ) : null}
+
+      {!conversation.isDemo
+        ? REVIEW_BANNERS.filter((b) => conversation.tags.includes(b.tag)).map((b) => (
+            <div
+              key={b.tag}
+              role="status"
+              data-testid={b.testId}
+              className={`flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2.5 sm:px-5 ${b.className}`}
+            >
+              <p className="min-w-0 flex-1 text-[13px] font-semibold">
+                {b.title}
+                <span className="font-normal opacity-80"> — {b.detail}</span>
+              </p>
+              <div className="flex shrink-0 items-center gap-2">
+                {canCreateOrder ? (
+                  <button
+                    type="button"
+                    onClick={onCreateOrder}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50"
+                  >
+                    <ShoppingBag className="h-3.5 w-3.5" aria-hidden />
+                    {orderDraftPending ? 'Continuar pedido' : 'Crear pedido'}
+                  </button>
+                ) : null}
+                {reviewTags ? (
+                  <button
+                    type="button"
+                    disabled={reviewTags.busy}
+                    onClick={() => reviewTags.onResolve(b.tag)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60 ${b.buttonClass}`}
+                    data-testid={`${b.testId}-resolve`}
+                  >
+                    <Check className="h-3.5 w-3.5" aria-hidden />
+                    {b.resolveLabel}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ))
+        : null}
 
       {compact ? (
         <div className="shrink-0 bg-au-tint-f5f4f0 px-3 pt-3" data-testid="soft-agent-banner">

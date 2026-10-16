@@ -24,6 +24,8 @@ import {
   accountDisplayLabel,
   accountChannelAddress,
   isConversationClosed,
+  reviewTagCounts,
+  REVIEW_CHIP_DEFS,
   type ChannelFilter,
   type ConversationStatus,
   type InboxBucket,
@@ -33,7 +35,7 @@ import {
   type SoftTag,
 } from '@/lib/chat-soft-copilot'
 import type { ChatConversationListItemDto } from '@/lib/chat-conversation-api'
-import { isClosedCategory } from '@/lib/crm-stages'
+import { isBuiltinChatTag, isClosedCategory, ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
 import {
   advanceRevisionCursor,
   buildChangesPollQuery,
@@ -147,7 +149,7 @@ export function SoftCopilotInboxV2() {
       // private mode: not remembered
     }
   }, [])
-  const { activeTags } = useCrmCatalog()
+  const { activeTags, activeChatStages } = useCrmCatalog()
   /** Details panel (Cliente · Agente): remembered; wide screens start open. */
   const [detailsOpen, setDetailsOpen] = useState(true)
   const [wideScreen, setWideScreen] = useState(true)
@@ -903,6 +905,17 @@ export function SoftCopilotInboxV2() {
     if (bucket === 'pospuestos' && snoozeAvailable) void pinRows('snoozed=1&limit=50')
   }, [bucket, snoozeAvailable, pinRows])
 
+  // agents2-notify: chats waiting on a payment check / order confirmation can be far down the list;
+  // load them on open and again when their chip is chosen, so the chip counts and list are complete.
+  useEffect(() => {
+    for (const tag of [PAYMENT_REVIEW_TAG, ORDER_REVIEW_TAG]) {
+      void pinRows(new URLSearchParams({ tag, limit: '50' }).toString())
+    }
+  }, [pinRows])
+  useEffect(() => {
+    if (activeTag && isBuiltinChatTag(activeTag)) void pinRows(new URLSearchParams({ tag: activeTag, limit: '50' }).toString())
+  }, [activeTag, pinRows])
+
   const selectedConversation = useMemo(() => {
     if (!selectedConversationId) return null
     const dto = dtoMap.get(selectedConversationId)
@@ -979,8 +992,9 @@ export function SoftCopilotInboxV2() {
       accountId: accountFilter,
       search,
       viewerUserId,
+      tag: activeTag,
     })
-    if (bucket === 'ia_manejando') {
+    if (bucket === 'ia_manejando' && !isBuiltinChatTag(activeTag)) {
       list = list.filter((c) => {
         const dto = [...dtoMap.values()].find(
           (d) => d.socialAccountId === c.socialAccountId && d.peerId === c.recipientId,
@@ -998,6 +1012,8 @@ export function SoftCopilotInboxV2() {
     () => conversations.filter((c) => !isConversationClosed(c)).length,
     [conversations],
   )
+  // agents2-notify: "💳 Pago por verificar" / "📦 Pedido por confirmar" chips (open chats with the tag).
+  const reviewCounts = useMemo(() => reviewTagCounts(conversations), [conversations])
 
   const lineCounts = useMemo(() => summarizeLineCounts(conversations), [conversations])
 
@@ -1155,6 +1171,32 @@ export function SoftCopilotInboxV2() {
     void patchConversation({ tags: nextTags }).catch(() => false).then((ok) => {
       if (!ok) toast({ variant: 'destructive', title: 'No se pudo cambiar la etiqueta', description: 'Puede que la hayan archivado. Recargá la página.' })
     })
+  }
+
+  /**
+   * agents2-notify: "Pago verificado" / "Confirmado" in the chat banner. Removes the built-in review tag
+   * (explicit press only — linking an order never clears it). A verified payment also moves the chat to a
+   * 'pagado' stage when the business has one.
+   */
+  const [reviewBusy, setReviewBusy] = useState(false)
+  async function resolveReviewTag(tag: SoftTag) {
+    if (!selectedConversation || reviewBusy || !selectedConversation.tags.includes(tag)) return
+    setReviewBusy(true)
+    try {
+      const nextTags = selectedConversation.tags.filter((t) => t !== tag)
+      const paidStage = tag === PAYMENT_REVIEW_TAG ? activeChatStages.find((s) => s.key === 'pagado') : undefined
+      const ok = await patchConversation({
+        tags: nextTags,
+        ...(paidStage && selectedConversation.status !== paidStage.key ? { status: paidStage.key } : {}),
+      }).catch(() => false)
+      if (ok) {
+        toast({ variant: 'success', title: tag === PAYMENT_REVIEW_TAG ? 'Pago verificado' : 'Pedido confirmado' })
+      } else {
+        toast({ variant: 'destructive', title: 'No se pudo guardar', description: 'Probá de nuevo o recargá la página.' })
+      }
+    } finally {
+      setReviewBusy(false)
+    }
   }
 
   async function setAgentControl(action: 'take_over' | 'pause' | 'resume') {
@@ -1715,6 +1757,7 @@ export function SoftCopilotInboxV2() {
 
   const threadSharedProps = {
     presence: presenceText,
+    reviewTags: { onResolve: (tag: SoftTag) => void resolveReviewTag(tag), busy: reviewBusy },
     // "Corregir" on AI messages: only people who can edit agents (the API checks update_config again).
     canTuneAgent: canManageQuickReplies,
     snooze: snoozeAvailable
@@ -1849,6 +1892,7 @@ export function SoftCopilotInboxV2() {
             tags={activeTags.map((t) => t.key)}
             activeTag={activeTag}
             onTagClick={(tag) => setActiveTag((prev) => (prev === tag ? null : tag))}
+            reviewFilters={REVIEW_CHIP_DEFS.map((f) => ({ ...f, count: reviewCounts[f.tag] ?? 0 }))}
           />
           <SoftThreadPane
             {...threadSharedProps}
@@ -1933,6 +1977,9 @@ export function SoftCopilotInboxV2() {
               hasMoreConversations={Boolean(listNextCursor)}
               loadingMoreConversations={loadingMoreConversations}
               onLoadMoreConversations={() => void loadMoreConversations()}
+              activeTag={activeTag}
+              onTagClick={(tag) => setActiveTag((prev) => (prev === tag ? null : tag))}
+              reviewFilters={REVIEW_CHIP_DEFS.map((f) => ({ ...f, count: reviewCounts[f.tag] ?? 0 }))}
             />
           ) : (
             <SoftThreadPane

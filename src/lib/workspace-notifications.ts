@@ -14,7 +14,15 @@ import { staffDisplayName } from '@/lib/display-name'
 import { hasPermission, type Role } from '@/lib/rbac'
 
 export const MENTION_MAX = 10
-export type NotificationKind = 'mention' | 'task_assigned' | 'task_due' | 'chat_assigned' | 'ai_no_reply' | 'ai_budget'
+export type NotificationKind =
+  | 'mention'
+  | 'task_assigned'
+  | 'task_due'
+  | 'chat_assigned'
+  | 'ai_no_reply'
+  | 'ai_budget'
+  | 'payment_review'
+  | 'order_review'
 
 /** Plain-word reasons for "La IA no respondió" (the reason travels in the dedupe key; no customer text). */
 export const AI_NO_REPLY_REASONS: Record<string, string> = {
@@ -34,6 +42,7 @@ export const AI_NO_REPLY_REASONS: Record<string, string> = {
  */
 export const HANDOFF_REASON_LABELS: Record<string, string> = {
   payment: 'Comprobante de pago',
+  order_ready: 'Pedido contra entrega por confirmar',
   payment_details: 'Hay que pasarle los datos de pago',
   human_request: 'Pidió hablar con una persona',
   complaint: 'Reclamo o devolución',
@@ -50,6 +59,31 @@ export function handoffNotificationText(dedupeKey: string, where: string): { tit
   return parts[0] === 'ai_handoff'
     ? { title: `La IA te pasó un chat${where}`, snippet }
     : { title: `Revisá un chat de la IA${where}`, snippet }
+}
+
+/**
+ * Agentes IA 2.0 · notify — hand-offs where money / an order is waiting on a person get their own kind
+ * (allowed by SQL 049): 'payment' (receipt to verify) → payment_review, 'order_ready' (cash-on-delivery
+ * order complete) → order_review. Every other code keeps 'ai_no_reply'.
+ */
+export type ReviewNotificationKind = 'payment_review' | 'order_review'
+
+export function reviewKindForHandoffCode(code: string | null | undefined): ReviewNotificationKind | null {
+  if (code === 'payment') return 'payment_review'
+  if (code === 'order_ready') return 'order_review'
+  return null
+}
+
+export function isReviewNotificationKind(kind: string | null | undefined): kind is ReviewNotificationKind {
+  return kind === 'payment_review' || kind === 'order_review'
+}
+
+/** Bell / toast text for a review alert. `who` = customer name, else number / handle. No message text. */
+export function reviewNotificationText(kind: ReviewNotificationKind, who: string | null | undefined): { title: string; snippet: string } {
+  const name = String(who || '').trim().slice(0, 60) || 'un cliente'
+  return kind === 'payment_review'
+    ? { title: `💳 Verificá un pago · ${name}`, snippet: 'Mandó el comprobante — revisalo y confirmá el pedido' }
+    : { title: `📦 Pedido por confirmar · ${name}`, snippet: 'Pidió contra entrega — confirmá los datos' }
 }
 
 const ID_RE = /^[A-Za-z0-9_-]{8,64}$/
@@ -165,12 +199,13 @@ export async function listNotifications(tenantId: string, userId: string, limit 
       noteIds.length ? prisma.crmNote.findMany({ where: { tenantId, id: { in: noteIds } }, select: { id: true, body: true, deletedAt: true } }) : [],
       taskIds.length ? prisma.crmTask.findMany({ where: { tenantId, id: { in: taskIds } }, select: { id: true, title: true, status: true } }) : [],
       actorIds.length ? prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true, username: true } }) : [],
-      convIds.length ? prisma.chatConversation.findMany({ where: { tenantId, id: { in: convIds } }, select: { id: true, peerName: true } }) : [],
+      convIds.length ? prisma.chatConversation.findMany({ where: { tenantId, id: { in: convIds } }, select: { id: true, peerName: true, peerId: true } }) : [],
     ])
     const noteById = new Map(notes.map((n) => [n.id, n]))
     const taskById = new Map(tasks.map((t) => [t.id, t]))
     const actorName = new Map(actors.map((a) => [a.id, staffDisplayName(a.name, a.username) || 'Alguien del equipo']))
     const peer = new Map(convs.map((c) => [c.id, c.peerName]))
+    const peerId = new Map(convs.map((c) => [c.id, c.peerId]))
 
     const items: NotificationDto[] = []
     const hidden: string[] = []
@@ -222,6 +257,18 @@ export async function listNotifications(tenantId: string, userId: string, limit 
             ? 'Se alcanzó el límite mensual de IA. Atiendan los chats a mano; Betsy ya fue avisado.'
             : 'Revisá el detalle en Uso de IA.',
           href: paused ? '/chats' : '/super-admin/ia',
+        })
+      } else if (isReviewNotificationKind(r.kind)) {
+        const who = r.conversationId ? peer.get(r.conversationId) || peerId.get(r.conversationId) : null
+        const text = reviewNotificationText(r.kind, who)
+        items.push({
+          id: r.id,
+          kind: r.kind,
+          read: Boolean(r.readAt),
+          createdAt: r.createdAt.toISOString(),
+          title: text.title,
+          snippet: text.snippet,
+          href: chatHref(r.conversationId, r.clientId),
         })
       } else if (r.kind === 'ai_no_reply' && handoffNotificationText(r.dedupeKey, where)) {
         const text = handoffNotificationText(r.dedupeKey, where) as { title: string; snippet: string }

@@ -22,18 +22,22 @@ import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
 import type { InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import { guideShortcutCatalog, renderShortcutTemplate } from '@/lib/soft-ai/shortcuts'
+import { brandFactsLinkAllowlist } from '@/lib/soft-ai/llm/output-validator'
+import { linkSourceTexts } from '@/lib/soft-ai/agent-tuning-core'
 import {
   deriveSalesState,
   formatSalesTurnBlock,
   salesAllowedAmounts,
   salesAllowedDeals,
+  salesCloseWithoutPaymentData,
   salesFreeShippingRule,
   salesNeedsHuman,
+  salesPaymentOptions,
   salesSystemBlock,
   type SalesContext,
 } from '@/lib/soft-ai/sales-state'
 import {
-  PAYMENT_TOKEN,
+  PAYMENT_METHOD_TOKENS,
   formatBrandFactsForPrompt,
   parseBrandFactsSafe,
   parseReplyStyleSafe,
@@ -214,28 +218,51 @@ export function assembleAgentRuntimeInputs(input: {
     linkedOrderId: null,
     pricingVersion: DEFAULT_PRICING_VERSION,
     brandFactsBlock: formatBrandFactsForPrompt(promptFacts),
-    // Bodies rendered for the model (no raw {{brand.…}}); payment numbers stay out — they become [[DATOS_PAGO]].
+    // Bodies rendered for the model (no raw {{brand.…}}); payment numbers stay out. agents2-format: a payment summary
+    // becomes the method NAMES (the agent asks which one first), a SINPE field becomes [[PAGO_SINPE]].
     shortcutCatalog: guideShortcutCatalog(
       input.shortcuts.map((row) => ({
         ...row,
         // Same facts as the brand block (no store shipping under the sales flow); no customer name in the system
         // instructions (it is customer-controlled and would break prompt caching) — the name is in the chat anyway.
-        body: renderShortcutTemplate(row.body.replace(/\{\{\s*brand\.payment\.[a-zA-Z0-9_.]+\s*\}\}/g, PAYMENT_TOKEN), {
-          facts: promptFacts,
-          clientFirstName: null,
-        }),
+        body: renderShortcutTemplate(
+          row.body
+            .replace(/\{\{\s*brand\.payment\.sinpe\.[a-zA-Z0-9_.]+\s*\}\}/g, PAYMENT_METHOD_TOKENS.sinpe)
+            .replace(/\{\{\s*brand\.payment\.(?!methods(?:List)?\s*\}\})[a-zA-Z0-9_.]+\s*\}\}/g, '{{brand.payment.methods}}'),
+          {
+            facts: promptFacts,
+            clientFirstName: null,
+          },
+        ),
       })),
       input.replyImageShortcutIds,
     ),
     replyStyleSnippet: replyStyleSnippet(input.agent.replyStyle),
     salesSystemBlock: sales ? salesSystemBlock(sales) : null,
     salesTurnBlock: sales && salesState ? formatSalesTurnBlock(sales, salesState) : null,
+    // B4: + totals for the quantities the customer asked for (computed by code, listed in BETSY_DATOS).
+    // Multi-unit totals are never quotable (SecureDog INT-94): unit prices, shipping, one unit + shipping, combos only.
     salesAllowedAmounts: sales ? salesAllowedAmounts(sales) : undefined,
     salesNeedsHuman: Boolean(sales && salesState && salesNeedsHuman(sales, salesState)),
+    salesReceiptCue: Boolean(salesState?.receiptCue),
+    salesPaymentDataByTeam: Boolean(sales && salesState && salesCloseWithoutPaymentData(sales, salesState)),
     salesAllowedDeals: sales ? salesAllowedDeals(sales) : [],
     salesFreeShipping: Boolean(sales?.promo?.freeShipping),
     salesFreeShippingRule: sales ? salesFreeShippingRule(sales) : null,
-    salesTrace: salesState ? { stage: salesState.stage, said: salesState.said } : null,
+    // INT-112: same allowlist for live and Probar — brand site, map link, and links the owner wrote in ACTIVE saved
+    // replies and APPROVED bound knowledge (PatchHouse ↔ sleep.shopping cross-links pass this way).
+    linkAllowlist: brandFactsLinkAllowlist(
+      input.agent.brandFacts,
+      linkSourceTexts({
+        shortcuts: input.shortcuts,
+        knowledge: input.knowledge
+          ? [...input.knowledge.brandBook, ...input.knowledge.policies, ...input.knowledge.faqs, ...input.knowledge.channelOverlay]
+          : [],
+      }),
+    ),
+    // chosenMethod: a contra-entrega / efectivo block is an order for a person only when the customer chose it (#9).
+    salesPaymentOptions: sales ? { ...salesPaymentOptions(sales), chosenMethod: salesState?.chosenMethod ?? null } : undefined,
+    salesTrace: salesState ? { stage: salesState.stage, said: salesState.said, chosenMethod: salesState.chosenMethod ?? null } : null,
     toolCtx: {
       ...input.toolCtxBase,
       enabledTools,

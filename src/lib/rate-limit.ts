@@ -265,6 +265,13 @@ export const workspaceWriteRateLimit = createIdentifierRateLimit({
   identifier: 'workspace-write',
 });
 
+/** Bell notifications poll (every 15 s per visible tab) — per tenant:user, generous; 429 is ignored by the client. */
+export const workspaceNotificationsReadRateLimit = createIdentifierRateLimit({
+  windowMs: 60 * 1000,
+  maxRequests: 30,
+  identifier: 'workspace-notifications-read',
+});
+
 /** Soft Copilot / chats outbound send — per tenant:user. */
 export const chatSendRateLimit = createIdentifierRateLimit({
   windowMs: 60 * 1000,

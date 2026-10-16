@@ -247,3 +247,63 @@ describe('2026-10-15: "En vivo" says when no line answers yet', () => {
     assert.match(readFileSync('src/app/config/agentes/page.tsx', 'utf8'), /liveWithoutActivationNotice\(\{\s*status: selected\.status,\s*operationMode: selected\.operationMode,\s*rows: attendingRows,/)
   })
 })
+
+describe('2026-10-15 PatchHouse quick check: the grader sees shipping, combos and the allowed amounts', () => {
+  it('judgeFacts lists products, combos, shipping and the valid amounts', async () => {
+    const { judgeFacts } = await import('@/lib/soft-ai/test-engine/generate')
+    const facts = judgeFacts({
+      products: [{ name: 'Dopamine Patch', sellingPrice: 9900, currentStock: 10 }],
+      sales: {
+        shipping: [{ name: 'Envío a domicilio (todo el país)', price: 3000 }],
+        bundles: [{ name: 'Combo 2 paquetes (a elección)', price: 17900, shippingIncluded: false }],
+        allowedAmounts: [9900, 3000, 12900, 17900, 20900],
+      },
+    })
+    assert.match(facts, /Dopamine Patch: ₡9.900/)
+    assert.match(facts, /Combo 2 paquetes \(a elección\): ₡17.900 \(más el envío\)/)
+    assert.match(facts, /Envío a domicilio \(todo el país\): ₡3.000/)
+    // V3 (2026-10-15): every valid amount is labelled with what it is the price of (same amounts, same order).
+    assert.match(
+      facts,
+      /Montos válidos[^:]*: ₡3.000 = Envío a domicilio \(todo el país\); ₡9.900 = Dopamine Patch; ₡12.900 = Dopamine Patch \+ Envío a domicilio \(todo el país\); ₡17.900 = Combo 2 paquetes \(a elección\); ₡20.900 = Combo 2 paquetes \(a elección\) \+ Envío a domicilio \(todo el país\)\./,
+    )
+    const run = readFileSync('src/lib/soft-ai/test-engine/run.ts', 'utf8')
+    // N5 (round 2): strict — a read failure throws instead of building a different suite.
+    assert.match(run, /loadAgentSalesContext\(\{ tenantId, agentId: agent\.id, inventoryItemIds: mapped, brandFacts: facts, strict: true \}\)/)
+    assert.match(run, /allowedAmounts: salesAllowedAmounts\(salesCtx\)/)
+  })
+
+  it('N4: an amount shared by several items lists them all ("cualquiera de" past 3); the judge accepts any of them', async () => {
+    const { judgeFacts } = await import('@/lib/soft-ai/test-engine/generate')
+    const { JUDGE_INSTRUCTIONS } = await import('@/lib/soft-ai/test-engine/grade')
+    const products = ['Alpha', 'Beta', 'Gamma', 'Delta'].map((name) => ({ name, sellingPrice: 9900, currentStock: 5 }))
+    const four = judgeFacts({ products, sales: { shipping: [], bundles: [], allowedAmounts: [9900] } })
+    assert.match(four, /₡9.900 = cualquiera de: Alpha, Beta, Gamma, Delta\./)
+    const two = judgeFacts({ products: products.slice(0, 2), sales: { shipping: [], bundles: [], allowedAmounts: [9900] } })
+    assert.match(two, /₡9.900 = Alpha o Beta\./)
+    assert.match(JUDGE_INSTRUCTIONS, /está bien para CUALQUIERA de ellos/)
+  })
+
+  it('N5: loadAgentSalesContext has a strict mode that rethrows read failures (live turns stay fail-soft)', () => {
+    const ctx = readFileSync('src/lib/soft-ai/agent-sales-context.ts', 'utf8')
+    assert.match(ctx, /strict\?: boolean/)
+    assert.match(ctx, /if \(input\.strict\) throw error/)
+    assert.doesNotMatch(ctx, /\.catch\(\(\) => null\)/)
+  })
+
+  it('V3: the judge is told an amount must match the item it is attached to; unlabelled amounts still listed', async () => {
+    const { judgeFacts } = await import('@/lib/soft-ai/test-engine/generate')
+    const { JUDGE_INSTRUCTIONS } = await import('@/lib/soft-ai/test-engine/grade')
+    assert.match(JUDGE_INSTRUCTIONS, /un monto tiene que coincidir con el producto, combo o envío al que la respuesta lo asocia/)
+    assert.match(JUDGE_INSTRUCTIONS, /producto suelto cotizado al precio de un combo/)
+    const facts = judgeFacts({ products: [], sales: { shipping: [], bundles: [], allowedAmounts: [5000] } })
+    assert.match(facts, /Montos válidos[^:]*: ₡5.000\./)
+  })
+
+  it('V4: buildSuite never swallows a sales-context load failure into a different suite hash', () => {
+    const run = readFileSync('src/lib/soft-ai/test-engine/run.ts', 'utf8')
+    const at = run.indexOf('const salesCtx = await loadAgentSalesContext(')
+    assert.ok(at > 0)
+    assert.doesNotMatch(run.slice(at, run.indexOf('\n', at)), /\.catch\(/)
+  })
+})

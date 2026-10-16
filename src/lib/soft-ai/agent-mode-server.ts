@@ -5,6 +5,7 @@
  */
 
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
+import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 
 export type SoftAiAgentStateRow = {
   mode?: string
@@ -62,4 +63,69 @@ export function maySoftAiMetaReply(mode: SoftAiAgentMode | null): boolean {
 
 export function softAiConversationKey(socialAccountId: string, recipientId: string): string {
   return `${socialAccountId}::${recipientId}`
+}
+
+
+export type EffectiveAiModeVia = 'column' | 'state' | 'line' | 'none'
+
+/**
+ * Agentes IA 2.0 — "chats follow the line" (PURE). The mode a conversation really has:
+ *  1. the `aiMode` column wins ('human' / 'paused' / 'ai_active');
+ *  2. then the legacy flag agentState (persisted);
+ *  3. a chat with no mode on a line that is ON is the AI's ('ai_active', old chats included) — unless a person
+ *     wrote in it in the last 24 h (Rafael's default): then it stays with the person ('human');
+ *  4. otherwise null (line off: nobody answers automatically).
+ * Resolved where the mode is read; rows are never mass-updated.
+ */
+export function effectiveConversationAiMode(input: {
+  column: string | null | undefined
+  persisted: SoftAiAgentMode | null
+  lineOn: boolean
+  humanWroteRecently: boolean
+}): { mode: SoftAiAgentMode | null; via: EffectiveAiModeVia } {
+  const fromColumn = normalizeConversationAiMode(input.column)
+  if (fromColumn) return { mode: fromColumn, via: 'column' }
+  const persisted = normalizeConversationAiMode(input.persisted)
+  if (persisted) return { mode: persisted, via: 'state' }
+  if (!input.lineOn) return { mode: null, via: 'none' }
+  return { mode: input.humanWroteRecently ? 'human' : 'ai_active', via: 'line' }
+}
+
+/** Optional reader for humanWroteRecently (tests inject one; the server default is a tenant-scoped Prisma read). */
+export type RecentOutboundReader = (args: {
+  tenantId: string
+  conversationId: string
+  since: Date
+}) => Promise<Array<{ metadata: unknown }>>
+
+/**
+ * A person (not the AI) wrote in this chat within `hours`: an outbound message whose metadata is not an AI send
+ * (isSoftAiOutboundMetadata). Tenant-scoped. Server use only — the DB module is imported lazily so this file stays
+ * client-safe (the inbox imports the pure helpers above). A read error counts as "a person wrote" (fail toward the
+ * person: the AI never takes a chat it is not sure about).
+ */
+export async function humanWroteRecently(
+  tenantId: string,
+  conversationId: string,
+  hours = 24,
+  reader?: RecentOutboundReader,
+): Promise<boolean> {
+  const since = new Date(Date.now() - hours * 3_600_000)
+  try {
+    const read: RecentOutboundReader =
+      reader ??
+      (async (args) => {
+        const { prisma } = await import('@/lib/db')
+        return prisma.chatMessage.findMany({
+          where: { tenantId: args.tenantId, conversationId: args.conversationId, direction: 'outbound', sentAt: { gte: args.since } },
+          select: { metadata: true },
+          orderBy: { sentAt: 'desc' },
+          take: 50,
+        })
+      })
+    const rows = await read({ tenantId, conversationId, since })
+    return rows.some((r) => !isSoftAiOutboundMetadata(r.metadata))
+  } catch {
+    return true
+  }
 }

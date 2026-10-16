@@ -57,7 +57,10 @@ describe('decideInbound payment policy', () => {
     assert.equal(decision.shortcutKey, 'sys_payment_info')
     assert.equal(decision.intent, 'payment_info')
     assert.equal(decision.needsHuman, false)
-    assert.match(decision.text, /88881234/)
+    // agents2-format: "¿cómo pago?" lists the methods and asks which one — no number until a method is chosen.
+    assert.match(decision.text, /- SINPE Móvil/)
+    assert.match(decision.text, /¿Cómo preferís pagar\?/)
+    assert.doesNotMatch(decision.text, /8888/)
     assert.equal(decision.decisionTrace.steps.some((step) => step.step === 'model'), false)
   })
 
@@ -67,11 +70,14 @@ describe('decideInbound payment policy', () => {
       brandFacts: sharedFacts(false),
       shortcuts,
     })
-    assert.equal(decision.shortcutKey, 'sys_handoff_payment')
+    // 2026-10-15 (Agentes IA 2.0, B7): a how-to-pay QUESTION gets "Enseguida te paso cómo pagar 😊" and a person
+    // is asked to send the data (review); "ya lo reviso" stays for real payment claims.
+    assert.equal(decision.shortcutKey, 'sys_payment_soon')
     assert.equal(decision.escalate, true)
     assert.ok(decision.reasons.includes('payment_info_not_shared'))
     // 2026-10-09 (Rafael): the client never hears "una persona del equipo" — seller voice.
-    assert.match(decision.text, /lo reviso/)
+    assert.match(decision.text, /c[oó]mo pagar/)
+    assert.doesNotMatch(decision.text, /lo reviso/)
     assert.doesNotMatch(decision.text, /persona|equipo/i)
   })
 

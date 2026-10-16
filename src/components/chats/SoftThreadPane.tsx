@@ -14,6 +14,8 @@ import {
 import Link from 'next/link'
 import { Check, CheckCheck, ChevronLeft, Hand, Info, PanelRight, Paperclip, Pause, Play, Send, ShoppingBag, Smile, Sparkles, User, X, Zap } from 'lucide-react'
 import { AgentFeedbackButtons } from '@/components/chats/AgentFeedbackButtons'
+import { CorrectionPanel } from '@/components/aurora/agentes/CorrectionPanel'
+import { TUNE_CODE_REPLY_NOTE, tuneTargetFromMetadata } from '@/lib/soft-ai/agent-tuning-core'
 import { CatalogPicker } from '@/components/chats/composer/CatalogPicker'
 import { useAiTermsAccepted } from '@/components/chats/useAiTermsAccepted'
 import {
@@ -74,6 +76,7 @@ import {
   type ChatInboxMessage,
 } from '@/lib/chat-inbox'
 import { stageChipClass, useCrmCatalog } from '@/components/chats/useCrmCatalog'
+import { ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
 import { ChatSnoozeButton } from '@/components/chats/ChatSnoozeButton'
 
 export type SoftWaTemplateOption = {
@@ -86,6 +89,8 @@ interface SoftThreadPaneProps {
   conversation: SoftConversation | null
   /** Teammates in this chat right now ("Ana está respondiendo…"); empty when nobody. */
   presence?: string
+  /** "Corregir" on AI messages (update_config). Undefined = shown; the API's 403 explains. */
+  canTuneAgent?: boolean
   /** "Posponer" (Phase 2b). Hidden when absent (e.g. before migration 036). */
   snooze?: {
     until: string | null
@@ -159,6 +164,11 @@ interface SoftThreadPaneProps {
     /** A quick reply was inserted (the next send reports it as a usage metric). */
     onUsed?: (shortcut: string) => void
   }
+  /**
+   * agents2-notify: "Pago verificado" / "Confirmado" in the review banner (removes the built-in tag).
+   * The banner shows whenever the chat has the tag; without this prop it has no resolve button.
+   */
+  reviewTags?: { onResolve: (tag: SoftTag) => void; busy?: boolean }
   /** Chat owner picker (Asignarme / teammates / Sin asignar). Hidden when absent. */
   assignment?: {
     assignees: ChatAssignee[]
@@ -185,6 +195,36 @@ function DeliveryTicks({ status }: { status?: string | null }) {
     />
   )
 }
+
+/** agents2-notify: banners for the built-in review tags (the AI added them; a person removes them). */
+const REVIEW_BANNERS: Array<{
+  tag: SoftTag
+  title: string
+  detail: string
+  resolveLabel: string
+  className: string
+  buttonClass: string
+  testId: string
+}> = [
+  {
+    tag: PAYMENT_REVIEW_TAG,
+    title: '💳 Pago por verificar',
+    detail: 'el cliente mandó el comprobante',
+    resolveLabel: 'Pago verificado',
+    className: 'border-rose-200 bg-rose-50 text-rose-900',
+    buttonClass: 'bg-rose-600 hover:bg-rose-700',
+    testId: 'chat-review-banner-payment',
+  },
+  {
+    tag: ORDER_REVIEW_TAG,
+    title: '📦 Pedido por confirmar',
+    detail: 'pidió contra entrega, confirmá los datos',
+    resolveLabel: 'Confirmado',
+    className: 'border-orange-200 bg-orange-50 text-orange-950',
+    buttonClass: 'bg-orange-600 hover:bg-orange-700',
+    testId: 'chat-review-banner-order',
+  },
+]
 
 function tagChip(tag: SoftTag, label: string = tag, color: string | null = null) {
   return (
@@ -263,7 +303,7 @@ export function SoftThreadPane({
   onOpenTemplatePicker,
   onCloseTemplatePicker,
   onSendTemplate,
-  agentMode = 'human',
+  agentMode: agentModeProp = 'human',
   onTakeOver,
   onPauseAi,
   onResumeAi,
@@ -282,6 +322,8 @@ export function SoftThreadPane({
   quickReplies,
   presence,
   snooze,
+  canTuneAgent = true,
+  reviewTags,
 }: SoftThreadPaneProps) {
   // Stage labels / colours from Config › Chats (custom stages).
   const { chatStages, chatStageLabel, tags: tagDefs } = useCrmCatalog()
@@ -297,6 +339,16 @@ export function SoftThreadPane({
   /** `false` = closed; string = open (optionally pre-filling a new shortcut). */
   const [managerOpen, setManagerOpen] = useState<false | { shortcut?: string }>(false)
   const [catalogOpen, setCatalogOpen] = useState(false)
+  // Agentes IA 2.0 — the truth: "IA activa" (and the composer lock) only when the line really answers this chat.
+  // A chat on a line that is off is the team's (composer open); 'human' / 'paused' still win.
+  const aiTruth = conversation?.aiStatus ?? null
+  const agentMode: SoftAiAgentMode = aiTruth
+    ? aiTruth.state === 'ia'
+      ? 'ai_active'
+      : aiTruth.state === 'paused'
+        ? 'paused'
+        : 'human'
+    : agentModeProp
   // "IA activa" must not show green while the business has not authorized AI (agents are silent then).
   const aiTermsAccepted = useAiTermsAccepted(agentMode === 'ai_active')
   useEffect(() => {
@@ -429,7 +481,12 @@ export function SoftThreadPane({
       ),
     [conversation?.messages],
   )
-
+  /** "Corregir" open under this AI message (Agentes IA 2.0 · E). */
+  const [tuningId, setTuningId] = useState<string | null>(null)
+  useEffect(() => {
+    setTuningId(null)
+  }, [conversation?.recipientId, conversation?.socialAccountId])
+  /** The customer message an AI reply answered: the last inbound text before it. */
   if (!conversation) {
     return (
       <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-au-tint-fafbfc px-6 text-center">
@@ -658,8 +715,12 @@ export function SoftThreadPane({
                 >
                   {chatStageLabel(conversation.status)}
                 </span>
-                <span className="rounded-md bg-au-tint-eef0ff px-2 py-0.5 text-[10px] font-medium text-au-ink-4a46e5">
-                  {agentModeLabel(agentMode)}
+                <span
+                  className="rounded-md bg-au-tint-eef0ff px-2 py-0.5 text-[10px] font-medium text-au-ink-4a46e5"
+                  title={aiTruth?.reason}
+                  data-testid="soft-ai-truth-chip"
+                >
+                  {aiTruth && aiTruth.state !== 'ia' ? aiTruth.label : agentModeLabel(agentMode)}
                 </span>
                 {conversation.tags.map((t) => {
                   const def = tagDefs.find((d) => d.key === t)
@@ -737,6 +798,46 @@ export function SoftThreadPane({
         </header>
       ) : null}
 
+      {!conversation.isDemo
+        ? REVIEW_BANNERS.filter((b) => conversation.tags.includes(b.tag)).map((b) => (
+            <div
+              key={b.tag}
+              role="status"
+              data-testid={b.testId}
+              className={`flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2.5 sm:px-5 ${b.className}`}
+            >
+              <p className="min-w-0 flex-1 text-[13px] font-semibold">
+                {b.title}
+                <span className="font-normal opacity-80"> — {b.detail}</span>
+              </p>
+              <div className="flex shrink-0 items-center gap-2">
+                {canCreateOrder ? (
+                  <button
+                    type="button"
+                    onClick={onCreateOrder}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50"
+                  >
+                    <ShoppingBag className="h-3.5 w-3.5" aria-hidden />
+                    {orderDraftPending ? 'Continuar pedido' : 'Crear pedido'}
+                  </button>
+                ) : null}
+                {reviewTags ? (
+                  <button
+                    type="button"
+                    disabled={reviewTags.busy}
+                    onClick={() => reviewTags.onResolve(b.tag)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60 ${b.buttonClass}`}
+                    data-testid={`${b.testId}-resolve`}
+                  >
+                    <Check className="h-3.5 w-3.5" aria-hidden />
+                    {b.resolveLabel}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ))
+        : null}
+
       {compact ? (
         <div className="shrink-0 bg-au-tint-f5f4f0 px-3 pt-3" data-testid="soft-agent-banner">
           <div className="rounded-2xl bg-gradient-to-r from-[#5B6CFF] via-[#A855F7] to-[#EC4899] p-[1.5px]">
@@ -752,10 +853,14 @@ export function SoftThreadPane({
                     ? `${conversation.agentLabel || 'Agente'} está atendiendo`
                     : agentMode === 'paused'
                       ? 'Agente en pausa'
-                      : 'Control humano'}
+                      : aiTruth
+                        ? aiTruth.state === 'off'
+                          ? 'Sin IA'
+                          : aiTruth.label
+                        : 'Control humano'}
                 </p>
-                <p className="truncate text-[12px] text-slate-500">
-                  {agentModeLabel(agentMode)}
+                <p className="truncate text-[12px] text-slate-500" title={aiTruth?.reason}>
+                  {aiTruth && aiTruth.state !== 'ia' ? aiTruth.reason : agentModeLabel(agentMode)}
                   {aiBusy ? ' · procesando…' : ` · ${agentActionsToday} ${agentActionsToday === 1 ? 'acción' : 'acciones'} hoy`}
                 </p>
               </div>
@@ -769,18 +874,19 @@ export function SoftThreadPane({
                 >
                   <Pause className="h-4 w-4" aria-hidden />
                 </button>
-              ) : (
+              ) : !aiTruth || aiTruth.canReturnToAi ? (
+                // "Devolver a IA" only when the line answers; on a line that is off the chat stays with the team.
                 <button
                   type="button"
                   onClick={onResumeAi}
                   disabled={aiBusy}
-                  aria-label="Reanudar IA"
+                  aria-label={aiTruth ? 'Devolver a IA' : 'Reanudar IA'}
                   className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-white px-3 text-[13px] font-semibold text-emerald-800 ring-1 ring-emerald-200 disabled:opacity-50"
                 >
                   <Play className="h-4 w-4" aria-hidden />
-                  Reanudar
+                  {aiTruth ? 'Devolver a IA' : 'Reanudar'}
                 </button>
-              )}
+              ) : null}
               {agentMode !== 'human' ? (
                 <button
                   type="button"
@@ -843,6 +949,30 @@ export function SoftThreadPane({
               softAi && msg.metadata && typeof msg.metadata === 'object' && !Array.isArray(msg.metadata)
                 ? ((msg.metadata as Record<string, unknown>).turnId as unknown)
                 : null
+            // "Corregir" (INT-108 / V6 / V11): only on a message with its own recorded agent (send snapshot, never the
+            // agent serving the line now) and a way to find the customer message it answered; code-sent replies point
+            // to Respuestas guardadas instead.
+            const tuneTarget =
+              softAi && outbound && canTuneAgent && !msg.id?.startsWith('demo-ai-') && msg.content && !isPlaceholderToken(msg.content)
+                ? tuneTargetFromMetadata(msg.metadata)
+                : null
+            const tuneAgentId = tuneTarget?.agentId ?? null
+            const tuneButton = tuneTarget ? (
+              tuneTarget.codeReply ? (
+                <span className="ml-1 px-1 text-[10.5px] text-slate-500" title={TUNE_CODE_REPLY_NOTE} data-testid="soft-thread-tune-code">
+                  Respuesta guardada
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setTuningId(tuningId === msg.id ? null : msg.id)}
+                  className="ml-1 rounded px-1 text-[10.5px] font-medium text-au-ink-5b6cff hover:underline"
+                  data-testid="soft-thread-tune"
+                >
+                  Corregir
+                </button>
+              )
+            ) : null
             const showMedia = messageHasMedia(msg)
             // Any stored `[type]` token (media, share, story_mention, ig_reel…) is never shown
             // as text next to the media (it stays after IG media gets cached).
@@ -911,6 +1041,7 @@ export function SoftThreadPane({
                             {typeof feedbackTurnId === 'string' && feedbackTurnId ? (
                               <AgentFeedbackButtons turnId={feedbackTurnId} />
                             ) : null}
+                            {tuneButton}
                             <span aria-hidden>·</span>
                           </>
                         ) : null}
@@ -939,6 +1070,7 @@ export function SoftThreadPane({
                           {!compact && typeof feedbackTurnId === 'string' && feedbackTurnId ? (
                             <AgentFeedbackButtons turnId={feedbackTurnId} />
                           ) : null}
+                          {!compact ? tuneButton : null}
                         </>
                       ) : failed || msg.deliveryStatus === 'failed' ? (
                         <>
@@ -971,6 +1103,14 @@ export function SoftThreadPane({
                         </>
                       )}
                     </p>
+                  ) : null}
+                  {tuneAgentId && tuneTarget && !tuneTarget.codeReply && tuningId === msg.id ? (
+                    <CorrectionPanel
+                      agentId={tuneAgentId}
+                      agentName={tuneTarget.agentName}
+                      messageId={msg.id}
+                      onClose={() => setTuningId(null)}
+                    />
                   ) : null}
                   </div>
                 </div>
@@ -1038,7 +1178,9 @@ export function SoftThreadPane({
                   ? 'IA activa'
                   : agentMode === 'paused'
                     ? 'IA en pausa'
-                    : 'Humano'}
+                    : aiTruth
+                      ? `${aiTruth.label} · ${aiTruth.reason}`
+                      : 'Humano'}
               {aiBusy ? ' · procesando…' : ''}
             </span>
             {agentMode === 'ai_active' ? (
@@ -1053,15 +1195,19 @@ export function SoftThreadPane({
               </>
             ) : (
               <>
-                <span aria-hidden className="text-slate-300">·</span>
+                {agentMode === 'paused' || !aiTruth || aiTruth.canReturnToAi ? (
+                  <span aria-hidden className="text-slate-300">·</span>
+                ) : null}
                 {agentMode === 'paused' ? (
                   <button type="button" onClick={onTakeOver} disabled={aiBusy} className="font-medium text-slate-600 hover:text-slate-900 disabled:opacity-40">
                     Tomar control
                   </button>
                 ) : null}
-                <button type="button" onClick={onResumeAi} disabled={aiBusy} className="font-medium text-slate-600 hover:text-emerald-700 disabled:opacity-40">
-                  {agentMode === 'paused' ? 'Reanudar IA' : 'Activar IA'}
-                </button>
+                {!aiTruth || aiTruth.canReturnToAi ? (
+                  <button type="button" onClick={onResumeAi} disabled={aiBusy} className="font-medium text-slate-600 hover:text-emerald-700 disabled:opacity-40">
+                    {aiTruth ? 'Devolver a IA' : agentMode === 'paused' ? 'Reanudar IA' : 'Activar IA'}
+                  </button>
+                ) : null}
               </>
             )}
           </div>

@@ -4,11 +4,13 @@
  */
 
 import type { ChatConversation, ChatInboxMessage } from '@/lib/chat-inbox'
+import type { ChatAiStatus } from '@/lib/soft-ai/agent-status'
 import {
   channelSecondaryAddress,
   resolveChannelDisplayName,
   type ChannelLogoKey,
 } from '@/lib/social-account-identity'
+import { isBuiltinChatTag, ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
 
 /** System keys plus any custom stage key from Config › Chats. */
 export type ConversationStatus = 'nuevo' | 'en_curso' | 'hecho' | (string & {})
@@ -41,9 +43,13 @@ export interface SoftConversation extends ChatConversation {
   isDemo?: boolean
   /** Soft Agent Layer trust labels (optional; A1). */
   agentLabel?: string | null
+  /** Live agent serving this chat's line (read-only; "Corregir" falls back to it when a message has no snapshot). */
+  agentId?: string | null
   agentEmoji?: string | null
   agentStateDot?: 'IA' | 'Sug' | 'Hum' | null
   pendingSuggestionText?: string | null
+  /** Agentes IA 2.0: who really has this chat ("IA" only when the line answers it). */
+  aiStatus?: ChatAiStatus | null
 }
 
 export interface SoftSocialAccount {
@@ -356,11 +362,26 @@ export function filterSoftConversations(
     viewerUserId?: string | null
     /** Clock for snooze checks (tests); defaults to now. */
     nowMs?: number
+    /**
+     * A built-in review tag chip ("Pago por verificar" / "Pedido por confirmar") is on: every OPEN chat with
+     * that tag, whatever the bucket ("Míos", "Sin asignar", snoozed…) — whoever is logged in can act.
+     * Channel, line and search still apply. Other tags are filtered by the caller as before.
+     */
+    tag?: SoftTag | null
   },
 ): SoftConversation[] {
   const q = opts.search.trim().toLowerCase()
   const now = opts.nowMs ?? Date.now()
+  const reviewTag = opts.tag && isBuiltinChatTag(opts.tag) ? opts.tag : null
   return conversations.filter((c) => {
+    if (reviewTag) {
+      if (!c.tags.includes(reviewTag) || isConversationClosed(c)) return false
+      if (opts.channel === 'whatsapp' && c.platform !== 'whatsapp') return false
+      if (opts.channel === 'instagram' && c.platform !== 'instagram') return false
+      if (opts.accountId !== 'all' && c.socialAccountId !== opts.accountId) return false
+      if (!q) return true
+      return `${c.recipientName || ''} ${c.lastMessage || ''} ${c.accountLabel} ${c.recipientId}`.toLowerCase().includes(q)
+    }
     const snoozed = isSnoozedConversation(c, now)
     if (opts.bucket === 'pospuestos' && !snoozed) return false
     // A snoozed chat leaves the working buckets until it wakes up (time passes or customer writes).
@@ -387,6 +408,26 @@ export function filterSoftConversations(
     return hay.includes(q)
   })
 }
+
+/**
+ * Agentes IA 2.0 · notify — "Pago por verificar" / "Pedido por confirmar" chips at the top of the inbox.
+ * A chat counts while it has the tag and is not closed (snoozed ones too: money is waiting).
+ */
+export const REVIEW_CHIP_DEFS: Array<{ tag: SoftTag; label: string; emoji: string; tone: 'rose' | 'orange' }> = [
+  { tag: PAYMENT_REVIEW_TAG, label: 'Pago por verificar', emoji: '💳', tone: 'rose' },
+  { tag: ORDER_REVIEW_TAG, label: 'Pedido por confirmar', emoji: '📦', tone: 'orange' },
+]
+
+export function reviewTagCounts(conversations: Array<Pick<SoftConversation, 'tags' | 'status' | 'closed'>>): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const f of REVIEW_CHIP_DEFS) out[f.tag] = 0
+  for (const c of conversations) {
+    if (isConversationClosed(c)) continue
+    for (const f of REVIEW_CHIP_DEFS) if (c.tags.includes(f.tag)) out[f.tag] += 1
+  }
+  return out
+}
+
 
 export function stubSources(conversation: SoftConversation | null): Array<{ label: string; href?: string }> {
   if (!conversation) {

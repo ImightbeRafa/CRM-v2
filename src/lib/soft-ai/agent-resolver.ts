@@ -22,6 +22,11 @@ import {
 } from '@/lib/soft-ai/agent-types'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 import {
+  effectiveConversationAiMode,
+  humanWroteRecently as readHumanWroteRecently,
+  type EffectiveAiModeVia,
+} from '@/lib/soft-ai/agent-mode-server'
+import {
   parseBrandFactsSafe,
   parseReplyStyleSafe,
   type BrandFacts,
@@ -64,6 +69,9 @@ export type AgentResolveResult =
       effectiveBehavior: EffectiveAgentBehavior
       effectiveMode: ChatAgentOperationMode
       unlockedForSend: boolean
+      /** The chat's effective mode (column, agentState, or the line's when NULL) and where it came from. */
+      conversationMode: SoftAiAgentMode | null
+      conversationModeVia: EffectiveAiModeVia
       skipReason?: undefined
     }
   | {
@@ -123,8 +131,39 @@ export function composeEffectiveBehavior(input: {
   conversationAiMode: SoftAiAgentMode | null | undefined
   operationMode: ChatAgentOperationMode
   unlockedForSend: boolean
-}): { behavior: EffectiveAgentBehavior; effectiveMode: ChatAgentOperationMode; skipReason?: ChatAgentSkipReason } {
-  const convo = input.conversationAiMode
+  /** Legacy flag agentState for this thread (when the caller did not merge it into conversationAiMode). */
+  persistedAiMode?: SoftAiAgentMode | null
+  /**
+   * Agentes IA 2.0 — chats follow the line: a NULL-mode chat on a line that is ON (ai_full + unlocked) is the AI's
+   * unless a person wrote in it in the last 24 h. Only applied when the caller checked it (a boolean); undefined
+   * keeps the old fail-closed rule (NULL = skip).
+   */
+  humanWroteRecently?: boolean
+}): {
+  behavior: EffectiveAgentBehavior
+  effectiveMode: ChatAgentOperationMode
+  skipReason?: ChatAgentSkipReason
+  conversationMode: SoftAiAgentMode | null
+  conversationModeVia: EffectiveAiModeVia
+} {
+  const lineOn = input.operationMode === 'ai_full' && input.unlockedForSend
+  const effective = effectiveConversationAiMode({
+    column: input.conversationAiMode,
+    persisted: input.persistedAiMode ?? null,
+    lineOn: lineOn && typeof input.humanWroteRecently === 'boolean',
+    humanWroteRecently: input.humanWroteRecently === true,
+  })
+  const base = { conversationMode: effective.mode, conversationModeVia: effective.via }
+  const r = composeFromMode(effective.mode, input.operationMode, input.unlockedForSend)
+  return { ...r, ...base }
+}
+
+function composeFromMode(
+  convo: SoftAiAgentMode | null,
+  operationMode: ChatAgentOperationMode,
+  unlockedForSend: boolean,
+): { behavior: EffectiveAgentBehavior; effectiveMode: ChatAgentOperationMode; skipReason?: ChatAgentSkipReason } {
+  const input = { operationMode, unlockedForSend }
   if (convo == null) {
     return { behavior: 'skip', effectiveMode: input.operationMode, skipReason: 'missing_mode' }
   }
@@ -208,6 +247,9 @@ export async function resolveChatAgent(input: {
   tenantId: string
   socialAccountId: string
   conversationAiMode: SoftAiAgentMode | null | undefined
+  /** With it, a NULL-mode chat on a line that is ON follows the line (unless a person wrote in the last 24 h). */
+  conversationId?: string | null
+  persistedAiMode?: SoftAiAgentMode | null
 }): Promise<AgentResolveResult & { layerEnabled: boolean; softAiEnabled: boolean }> {
   const softAiEnabled = await shouldUseSoftTenantAiV1(input.tenantId)
   const layer = await readAgentLayerFlag(input.tenantId)
@@ -348,10 +390,21 @@ export async function resolveChatAgent(input: {
       model: agent.model,
       agentVersion: agent.version,
     })
+    // Chats follow the line: only a NULL-mode chat on a line that answers needs the "did a person write?" read.
+    const needsHumanCheck =
+      Boolean(input.conversationId) &&
+      input.conversationAiMode == null &&
+      input.persistedAiMode == null &&
+      agent.operationMode === 'ai_full' &&
+      unlockedForSend
     const composed = composeEffectiveBehavior({
       conversationAiMode: input.conversationAiMode,
+      persistedAiMode: input.persistedAiMode ?? null,
       operationMode: agent.operationMode,
       unlockedForSend,
+      humanWroteRecently: needsHumanCheck
+        ? await readHumanWroteRecently(input.tenantId, input.conversationId as string, 24)
+        : undefined,
     })
 
     if (composed.behavior === 'skip' || composed.behavior === 'human_only') {
@@ -389,6 +442,8 @@ export async function resolveChatAgent(input: {
       },
       effectiveBehavior: composed.behavior,
       effectiveMode: composed.effectiveMode,
+      conversationMode: composed.conversationMode,
+      conversationModeVia: composed.conversationModeVia,
       unlockedForSend,
     }
   } catch (error) {

@@ -1,9 +1,14 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { AtSign, Bell, Bot, ListChecks } from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
+import { AtSign, Bell, BellRing, Bot, CreditCard, ListChecks, Package } from 'lucide-react'
 import { showBellDot } from '@/lib/aurora-alerts'
+import { isReviewAlertKind, isSafeInternalHref, nativeNotificationText, titleWithCount } from '@/lib/notification-alerts'
+import { installNotificationSoundUnlock, playNotificationChime } from '@/lib/notification-sound'
+import { useToast } from '@/app/hooks/use-toast'
+import { ToastAction } from '@/app/components/ui/toast'
 import { AuroraAlertsList } from './AuroraAlertsList'
 import { useAuroraAlerts } from './useAuroraAlerts'
 import { useDismiss } from './useDismiss'
@@ -34,6 +39,70 @@ export function AuroraBell() {
   useDismiss(open, ref, close)
   const dot = showBellDot(alerts) || notes.unread > 0 || notes.overdueTasks > 0
   const total = alerts.length + notes.unread + (notes.overdueTasks > 0 ? 1 : 0)
+  const reviewUnread = notes.reviewUnread
+  const router = useRouter()
+  const pathname = usePathname()
+  const { toast } = useToast()
+  const [browserPerm, setBrowserPerm] = useState<NotificationPermission | 'unsupported'>('unsupported')
+  const { claimNewAlerts, markRead, items } = notes
+
+  useEffect(() => {
+    installNotificationSoundUnlock()
+    try {
+      setBrowserPerm('Notification' in window ? window.Notification.permission : 'unsupported')
+    } catch {
+      setBrowserPerm('unsupported')
+    }
+  }, [])
+
+  // agents2-notify: a NEW "Verificá un pago" / "Pedido por confirmar" → chime + toast (+ browser notification
+  // when already allowed). Each alert is announced once, by whichever bell claims it first.
+  useEffect(() => {
+    const fresh = claimNewAlerts()
+    if (!fresh.length) return
+    playNotificationChime()
+    const top = fresh[0]
+    const more = fresh.length - 1
+    toast({
+      title: top.title,
+      description: more > 0 ? `${top.snippet ?? ''} · y ${more} más`.trim() : top.snippet ?? undefined,
+      duration: 20_000,
+      action: (
+        <ToastAction
+          altText="Abrir chat"
+          onClick={() => {
+            void markRead([top.id])
+            if (isSafeInternalHref(top.href)) router.push(top.href)
+          }}
+        >
+          Abrir chat
+        </ToastAction>
+      ),
+    })
+    try {
+      if ('Notification' in window && window.Notification.permission === 'granted') {
+        for (const n of fresh.slice(0, 3)) {
+          // Lock-screen safe: "un cliente", never the customer's name / number (DATA-54).
+          const text = nativeNotificationText(n)
+          const native = new window.Notification(text.title, { body: text.body || undefined, tag: `betsy-${n.id}` })
+          native.onclick = () => {
+            window.focus()
+            void markRead([n.id])
+            if (isSafeInternalHref(n.href)) router.push(n.href)
+            native.close()
+          }
+        }
+      }
+    } catch {
+      /* some browsers (Android Chrome) only allow notifications from a service worker */
+    }
+  }, [items, claimNewAlerts, markRead, router, toast])
+
+  // Tab title "(N) …" while payment / order alerts wait (re-applied after navigation and every poll).
+  useEffect(() => {
+    const next = titleWithCount(document.title, reviewUnread)
+    if (next !== document.title) document.title = next
+  }, [reviewUnread, pathname, items])
 
   return (
     <div ref={ref} className="relative">
@@ -45,11 +114,19 @@ export function AuroraBell() {
         }}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={dot ? `Avisos (${total})` : 'Avisos'}
+        aria-label={reviewUnread > 0 ? `Avisos (${total}) · ${reviewUnread} por revisar` : dot ? `Avisos (${total})` : 'Avisos'}
         className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors duration-150 outline-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-[#8F7BFF]/60 focus-visible:ring-offset-2"
       >
-        <Bell className="h-4 w-4" aria-hidden />
-        {dot ? (
+        {reviewUnread > 0 ? <BellRing className="h-4 w-4 text-amber-600" aria-hidden /> : <Bell className="h-4 w-4" aria-hidden />}
+        {reviewUnread > 0 ? (
+          <span
+            data-testid="aurora-bell-review-count"
+            title={reviewUnread === 1 ? '1 pago o pedido por revisar' : `${reviewUnread} pagos o pedidos por revisar`}
+            className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white motion-safe:animate-pulse"
+          >
+            {reviewUnread > 9 ? '9+' : reviewUnread}
+          </span>
+        ) : dot ? (
           <span
             data-testid="aurora-bell-dot"
             className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white"
@@ -75,6 +152,27 @@ export function AuroraBell() {
                 <span className="text-[11px] text-slate-400">{total}</span>
               ) : null}
             </div>
+            {browserPerm === 'default' ? (
+              <button
+                type="button"
+                data-testid="aurora-browser-notify"
+                onClick={() => {
+                  try {
+                    void window.Notification.requestPermission().then((p) => setBrowserPerm(p))
+                  } catch {
+                    setBrowserPerm('unsupported')
+                  }
+                }}
+                className="flex w-full items-center gap-2 border-b border-slate-100 px-4 py-2 text-left text-[12px] font-medium text-au-ink-5b6cff outline-none hover:bg-slate-50 focus-visible:bg-slate-50"
+              >
+                <BellRing className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                Activar avisos del navegador
+              </button>
+            ) : browserPerm === 'denied' ? (
+              <p className="border-b border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+                Los avisos del navegador están bloqueados. Activalos en la configuración del sitio.
+              </p>
+            ) : null}
             {notes.overdueTasks > 0 ? (
               <Link
                 href="/tareas"
@@ -96,13 +194,32 @@ export function AuroraBell() {
                         if (!n.read) void notes.markRead([n.id])
                         close()
                       }}
-                      className={`flex gap-3 px-4 py-2.5 text-[13px] outline-none transition-colors duration-150 hover:bg-slate-50 focus-visible:bg-slate-50 ${n.read ? 'text-slate-500' : 'text-slate-900'}`}
+                      className={`flex gap-3 px-4 py-2.5 text-[13px] outline-none transition-colors duration-150 hover:bg-slate-50 focus-visible:bg-slate-50 ${n.read ? 'text-slate-500' : 'text-slate-900'} ${!n.read && isReviewAlertKind(n.kind) ? 'bg-amber-50' : ''}`}
+                      data-kind={n.kind}
                     >
                       <span
-                        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${n.read ? 'bg-slate-100 text-slate-400' : 'bg-au-tint-eef0ff text-au-ink-5b6cff'}`}
+                        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+                          n.read
+                            ? 'bg-slate-100 text-slate-400'
+                            : n.kind === 'payment_review'
+                              ? 'bg-rose-100 text-rose-700'
+                              : n.kind === 'order_review'
+                                ? 'bg-orange-100 text-orange-700'
+                                : 'bg-au-tint-eef0ff text-au-ink-5b6cff'
+                        }`}
                         aria-hidden
                       >
-                        {n.kind === 'mention' ? <AtSign className="h-3.5 w-3.5" /> : n.kind === 'ai_no_reply' || n.kind === 'ai_budget' ? <Bot className="h-3.5 w-3.5" /> : <ListChecks className="h-3.5 w-3.5" />}
+                        {n.kind === 'mention' ? (
+                          <AtSign className="h-3.5 w-3.5" />
+                        ) : n.kind === 'payment_review' ? (
+                          <CreditCard className="h-3.5 w-3.5" />
+                        ) : n.kind === 'order_review' ? (
+                          <Package className="h-3.5 w-3.5" />
+                        ) : n.kind === 'ai_no_reply' || n.kind === 'ai_budget' ? (
+                          <Bot className="h-3.5 w-3.5" />
+                        ) : (
+                          <ListChecks className="h-3.5 w-3.5" />
+                        )}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className={`block truncate ${n.read ? '' : 'font-semibold'}`}>{n.title}</span>

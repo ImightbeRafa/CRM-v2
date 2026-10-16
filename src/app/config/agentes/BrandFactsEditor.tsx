@@ -23,6 +23,7 @@ type FactsForm = {
   sinpeHolder: string
   bank: string
   iban: string
+  cardUrl: string
   instructionsText: string
   maxLines: string
 }
@@ -44,6 +45,7 @@ const EMPTY: FactsForm = {
   sinpeHolder: '',
   bank: '',
   iban: '',
+  cardUrl: '',
   instructionsText: '',
   maxLines: '4',
 }
@@ -101,6 +103,7 @@ export function BrandFactsEditor({
       sinpeHolder: payment.sinpe?.holderName || '',
       bank: payment.transfer?.bank || '',
       iban: payment.transfer?.iban || '',
+      cardUrl: payment.cardUrl || '',
       instructionsText: payment.instructionsText || '',
       maxLines: style.maxLines != null ? String(style.maxLines) : '4',
     })
@@ -146,6 +149,7 @@ export function BrandFactsEditor({
         methods: form.methods,
         sinpe: { number: form.sinpeNumber, holderName: form.sinpeHolder },
         transfer: { bank: form.bank, iban: form.iban },
+        cardUrl: form.cardUrl,
         instructionsText: form.instructionsText,
       },
     }
@@ -208,23 +212,23 @@ export function BrandFactsEditor({
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-medium text-slate-700">
           Nombre de tienda
-          <input className={FIELD} value={form.storeName} disabled={!canEdit} onChange={(e) => setForm({ ...form, storeName: e.target.value })} />
+          <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.storeName} disabled={!canEdit} onChange={(e) => setForm({ ...form, storeName: e.target.value })} />
         </label>
         <label className="text-xs font-medium text-slate-700">
           Sitio web
-          <input className={FIELD} value={form.website} disabled={!canEdit} placeholder="URL del catálogo" onChange={(e) => setForm({ ...form, website: e.target.value })} />
+          <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.website} disabled={!canEdit} placeholder="URL del catálogo" onChange={(e) => setForm({ ...form, website: e.target.value })} />
         </label>
         <label className="text-xs font-medium text-slate-700 sm:col-span-2">
           Horario
-          <input className={FIELD} value={form.hoursText} disabled={!canEdit} onChange={(e) => setForm({ ...form, hoursText: e.target.value })} />
+          <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.hoursText} disabled={!canEdit} onChange={(e) => setForm({ ...form, hoursText: e.target.value })} />
         </label>
         <label className="text-xs font-medium text-slate-700">
           Dirección de retiro
-          <input className={FIELD} value={form.address} disabled={!canEdit} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+          <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.address} disabled={!canEdit} onChange={(e) => setForm({ ...form, address: e.target.value })} />
         </label>
         <label className="text-xs font-medium text-slate-700">
           Indicaciones de retiro
-          <input className={FIELD} value={form.pickupInstructions} disabled={!canEdit} onChange={(e) => setForm({ ...form, pickupInstructions: e.target.value })} />
+          <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.pickupInstructions} disabled={!canEdit} onChange={(e) => setForm({ ...form, pickupInstructions: e.target.value })} />
         </label>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -235,11 +239,11 @@ export function BrandFactsEditor({
           </label>
           <label className="mt-2 block text-xs text-slate-700">
             Costo GAM
-            <input className={FIELD} value={form.gamCost} disabled={!canEdit} inputMode="numeric" onChange={(e) => setForm({ ...form, gamCost: e.target.value })} />
+            <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.gamCost} disabled={!canEdit} inputMode="numeric" onChange={(e) => setForm({ ...form, gamCost: e.target.value })} />
           </label>
           <label className="mt-2 block text-xs text-slate-700">
             Fuera del GAM
-            <input className={FIELD} value={form.outsideGamCost} disabled={!canEdit} inputMode="numeric" onChange={(e) => setForm({ ...form, outsideGamCost: e.target.value })} />
+            <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.outsideGamCost} disabled={!canEdit} inputMode="numeric" onChange={(e) => setForm({ ...form, outsideGamCost: e.target.value })} />
           </label>
         </div>
         <div className="rounded-lg bg-slate-50 p-3">
@@ -249,7 +253,7 @@ export function BrandFactsEditor({
           </label>
           <label className="mt-2 block text-xs text-slate-700">
             Texto de retiro
-            <input className={FIELD} value={form.raText} disabled={!canEdit} onChange={(e) => setForm({ ...form, raText: e.target.value })} />
+            <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.raText} disabled={!canEdit} onChange={(e) => setForm({ ...form, raText: e.target.value })} />
           </label>
         </div>
       </div>
@@ -269,29 +273,33 @@ export function BrandFactsEditor({
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           <label className="text-xs text-slate-700">
             Número SINPE
-            <input className={FIELD} value={form.sinpeNumber} disabled={!canEdit} onChange={(e) => setForm({ ...form, sinpeNumber: e.target.value })} />
+            <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.sinpeNumber} disabled={!canEdit} onChange={(e) => setForm({ ...form, sinpeNumber: e.target.value })} />
           </label>
           <label className="text-xs text-slate-700">
             Titular SINPE
-            <input className={FIELD} value={form.sinpeHolder} disabled={!canEdit} onChange={(e) => setForm({ ...form, sinpeHolder: e.target.value })} />
+            <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.sinpeHolder} disabled={!canEdit} onChange={(e) => setForm({ ...form, sinpeHolder: e.target.value })} />
           </label>
           <label className="text-xs text-slate-700">
             Banco
-            <input className={FIELD} value={form.bank} disabled={!canEdit} onChange={(e) => setForm({ ...form, bank: e.target.value })} />
+            <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.bank} disabled={!canEdit} onChange={(e) => setForm({ ...form, bank: e.target.value })} />
           </label>
           <label className="text-xs text-slate-700">
             IBAN
-            <input className={FIELD} value={form.iban} disabled={!canEdit} onChange={(e) => setForm({ ...form, iban: e.target.value })} />
+            <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.iban} disabled={!canEdit} onChange={(e) => setForm({ ...form, iban: e.target.value })} />
           </label>
         </div>
         <label className="mt-2 block text-xs text-slate-700">
+          Enlace para pagar con tarjeta (opcional; si no, se usa el sitio)
+          <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.cardUrl} disabled={!canEdit} placeholder="https://" onChange={(e) => setForm({ ...form, cardUrl: e.target.value })} />
+        </label>
+        <label className="mt-2 block text-xs text-slate-700">
           Instrucciones de pago
-          <input className={FIELD} value={form.instructionsText} disabled={!canEdit} onChange={(e) => setForm({ ...form, instructionsText: e.target.value })} />
+          <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.instructionsText} disabled={!canEdit} onChange={(e) => setForm({ ...form, instructionsText: e.target.value })} />
         </label>
       </div>
       <label className="mt-3 block text-xs font-medium text-slate-700">
         Máximo de líneas por respuesta
-        <input className={`${FIELD} max-w-[8rem]`} value={form.maxLines} disabled={!canEdit} onChange={(e) => setForm({ ...form, maxLines: e.target.value })} />
+        <input autoComplete="off" data-lpignore="true" className={`${FIELD} max-w-[8rem]`} value={form.maxLines} disabled={!canEdit} onChange={(e) => setForm({ ...form, maxLines: e.target.value })} />
       </label>
       {error ? (
         <p role="alert" className="mt-2 text-xs text-red-800">

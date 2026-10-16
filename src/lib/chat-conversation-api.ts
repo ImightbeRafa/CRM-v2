@@ -4,6 +4,7 @@ import { projectRawMessageForClient } from '@/lib/chat-message-display'
 import type { Prisma } from '@prisma/client'
 import { type SoftTag } from '@/lib/chat-soft-copilot'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
+import type { ChatAiStatus, ChatLineAi } from '@/lib/soft-ai/agent-status'
 import {
   channelLogoKey,
   channelSecondaryAddress,
@@ -20,10 +21,26 @@ export const patchConversationBodySchema = z
   .object({
     status: CHAT_CONVERSATION_STATUS.optional(),
     tags: z.array(z.string().min(1).max(40)).max(20).optional(),
+    /**
+     * agents2-notify: remove ONE tag atomically on the server ("Pago verificado" / "Confirmado"), never a
+     * whole-array write from a possibly stale client copy. Not combinable with `tags`.
+     */
+    removeTag: z.string().min(1).max(40).optional(),
+    /** SecureDog DATA-53: add ONE tag atomically (array_append when absent, max 20 tags). Not combinable with `tags`. */
+    addTag: z.string().min(1).max(40).optional(),
     assignedUserId: z.string().cuid().nullable().optional(),
     aiMode: CHAT_CONVERSATION_AI_MODE.nullable().optional(),
   })
   .refine((body) => Object.keys(body).length > 0, { message: 'No fields to update' })
+  .refine((body) => !(body.tags !== undefined && (body.removeTag !== undefined || body.addTag !== undefined)), {
+    message: 'Use tags or addTag / removeTag, not both',
+  })
+  .refine((body) => !(body.addTag !== undefined && body.addTag === body.removeTag), {
+    message: 'addTag and removeTag must differ',
+  })
+
+/** Most tags one chat can carry (same cap as the `tags` array). */
+export const CHAT_TAGS_MAX = 20
 
 export const importLocalStateBodySchema = z.object({
   items: z
@@ -112,9 +129,20 @@ export type ChatConversationListItemDto = {
   }
   clientId: string | null
   agentLabel?: string | null
+  /** Live agent serving the line (agent-inbox-enrich.ts); read-only, used by "Corregir". */
+  agentId?: string | null
   agentEmoji?: string | null
   agentStateDot?: 'IA' | 'Sug' | 'Hum' | null
   pendingSuggestionText?: string | null
+  /**
+   * Agentes IA 2.0 — the truth (set by the list/changes enrich, agent-inbox-enrich.ts): the line's status, the legacy
+   * per-thread mode, whether a person wrote in the last 24 h, and the resulting chat status. The client recomputes
+   * aiStatus with chatAiStatus() from these + aiMode after a local mode change.
+   */
+  aiLine?: ChatLineAi | null
+  aiPersistedMode?: SoftAiAgentMode | null
+  aiHumanRecent?: boolean
+  aiStatus?: ChatAiStatus | null
 }
 
 export type ChatMessageItemDto = {

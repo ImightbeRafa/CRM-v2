@@ -10,6 +10,12 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 import { parseConversationKey } from '@/lib/chat-conversation-api'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
+import { sweepWaitingConversation } from '@/lib/soft-ai/waiting-sweep'
+import { isSameOriginRequest } from '@/lib/same-origin'
+import { createIdentifierRateLimit } from '@/lib/rate-limit'
+
+// SecureDog INT-96: resume now triggers an AI answer (model spend) — same-origin + per-person limit.
+const controlRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 20, identifier: 'chat-soft-ai-control' })
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,6 +34,13 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_sales')
     if (!auth.ok) return auth.response
+    if (!isSameOriginRequest(request)) {
+      return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })
+    }
+    const rate = await controlRateLimit(`${auth.tenantId}:${auth.userId}`)
+    if (!rate.allowed) {
+      return NextResponse.json({ success: false, error: 'Demasiados intentos. Esperá un momento.' }, { status: 429, headers: rate.headers })
+    }
 
     const { tenantId } = auth
     const body = await request.json().catch(() => null)
@@ -97,7 +110,19 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ success: true, conversationKey, action, mode })
+    // Devolver a IA: if the customer's last message is still unanswered (and the line answers), answer it now.
+    // Same job path as the webhook (same delivery key), so it is never answered twice.
+    let answering = false
+    if (action === 'resume' && keyParts) {
+      const sweep = await sweepWaitingConversation({
+        tenantId,
+        socialAccountId: keyParts.socialAccountId,
+        peerId: keyParts.peerId,
+      })
+      answering = sweep.queued
+    }
+
+    return NextResponse.json({ success: true, conversationKey, action, mode, answering })
   } catch (error) {
     console.error('[soft-ai/control]', error)
     return NextResponse.json({ success: false, error: 'Error al controlar Soft AI' }, { status: 500 })

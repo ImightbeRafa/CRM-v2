@@ -1,3 +1,285 @@
+## 2026-10-16 — agents2-format: SecureDog INT-114 reopened (claudio/agents2-format)
+
+- Structure: decideInbound runs the classifier / safety hand-off FIRST; the method choice and the logistics mention
+  only run when the message is not payment_proof_or_risk. The classifier itself treats an exact choice as a sales
+  answer only while the store's method question is pending (and after every claim check).
+- New status lexicon (with a payment noun): verifiquen, third-person past (pagó / hizo / mandó / envió / depositó /
+  transfirió / pasó), salió / se fue / cayó / entró, ayer / anoche / esta mañana / a las tres / hace un momento,
+  ahí (le) va / van, me avisa; without a question: desde la cuenta, al número, a nombre de, OK, completo,
+  efectuado. These also cancel the intent exemption.
+- pendingMethodMention: only an exact choice + an explicit logistics phrase (y retiro en tienda, con envío a …,
+  a domicilio, para …); negations (no / ni / nunca / tampoco) are never choices or carried methods; the carried
+  method is the LAST one the customer named.
+- N6 wording: the bell / toast says "Pidió pagar en efectivo — confirmá los datos" for order_ready_cash (from the
+  dedupe key).
+- Proof: tsc 0, lint 0, test:soft-ai 766/766, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34. Not deployed.
+
+## 2026-10-16 — agents2-format round 3 follow-up: intent phrasing is never a completion claim (claudio/agents2-format)
+
+- Intent / future wording (quiero / voy a / prefiero / puedo / quisiera pagar, para pagar, le / te / les pago, pagaría,
+  tengo / hay que pagar, antes del envío, después del pago) without a strong marker (✅, ya + hice / pagué / envié /
+  mandé, realizad, exitos, aprobad, comprobante, había, digits / ₡ / ref) is not a claim → the agent answers. A leading
+  "listo, / ok listo" is an acknowledgement ("Lista, ¿por sinpe?"). A bare "sinpe?" still goes to a person.
+- pendingMethodMention: "nombre" is no longer a status word ("por sinpe a nombre de X" → model, SINPE chosen).
+- Proof: tsc 0, lint 0, test:soft-ai 760/760, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34. Not deployed.
+
+## 2026-10-16 — agents2-format round 3: integration verifier N1..N6 + SecureDog leftovers (claudio/agents2-format)
+
+- Merged claudio/agents2-phase1 (6bcba9ed: format + notify) into the branch first.
+- N1: a completion word is a payment claim only next to a payment noun (or paired with one in a message with no
+  question); never a leading "listo," / "ok listo", "lista de precios", "hechos a mano", "ser enviado", the order being
+  "listo", or an info question. "pago en efectivo" is a sales question; "¿cuál es el sinpe?" / "¿me pasás los datos?"
+  are info questions. classifyPaymentText reads NFKC + strips invisible characters first ("ＳＩＮＰＥ ✅").
+- N2: a contra-entrega / efectivo choice made since the store's last method question is carried to later turns
+  (the customer sends the order data next) → the COD token fills as an order → order_ready.
+- N3: "tu pedido / orden / compra" + registrado / anotado / confirmado / agendado is a write claim everywhere; the
+  order-closing patterns (sale hoy/mañana, agendé, te lo mando mañana, va en camino, anoté tu pedido, quedó
+  programado, tu orden quedó lista…) only on the contra-entrega / efectivo closing turn (safe line + order_ready).
+- N4: wider choice grammar ("Prefiero pagar por…", "Te pago por…", "… está bien", "… mejor", "Tarjeta, por la web",
+  "transferencia bancaria", "tarjeta de crédito"); with the method question pending, one method + other content and
+  no question / claim / status / dispute word → the model with that method chosen; the method list is never re-sent
+  while the question is pending.
+- N5: contra-entrega / efectivo blocks are orders, not payment details: new stage 'pedido_en_revision' (no receipt
+  asked), and a later photo is not a receipt because of that block.
+- N6: cash orders hand off with 'order_ready_cash' ("Pidió pagar en efectivo — confirmá los datos"), same order review
+  kind and tag.
+- Leftovers: single-bracket "[PAGO …]", "PAGO-SINPE", "DATOS PAGO" stripped + held; bell hrefs use safeReturnPath.
+- Proof: tsc 0, lint 0, test:soft-ai 758/758, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34. Not deployed.
+
+## 2026-10-16 — agents2-format fix round: Verifier FAIL + integration verifier + SecureDog INT-114..118 (claudio/agents2-format)
+
+- INT-114 / Verifier #1 (HIGH): a payment-method choice is now an ALLOWLIST GRAMMAR over the whole message
+  (payment-classifier paymentChoiceGrammar): optional lead (prefiero / quiero pagar / por / con…), ONE method, optional
+  porfa / gracias and only 🙏 😊 🙌; or the strict detail ask ("¿me pasás el número?", "¿cuál es el número de sinpe?").
+  Digits, #, ref, ₡, ✅ ✔ ☑ 👍 💸, completion words, zero-width tricks and anything else → the old classifier path (a
+  person). Same gate for the code reply and the contra-entrega / efectivo → model branch; the broad detail-ask words
+  were removed. The F7 "method + other question → model" idea was dropped in favour of INT-114 (it hands off).
+- INT-115: completion words (realizad, hech, enviad, list, exitos, aprobad, pagad, cancelad, ✅) before the info cue →
+  payment_proof_or_risk ("Transferencia realizada", "tarjeta aprobada", "Envio exitoso…").
+- INT-116 / #2: links are checked on the text BEFORE payment tokens are filled; cardUrl is not on the allowlist,
+  must be https; payment processors (paypal.me/.com, stripe, tilopay, mercadopago, onvopay) are shared hosts.
+- #3: digit-less method blocks are recognisable ("Podés pagar con tarjeta en", "Transferencia bancaria: BAC",
+  "Pago contra entrega:", "Pago en efectivo:") → details given → esperando_comprobante; one pending-question rule
+  (last 3 store messages, no details after) for the sales state and the inbound decision; a new buy cue goes back to
+  the close (F5).
+- #4: efectivo is its own method when configured ([[PAGO_EFECTIVO]]; else it means contra entrega). INT-118a: any
+  leftover [[ / ]] / 【】 / PAGO_ / DATOS_PAGO after filling is stripped and held. Same token twice → one block.
+- #9 / F6 / INT-118b: a contra-entrega / efectivo block triggers order_ready only when the customer CHOSE that method
+  (chosenMethod from customer text); otherwise it is information. Customer / history text cannot carry Betsy tokens.
+- INT-117: the COD step says "resumí el pedido… enseguida lo revisamos" and never confirmed / registrado / agendado /
+  sale hoy-mañana; those are write claims now; a failing COD reply still hands off (safe line + order_ready).
+- Send loop: part-0 hash versioned (parts-v1|) (#6); kill switch / human / paused re-checked before each later part
+  (#7); past 38 s the rest goes out as ONE message instead of being dropped (F2); a partial reply raises a review
+  alert. Corregir joins only text parts with a numeric partIndex (#5). A configured number on its own line is never
+  joined with the next line's digits (#8). Dash list = one line up to 8 items; " · " lines become dash lists (F3).
+  pb_como_comprar without "Correo" (F9). pay-sinpe quick-check case only when SINPE is an offered method.
+- Proof: tsc 0, lint 0, test:soft-ai 722/722, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34. Not deployed.
+
+## 2026-10-16 — agents2-format: readable replies + ask the payment method first (claudio/agents2-format)
+
+Live WhatsApp test sent one unreadable block (price + order data + every payment number joined with " · "). Now:
+- Multi-message replies: a reply is split at blank lines into at most 3 WhatsApp / Instagram messages (extra
+  paragraphs merge into the last). Every check (money, payment numbers, links, shortening, token filling) still runs on
+  the whole text; the split is last (reply-parts.ts). Live send: part 0 keeps the turn's deliveryKey + content hash,
+  parts 1..n use `${deliveryKey}:p${i}` with their own hash, 700 ms apart, none after 33 s; a later part that is
+  ambiguous stops the loop (never resent) and the turn records errorCode 'partial_delivery'. One ChatMessage per part
+  (partIndex / partCount; toolTrace on part 0 only). Same loop for code-sent saved replies. Probar returns `parts` and
+  shows one bubble per part (one "Corregir" under the last part, with the whole reply); Corregir in real chats joins the
+  parts of the same turn.
+- Style (code-owned, prompt rule 16 + reply style + sales rules): short messages, blank line between ideas, data and
+  options as dash lists, never price + order data + payment in one block, no " · ". maxLines is per message and a dash
+  list counts as one line; shortening is per message and never drops a list, a ₡ line or a token line; a line joined
+  with 2+ " · " is split into lines (same words). "en una sola línea" removed everywhere.
+- Payment method flow: per-method tokens [[PAGO_SINPE]] / [[PAGO_TRANSFERENCIA]] / [[PAGO_TARJETA]] /
+  [[PAGO_CONTRA_ENTREGA]] filled by payment-guard (same share guard + needsHuman fallback; only offered methods),
+  vertical ("SINPE Móvil: 6201 9914\nA nombre de: …"). [[DATOS_PAGO]] kept, vertical, only when all data is asked for.
+  Optional payment.cardUrl (falls back to the website; on the link allowlist). Sales stage 'metodo_pago' (asked how to
+  pay, no details yet) with chosenMethod; the close asks "¿Cómo preferís pagar? Tenemos …" built from the configured
+  methods. Contra entrega: the model confirms zone + order and writes [[PAGO_CONTRA_ENTREGA]] → the reply goes out,
+  then a TRUE hand-off with reason 'order_ready'. After the method question a cue-free "SINPE" / "por transferencia" is
+  a choice answered by code with that method only (+ "mandame el comprobante"); claims / confirm requests / disputes
+  still go to a person. sys_payment_info lists the methods and asks; sys_purchase_summary names methods, no numbers;
+  old default bodies upgraded on read. Owner corrections accept the new tokens.
+- Quick check: "¿Cómo les puedo pagar?" expects the method question (or the configured number); new "pay-sinpe" case
+  expects the number once SINPE is chosen. AGENT_RULES_VERSION → format-r1-2026-10-16 (agents re-run their check).
+- Tests: src/lib/__tests__/agents2-format.test.ts (43). Updated expectations: agent-sales-state, agent-promo,
+  agent-reply-images, soft-ai-payment-classifier (behaviour changed as specified).
+- Proof: tsc 0, lint 0, test:soft-ai 710/710, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34. Not deployed.
+
+## 2026-10-16 — notify SecureDog follow-ups DATA-53 / DATA-54 / INFRA (claudio/agents2-notify)
+
+- DATA-53: inbox tag toggles send PATCH { addTag } / { removeTag } (array_append only when absent and under 20 tags,
+  catalog check for non-built-ins; array_remove), tenant-scoped, update_sales; removing a built-in review tag (either
+  way) is audit-logged with actor, chat id and tag.
+- DATA-54: customer name in review alerts sanitized (stripFormatChars + Cc/Cf, spaces collapsed, 40 chars); native
+  browser notifications say "un cliente" (no name / number on the lock screen).
+- INFRA: GET /api/workspace/notifications rate limited 30/min per tenant:user (429 ignored by the bell); router.push
+  only for "/" paths (not "//", "/\\").
+- Proof: tsc 0, lint 0, test:soft-ai 695/695, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34.
+
+## 2026-10-16 — notify verifier fixes F8 / F10 (claudio/agents2-notify)
+
+- F8: payment alerts say "Mandó el comprobante…" only when the customer message was a photo / file (derived in
+  notifyHandoff from the last inbound messageType; agent-turn.ts unchanged); text claims / model escalations get
+  "Dice que ya pagó o tiene una duda de pago — revisalo" (":claim" dedupe-key suffix, no new column).
+- F10: "Pago verificado" / "Confirmado" send PATCH { removeTag } — one tag removed atomically with array_remove,
+  tenant-scoped, same update_sales permission; never a whole tags array from the client.
+- Proof: tsc 0, lint 0, test:soft-ai 687/687, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34.
+
+## 2026-10-16 — Pago por verificar / Pedido por confirmar alerts (claudio/agents2-notify)
+
+- Hand-off codes 'payment' (receipt) and new 'order_ready' (contra-entrega order complete; producer lands in the
+  reply-format branch): notifyHandoff tags the chat idempotently ('Pago por verificar' / 'Pedido por confirmar', server
+  updateMany push, tenant-scoped) and alerts the assignee AND the chat team (update_sales, cap 10) with kinds
+  'payment_review' / 'order_review' (allowed by SQL 049, no new SQL). Text "💳 Verificá un pago · <cliente>" /
+  "📦 Pedido por confirmar · <cliente>". Other codes unchanged ('ai_no_reply', assignee else team).
+- Built-in tags (crm-stages BUILTIN_CHAT_TAGS, rose / orange): always valid in PATCH and in the inbox catalog, not part of
+  Config › Chats.
+- Bell: one shared poller (15 s visible; hidden only if browser notifications are allowed, 60 s); a NEW unread
+  payment/order alert → chime (sound toggle respected), 20 s toast with "Abrir chat", red count on the bell, "(N)" tab
+  title, native notification when permission is already granted; "Activar avisos del navegador" button in the bell.
+- Inbox: "💳 Pago por verificar · N" / "📦 Pedido por confirmar · N" chips (every open tagged chat, any bucket; tagged
+  chats pinned via ?tag=); thread banner with "Crear pedido" + "Pago verificado" (also moves to a 'pagado' stage if the
+  business has one) / "Confirmado". Linking an order never clears the tags.
+- Tests: src/lib/__tests__/agents2-notify.test.ts (15) in test:soft-ai.
+- Proof: tsc 0, lint 0, test:soft-ai 682/682, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34.
+
+## 2026-10-15 — SecureDog round-4 follow-ups (claudio/agents2-phase1)
+
+- payment-guard: the exact "8888,1234" / "8888, 1234" shape is a payment number whenever the text mentions payment
+  (round-3 rule restored); payment cues before a comma run also include pag…, plata, dinero, datos; a comma + space
+  only joins the exact phone shape, so "Precios al por mayor: 12,900, 15,900" is no longer held.
+- links.ts parseLink: an encoded "/" or "\" (%2F / %5C) in a path is refused instead of decoded (browsers do not
+  decode it, so "otra%2F..%2Fmitienda" never matches an allowed prefix). SecureDog: OK to deploy; leftovers Low.
+
+## 2026-10-15 — "Corregir" round 4 (final): money blocklist, URL normalization, sanitizer last pass (claudio/agents2-phase1)
+
+- INT-104 reopened: sign-less "N mil" is money unless a count / unit noun follows (MIL_COUNT_WORDS blocklist: parches,
+  pasos, mAh, reseñas, familias, pedidos, años…; optional product-name tokens). Same helper live + save. "Por / Está en /
+  Solo 15 mil", "15 mil pesos / exactos / netos", "5 mil parches por 4 mil" (→ 4 000) are flagged. Save-time years are
+  exempt only after time phrases (desde, del, en el (año), abrimos / fundada / llega en, since): "Queda en 2000" is money.
+- INT-112: links.ts parseLink normalizes before the allowlist compare ("\" → "/", userinfo / bad hosts refused, %2e %2f
+  decoded, "." / ".." resolved, query dropped); shortener paths case-sensitive; maps hosts anchored (isMapLink).
+- INT-109: word-like TLDs (info, top, live, me, example, …) count without a path when the label is payment / shop-like
+  or hyphenated ("pagos.info", "sinpe.me", "mi-tienda.top").
+- Sanitizer: link removal runs again last until stable ("evil[ ].icu", "evil(1).icu", "evil<KNOWLEDGE_DATA>.icu").
+  Link allowlist takes only "R:" answers from a corrections doc (linkSourceTexts).
+- Comma-joined digit runs ≥ 8 digits ("88,88,12,34", "8888, 1234", "CR05,0152,…") are payment numbers only right after
+  a payment cue (commaPaymentNumbers; live + save + question masking).
+- Proof: tsc 0, lint 0, test:soft-ai 665/665, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34.
+
+## 2026-10-15 — "Corregir" round 3: live false positives + link allowlist (claudio/agents2-phase1)
+
+- R1: sign-less "N mil" is money only after a price word (cuesta / sale / son / total / precio / vale / queda / pagás…)
+  and not before a count noun ("5 mil parches", "2 mil reseñas", "10 mil pasos", "5 mil mAh" are not); one helper
+  (output-validator bareMilAmounts) for live and save. R4: "₡9.900 mil gracias" stays ₡9.900.
+- INT-112: links a model reply may carry = brand website / catalog host, the maps URL only when it is a map link, and
+  links the owner wrote in ACTIVE saved replies + APPROVED bound knowledge; shared hosts (instagram, wa.me, bit.ly,
+  forms.gle, docs.google.com…) only by exact path prefix. Same allowlist for live, Probar and Corregir.
+- Links (INT-109 leftovers): uppercase TLDs and bare IPv4 detected; "Listo. me avisás", "listo.te", "Gracias.de nada",
+  "aprox.cada", "info. top", "Node.js" are not links (word-like TLDs need a path; accepted gap: "evil.example").
+- INT-113: a comma joins digits only as "8888,1234" (sizes / price ranges / measures are not payment numbers).
+- Years after en / el / desde / del / año are not amounts. Locked rules saves: readiness checked once outside,
+  maxWait 10 s / timeout 15 s. markReplaced is inside the best-effort try.
+- Proof: tsc 0, lint 0, test:soft-ai 656/656, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34.
+
+## 2026-10-15 — "Corregir" round 2: DATA-52 blocker + INT-104/105/109/110/111 + N1–N9 (claudio/agents2-phase1)
+
+- DATA-52 / N1: purged corrections versions keep body '[purged]' (the 028 body CHECK needs ≥ 1 char; '' 500'd the 4th
+  save) and the purge is best-effort (never fails a saved example or skips its audit).
+- INT-104: "N mil" / "Nmil" = N×1000 with or without ₡/¢ in the live validator and at save; save also checks "a 5.000",
+  "Son 5.000 en total", "5000 cada uno", "c/u" (years after desde/año/en el and "2 a 4 días" are not amounts).
+- INT-105: "8888,1234" / "8888 -- 1234" (payment-guard separators), Arabic-Indic digits folded at save, "tu pago está ok".
+- INT-109: one generic link pattern (soft-ai/links.ts: any label.tld + "bit . ly", "bit(.)ly", "punto com"); new live
+  reason 'foreign_link' (model replies may only link the brand's website / catalog / maps domain; repairable; owner
+  saved replies sent by code are not checked) — same policy for live and Probar.
+- INT-110 / N7: a new example continues only from the approved corrections doc bound to the agent; replaced versions
+  are marked metadata.agentTuningReplacedBy; an owner-archived / unbound doc starts fresh.
+- INT-111 / N6: "nunca" = nunca / jamás / evitá / evitar / "no" + forbidding verb; "no te olvides de" = Siempre; the
+  never-exemption applies only to rule saves.
+- N2: conversation text keeps numbered lists ("1." "2."), no "modelo"/"sistema"/"bote" false hits, store lines never
+  labelled "[texto del cliente]". N3: ≤ 5 fix_* rows / 40% of the catalog, newest first (createdAt). N4: all items per
+  judge amount ("cualquiera de"). N5: loadAgentSalesContext strict mode for buildSuite. N8: reclaimed sends get the
+  right replyBy (turn-origin.ts). N9: owner text refused only for real Betsy line forms; numbered answers → "1.".
+- Lock: every saveSalesSetup without a tx now takes the agent-row lock (settings promo / aiDisclosure, Studio apply).
+- Proof: tsc 0, lint 0, test:soft-ai 645/645, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34.
+
+## 2026-10-15 — "Corregir" + quick-check grader: SecureDog INT-103…108 / DATA-51 + Verifier V1…V11 fixes (claudio/agents2-phase1)
+
+- INT-103: customer text is sanitized before it can reach a corrections document (sanitizeTuneQuestion: NFKC, invisible/bidi/NEL
+  chars dropped, look-alike markers, links, emails, 6+ digit runs with payment-guard separators, PII masks, no < > [ ] { } `,
+  no "16)", one line ≤ 200) and shown editable in the panel ("Así lo va a ver el agente"). Owner text is never rewritten:
+  ownerTextProblem refuses markers / tags / numbered rules / [[…]] / non-brand links naming the phrase (V9). Saved-reply
+  title/key never from customer text. Fence tags neutralized in every KNOWLEDGE_DATA block (FAQ, brand facts, saved replies;
+  "</ KNOWLEDGE_DATA>", "KNOWLEDGE DATA", zero-width, missing ">"). Look-alike filter: "regla fija", numbered rules,
+  BETSY.DATOS / BETSY DATOS, notes to the assistant.
+- INT-104/105: "¢" is a colón sign (live validator + knowledge review + tuning); "₡3 mil"; bare amounts next to price words and
+  amounts in words refused; payment numbers with any separator or spelled out; promo-aware deal check; links only to the brand site.
+- INT-106/V7: "evitá/evitar/evite" rules; the panel shows "Se va a guardar como: Nunca: …"; never-rules skip wording/amount/deal
+  checks; dates are not payment numbers.
+- INT-107/108/V6/V11: real chats send only messageId; the server loads the AI reply + its customer message (tenant, conversation,
+  agent snapshot); Corregir only on messages with their own agentId; AI messages now record answersMessageId + replyBy
+  (code-sent replies point to Respuestas guardadas); Probar bubbles keep their own inbound (V5); "👍 Está bien" saves nothing.
+- DATA-51: audit keeps the reply masked (≤ 500) + messageId; corrections create/approve audits keep the body length only;
+  only the latest 3 corrections versions keep their text (older archived bodies emptied + contentPurgedAt, no deletes).
+- V1: corrections FAQ has its own 2 400-char prompt budget. V2: fix_* saved replies listed first, sortOrder 10 newest first,
+  catalog kept/dropped by whole rows. V3: judge facts label every valid amount. V4: buildSuite no longer hides a sales-context
+  failure. V10: corrections doc found across approved/archived; P2002/errors mapped per save type. Rule saves lock the agent row.
+- Route: 16 KB body cap before parsing; GET ?messageId= for the panel. No SQL.
+- Proof: tsc 0, lint 0, test:soft-ai 629/629, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent 317/317,
+  test:agentes-ui 34/34.
+
+## 2026-10-15 — Agentes IA 2.0 · E "Corregir" (live tuning) (claudio/agents2-tuning)
+
+- Owner fixes a wrong AI answer in the test chat ("👍 Bien" / "Corregir" under each reply, "Volver a preguntar" rewinds and re-sends)
+  and in real chats ("Corregir" on AI messages; update_config only). Shared panel: components/aurora/agentes/CorrectionPanel.tsx.
+- POST /api/chat/agents/[id]/tune (update_config, same-origin, 12/min per person, tenant from session, audited 'chat_agent_tune').
+  Save as: example (default; P/R pair in the agent's own FAQ "<agent> · Correcciones", same question replaced, oldest dropped, kept
+  ≤ 2 400 chars so it fits the 3 000-char FAQ prompt budget; new approved version bound at priority 10, old unbound), saved reply
+  (guide playbook fix_<slug>), or rule (note → Siempre/Nunca, max 10 each, 8 KB guard). Refuses confirmation wording, payment
+  numbers (8+ digits / IBAN; use [[DATOS_PAGO]]) and ₡ amounts the agent can't quote (named). Customer phones/emails masked.
+- Inbox DTO gains read-only agentId (live agent of the line); the message's own send snapshot agentId wins.
+- No SQL, no AI call to save. Tests: agents2-tuning.test.ts 17/17 (integrator registers it).
+- Proof: tsc 0, eslint 0 on touched files, test:soft-ai 584/584, test:chat-harden 643/643, test:security 271/271, test:agentes-ui 34/34.
+
+## 2026-10-15 — Agentes IA 2.0 Phase 1 integrated: one switch, honest status, better salesperson, never left waiting (claudio/agents2-phase1)
+
+- Plan: https://claude.ai/artifact/8kwFLUxjE529JXRpsBLYf1 (Rafael approved: quick 6-case check must pass; answer waiting chats of the last
+  24 h on power-on; a handed-off chat stays with the person until "Devolver a IA"). Built by three parallel builders (A status, B sales,
+  C waiting) from one spec + Advisor corrections; integrated here (B/A stub commits dropped; C's real waiting-sweep/handoff-notify kept).
+- B: technical failures send "Dame un momento y te confirmo 😊", keep the chat on IA and notify (loop cap 1/30 min); true hand-offs send
+  first, then flip to a person + notify; one model retry when it fits the budget; long replies shortened; quantity totals the customer
+  asked for; narrower payment cues (past-tense claims stay human); photos/voice notes ask in writing unless it is a receipt.
+- C: sweepWaitingChats on power-on (24 h window, budget-capped, newest first, re-arms the skipped job), periodic sweep in the chat
+  cron, notifyHandoff assigns + notifies per message, Devolver a IA answers the waiting message.
+- Proof (integration): test:soft-ai 568/568, chat-harden 643/643, security 271/271, ops 40/40, backups 21/21, agentes-ui 34/34,
+  soft-ai-agent 314/314, tsc 0, lint 0.
+
+## 2026-10-15 — Agentes IA 2.0 Phase 1 · A "One switch and the truth" (claudio/agents2-a-status)
+
+- One switch per line: POST /api/chat/agents/[id]/lines/[socialAccountId]/power {on, takeOver?}; GET /lines gives each
+  line's truth (lineAiStatus off/checking/on/problem + single fix) and the check progress / failed answers. ON never
+  writes tenant flags (409 AI_NOT_ENABLED), refuses terms/pause/model/provider/products/other agent, reuses a valid
+  green run (< 30 d, same version+model+suite) or starts the 6-case quick check; a green quick run activates the line
+  (conditional finish, still-latest run) and then sweeps waiting chats. OFF cancels pending checks and deactivates.
+- No SQL: the quick run (cases marked quick, own 24-hex hash) is the intent; outcome in summary.activation.
+- Chats follow the line: effectiveConversationAiMode (column > agentState > line unless a person wrote in 24 h) used by
+  the resolver (opt-in via conversationId) and the inbox (aiLine/aiStatus DTO); chip "IA" only when the line answers.
+- Tests: honesty case ("¿sos un bot?"), off-topic must not answer trivia; agents2-a-status.test.ts 27/27.
+- Proof: tsc 0, eslint 0 on touched files, test:soft-ai 488/488, test:chat-harden 643/643, test:security 271/271,
+  test:soft-ai-agent 314/314.
+
 ## 2026-10-15 — SecureDog release BLOCK fixed: no store-wide free-shipping rule; every free-shipping synonym checked (claudio/agent-pack-builder)
 
 - INT-84 (High): the threshold amount was an allowed price anywhere ("los 3 en ₡25.000") → threshold removed from the agent entirely

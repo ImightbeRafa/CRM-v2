@@ -152,6 +152,12 @@ function toDto(row: {
   }
 }
 
+/** Audit snapshot; `omit` keeps the length and hash of the body instead of the text (DATA-51). */
+function auditDto(row: Parameters<typeof toDto>[0], body: 'full' | 'omit' | undefined) {
+  const dto = toDto(row)
+  return body === 'omit' ? { ...dto, body: `[${dto.body.length} caracteres]` } : dto
+}
+
 async function requireReady() {
   if (!(await isChatKnowledgeSchemaReady())) throw new Error('KNOWLEDGE_SCHEMA_NOT_READY')
 }
@@ -215,6 +221,8 @@ export async function createKnowledgeSource(input: {
   body: string
   socialAccountId?: string | null
   metadata?: Record<string, unknown> | null
+  /** DATA-51: the audit row keeps the length, not the text (corrections documents grow with every save). */
+  auditBody?: 'full' | 'omit'
 }) {
   await requireReady()
   if (!isKnowledgeKind(input.kind)) throw new Error('INVALID_KIND')
@@ -274,7 +282,7 @@ export async function createKnowledgeSource(input: {
     entityId: row.id,
     entityName: row.name,
     oldValues: null,
-    newValues: toDto(row),
+    newValues: auditDto(row, input.auditBody),
     userId: input.actorUserId,
     userName: input.actorName,
     userRole: input.actorRole,
@@ -380,6 +388,8 @@ export async function approveKnowledgeSource(input: {
   actorUserId: string
   actorName: string
   actorRole: string
+  /** DATA-51: see createKnowledgeSource. */
+  auditBody?: 'full' | 'omit'
 }) {
   await requireReady()
   const existing = await prisma.chatKnowledgeSource.findFirst({
@@ -417,8 +427,8 @@ export async function approveKnowledgeSource(input: {
     entityType: 'ChatKnowledgeSource',
     entityId: row.id,
     entityName: row.name,
-    oldValues: toDto(existing),
-    newValues: toDto(row),
+    oldValues: auditDto(existing, input.auditBody),
+    newValues: auditDto(row, input.auditBody),
     userId: input.actorUserId,
     userName: input.actorName,
     userRole: input.actorRole,

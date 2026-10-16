@@ -5,12 +5,15 @@
 import { extractShortcutTag } from '@/lib/soft-ai/reply-images'
 import {
   extractSoftAiFunctionCalls,
+  isRetryableSoftAiError,
   parseSoftAiResponseText,
   readSoftAiUsage,
-  softAiResponsesCreate,
+  softAiResponsesCreate as rawSoftAiResponsesCreate,
   SOFT_AI_FIRST_CALL_TIMEOUT_MS,
+  SOFT_AI_RETRY_MIN_LEFT_MS,
   SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS,
   SOFT_AI_TURN_BUDGET_MS,
+  type SoftAiResponsesCreateArgs,
 } from '@/lib/soft-ai/llm/client'
 import {
   SOFT_AI_MAX_MODEL_CALLS,
@@ -20,6 +23,7 @@ import {
 import { softAiToolDefinitions } from '@/lib/soft-ai/llm/tool-definitions'
 import { runA1Tool, type SoftAiToolRunContext } from '@/lib/soft-ai/llm/tool-runner'
 import { validateAgentOutput, type FreeShippingRule } from '@/lib/soft-ai/llm/output-validator'
+import type { LinkAllowlist } from '@/lib/soft-ai/links'
 import { runAgentFallback } from '@/lib/soft-ai/llm/fallback'
 import { redactToolTrace } from '@/lib/soft-ai/llm/redact'
 import { billedTokens, estimateCostMicros } from '@/lib/soft-ai/llm/usage'
@@ -31,6 +35,8 @@ import {
 import { softAiProviderFor, type ChatAgentTonePreset } from '@/lib/soft-ai/agent-types'
 import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
 import { isAgentIntent } from '@/lib/soft-ai/agent-intents'
+import { HANDOFF_REASON, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
+import { hasPaymentWord, paymentHandoffReason } from '@/lib/soft-ai/payment-classifier'
 
 export type SoftAiLlmRuntimeInput = {
   tenantId: string
@@ -60,22 +66,40 @@ export type SoftAiLlmRuntimeInput = {
   salesAllowedAmounts?: number[]
   /** Code says a person must follow up this turn (e.g. close with payment data not shareable). */
   salesNeedsHuman?: boolean
+  /** Customer message has a receipt / "ya pagué" cue (sales-state): a TRUE hand-off whatever the model writes. */
+  salesReceiptCue?: boolean
+  /** Close with payment data not shared by chat: "Enseguida te paso cómo pagar 😊" + team review, chat stays on IA. */
+  salesPaymentDataByTeam?: boolean
   /** Deal wording the owner's active promo allows (free shipping / special price); nothing else. */
   salesAllowedDeals?: Array<'free_shipping' | 'special_price'>
   /** Promo makes shipping free: the store's fixed shipping amounts are no longer valid prices. */
   salesFreeShipping?: boolean
   /** Store rule "envío gratis desde ₡X": the words pass only next to that amount (output-validator). */
   salesFreeShippingRule?: FreeShippingRule | null
+  /** INT-109 / INT-112: links a reply may carry (brandFactsLinkAllowlist) — any other is 'foreign_link'. */
+  linkAllowlist?: LinkAllowlist
+  /** Sales flow: contra entrega offered by a shipping method, for [[PAGO_CONTRA_ENTREGA]] (agents2-format). */
+  salesPaymentOptions?: { codAvailable?: boolean; codNote?: string | null; chosenMethod?: string | null }
   /** Sales state for the turn trace (debug only; not sent to the model separately). */
-  salesTrace?: { stage: string; said: Record<string, boolean> } | null
+  salesTrace?: { stage: string; said: Record<string, boolean>; chosenMethod?: string | null } | null
 }
 
 export type SoftAiLlmRuntimeResult = {
   text: string
   status: 'generated' | 'fallback' | 'failed'
   needsHuman: boolean
+  /** TRUE hand-off only (escalate_to_human called by the model, payment fallback). Validator / technical problems are not. */
   escalate: boolean
   escalateReason?: string
+  /**
+   * Agentes IA 2.0 (B1): 'handoff' → the chat goes to a person after the customer gets the hand-off text; 'review' →
+   * the customer gets the safe line, the chat stays on IA, a person is asked to look. Null = normal answer.
+   */
+  handoff: TurnHandoff | null
+  /** The returned text passed every runtime check (or is a fixed code text) and may be sent as written. */
+  textOk: boolean
+  /** Same as handoff.kind, named for the review: 'technical' = validator / provider / tool problem, never a flip. */
+  escalateKind: 'technical' | 'handoff' | null
   toolTrace: unknown
   citedToolNames: string[]
   knowledgeVersions: ApprovedKnowledgeSlice['versions']
@@ -107,6 +131,30 @@ export async function runSoftAiLlmRuntime(
   const inventoryPrices: number[] = []
   let escalate = false
   let escalateReason: string | undefined
+  /** An unknown / not-allowed tool was requested: a person reviews, the chat stays on IA. */
+  let toolProblem = false
+  /** B2: ONE retry per turn (provider error / timeout, or an empty / tag-only answer). */
+  let retried = false
+  const addUsage = (response: unknown) => {
+    const usage = readSoftAiUsage(response)
+    inputTokens += usage.inputTokens
+    cachedInputTokens += usage.cachedInputTokens
+    outputTokens += usage.outputTokens
+    reasoningTokens += usage.reasoningTokens
+  }
+  // Every model call of the turn goes through this (one retry per turn at most; all usage tagged and metered).
+  const softAiResponsesCreate = async (args: SoftAiResponsesCreateArgs) => {
+    try {
+      return await rawSoftAiResponsesCreate(args)
+    } catch (error) {
+      // Only when a FULL attempt (same timeout) still fits in the turn budget (35 s, inside the 42 s job / 45 s lease).
+      const timeoutMs = args.timeoutMs ?? SOFT_AI_FIRST_CALL_TIMEOUT_MS
+      if (retried || !isRetryableSoftAiError(error) || !retryFits(started, timeoutMs)) throw error
+      retried = true
+      toolTrace.push({ retry: { reason: 'model_error' } })
+      return rawSoftAiResponsesCreate({ ...args, timeoutMs })
+    }
+  }
 
   const built = buildAgentSystemInstructions({
     systemInstructions: input.systemInstructions,
@@ -227,14 +275,25 @@ export async function runSoftAiLlmRuntime(
             }
           }
         }
+        let output: Record<string, unknown> = result.result
         if (result.escalate) {
-          escalate = true
-          escalateReason = result.escalateReason || 'other'
+          if (result.name === 'escalate_to_human' && result.ok) {
+            // The model (or the payment rule) asked for a person: a TRUE hand-off.
+            escalate = true
+            escalateReason = result.escalateReason || 'other'
+          } else if (result.name === 'escalate_to_human') {
+            // Unknown / not-allowed tool: technical, a person reviews (B1).
+            toolProblem = true
+          } else {
+            // B8: an order lookup that found no order of THIS customer is not a hand-off: ask for the order number.
+            // The answer stays the same for "unknown" and "someone else's" (no probing which orders exist).
+            output = { ...result.result, next: ORDER_LOOKUP_MISS_HINT }
+          }
         }
         inputItems.push({
           type: 'function_call_output',
           call_id: call.callId,
-          output: JSON.stringify(result.result),
+          output: JSON.stringify(output),
         })
       }
 
@@ -280,18 +339,56 @@ export async function runSoftAiLlmRuntime(
     // A reply that is only [[ATAJO:…]] (or empty JSON text) is no reply: fallback / hand-off, never an empty send.
     if (finalText && !extractShortcutTag(parseStructuredAgentOutput(finalText).text).text) finalText = ''
 
+    // B2: empty or tag-only answer → ONE more try (text only) before the safe line, when the turn budget allows.
+    if (!finalText && !retried && !escalate && retryFits(started, SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS)) {
+      retried = true
+      toolTrace.push({ retry: { reason: 'empty_output' } })
+      try {
+        const response = await softAiResponsesCreate({
+          model: input.model,
+          instructions,
+          input: inputItems,
+          tools: tools.length > 0 ? tools : undefined,
+          toolChoice: 'none',
+          promptCacheKey,
+          timeoutMs: SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS,
+          temperature: 0.1,
+          reasoningEffort: 'low',
+          store: false,
+          maxOutputTokens: 700,
+          usage: {
+            tenantId: input.tenantId,
+            feature: input.toolCtx.sandbox ? 'probar' : 'inbox_agent',
+            agentId: input.agentId,
+            conversationId: input.toolCtx.sandbox ? null : input.toolCtx.conversationId,
+          },
+        })
+        modelCalls += 1
+        addUsage(response)
+        finalText = parseSoftAiResponseText(response)
+        if (finalText && !extractShortcutTag(parseStructuredAgentOutput(finalText).text).text) finalText = ''
+      } catch {
+        // Still nothing: the safe line below.
+      }
+    }
+
     if (!finalText) {
       const fb = await runAgentFallback({
         inboundText: input.inboundText,
         toolCtx: input.toolCtx,
         linkedOrderId: input.linkedOrderId,
       })
+      const fbHandoff = escalate ? modelHandoff(escalateReason, input.inboundText) : fallbackHandoff(fb, input.inboundText)
       return {
         text: fb.text,
         status: 'fallback',
-        needsHuman: fb.escalate,
-        escalate: fb.escalate,
-        escalateReason: fb.escalateReason,
+        needsHuman: fb.escalate || escalate,
+        escalate: fbHandoff?.kind === 'handoff',
+        escalateReason: escalate ? escalateReason : fb.escalateReason,
+        handoff: fbHandoff,
+        escalateKind: escalateKindOf(fbHandoff),
+        // Fallback texts are code-written (reserved line or the owned order's status).
+        textOk: true,
         toolTrace: redactToolTrace([
           { knowledgeVersions },
           ...toolTrace,
@@ -329,6 +426,9 @@ export async function runSoftAiLlmRuntime(
         quoteAmounts: input.salesAllowedAmounts,
         allowedDeals: input.salesAllowedDeals,
         freeShippingRule: input.salesFreeShippingRule,
+        customerText: input.inboundText,
+        linkAllowlist: input.linkAllowlist,
+        paymentContext: conversationPaymentContext(input.history, input.inboundText),
       })
     let validation = validate(finalText)
     // B7: a reply that breaks a rule (made-up amount, a deal, "ya quedó pagado"…) gets ONE rewrite with the reasons
@@ -379,19 +479,40 @@ export async function runSoftAiLlmRuntime(
         // Timeout / provider error: keep the original verdict (hand-off).
       }
     }
-    if (validation.needsHuman || structured.needsHuman) {
+    // SecureDog INT-93: a reply that sounds like it confirms a payment, or the model asking for a person on a message
+    // about a payment, is a real PAYMENT hand-off (fixed "ya lo reviso" text + the chat goes to a person) — never the
+    // "safe line and stay on IA" path, which would let the model try again on the next message.
+    const paymentRisk =
+      validation.reasons.includes('confirmation_wording') ||
+      validation.reasons.includes('payment_status_claim') ||
+      (structured.needsHuman && hasPaymentWord(input.inboundText || ''))
+    if (paymentRisk) {
       escalate = true
+      escalateReason = 'payment_claim'
+    }
+    if (validation.needsHuman || structured.needsHuman) {
+      // B1: a reply that still breaks a rule is never sent as written and is NOT a hand-off: the customer gets the
+      // safe line, the chat stays on IA and a person reviews (agent-turn planModelTurnDelivery).
       escalateReason = escalateReason || 'provenance'
     }
+    const reviewNeeded = validation.needsHuman || structured.needsHuman || toolProblem
+    const handoff: TurnHandoff | null = escalate
+      ? modelHandoff(escalateReason, input.inboundText)
+      : reviewNeeded
+        ? { kind: 'review', reason: HANDOFF_REASON.review }
+        : null
 
     return {
       text: finalText,
       status: 'generated',
-      needsHuman: validation.needsHuman || structured.needsHuman || escalate,
+      needsHuman: validation.needsHuman || structured.needsHuman || escalate || toolProblem,
+      handoff,
+      escalateKind: escalateKindOf(handoff),
+      textOk: validation.ok && !structured.needsHuman && Boolean(finalText.trim()),
       intent: structured.intent,
       shortcutKey: tagged.key || structured.shortcutKey || lastUsedShortcutKey(toolTrace),
       inventoryPrices,
-      escalate,
+      escalate: handoff?.kind === 'handoff',
       escalateReason,
       toolTrace: redactToolTrace([{ knowledgeVersions }, ...toolTrace]),
       citedToolNames,
@@ -434,12 +555,16 @@ export async function runSoftAiLlmRuntime(
             : openai
               ? 'LLM_ERROR'
               : 'XAI_ERROR'
+    const fbHandoff = escalate ? modelHandoff(escalateReason, input.inboundText) : fallbackHandoff(fb, input.inboundText)
     return {
       text: fb.text,
       status: 'fallback',
       needsHuman: true,
-      escalate: fb.escalate,
-      escalateReason: fb.escalateReason,
+      escalate: fbHandoff?.kind === 'handoff',
+      escalateReason: escalate ? escalateReason : fb.escalateReason,
+      handoff: fbHandoff,
+      escalateKind: escalateKindOf(fbHandoff),
+      textOk: true,
       toolTrace: redactToolTrace([
         { knowledgeVersions },
         ...toolTrace,
@@ -463,6 +588,57 @@ export async function runSoftAiLlmRuntime(
       errorCode,
     }
   }
+}
+
+/** B8: what the model gets after an order lookup that found nothing for this customer. */
+export const ORDER_LOOKUP_MISS_HINT =
+  'No encontré un pedido de este cliente con ese dato. Pedile con amabilidad el número de pedido (o el nombre y teléfono con que compró) para buscarlo. No digas nada de otros pedidos ni inventes estados.'
+
+/** escalate_to_human called by the model (or forced by the payment rule) → hand-off with a plain reason for the team. */
+/** B2: a retry runs only when a FULL attempt with this timeout still fits in the turn budget. */
+export function retryFits(startedAt: number, timeoutMs: number, now = Date.now()): boolean {
+  return SOFT_AI_TURN_BUDGET_MS - (now - startedAt) - 1_000 >= Math.max(timeoutMs, SOFT_AI_RETRY_MIN_LEFT_MS)
+}
+
+/** Explicit kind of a non-answer: 'handoff' (a person takes the chat) or 'technical' (safe line, chat stays on IA). */
+export function escalateKindOf(handoff: TurnHandoff | null): 'technical' | 'handoff' | null {
+  return handoff ? (handoff.kind === 'handoff' ? 'handoff' : 'technical') : null
+}
+
+/**
+ * MEDIA-15: the payment-status backstop also applies when the conversation (not only this message) is about a
+ * payment: a payment word or a photo / file / audio in the last 3 customer messages, or the store talked about paying.
+ */
+export function conversationPaymentContext(history: Array<{ direction: string; content?: string | null }>, inboundText: string): boolean {
+  const inbound = history.filter((m) => m.direction === 'inbound').slice(-3).map((m) => m.content || '')
+  const mediaRe = /\[(image|imagen|foto|audio|voice|video|document|documento|archivo|sticker)/i
+  if ([inboundText, ...inbound].some((t) => hasPaymentWord(t) || mediaRe.test(t))) return true
+  return history.some((m) => m.direction === 'outbound' && hasPaymentWord(m.content || ''))
+}
+
+export function modelHandoff(reason: string | undefined, inboundText: string): TurnHandoff {
+  switch (reason) {
+    case 'payment_or_sinpe':
+    case 'payment_claim':
+      return { kind: 'handoff', reason: paymentHandoffReason(inboundText) }
+    case 'opt_out':
+      return { kind: 'handoff', reason: HANDOFF_REASON.optOut }
+    case 'media_inbound':
+      return { kind: 'handoff', reason: HANDOFF_REASON.payment }
+    case 'llm_unavailable':
+      // Technical by name: the safe line, the chat stays on IA.
+      return { kind: 'review', reason: HANDOFF_REASON.review }
+    default:
+      // Never the model's own words in a team notification.
+      return { kind: 'handoff', reason: HANDOFF_REASON.modelAsked }
+  }
+}
+
+/** Fallback after a failed / empty model call: payment text → hand-off; "model unavailable" → review (B1). */
+export function fallbackHandoff(fb: { escalate: boolean; escalateReason: string }, inboundText: string): TurnHandoff | null {
+  if (!fb.escalate) return null
+  if (fb.escalateReason === 'payment_or_sinpe') return { kind: 'handoff', reason: paymentHandoffReason(inboundText) }
+  return { kind: 'review', reason: HANDOFF_REASON.review }
 }
 
 /** Provider 401/403 (wrong, revoked or restricted key): a distinct code so ops can see it. */
@@ -497,6 +673,7 @@ export const REPAIRABLE_REASONS: ReadonlySet<string> = new Set([
   'write_claim',
   'unit_cost_leak',
   'style_too_long',
+  'foreign_link',
 ])
 
 const REPAIR_REASON_TEXT: Record<string, string> = {
@@ -507,6 +684,7 @@ const REPAIR_REASON_TEXT: Record<string, string> = {
   write_claim: 'dijiste que ya creaste o registraste algo',
   unit_cost_leak: 'mencionaste un costo interno',
   style_too_long: 'quedó muy largo',
+  foreign_link: 'pusiste un enlace que no es del sitio del negocio (no pongas enlaces)',
 }
 
 /** Rewrite request (B7): only reason names from code, never customer text. */

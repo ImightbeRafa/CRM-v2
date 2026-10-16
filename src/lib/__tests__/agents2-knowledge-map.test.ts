@@ -91,6 +91,17 @@ describe('product text: only real product knowledge counts (verifier F1)', () =>
     const faq = buildKnowledgeMap(base({ docs: [doc('FAQ', '¿El Energy Patch se pega en el brazo? Sí, uno al día.')] }))
     assert.equal(fieldsOf(faq, 1).usage.status, 'ok')
   })
+  it('FAQ questions about another product start its section (verifier round 4 M1)', () => {
+    const one = buildKnowledgeMap(base({ docs: [doc('FAQ', '¿El Focus Patch tiene cafeína? No, contiene melena de león.\n¿El Energy Patch se pega en el brazo? Sí, se pega en el hombro o brazo, uno al día.', true, 'faq')] }))
+    assert.equal(fieldsOf(one, 0).usage.status, 'missing')
+    assert.equal(fieldsOf(one, 1).usage.status, 'ok')
+    const two = buildKnowledgeMap(base({ docs: [doc('FAQ', '¿Qué contiene el Focus Patch?\nMelena de león y NAC.\n¿Cómo se usa el Energy Patch?\nSe pega en el brazo.', true, 'faq')] }))
+    assert.equal(fieldsOf(two, 0).usage.status, 'missing')
+    assert.equal(fieldsOf(two, 1).usage.status, 'ok')
+    const hidden = doc('Productos', 'Focus Patch\nIngredientes: melena de león.\nModo de uso: se pega en el brazo.', false)
+    const three = buildKnowledgeMap(base({ docs: [doc('Doc1', 'Combinalo con el Focus Patch. Energy Patch contiene cafeína.'), hidden] }))
+    assert.equal(fieldsOf(three, 0).ingredients.status, 'hidden')
+  })
   it('customer-service lines are store sentences (verifier round 3 M2)', () => {
     const map = buildKnowledgeMap(base({ docs: [doc('Políticas', 'Atendemos todos los días de 8 a 6. Respondemos en menos de 2 horas. Se aplican términos y condiciones.')] }))
     for (const k of ['usage', 'frequency']) assert.equal(fieldsOf(map, 0)[k].status, 'missing', k)
@@ -231,6 +242,15 @@ describe('performance (SecureDog INT-127)', () => {
     buildKnowledgeMap(base({ products: named, docs: docsB }))
     const b = performance.now() - t0
     assert.ok(a < 800 && b < 800, `numeric ${Math.round(a)} ms, named ${Math.round(b)} ms`)
+  })
+  it('SecureDog round 4 shape: alternating names on ONE 200k-char line (no newline) stay fast — bounded subject look-back', () => {
+    const named = Array.from({ length: 200 }, (_, i) => ({ id: `s${i}`, name: `Producto ${i}`, price: 1000 }))
+    const line = Array.from({ length: 12_000 }, (_, i) => `con el Producto ${i % 200} `).join('').slice(0, 199_000)
+    const docs = Array.from({ length: 2 }, (_, i) => doc(`S${i}`, line))
+    const t0 = performance.now()
+    buildKnowledgeMap(base({ products: named, docs }))
+    const ms = performance.now() - t0
+    assert.ok(ms < 1500, `took ${Math.round(ms)} ms`)
   })
   it('very long product names are cut (no huge output, no regex error)', () => {
     const map = buildKnowledgeMap(base({ products: [{ id: 'x', name: 'x'.repeat(60_000), price: 1000 }] }))

@@ -192,17 +192,32 @@ function mentionsOf(ctx: Ctx, d: Doc): Mention[] {
   return out
 }
 
-/** A mention at the start of its line (after spaces, a bullet, a number or a heading mark): it starts a new section. */
-function startsLine(folded: string, index: number): boolean {
-  const lineStart = folded.lastIndexOf('\n', index - 1) + 1
-  return /^[\s\-•*–#>\d.):]*$/.test(folded.slice(lineStart, index))
+/** How far back the subject check looks (bounded: never a scan to the start of a very long line). */
+const SUBJECT_LOOKBACK = 120
+/**
+ * The product is the SUBJECT of its line or sentence: only bullets / numbers / ¿¡ and up to 4 question or lead words
+ * ("¿Cómo se usa el …", "¿Qué contiene el …", "El …") come before it since the line or sentence started. An object
+ * mention ("ideal para combinar con el Energy Patch", "combinalo con el …") is not. Verifier rounds 3–4.
+ */
+const SUBJECT_PREFIX_RE =
+  /^[\s\-•*–#>\d.):¿¡"“'*]*(?:(?:el|la|los|las|lo|un|una|que|como|cuanto|cuanta|cuantos|cuantas|cual|y|tambien|sobre|del|de|se|usa|usan|contiene|contienen|trae|traen|lleva|sirve|sirven|es|son|para|tiene|tienen|hay|precio|ingredientes)\s+){0,4}$/
+/** Where the line / sentence that makes the product its subject starts, or -1 when the mention is an object. */
+function subjectStart(folded: string, index: number): number {
+  const from = Math.max(0, index - SUBJECT_LOOKBACK)
+  const before = folded.slice(from, index)
+  // The current line / sentence starts after the last newline or sentence mark in the look-back window.
+  const cut = Math.max(before.lastIndexOf('\n'), before.lastIndexOf('. '), before.lastIndexOf('? '), before.lastIndexOf('! '), before.lastIndexOf('?'), before.lastIndexOf('!'))
+  if (cut < 0 && from > 0) return -1
+  const prefix = cut >= 0 ? before.slice(cut + 1) : before
+  return SUBJECT_PREFIX_RE.test(prefix) ? from + cut + 1 : -1
 }
 
 /**
- * Every product section of a document, in one pass over the mentions (verifier round 3): a section opens at a mention
- * that starts a line, or at a mid-line mention outside any section ("¿El Focus Patch sirve…?"); it ends at the next blank
- * line, 700 chars, or the next LINE-START mention of a different product ("Focus: …\nEnergy: contiene cafeína" is Energy's
- * fact). A mid-line mention inside a section ("ideal para combinar con el Energy Patch") neither ends it nor opens one.
+ * Every product section of a document, in one pass over the mentions: a section opens at a mention where the product is
+ * the subject of its line / sentence, or at an object mention outside any section; it ends at the next blank line,
+ * 700 chars, or the next SUBJECT mention of a different product ("Focus: …\nEnergy: contiene cafeína", "¿Cómo se usa el
+ * Energy Patch?" are Energy's facts). An object mention inside a section ("ideal para combinar con el Energy Patch")
+ * neither ends it nor opens one.
  */
 function sectionsOf(ctx: Ctx, d: Doc): Array<{ start: number; end: number; core: string }> {
   const cached = ctx.sections.get(d)
@@ -210,10 +225,12 @@ function sectionsOf(ctx: Ctx, d: Doc): Array<{ start: number; end: number; core:
   const out: Array<{ start: number; end: number; core: string }> = []
   let cur: { start: number; end: number; core: string } | null = null
   for (const m of mentionsOf(ctx, d)) {
-    const lineStart = startsLine(d.folded, m.index)
     if (cur && m.index < cur.end) {
-      if (m.core === cur.core || !lineStart) continue
-      cur.end = m.index
+      if (m.core === cur.core) continue
+      const at = subjectStart(d.folded, m.index)
+      if (at < 0) continue
+      // The previous section ends where this line / sentence starts ("¿Cómo se usa el Energy Patch?" is Energy's).
+      cur.end = Math.max(cur.start + 1, Math.min(cur.end, at))
     }
     let end = Math.min(d.folded.length, m.index + 700)
     const blank = d.folded.slice(m.index, end).search(/\n\s*\n/)

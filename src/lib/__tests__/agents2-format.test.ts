@@ -279,7 +279,7 @@ describe('3a. per-method payment tokens', () => {
     const bad = ownerTextProblem('Hola [[ATAJO:x]]', 'La respuesta')
     assert.equal(bad.ok, false)
     assert.match(bad.ok ? '' : bad.error, /\[\[PAGO_SINPE\]\]/)
-    const nums = checkCorrectionText('Pagá al 8888 1234', 'La respuesta', [])
+    const nums = checkCorrectionText('Pagá al 8888 1234', [], 'La respuesta')
     assert.equal(nums.ok, false)
     assert.match(nums.ok ? '' : nums.error, /\[\[PAGO_SINPE\]\]/)
   })

@@ -185,6 +185,7 @@ describe('2026-10-16 Sleeping quick check: "Pack" bundles with shipping included
     } as never)
     assert.deepEqual(sleeping?.bundleWords, ['pack'])
     assert.deepEqual(sleeping?.otherNames, [])
+    assert.deepEqual(sleeping?.nameNotes, ['60 noches', '90 noches'])
     for (const reply of [
       'Cada bolsa de SleepingPatches trae 30 parches y sale en ₡9 900 más el envío 🌙\nSi querés, el pack de 2 bolsas (60 noches) queda en ₡19 800 con el envío incluido.',
       'El Pack 2 bolsas (60 noches) sale en ₡19 800 con envío incluido 😊',
@@ -210,5 +211,43 @@ describe('2026-10-16 Sleeping quick check: "Pack" bundles with shipping included
     } as never)
     assert.ok(validateAgentOutput({ text: 'El Focus va con el combo Trío a ₡26 900 con envío incluido', citedToolNames: [], freeShippingRule: ph } as never).reasons.includes('deal_offer'))
     assert.ok(!validateAgentOutput({ text: 'El Combo Trío (3 paquetes a elección) sale en ₡26 900 con envío incluido 🌿', citedToolNames: [], freeShippingRule: ph } as never).reasons.includes('deal_offer'))
+  })
+})
+
+describe('SecureDog INT-126: nothing can hide inside brackets in a free-shipping reply', () => {
+  it('only owner name notes are ignored; every other bracket is checked', async () => {
+    const { salesFreeShippingRule } = await import('@/lib/soft-ai/sales-state')
+    const sleeping = salesFreeShippingRule({
+      bundles: [
+        { name: 'Pack 2 bolsas (60 noches)', price: 19800, shippingIncluded: true },
+        { name: 'Pack 3 bolsas (90 noches)', price: 28500, shippingIncluded: true },
+      ],
+      catalog: [{ name: 'SleepingPatches', price: 9900 }],
+    } as never)
+    const ph = salesFreeShippingRule({
+      bundles: [
+        { name: 'Combo 2 paquetes (a elección)', price: 17900, shippingIncluded: false },
+        { name: 'Combo Trío (3 paquetes a elección)', price: 26900, shippingIncluded: true },
+      ],
+      catalog: [{ name: 'Focus Patch', price: 9900 }, { name: 'Energy Patch', price: 9900 }],
+    } as never)
+    const blocked: Array<[string, unknown]> = [
+      ['El pack de 2 bolsas sale en ₡19 800 con envío incluido (y la bolsa sola también)', sleeping],
+      ['El pack de 2 bolsas (o el pack de 3) sale en ₡19 800 con envío incluido', sleeping],
+      ['Una bolsa con envío incluido (bueno) el pack sale en ₡19 800', sleeping],
+      ['El Combo Trío sale en ₡26 900 con envío incluido (el Focus igual)', ph],
+      ['El Combo Trío (y el Focus Patch también) sale en ₡26 900 con envío incluido', ph],
+      ['El Combo Trío (o el Combo 2 paquetes) sale en ₡26 900 con envío incluido', ph],
+      ['El Combo 2 paquetes (igual que el Trío) va con envío incluido, el Trío sale en ₡26 900', ph],
+    ]
+    for (const [text, rule] of blocked) {
+      assert.ok(validateAgentOutput({ text, citedToolNames: [], freeShippingRule: rule } as never).reasons.includes('deal_offer'), text)
+    }
+    for (const [text, rule] of [
+      ['El Pack 2 bolsas (60 noches) sale en ₡19 800 con envío incluido 😊', sleeping],
+      ['El Combo Trío (3 paquetes a elección) sale en ₡26 900 con envío incluido 🌿', ph],
+    ] as Array<[string, unknown]>) {
+      assert.ok(!validateAgentOutput({ text, citedToolNames: [], freeShippingRule: rule } as never).reasons.includes('deal_offer'), text)
+    }
   })
 })

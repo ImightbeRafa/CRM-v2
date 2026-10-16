@@ -313,7 +313,7 @@ describe('2026-10-15 combos (agent packs) — SecureDog INT-84..INT-89', () => {
     const { validateAgentOutput } = await import('@/lib/soft-ai/llm/output-validator')
     assert.deepEqual(salesAllowedDeals(PH), [])
     const rule = salesFreeShippingRule(PH)
-    assert.deepEqual(rule, { includedPrices: [26900], otherNames: [], bundleWords: ['combo'] })
+    assert.deepEqual(rule, { includedPrices: [26900], otherNames: [], bundleWords: ['combo'], nameNotes: [] })
     const check = (text: string) =>
       validateAgentOutput({ text, citedToolNames: [], quoteAmounts: salesAllowedAmounts(PH), allowedDeals: [], freeShippingRule: rule }).reasons
     const good = [

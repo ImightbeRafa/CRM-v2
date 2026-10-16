@@ -641,7 +641,9 @@ export function salesAllowedDeals(ctx: SalesContext): Array<'free_shipping' | 's
  * says "combo" and quotes one of these exact prices, nothing else (output-validator freeShippingRuleOk). Store-wide
  * "free shipping from ₡X" is NOT offered to the model at all (SecureDog INT-84/85: not checkable from wording).
  */
-export function salesFreeShippingRule(ctx: SalesContext): { includedPrices: number[]; otherNames: string[]; bundleWords: string[] } | null {
+export function salesFreeShippingRule(
+  ctx: SalesContext,
+): { includedPrices: number[]; otherNames: string[]; bundleWords: string[]; nameNotes: string[] } | null {
   const includedPrices = (ctx.bundles ?? []).filter((b) => b.shippingIncluded).map((b) => Math.round(b.price))
   if (!includedPrices.length) return null
   const firstWord = (name: string) => (name.trim().split(/[\s\-–—]+/)[0] || '').toLowerCase()
@@ -654,7 +656,15 @@ export function salesFreeShippingRule(ctx: SalesContext): { includedPrices: numb
     catalog.length > 1
       ? [...new Set(catalog.map((c) => firstWord(c.name)).filter((w) => w.length >= 3 && !bundleWords.includes(w)))]
       : []
-  return { includedPrices, otherNames, bundleWords }
+  // Bracketed notes that are part of the owner's own names ("(60 noches)", "(3 paquetes a elección)").
+  const nameNotes = [
+    ...new Set(
+      [...(ctx.bundles ?? []).map((b) => b.name), ...catalog.map((c) => c.name)].flatMap((n) =>
+        [...n.matchAll(/\(([^()]{1,60})\)/g)].map((m) => m[1].trim()).filter(Boolean),
+      ),
+    ),
+  ]
+  return { includedPrices, otherNames, bundleWords, nameNotes }
 }
 
 const MEDIA_LIKE_TYPES = new Set(['image', 'document', 'audio', 'video', 'voice', 'sticker'])

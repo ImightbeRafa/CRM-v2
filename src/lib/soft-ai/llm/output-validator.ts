@@ -110,16 +110,19 @@ const FREE_SHIPPING_EXCEPTION_RE =
  * Combos the owner marked as including shipping (exact prices), plus words that name other things the agent sells
  * (catalog items): a clause that names one of them is not only about the included combo (INT-91).
  */
-export type FreeShippingRule = { includedPrices: number[]; otherNames?: string[]; bundleWords?: string[] }
+export type FreeShippingRule = { includedPrices: number[]; otherNames?: string[]; bundleWords?: string[]; nameNotes?: string[] }
+
+const foldNote = (s: string) => s.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim()
 
 /**
- * A bracketed note with no amount and no shipping words ("Pack 2 bolsas (60 noches)") is part of the name, not a
- * clause break: blank it out (same length, so match positions stay valid).
+ * A bracketed note that is word-for-word part of an owner's bundle / catalog name ("Pack 2 bolsas (60 noches)") is
+ * not a clause break: blank it out (same length, so match positions stay valid). Any other bracket stays visible and
+ * keeps breaking the clause — nothing can hide inside one (SecureDog INT-126).
  */
-function maskNameParentheticals(text: string): string {
-  return text.replace(/\(([^()\n]*)\)/g, (m, inner: string) =>
-    /[₡¢$]|\d{4,}|\d[.,\s]\d{3}|env[ií]o|entrega|despacho|gratis|incluid/iu.test(inner) ? m : ' '.repeat(m.length),
-  )
+function maskNameParentheticals(text: string, nameNotes: ReadonlyArray<string>): string {
+  if (!nameNotes.length) return text
+  const notes = new Set(nameNotes.map(foldNote).filter(Boolean))
+  return text.replace(/\(([^()\n]*)\)/g, (m, inner: string) => (notes.has(foldNote(inner)) ? ' '.repeat(m.length) : m))
 }
 
 /** Words that stretch one combo's fact to more items, anywhere in the reply (INT-91). */
@@ -146,7 +149,7 @@ function clauseSpans(text: string): Array<[number, number]> {
  */
 export function freeShippingRuleOk(rawText: string, rule: FreeShippingRule): boolean {
   const near = (a: number, b: number) => Math.abs(a - b) <= 1
-  const text = maskNameParentheticals(rawText)
+  const text = maskNameParentheticals(rawText, rule.nameNotes ?? [])
   const extraWords = (rule.bundleWords ?? []).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).filter(Boolean)
   const bundleWordRe = new RegExp(`(?<![\\p{L}])(?:combos?|packs?|kits?${extraWords.length ? '|' + extraWords.map((w) => `${w}s?`).join('|') : ''})(?![\\p{L}])`, 'giu')
   const matches = freeShippingWording(text)

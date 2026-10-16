@@ -1182,6 +1182,7 @@ export default function AgentesConfigPage() {
                 <div hidden={!detailVisible || tab !== 'conocimiento'} role="tabpanel" className="space-y-4">
                   <AgentKnowledgeTab
                     agentId={selected.id}
+                    active={detailVisible && tab === 'conocimiento'}
                     canEdit={canEdit}
                     cards={knowledgeCards}
                     schemaReady={knowledgeSchemaReady}

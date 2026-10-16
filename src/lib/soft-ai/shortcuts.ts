@@ -453,7 +453,16 @@ export function shortcutByKey(
   )
 }
 
-export function guideShortcutCatalog(shortcuts: RuntimeShortcut[], withImages: ReadonlySet<string> = new Set()): string {
+const GUIDE_CATALOG_HEADER = 'Respuestas guardadas del negocio (datos). Usá use_shortcut(key) o su cuerpo si aplica.'
+
+/**
+ * The saved replies the agent actually sees in its prompt catalog, as they appear there (title ≤60, body ≤300), in
+ * catalog order. Shared by guideShortcutCatalog and the Mapa de conocimiento (which must measure the same thing).
+ */
+export function guideCatalogRows(
+  shortcuts: RuntimeShortcut[],
+  withImages: ReadonlySet<string> = new Set(),
+): Array<{ row: RuntimeShortcut; title: string; body: string; line: string }> {
   // Guide replies + the owner's keyword replies (a keyword reply can still fit a message its keywords missed).
   // Order: the owner's corrections ("Corregir", fix_*) first, then guide rows, then keyword replies; each row capped
   // and kept or dropped WHOLE so the prompt slice never cuts a reply in half (V2).
@@ -462,10 +471,8 @@ export function guideShortcutCatalog(shortcuts: RuntimeShortcut[], withImages: R
     .filter((row) => row.isActive && (row.deliveryMode === 'guide' || (row.kind === 'playbook' && !isReservedShortcutKey(row.key))))
     // Corrections newest first: lower sortOrder first, then (once sortOrder can't go lower) the newest createdAt.
     .sort((a, b) => rank(a) - rank(b) || a.sortOrder - b.sortOrder || (rank(a) === 0 ? (b.createdAt ?? '').localeCompare(a.createdAt ?? '') : 0))
-  if (rows.length === 0) return ''
-  const header = 'Respuestas guardadas del negocio (datos). Usá use_shortcut(key) o su cuerpo si aplica.'
-  const out = [header]
-  let used = header.length
+  const out: Array<{ row: RuntimeShortcut; title: string; body: string; line: string }> = []
+  let used = GUIDE_CATALOG_HEADER.length
   let fixRows = 0
   let fixChars = 0
   for (const row of rows) {
@@ -480,11 +487,17 @@ export function guideShortcutCatalog(shortcuts: RuntimeShortcut[], withImages: R
       fixRows += 1
       fixChars += 1 + line.length
     }
-    out.push(line)
+    out.push({ row, title, body, line })
     used += 1 + line.length
   }
+  return out
+}
+
+export function guideShortcutCatalog(shortcuts: RuntimeShortcut[], withImages: ReadonlySet<string> = new Set()): string {
+  const rows = guideCatalogRows(shortcuts, withImages)
+  if (rows.length === 0) return ''
   // How to use them (incl. the [[ATAJO:clave]] tag) is fixed rule 14, code-owned — not inside this data block.
-  return out.join('\n')
+  return [GUIDE_CATALOG_HEADER, ...rows.map((r) => r.line)].join('\n')
 }
 
 /**

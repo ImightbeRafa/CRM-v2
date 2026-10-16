@@ -26,6 +26,7 @@ const TEXT_TONE: Record<CardState, string> = {
  */
 export function AgentKnowledgeTab({
   agentId,
+  active = true,
   canEdit,
   cards,
   schemaReady,
@@ -34,6 +35,8 @@ export function AgentKnowledgeTab({
   onChanged,
 }: {
   agentId: string
+  /** The Conocimiento tab is open (the map loads only then). */
+  active?: boolean
   canEdit: boolean
   cards: KnowledgeCard[]
   schemaReady: boolean
@@ -106,7 +109,7 @@ export function AgentKnowledgeTab({
 
   return (
     <div className="space-y-4" data-testid="agent-knowledge-tab">
-      <KnowledgeMapCard agentId={agentId} refreshKey={mapKey} />
+      <KnowledgeMapCard key={agentId} agentId={agentId} active={active} refreshKey={mapKey} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="knowledge-cards">
         {cards.map((card) => {
           const state = cardState(card)

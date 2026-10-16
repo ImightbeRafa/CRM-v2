@@ -1,7 +1,9 @@
 /**
- * Server side of the Mapa de conocimiento: loads what the agent really has (approved + bound knowledge, which of it
- * fits the prompt budget, mapped products, brand facts, active saved replies, business hours) and the live gaps
- * (turns handed to a person because the agent did not have the answer). Tenant-scoped; read-only.
+ * Server side of the Mapa de conocimiento: loads what the agent really has, from the same sources the live turn uses
+ * (approved + bound knowledge and which of it fits the prompt budget, the saved-reply catalog as the prompt shows it,
+ * Config › Métodos de envío, mapped products, brand facts, combos / promo) and the live gaps (turns handed to a person
+ * because the agent did not have the answer). Tenant-scoped; read-only. Channel overlays are not included (the map
+ * covers the agent's own knowledge; the UI says so).
  */
 import 'server-only'
 
@@ -17,11 +19,20 @@ import {
   KNOWLEDGE_TUNING_CHAR_BUDGET,
   type KnowledgeSourceDto,
 } from '@/lib/soft-ai/knowledge-types'
-import { listShortcuts } from '@/lib/soft-ai/shortcut-admin'
+import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
+import { guideCatalogRows } from '@/lib/soft-ai/shortcuts'
 import { loadSalesSetup } from '@/lib/soft-ai/agent-sales-setup'
-import { normalizeQuestion, sanitizeTuneQuestion } from '@/lib/soft-ai/agent-tuning-core'
+import { loadCoverage } from '@/lib/shipping/coverage-store'
+import { promoInEffect } from '@/lib/soft-ai/promo'
+import { DIGIT_WORDS_RE, normalizeQuestion, sanitizeTuneQuestion } from '@/lib/soft-ai/agent-tuning-core'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
-import { buildKnowledgeMap, type KnowledgeDocInput, type KnowledgeMap } from '@/lib/soft-ai/knowledge-map'
+import { buildKnowledgeMap, gapAnswered, type KnowledgeDocInput, type KnowledgeMap } from '@/lib/soft-ai/knowledge-map'
+
+/** An optional part failed: the map still renders (that part shows as missing), the error name is logged. */
+function logSoft<T>(part: string, error: unknown, fallback: T): T {
+  console.error('[knowledge-map]', part, error instanceof Error ? error.name : 'unknown')
+  return fallback
+}
 
 /** Turns are only kept 90 days (retention); the gap list never looks further back. */
 export const GAP_WINDOW_DAYS = 90
@@ -29,14 +40,18 @@ const GAP_TURNS_MAX = 200
 const GAP_GROUPS_MAX = 20
 
 export type KnowledgeGapGroup = {
-  /** Masked, length-capped customer question (sanitizeTuneQuestion); never names or phone numbers. */
+  /**
+   * Best-effort masked customer question (≤200): phones, emails, payment / ID numbers, spelled-out digit runs and the
+   * conversation's own contact / client name are replaced. Free text (an address, a health detail) can remain; only
+   * people who can edit the agent see it, and they can already read these chats.
+   */
   question: string
   count: number
   lastAt: string
   /** One of the turns, for answering it later (the server reloads the text itself). */
   turnId: string
   conversationId: string | null
-  /** A written answer already covers it (same normalized question in this agent's knowledge). */
+  /** The agent can already see an answer (visible knowledge only). */
   answered: boolean
 }
 
@@ -50,7 +65,7 @@ export type KnowledgeMapResult = KnowledgeMap & {
 export async function loadKnowledgeMap(input: {
   tenantId: string
   agentId: string
-  /** Gaps show customer questions: only for roles that can already read the inbox (update_sales). */
+  /** Gaps show customer questions: only for people who can edit the agent (update_config, like Corregir). */
   includeGaps: boolean
   now?: Date
 }): Promise<KnowledgeMapResult | null> {
@@ -59,21 +74,19 @@ export async function loadKnowledgeMap(input: {
     select: { id: true, name: true, brandFacts: true },
   })
   if (!agent) return null
+  const now = input.now ?? new Date()
 
-  const [inventory, slice, shortcuts, sales] = await Promise.all([
+  const [inventory, slice, shortcuts, sales, coverage] = await Promise.all([
     listMappedInventory(input.tenantId, agent.id),
-    // '' = no channel overlays (same as Corregir); the UI says the map covers the agent's own knowledge.
+    // '' = no channel overlays (same as Corregir).
     loadApprovedKnowledgeForAgent({ tenantId: input.tenantId, agentId: agent.id, socialAccountId: '' }),
-    listShortcuts(input.tenantId, agent.id).catch(() => ({ shortcuts: [] as Array<{ title: string; body: string; isActive: boolean }> })),
-    loadSalesSetup(input.tenantId, agent.id).catch(() => null),
+    listRuntimeShortcuts(input.tenantId, agent.id).catch((e) => logSoft('shortcuts', e, [])),
+    loadSalesSetup(input.tenantId, agent.id).catch((e) => logSoft('sales', e, null)),
+    loadCoverage(input.tenantId).catch((e) => logSoft('coverage', e, [])),
   ])
 
-  const visibleIds = new Set(
-    (() => {
-      const b = budgetKnowledgeSlice(slice)
-      return [...b.brandBook, ...b.policies, ...b.faqs, ...b.channelOverlay].map((s) => s.id)
-    })(),
-  )
+  const budgeted = budgetKnowledgeSlice(slice)
+  const visibleIds = new Set([...budgeted.brandBook, ...budgeted.policies, ...budgeted.faqs].map((s) => s.id))
   const laneOf = (s: KnowledgeSourceDto): KnowledgeDocInput['lane'] =>
     s.kind === 'faq' ? (isAgentTuningSource(s) ? 'corrections' : 'faq') : 'brand_policy'
   const docs: KnowledgeDocInput[] = [...slice.brandBook, ...slice.policies, ...slice.faqs].map((s) => ({
@@ -84,17 +97,23 @@ export async function loadKnowledgeMap(input: {
     lane: laneOf(s),
   }))
 
+  // Same rule as agent-sales-context: the agent's offered methods (all active ones when none is chosen).
+  const offered = new Set(sales?.offeredShippingMethodIds ?? [])
+  const methods = coverage.filter((m) => offered.size === 0 || offered.has(m.shippingMethodId))
+  const promo = sales?.salesRules.promo
   const map = buildKnowledgeMap({
     products: inventory.items.filter((i) => i.isActive).map((i) => ({ id: i.id, name: i.name, price: i.sellingPrice })),
     docs,
-    replies: shortcuts.shortcuts.filter((s) => s.isActive).map((s) => ({ title: s.title, body: s.body })),
+    catalogReplies: guideCatalogRows(shortcuts).map((r) => ({ title: r.title, body: r.body })),
     brandFacts: parseBrandFactsSafe(agent.brandFacts),
-    hoursEnabled: Boolean(sales?.salesRules.businessHours?.enabled),
+    shippingMethods: methods.map((m) => ({ name: m.name, price: Number(m.basePrice) || 0, allowsCod: m.allowsCod })),
     freeShippingBundles: (sales?.salesRules.bundles ?? []).filter((b) => b.shippingIncluded === true).map((b) => b.name),
+    promoFreeShipping: Boolean(promo && promoInEffect(promo, now) && promo.freeShipping && promo.freeShippingMethodIds.length === 0),
     budgets: { brand_policy: KNOWLEDGE_LAYER2_CHAR_BUDGET, faq: KNOWLEDGE_LAYER34_CHAR_BUDGET, corrections: KNOWLEDGE_TUNING_CHAR_BUDGET },
   })
 
-  const gaps = input.includeGaps ? await loadGaps(input.tenantId, agent.id, docs, input.now ?? new Date()) : null
+  const visibleBodies = docs.filter((d) => d.visible).map((d) => d.body)
+  const gaps = input.includeGaps ? await loadGaps(input.tenantId, agent.id, visibleBodies, now) : null
   return {
     ...map,
     agentName: agent.name,
@@ -104,7 +123,7 @@ export async function loadKnowledgeMap(input: {
   }
 }
 
-async function loadGaps(tenantId: string, agentId: string, docs: KnowledgeDocInput[], now: Date): Promise<KnowledgeGapGroup[]> {
+async function loadGaps(tenantId: string, agentId: string, visibleBodies: string[], now: Date): Promise<KnowledgeGapGroup[]> {
   const since = new Date(now.getTime() - GAP_WINDOW_DAYS * 24 * 60 * 60 * 1000)
   const turns = await prisma.chatAgentTurn.findMany({
     where: {
@@ -121,17 +140,52 @@ async function loadGaps(tenantId: string, agentId: string, docs: KnowledgeDocInp
   })
   const ids = [...new Set(turns.map((t) => t.triggerMessageId).filter((id): id is string => Boolean(id)))]
   if (!ids.length) return []
-  const messages = await prisma.chatMessage.findMany({
-    where: { tenantId, id: { in: ids }, direction: 'inbound' },
-    select: { id: true, content: true },
-  })
+  const convIds = [...new Set(turns.map((t) => t.conversationId).filter((id): id is string => Boolean(id)))]
+  const [messages, conversations] = await Promise.all([
+    prisma.chatMessage.findMany({
+      where: { tenantId, id: { in: ids }, direction: 'inbound' },
+      select: { id: true, content: true },
+    }),
+    prisma.chatConversation.findMany({
+      where: { tenantId, id: { in: convIds } },
+      select: { id: true, peerName: true, client: { select: { name: true } } },
+    }),
+  ])
   const textById = new Map(messages.map((m) => [m.id, m.content || '']))
-  const written = docs.map((d) => normalizeQuestion(d.body))
+  const namesById = new Map(conversations.map((c) => [c.id, [c.peerName, c.client?.name].filter((n): n is string => Boolean(n))]))
+  return groupGaps(
+    turns.map((t) => ({
+      id: t.id,
+      createdAt: t.createdAt,
+      conversationId: t.conversationId,
+      text: t.triggerMessageId ? textById.get(t.triggerMessageId) ?? '' : '',
+      names: t.conversationId ? namesById.get(t.conversationId) ?? [] : [],
+    })),
+    visibleBodies,
+  )
+}
+
+/** Masks, groups by normalized question and sorts (unanswered first, then most asked). Pure; exported for tests. */
+export function maskGapQuestion(text: string, names: string[] = []): string {
+  // Cut first: the sanitizer cost grows with the message (DATA-57).
+  let q = sanitizeTuneQuestion(text.slice(0, 1000))
+  q = q.replace(new RegExp(DIGIT_WORDS_RE.source, 'giu'), '…')
+  for (const name of names) {
+    for (const part of name.split(/\s+/).filter((w) => w.length >= 3)) {
+      q = q.replace(new RegExp(`(?<![\\p{L}])${part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, 'giu'), '…')
+    }
+  }
+  return q.slice(0, 200)
+}
+
+export function groupGaps(
+  turns: Array<{ id: string; createdAt: Date; conversationId: string | null; text: string; names?: string[] }>,
+  visibleBodies: string[],
+): KnowledgeGapGroup[] {
   const groups = new Map<string, KnowledgeGapGroup>()
   for (const t of turns) {
-    const raw = t.triggerMessageId ? textById.get(t.triggerMessageId) : undefined
-    if (!raw) continue
-    const question = sanitizeTuneQuestion(raw).slice(0, 200)
+    if (!t.text) continue
+    const question = maskGapQuestion(t.text, t.names)
     const key = normalizeQuestion(question)
     if (!key) continue
     const g = groups.get(key)
@@ -145,7 +199,7 @@ async function loadGaps(tenantId: string, agentId: string, docs: KnowledgeDocInp
       lastAt: t.createdAt.toISOString(),
       turnId: t.id,
       conversationId: t.conversationId,
-      answered: written.some((w) => w.includes(key)),
+      answered: gapAnswered(question, visibleBodies, normalizeQuestion),
     })
   }
   return [...groups.values()].sort((a, b) => Number(a.answered) - Number(b.answered) || b.count - a.count).slice(0, GAP_GROUPS_MAX)
@@ -169,8 +223,9 @@ async function loadGoldTest(tenantId: string, agentId: string): Promise<Knowledg
         out.lastRunAt = runs[0].createdAt.toISOString()
       }
     }
-  } catch {
+  } catch (error) {
     // Optional panel: the map still renders without it.
+    logSoft('goldTest', error, null)
   }
   return out
 }

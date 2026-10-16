@@ -319,7 +319,7 @@ export function placeRule(
 
 const DIGIT_WORD = '(?:cero|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)'
 /** "ocho ocho ocho ocho …": a number spelled digit by digit (4+ digit words in a row). */
-const DIGIT_WORDS_RE = new RegExp(`(?<![\\p{L}])${DIGIT_WORD}(?:[\\s,.\\-y]+${DIGIT_WORD}){3,}(?![\\p{L}])`, 'iu')
+export const DIGIT_WORDS_RE = new RegExp(`(?<![\\p{L}])${DIGIT_WORD}(?:[\\s,.\\-y]+${DIGIT_WORD}){3,}(?![\\p{L}])`, 'iu')
 
 /** Payment data never goes in a correction: only the payment tokens ([[PAGO_SINPE]] …, [[DATOS_PAGO]]; Betsy fills the numbers). */
 export function hasPaymentNumbers(text: string): boolean {

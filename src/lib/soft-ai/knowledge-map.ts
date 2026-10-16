@@ -400,7 +400,7 @@ export function findConflicts(input: Pick<MapInput, 'products' | 'brandFacts' | 
       const beforeShipping = l.line.split(/env[ií]o/i)[0]
       const wrong = colonAmountsIn(beforeShipping).filter((a) => a >= 100 && a !== p.price && !shippingAmounts.has(a))
       if (wrong.length) {
-        out.push({ key: `price:${p.id}`, label: `Precio de ${p.name}`, detail: `"${l.doc}" dice ${money(wrong[0])}; el inventario dice ${money(p.price)}.` })
+        out.push({ key: `price:${p.id}`, label: `Precio de ${p.name.slice(0, MAP_NAME_MAX)}`, detail: `"${l.doc}" dice ${money(wrong[0])}; el inventario dice ${money(p.price)}.` })
         break
       }
     }
@@ -424,7 +424,7 @@ export function findConflicts(input: Pick<MapInput, 'products' | 'brandFacts' | 
       if (!/\b(envio|envios|entrega|llega|llegan|despacho)\b/.test(l.folded)) continue
       const bad = [...l.folded.matchAll(/(?<!\d)(\d{1,3}) ?a ?(\d{1,3}) ?dias/g)].map((m) => `${m[1]}-${m[2]}`).find((r) => etaRanges.size && !etaRanges.has(r))
       if (bad) {
-        out.push({ key: 'shipping_time', label: 'Tiempo de entrega', detail: `"${l.doc}" dice ${bad.replace('-', ' a ')} días; la configuración dice "${ea!.etaText}".` })
+        out.push({ key: 'shipping_time', label: 'Tiempo de entrega', detail: `"${l.doc}" dice ${bad.replace('-', ' a ')} días; la configuración dice "${maskMapText(ea!.etaText)}".` })
         break
       }
     }

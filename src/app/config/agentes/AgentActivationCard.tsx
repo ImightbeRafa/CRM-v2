@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-type CaseResult = { id: string; title: string; group: string; grading: 'rule' | 'judge'; pass: boolean; reply: string; notes: string[]; error?: string | null }
+type CaseResult = { id: string; title: string; group: string; grading: 'rule' | 'judge'; pass: boolean; reply: string; notes: string[]; error?: string | null; why?: string | null; retried?: boolean }
 type Run = {
   id: string
   status: 'queued' | 'running' | 'passed' | 'failed' | 'cost_capped' | 'canceled' | 'error'
@@ -156,6 +156,7 @@ export function AgentActivationCard({
                     <div className="ml-6 mt-1 rounded-lg bg-slate-50 p-2 text-[12px] text-slate-700">
                       <p className="whitespace-pre-wrap">{r.reply || '(pasó el chat a una persona)'}</p>
                       {r.notes.length ? <p className="mt-1 text-red-800">{r.notes.join(' ')}</p> : null}
+                      {!r.pass && r.why ? <p className="mt-1 text-[11.5px] text-slate-600" data-testid="case-why">Por qué: {r.why}{r.retried ? ' (se reintentó una vez)' : ''}</p> : null}
                       {r.error ? <p className="mt-1 text-red-800">No se pudo correr esta prueba.</p> : null}
                     </div>
                   ) : null}

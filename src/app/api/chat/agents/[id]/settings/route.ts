@@ -21,6 +21,7 @@ import { loadSalesSetup, saveSalesSetup, SalesRulesTooLargeError, SalesSetupNotR
 import { headlineHasNumberWords, parsePromo } from '@/lib/soft-ai/promo'
 import { dealProblem } from '@/lib/soft-ai/llm/output-validator'
 import { hasConfirmationWording } from '@/lib/soft-ai/shortcuts'
+import { DEFAULT_REPLY_PACE, replyPaceSchema } from '@/lib/soft-ai/reply-pace'
 
 const settingsRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 20, identifier: 'chat-agent-settings' })
 
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       loadSalesSetup(auth.tenantId, id).catch(() => null),
     ])
     return NextResponse.json(
-      { success: true, available, settings, knownStamps: stamps, aiDisclosure: sales?.salesRules.aiDisclosure ?? 'discreet', promo: sales?.salesRules.promo ?? null },
+      { success: true, available, settings, knownStamps: stamps, aiDisclosure: sales?.salesRules.aiDisclosure ?? 'discreet', replyPace: sales?.salesRules.replyPace ?? DEFAULT_REPLY_PACE, promo: sales?.salesRules.promo ?? null },
       { headers: { 'Cache-Control': 'no-store' } },
     )
   } catch (error) {
@@ -189,6 +190,39 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
         tenantId: auth.tenantId,
       }).catch(() => {})
       return NextResponse.json({ success: true, aiDisclosure: value })
+    }
+    // agents2-pace: "Velocidad de respuesta" (stored with the sales script, like aiDisclosure): saved on its own.
+    if ('replyPace' in body) {
+      const parsed = replyPaceSchema.safeParse(body.replyPace)
+      if (!parsed.success) {
+        return NextResponse.json({ success: false, error: 'Valor inválido' }, { status: 400 })
+      }
+      const value = parsed.data
+      const before = await loadSalesSetup(auth.tenantId, agent.id).catch(() => null)
+      try {
+        await saveSalesSetup(auth.tenantId, agent.id, { salesRules: { replyPace: value } }, auth.userId)
+      } catch (error) {
+        if (error instanceof SalesRulesTooLargeError) {
+          return NextResponse.json({ success: false, error: 'El guion de venta es demasiado largo: acortá algún texto o combo.' }, { status: 413 })
+        }
+        if (error instanceof SalesSetupNotReadyError) {
+          return NextResponse.json({ success: false, error: 'Este ajuste todavía no está disponible.' }, { status: 503 })
+        }
+        throw error
+      }
+      await logAuditEvent({
+        action: 'UPDATE',
+        entityType: 'ChatAgent',
+        entityId: agent.id,
+        entityName: agent.name,
+        description: 'Velocidad de respuesta del agente',
+        oldValues: { replyPace: before?.salesRules.replyPace ?? null },
+        newValues: { replyPace: value },
+        userId: auth.userId,
+        userRole: auth.role,
+        tenantId: auth.tenantId,
+      }).catch(() => {})
+      return NextResponse.json({ success: true, replyPace: value })
     }
     const patch: AgentSettingsPatch = {}
     if ('dailyTokenCap' in body) {

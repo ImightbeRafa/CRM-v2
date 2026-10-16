@@ -149,8 +149,9 @@ describe('1. multi-message replies', () => {
     assert.match(turn, /planReplyParts\(\{ text: input\.outputText, deliveryKey: input\.row\.deliveryKey, hash: hashSoftAiDeliveryContent \}\)/)
     assert.match(turn, /for \(let i = 0; i < partsPlan\.length; i \+= 1\) \{/)
     assert.match(turn, /if \(await stopRemainingParts\(input\.row\.tenantId, input\.row\.conversationId\)\) \{\s*partial = true\s*break/)
-    assert.match(turn, /if \(Date\.now\(\) \+ REPLY_PART_GAP_MS > partsDeadlineAt\) \{[\s\S]{0,200}part = remainderPart\(partsPlan, i, hashSoftAiDeliveryContent\)\s*lastPart = true/)
-    assert.match(turn, /setTimeout\(resolve, REPLY_PART_GAP_MS\)/)
+    // agents2-pace: the gap / late rule moved into planPartWait (reply-pace.ts; 'instant' keeps 700 ms + the late rule).
+    assert.match(turn, /if \(wait\.late\) \{[\s\S]{0,200}part = remainderPart\(partsPlan, i, hashSoftAiDeliveryContent\)\s*lastPart = true/)
+    assert.match(turn, /setTimeout\(resolve, Math\.max\(0, waitUntil - Date\.now\(\)\)\)/)
     assert.match(turn, /deliveryKey: part\.deliveryKey,\s*kind: 'text',\s*contentHash: part\.contentHash,/)
     assert.match(turn, /if \(part\.index === 0\) throw error[\s\S]{0,300}partial = true\s*break/)
     assert.match(turn, /content: part\.text,/)

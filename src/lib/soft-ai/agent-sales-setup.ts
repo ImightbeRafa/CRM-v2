@@ -11,11 +11,14 @@ import { isColumnReady, isTableReady } from '@/lib/soft-ai/table-ready'
 import { EMPTY_PROMO, headlineHasNumberWords, parsePromo, type AgentPromo } from '@/lib/soft-ai/promo'
 import { dealProblem } from '@/lib/soft-ai/llm/output-validator'
 import { hasConfirmationWording } from '@/lib/soft-ai/shortcuts'
+import { DEFAULT_REPLY_PACE, parseReplyPace, type ReplyPace } from '@/lib/soft-ai/reply-pace'
 
 export type SalesRules = {
   voice: string | null
   /** If a client asks "¿sos un bot?": discreet = never says it, never denies it; transparent = says it's the store's virtual assistant. */
   aiDisclosure: 'discreet' | 'transparent'
+  /** agents2-pace: how fast the reply goes out in a real chat (reply-pace.ts). Missing / unknown = 'natural'. */
+  replyPace?: ReplyPace
   closing: string | null
   upsells: string | null
   objections: string | null
@@ -90,6 +93,7 @@ export type SalesSetup = { offeredShippingMethodIds: string[]; salesRules: Sales
 export const EMPTY_SALES_RULES: SalesRules = {
   voice: null,
   aiDisclosure: 'discreet',
+  replyPace: DEFAULT_REPLY_PACE,
   closing: null,
   upsells: null,
   objections: null,
@@ -114,6 +118,7 @@ export function parseSalesRules(raw: unknown): SalesRules {
     objections: text(r.objections, 1200),
     handoffWhen: text(r.handoffWhen, 800),
     aiDisclosure: r.aiDisclosure === 'transparent' ? 'transparent' : 'discreet',
+    replyPace: parseReplyPace(r.replyPace),
     mustSay: list(r.mustSay, 10, 200),
     neverSay: list(r.neverSay, 10, 200),
     promo: parsePromo(r.promo),

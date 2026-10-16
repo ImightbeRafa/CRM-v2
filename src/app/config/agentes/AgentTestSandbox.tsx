@@ -8,6 +8,7 @@ import { ProbarScenarios } from '@/app/config/agentes/ProbarScenarios'
 import { CorrectionPanel } from '@/components/aurora/agentes/CorrectionPanel'
 import { TUNE_CODE_REPLY_NOTE } from '@/lib/soft-ai/agent-tuning-core'
 import { replyPartsOf } from '@/lib/soft-ai/reply-parts'
+import { paceNoteText, parseReplyPace, REPLY_PACE_EVENT, type ReplyPace } from '@/lib/soft-ai/reply-pace'
 
 export type WaBubble = {
   kind: 'text'
@@ -185,6 +186,27 @@ export function AgentTestSandbox({
     if (el) el.scrollTop = el.scrollHeight
   }, [history, busy])
 
+  // agents2-pace: Probar never waits; a note says how the reply is paced in a real chat.
+  const [replyPace, setReplyPace] = useState<ReplyPace | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const res = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/settings`, { cache: 'no-store' }).catch(() => null)
+      if (!res?.ok) return
+      const json = (await res.json().catch(() => ({}))) as { replyPace?: unknown }
+      if (!cancelled) setReplyPace(parseReplyPace(json.replyPace))
+    })()
+    const onPace = (e: Event) => {
+      const detail = (e as CustomEvent<{ agentId?: string; pace?: unknown }>).detail
+      if (detail?.agentId === agentId) setReplyPace(parseReplyPace(detail.pace))
+    }
+    window.addEventListener(REPLY_PACE_EVENT, onPace)
+    return () => {
+      cancelled = true
+      window.removeEventListener(REPLY_PACE_EVENT, onPace)
+    }
+  }, [agentId])
+
   /** `again`: "Volver a preguntar" re-sends that customer message (the composer text stays). */
   function sendTurn(again?: string) {
     const inbound = (again ?? text).trim()
@@ -321,6 +343,11 @@ export function AgentTestSandbox({
         <div>
           <h2 className="text-sm font-semibold text-slate-900">Probar como cliente</h2>
           <p className={`mt-0.5 ${HINT}`}>Escribí como un cliente: recibís la misma respuesta que recibiría en WhatsApp. No escribe a nadie real.</p>
+          {replyPace ? (
+            <p className={`mt-0.5 ${HINT}`} data-testid="probar-pace-note">
+              {paceNoteText(replyPace)}
+            </p>
+          ) : null}
         </div>
         <button
           type="button"

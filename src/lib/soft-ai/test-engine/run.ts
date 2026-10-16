@@ -30,6 +30,7 @@ import {
   type SuiteSummary,
   type TurnForGrading,
 } from '@/lib/soft-ai/test-engine/grade'
+import { caseWhy, shouldRetryCase } from '@/lib/soft-ai/test-engine/why'
 
 const TABLE = 'ChatAgentTestRun'
 export const TEST_RUN_COST_CAP_MICROS = 400_000 // US$0.40 per run
@@ -50,6 +51,12 @@ export type CaseResult = {
   reply: string
   notes: string[]
   error?: string | null
+  /** agents2-pace: why the agent did not answer normally (validator / AI timeout / hand-off), plain Spanish. */
+  why?: string | null
+  /** The raw outcome codes behind `why` (validator reasons, provider error code, escalate:<reason>, review). */
+  codes?: string[]
+  /** The case failed only for a technical reason on the first try and was run once more. */
+  retried?: boolean
 }
 
 export type TestRunRow = {
@@ -355,8 +362,23 @@ async function judge(
   return { pass: false, reason: 'No se pudo evaluar.' }
 }
 
+/**
+ * One case. A case that failed ONLY for a technical reason (AI timeout / provider error, no validator rejection) is
+ * run once more before it counts (shouldRetryCase: within the run's cost cap; the test budget is re-checked by the
+ * turn itself). If the retry is blocked or errors, the first result stands.
+ */
 async function runCase(run: TestRunRow, tc: TestCase): Promise<{ result: CaseResult; costMicros: number }> {
+  const first = await runCaseOnce(run, tc)
+  if (!shouldRetryCase(first.result, run.spentMicros + first.costMicros, run.costCapMicros)) return first
+  const second = await runCaseOnce(run, tc)
+  const costMicros = first.costMicros + second.costMicros
+  if (second.result.error) return { result: first.result, costMicros }
+  return { result: { ...second.result, retried: true }, costMicros }
+}
+
+async function runCaseOnce(run: TestRunRow, tc: TestCase): Promise<{ result: CaseResult; costMicros: number }> {
   let turn: TurnForGrading
+  let codes: string[] = []
   let costMicros = 0
   for (let attempt = 0; ; attempt += 1) {
     try {
@@ -377,11 +399,12 @@ async function runCase(run: TestRunRow, tc: TestCase): Promise<{ result: CaseRes
       const blocked = (out.blockedBy || []).find((b) => b === 'test_budget_blocked' || b === 'not_bound_to_channel')
       if (blocked) {
         return {
-          result: { id: tc.id, title: tc.title, group: tc.group, grading: tc.grading, pass: false, reply: '', notes: [], error: blocked },
+          result: { id: tc.id, title: tc.title, group: tc.group, grading: tc.grading, pass: false, reply: '', notes: [], error: blocked, why: caseWhy([], blocked), codes: [blocked] },
           costMicros,
         }
       }
       turn = { text: out.text || '', escalate: out.escalate, needsHuman: out.needsHuman, outcome: out.outcome }
+      codes = Array.isArray(out.codes) ? out.codes : []
       break
     } catch (error) {
       const code = error instanceof Error ? error.message : 'error'
@@ -390,7 +413,7 @@ async function runCase(run: TestRunRow, tc: TestCase): Promise<{ result: CaseRes
         continue
       }
       return {
-        result: { id: tc.id, title: tc.title, group: tc.group, grading: tc.grading, pass: false, reply: '', notes: [], error: code.slice(0, 60) },
+        result: { id: tc.id, title: tc.title, group: tc.group, grading: tc.grading, pass: false, reply: '', notes: [], error: code.slice(0, 60), why: caseWhy([], code.slice(0, 60)), codes: [] },
         costMicros,
       }
     }
@@ -409,7 +432,7 @@ async function runCase(run: TestRunRow, tc: TestCase): Promise<{ result: CaseRes
     }
   }
   return {
-    result: { id: tc.id, title: tc.title, group: tc.group, grading: tc.grading, pass, reply: turn.text.slice(0, 600), notes, error: null },
+    result: { id: tc.id, title: tc.title, group: tc.group, grading: tc.grading, pass, reply: turn.text.slice(0, 600), notes, error: null, why: caseWhy(codes), codes },
     costMicros,
   }
 }

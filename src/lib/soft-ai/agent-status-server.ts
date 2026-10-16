@@ -42,7 +42,7 @@ export type LoadedLineRun = {
   quick: boolean
   finishedAt: string | null
   cases: Array<{ id: string; title: string; group: string }>
-  results: Array<{ id: string; title: string; pass: boolean; reply: string; notes: string[]; error?: string | null }>
+  results: Array<{ id: string; title: string; pass: boolean; reply: string; notes: string[]; error?: string | null; why?: string | null; retried?: boolean }>
 }
 
 export type LoadedLine = {
@@ -90,6 +90,8 @@ function toRun(r: Record<string, unknown> | undefined): LoadedLineRun | null {
       reply: x.reply,
       notes: x.notes || [],
       error: x.error ?? null,
+      why: typeof x.why === 'string' ? x.why.slice(0, 300) : null,
+      retried: x.retried === true,
     })),
   }
 }

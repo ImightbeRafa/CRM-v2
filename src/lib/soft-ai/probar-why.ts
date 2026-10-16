@@ -4,8 +4,9 @@
  */
 
 // Real codes from the turn (agent-claim-gates / runtime / tool-runner); anything unknown shows as a generic phrase.
-const ESCALATE: Record<string, string> = {
+export const PROBAR_ESCALATE_LABELS: Record<string, string> = {
   payment_or_sinpe: 'pago o comprobante SINPE (lo confirma una persona)',
+  payment_claim: 'hablaba de un pago confirmado (lo revisa una persona)',
   media_inbound: 'mandó foto, audio o archivo',
   opt_out: 'pidió no hablar con la IA',
   llm_unavailable: 'la IA no respondió a tiempo',
@@ -70,7 +71,7 @@ export function probarWhy(input: {
   if (input.shortcutKey && !out.includes('usó una respuesta rápida')) {
     out.push(/^[a-z0-9_]{2,40}$/.test(input.shortcutKey) && !input.shortcutKey.startsWith('sys_') ? `usó la respuesta guardada “${input.shortcutKey}”` : 'usó una respuesta rápida')
   }
-  if (input.escalate) out.push(`pasó a una persona: ${ESCALATE[input.escalateReason || 'other'] || 'otro motivo'}`)
+  if (input.escalate) out.push(`pasó a una persona: ${PROBAR_ESCALATE_LABELS[input.escalateReason || 'other'] || 'otro motivo'}`)
   // Codes are internal; the owner only needs to know the AI's own answer was replaced by a safe one.
   if (input.fallbackUsed) out.push('respuesta de respaldo: la IA falló o su respuesta no pasó las reglas')
   for (const b of (input.blockedBy ?? []).filter((x) => !ACTIVATION_ONLY.has(x))) out.push(`un cliente real no recibiría respuesta: ${BLOCKED[b] || 'una regla del canal lo bloquea'}`)

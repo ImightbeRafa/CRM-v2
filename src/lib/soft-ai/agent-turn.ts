@@ -5,6 +5,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { probarWhy } from '@/lib/soft-ai/probar-why'
+import { probarOutcomeCodes } from '@/lib/soft-ai/test-engine/why'
 import { loadAgentSalesContext } from '@/lib/soft-ai/agent-sales-context'
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
@@ -80,7 +81,10 @@ import type { AgentAsset } from '@/lib/soft-ai/agent-assets'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import { AGENT_IMAGE_DEADLINE_MS, loadSentAgentImageShas, sendAgentImagesOnce } from '@/lib/soft-ai/agent-media-send'
 import { applyFinalOutputPolicy, splitReplyParts, validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
-import { AGENT_PARTS_DEADLINE_MS, planReplyParts, remainderPart, REPLY_PART_GAP_MS } from '@/lib/soft-ai/reply-parts'
+import { AGENT_PARTS_DEADLINE_MS, planReplyParts, remainderPart } from '@/lib/soft-ai/reply-parts'
+import { DEFAULT_REPLY_PACE, planPartWait, type ReplyPace } from '@/lib/soft-ai/reply-pace'
+import { sendWhatsappTypingIndicator } from '@/lib/soft-ai/typing-indicator'
+import { loadSalesSetup } from '@/lib/soft-ai/agent-sales-setup'
 import { maskConfiguredPaymentSecrets, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import { redactToolTrace } from '@/lib/soft-ai/llm/redact'
 import {
@@ -190,6 +194,8 @@ async function loadTriggerMessage(messageId: string) {
       content: true,
       messageType: true,
       direction: true,
+      // agents2-pace: the WhatsApp message id (wamid) the "escribiendo…" indicator points at.
+      providerMessageId: true,
     },
   })
 }
@@ -993,7 +999,7 @@ async function finishDeliveryOrSuggestInner(input: {
   }
   agent: ResolvedChatAgent
   bindingId: string
-  trigger: { id: string; sentAt: Date }
+  trigger: { id: string; sentAt: Date; providerMessageId?: string | null }
   agentMode: string | null
   effectiveBehavior: EffectiveAgentBehavior
   unlockedForSend: boolean
@@ -1209,6 +1215,12 @@ async function finishDeliveryOrSuggestInner(input: {
   // agents2-format: the reply goes out as up to 3 messages (one per paragraph), in order, each claimed exactly once.
   const partsPlan = planReplyParts({ text: input.outputText, deliveryKey: input.row.deliveryKey, hash: hashSoftAiDeliveryContent })
   const partsDeadlineAt = (input.startedAt ?? Date.now()) + AGENT_PARTS_DEADLINE_MS
+  // agents2-pace: "Velocidad de respuesta" — a typing wait before each message; the time since the customer wrote
+  // (model included) counts. A re-run of a job whose text was already attempted goes out at once (no new waits).
+  const replyPace: ReplyPace = textAlreadyClaimed ? 'instant' : await loadReplyPace(input.row.tenantId, input.agent.id)
+  const showTyping = replyPace !== 'instant' && platform === 'whatsapp'
+  let pacedSoFarMs = 0
+  let lastSentAt = input.trigger.sentAt.getTime()
   let firstSkipped = false
   let partial = false
   for (let i = 0; i < partsPlan.length; i += 1) {
@@ -1220,12 +1232,38 @@ async function finishDeliveryOrSuggestInner(input: {
         partial = true
         break
       }
-      if (Date.now() + REPLY_PART_GAP_MS > partsDeadlineAt) {
-        // Late turn (F2): everything left goes out NOW as one last message (never silently dropped).
-        part = remainderPart(partsPlan, i, hashSoftAiDeliveryContent)
-        lastPart = true
-      } else {
-        await new Promise((resolve) => setTimeout(resolve, REPLY_PART_GAP_MS))
+    }
+    const now = Date.now()
+    const wait = planPartWait({
+      pace: replyPace,
+      index: i,
+      chars: part.text.length,
+      now,
+      spentMs: now - lastSentAt,
+      pacedSoFarMs,
+      deadlineAt: partsDeadlineAt,
+    })
+    if (wait.late) {
+      // Late turn (F2): everything left goes out NOW as one last message (never silently dropped).
+      part = remainderPart(partsPlan, i, hashSoftAiDeliveryContent)
+      lastPart = true
+    } else if (wait.waitMs > 0) {
+      const waitUntil = now + wait.waitMs
+      // WhatsApp "escribiendo…" (best effort, ≤ 2 s, inside the wait — never adds time).
+      if (showTyping) {
+        await sendWhatsappTypingIndicator({ accessToken, phoneNumberId: account.accountId, inboundMessageId: input.trigger.providerMessageId })
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.max(0, waitUntil - Date.now())))
+      pacedSoFarMs += wait.waitMs
+      // Gate re-check after the wait: kill switch / a person took or paused the chat meanwhile.
+      if (i === 0) {
+        const stop = await pacedFirstPartStop(input.row.tenantId, input.row.conversationId)
+        if (stop) {
+          return persistDecidedTurn({ turnId: input.turnId, outcome: { outcome: 'skip', reason: stop }, operationMode: input.agent.operationMode, setMode: false })
+        }
+      } else if (await stopRemainingParts(input.row.tenantId, input.row.conversationId)) {
+        partial = true
+        break
       }
     }
     let delivery: { skipped: boolean; providerDeliveryId?: string; result?: { providerMessageId?: string } }
@@ -1264,6 +1302,7 @@ async function finishDeliveryOrSuggestInner(input: {
       break
     }
     if (part.index === 0) firstSkipped = delivery.skipped
+    lastSentAt = Date.now()
 
     const providerMessageId =
       delivery.providerDeliveryId ||
@@ -1348,6 +1387,32 @@ async function stopRemainingParts(tenantId: string, conversationId: string): Pro
     return !conv || conv.aiMode === 'human' || conv.aiMode === 'paused'
   } catch {
     return true
+  }
+}
+
+/**
+ * agents2-pace: after the typing wait before the FIRST message (nothing sent yet), why not to send it: kill switch,
+ * or a person took / paused the chat meanwhile. Fail-safe: a read error stops too.
+ */
+async function pacedFirstPartStop(tenantId: string, conversationId: string): Promise<string | null> {
+  try {
+    if ((await readAgentKillState(tenantId)).armed) return 'kill_switch'
+    const conv = await prisma.chatConversation.findFirst({ where: { id: conversationId, tenantId }, select: { aiMode: true } })
+    if (!conv) return 'conversation_missing'
+    if (conv.aiMode === 'human') return 'human_before_send'
+    if (conv.aiMode === 'paused') return 'paused_before_send'
+    return null
+  } catch {
+    return 'pace_recheck_failed'
+  }
+}
+
+/** agents2-pace: this agent's "Velocidad de respuesta" (salesRules.replyPace). Never throws; default 'natural'. */
+async function loadReplyPace(tenantId: string, agentId: string): Promise<ReplyPace> {
+  try {
+    return (await loadSalesSetup(tenantId, agentId)).salesRules.replyPace ?? DEFAULT_REPLY_PACE
+  } catch {
+    return DEFAULT_REPLY_PACE
   }
 }
 
@@ -1436,6 +1501,11 @@ async function runAgentTestTurnInner(input: {
   estimatedCostUsd: number
   /** Short reasons shown under the reply in the test chat (what it used / why it handed off). */
   why?: string[]
+  /**
+   * agents2-pace (quick check): raw outcome codes of this turn — validator reasons, the provider error code,
+   * `escalate:<reason>`, `review`. Internal; the test engine maps them to plain Spanish.
+   */
+  codes?: string[]
   /** Images sent before the text (saved reply the agent used). */
   images: ReplyImage[]
   /** B1: what live would do after this text — hand the chat to a person, or ask a person to review (stays on IA). */
@@ -1573,6 +1643,8 @@ async function runAgentTestTurnInner(input: {
   let salesTrace: unknown = null
   let escalateReason: string | null = null
   let validationReasons: string[] = []
+  let policyReasons: string[] = []
+  let llmErrorCode: string | null = null
   let shortcutKey = decision.shortcutKey
   let highlightedAmounts = decision.highlightedAmounts
   let tokens = { input: 0, output: 0, cached: 0 }
@@ -1635,6 +1707,7 @@ async function runAgentTestTurnInner(input: {
     llmTrace = llm.toolTrace
     escalateReason = llm.escalateReason ?? null
     validationReasons = llm.validationReasons ?? []
+    llmErrorCode = llm.errorCode ?? null
     salesTrace = runtimeInput.salesTrace ?? null
     const policy = applyFinalOutputPolicy({
       text: llm.text,
@@ -1675,6 +1748,10 @@ async function runAgentTestTurnInner(input: {
     needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
     fallbackUsed = llm.fallbackUsed
     escalate = llm.escalate
+    policyReasons = [
+      ...(policy.needsHuman ? policy.reasons : []),
+      ...(runtimeInput.salesNeedsHuman === true ? ['sales_needs_human'] : []),
+    ]
   } else {
     const plan = planDecisionDelivery({ text: decision.text, textOk: decision.textOk, handoff: decision.handoff })
     text = plan.text
@@ -1782,6 +1859,7 @@ async function runAgentTestTurnInner(input: {
     model: runtimeAgent.model,
     estimatedCostUsd: testCostMicros / 1_000_000,
     why: probarWhy({ toolTrace: llmTrace, escalate, escalateReason, fallbackUsed, validationReasons, shortcutKey, blockedBy }),
+    codes: probarOutcomeCodes({ validationReasons, policyReasons, errorCode: llmErrorCode, escalate, escalateReason, handoff }),
     images,
     handoff,
     // "Corregir" (V11): code answered before the model (keyword saved reply / system message) — edit that reply instead.

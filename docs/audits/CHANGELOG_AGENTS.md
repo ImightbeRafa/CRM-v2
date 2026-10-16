@@ -1,3 +1,22 @@
+## 2026-10-16 — agents2-pace: "Velocidad de respuesta" + quick-check "por qué" (claudio/agents2-pace)
+
+- New per-agent `replyPace` ('instant' | 'natural' | 'calm', default 'natural', also for existing agents) stored in
+  ChatAgentSettings.salesRules (same jsonb as aiDisclosure; zod: strict on PUT, unknown → natural on read). No SQL.
+- Live send loop (agent-turn finishDeliveryOrSuggestInner) waits a typing time before each message
+  (reply-pace.ts planPartWait: natural 1.2 s + 35 ms/char clamp 1.5–6 s; calm 2 s + 55 ms/char clamp 3–9 s; instant =
+  old 0 / 700 ms). Time since the customer wrote (model latency) counts; ≤ 15 s per turn; no waits within 3 s of the
+  38 s parts deadline; late rule + remainderPart unchanged; gates re-checked after each wait (first message: skip with
+  kill_switch / human_before_send / paused_before_send). Re-runs of an already-claimed job go out at once.
+- WhatsApp "escribiendo…" (status read + typing_indicator, inbound wamid from ChatMessage.providerMessageId), best
+  effort, 2 s timeout, inside the wait; Instagram: waits only. Probar / quick check never wait; Probar shows a note.
+- UI: "Velocidad de respuesta" (Al instante / Natural / Pausado) in ④ Probar y activar.
+- Quick check: each case stores `why` (plain Spanish), `codes` (validator reasons, provider error code,
+  escalate:<reason>, review) and `retried`; a case that failed ONLY for an AI timeout / provider error is run once
+  more within the run's cost cap. "Por qué: …" shown under failed cases (activation card + channel list).
+- Tests: agents2-pace.test.ts (17); agents2-format send-loop source asserts updated for planPartWait.
+- Proof: tsc 0, lint 0, test:soft-ai 783/783, chat-harden 643/643, security 271/271, soft-ai-agent 319/319,
+  agentes-ui 34/34. Not deployed.
+
 ## 2026-10-16 — Admin › IA usage: "Not found" + test-traffic labels (claudio/ai-usage-fix)
 
 - "Not found" on Logística › Admin › IA = /api/super-admin/ai-usage owner check (isSuperAdmin flag AND, when set,

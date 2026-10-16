@@ -136,7 +136,9 @@ export function decideInbound(input: {
    */
   awaitingPaymentMethod?: boolean
 }): InboundDecision {
-  const paymentClass = classifyPaymentText(input.inboundText)
+  const paymentClass = classifyPaymentText(input.inboundText, {
+    awaitingPaymentMethod: input.awaitingPaymentMethod === true && (!input.messageType || input.messageType === 'text'),
+  })
   const steps: DecisionStep[] = [
     { step: 'payment_class', outcome: paymentClass },
   ]
@@ -209,13 +211,45 @@ export function decideInbound(input: {
     })
   }
 
+  if (safety.escalate) {
+    steps.push({ step: 'safety', outcome: 'handoff', reason: safety.reason })
+    const shortcut = seedShortcut(safety.shortcutKey, input.shortcuts)
+    const text = renderShortcutTemplate(shortcut.body, { facts: input.brandFacts })
+    return finish({
+      text,
+      intent: safety.reason === 'payment_or_sinpe' ? 'payment_proof' : safety.reason === 'opt_out' ? 'human_request' : 'other',
+      shortcutKey: safety.shortcutKey,
+      escalate: true,
+      paymentClass,
+      steps,
+      facts: input.brandFacts,
+      replyStyle: input.replyStyle,
+      shortcuts: input.shortcuts,
+      forceNeedsHuman: true,
+      handoff: {
+        kind: 'handoff',
+        reason:
+          safety.reason === 'opt_out'
+            ? HANDOFF_REASON.optOut
+            : safety.reason === 'media_inbound'
+              ? HANDOFF_REASON.payment
+              : paymentHandoffReason(input.inboundText),
+      },
+    })
+  }
+
   // agents2-format: the customer picked a method — after the store's question ("SINPE"), or naming one while asking
   // for its details ("Quiero pagar por SINPE, ¿me pasás el número?"). A bare "SINPE" used to fail closed as a payment
   // message (→ "ya lo reviso"); with no proof / claim / confirm / refund cue at all it is a choice.
   // SecureDog INT-114: only a message matching the choice ALLOWLIST GRAMMAR (paymentChoiceGrammar) is a choice — the
   // same gate for every branch (code reply and contra entrega / efectivo → model). Anything else ("hecho por sinpe",
   // "sinpe ✅", "sinpe de 25 mil", "sinpe, ¿cuándo me llega?") keeps the classifier / safety path below (a person).
-  const textMessage = (!input.messageType || input.messageType === 'text') && !isOptOutText(input.inboundText || '')
+  // STRUCTURAL RULE (SecureDog INT-114 reopened): this runs only AFTER the safety hand-off above and never for a
+  // message the classifier calls payment_proof_or_risk — no choice / mention route can override a hand-off.
+  const textMessage =
+    (!input.messageType || input.messageType === 'text') &&
+    !isOptOutText(input.inboundText || '') &&
+    paymentClass !== 'payment_proof_or_risk'
   const choice = textMessage
     ? paymentMethodPick(input.inboundText, input.awaitingPaymentMethod === true, offeredMethods(input.brandFacts))
     : null
@@ -225,8 +259,8 @@ export function decideInbound(input: {
     return continueToModel(paymentClass, steps)
   }
   if (!choice && textMessage && input.awaitingPaymentMethod) {
-    // N4: the method question is pending and the message names ONE method with something else ("Por sinpe y retiro en
-    // tienda") and no question / claim / status / dispute word: the model answers with that method chosen.
+    // N4 (narrowed): the method question is pending and the message is an exact choice + an explicit logistics phrase
+    // ("Por sinpe y retiro en tienda"): the model answers with that method chosen.
     const mention = pendingMethodMention(input.inboundText)
     if (mention) {
       steps.push({ step: 'payment_choice', outcome: 'model', reason: mention })
@@ -272,32 +306,6 @@ export function decideInbound(input: {
     return continueToModel(paymentClass, steps)
   }
 
-  if (safety.escalate) {
-    steps.push({ step: 'safety', outcome: 'handoff', reason: safety.reason })
-    const shortcut = seedShortcut(safety.shortcutKey, input.shortcuts)
-    const text = renderShortcutTemplate(shortcut.body, { facts: input.brandFacts })
-    return finish({
-      text,
-      intent: safety.reason === 'payment_or_sinpe' ? 'payment_proof' : safety.reason === 'opt_out' ? 'human_request' : 'other',
-      shortcutKey: safety.shortcutKey,
-      escalate: true,
-      paymentClass,
-      steps,
-      facts: input.brandFacts,
-      replyStyle: input.replyStyle,
-      shortcuts: input.shortcuts,
-      forceNeedsHuman: true,
-      handoff: {
-        kind: 'handoff',
-        reason:
-          safety.reason === 'opt_out'
-            ? HANDOFF_REASON.optOut
-            : safety.reason === 'media_inbound'
-              ? HANDOFF_REASON.payment
-              : paymentHandoffReason(input.inboundText),
-      },
-    })
-  }
 
   if (paymentClass === 'payment_info_safe' && input.awaitingPaymentMethod && canSharePaymentFacts(input.brandFacts)) {
     // N4: never the method list again while the store's method question is pending — the model answers.

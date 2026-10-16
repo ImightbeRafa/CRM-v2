@@ -318,7 +318,8 @@ describe('notify · F8 payment snippet: receipt vs claim', () => {
     const src = read('src/lib/soft-ai/handoff-notify.ts')
     assert.match(src, /select: \{ id: true, messageType: true \}/)
     assert.match(src, /dedupeKey: \(\) => reviewDedupeKey\(key, reviewKind, lastInbound\?\.messageType\)/)
-    assert.match(read('src/lib/workspace-notifications.ts'), /reviewNotificationText\(r\.kind, who, paymentVariantFromDedupeKey\(r\.dedupeKey\)\)/)
+    // agents2-format N6: the cash-order variant also travels in the dedupe key (':order_ready_cash').
+    assert.match(read('src/lib/workspace-notifications.ts'), /reviewNotificationText\(r\.kind, who, paymentVariantFromDedupeKey\(r\.dedupeKey\), orderIsCashFromDedupeKey\(r\.dedupeKey\)\)/)
   })
 
   it('snippets: receipt vs "ya pagó" claim; the title stays the same', () => {

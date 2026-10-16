@@ -162,9 +162,46 @@ describe('product text: only real product knowledge counts (verifier F1)', () =>
       assert.equal(fieldsOf(map, 0)[field].status, 'missing', q)
       assert.equal(fieldsOf(map, 1)[field].status, 'ok', q)
     }
-    const pairing = buildKnowledgeMap(base({ docs: [doc('FAQ', '¿El Focus Patch tiene cafeína? No, contiene melena de león. ¿Lo puedo usar si uso el Energy Patch? Sí, se pega en otra zona, uno al día.', true, 'faq')] }))
+    const pairing = buildKnowledgeMap(base({ docs: [doc('FAQ', '¿El Focus Patch tiene cafeína? No, contiene melena de león. ¿Se puede combinar con el Energy Patch? Sí, se pega en otra zona, uno al día.', true, 'faq')] }))
     assert.equal(fieldsOf(pairing, 1).usage.status, 'missing')
     assert.equal(fieldsOf(pairing, 0).usage.status, 'ok')
+  })
+  it('"si" / "con" / "mejor" / "que el" / long questions before the name still make it the subject (verifier round 7 F1)', () => {
+    const cases: Array<[string, string]> = [
+      ['¿Qué pasa si uso el Energy Patch de noche? Mejor de día: se pega en el brazo, uno al día.', 'usage'],
+      ['¿Qué hago si el Energy Patch se despega? Pegá uno nuevo, uno al día.', 'frequency'],
+      ['¿Qué hago si me irrita el Energy Patch? Retiralo y consultá al médico.', 'warnings'],
+      ['¿Sí se puede usar el Energy Patch todos los días? Sí, uno al día.', 'frequency'],
+      ['¿Con qué frecuencia se cambia el Energy Patch? Uno al día.', 'frequency'],
+      ['¿Cuál es el mejor momento para usar el Energy Patch? En la mañana, se pega en el brazo.', 'usage'],
+      ['¿Dónde es mejor pegar el Energy Patch? En el brazo, uno al día.', 'frequency'],
+      ['¿Por qué el Energy Patch tiene cafeína? Para dar energía, uno al día.', 'frequency'],
+      ['¿Cuántas veces por día se usa el Energy Patch? Uno al día.', 'frequency'],
+    ]
+    for (const [q, field] of cases) {
+      const map = buildKnowledgeMap(base({ docs: [doc('FAQ', `¿El Focus Patch tiene cafeína? No, contiene melena de león.\n${q}`, true, 'faq')] }))
+      assert.equal(fieldsOf(map, 0)[field].status, 'missing', q)
+      assert.equal(fieldsOf(map, 1)[field].status, 'ok', q)
+    }
+  })
+  it('article-led product lines with "también / además / promo" are still their own product (verifier round 7 F2)', () => {
+    for (const line of ['El Energy Patch también se puede usar de noche; se pega en el brazo, uno al día.', 'El Energy Patch además se pega en el brazo, uno al día.']) {
+      const map = buildKnowledgeMap(base({ docs: [doc('Productos', `El Focus Patch contiene melena de león.\n${line}`)] }))
+      assert.equal(fieldsOf(map, 0).usage.status, 'missing', line)
+      assert.equal(fieldsOf(map, 1).usage.status, 'ok', line)
+    }
+  })
+  it('KNOWN LIMITS of the word rules (accepted, verifier round 7) — change deliberately', () => {
+    const faq = (q: string) => buildKnowledgeMap(base({ docs: [doc('FAQ', `¿El Focus Patch tiene cafeína? No, contiene melena de león. ${q}`, true, 'faq')] }))
+    // "si uso el X" reads as a subject question (much rarer than "¿Qué pasa si uso el X…?")
+    assert.equal(fieldsOf(faq('¿Lo puedo usar si uso el Energy Patch? Sí, se pega en otra zona, uno al día.'), 1).usage.status, 'ok')
+    // "al X" right before the name reads as an object
+    assert.equal(fieldsOf(faq('¿Qué le pasa al Energy Patch si me baño? Se pega en el brazo y resiste el agua.'), 0).usage.status, 'ok')
+    // a keyword-less cross-sell on its own line inside a block cuts the block
+    for (const x of ['El Energy Patch es su pareja ideal.', 'El Energy Patch va perfecto con él.']) {
+      const map = buildKnowledgeMap(base({ docs: [doc('Productos', `Focus Patch\nPara concentración.\n${x}\nContiene melena de león.\nSe pega en el brazo, uno al día.`)] }))
+      assert.equal(fieldsOf(map, 0).usage.status, 'missing', x)
+    }
   })
   it('the question before the product name belongs to its section (verifier round 5 L1)', () => {
     const map = buildKnowledgeMap(base({ docs: [doc('FAQ', 'P: ¿Qué ingredientes tiene el Focus Patch?\nR: Melena de león, ginseng rojo y vitaminas B.\n\nP: ¿Cómo se usa el Energy Patch?\nR: Retirás el protector y lo pegás en piel limpia.', true, 'faq')] }))

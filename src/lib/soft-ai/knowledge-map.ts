@@ -208,11 +208,14 @@ const STATEMENT_PREFIX_RE = /^[\s\-•*–#>\d.):"“'*]*(?:[pr]\s*:[\s"“'*]*)
  * the sentence is a cross-sell ("El Energy Patch es su complemento ideal").
  */
 const LINE_ARTICLE_PREFIX_RE = /^[\s\-•*–#>\d.):"“'*]*(?:[pr]\s*:[\s"“'*]*)?(?:el|la|los|las)\s+$/
-const CROSS_SELL_RE = /\b(?:complement|combin|acompa|tambien|junto|ademas|promo|igual)\w*/
-/** A question that opens with ¿: any ≤6 words may lead, unless one makes the product an object (round 6 F3). */
-const OPEN_QUESTION_PREFIX_RE = /^[\s\-•*–#>\d.):"“'*]*(?:[pr]\s*:[\s"“'*]*)?¿\s*(?:\p{L}+\s+){0,6}$/u
+const CROSS_SELL_RE = /\b(?:complement|combin|junto)\w*/
+/**
+ * A question that opens with ¿: any ≤8 words may lead (rounds 6–7), unless the product is an object: a pairing word
+ * anywhere, a preposition / "como" right before the name, or a comparison ("más … que el").
+ */
+const OPEN_QUESTION_PREFIX_RE = /^[\s\-•*–#>\d.):"“'*]*(?:[pr]\s*:[\s"“'*]*)?¿\s*(?:\p{L}+\s+){0,8}$/u
 const QUESTION_OBJECT_RE =
-  /\b(?:con|al|junto|juntos|combin\w*|mezcl\w*|igual|mismo|misma|diferencia|mejor|peor|entre|ademas|si|o|vs|versus)\b|\b(?:como|que)\s+(?:el|la|los|las|un|una)\s+$/
+  /\b(?:combin\w*|mezcl\w*|diferencia)\b|\b(?:con|al|junto|entre|o|vs|versus|como)\s+(?:(?:el|la|los|las|un|una)\s+)?$|\b(?:mas|menos|mejor|peor|igual|mismo|misma|parecido|parecida)\b.*\bque\s+(?:el|la|los|las|un|una)\s+$/
 const QUESTION_PREFIX_RE =
   /^[\s\-•*–#>\d.):"“'*]*(?:[pr]\s*:[\s"“'*]*)?[¿¡]?\s*(?:(?:el|la|los|las|lo|un|una|que|como|cuanto|cuanta|cuantos|cuantas|cual|cuales|donde|cuando|cada|quien|puedo|puede|pueden|podes|usar|uso|dura|duran|cuesta|cuestan|funciona|funcionan|aplica|aplico|pega|pego|coloca|coloco|pone|pongo|cambia|cambio|en|tiempo|y|tambien|sobre|del|de|se|usa|usan|contiene|contienen|trae|traen|lleva|llevan|sirve|sirven|es|son|para|tiene|tienen|hay|precio|ingredientes|si|me|lo|la)\s+){0,6}$/
 /** "como el …" right before the name is a comparison ("¿Es como el Energy Patch?"), never the subject. */

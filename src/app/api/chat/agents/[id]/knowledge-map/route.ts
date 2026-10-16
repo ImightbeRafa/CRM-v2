@@ -15,8 +15,12 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const mapRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 20, identifier: 'chat-agent-knowledge-map' })
+/** `?fresh=1` skips the cache, so it gets its own tighter limit. */
+const freshRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 4, identifier: 'chat-agent-knowledge-map-fresh' })
 const CACHE_MS = 30_000
-const CACHE_MAX = 500
+/** Bounded memory (SecureDog INT-129): few entries, expired ones dropped, big maps never cached. */
+const CACHE_MAX = 100
+const CACHE_ENTRY_MAX_CHARS = 256_000
 const cache = new Map<string, { at: number; map: KnowledgeMapResult }>()
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -31,14 +35,24 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     const includeGaps = hasPermission(auth.role, 'update_config')
     const key = `${auth.tenantId}:${id}:${includeGaps ? 'g' : '-'}`
     const fresh = request.nextUrl.searchParams.get('fresh') === '1'
+    if (fresh) {
+      const freshRate = await freshRateLimit(`${auth.tenantId}:${auth.userId}`)
+      if (!freshRate.allowed) {
+        return NextResponse.json({ success: false, error: 'Demasiadas consultas. Esperá un momento.' }, { status: 429, headers: freshRate.headers })
+      }
+    }
     const hit = cache.get(key)
     if (!fresh && hit && Date.now() - hit.at < CACHE_MS) {
       return NextResponse.json({ success: true, map: hit.map }, { headers: { 'Cache-Control': 'no-store' } })
     }
     const map = await loadKnowledgeMap({ tenantId: auth.tenantId, agentId: id, includeGaps })
     if (!map) return NextResponse.json({ success: false, error: 'Agente no encontrado' }, { status: 404 })
-    if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value as string)
-    cache.set(key, { at: Date.now(), map })
+    const now = Date.now()
+    for (const [k, v] of cache) if (now - v.at >= CACHE_MS) cache.delete(k)
+    if (JSON.stringify(map).length <= CACHE_ENTRY_MAX_CHARS) {
+      if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value as string)
+      cache.set(key, { at: now, map })
+    }
     return NextResponse.json({ success: true, map }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     console.error('[chat/agents/knowledge-map GET]', error instanceof Error ? error.name : 'unknown')

@@ -165,27 +165,42 @@ async function loadGaps(tenantId: string, agentId: string, visibleBodies: string
   )
 }
 
-/** Masks, groups by normalized question and sorts (unanswered first, then most asked). Pure; exported for tests. */
-export function maskGapQuestion(text: string, names: string[] = []): string {
+const ACCENTS: Record<string, string> = { a: '[aáàäâ]', e: '[eéèëê]', i: '[iíìïî]', o: '[oóòöô]', u: '[uúùüû]', n: '[nñ]' }
+
+/**
+ * One accent-insensitive regex for a conversation's contact / client names (≤6 parts of 3–40 letters), built once per
+ * conversation (SecureDog DATA-57 round 2: "perez" masks "Pérez"; a huge client name costs nothing extra).
+ */
+export function namesRegex(names: string[]): RegExp | null {
+  const folded = names.join(' ').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  const parts = [...new Set(folded.split(/[^\p{L}]+/u))].filter((w) => w.length >= 3 && w.length <= 40).slice(0, 6)
+  if (!parts.length) return null
+  const pattern = parts.map((w) => [...w].map((c) => ACCENTS[c] ?? c).join('')).join('|')
+  return new RegExp(`(?<![\\p{L}])(?:${pattern})(?![\\p{L}])`, 'giu')
+}
+
+/** Best-effort masking of one customer question (≤200 chars). */
+export function maskGapQuestion(text: string, names: string[] | RegExp | null = null): string {
   // Cut first: the sanitizer cost grows with the message (DATA-57).
   let q = sanitizeTuneQuestion(text.slice(0, 1000))
   q = q.replace(new RegExp(DIGIT_WORDS_RE.source, 'giu'), '…')
-  for (const name of names) {
-    for (const part of name.split(/\s+/).filter((w) => w.length >= 3)) {
-      q = q.replace(new RegExp(`(?<![\\p{L}])${part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, 'giu'), '…')
-    }
-  }
+  const re = Array.isArray(names) ? namesRegex(names) : names
+  if (re) q = q.replace(new RegExp(re.source, 'giu'), '…')
   return q.slice(0, 200)
 }
 
+/** Masks, groups by normalized question and sorts (unanswered first, then most asked). Pure; exported for tests. */
 export function groupGaps(
   turns: Array<{ id: string; createdAt: Date; conversationId: string | null; text: string; names?: string[] }>,
   visibleBodies: string[],
 ): KnowledgeGapGroup[] {
   const groups = new Map<string, KnowledgeGapGroup>()
+  const nameRes = new Map<string, RegExp | null>()
   for (const t of turns) {
     if (!t.text) continue
-    const question = maskGapQuestion(t.text, t.names)
+    const convKey = t.conversationId ?? `turn:${t.id}`
+    if (!nameRes.has(convKey)) nameRes.set(convKey, namesRegex(t.names ?? []))
+    const question = maskGapQuestion(t.text, nameRes.get(convKey) ?? null)
     const key = normalizeQuestion(question)
     if (!key) continue
     const g = groups.get(key)

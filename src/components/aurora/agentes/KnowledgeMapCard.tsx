@@ -89,13 +89,17 @@ export function KnowledgeMapCard({ agentId, active, refreshKey }: { agentId: str
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
   const requestRef = useRef(0)
+  /** The refreshKey already fetched fresh: force the server refresh once per change, not on every tab open. */
+  const freshDone = useRef(0)
 
   const load = useCallback(async () => {
     const requestId = ++requestRef.current
     setLoading(true)
     try {
       // After a knowledge change (refreshKey > 0) skip the server's short cache so the change shows at once.
-      const res = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/knowledge-map${refreshKey > 0 ? '?fresh=1' : ''}`)
+      const fresh = refreshKey > freshDone.current
+      freshDone.current = refreshKey
+      const res = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/knowledge-map${fresh ? '?fresh=1' : ''}`)
       const data = await res.json()
       if (requestRef.current !== requestId) return
       if (!res.ok || !data?.success) throw new Error(typeof data?.error === 'string' ? data.error : 'No se pudo cargar el mapa')

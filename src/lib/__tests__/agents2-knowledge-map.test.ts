@@ -183,6 +183,8 @@ describe('live gaps (verifier F4)', () => {
     const q = maskGapQuestion('Hola soy María Pérez, mi sinpe es ocho ocho ocho ocho uno dos tres cuatro', ['María Pérez'])
     assert.doesNotMatch(q, /María|Pérez|ocho ocho/)
     assert.ok(maskGapQuestion('x'.repeat(5000)).length <= 200)
+    // Accent-insensitive both ways: the name stored as "Maria Perez", the customer writes "María Pérez".
+    assert.doesNotMatch(maskGapQuestion('soy María Pérez', ['Maria Perez']), /Mar[ií]a|P[ée]rez/)
   })
   it('"ya respondida" only from visible text: a whole P: line, or every word in one paragraph', () => {
     assert.equal(gapAnswered('¿Ingredientes?', ['Los ingredientes son naturales'], normalizeQuestion), false) // single word: no fuzzy match
@@ -201,6 +203,25 @@ describe('performance (SecureDog INT-127)', () => {
     const ms = performance.now() - t0
     assert.equal(map.products.length, 200)
     assert.ok(ms < 1500, `took ${Math.round(ms)} ms`)
+  })
+  it('SecureDog round 2 shapes: 200 numeric products × 60 number-list docs, and every name 10× per doc, stay fast', () => {
+    const numeric = Array.from({ length: 200 }, (_, i) => ({ id: `n${i}`, name: String(i + 1), price: 1000 }))
+    const list = Array.from({ length: 200 }, (_, i) => `${i + 1}`).join(' ')
+    const docsA = Array.from({ length: 60 }, (_, i) => doc(`L${i}`, `${list}\n${list}`))
+    let t0 = performance.now()
+    buildKnowledgeMap(base({ products: numeric, docs: docsA }))
+    const a = performance.now() - t0
+    const named = Array.from({ length: 200 }, (_, i) => ({ id: `m${i}`, name: `Producto ${i}`, price: 1000 }))
+    const every = named.map((p) => p.name).join(', ')
+    const docsB = Array.from({ length: 60 }, (_, i) => doc(`N${i}`, Array.from({ length: 10 }, () => every).join('\n')))
+    t0 = performance.now()
+    buildKnowledgeMap(base({ products: named, docs: docsB }))
+    const b = performance.now() - t0
+    assert.ok(a < 800 && b < 800, `numeric ${Math.round(a)} ms, named ${Math.round(b)} ms`)
+  })
+  it('very long product names are cut (no huge output, no regex error)', () => {
+    const map = buildKnowledgeMap(base({ products: [{ id: 'x', name: 'x'.repeat(60_000), price: 1000 }] }))
+    assert.ok(map.products[0].name.length <= 120)
   })
   it('size caps: documents over the limits are reported as not measured', () => {
     const many = Array.from({ length: 70 }, (_, i) => doc(`D${i}`, 'texto'))
@@ -228,7 +249,7 @@ describe('route + server + UI contract (source)', () => {
   const route = readFileSync('src/app/api/chat/agents/[id]/knowledge-map/route.ts', 'utf8')
   const server = readFileSync('src/lib/soft-ai/knowledge-map-server.ts', 'utf8')
   const card = readFileSync('src/components/aurora/agentes/KnowledgeMapCard.tsx', 'utf8')
-  it('view_config, tenant from the session, no-store, gaps only with update_sales, read-only', () => {
+  it('view_config, tenant from the session, no-store, rate limit + short bounded cache, gaps only for agent editors (update_config), read-only', () => {
     assert.match(route, /authenticateAPIWithPermission\(request, 'view_config'\)/)
     assert.match(route, /tenantId: auth\.tenantId/)
     assert.match(route, /'Cache-Control': 'no-store'/)

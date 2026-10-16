@@ -114,24 +114,27 @@ export const MAP_MAX_DOCS = 60
 export const MAP_MAX_CHARS = 200_000
 export const MAP_MAX_REPLIES = 300
 const WINDOWS_PER_DOC = 10
+/** Product / method names are cut to this in the map and in name matching (SecureDog INT-129 / INT-130). */
+export const MAP_NAME_MAX = 120
 
-/**
- * A short snippet around a match. Masks anything payment- or ID-looking (cards, IBAN, IDs, phones, emails, SINPE) and
- * digit runs with any separator (SecureDog DATA-58): never a payment number.
- */
+/** Masks anything payment- or ID-looking (cards, IBAN, IDs, phones, emails, SINPE, digit runs with any separator). */
+export function maskMapText(raw: string): string {
+  return redactPiiText(redactSensitiveForProvider(raw.slice(0, 400)))
+    .replace(/[A-Z]{2}\d{2}(?:[\s.\-_/–]?\d{2,4}){3,}/gi, '…')
+    .replace(/\d[\d\s.\-_/–]{6,}\d/g, '…')
+    .trim()
+}
+
+/** A short snippet around a match (≤160 chars), masked (SecureDog DATA-58): never a payment number. */
 function snippetAt(original: string, index: number): string {
   const start = Math.max(0, original.lastIndexOf('\n', index) + 1, index - 80)
-  const raw = original.slice(start, start + 160).split('\n')[0]
-  return redactPiiText(redactSensitiveForProvider(raw))
-    .replace(/[A-Z]{2}\d{2}(?:[\s.\-_/–]?\d{2,4}){3,}/gi, '…')
-    .replace(/\d(?:[\d\s.\-_/–]{6,40})\d/g, '…')
-    .trim()
+  return maskMapText(original.slice(start, start + 160).split('\n')[0])
 }
 
 /** A document prepared once: folded text and its paragraphs (offsets into the original). */
 type Doc = { name: string; body: string; folded: string; paras: Array<{ folded: string; offset: number }> }
 type Hit = { source: string; snippet: string }
-type WindowCache = Map<string, Array<{ start: number; text: string }>>
+type Mention = { index: number; core: string }
 
 function prepareDoc(name: string, body: string): Doc {
   const folded = fold(body)
@@ -148,52 +151,105 @@ function prepareDoc(name: string, body: string): Doc {
 }
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-/** The product name as a whole word ("1" never matches inside "12" or "2026"). */
-const coreRe = (core: string) => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(core)}(?![\\p{L}\\p{N}])`, 'gu')
 
 /**
- * The text right after each mention of the product (to the next blank line, ≤700 chars): non-overlapping, at most
- * WINDOWS_PER_DOC per document, computed once per (product, document) and reused for every topic.
+ * ONE regex for every product name (longest first, so "focus plus" wins over "focus"): all mentions of all products in
+ * a document are found in a single pass (SecureDog INT-127 round 2: no products × products scans).
  */
-function windowsFor(cache: WindowCache, docIndex: number, d: Doc, core: string, otherCores: RegExp[]): Array<{ start: number; text: string }> {
-  const key = `${docIndex}\u0000${core}`
-  const cached = cache.get(key)
-  if (cached) return cached
-  const out: Array<{ start: number; text: string }> = []
-  const re = coreRe(core)
-  let m: RegExpExecArray | null
-  let next = 0
-  while (out.length < WINDOWS_PER_DOC && (m = re.exec(d.folded))) {
-    if (m.index < next) continue
-    const rest = d.folded.slice(m.index, m.index + 700)
-    const blank = rest.search(/\n\s*\n/)
-    let text = blank > 0 ? rest.slice(0, blank) : rest
-    // ...and at the first mention of another product ("Focus: …\nEnergy: contiene cafeína" is Energy's fact).
-    let cut = text.length
-    for (const other of otherCores) {
-      other.lastIndex = m[0].length
-      const o = other.exec(text)
-      if (o && o.index > 0 && o.index < cut) cut = o.index
-    }
-    text = text.slice(0, cut)
-    out.push({ start: m.index, text })
-    next = m.index + text.length
-  }
-  cache.set(key, out)
-  return out
+function allCoresRe(cores: string[]): RegExp | null {
+  const unique = [...new Set(cores.filter(Boolean))].sort((a, b) => b.length - a.length)
+  if (!unique.length) return null
+  return new RegExp(`(?<![\\p{L}\\p{N}])(?:${unique.map(escapeRe).join('|')})(?![\\p{L}\\p{N}])`, 'gu')
 }
 
 /** Paragraphs that name no product: text that applies to all of them ("USO (igual para todos): …"). */
 /** Sentences about the store (shipping, orders, payment, promos) never count as product knowledge. */
 const STORE_SENTENCE_RE = /\b(envio|envios|enviamos|envian|entrega|entregamos|entregas|pedido|pedidos|pago|pagos|pagar|promo|promocion|descuento|direccion|compra|compras|comprar|precio|precios|retiro|despacho|mensajer|correos|sinpe|tarjeta|factura|horario|cupon)\w*/
 
-function generalHit(d: Doc, generalParas: boolean[], topic: RegExp, productField: boolean): Hit | null {
-  for (let i = 0; i < d.paras.length; i++) {
-    if (!generalParas[i]) continue
+type Ctx = {
+  visible: Doc[]
+  hidden: Doc[]
+  allCores: RegExp | null
+  mentions: Map<Doc, Mention[]>
+  windows: Map<string, Array<{ start: number; text: string }>>
+  general: Map<Doc, boolean[]>
+  generalHits: Map<string, Hit | null>
+  docIndex: Map<Doc, number>
+}
+
+/** Every product mention in a document (one pass, cached). */
+function mentionsOf(ctx: Ctx, d: Doc): Mention[] {
+  const cached = ctx.mentions.get(d)
+  if (cached) return cached
+  const out: Mention[] = []
+  if (ctx.allCores) {
+    const re = new RegExp(ctx.allCores.source, 'gu')
+    let m: RegExpExecArray | null
+    while ((m = re.exec(d.folded))) out.push({ index: m.index, core: m[0] })
+  }
+  ctx.mentions.set(d, out)
+  return out
+}
+
+/**
+ * The text right after each mention of the product, up to the next blank line, the next mention of a DIFFERENT product
+ * ("Focus: …\nEnergy: contiene cafeína" is Energy's fact) or 700 chars; non-overlapping, ≤WINDOWS_PER_DOC per document.
+ * Cached per (document, product), reused for every topic.
+ */
+function windowsFor(ctx: Ctx, d: Doc, core: string): Array<{ start: number; text: string }> {
+  const key = `${ctx.docIndex.get(d) ?? -1}\u0000${core}`
+  const cached = ctx.windows.get(key)
+  if (cached) return cached
+  const mentions = mentionsOf(ctx, d)
+  const out: Array<{ start: number; text: string }> = []
+  let next = 0
+  for (let i = 0; i < mentions.length && out.length < WINDOWS_PER_DOC; i++) {
+    const m = mentions[i]
+    if (m.core !== core || m.index < next) continue
+    let end = Math.min(d.folded.length, m.index + 700)
+    const blank = d.folded.slice(m.index, end).search(/\n\s*\n/)
+    if (blank > 0) end = m.index + blank
+    for (let j = i + 1; j < mentions.length && mentions[j].index < end; j++) {
+      if (mentions[j].core !== core) {
+        end = mentions[j].index
+        break
+      }
+    }
+    out.push({ start: m.index, text: d.folded.slice(m.index, end) })
+    next = end
+  }
+  ctx.windows.set(key, out)
+  return out
+}
+
+/** Which paragraphs of a document name no product (from the cached mentions). */
+function generalParasOf(ctx: Ctx, d: Doc): boolean[] {
+  const cached = ctx.general.get(d)
+  if (cached) return cached
+  const mentions = mentionsOf(ctx, d)
+  const flags = d.paras.map((p) => !mentions.some((m) => m.index >= p.offset && m.index < p.offset + p.folded.length))
+  ctx.general.set(d, flags)
+  return flags
+}
+
+/**
+ * General text for a topic in one document — the same for every product, so cached per (document, topic, kind).
+ * Product fields: only paragraphs naming no product, sentence by sentence, skipping store sentences.
+ */
+function generalHit(ctx: Ctx, d: Doc, topicKey: string, topic: RegExp, productField: boolean): Hit | null {
+  const key = `${ctx.docIndex.get(d) ?? -1}\u0000${topicKey}\u0000${productField ? 'p' : 's'}`
+  if (ctx.generalHits.has(key)) return ctx.generalHits.get(key) ?? null
+  let hit: Hit | null = null
+  const flags = productField ? generalParasOf(ctx, d) : null
+  outer: for (let i = 0; i < d.paras.length; i++) {
+    if (flags && !flags[i]) continue
     const p = d.paras[i]
     if (!productField) {
       const m = topic.exec(p.folded)
-      if (m) return { source: `general · ${d.name}`, snippet: snippetAt(d.body, p.offset + m.index) }
+      if (m) {
+        hit = { source: `general · ${d.name}`, snippet: snippetAt(d.body, p.offset + m.index) }
+        break
+      }
       continue
     }
     const re = /[^.!?\n]+/g
@@ -201,40 +257,21 @@ function generalHit(d: Doc, generalParas: boolean[], topic: RegExp, productField
     while ((sm = re.exec(p.folded))) {
       if (STORE_SENTENCE_RE.test(sm[0])) continue
       const m = topic.exec(sm[0])
-      if (m) return { source: `general · ${d.name}`, snippet: snippetAt(d.body, p.offset + sm.index + m.index) }
+      if (m) {
+        hit = { source: `general · ${d.name}`, snippet: snippetAt(d.body, p.offset + sm.index + m.index) }
+        break outer
+      }
     }
   }
-  return null
-}
-
-type Ctx = { visible: Doc[]; hidden: Doc[]; coreRes: RegExp[]; cores: string[]; cache: WindowCache; docIndex: Map<Doc, number>; general: Map<Doc, boolean[]>; others: Map<string, RegExp[]> }
-
-/** The other products' name regexes (a product name that contains this one, e.g. "focus plus" vs "focus", is skipped). */
-function otherCoresOf(ctx: Ctx, core: string): RegExp[] {
-  const cached = ctx.others.get(core)
-  if (cached) return cached
-  const list = ctx.cores.filter((c) => c && c !== core && !c.includes(core)).map(coreRe)
-  ctx.others.set(core, list)
-  return list
-}
-
-/** Which paragraphs of a document name no product (computed once per document). */
-function generalParasOf(ctx: Ctx, d: Doc): boolean[] {
-  const cached = ctx.general.get(d)
-  if (cached) return cached
-  const flags = d.paras.map((p) => !ctx.coreRes.some((re) => {
-    re.lastIndex = 0
-    return re.test(p.folded)
-  }))
-  ctx.general.set(d, flags)
-  return flags
+  ctx.generalHits.set(key, hit)
+  return hit
 }
 
 function textField(key: string, label: string, topic: RegExp, core: string | null, ctx: Ctx): MapField {
   const general = GENERAL_OK.has(key)
   const productHit = (d: Doc): Hit | null => {
     if (!core) return null
-    for (const w of windowsFor(ctx.cache, ctx.docIndex.get(d) ?? -1, d, core, otherCoresOf(ctx, core))) {
+    for (const w of windowsFor(ctx, d, core)) {
       const m = topic.exec(w.text)
       if (m) return { source: d.name, snippet: snippetAt(d.body, w.start + m.index) }
     }
@@ -248,10 +285,8 @@ function textField(key: string, label: string, topic: RegExp, core: string | nul
     tries.push({ docs: ctx.hidden, status: 'hidden', find: productHit })
   }
   if (general || !core) {
-    // For a product field: only paragraphs naming no product. For a store field: every paragraph.
-    const parasOf = (d: Doc) => (core ? generalParasOf(ctx, d) : d.paras.map(() => true))
-    tries.push({ docs: ctx.visible, status: 'ok', find: (d) => generalHit(d, parasOf(d), topic, Boolean(core)) })
-    tries.push({ docs: ctx.hidden, status: 'hidden', find: (d) => generalHit(d, parasOf(d), topic, Boolean(core)) })
+    tries.push({ docs: ctx.visible, status: 'ok', find: (d) => generalHit(ctx, d, key, topic, Boolean(core)) })
+    tries.push({ docs: ctx.hidden, status: 'hidden', find: (d) => generalHit(ctx, d, key, topic, Boolean(core)) })
   }
   for (const t of tries) {
     for (const d of t.docs) {
@@ -281,12 +316,12 @@ function storeFields(input: MapInput, ctx: Ctx): MapField[] {
   // Live rule (agent-sales-context): methods win; brand facts are only the fallback when there are none.
   const factCosts = [ea?.gamCost, ea?.outsideGamCost].filter((n): n is number => typeof n === 'number')
   const shippingCost = methods.length
-    ? structured('shipping_cost', 'Costo de envío', true, 'métodos de envío', methods.slice(0, 3).map((m) => `${m.name} ${money(m.price)}`).join(' · '), 'shipping_methods')
+    ? structured('shipping_cost', 'Costo de envío', true, 'métodos de envío', maskMapText(methods.slice(0, 3).map((m) => `${m.name.slice(0, MAP_NAME_MAX)} ${money(m.price)}`).join(' · ')), 'shipping_methods')
     : structured('shipping_cost', 'Costo de envío', Boolean(ea?.enabled) && factCosts.length > 0, 'datos del negocio', factCosts.map(money).join(' / ') || null, 'brand_facts')
   // Delivery time: only brand facts without methods reach the prompt; otherwise it has to be written.
   const shippingTime =
     !methods.length && ea?.etaText
-      ? structured('shipping_time', 'Tiempo de entrega', true, 'datos del negocio', ea.etaText, 'brand_facts')
+      ? structured('shipping_time', 'Tiempo de entrega', true, 'datos del negocio', maskMapText(ea.etaText), 'brand_facts')
       : textField('shipping_time', 'Tiempo de entrega', TEXT_TOPICS.delivery, null, ctx)
   const free = input.freeShippingBundles ?? []
   const freeShipping = structured(
@@ -302,7 +337,7 @@ function storeFields(input: MapInput, ctx: Ctx): MapField[] {
   const cod = methods.length
     ? structured('cod', 'Contra entrega', true, 'métodos de envío', codFromMethods ? 'sí (según el método de envío)' : 'no', 'shipping_methods')
     : structured('cod', 'Contra entrega', typeof facts.shipping?.contraEntrega?.enabled === 'boolean', 'datos del negocio', facts.shipping?.contraEntrega ? (facts.shipping.contraEntrega.enabled ? 'sí' : 'no') : null, 'brand_facts')
-  const returnsFact = facts.returnsText ? structured('returns', 'Cambios y devoluciones', true, 'datos del negocio', facts.returnsText.slice(0, 160), 'brand_facts') : null
+  const returnsFact = facts.returnsText ? structured('returns', 'Cambios y devoluciones', true, 'datos del negocio', maskMapText(facts.returnsText.slice(0, 160)), 'brand_facts') : null
   return [
     shippingCost,
     shippingTime,
@@ -313,28 +348,26 @@ function storeFields(input: MapInput, ctx: Ctx): MapField[] {
     structured('pickup', 'Retiro', typeof facts.shipping?.ra?.enabled === 'boolean', 'datos del negocio', facts.shipping?.ra ? (facts.shipping.ra.enabled ? 'sí' : 'no') : null, 'brand_facts'),
     returnsFact ?? textField('returns', 'Cambios y devoluciones', TEXT_TOPICS.returns, null, ctx),
     // The hours windows never reach the prompt; only the hours text does.
-    structured('hours', 'Horario', Boolean(facts.hoursText), 'datos del negocio', facts.hoursText ?? null, 'brand_facts'),
+    structured('hours', 'Horario', Boolean(facts.hoursText), 'datos del negocio', facts.hoursText ? maskMapText(facts.hoursText) : null, 'brand_facts'),
   ]
 }
 
 /** Numbers that disagree with the structured facts (shown, never auto-fixed; they do not lower the %). */
 export function findConflicts(input: Pick<MapInput, 'products' | 'brandFacts' | 'shippingMethods'> & { visible: Array<{ name: string; body: string }> }): MapConflict[] {
   const out: MapConflict[] = []
-  const coreRes = input.products.map((p) => {
-    const c = productCoreName(p.name)
-    return c ? coreRe(c) : null
-  })
-  const hasCore = (re: RegExp | null, text: string) => {
-    if (!re) return false
-    re.lastIndex = 0
-    return re.test(text)
-  }
+  const cores = input.products.map((p) => productCoreName(p.name.slice(0, MAP_NAME_MAX)))
+  const all = allCoresRe(cores)
   const lines = input.visible.flatMap((d) =>
     d.body
       .split('\n')
       // "P: …" lines are customer questions (corrections), not the store's facts.
       .filter((line) => !/^\s*P:/i.test(line))
-      .map((line) => ({ doc: d.name, line, folded: fold(line) })),
+      .map((line) => {
+        const folded = fold(line)
+        const named = new Set<string>()
+        if (all) for (const m of folded.matchAll(new RegExp(all.source, 'gu'))) named.add(m[0])
+        return { doc: d.name, line, folded, named }
+      }),
   )
   const ea = input.brandFacts.shipping?.ea
   const shippingAmounts = new Set(
@@ -342,12 +375,11 @@ export function findConflicts(input: Pick<MapInput, 'products' | 'brandFacts' | 
   )
   const BUNDLE_RE = /combo|pack|paquetes|cajas|bolsas|unidades|\bx\s*\d|\d\s*x\b|full house|trio|antes|ahora|descuento|oferta|promo/
   input.products.forEach((p, i) => {
-    const re = coreRes[i]
-    if (!re || !(p.price > 0)) return
+    const core = cores[i]
+    if (!core || !(p.price > 0)) return
     for (const l of lines) {
-      if (!hasCore(re, l.folded) || BUNDLE_RE.test(l.folded)) continue
-      // A line that also names another product quotes that product too.
-      if (coreRes.some((other, j) => j !== i && hasCore(other, l.folded))) continue
+      // Only lines that name this product and no other one (a line naming two products quotes both).
+      if (!l.named.has(core) || l.named.size > 1 || BUNDLE_RE.test(l.folded)) continue
       // Amounts after "envío" are shipping, not the product price.
       const beforeShipping = l.line.split(/env[ií]o/i)[0]
       const wrong = colonAmountsIn(beforeShipping).filter((a) => a >= 100 && a !== p.price && !shippingAmounts.has(a))
@@ -411,9 +443,9 @@ export function buildKnowledgeMap(input: MapInput): KnowledgeMap {
     facts.extraFacts?.length ? take('datos del negocio', facts.extraFacts.map((f) => `${f.label}: ${f.value}`).join('\n\n')) : null,
   ].filter((d): d is Doc => d !== null)
   const hidden: Doc[] = docsIn.filter((d) => !d.visible).map((d) => take(d.name, d.body)).filter((d): d is Doc => d !== null)
-  const cores = input.products.map((p) => productCoreName(p.name))
+  const cores = input.products.map((p) => productCoreName(p.name.slice(0, MAP_NAME_MAX)))
   const docIndex = new Map<Doc, number>([...visible, ...hidden].map((d, i) => [d, i]))
-  const ctx: Ctx = { visible, hidden, coreRes: cores.filter(Boolean).map(coreRe), cores: cores.filter(Boolean), cache: new Map(), docIndex, general: new Map(), others: new Map() }
+  const ctx: Ctx = { visible, hidden, allCores: allCoresRe(cores), mentions: new Map(), windows: new Map(), general: new Map(), generalHits: new Map(), docIndex }
 
   const products: MapProduct[] = input.products.map((p, i) => {
     const price: MapField =
@@ -424,7 +456,7 @@ export function buildKnowledgeMap(input: MapInput): KnowledgeMap {
       price,
       ...PRODUCT_FIELDS.filter((f) => f.key !== 'price').map((f) => textField(f.key, f.label, TEXT_TOPICS[f.key], cores[i] || null, ctx)),
     ].map((f): MapField => (na.has(`product.${f.key}`) ? { ...f, status: 'na' } : f))
-    return { id: p.id, name: p.name, fields }
+    return { id: p.id, name: p.name.slice(0, MAP_NAME_MAX), fields }
   })
   const store = storeFields(input, ctx).map((f): MapField => (na.has(`store.${f.key}`) ? { ...f, status: 'na' } : f))
 

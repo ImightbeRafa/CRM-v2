@@ -408,7 +408,7 @@ describe('3b. sales state: metodo_pago', () => {
     assert.equal(cash.chosenMethod, 'efectivo')
     assert.match(cash.nextStep, /\[\[PAGO_EFECTIVO\]\]/)
     assert.equal(parsePaymentMethodChoice('sinpe o tarjeta?'), null)
-    assert.equal(parsePaymentMethodChoice('tarjeta de crédito'), null)
+    assert.equal(parsePaymentMethodChoice('tarjeta de crédito'), 'tarjeta')
     assert.equal(deriveSalesState({ history: [], inboundText: '¿aceptan sinpe?', ctx: CTX }).chosenMethod ?? null, null)
     assert.equal(deriveSalesState({ history: [], inboundText: 'Quiero pagar por SINPE, ¿me pasás el número?', ctx: CTX }).chosenMethod, 'sinpe')
     for (const claim of CLAIMS) {
@@ -416,7 +416,7 @@ describe('3b. sales state: metodo_pago', () => {
     }
   })
   it('once the details went out (also digit-less blocks): esperando_comprobante; same rule in both helpers (#3)', () => {
-    for (const block of ['Perfecto 🙌\nSINPE Móvil: 6201 9914\nA nombre de: Rafael García', 'Perfecto 🙌\nPodés pagar con tarjeta en https://tienda.example.cr', 'Transferencia bancaria: BAC', COD_BLOCK, 'Pago en efectivo:\nPagás en efectivo al recibir o al retirar el pedido.']) {
+    for (const block of ['Perfecto 🙌\nSINPE Móvil: 6201 9914\nA nombre de: Rafael García', 'Perfecto 🙌\nPodés pagar con tarjeta en https://tienda.example.cr', 'Transferencia bancaria: BAC']) {
       const given = [...askedHistory, msg('inbound', 'x'), msg('outbound', block)]
       assert.equal(paymentDetailsIn(block), true, block)
       assert.equal(deriveSalesState({ history: given, inboundText: 'ok', ctx: CTX }).stage, 'esperando_comprobante', block)
@@ -646,7 +646,9 @@ describe('SecureDog INT-114..118', () => {
   })
   it('INT-117: order confirmations the agent might make up are write claims', () => {
     for (const text of ['Tu pedido quedó registrado 😊', 'Listo, pedido confirmado', 'Ya agendé la entrega', 'Sale mañana', 'Tu entrega queda para el lunes', 'tu pedido está anotado']) {
-      assert.ok(validateAgentOutput({ text, citedToolNames: [] }).reasons.includes('write_claim'), text)
+      // Round 3 (N3): these confirmation patterns apply on the contra-entrega / efectivo closing turn.
+      const r = validateAgentOutput({ text, citedToolNames: [], orderClosing: true }).reasons
+      assert.ok(r.includes('write_claim') || r.includes('confirmation_wording'), text)
     }
     assert.equal(validateAgentOutput({ text: 'Enseguida lo revisamos 😊', citedToolNames: [] }).reasons.includes('write_claim'), false)
   })
@@ -661,6 +663,133 @@ describe('SecureDog INT-114..118', () => {
     const { stripBetsyLookalikes } = await import('@/lib/soft-ai/sales-state')
     for (const t of ['[[PAGO_SINPE]]', '[[DATOS_PAGO]]', '[[ATAJO:pb_promo]]', '[PAGO CONTRA ENTREGA]', '【PAGO_TARJETA】']) {
       assert.doesNotMatch(stripBetsyLookalikes(`hola ${t}`), /PAGO|ATAJO/, t)
+    }
+  })
+})
+
+describe('Round 3 (integration verifier N1..N6 + SecureDog leftovers)', () => {
+  const asked = msg('outbound', '¿Cómo preferís pagar? Tenemos SINPE Móvil, transferencia, tarjeta (en la web) y contra entrega (solo GAM).')
+  it('N1: completion words count only next to a payment noun (or paired with one, with no question)', async () => {
+    const { classifyPaymentText } = await import('@/lib/soft-ai/payment-classifier')
+    for (const text of [
+      'Listo, ¿cómo pago?', 'Listo, ¿cómo le pago?', 'Listo, me lo llevo. ¿Cómo les pago?', 'Ok listo, ¿aceptan tarjeta?',
+      'Listo! ¿A qué número hago el sinpe?', '¿Tienen lista de precios? ¿Aceptan transferencia?', '¿Son hechos a mano? ¿Aceptan tarjeta?',
+      '¿Cuánto tarda en ser enviado? ¿aceptan sinpe?', '¿Cuándo está listo? ¿puedo pagar con sinpe?',
+      '¿Me lo tienen listo para el sábado? pago en efectivo', 'Ya lo tengo listo para pagar, ¿cuál es el sinpe?',
+    ]) {
+      assert.notEqual(classifyPaymentText(text), 'payment_proof_or_risk', text)
+    }
+    for (const text of ['Transferencia realizada', 'transferencia hecha', 'transferencia lista', 'transferencia enviada', 'Transferencia ✅', 'Listo, transferencia', 'pagado con tarjeta', 'tarjeta aprobada', 'SINPE MOVIL: Envio exitoso de 15,000.00 a 8888-8888', 'sinpe pagado, ¿me pasás el número de pedido?', 'ＳＩＮＰＥ ✅', 'he​cho por sinpe']) {
+      assert.equal(classifyPaymentText(text), 'payment_proof_or_risk', text)
+    }
+  })
+  it('INT-114 / INT-115 positives still hand off after the round-3 changes', () => {
+    for (const text of [...CLAIMS]) {
+      for (const awaiting of [true, false]) {
+        const d = decideInbound({ inboundText: text, brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: awaiting })
+        assert.equal(d.handoff?.kind, 'handoff', `${text} (${awaiting})`)
+      }
+    }
+  })
+  it('N2: a contra-entrega choice is carried to the turn with the order data → order_ready (flow A and B)', () => {
+    const histA = [msg('outbound', 'El combo queda en ₡20 900'), asked, msg('inbound', 'contra entrega'), msg('outbound', 'Perfecto 🙌 pasame:\n- Nombre completo\n- Dirección exacta')]
+    const sA = deriveSalesState({ history: histA, inboundText: 'Juan Pérez, Heredia centro, 100 m norte de la iglesia', ctx: CTX })
+    assert.deepEqual([sA.stage, sA.chosenMethod], ['metodo_pago', 'contra_entrega'])
+    const reply = 'Perfecto 🙌 tu pedido:\n- Combo GLP-1 + Focus\n- Total ₡20 900\n- Juan Pérez, Heredia centro\n\n[[PAGO_CONTRA_ENTREGA]]\n\nEnseguida lo revisamos 😊'
+    const p = applyFinalOutputPolicy({ text: reply, brandFacts: FACTS, skipPurchaseSummary: true, quoteAmounts: [20900], paymentOptions: { ...salesPaymentOptions(CTX), chosenMethod: sA.chosenMethod ?? null } })
+    assert.equal(p.ok, true, p.reasons.join(','))
+    const plan = planModelTurnDelivery({ text: p.text, textOk: p.ok, llmHandoff: null, codOrderReady: p.paymentMethods.some((x) => x === 'contra_entrega' || x === 'efectivo') })
+    assert.equal(plan.handoff?.reason, 'order_ready')
+    const sB = deriveSalesState({ history: [msg('outbound', 'El combo queda en ₡20 900'), asked], inboundText: 'contra entrega, a nombre de Juan Pérez en Heredia centro', ctx: CTX })
+    assert.deepEqual([sB.stage, sB.chosenMethod], ['metodo_pago', 'contra_entrega'])
+    assert.match(sB.nextStep, /\[\[PAGO_CONTRA_ENTREGA\]\]/)
+    // A question (no choice) is never carried: no hand-off.
+    const q = deriveSalesState({ history: [msg('outbound', 'Queda en ₡15 900'), asked], inboundText: '¿hacen contra entrega a Cartago?', ctx: CTX })
+    assert.equal(q.chosenMethod ?? null, null)
+  })
+  it('N3: delivery wording is fine outside the COD closing turn; confirmations still blocked on it', () => {
+    for (const text of ['El envío sale mañana y llega en 2 días 😊', 'Si lo pedís hoy antes de las 2, sale hoy mismo por Correos.', 'Con la promo te sale hoy en ₡10 000', 'Tu pedido está listo para retirar en tienda']) {
+      assert.equal(validateAgentOutput({ text, citedToolNames: [], quoteAmounts: [10000] }).reasons.includes('write_claim'), false, text)
+    }
+    const cod = applyFinalOutputPolicy({ text: '¡Listo! Tu pedido quedó registrado ✅\n\n[[PAGO_CONTRA_ENTREGA]]', brandFacts: FACTS, paymentOptions: { ...salesPaymentOptions(CTX), chosenMethod: 'contra_entrega' } })
+    assert.ok(cod.reasons.includes('write_claim'))
+    const plan = planModelTurnDelivery({ text: cod.text, textOk: cod.ok, llmHandoff: null, codOrderReady: cod.paymentMethods.includes('contra_entrega') })
+    assert.deepEqual(plan, { text: 'Dame un momento y te confirmo 😊', handoff: { kind: 'handoff', reason: 'order_ready' } })
+    for (const text of ['Te lo mando mañana', 'Mañana te llega 😊', 'Quedó programado', 'Te lo despachamos hoy', 'Ya va en camino', 'Anoté tu pedido', 'Tu orden quedó lista']) {
+      const r = validateAgentOutput({ text, citedToolNames: [], orderClosing: true }).reasons
+      assert.ok(r.includes('write_claim'), text)
+    }
+  })
+  it('N4: wider choice grammar; one method + other content with the question pending → the model', () => {
+    for (const [text, method] of [['Prefiero pagar por sinpe', 'sinpe'], ['Te pago por sinpe', 'sinpe'], ['Por SINPE está bien', 'sinpe'], ['sinpe mejor', 'sinpe'], ['Prefiero pagar con tarjeta', 'tarjeta'], ['Por transferencia está bien', 'transferencia'], ['Tarjeta, por la web', 'tarjeta']] as const) {
+      assert.equal(paymentChoiceShape(text), method, text)
+      const d = decideInbound({ inboundText: text, brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: true })
+      assert.match(d.text, /^Perfecto 🙌\n/, text)
+    }
+    assert.equal(decideInbound({ inboundText: 'Sinpe 👍', brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: true }).handoff?.kind, 'handoff')
+    const mixed = decideInbound({ inboundText: 'Por sinpe y retiro en tienda', brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: true })
+    assert.equal(mixed.handled, false)
+    const s = deriveSalesState({ history: [msg('outbound', 'Queda en ₡15 900'), asked], inboundText: 'Por sinpe y retiro en tienda', ctx: CTX })
+    assert.equal(s.chosenMethod, 'sinpe')
+    // Never the method list again while the question is pending.
+    const again = decideInbound({ inboundText: '¿cómo puedo pagar?', brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: true })
+    assert.notEqual(again.shortcutKey, 'sys_payment_info')
+  })
+  it('N5: an order block is not "payment details": no receipt asked, a later photo is not a receipt because of it', async () => {
+    const { mediaAwaitingReceipt } = await import('@/lib/soft-ai/sales-state')
+    const hist = [msg('outbound', 'Queda en ₡15 900'), msg('inbound', 'contra entrega'), msg('outbound', COD_BLOCK)]
+    assert.equal(paymentDetailsIn(COD_BLOCK), false)
+    const s = deriveSalesState({ history: hist, inboundText: '¿y cuándo llega?', ctx: CTX })
+    assert.equal(s.stage, 'pedido_en_revision')
+    assert.doesNotMatch(s.nextStep, /mand[aá]me el comprobante/)
+    assert.equal(salesAwaitingReceipt(s), false)
+    assert.equal(mediaAwaitingReceipt('image', hist, null), false)
+    assert.equal(awaitingPaymentMethodChoice([...hist.slice(0, 1), asked, msg('outbound', COD_BLOCK)]), false)
+  })
+  it('N6: a cash order is its own review reason, same order review kind / tag', async () => {
+    const { reviewKindForHandoffCode, HANDOFF_REASON_LABELS } = await import('@/lib/workspace-notifications')
+    assert.equal(reviewKindForHandoffCode('order_ready_cash'), 'order_review')
+    assert.equal(HANDOFF_REASON_LABELS.order_ready_cash, 'Pidió pagar en efectivo — confirmá los datos')
+    assert.equal(planModelTurnDelivery({ text: 'x', textOk: true, llmHandoff: null, codOrderReady: true, orderReadyCash: true }).handoff?.reason, 'order_ready_cash')
+    assert.equal((read('src/lib/soft-ai/agent-turn.ts').match(/orderReadyCash: policy\.paymentMethods\.includes\('efectivo'\),/g) || []).length, 2)
+    assert.match(read('src/lib/soft-ai/handoff-notify.ts'), /code === 'order_ready' \|\| code === 'order_ready_cash'\) return ORDER_REVIEW_TAG/)
+  })
+  it('leftovers: single-bracket / bare token look-alikes are stripped; internal hrefs use the shared guard', async () => {
+    for (const text of ['Pagá así: [PAGO PAYPAL]', 'Usá PAGO-SINPE', 'Te paso los DATOS PAGO']) {
+      const p = applyFinalOutputPolicy({ text, brandFacts: FACTS })
+      assert.ok(p.reasons.includes('unknown_token'), text)
+    }
+    const { isSafeInternalHref } = await import('@/lib/notification-alerts')
+    for (const bad of ['/\t/evil.com', '/\n/evil.com', '//evil.com', '/\\evil.com', 'https://evil.com']) assert.equal(isSafeInternalHref(bad), false, JSON.stringify(bad))
+    assert.equal(isSafeInternalHref('/chats?c=abc'), true)
+  })
+})
+
+describe('Round 3 follow-up: intent phrasing is never a completion claim', () => {
+  it('the five phrases go to the agent (choice / model), never a hand-off', async () => {
+    const { classifyPaymentText } = await import('@/lib/soft-ai/payment-classifier')
+    for (const text of ['Listo, quiero pagar por sinpe', 'Lista, ¿por sinpe?', '¿El pago tiene que estar hecho antes del envío?', '¿El pedido es enviado después del pago?']) {
+      assert.notEqual(classifyPaymentText(text), 'payment_proof_or_risk', text)
+      for (const awaiting of [true, false]) {
+        const d = decideInbound({ inboundText: text, brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: awaiting })
+        assert.notEqual(d.handoff?.kind, 'handoff', `${text} (${awaiting})`)
+      }
+    }
+    // "por sinpe a nombre de X" with the question pending: the model, with SINPE chosen (no hand-off).
+    const named = decideInbound({ inboundText: 'por sinpe a nombre de María', brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: true })
+    assert.equal(named.handled, false)
+    const s = deriveSalesState({ history: [msg('outbound', '¿Cómo preferís pagar? Tenemos SINPE Móvil y tarjeta.')], inboundText: 'por sinpe a nombre de María', ctx: CTX })
+    assert.equal(s.chosenMethod, 'sinpe')
+  })
+  it('strong markers still win over intent wording; INT-114/115 positives still hand off in both states', () => {
+    for (const text of ['Quiero pagar por sinpe, ya lo hice ✅', 'Prefiero pagar por sinpe pero ya le había pagado al otro número', 'Quería pagar por sinpe, comprobante adjunto', 'Para pagar hice el sinpe de 15 mil']) {
+      const d = decideInbound({ inboundText: text, brandFacts: FACTS, shortcuts: SHORTCUTS })
+      assert.equal(d.handoff?.kind, 'handoff', text)
+    }
+    for (const text of CLAIMS) {
+      for (const awaiting of [true, false]) {
+        assert.equal(decideInbound({ inboundText: text, brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: awaiting }).handoff?.kind, 'handoff', `${text} (${awaiting})`)
+      }
     }
   })
 })

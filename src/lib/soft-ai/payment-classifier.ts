@@ -4,6 +4,8 @@
  * Information questions are payment_info_safe only when the cue is clear.
  */
 
+import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
+
 export type PaymentClassification = 'non_payment' | 'payment_info_safe' | 'payment_proof_or_risk'
 
 const PROOF_CUE_RE =
@@ -25,7 +27,7 @@ const INFO_CUE_RE =
   /\b(c[oó]mo\s+(pago|puedo\s+pagar|se\s+paga)|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|aceptan|n[uú]mero\s+(de\s+)?sinpe|sinpe\s+m[oó]vil|tarjeta|cuenta\s+(bancaria|iban)|transferencia)\b/i
 
 const COD_QUESTION_RE =
-  /(?<![\p{L}])(contra\s?entrega|pag(o|ar)\s+(al\s+recibir|cuando\s+(lo\s+|la\s+|me\s+)?(recib|lleg))|pago\s+en\s+efectivo\s+al)/iu
+  /(?<![\p{L}])(contra\s?entrega|pag(o|ar)\s+(al\s+recibir|cuando\s+(lo\s+|la\s+|me\s+)?(recib|lleg))|pago\s+en\s+efectivo\s+al|pag(o|ar)\s+(en|con)\s+efectivo(?![\p{L}]))/iu
 
 const PAY_NOUN = String.raw`(sinpe|pago|plata|dinero|transferencia|dep[oó]sito|comprobante|monto)`
 const W = String.raw`(?:\s+[\p{L}\p{N}₡.,]+){0,4}?\s+`
@@ -123,7 +125,8 @@ const SENT_AMOUNT_CLAIM_RE =
   /(?<![\p{L}])(envi[eé]|mand[eé]|pas[eé]|deposit[eé]|transfer[ií]|pagu[eé]|hice)(?:\s+\p{L}+){0,2}?\s+(?:₡\s?\d|\d+(?:[.,\s]\d{3})*\s*(?:mil|k|colones|rojos)(?![\p{L}])|\d{4,})/iu
 
 export function classifyPaymentText(text: string): PaymentClassification {
-  const value = text || ''
+  // SecureDog: full-width / invisible-character spellings ("ＳＩＮＰＥ ✅", "he\u200Bcho") are read as plain text.
+  const value = stripFormatChars((text || '').normalize('NFKC'))
   if (SENT_AMOUNT_CLAIM_RE.test(value)) return 'payment_proof_or_risk'
   if (
     PROOF_CUE_RE.test(value) ||
@@ -140,8 +143,21 @@ export function classifyPaymentText(text: string): PaymentClassification {
     return 'non_payment'
   }
   // INT-115: "Transferencia realizada", "tarjeta aprobada", "Listo, transferencia", ✅ — a claim, not an info question.
-  if (PAYMENT_COMPLETION_RE.test(value) && (INFO_CUE_RE.test(value) || PAYMENT_RE.test(value))) {
+  if (isPaymentCompletionClaim(value)) {
     return 'payment_proof_or_risk'
+  }
+  // Follow-up: future / intent phrasing ("Listo, quiero pagar por sinpe", "¿El pago tiene que estar hecho antes del
+  // envío?") and a bare method question after an "ok" ("Lista, ¿por sinpe?") are not claims — the agent answers.
+  // (A plain "¿cómo puedo pagar?" keeps the info path below: the method list.)
+  if (isPaymentIntentText(value) && !INFO_CUE_RE.test(value)) return 'non_payment'
+  // Only after an "ok / listo" and with "por / con" ("Lista, ¿por sinpe?"); a bare "sinpe?" stays ambiguous (a person).
+  if (
+    /[?¿]/.test(value) &&
+    LEADING_LISTO_RE.test(value) &&
+    /(?<![\p{L}])(?:por|con)(?![\p{L}])/iu.test(value) &&
+    paymentChoiceGrammar(value.replace(LEADING_LISTO_RE, '').replace(/[¿?]/g, ' '))
+  ) {
+    return 'non_payment'
   }
   if (INFO_CUE_RE.test(value)) {
     return 'payment_info_safe'
@@ -165,7 +181,7 @@ export function classifyPaymentText(text: string): PaymentClassification {
 
 /** Plain info questions about HOW the store takes payment (explicit list — never a generic "question" heuristic). */
 const PAYMENT_INFO_QUESTION_RE =
-  /(adelantad|anticipad|con\s+qu[eé]\s+banco|qu[eé]\s+bancos?|a\s+qu[eé]\s+(n[uú]mero|cuenta)|aceptan\s+(tarjetas?|sinpe|transferencias?|efectivo)|se\s+puede\s+pagar\s+con|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|cu[aá]ndo\s+(se\s+)?paga|pago\s+al\s+recibir|pagar\s+al\s+recibir)/iu
+  /(adelantad|anticipad|con\s+qu[eé]\s+banco|qu[eé]\s+bancos?|a\s+qu[eé]\s+(n[uú]mero|cuenta)|cu[aá]l\s+es\s+(el\s+|la\s+)?(n[uú]mero|sinpe|cuenta|iban)|me\s+pas[aá]s?\s+(el\s+n[uú]mero|los\s+datos|la\s+cuenta)|aceptan\s+(tarjetas?|sinpe|transferencias?|efectivo)|se\s+puede\s+pagar\s+con|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|cu[aá]ndo\s+(se\s+)?paga|pago\s+al\s+recibir|pagar\s+al\s+recibir)/iu
 /** Anything about the STATE of a payment or one already sent: never an info question (INT-93). */
 const PAYMENT_STATUS_CUE_RE =
   /(acredit|se\s+aplic|aplicad|proces|reflej|v[aá]lid|correct|problema|est[aá]\s+bien|va\s+bien|se\s+hizo|se\s+ve|aparec|qued[oó]|entr[oó]|lleg[oó]|recib|vieron|ya\s+(lo|la|les|te)\s+(envi[eé]|mand[eé]|pas[eé]|hice|deposit[eé]|transfer[ií])|(mi|su)\s+(pago|sinpe|transferencia|dep[oó]sito)|envi[eé]|mand[eé]|pas[eé]|hice|deposit[eé]|transfer[ií]|pagu[eé]|pagamos|cancel[eé]|(le|les|se\s+l[oa]s?)\s+(envi|mand|pas)|todo\s+bien|ya\s+est[aá])/iu
@@ -206,6 +222,70 @@ export function isCueFreePaymentChoiceText(text: string): boolean {
   )
 }
 
+const COMPLETION_WORD = String.raw`(?:realizad\p{L}*|hech[oa]s?|echo|enviad\p{L}*|list[oa]s?|lsito|exitos\p{L}*|aprobad\p{L}*|pagad\p{L}*|cancelad\p{L}*|completad\p{L}*|transferid\p{L}*|depositad\p{L}*)`
+const COMPLETION_PAY_NOUN = String.raw`(?:sinpe|transferencias?|pagos?|dep[oó]sitos?|tarjetas?|plata|dinero|comprobantes?)`
+/** A completion word within 2 words of a payment noun, either order ("transferencia realizada", "pagado con tarjeta"). */
+const COMPLETION_NEAR_RE = new RegExp(
+  String.raw`(?<![\p{L}])(?:${COMPLETION_PAY_NOUN}(?:\s+[\p{L}\p{N}]+){0,2}?\s+${COMPLETION_WORD}|${COMPLETION_WORD}(?:\s+[\p{L}\p{N}]+){0,2}?\s+${COMPLETION_PAY_NOUN})(?![\p{L}])`,
+  'iu',
+)
+/** Completion words that are about something else (N1): a price list, hand-made, shipping, the ORDER being ready. */
+const COMPLETION_NOT_PAYMENT_RE =
+  /(?<![\p{L}])(?:list[oa]s?\s+de\s+\p{L}+|hech[oa]s?\s+a\s+mano|(?:es|ser|son|sea|sean|ser[aá]n?|fue|fueron)\s+enviad\p{L}*|(?:est[aá]n?|tienen|tiene|tengo|tenga|tengan|queda|quede)\s+(?:\p{L}+\s+)?list[oa]s?)(?![\p{L}])/giu
+/** A leading "listo," / "ok listo" / "listo!" is agreement, not a completion. */
+const LEADING_LISTO_RE = /^\s*(?:(?:ok|okay|dale|bueno|perfecto)[\s,.!]+)?list[oa][\s,.!]+/iu
+/** Info questions (how / where / which number / do you accept): a question about paying, never a claim. */
+const INFO_QUESTION_CUE_RE = /c[oó]mo\s+(?:\p{L}+\s+){0,2}(?:pag\p{L}*|hago)|aceptan|reciben|a\s+qu[eé]\s+n[uú]mero|cu[aá]l\s+es|puedo\s+pagar|me\s+pas[aá]s?|tienen|se\s+puede|tiene\s+que|hay\s+que|deb[eo]\s/iu
+
+/**
+ * INT-115 narrowed (N1): a completion word is a payment CLAIM only next to a payment noun ("transferencia realizada",
+ * "pagado con tarjeta", "sinpe listo", "envío exitoso", ✅ with a payment noun), or — in a message with no question —
+ * paired with a payment noun anywhere ("Listo, transferencia"). Never: a leading "listo," / "ok listo", "lista de
+ * precios", "hechos a mano", "ser enviado", the order being "listo", or an info question ("Listo, ¿cómo pago?").
+ */
+/** Intent / future phrasing around paying: never a completion claim by itself. */
+const PAYMENT_INTENT_RE =
+  /(?<![\p{L}])(?:quiero\s+pagar|voy\s+a\s+pagar|prefiero\s+pagar|puedo\s+pagar|quisiera\s+pagar|para\s+pagar|(?:le|te|les)\s+pago|pagar[ií]a|tengo\s+que\s+pagar|hay\s+que\s+pagar|antes\s+del\s+env[ií]o|despu[eé]s\s+del\s+pago)(?![\p{L}])/iu
+/** Strong completion markers that win over intent wording ("ya pagué", ✅, an amount, a reference, "realizada"…). */
+const STRONG_COMPLETION_RE =
+  /[✅✔☑₡#\d]|(?<![\p{L}])(?:ref|ya|pagu[eé]|pagad\p{L}*|hab[ií]a|anterior|comprobante\p{L}*|realizad\p{L}*|exitos\p{L}*|aprobad\p{L}*|doble|error)(?![\p{L}])|ya\s+(?:lo\s+|la\s+|le\s+|te\s+|les\s+)?(?:hice|pagu[eé]|envi[eé]|mand[eé])/iu
+
+/**
+ * Follow-up to N1: intent phrasing with no strong completion marker and no claim / status cue (a leading "listo," /
+ * "ok listo" is an acknowledgement) — the customer is about to pay or asking about it.
+ */
+export function isPaymentIntentText(text: string): boolean {
+  const value = text || ''
+  if (!PAYMENT_INTENT_RE.test(value) || STRONG_COMPLETION_RE.test(value)) return false
+  const v = value.replace(LEADING_LISTO_RE, '')
+  return !(
+    PROOF_CUE_RE.test(v) ||
+    hasPaymentClaimCue(v) ||
+    CONFIRM_CUE_RE.test(v) ||
+    CONFIRM_PAYMENT_RE.test(v) ||
+    RISK_CUE_RE.test(v) ||
+    PAYMENT_STATUS_CUE_RE.test(v)
+  )
+}
+
+export function isPaymentCompletionClaim(text: string): boolean {
+  const value = text || ''
+  // Intent ("quiero pagar", "antes del envío") without a strong marker is never a completion claim.
+  if (PAYMENT_INTENT_RE.test(value) && !STRONG_COMPLETION_RE.test(value)) return false
+  // "Envío exitoso" (a SINPE notification) — "envío" alone is shipping ("¿el envío va pagado?" is a question).
+  if (/(?<![\p{L}])env[ií]o\s+exitos\p{L}*/iu.test(value)) return true
+  const hasNoun = new RegExp(`(?<![\\p{L}])${COMPLETION_PAY_NOUN}(?![\\p{L}])`, 'iu').test(value)
+  if (!hasNoun) return false
+  if (/[✅✔☑]/u.test(value)) return true
+  const question = /[?¿]/.test(value)
+  // Right next to a payment noun it is a claim even inside a question ("sinpe pagado, ¿me pasás el número de pedido?").
+  const cleaned = value.replace(LEADING_LISTO_RE, ' ').replace(COMPLETION_NOT_PAYMENT_RE, ' ')
+  if (COMPLETION_NEAR_RE.test(cleaned)) return true
+  if (question && INFO_QUESTION_CUE_RE.test(value)) return false
+  if (!question && new RegExp(`(?<![\\p{L}])${COMPLETION_WORD}(?![\\p{L}])`, 'iu').test(value.replace(COMPLETION_NOT_PAYMENT_RE, ' '))) return true
+  return false
+}
+
 /** A payment method a customer can name. */
 export type PaymentChoiceMethod = 'sinpe' | 'transferencia' | 'tarjeta' | 'contra_entrega' | 'efectivo'
 
@@ -232,9 +312,9 @@ function foldChoice(text: string): string {
     .trim()
 }
 
-const METHOD = String.raw`(sinpe(?: movil)?|transferencia|tarjeta|contra ?entrega|al recibir(?:lo|la)?|efectivo)`
-const LEAD = String.raw`(?:(?:prefiero|mejor|quiero pagar|voy a pagar|pago|quisiera pagar)\s+)?(?:(?:por|con|en)\s+)?(?:el\s+|la\s+)?`
-const TAIL = String.raw`(?:\s*,?\s*(?:porfa|por favor|gracias|pls))?[\s.!🙏😊🙌]*`
+const METHOD = String.raw`(sinpe(?: movil)?|transferencia(?: bancaria)?|tarjeta(?: de (?:credito|debito))?|contra ?entrega|al recibir(?:lo|la)?|efectivo)`
+const LEAD = String.raw`(?:(?:prefiero pagar|prefiero|mejor|quiero pagar|voy a pagar|quisiera pagar|(?:te|le|les) pago|pago)\s+)?(?:(?:por|con|en)\s+)?(?:el\s+|la\s+)?`
+const TAIL = String.raw`(?:\s*,?\s*(?:porfa|por favor|gracias|pls|esta bien|mejor|entonces|por la web|por la pagina|en la web|en la pagina)){0,3}[\s.!🙏😊🙌]*`
 const ASK_HEAD = String.raw`¿?\s*(?:me\s+(?:pasas|pasa|das|da)|cual\s+es|a\s+que)\s+(?:el\s+|los\s+|la\s+)?(?:numero|cuenta|link|datos)`
 const ASK_TAIL = String.raw`\s*\?*${TAIL}`
 /** "SINPE", "por sinpe porfa", "Prefiero SINPE 🙏", "pago al recibirlo", "en efectivo". */
@@ -248,8 +328,8 @@ const CHOICE_REJECT_RE = /[\d#₡¢$✅✔☑👍💸]|(?<![\p{L}])ref(?![\p{L}]
 
 function methodOf(word: string): PaymentChoiceMethod {
   if (word.startsWith('sinpe')) return 'sinpe'
-  if (word === 'transferencia') return 'transferencia'
-  if (word === 'tarjeta') return 'tarjeta'
+  if (word.startsWith('transferencia')) return 'transferencia'
+  if (word.startsWith('tarjeta')) return 'tarjeta'
   if (word === 'efectivo') return 'efectivo'
   return 'contra_entrega'
 }
@@ -271,12 +351,40 @@ export function paymentChoiceGrammar(text: string): { method: PaymentChoiceMetho
   return m ? { method: methodOf(m[1]), ask: true } : null
 }
 
+/** Loose method words (folded text) for the pending-question routes (N2 / N4). */
+const LOOSE_METHODS: Array<[RegExp, PaymentChoiceMethod]> = [
+  [/(?<![a-z])sinpe(?![a-z])/g, 'sinpe'],
+  [/(?<![a-z])transfer[a-z]*/g, 'transferencia'],
+  [/(?<![a-z])tarjeta(?![a-z])/g, 'tarjeta'],
+  [/(?<![a-z])(?:contra ?entrega|(?:pago |pagar )?al recibir(?:lo|la)?)(?![a-z])/g, 'contra_entrega'],
+  [/(?<![a-z])(?:efectivo|cash)(?![a-z])/g, 'efectivo'],
+]
+/** Status / dispute / problem words: a message with these is never routed as a choice (a person looks). */
+const STATUS_DISPUTE_RE =
+  /(?<![a-z])(?:cheque\p{L}*|chequ\p{L}*|verific\p{L}*|revis\p{L}*|avis\p{L}*|paso|camino|duplicad\p{L}*|doble|de mas|revers\p{L}*|anul\p{L}*|estafa|fraude|error|lleg\p{L}*|ver|vieron|deja|problema|falla\p{L}*|rechaz\p{L}*|devolu\p{L}*|reembols\p{L}*|cobr\p{L}*|ya)(?![a-z])/u
+
+/**
+ * N4: after the store's method question, a message that names exactly ONE method (loosely) with something else
+ * ("Por sinpe y retiro en tienda", "Sinpe. Lo hago en la noche") goes to the model with that method chosen — but only
+ * with no question mark, no digit / ₡ / ✅ 👍 💸 / ref, no claim, completion, status or dispute word. Pure.
+ */
+export function pendingMethodMention(text: string): PaymentChoiceMethod | null {
+  const raw = (text || '').normalize('NFKC').replace(FORMAT_CHARS_RE, '')
+  if (!raw.trim() || raw.length > 200 || /[?¿]/.test(raw) || CHOICE_REJECT_RE.test(raw)) return null
+  if (!isCueFreePaymentChoiceText(raw) || isPaymentCompletionClaim(raw) || PAYMENT_COMPLETION_RE.test(raw)) return null
+  const t = foldChoice(raw)
+  if (STATUS_DISPUTE_RE.test(t)) return null
+  const found = new Set<PaymentChoiceMethod>()
+  for (const [re, m] of LOOSE_METHODS) if (new RegExp(re.source, 'u').test(t)) found.add(m)
+  return found.size === 1 ? [...found][0] : null
+}
+
 /**
  * The method a message picks when it is SHAPED like a choice (paymentChoiceGrammar); `allowAsk` also accepts the strict
  * detail-ask forms. Also requires no claim / confirm / dispute cue (belt and braces). Pure.
  */
 export function paymentChoiceShape(text: string, opts: { allowAsk?: boolean } = {}): PaymentChoiceMethod | null {
-  if (!isCueFreePaymentChoiceText(text)) return null
+  // The whole-message allowlist grammar is the gate (its tail words — "está bien", "gracias" — are not claim cues).
   const g = paymentChoiceGrammar(text)
   return g && (opts.allowAsk || !g.ask) ? g.method : null
 }

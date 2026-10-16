@@ -9,6 +9,40 @@
 - Proof: tsc 0, eslint touched files 0, ai-usage-meter 6/6, test:soft-ai 750/750, test:soft-ai-agent 319/319,
   test:security 271/271. Not deployed.
 
+## 2026-10-16 — agents2-format round 3 follow-up: intent phrasing is never a completion claim (claudio/agents2-format)
+
+- Intent / future wording (quiero / voy a / prefiero / puedo / quisiera pagar, para pagar, le / te / les pago, pagaría,
+  tengo / hay que pagar, antes del envío, después del pago) without a strong marker (✅, ya + hice / pagué / envié /
+  mandé, realizad, exitos, aprobad, comprobante, había, digits / ₡ / ref) is not a claim → the agent answers. A leading
+  "listo, / ok listo" is an acknowledgement ("Lista, ¿por sinpe?"). A bare "sinpe?" still goes to a person.
+- pendingMethodMention: "nombre" is no longer a status word ("por sinpe a nombre de X" → model, SINPE chosen).
+- Proof: tsc 0, lint 0, test:soft-ai 760/760, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34. Not deployed.
+
+## 2026-10-16 — agents2-format round 3: integration verifier N1..N6 + SecureDog leftovers (claudio/agents2-format)
+
+- Merged claudio/agents2-phase1 (6bcba9ed: format + notify) into the branch first.
+- N1: a completion word is a payment claim only next to a payment noun (or paired with one in a message with no
+  question); never a leading "listo," / "ok listo", "lista de precios", "hechos a mano", "ser enviado", the order being
+  "listo", or an info question. "pago en efectivo" is a sales question; "¿cuál es el sinpe?" / "¿me pasás los datos?"
+  are info questions. classifyPaymentText reads NFKC + strips invisible characters first ("ＳＩＮＰＥ ✅").
+- N2: a contra-entrega / efectivo choice made since the store's last method question is carried to later turns
+  (the customer sends the order data next) → the COD token fills as an order → order_ready.
+- N3: "tu pedido / orden / compra" + registrado / anotado / confirmado / agendado is a write claim everywhere; the
+  order-closing patterns (sale hoy/mañana, agendé, te lo mando mañana, va en camino, anoté tu pedido, quedó
+  programado, tu orden quedó lista…) only on the contra-entrega / efectivo closing turn (safe line + order_ready).
+- N4: wider choice grammar ("Prefiero pagar por…", "Te pago por…", "… está bien", "… mejor", "Tarjeta, por la web",
+  "transferencia bancaria", "tarjeta de crédito"); with the method question pending, one method + other content and
+  no question / claim / status / dispute word → the model with that method chosen; the method list is never re-sent
+  while the question is pending.
+- N5: contra-entrega / efectivo blocks are orders, not payment details: new stage 'pedido_en_revision' (no receipt
+  asked), and a later photo is not a receipt because of that block.
+- N6: cash orders hand off with 'order_ready_cash' ("Pidió pagar en efectivo — confirmá los datos"), same order review
+  kind and tag.
+- Leftovers: single-bracket "[PAGO …]", "PAGO-SINPE", "DATOS PAGO" stripped + held; bell hrefs use safeReturnPath.
+- Proof: tsc 0, lint 0, test:soft-ai 758/758, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34. Not deployed.
+
 ## 2026-10-16 — agents2-format fix round: Verifier FAIL + integration verifier + SecureDog INT-114..118 (claudio/agents2-format)
 
 - INT-114 / Verifier #1 (HIGH): a payment-method choice is now an ALLOWLIST GRAMMAR over the whole message

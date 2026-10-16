@@ -6,6 +6,15 @@
 import { randomUUID } from 'node:crypto'
 import { probarWhy } from '@/lib/soft-ai/probar-why'
 import { probarOutcomeCodes } from '@/lib/soft-ai/test-engine/why'
+import {
+  afterHoursPromptLine,
+  afterHoursState,
+  applyAfterHoursText,
+  DEFAULT_BUSINESS_HOURS,
+  IN_HOURS,
+  type AfterHoursState,
+  type BusinessHours,
+} from '@/lib/soft-ai/business-hours'
 import { loadAgentSalesContext } from '@/lib/soft-ai/agent-sales-context'
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
@@ -129,8 +138,9 @@ function readPayload(payload: unknown): JobPayload {
 }
 
 /** A planned reply (B1) gets the sweep apology when the customer waited > 30 min (B9). Never on a payment hand-off. */
-function finalizePlannedText(plan: TurnDeliveryPlan, payload: JobPayload, triggerSentAt: Date): string {
-  if (plan.handoff?.kind === 'handoff') return plan.text
+function finalizePlannedText(plan: TurnDeliveryPlan, payload: JobPayload, triggerSentAt: Date, hours: AfterHoursState = IN_HOURS): string {
+  // agents2-hours: after hours a TRUE hand-off tells the customer when the team answers (code-owned text).
+  if (plan.handoff?.kind === 'handoff') return applyAfterHoursText(plan, hours, SAFE_LINE.review)
   return withDelayApology(plan.text, { sweep: Boolean(payload.sweep), messageAgeMs: Date.now() - triggerSentAt.getTime() })
 }
 
@@ -511,6 +521,9 @@ export async function executeAgentLayerTurn(
     return { status: 'skipped', reason: 'not_activated' }
   }
 
+  // agents2-hours: "Horario de atención" of this agent (off = 24/7, nothing changes).
+  const hours = afterHoursState(await loadBusinessHours(row.tenantId, resolved.agent.id), new Date())
+
   // Reuse persisted output on lease reclaim (exactly-once contentHash).
   const existing = await prisma.chatAgentTurn.findUnique({
     where: { automationDeliveryKey: row.deliveryKey },
@@ -544,6 +557,7 @@ export async function executeAgentLayerTurn(
       effectiveBehavior: behaviorForOperationMode(resolved.agent.operationMode),
       unlockedForSend: resolved.unlockedForSend,
       turnId: existing.id,
+      afterHours: hours,
       outputText: existing.outputText,
       outputHash: existing.outputHash,
       outputValidationOk:
@@ -615,7 +629,7 @@ export async function executeAgentLayerTurn(
       planDecisionDelivery({ text: decision.text, textOk: decision.textOk, handoff: decision.handoff }),
       await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
     )
-    const handledText = finalizePlannedText(plan, payload, trigger.sentAt)
+    const handledText = finalizePlannedText(plan, payload, trigger.sentAt, hours)
     const outputHash = hashSoftAiOutput(handledText)
     const handledMarkers: OutcomeMarkers = plannedMarkers(
       { needsHuman: decision.needsHuman, fallbackUsed: false, escalate: decision.escalate },
@@ -712,6 +726,7 @@ export async function executeAgentLayerTurn(
       shortcuts,
       replyAssets,
       startedAt: turnStartedAt,
+      afterHours: hours,
     })
   }
 
@@ -731,6 +746,7 @@ export async function executeAgentLayerTurn(
     replyImageShortcutIds: liveImageReplyIds,
     knowledge,
     decision,
+    afterHoursLine: afterHoursPromptLine(hours),
     salesContext: await loadAgentSalesContext({
       tenantId: row.tenantId,
       agentId: resolved.agent.id,
@@ -783,7 +799,7 @@ export async function executeAgentLayerTurn(
     }),
     await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
   )
-  const finalText = finalizePlannedText(modelPlan, payload, trigger.sentAt)
+  const finalText = finalizePlannedText(modelPlan, payload, trigger.sentAt, hours)
   const modelMarkers: OutcomeMarkers = plannedMarkers(
     { needsHuman, fallbackUsed: llm.fallbackUsed, escalate: llm.escalate },
     modelPlan.handoff,
@@ -903,6 +919,7 @@ export async function executeAgentLayerTurn(
     shortcuts,
     replyAssets,
     startedAt: turnStartedAt,
+    afterHours: hours,
   })
 }
 
@@ -941,7 +958,7 @@ async function persistDecidedTurn(input: {
  * B1 hand-off settlement, AFTER the text went out (or was blocked): a TRUE hand-off moves the chat to a person
  * (never over 'paused') and notifies; a review only notifies (chat stays on IA). Never throws.
  */
-async function settleHandoff(row: ClaimedChatAutomationJob, handoff: TurnHandoff): Promise<void> {
+async function settleHandoff(row: ClaimedChatAutomationJob, handoff: TurnHandoff, afterHours: AfterHoursState = IN_HOURS): Promise<void> {
   try {
     if (handoff.kind === 'handoff') {
       await prisma.chatConversation.updateMany({
@@ -955,6 +972,8 @@ async function settleHandoff(row: ClaimedChatAutomationJob, handoff: TurnHandoff
       socialAccountId: row.socialAccountId,
       kind: handoff.kind,
       reason: handoff.reason,
+      // agents2-hours: created now (the queue is ready in the morning) but quiet until the team is back.
+      quietUntil: afterHours.afterHours ? afterHours.opensAt : null,
     })
   } catch (error) {
     console.error('[soft-ai handoff]', { code: error instanceof Error ? error.name : 'error' })
@@ -970,12 +989,12 @@ async function finishDeliveryOrSuggest(
     result = await finishDeliveryOrSuggestInner(input)
   } finally {
     // Also when the send threw or was blocked (window / token / kill switch): the person must still get the chat.
-    if (input.handoff) await settleHandoff(input.row, input.handoff)
+    if (input.handoff) await settleHandoff(input.row, input.handoff, input.afterHours)
   }
   // F2: part of the reply did not go out (ambiguous send / kill switch / chat taken): a person is asked to look
   // (review alert, the chat stays as it is). Only the parts actually sent were written as messages.
   if (!input.handoff && result.status === 'delivered' && result.partialDelivery) {
-    await settleHandoff(input.row, { kind: 'review', reason: HANDOFF_REASON.review })
+    await settleHandoff(input.row, { kind: 'review', reason: HANDOFF_REASON.review }, input.afterHours)
   }
   // notifyHandoff already told the team: no second "La IA no respondió" alert.
   if (!input.handoff && (result.status === 'suggested' || result.status === 'skipped')) {
@@ -1036,6 +1055,8 @@ async function finishDeliveryOrSuggestInner(input: {
   persistedMode?: SoftAiAgentMode | null
   /** The text was decided by code before the model (keyword saved reply / system message): "Corregir" points to Respuestas guardadas. */
   codeDecided?: boolean
+  /** agents2-hours: this turn is outside the agent's "Horario de atención" (hand-off alerts are quiet until it opens). */
+  afterHours?: AfterHoursState
 }): Promise<AgentTurnDispatchResult> {
   const decisionBase = {
     effectiveBehavior: input.effectiveBehavior,
@@ -1407,6 +1428,15 @@ async function pacedFirstPartStop(tenantId: string, conversationId: string): Pro
   }
 }
 
+/** agents2-hours: this agent's "Horario de atención" (salesRules.businessHours). Never throws; default off (24/7). */
+async function loadBusinessHours(tenantId: string, agentId: string): Promise<BusinessHours> {
+  try {
+    return (await loadSalesSetup(tenantId, agentId)).salesRules.businessHours ?? DEFAULT_BUSINESS_HOURS
+  } catch {
+    return DEFAULT_BUSINESS_HOURS
+  }
+}
+
 /** agents2-pace: this agent's "Velocidad de respuesta" (salesRules.replyPace). Never throws; default 'natural'. */
 async function loadReplyPace(tenantId: string, agentId: string): Promise<ReplyPace> {
   try {
@@ -1478,6 +1508,8 @@ async function runAgentTestTurnInner(input: {
   sentImageIds?: string[]
   /** Meter label: automatic checks pass 'agent_test' so they don't count as manual Probar. */
   usageFeature?: 'probar' | 'agent_test'
+  /** agents2-hours: "Simular fuera de horario" (Probar only). */
+  simulateAfterHours?: boolean
 }): Promise<{
   text: string
   /** agents2-format: the messages a real chat would get (one bubble each in Probar); joined = text. */
@@ -1613,6 +1645,10 @@ async function runAgentTestTurnInner(input: {
   }
 
   const notSimulatedGates = [...PROBAR_NOT_SIMULATED_GATES]
+  // agents2-hours: Probar answers in hours unless the owner simulates the night (the quick check never does).
+  const probarHours = input.simulateAfterHours === true
+    ? afterHoursState(await loadBusinessHours(input.tenantId, runtimeAgent.id), new Date(), { simulate: true })
+    : IN_HOURS
   const probarInventoryIds = await loadMappedInventoryIds(input.tenantId, runtimeAgent.id)
   const probarMediaSalesContext = isMediaLikeMessageType(input.messageType)
     ? await loadAgentSalesContext({
@@ -1681,6 +1717,7 @@ async function runAgentTestTurnInner(input: {
       clientName: input.customerName ?? null,
       shortcuts,
       replyImageShortcutIds: probarImageReplyIds,
+      afterHoursLine: afterHoursPromptLine(probarHours),
       knowledge,
       decision,
       salesContext: await loadAgentSalesContext({
@@ -1738,7 +1775,7 @@ async function runAgentTestTurnInner(input: {
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
     })
-    text = plan.text
+    text = applyAfterHoursText(plan, probarHours, SAFE_LINE.review)
     handoff = plan.handoff
     intent = policy.intent
     shortcutKey = plan.text !== policy.text ? null : policy.purchaseSummaryAppended ? 'sys_purchase_summary' : llm.shortcutKey || null
@@ -1754,7 +1791,7 @@ async function runAgentTestTurnInner(input: {
     ]
   } else {
     const plan = planDecisionDelivery({ text: decision.text, textOk: decision.textOk, handoff: decision.handoff })
-    text = plan.text
+    text = applyAfterHoursText(plan, probarHours, SAFE_LINE.review)
     handoff = plan.handoff
     needsHuman = decision.needsHuman
     escalate = decision.escalate

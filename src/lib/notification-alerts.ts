@@ -18,7 +18,17 @@ export const POLL_HIDDEN_MS = 60_000
 /** On first load, alerts newer than this still chime / toast (the person just opened the app). */
 export const FIRST_LOAD_FRESH_MS = 2 * 60_000
 
-export type AlertItem = { id: string; kind: string; read: boolean; createdAt: string; title: string; snippet: string | null; href: string }
+export type AlertItem = {
+  id: string
+  kind: string
+  read: boolean
+  createdAt: string
+  title: string
+  snippet: string | null
+  href: string
+  /** agents2-hours: after-hours hand-off alert — quiet until this time, then part of the morning summary. */
+  quietUntil?: string
+}
 
 export function isReviewAlertKind(kind: string | null | undefined): kind is ReviewAlertKind {
   return kind === 'payment_review' || kind === 'order_review'
@@ -44,6 +54,8 @@ export function detectNewReviewAlerts(
   const alerts: AlertItem[] = []
   for (const it of items) {
     if (!isReviewAlertKind(it.kind)) continue
+    // agents2-hours: a night alert never chimes on its own (quiet at night, then the one morning summary).
+    if (it.quietUntil) continue
     const known = next.has(it.id)
     next.add(it.id)
     if (known || it.read) continue
@@ -55,6 +67,25 @@ export function detectNewReviewAlerts(
   }
   alerts.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
   return { alerts, seen: next }
+}
+
+/** agents2-hours: a night alert older than this after opening time is not announced any more (just listed). */
+export const MORNING_ANNOUNCE_WINDOW_MS = 12 * 60 * 60_000
+
+/**
+ * agents2-hours: unread after-hours alerts whose quiet time is over and that were not announced yet → one morning
+ * summary ("Tenés N pendientes de la noche"). Before opening time they stay quiet. Pure.
+ */
+export function detectMorningAlerts(items: AlertItem[], announced: ReadonlySet<string>, nowMs: number = Date.now()): AlertItem[] {
+  return items.filter((it) => {
+    if (it.read || !it.quietUntil || announced.has(it.id)) return false
+    const at = Date.parse(it.quietUntil)
+    return Number.isFinite(at) && at <= nowMs && nowMs - at <= MORNING_ANNOUNCE_WINDOW_MS
+  })
+}
+
+export function morningSummaryText(count: number): string {
+  return count === 1 ? 'Tenés 1 pendiente de la noche' : `Tenés ${count} pendientes de la noche`
 }
 
 export function unreadReviewCount(items: AlertItem[]): number {

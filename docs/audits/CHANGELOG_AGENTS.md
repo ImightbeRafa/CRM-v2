@@ -1,3 +1,24 @@
+## 2026-10-16 — agents2-hours: "Horario de atención" per agent (claudio/agents2-pace)
+
+- New per-agent `businessHours` {enabled, timezone 'America/Costa_Rica', windows [{day 0–6, open, close}] (≤ 3 per
+  day, close ≤ open = overnight), afterHoursNote ≤ 200} in ChatAgentSettings.salesRules (zod; no SQL). Default OFF =
+  24/7, no behaviour change. PUT checks the note with ownerTextProblem + no confirmations / deals / numbers.
+- Pure helpers (business-hours.ts): isWithinBusinessHours, nextOpening ("hoy / mañana / el lunes a las 8:00 a. m."),
+  afterHoursState, afterHoursPromptLine, applyAfterHoursText, night-key helpers.
+- After hours: the agent still sells; the user prompt gets the code-owned "Fuera de horario: …" line; a TRUE hand-off
+  (payment, order_ready[_cash], human_request, escalate, complaint; not owner_reply) sends a code-built after-hours text
+  (+ owner note; an order close keeps its checked reply and adds the line). Texts pass write-claim / confirmation /
+  deal / payment-status checks (tested).
+- Alerts: still created (+ tag) after hours, dedupe key suffix `:night-<opening s>`; the bell shows "🌙 fuera de
+  horario", never chimes them; the first poll after opening announces once "🌙 Tenés N pendientes de la noche"
+  (localStorage-remembered; 12 h window).
+- UI: "Usar horario de atención" card (7-row week, nota, "Ahora: dentro / fuera de horario") in ④ Probar y activar;
+  Probar "Simular fuera de horario" in Opciones de prueba avanzadas. Quick check always in hours.
+- Tests: agents2-hours.test.ts (16). Source asserts updated where signatures legitimately changed (settleHandoff /
+  finalizePlannedText extra arg, notifyHandoff quietUntil, night key suffix, bell's third router.push('/chats')).
+- Proof: tsc 0, lint 0, test:soft-ai 799/799, chat-harden 643/643, security 271/271, soft-ai-agent 319/319,
+  agentes-ui 34/34. Not deployed.
+
 ## 2026-10-16 — agents2-pace: "Velocidad de respuesta" + quick-check "por qué" (claudio/agents2-pace)
 
 - New per-agent `replyPace` ('instant' | 'natural' | 'calm', default 'natural', also for existing agents) stored in

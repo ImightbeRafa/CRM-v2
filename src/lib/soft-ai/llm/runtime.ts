@@ -65,6 +65,8 @@ export type SoftAiLlmRuntimeInput = {
   /** Sales flow (Phase A): code-owned selling rules, per-turn sales data, and the amounts that data makes valid. */
   salesSystemBlock?: string | null
   salesTurnBlock?: string | null
+  /** agents2-hours: "Fuera de horario: …" line for this turn (user prompt), null in hours. */
+  afterHoursLine?: string | null
   salesAllowedAmounts?: number[]
   /** Code says a person must follow up this turn (e.g. close with payment data not shareable). */
   salesNeedsHuman?: boolean
@@ -178,6 +180,7 @@ export async function runSoftAiLlmRuntime(
     clientName: input.clientName,
     linkedOrderId: input.linkedOrderId,
     salesTurnBlock: input.salesTurnBlock,
+    afterHoursLine: input.afterHoursLine,
   })
   const tools = softAiToolDefinitions(input.enabledTools)
   const promptCacheKey = buildSoftAiPromptCacheKey({

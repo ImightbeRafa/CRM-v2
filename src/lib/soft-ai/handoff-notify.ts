@@ -27,6 +27,7 @@ import {
   PAYMENT_CLAIM_KEY_SUFFIX,
 } from '@/lib/workspace-notifications'
 import { ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
+import { nightKeySuffix } from '@/lib/soft-ai/business-hours'
 import { hasPermission, type Role } from '@/lib/rbac'
 
 export type HandoffKind = 'handoff' | 'review'
@@ -181,6 +182,11 @@ export async function notifyHandoff(input: {
   socialAccountId?: string | null
   kind: 'handoff' | 'review'
   reason: string
+  /**
+   * agents2-hours: the hand-off happened outside the agent's "Horario de atención" — the alert and the tag are created
+   * now, but the bell keeps it quiet (no chime / toast / native notification) until this time (`:night-<s>` key).
+   */
+  quietUntil?: Date | null
 }): Promise<void> {
   try {
     if (!input.tenantId || !input.conversationId) return
@@ -242,6 +248,7 @@ export async function notifyHandoff(input: {
     }
 
     const key = handoffDedupeKey(input.kind, conv.id, handoffAnchor(lastInbound?.id), code)
+    const night = input.quietUntil ? nightKeySuffix(input.quietUntil) : ''
     const reviewKind = reviewKindForHandoffCode(code)
     if (reviewKind) {
       // Money / an order is waiting: the assignee AND every chat-team member (cap 10), even with an owner.
@@ -252,7 +259,7 @@ export async function notifyHandoff(input: {
         actorUserId: null,
         kind: reviewKind,
         userIds: recipients,
-        dedupeKey: () => reviewDedupeKey(key, reviewKind, lastInbound?.messageType),
+        dedupeKey: () => `${reviewDedupeKey(key, reviewKind, lastInbound?.messageType)}${night}`,
         conversationId: conv.id,
       })
       return
@@ -265,7 +272,7 @@ export async function notifyHandoff(input: {
       actorUserId: null,
       kind: 'ai_no_reply',
       userIds,
-      dedupeKey: () => key,
+      dedupeKey: () => `${key}${night}`,
       conversationId: conv.id,
     })
   } catch (error) {

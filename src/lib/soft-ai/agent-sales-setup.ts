@@ -12,6 +12,7 @@ import { EMPTY_PROMO, headlineHasNumberWords, parsePromo, type AgentPromo } from
 import { dealProblem } from '@/lib/soft-ai/llm/output-validator'
 import { hasConfirmationWording } from '@/lib/soft-ai/shortcuts'
 import { DEFAULT_REPLY_PACE, parseReplyPace, type ReplyPace } from '@/lib/soft-ai/reply-pace'
+import { DEFAULT_BUSINESS_HOURS, parseBusinessHours, type BusinessHours } from '@/lib/soft-ai/business-hours'
 
 export type SalesRules = {
   voice: string | null
@@ -19,6 +20,8 @@ export type SalesRules = {
   aiDisclosure: 'discreet' | 'transparent'
   /** agents2-pace: how fast the reply goes out in a real chat (reply-pace.ts). Missing / unknown = 'natural'. */
   replyPace?: ReplyPace
+  /** agents2-hours: "Horario de atención" (business-hours.ts). Missing / invalid = off (24/7). */
+  businessHours?: BusinessHours
   closing: string | null
   upsells: string | null
   objections: string | null
@@ -94,6 +97,7 @@ export const EMPTY_SALES_RULES: SalesRules = {
   voice: null,
   aiDisclosure: 'discreet',
   replyPace: DEFAULT_REPLY_PACE,
+  businessHours: DEFAULT_BUSINESS_HOURS,
   closing: null,
   upsells: null,
   objections: null,
@@ -119,6 +123,7 @@ export function parseSalesRules(raw: unknown): SalesRules {
     handoffWhen: text(r.handoffWhen, 800),
     aiDisclosure: r.aiDisclosure === 'transparent' ? 'transparent' : 'discreet',
     replyPace: parseReplyPace(r.replyPace),
+    businessHours: parseBusinessHours(r.businessHours),
     mustSay: list(r.mustSay, 10, 200),
     neverSay: list(r.neverSay, 10, 200),
     promo: parsePromo(r.promo),

@@ -153,6 +153,8 @@ export function AgentTestSandbox({
   const [text, setText] = useState('')
   const [messageType, setMessageType] = useState<'text' | 'image' | 'audio' | 'document' | 'video'>('text')
   const [windowOpen, setWindowOpen] = useState(true)
+  /** agents2-hours: answer as if outside the agent's "Horario de atención". */
+  const [simulateAfterHours, setSimulateAfterHours] = useState(false)
   const [customerName, setCustomerName] = useState('')
   const [conversationAiMode, setConversationAiMode] = useState<'ai_active' | 'human' | 'paused'>('ai_active')
   const [history, setHistory] = useState<WaBubble[]>([])
@@ -269,6 +271,7 @@ export function AgentTestSandbox({
             sentAt: bubble.at,
           })),
           windowOpen,
+          ...(simulateAfterHours ? { simulateAfterHours: true } : {}),
           customerName: customerName.trim() || undefined,
           conversationAiMode,
           sentImageIds: before.flatMap((bubble) => (bubble.images ?? []).map((img) => img.assetId)).slice(-30),
@@ -490,6 +493,11 @@ export function AgentTestSandbox({
       ) : null}
       <details className="mt-3">
         <summary className="cursor-pointer text-[12px] font-medium text-slate-500">Opciones de prueba avanzadas</summary>
+        <label className="mt-2 inline-flex items-center gap-1.5 text-xs text-slate-800" data-testid="probar-after-hours">
+          <input type="checkbox" checked={simulateAfterHours} disabled={!canEdit} onChange={(e) => setSimulateAfterHours(e.target.checked)} />
+          Simular fuera de horario
+          <span className={HINT}>(responde como de noche: avisa cuándo atiende el equipo)</span>
+        </label>
       <AgentInternalTests
         canEdit={canEdit}
         busy={busy}

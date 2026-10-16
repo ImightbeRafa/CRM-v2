@@ -317,7 +317,7 @@ describe('notify · F8 payment snippet: receipt vs claim', () => {
     assert.equal(paymentVariantFromDedupeKey(base), 'receipt')
     const src = read('src/lib/soft-ai/handoff-notify.ts')
     assert.match(src, /select: \{ id: true, messageType: true \}/)
-    assert.match(src, /dedupeKey: \(\) => reviewDedupeKey\(key, reviewKind, lastInbound\?\.messageType\)/)
+    assert.match(src, /dedupeKey: \(\) => `\$\{reviewDedupeKey\(key, reviewKind, lastInbound\?\.messageType\)\}\$\{night\}`/)
     // agents2-format N6: the cash-order variant also travels in the dedupe key (':order_ready_cash').
     assert.match(read('src/lib/workspace-notifications.ts'), /reviewNotificationText\(r\.kind, who, paymentVariantFromDedupeKey\(r\.dedupeKey\), orderIsCashFromDedupeKey\(r\.dedupeKey\)\)/)
   })
@@ -423,7 +423,9 @@ describe('SecureDog INFRA · notifications GET rate limit + client href guard', 
       assert.ok(!isSafeInternalHref(bad), String(bad))
     }
     const bell = read('src/components/aurora/shell/AuroraBell.tsx')
-    assert.equal(bell.match(/router\.push\(/g)?.length, 2)
+    // agents2-hours: + the morning summary's fixed '/chats' link.
+    assert.equal(bell.match(/router\.push\(/g)?.length, 3)
+    assert.equal(bell.match(/router\.push\('\/chats'\)/g)?.length, 1)
     assert.equal(bell.match(/if \(isSafeInternalHref\((top|n)\.href\)\) router\.push/g)?.length, 2)
   })
 })

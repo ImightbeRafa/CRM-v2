@@ -29,6 +29,8 @@ export const AgentTestRequestSchema = z.object({
   modelOverride: z.enum(CHAT_AGENT_MODEL_ALLOWLIST).optional(),
   /** Images this test chat already showed (asset ids): the agent never sends the same image twice. */
   sentImageIds: z.array(z.string().max(64)).max(30).default([]),
+  /** agents2-hours: Probar only — answer as if outside the agent's "Horario de atención". */
+  simulateAfterHours: z.boolean().optional(),
 })
 
 export type AgentTestRequest = z.infer<typeof AgentTestRequestSchema>

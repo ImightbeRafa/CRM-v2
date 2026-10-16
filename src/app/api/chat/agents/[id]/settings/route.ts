@@ -22,6 +22,8 @@ import { headlineHasNumberWords, parsePromo } from '@/lib/soft-ai/promo'
 import { dealProblem } from '@/lib/soft-ai/llm/output-validator'
 import { hasConfirmationWording } from '@/lib/soft-ai/shortcuts'
 import { DEFAULT_REPLY_PACE, replyPaceSchema } from '@/lib/soft-ai/reply-pace'
+import { BUSINESS_HOURS_TIMEZONE, businessHoursSchema, DEFAULT_BUSINESS_HOURS, type BusinessHours } from '@/lib/soft-ai/business-hours'
+import { ownerTextProblem } from '@/lib/soft-ai/agent-tuning-core'
 
 const settingsRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 20, identifier: 'chat-agent-settings' })
 
@@ -83,7 +85,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       loadSalesSetup(auth.tenantId, id).catch(() => null),
     ])
     return NextResponse.json(
-      { success: true, available, settings, knownStamps: stamps, aiDisclosure: sales?.salesRules.aiDisclosure ?? 'discreet', replyPace: sales?.salesRules.replyPace ?? DEFAULT_REPLY_PACE, promo: sales?.salesRules.promo ?? null },
+      { success: true, available, settings, knownStamps: stamps, aiDisclosure: sales?.salesRules.aiDisclosure ?? 'discreet', replyPace: sales?.salesRules.replyPace ?? DEFAULT_REPLY_PACE, businessHours: sales?.salesRules.businessHours ?? DEFAULT_BUSINESS_HOURS, promo: sales?.salesRules.promo ?? null },
       { headers: { 'Cache-Control': 'no-store' } },
     )
   } catch (error) {
@@ -223,6 +225,49 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
         tenantId: auth.tenantId,
       }).catch(() => {})
       return NextResponse.json({ success: true, replyPace: value })
+    }
+    // agents2-hours: "Horario de atención" (same salesRules jsonb). The after-hours note is owner text the customer
+    // reads as-is: same checks as a saved answer, no confirmations, no deals, no amounts in words.
+    if ('businessHours' in body) {
+      const parsed = businessHoursSchema.safeParse(body.businessHours)
+      if (!parsed.success) {
+        return NextResponse.json({ success: false, error: 'Horario inválido: revisá las horas de cada día.' }, { status: 400 })
+      }
+      let note: string | null = parsed.data.afterHoursNote?.trim() || null
+      if (note) {
+        const checked = ownerTextProblem(note, 'La nota fuera de horario')
+        if (!checked.ok) return NextResponse.json({ success: false, error: checked.error }, { status: 400 })
+        note = checked.text.trim()
+        if (hasConfirmationWording(note) || dealProblem(note, []) || headlineHasNumberWords(note) || /\d/.test(note)) {
+          return NextResponse.json({ success: false, error: 'La nota no puede tener montos ni números, ofertas ni “pago confirmado”.' }, { status: 400 })
+        }
+      }
+      const value: BusinessHours = { enabled: parsed.data.enabled, timezone: BUSINESS_HOURS_TIMEZONE, windows: parsed.data.windows, afterHoursNote: note }
+      const before = await loadSalesSetup(auth.tenantId, agent.id).catch(() => null)
+      try {
+        await saveSalesSetup(auth.tenantId, agent.id, { salesRules: { businessHours: value } }, auth.userId)
+      } catch (error) {
+        if (error instanceof SalesRulesTooLargeError) {
+          return NextResponse.json({ success: false, error: 'El guion de venta es demasiado largo: acortá algún texto o combo.' }, { status: 413 })
+        }
+        if (error instanceof SalesSetupNotReadyError) {
+          return NextResponse.json({ success: false, error: 'Este ajuste todavía no está disponible.' }, { status: 503 })
+        }
+        throw error
+      }
+      await logAuditEvent({
+        action: 'UPDATE',
+        entityType: 'ChatAgent',
+        entityId: agent.id,
+        entityName: agent.name,
+        description: 'Horario de atención del agente',
+        oldValues: { businessHours: before?.salesRules.businessHours ?? null },
+        newValues: { businessHours: value },
+        userId: auth.userId,
+        userRole: auth.role,
+        tenantId: auth.tenantId,
+      }).catch(() => {})
+      return NextResponse.json({ success: true, businessHours: value })
     }
     const patch: AgentSettingsPatch = {}
     if ('dailyTokenCap' in body) {

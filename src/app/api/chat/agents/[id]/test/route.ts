@@ -45,6 +45,7 @@ export async function POST(
       conversationAiMode: parsed.conversationAiMode,
       modelOverride: parsed.modelOverride,
       sentImageIds: parsed.sentImageIds,
+      simulateAfterHours: parsed.simulateAfterHours,
     })
     // Provider cost in dollars stays on the platform side (never shown to businesses).
     const { estimatedCostUsd: _platformOnlyCost, ...visible } = result as typeof result & { estimatedCostUsd?: number }

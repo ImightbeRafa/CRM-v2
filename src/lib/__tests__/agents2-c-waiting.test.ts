@@ -63,7 +63,7 @@ describe('C · contracts exported exactly as the spec says', () => {
     const notify = read('src/lib/soft-ai/handoff-notify.ts')
     assert.match(
       notify,
-      /export async function notifyHandoff\(input: \{\s*tenantId: string\s*conversationId: string\s*socialAccountId\?: string \| null\s*kind: 'handoff' \| 'review'\s*reason: string\s*\}\): Promise<void>/,
+      /export async function notifyHandoff\(input: \{\s*tenantId: string\s*conversationId: string\s*socialAccountId\?: string \| null\s*kind: 'handoff' \| 'review'\s*reason: string\s*(?:\/\*\*[\s\S]*?\*\/\s*quietUntil\?: Date \| null\s*)?\}\): Promise<void>/,
     )
   })
 })

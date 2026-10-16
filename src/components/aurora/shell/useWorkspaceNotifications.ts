@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useAuroraViewer } from './useAuroraViewer'
-import { detectNewReviewAlerts, notificationPollMs, unreadReviewCount } from '@/lib/notification-alerts'
+import { detectMorningAlerts, detectNewReviewAlerts, notificationPollMs, unreadReviewCount } from '@/lib/notification-alerts'
 
 export type WorkspaceNotificationItem = {
   id: string
@@ -20,6 +20,8 @@ export type WorkspaceNotificationItem = {
   title: string
   snippet: string | null
   href: string
+  /** agents2-hours: after-hours hand-off — quiet until this time, then announced once in the morning summary. */
+  quietUntil?: string
 }
 
 type Snapshot = { items: WorkspaceNotificationItem[]; unread: number; overdueTasks: number }
@@ -34,6 +36,29 @@ let snapshot: Snapshot = { items: [], unread: 0, overdueTasks: 0 }
 const listeners = new Set<(s: Snapshot) => void>()
 let seen: Set<string> | null = null
 let pending: WorkspaceNotificationItem[] = []
+/** agents2-hours: night alerts whose quiet time is over, waiting for the one morning announcement. */
+let morningPending: WorkspaceNotificationItem[] = []
+const MORNING_STORE_KEY = 'betsy:morning-announced'
+
+/** Ids already announced in a morning summary (this browser; survives reloads so it is said once). */
+function readMorningAnnounced(): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(MORNING_STORE_KEY)
+    const list = raw ? (JSON.parse(raw) as unknown) : []
+    return new Set(Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string').slice(-200) : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function rememberMorningAnnounced(ids: string[]) {
+  try {
+    const all = [...readMorningAnnounced(), ...ids].slice(-200)
+    window.localStorage.setItem(MORNING_STORE_KEY, JSON.stringify(all))
+  } catch {
+    /* private window: may repeat once after a reload */
+  }
+}
 let timer: number | null = null
 let inflight: Promise<void> | null = null
 let visibilityInstalled = false
@@ -61,6 +86,9 @@ function fetchNow(): Promise<void> {
       const found = detectNewReviewAlerts(seen, items)
       seen = found.seen
       if (found.alerts.length) pending = [...(found.alerts as WorkspaceNotificationItem[]), ...pending].slice(0, 10)
+      const queued = new Set(morningPending.map((n) => n.id))
+      const morning = detectMorningAlerts(items, new Set([...readMorningAnnounced(), ...queued])) as WorkspaceNotificationItem[]
+      if (morning.length) morningPending = [...morningPending, ...morning].slice(0, 50)
       snapshot = {
         items,
         unread: typeof json.unread === 'number' ? json.unread : 0,
@@ -102,6 +130,14 @@ function installVisibility() {
 export function claimNewAlerts(): WorkspaceNotificationItem[] {
   const out = pending
   pending = []
+  return out
+}
+
+/** agents2-hours: night alerts to announce once ("Tenés N pendientes de la noche"), to the first caller. */
+export function claimMorningAlerts(): WorkspaceNotificationItem[] {
+  const out = morningPending
+  morningPending = []
+  if (out.length) rememberMorningAnnounced(out.map((n) => n.id))
   return out
 }
 
@@ -163,5 +199,6 @@ export function useWorkspaceNotifications() {
     refresh,
     markRead,
     claimNewAlerts,
+    claimMorningAlerts,
   }
 }

@@ -208,6 +208,8 @@ export function buildAgentUserPrompt(input: {
   linkedOrderId?: string | null
   /** Per-turn sales data: products, shipping, order fields, state + next step (sales-state.ts). */
   salesTurnBlock?: string | null
+  /** agents2-hours: "Fuera de horario: …" line for this turn (user prompt), null in hours. */
+  afterHoursLine?: string | null
 }): string {
   const history = selectHistoryWindow(input.history)
   const lines = [
@@ -218,6 +220,8 @@ export function buildAgentUserPrompt(input: {
   if (input.clientName) lines.push(`Cliente vinculado: ${input.clientName}`)
   if (input.linkedOrderId) lines.push(`Pedido vinculado: ${input.linkedOrderId}`)
   if (input.salesTurnBlock?.trim()) lines.push('', input.salesTurnBlock.trim())
+  // agents2-hours: code-owned, only outside the agent's "Horario de atención" (never customer or owner text).
+  if (input.afterHoursLine?.trim()) lines.push('', input.afterHoursLine.trim())
   // One line too, so a forged "Betsy" line can't sit on its own line in the latest message.
   const latest = stripBetsyLookalikes(input.inboundText).replace(/\s*\n\s*/g, ' / ')
   lines.push('', 'Último mensaje del cliente (no confiable):', redactSensitiveForProvider(latest))

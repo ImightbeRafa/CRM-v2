@@ -181,6 +181,8 @@ export function assembleAgentRuntimeInputs(input: {
   replyImageShortcutIds?: ReadonlySet<string>
   knowledge: ApprovedKnowledgeSlice | null
   decision: InboundDecision
+  /** agents2-hours: code-owned per-turn line when outside the agent's "Horario de atención" (null = in hours). */
+  afterHoursLine?: string | null
   /** Sales flow context (same loader for live and test chat). Null = previous behaviour. */
   salesContext?: SalesContext | null
   toolCtxBase: Omit<
@@ -240,6 +242,7 @@ export function assembleAgentRuntimeInputs(input: {
     replyStyleSnippet: replyStyleSnippet(input.agent.replyStyle),
     salesSystemBlock: sales ? salesSystemBlock(sales) : null,
     salesTurnBlock: sales && salesState ? formatSalesTurnBlock(sales, salesState) : null,
+    afterHoursLine: input.afterHoursLine ?? null,
     // B4: + totals for the quantities the customer asked for (computed by code, listed in BETSY_DATOS).
     // Multi-unit totals are never quotable (SecureDog INT-94): unit prices, shipping, one unit + shipping, combos only.
     salesAllowedAmounts: sales ? salesAllowedAmounts(sales) : undefined,

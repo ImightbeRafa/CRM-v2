@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { AtSign, Bell, BellRing, Bot, CreditCard, ListChecks, Package } from 'lucide-react'
 import { showBellDot } from '@/lib/aurora-alerts'
-import { isReviewAlertKind, isSafeInternalHref, nativeNotificationText, titleWithCount } from '@/lib/notification-alerts'
+import { isReviewAlertKind, isSafeInternalHref, morningSummaryText, nativeNotificationText, titleWithCount } from '@/lib/notification-alerts'
 import { installNotificationSoundUnlock, playNotificationChime } from '@/lib/notification-sound'
 import { useToast } from '@/app/hooks/use-toast'
 import { ToastAction } from '@/app/components/ui/toast'
@@ -44,7 +44,24 @@ export function AuroraBell() {
   const pathname = usePathname()
   const { toast } = useToast()
   const [browserPerm, setBrowserPerm] = useState<NotificationPermission | 'unsupported'>('unsupported')
-  const { claimNewAlerts, markRead, items } = notes
+  const { claimNewAlerts, claimMorningAlerts, markRead, items } = notes
+
+  // agents2-hours: hand-offs that came in after hours stayed quiet; the first poll after opening says it once.
+  useEffect(() => {
+    const night = claimMorningAlerts()
+    if (!night.length) return
+    playNotificationChime()
+    toast({
+      title: `🌙 ${morningSummaryText(night.length)}`,
+      description: 'Llegaron fuera de horario; la IA ya les avisó cuándo los atienden.',
+      duration: 20_000,
+      action: (
+        <ToastAction altText="Ver chats" onClick={() => router.push('/chats')}>
+          Ver chats
+        </ToastAction>
+      ),
+    })
+  }, [items, claimMorningAlerts, router, toast])
 
   useEffect(() => {
     installNotificationSoundUnlock()

@@ -755,6 +755,7 @@ export async function probeAgent(input: {
   conversationAiMode?: 'ai_active' | 'human' | 'paused'
   modelOverride?: string
   sentImageIds?: string[]
+  simulateAfterHours?: boolean
 }) {
   return runAgentTestTurn(input)
 }

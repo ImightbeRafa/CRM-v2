@@ -13,6 +13,7 @@ import { isMissingRelation } from '@/lib/db-missing-relation'
 import { staffDisplayName } from '@/lib/display-name'
 import { hasPermission, type Role } from '@/lib/rbac'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
+import { quietUntilFromKey, stripNightSuffix } from '@/lib/soft-ai/business-hours'
 
 export const MENTION_MAX = 10
 export type NotificationKind =
@@ -56,7 +57,7 @@ export const HANDOFF_REASON_LABELS: Record<string, string> = {
 
 /** Handoff / review alerts reuse kind 'ai_no_reply' (already allowed by SQL 049); the key prefix tells them apart. */
 export function handoffNotificationText(dedupeKey: string, where: string): { title: string; snippet: string } | null {
-  const parts = String(dedupeKey || '').split(':')
+  const parts = stripNightSuffix(dedupeKey).split(':')
   if (parts[0] !== 'ai_handoff' && parts[0] !== 'ai_review') return null
   const snippet = HANDOFF_REASON_LABELS[parts[3] || ''] || (parts[0] === 'ai_handoff' ? 'Necesita a una persona' : 'Revisá el chat.')
   return parts[0] === 'ai_handoff'
@@ -96,12 +97,12 @@ export function paymentReviewVariant(lastInboundMessageType: string | null | und
 }
 
 export function paymentVariantFromDedupeKey(dedupeKey: string | null | undefined): PaymentReviewVariant {
-  return String(dedupeKey || '').endsWith(PAYMENT_CLAIM_KEY_SUFFIX) ? 'claim' : 'receipt'
+  return stripNightSuffix(dedupeKey).endsWith(PAYMENT_CLAIM_KEY_SUFFIX) ? 'claim' : 'receipt'
 }
 
 /** N6: an order review for a CASH order (hand-off code 'order_ready_cash' — the last part of the dedupe key). */
 export function orderIsCashFromDedupeKey(dedupeKey: string | null | undefined): boolean {
-  return String(dedupeKey || '').endsWith(':order_ready_cash')
+  return stripNightSuffix(dedupeKey).endsWith(':order_ready_cash')
 }
 
 /**
@@ -231,6 +232,13 @@ export type NotificationDto = {
   title: string
   snippet: string | null
   href: string
+  /** agents2-hours: after-hours hand-off — no chime / toast before this time (ISO); announced once after it. */
+  quietUntil?: string
+}
+
+/** agents2-hours: bell label "🌙 fuera de horario" + the quiet-until time for an after-hours alert. Pure. */
+export function withNightLabel(item: NotificationDto, quietUntil: Date): NotificationDto {
+  return { ...item, snippet: item.snippet ? `🌙 fuera de horario · ${item.snippet}` : '🌙 fuera de horario', quietUntil: quietUntil.toISOString() }
 }
 
 function chatHref(conversationId: string | null, clientId: string | null): string {
@@ -268,7 +276,12 @@ export async function listNotifications(tenantId: string, userId: string, limit 
 
     const items: NotificationDto[] = []
     const hidden: string[] = []
-    for (const r of rows) {
+    // agents2-hours: an after-hours hand-off alert carries `:night-<s>` (quiet until the team is back).
+    const quietById = new Map<string, Date>()
+    for (const raw of rows) {
+      const quietUntil = quietUntilFromKey(raw.dedupeKey)
+      if (quietUntil) quietById.set(raw.id, quietUntil)
+      const r = quietUntil ? { ...raw, dedupeKey: stripNightSuffix(raw.dedupeKey) } : raw
       const who = (r.actorUserId && actorName.get(r.actorUserId)) || 'Alguien del equipo'
       const where = r.conversationId && peer.get(r.conversationId) ? ` · ${peer.get(r.conversationId)}` : ''
       if (r.kind === 'mention') {
@@ -362,6 +375,10 @@ export async function listNotifications(tenantId: string, userId: string, limit 
           href: chatHref(r.conversationId, r.clientId),
         })
       }
+    }
+    for (let i = 0; i < items.length; i += 1) {
+      const quietUntil = quietById.get(items[i].id)
+      if (quietUntil) items[i] = withNightLabel(items[i], quietUntil)
     }
     // Notifications that can no longer be shown (deleted note, canceled task) never keep the dot on.
     if (hidden.length) {

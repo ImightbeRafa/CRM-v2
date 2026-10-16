@@ -162,7 +162,7 @@ describe('1. multi-message replies', () => {
     // #7: kill switch / chat taken by a person / paused → stop (fail-safe on read errors).
     assert.match(turn, /async function stopRemainingParts[\s\S]{0,400}readAgentKillState\(tenantId\)\)\.armed\) return true[\s\S]{0,300}conv\.aiMode === 'human' \|\| conv\.aiMode === 'paused'[\s\S]{0,60}catch \{\s*return true/)
     // F2: a partial reply asks a person to look (review alert; the chat stays as it is).
-    assert.match(turn, /result\.status === 'delivered' && result\.partialDelivery\) \{\s*await settleHandoff\(input\.row, \{ kind: 'review', reason: HANDOFF_REASON\.review \}\)/)
+    assert.match(turn, /result\.status === 'delivered' && result\.partialDelivery\) \{\s*await settleHandoff\(input\.row, \{ kind: 'review', reason: HANDOFF_REASON\.review \}, input\.afterHours\)/)
     assert.ok(turn.indexOf('await sendAgentImagesOnce(') < turn.indexOf('for (let i = 0; i < partsPlan.length; i += 1)'))
     assert.match(turn, /jobId_deliveryKey: \{ jobId: input\.row\.id, deliveryKey: input\.row\.deliveryKey \}/)
   })
@@ -562,7 +562,7 @@ describe('3b. contra entrega → order_ready hand-off', () => {
   it('both turn paths wire it (settleHandoff runs after the send through finishDeliveryOrSuggest)', () => {
     const turn = read('src/lib/soft-ai/agent-turn.ts')
     assert.equal((turn.match(/codOrderReady: policy\.paymentMethods\.some\(\(m\) => m === 'contra_entrega' \|\| m === 'efectivo'\),/g) || []).length, 2)
-    assert.match(turn, /if \(input\.handoff\) await settleHandoff\(input\.row, input\.handoff\)/)
+    assert.match(turn, /if \(input\.handoff\) await settleHandoff\(input\.row, input\.handoff, input\.afterHours\)/)
   })
 })
 

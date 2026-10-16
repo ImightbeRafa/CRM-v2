@@ -21,6 +21,7 @@ import { AgentQualityCard } from '@/app/config/agentes/AgentQualityCard'
 import { AgentInventoryCard } from '@/app/config/agentes/AgentInventoryCard'
 import { AgentDisclosureToggle } from '@/app/config/agentes/AgentDisclosureToggle'
 import { AgentReplyPaceToggle } from '@/app/config/agentes/AgentReplyPaceToggle'
+import { AgentBusinessHoursCard } from '@/app/config/agentes/AgentBusinessHoursCard'
 import { AgentPromoCard } from '@/app/config/agentes/AgentPromoCard'
 import { AgentRepliesCard } from '@/app/config/agentes/AgentRepliesCard'
 import { AgentBusinessCard } from '@/app/config/agentes/AgentBusinessCard'
@@ -767,6 +768,7 @@ export default function AgentesConfigPage() {
                     <p className="mb-2 text-[14px] font-semibold text-slate-900">④ Probar y activar</p>
                     <AgentDisclosureToggle key={`disc-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
                     <AgentReplyPaceToggle key={`pace-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
+                    <AgentBusinessHoursCard key={`hours-${selected.id}`} agentId={selected.id} canEdit={canEdit} />
                     <AgentTestSandbox
                       key={selected.id}
                       agentId={selected.id}

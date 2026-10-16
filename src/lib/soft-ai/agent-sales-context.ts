@@ -40,12 +40,21 @@ export async function loadAgentSalesContext(input: {
   agentId: string
   inventoryItemIds: string[] | null
   brandFacts: BrandFacts
+  /**
+   * N5 / V4: rethrow read failures instead of falling back (the test suite builder: a failed read must fail the run,
+   * never build a different suite and hash). Live turns keep the fail-soft default.
+   */
+  strict?: boolean
 }): Promise<SalesContext> {
   const ids = input.inventoryItemIds ?? []
+  const soft = <T,>(fallback: T) => (error: unknown): T => {
+    if (input.strict) throw error
+    return fallback
+  }
   const [setup, requirements, coverage, items] = await Promise.all([
-    loadSalesSetup(input.tenantId, input.agentId).catch(() => null),
-    loadOrderRequirements(input.tenantId).catch(() => null),
-    loadCoverage(input.tenantId).catch(() => []),
+    loadSalesSetup(input.tenantId, input.agentId).catch(soft(null)),
+    loadOrderRequirements(input.tenantId).catch(soft(null)),
+    loadCoverage(input.tenantId).catch(soft([] as Awaited<ReturnType<typeof loadCoverage>>)),
     ids.length > 0 && ids.length <= INLINE_CATALOG_MAX
       ? prisma.inventoryItem
           .findMany({
@@ -53,7 +62,7 @@ export async function loadAgentSalesContext(input: {
             select: { id: true, name: true, category: true, sellingPrice: true, currentStock: true, minStock: true },
             orderBy: { name: 'asc' },
           })
-          .catch(() => null)
+          .catch(soft(null))
       : Promise.resolve(null),
   ])
 

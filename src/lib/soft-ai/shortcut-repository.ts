@@ -40,6 +40,7 @@ export async function listRuntimeShortcuts(
       deliveryMode: row.deliveryMode === 'guide' ? 'guide' : 'verbatim',
       isActive: row.isActive,
       sortOrder: row.sortOrder,
+      createdAt: row.createdAt.toISOString(),
     }))
     const keys = new Set(fromDb.map((row) => row.key))
     const missing = seedRuntime().filter((seed) => !keys.has(seed.key))

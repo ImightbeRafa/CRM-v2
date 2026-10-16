@@ -44,8 +44,9 @@ export function fillPaymentToken(text: string, facts: BrandFacts): { text: strin
 
 const digitsOf = (s: string) => s.replace(/\D/g, '')
 export const PAY_WORDS_RE = /sinpe|iban|cuenta|transfer|dep[oó]sit|pag(ar|o|ás|as|ues)|n[uú]mero|plata|dinero|mand[aá]/iu
-// Digits joined by any common separator: spaces, dots, dashes (incl. en/em dash, minus), slashes, middle dots, "_".
-export const DIGIT_SEP = '[\\s.\\-\\u2010-\\u2015\\u2212/·_]{0,3}'
+// Digits joined by any common separator: spaces, dots, dashes (incl. en/em dash, minus, "--"), slashes, middle dots,
+// "_" (up to 4), or a single comma with no space ("8888,1234"; "9.900, 12.400" stays a list) — INT-105.
+export const DIGIT_SEP = '(?:[\\s.\\-\\u2010-\\u2015\\u2212/·_]{1,4}|,)?'
 const SEP = DIGIT_SEP
 export const CR_IBAN_RE = new RegExp(`CR${SEP}\\d{2}(?:${SEP}\\d){18}`, 'giu')
 /** 8+ digits with separators, optional +506 (a SINPE / phone / account number). */

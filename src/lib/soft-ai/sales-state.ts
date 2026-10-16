@@ -268,17 +268,23 @@ export function paymentDetailsIn(text: string): boolean {
   return /\bCR\s?\d{2}(?:[\s-]?\d{4}){4}[\s-]?\d{2}\b/i.test(text) || /(?<!\d)\d{4}[\s.-]?\d{4}(?!\d)/.test(text) || /\d{10,}/.test(text)
 }
 
-/** Customer / history text must not be able to imitate Betsy's data block or the store's own lines (prompt rule 13). */
-export function stripBetsyLookalikes(text: string): string {
+/**
+ * Customer / history text must not be able to imitate Betsy's data block or the store's own lines (prompt rule 13).
+ * `label` replaces a look-alike: "[texto del cliente]" for customer text; store (outbound) lines pass their own label so
+ * they are never called customer text (N2).
+ */
+export function stripBetsyLookalikes(text: string, label = '[texto del cliente]'): string {
   // Invisible characters first (INT-103): "BETSY+zero-width+DATOS" must not slip past the patterns below.
   return stripFormatChars(text)
     // The marker word itself, in any brackets / case / spacing / dot, is never allowed from the customer.
-    .replace(/BETSY[\s_.-]*DATOS/gi, '[texto del cliente]')
-    .replace(/regla de la tienda|precio total del combo|únicos precios de combo|promoci[oó]n activa|dato de betsy|aplicada por betsy|frase del due[nñ]o|estado de la venta|siguiente paso\s*:|etapa\s*:|calculado por betsy|productos que vend[eé]s|reglas? fijas?|\[\s*vos\s*\(\s*tienda\s*\)/gi, '[texto del cliente]')
-    // Notes addressed to the model, or posing as the business's own note in a correction (INT-103).
-    .replace(/nota\s+(?:para|al|a\s+la)\s+(?:el\s+|la\s+)?(?:asistente|agente|bot|ia|modelo|sistema)|nota\s+del\s+negocio|instrucci[oó]n(?:es)?\s+(?:para|del|de\s+la|al)\s+(?:el\s+|la\s+)?(?:asistente|agente|bot|ia|modelo|sistema)/giu, '[texto del cliente]')
-    // A numbered line like the fixed rules ("16) Pagos solo en…") could pose as one more rule.
-    .replace(/(^|\n)[ \t]*\(?\d{1,2}\)/g, '$1[texto del cliente]')
+    .replace(/BETSY[\s_.-]*DATOS/gi, label)
+    .replace(/regla de la tienda|precio total del combo|únicos precios de combo|promoci[oó]n activa|dato de betsy|aplicada por betsy|frase del due[nñ]o|estado de la venta|siguiente paso\s*:|etapa\s*:|calculado por betsy|productos que vend[eé]s|reglas? fijas?|\[\s*vos\s*\(\s*tienda\s*\)/gi, label)
+    // Notes addressed to the assistant, or posing as the business's own note in a correction (INT-103). Whole words
+    // only, and not "modelo" / "sistema" (N2: "¿trae instrucciones del modelo X100?" is a normal question).
+    .replace(/nota\s+(?:para|al|a\s+la)\s+(?:el\s+|la\s+)?(?:asistente|agente|bot|ia)(?![\p{L}])|nota\s+del\s+negocio|instrucci[oó]n(?:es)?\s+(?:para|del|de\s+la|al)\s+(?:el\s+|la\s+)?(?:asistente|agente|bot|ia)(?![\p{L}])/giu, label)
+    // A numbered line like the fixed rules ("16) Pagos solo en…") becomes "16." — the list stays readable (N2) but
+    // no longer looks like one more rule.
+    .replace(/(^|\n)([ \t]*)\(?(\d{1,2})\)/g, '$1$2$3.')
 }
 
 /** Code-owned selling rules (system instructions; stable per agent version). */

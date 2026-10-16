@@ -75,6 +75,8 @@ export type SoftAiLlmRuntimeInput = {
   salesFreeShipping?: boolean
   /** Store rule "envío gratis desde ₡X": the words pass only next to that amount (output-validator). */
   salesFreeShippingRule?: FreeShippingRule | null
+  /** INT-109: the brand's own domains — any other link in a reply is 'foreign_link'. */
+  brandDomains?: string[]
   /** Sales state for the turn trace (debug only; not sent to the model separately). */
   salesTrace?: { stage: string; said: Record<string, boolean> } | null
 }
@@ -422,6 +424,7 @@ export async function runSoftAiLlmRuntime(
         allowedDeals: input.salesAllowedDeals,
         freeShippingRule: input.salesFreeShippingRule,
         customerText: input.inboundText,
+        brandDomains: input.brandDomains,
         paymentContext: conversationPaymentContext(input.history, input.inboundText),
       })
     let validation = validate(finalText)
@@ -667,6 +670,7 @@ export const REPAIRABLE_REASONS: ReadonlySet<string> = new Set([
   'write_claim',
   'unit_cost_leak',
   'style_too_long',
+  'foreign_link',
 ])
 
 const REPAIR_REASON_TEXT: Record<string, string> = {
@@ -677,6 +681,7 @@ const REPAIR_REASON_TEXT: Record<string, string> = {
   write_claim: 'dijiste que ya creaste o registraste algo',
   unit_cost_leak: 'mencionaste un costo interno',
   style_too_long: 'quedó muy largo',
+  foreign_link: 'pusiste un enlace que no es del sitio del negocio (no pongas enlaces)',
 }
 
 /** Rewrite request (B7): only reason names from code, never customer text. */

@@ -22,6 +22,7 @@ import { loadAgentSalesContext } from '@/lib/soft-ai/agent-sales-context'
 import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import { salesAllowedAmounts, salesFreeShippingRule } from '@/lib/soft-ai/sales-state'
 import { redactPiiText } from '@/lib/soft-ai/llm/redact'
+import { turnWasCodeDecided } from '@/lib/soft-ai/turn-origin'
 import type { FreeShippingRule } from '@/lib/soft-ai/llm/output-validator'
 import {
   approveKnowledgeSource,
@@ -32,8 +33,8 @@ import {
 } from '@/lib/soft-ai/knowledge-admin'
 import { KNOWLEDGE_NAME_MAX } from '@/lib/soft-ai/knowledge-types'
 import { createShortcut, listShortcuts, shortcutErrorStatus } from '@/lib/soft-ai/shortcut-admin'
-import { isReservedShortcutKey, TUNE_SHORTCUT_PREFIX, validateShortcutForSave, type ShortcutDraft } from '@/lib/soft-ai/shortcuts'
-import { loadSalesSetup, saveSalesSetup, SalesRulesTooLargeError, SalesSetupNotReadyError } from '@/lib/soft-ai/agent-sales-setup'
+import { TUNE_SHORTCUT_PREFIX, validateShortcutForSave, type ShortcutDraft } from '@/lib/soft-ai/shortcuts'
+import { loadSalesSetup, lockAgentForSalesRules, saveSalesSetup, SalesRulesTooLargeError, SalesSetupNotReadyError } from '@/lib/soft-ai/agent-sales-setup'
 import {
   brandDomainsFrom,
   checkCorrectionText,
@@ -101,8 +102,8 @@ async function salesFactsFor(tenantId: string, agent: { id: string; brandFacts: 
 }
 
 /** The owner's text as written (invisible characters dropped), or a refusal naming the problem phrase (V9). */
-function ownerText(text: string, field: string, brandDomains: string[]): string {
-  const r = ownerTextProblem(text, field, brandDomains)
+function ownerText(text: string, field: string, brandDomains: string[], kind: 'answer' | 'rule' = 'answer'): string {
+  const r = ownerTextProblem(text, field, brandDomains, kind)
   if (!r.ok) throw new TuneRefusal(r.code, r.error)
   return r.text
 }
@@ -127,18 +128,36 @@ const tuningOf = (agentId: string) => ({ metadata: { path: ['agentTuning'], equa
 
 const isUniqueViolation = (error: unknown) => error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
 
-async function saveExample(tenantId: string, agent: { id: string; name: string }, question: string, answer: string, actor: Actor) {
-  // V10: the agent's own corrections document, wherever it is — approved or archived, bound or not — latest first.
-  const current = await prisma.chatKnowledgeSource.findFirst({
-    where: { tenantId, kind: 'faq', status: { in: ['approved', 'archived'] }, contentPurgedAt: null, ...tuningOf(agent.id) },
+/**
+ * INT-110 / N7: the document a new example continues from — ONLY the approved corrections version bound to this agent
+ * (the head of the chain the tune flow keeps; every version it replaces is marked metadata.agentTuningReplacedBy). If
+ * the owner archived, deleted or unbound it outside "Corregir", there is no head and a fresh document starts: an
+ * archived version is never revived on its own (its replacer is always the bound head when the chain is intact).
+ */
+async function currentCorrections(tenantId: string, agentId: string) {
+  const links = await prisma.chatAgentKnowledgeSource.findMany({ where: { tenantId, agentId }, select: { sourceId: true } })
+  if (!links.length) return null
+  return prisma.chatKnowledgeSource.findFirst({
+    where: { tenantId, kind: 'faq', status: 'approved', contentPurgedAt: null, id: { in: links.map((l) => l.sourceId) }, ...tuningOf(agentId) },
     orderBy: [{ createdAt: 'desc' }, { version: 'desc' }],
-    select: { id: true, name: true, body: true, version: true, status: true },
+    select: { id: true, name: true, body: true, version: true, status: true, metadata: true },
   })
+}
+
+/** Marks a version the tune flow replaced (traceability; only marked versions belong to the chain). */
+async function markReplaced(tenantId: string, sourceId: string, replacedBy: string) {
+  const row = await prisma.chatKnowledgeSource.findFirst({ where: { tenantId, id: sourceId }, select: { metadata: true } })
+  if (!row) return
+  await prisma.chatKnowledgeSource.updateMany({
+    where: { tenantId, id: sourceId },
+    data: { metadata: { ...asRecord(row.metadata), agentTuningReplacedBy: replacedBy } as Prisma.InputJsonValue },
+  })
+}
+
+async function saveExample(tenantId: string, agent: { id: string; name: string }, question: string, answer: string, actor: Actor) {
+  const current = await currentCorrections(tenantId, agent.id)
   const body = upsertCorrectionPair(current?.body ?? '', { question, answer })
-  if (current && current.status === 'approved' && current.body.trim() === body.trim()) {
-    const bound = await prisma.chatAgentKnowledgeSource.count({ where: { tenantId, agentId: agent.id, sourceId: current.id } })
-    if (bound) return { targetId: current.id, unchanged: true }
-  }
+  if (current && current.body.trim() === body.trim()) return { targetId: current.id, unchanged: true }
 
   let name = current?.name
   if (!name) {
@@ -160,14 +179,23 @@ async function saveExample(tenantId: string, agent: { id: string; name: string }
     ? await prisma.chatKnowledgeSource.findMany({ where: { tenantId, id: { in: links.map((l) => l.sourceId) }, ...tuningOf(agent.id) }, select: { id: true } })
     : []
   for (const s of stale) await unbindKnowledgeFromAgent({ tenantId, agentId: agent.id, sourceId: s.id, ...actor })
-  await purgeOldCorrections(tenantId, agent.id)
+  for (const id of new Set([...(current ? [current.id] : []), ...stale.map((s) => s.id)])) await markReplaced(tenantId, id, created.id)
+  // Best effort (DATA-52): the example is saved; trimming old versions must never fail it or skip the audit.
+  try {
+    await purgeOldCorrections(tenantId, agent.id)
+  } catch (error) {
+    console.warn('[agent-tuning] purge of old corrections versions failed', error instanceof Error ? error.name : 'unknown')
+  }
   return { targetId: created.id, unchanged: false }
 }
 
 /**
  * DATA-51: only the latest TUNE_VERSIONS_WITH_CONTENT versions keep their text. Older ARCHIVED versions keep the row
- * (history, hash, audit) with the body emptied and contentPurgedAt set — never a hard delete, never an approved row.
+ * (history, hash, audit) with the body replaced by '[purged]' (the body CHECK needs ≥ 1 char, like agent-retention.ts)
+ * and contentPurgedAt set — never a hard delete, never an approved row.
  */
+export const PURGED_BODY = '[purged]'
+
 async function purgeOldCorrections(tenantId: string, agentId: string) {
   const versions = await prisma.chatKnowledgeSource.findMany({
     where: { tenantId, kind: 'faq', contentPurgedAt: null, ...tuningOf(agentId) },
@@ -179,7 +207,7 @@ async function purgeOldCorrections(tenantId: string, agentId: string) {
   if (old.length) {
     await prisma.chatKnowledgeSource.updateMany({
       where: { tenantId, id: { in: old }, status: 'archived' },
-      data: { body: '', contentPurgedAt: new Date() },
+      data: { body: PURGED_BODY, contentPurgedAt: new Date() },
     })
   }
 }
@@ -216,7 +244,7 @@ async function saveSavedReply(tenantId: string, agentId: string, body: string, t
 async function saveRule(tenantId: string, agentId: string, note: string, actorUserId: string) {
   return prisma.$transaction(
     async (tx) => {
-      await tx.$queryRaw`SELECT "id" FROM "ChatAgent" WHERE "id" = ${agentId} AND "tenantId" = ${tenantId} FOR UPDATE`
+      await lockAgentForSalesRules(tx, tenantId, agentId)
       const setup = await loadSalesSetup(tenantId, agentId, tx)
       const placed = placeRule(setup.salesRules, note)
       if (!placed.text) throw new TuneRefusal('empty', 'La regla quedó vacía. Escribila completa, por ejemplo: "nunca prometas bajar de peso".')
@@ -297,16 +325,10 @@ export async function loadTuneSource(tenantId: string, agentId: string, messageI
     // Older messages (before replyBy / answersMessageId were recorded): the turn row knows both.
     const turn = await prisma.chatAgentTurn.findFirst({
       where: { id: meta.turnId, tenantId, agentId },
-      select: { triggerMessageId: true, shortcutKey: true },
+      select: { triggerMessageId: true, shortcutKey: true, inputTokens: true, outputTokens: true },
     })
     answersId = answersId ?? turn?.triggerMessageId ?? null
-    if (meta.replyBy === undefined && turn?.shortcutKey) {
-      if (isReservedShortcutKey(turn.shortcutKey) || turn.shortcutKey.startsWith('sys_')) decidedByCode = true
-      else {
-        const sc = await prisma.chatAgentShortcut.findFirst({ where: { tenantId, agentId, key: turn.shortcutKey }, select: { deliveryMode: true } })
-        if (sc?.deliveryMode === 'verbatim') decidedByCode = true
-      }
-    }
+    if (meta.replyBy === undefined && turn) decidedByCode = await turnWasCodeDecided(tenantId, agentId, turn)
   }
   if (!answersId) throw new TuneRefusal('customer_not_found', 'No encontramos el mensaje del cliente que respondió el agente.', 404)
   const customer = await prisma.chatMessage.findFirst({
@@ -367,11 +389,12 @@ export async function tuneAgent(input: { tenantId: string; agentId: string; body
   const facts = await salesFactsFor(tenantId, agent)
   // V9: the owner's wording is kept as written; markers, tags or links are refused, naming the phrase.
   const corrected = body.saveAs === 'rule' ? '' : ownerText(body.correctedReply, 'La respuesta', facts.brandDomains)
-  const note = body.note ? ownerText(body.note, 'La nota', facts.brandDomains) : null
+  const note = body.note ? ownerText(body.note, 'La nota', facts.brandDomains, body.saveAs === 'rule' ? 'rule' : 'answer') : null
   const title = body.title ? ownerText(body.title, 'El título', facts.brandDomains) : null
   if (body.saveAs !== 'rule') refuseIfBad(corrected, facts, 'La respuesta')
   // V7: a "nunca …" line names what NOT to say ("nunca digas que el pago está confirmado"): no wording / amount checks.
-  refuseIfBad(note, facts, 'La nota', note ? ruleTarget(note) === 'neverSay' : false)
+  // N6: only when the note IS the rule; a note riding on an example / saved reply always gets every check.
+  refuseIfBad(note, facts, 'La nota', body.saveAs === 'rule' && note ? ruleTarget(note) === 'neverSay' : false)
   refuseIfBad(title, facts, 'El título')
 
   let result: Omit<TuneResult, 'version'>

@@ -216,7 +216,7 @@ export async function buildSuite(tenantId: string, agent: { id: string; name: st
   // The grader sees the same selling data the agent sees (shipping, combos, allowed amounts) — 2026-10-15 quick check.
   // V4: no catch — a load failure must fail the run clearly, never build a different suite (and hash) silently.
   // An agent without a sales setup still gets a context (loadAgentSalesContext falls back to empty lists).
-  const salesCtx = await loadAgentSalesContext({ tenantId, agentId: agent.id, inventoryItemIds: mapped, brandFacts: facts })
+  const salesCtx = await loadAgentSalesContext({ tenantId, agentId: agent.id, inventoryItemIds: mapped, brandFacts: facts, strict: true })
   return generateAgentSuite({
     agentName: agent.name,
     systemInstructions: agent.systemInstructions || '',

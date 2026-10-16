@@ -17,6 +17,7 @@ import { redactPiiText, redactSensitiveForProvider } from '@/lib/soft-ai/llm/red
 import { DATA_FENCE_TAG_RE, stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import { CR_IBAN_RE, DIGIT_SEP, LONG_NUMBER_RE, PAY_WORDS_RE } from '@/lib/soft-ai/payment-guard'
 import { dealProblem, freeShippingRuleOk, type FreeShippingRule } from '@/lib/soft-ai/llm/output-validator'
+import { foreignLinks, linkRegex } from '@/lib/soft-ai/links'
 
 export const TUNE_SAVE_AS = ['example', 'saved_reply', 'rule'] as const
 export type TuneSaveAs = (typeof TUNE_SAVE_AS)[number]
@@ -79,38 +80,18 @@ const COLONES_AFTER_RE = /^\s*(?:mil\s+)?colones/i
 /** Digit runs of 6+ with payment-guard's separators ("8888 - 1234", "8888/1234", "8888–1234", "8888_1234"). */
 const SIX_DIGITS_RE = new RegExp(`(?<!\\d)\\d(?:${DIGIT_SEP}\\d){5,}(?!\\d)`, 'gu')
 
-/** TLDs that are links on their own ("bit.ly", "tienda.com"). */
-const STRONG_TLDS =
-  'com|net|org|cr|ly|io|app|link|info|biz|xyz|site|store|shop|online|gl|ws|club|top|live|gg|lat|tk|ml|ga|cf|click|website|tech|cc|ru|cn|lnk|bio|tienda|social|world|digital|company|dev'
-/** TLDs that are also Spanish / English words ("Gracias.De nada"): a link only with a path ("wa.me/506…"). */
-const WEAK_TLDS = 'co|me|be|to|us|es|mx|ai|page|tv|la|pe|ar|cl|ec|gt|hn|ni|pa|sv|ve|uy|py|bo|do|in|uk|de|fr|it|eu|fun|pro|one'
-const LINK_RE = new RegExp(
-  `(?:\\b(?:https?|ftp)://|\\bwww\\.)[^\\s<>"'«»]+|(?<![\\p{L}\\p{N}@.-])(?:[\\p{L}\\p{N}-]+\\.)+(?:(?:${STRONG_TLDS})(?![\\p{L}\\p{N}-])(?:[/?#][^\\s<>"'«»]*)?|(?:${WEAK_TLDS})/[^\\s<>"'«»]*)`,
-  'giu',
-)
+// INT-109: one generic link pattern (links.ts), shared with the live reply checker.
+export { brandDomainsFrom, linkHost, linksIn } from '@/lib/soft-ai/links'
 
-/** Links / bare domains in a text ("https://x.co", "www.x.com", "bit.ly/x9", "wa.me/506…"). */
-export function linksIn(text: string): string[] {
-  return [...stripFormatChars(text).matchAll(LINK_RE)].map((m) => m[0].replace(/[.,;:!?)\]]+$/, ''))
-}
-
-/** Host of a link, lowercased, without "www.". */
-export function linkHost(link: string): string {
-  return (link || '')
-    .toLowerCase()
-    .replace(/^[a-z]+:\/\//, '')
-    .replace(/^www\./, '')
-    .split(/[/?#:]/)[0]
-}
-
-/** The brand's own domains (website / catalog from brand facts), the only links a correction may carry. */
-export function brandDomainsFrom(urls: Array<string | null | undefined>): string[] {
-  return [...new Set(urls.map((u) => linkHost(u || '')).filter((h) => h.includes('.')))]
-}
-
-function isBrandLink(link: string, brandDomains: string[]): boolean {
-  const host = linkHost(link)
-  return brandDomains.some((d) => host === d || host.endsWith(`.${d}`))
+/**
+ * Save-time normalizer: NFKC, no invisible characters, and Arabic-Indic / Extended Arabic-Indic digits (U+0660–0669,
+ * U+06F0–06F9, which NFKC does not fold) as ASCII digits — "٨٨٨٨٨٨٨٨" is a payment number too (INT-105).
+ */
+export function tuneText(text: string): string {
+  return stripFormatChars(text).replace(/[\u{660}-\u{669}\u{6F0}-\u{6F9}]/gu, (d) => {
+    const c = d.codePointAt(0) ?? 0
+    return String(c >= 0x6f0 ? c - 0x6f0 : c - 0x660)
+  })
 }
 
 function maskLongDigits(text: string): string {
@@ -128,10 +109,10 @@ function maskLongDigits(text: string): string {
  * (redactPiiText + redactSensitiveForProvider), no < > [ ] { } or backticks, no numbered-rule "16)", one line, ≤ 200.
  */
 export function sanitizeTuneQuestion(text: string): string {
-  let t = stripFormatChars(text)
+  let t = tuneText(text)
   t = stripBetsyLookalikes(t)
   t = t.replace(EMAIL_RE, '…')
-  t = t.replace(LINK_RE, ' ')
+  t = t.replace(linkRegex(), ' ')
   t = maskLongDigits(t)
   t = redactSensitiveForProvider(redactPiiText(t))
   t = t.replace(DATA_FENCE_TAG_RE, ' ')
@@ -148,21 +129,29 @@ export function maskCustomerMessage(text: string): string {
 
 const firstWords = (text: string) => (text.match(/^\S+(?:\s+\S+){0,3}/)?.[0] ?? text).slice(0, 40)
 
+/** Betsy's own line forms (BETSY_DATOS block / fixed rules) at the start of a line or sentence (N9). */
+const BETSY_LINE_RE =
+  /(?:^|\n|[.!?]\s+)[ \t]*((?:promoci[oó]n\s+activa|siguiente\s+paso|etapa|estado\s+de\s+la\s+venta|reglas?\s+fijas?)\s*:)/iu
+
 /**
- * The owner's own text (answer, note, title) is never rewritten (V9): invisible characters go, and anything that could
- * pose as Betsy or the prompt (markers, tags, numbered rules, [[…]] tags other than [[DATOS_PAGO]], links that are not
- * the business's own site) is refused with the phrase named. Returns the cleaned text or the Spanish refusal.
+ * The owner's own text (answer, note, title) is never rewritten with markers (V9): invisible characters go, and only
+ * what could really pose as Betsy or the prompt is refused, naming the phrase (N9): Betsy's own line forms at the
+ * start of a line ("Promoción activa:", "Siguiente paso:", "Etapa:", "Estado de la venta:", "Reglas fijas:"), the
+ * BETSY_DATOS marker, fence / HTML tags, [[…]] other than [[DATOS_PAGO]], links that are not the business's own site,
+ * and — in a RULE only — a numbered "16)" line. In an answer a numbered list just becomes "1." "2." (kept readable).
  */
 export function ownerTextProblem(
   text: string,
   field: string,
   brandDomains: string[] = [],
+  kind: 'answer' | 'rule' = 'answer',
 ): { ok: true; text: string } | { ok: false; code: TuneRefusalCode; error: string } {
-  const clean = stripFormatChars(text).trim()
+  let clean = tuneText(text).trim()
   const numbered = clean.match(/(?:^|\n)[ \t]*(\(?\d{1,2}\))/)
-  if (numbered) {
-    return { ok: false, code: 'marker', error: `${field} tiene una línea numerada como «${numbered[1]}», igual que las reglas internas. Usá guiones en vez de números con paréntesis.` }
+  if (numbered && kind === 'rule') {
+    return { ok: false, code: 'marker', error: `${field} empieza con «${numbered[1]}», igual que las reglas internas. Escribila sin el número.` }
   }
+  clean = clean.replace(/(^|\n)([ \t]*)\(?(\d{1,2})\)/g, '$1$2$3.')
   const tag = clean.match(/<\s*\/?\s*[\p{L}_]|KNOWLEDGE[\s_-]*DATA/iu)
   if (tag) {
     const at = tag.index ?? 0
@@ -172,17 +161,15 @@ export function ownerTextProblem(
   if (bracket) {
     return { ok: false, code: 'marker', error: `${field} tiene «${bracket[0].slice(0, 40)}». La única marca permitida es [[DATOS_PAGO]].` }
   }
-  const stripped = stripBetsyLookalikes(clean)
-  if (stripped !== clean) {
-    let i = 0
-    while (i < clean.length && clean[i] === stripped[i]) i += 1
+  const marker = clean.match(/BETSY[\s_.-]*DATOS/i)?.[0] ?? clean.match(BETSY_LINE_RE)?.[1]
+  if (marker) {
     return {
       ok: false,
       code: 'marker',
-      error: `${field} tiene «${firstWords(clean.slice(i))}», que parece un texto interno del sistema. Escribilo con otras palabras.`,
+      error: `${field} tiene «${marker.slice(0, 40)}», que parece un texto interno del sistema. Escribilo con otras palabras.`,
     }
   }
-  const link = linksIn(clean).find((l) => !isBrandLink(l, brandDomains))
+  const link = foreignLinks(clean, brandDomains)[0]
   if (link) {
     const own = brandDomains.length ? ` Solo se permite el sitio de tu negocio (${brandDomains.join(', ')}).` : ' Solo se permite el sitio de tu negocio (configuralo en los datos del negocio).'
     return { ok: false, code: 'link', error: `${field} tiene un enlace («${link.slice(0, 40)}»).${own}` }
@@ -237,17 +224,36 @@ export function upsertCorrectionPair(body: string, pair: CorrectionPair, max = T
   return formatCorrectionPairs(pairs)
 }
 
-const NEVER_LEAD_RE = /^\s*(nunca|jam[aá]s|no|evit[aáe]\w*)(?![\p{L}\p{N}_])/iu
-const RULE_LEAD_RE = /^(siempre|nunca|jam[aá]s|no|evit[aáe]\w*)(?![\p{L}\p{N}_])[\s,:]*/iu
+/** "no" + a verb that forbids saying / doing something ("no digas", "no le prometas", INT-111). */
+const NO_PROHIBIT_RE =
+  /^\s*no\s+(?:(?:le|les|te|lo|la|los|las|se|me|nos)\s+)?(?:digas|prometas|ofrezcas|confirmes|menciones|des|uses|hables|inventes|compartas|mandes|env[ií]es|cobres|pidas|respondas|pongas)(?![\p{L}\p{N}_])/iu
+/** "No te olvides de …" / "no olvides …" / "no dejes de …": a reminder, i.e. "Siempre" (INT-111). */
+const NO_FORGET_LEAD_RE = /^\s*no\s+(?:te\s+olvides\s+de|olvides(?:\s+de)?|dejes\s+de)(?![\p{L}\p{N}_])[\s,:]*/iu
+const NEVER_WORD_RE = /^\s*(?:nunca|jam[aá]s|evit[aáe]\p{L}*)(?![\p{L}\p{N}_])/iu
+const LEAD_WORD_RE = /^\s*(?:siempre|nunca|jam[aá]s|evit[aáe]\p{L}*)(?![\p{L}\p{N}_])[\s,:]*/iu
 
-/** Where a note goes: "nunca …", "no …", "jamás …", "evitá …" → neverSay; anything else ("siempre …") → mustSay. */
+/**
+ * Where a note goes (INT-111): "nunca …", "jamás …", "evitá / evitar …" and "no" + a forbidding verb ("no digas",
+ * "no prometas", …) → neverSay. Anything else — "siempre …", "no te olvides de …", "no hay envíos los domingos" —
+ * → mustSay, and gets every check.
+ */
 export function ruleTarget(note: string): 'neverSay' | 'mustSay' {
-  return NEVER_LEAD_RE.test(note || '') ? 'neverSay' : 'mustSay'
+  const t = note || ''
+  if (NO_FORGET_LEAD_RE.test(t)) return 'mustSay'
+  return NEVER_WORD_RE.test(t) || NO_PROHIBIT_RE.test(t) ? 'neverSay' : 'mustSay'
 }
 
-/** The prompt already says "Siempre:" / "Nunca:", so the leading word goes ("evitá hablar de X" → "hablar de X"). */
+/**
+ * The prompt already says "Siempre:" / "Nunca:", so the leading word goes ("evitá hablar de X" → "hablar de X",
+ * "no digas X" → "digas X", "no te olvides de ofrecer el 2x1" → "ofrecer el 2x1"). Any other "no …" stays as written.
+ */
 export function ruleText(note: string): string {
-  const t = oneLine(note).replace(RULE_LEAD_RE, '').trim()
+  const one = oneLine(note)
+  let t: string
+  if (NO_FORGET_LEAD_RE.test(one)) t = one.replace(NO_FORGET_LEAD_RE, '')
+  else if (NO_PROHIBIT_RE.test(one)) t = one.replace(/^\s*no\s+/i, '')
+  else t = one.replace(LEAD_WORD_RE, '')
+  t = t.trim()
   return t ? t.slice(0, TUNE_NOTE_MAX) : ''
 }
 
@@ -281,9 +287,10 @@ const DIGIT_WORDS_RE = new RegExp(`(?<![\\p{L}])${DIGIT_WORD}(?:[\\s,.\\-y]+${DI
 
 /** Payment data never goes in a correction: only [[DATOS_PAGO]] (Betsy fills the numbers). */
 export function hasPaymentNumbers(text: string): boolean {
-  const t = stripFormatChars(text)
+  const t = tuneText(text)
   if (/\bCR\s?\d{2}(?:[\s-]?\d{4}){4}[\s-]?\d{2}\b/i.test(t)) return true
   if (new RegExp(CR_IBAN_RE.source, 'iu').test(t)) return true
+  // payment-guard's separators: "8888-1234", "8888 -- 1234", "8888,1234", "8888_1234", "8888/1234" (INT-105).
   for (const m of t.matchAll(new RegExp(LONG_NUMBER_RE.source, 'gu'))) {
     const at = m.index ?? 0
     // A big colón amount ("₡12.500.000", "12.500.000 colones") is an amount, not an account.
@@ -297,37 +304,80 @@ export function hasPaymentNumbers(text: string): boolean {
   return false
 }
 
-/** Colón amounts written in the text ("₡14.900", "¢5.000", "₡ 5000", "₡3 mil", "14 900 colones"). */
+/** Words after "N mil" that make it a count, not money ("2 mil años", "5 mil seguidores"). */
+const NOT_MONEY_AFTER = '(?!\\s+(?:años|personas|seguidores|clientes|unidades|pedidos|ventas))'
+
+/** Colón amounts written in the text ("₡14.900", "¢5.000", "₡ 5000", "₡3 mil", "15 mil", "15mil", "14 900 colones"). */
 export function colonAmountsIn(text: string): number[] {
   const out: number[] = []
-  const re = /[₡¢]\s?(\d{1,3}(?:[.,\s]\d{3})+|\d+)(\s*mil(?![\p{L}]))?|(?<![\d.,])(\d{1,3}(?:[.,\s]\d{3})+|\d+)(\s*mil)?\s*colones/giu
-  for (const m of stripFormatChars(text).matchAll(re)) {
-    const digits = (m[1] || m[3] || '').replace(/\D/g, '')
-    const thousand = Boolean(m[2] || m[4])
+  const re = new RegExp(
+    [
+      `[₡¢]\\s?(\\d{1,3}(?:[.,\\s]\\d{3})+|\\d+)(\\s*mil(?![\\p{L}]))?`,
+      `(?<![\\d.,])(\\d{1,3}(?:[.,\\s]\\d{3})+|\\d+)(\\s*mil)?\\s*colones`,
+      `(?<![\\d.,₡¢$\\p{L}])(\\d{1,3})\\s*mil(?![\\p{L}])${NOT_MONEY_AFTER}`,
+    ].join('|'),
+    'giu',
+  )
+  for (const m of tuneText(text).matchAll(re)) {
+    const digits = (m[1] || m[3] || m[5] || '').replace(/\D/g, '')
+    const thousand = Boolean(m[2] || m[4] || m[5])
     const n = Number(digits) * (thousand ? 1000 : 1)
     if (Number.isFinite(n) && n > 0) out.push(n)
   }
   return out
 }
 
+const BARE_NUMBER = '(?<![\\d.,/])(\\d{1,3}(?:[.,\\s]\\d{3})+|\\d{4,7})(?![\\d]|[.,/]\\d)'
 /** Bare amounts next to a price word ("cuesta 12000", "el combo queda en 17.900", INT-104). */
-const PRICE_WORD_AMOUNT_RE =
-  /(?<![\p{L}])(?:cuestan?|precios?|salen?|quedan?|valen?|total|env[ií]os?|combos?|pag(?:a|ás|as|an|ar))(?![\p{L}])[^\p{L}\p{N}]{0,3}(?:\p{L}+[^\p{L}\p{N}]{1,3}){0,3}?(?<![\d.,/])(\d{1,3}(?:[.,\s]\d{3})+|\d{4,7})(?![\d]|[.,/]\d)/giu
+const PRICE_WORD_AMOUNT_RE = new RegExp(
+  `(?<![\\p{L}])(?:cuestan?|precios?|salen?|quedan?|valen?|total|env[ií]os?|combos?|pag(?:a|ás|as|an|ar))(?![\\p{L}])[^\\p{L}\\p{N}]{0,3}(?:\\p{L}+[^\\p{L}\\p{N}]{1,3}){0,3}?${BARE_NUMBER}`,
+  'giu',
+)
+/** Right after "a / en / son / total / por" ("a 5.000", "Son 5.000 en total"). */
+const LEAD_AMOUNT_RE = new RegExp(`(?<![\\p{L}])(?:a|en|son|total|por)\\s+${BARE_NUMBER}`, 'giu')
+/** Followed by "cada uno", "c/u", "en total", "por unidad" ("5000 cada uno"). */
+const TRAIL_AMOUNT_RE = new RegExp(
+  `${BARE_NUMBER}\\s*(?:cada\\s+(?:uno|una|paquete|unidad|caja)|c\\s?\\/\\s?u(?![\\p{L}])|en\\s+total|por\\s+(?:unidad|paquete|caja))`,
+  'giu',
+)
+/** "Envíos desde 2019", "en el 2020", "del año 2018": a year, not an amount (N9). */
+const YEAR_BEFORE_RE = /(?:desde|año|años|en\s+el|del|el\s+año|hasta)\s*$/iu
+
+function bareAmounts(text: string, re: RegExp): number[] {
+  const out: number[] = []
+  for (const m of text.matchAll(re)) {
+    const num = m[1]
+    const at = (m.index ?? 0) + m[0].lastIndexOf(num)
+    if (/^(?:19|20)\d\d$/.test(num) && YEAR_BEFORE_RE.test(text.slice(0, at))) continue
+    const n = Number(num.replace(/\D/g, ''))
+    if (n > 0) out.push(n)
+  }
+  return out
+}
 
 export function priceWordAmountsIn(text: string): number[] {
-  return [...stripFormatChars(text).matchAll(PRICE_WORD_AMOUNT_RE)].map((m) => Number(m[1].replace(/\D/g, ''))).filter((n) => n > 0)
+  const t = tuneText(text)
+  return [...new Set([...bareAmounts(t, PRICE_WORD_AMOUNT_RE), ...bareAmounts(t, LEAD_AMOUNT_RE), ...bareAmounts(t, TRAIL_AMOUNT_RE)])]
 }
 
 const NUM_WORD =
   '(?:un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieci\\p{L}+|veinti?\\p{L}*|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscientos|trescientos|cuatrocientos|quinientos|seiscientos|setecientos|ochocientos|novecientos)'
+const WORD_AMOUNT = `(?:${NUM_WORD}\\s+mil(?:\\s+${NUM_WORD})*|mil(?:\\s+${NUM_WORD})*|${NUM_WORD}(?:\\s+${NUM_WORD})*)`
 /**
- * Amounts in words ("doce mil", "mil colones", "quince mil quinientos"). Narrower than promo.ts headlineHasNumberWords
- * on purpose: a reply often says "uno o dos" — only number words that make a money amount are refused.
+ * Amounts in words, only when they are money (N9): followed by colones / ₡-words ("doce mil colones", "mil rojos"),
+ * or right after a price word ("te sale en doce mil", "cuesta quince mil"). "dos mil años" / "uno o dos" are not.
+ * Narrower than promo.ts headlineHasNumberWords on purpose (a reply often says "uno o dos").
  */
-const AMOUNT_WORDS_RE = new RegExp(`(?<![\\p{L}])(?:${NUM_WORD}\\s+(?:mil|colones|rojos|tejas)|mil\\s+(?:colones|${NUM_WORD}))(?![\\p{L}])`, 'iu')
+const AMOUNT_WORDS_RE = new RegExp(
+  [
+    `(?<![\\p{L}])${WORD_AMOUNT}\\s+(?:colones|rojos|tejas)(?![\\p{L}])`,
+    `(?<![\\p{L}])(?:cuestan?|precios?|salen?|quedan?|valen?|total|env[ií]os?|combos?|pag\\p{L}*|son)(?![\\p{L}])\\s+(?:(?:en|a|de|por|el|la|los|las|solo|solamente)\\s+){0,2}(?:${NUM_WORD}\\s+mil|mil)(?:\\s+${NUM_WORD})*(?![\\p{L}])${NOT_MONEY_AFTER}`,
+  ].join('|'),
+  'iu',
+)
 
 export function hasAmountInWords(text: string): string | null {
-  return stripFormatChars(text).match(AMOUNT_WORDS_RE)?.[0] ?? null
+  return tuneText(text).match(AMOUNT_WORDS_RE)?.[0] ?? null
 }
 
 const fmt = (n: number) => `₡${n.toLocaleString('es-CR')}`

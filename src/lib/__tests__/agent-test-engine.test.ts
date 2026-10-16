@@ -268,8 +268,27 @@ describe('2026-10-15 PatchHouse quick check: the grader sees shipping, combos an
       /Montos válidos[^:]*: ₡3.000 = Envío a domicilio \(todo el país\); ₡9.900 = Dopamine Patch; ₡12.900 = Dopamine Patch \+ Envío a domicilio \(todo el país\); ₡17.900 = Combo 2 paquetes \(a elección\); ₡20.900 = Combo 2 paquetes \(a elección\) \+ Envío a domicilio \(todo el país\)\./,
     )
     const run = readFileSync('src/lib/soft-ai/test-engine/run.ts', 'utf8')
-    assert.match(run, /loadAgentSalesContext\(\{ tenantId, agentId: agent\.id, inventoryItemIds: mapped, brandFacts: facts \}\)/)
+    // N5 (round 2): strict — a read failure throws instead of building a different suite.
+    assert.match(run, /loadAgentSalesContext\(\{ tenantId, agentId: agent\.id, inventoryItemIds: mapped, brandFacts: facts, strict: true \}\)/)
     assert.match(run, /allowedAmounts: salesAllowedAmounts\(salesCtx\)/)
+  })
+
+  it('N4: an amount shared by several items lists them all ("cualquiera de" past 3); the judge accepts any of them', async () => {
+    const { judgeFacts } = await import('@/lib/soft-ai/test-engine/generate')
+    const { JUDGE_INSTRUCTIONS } = await import('@/lib/soft-ai/test-engine/grade')
+    const products = ['Alpha', 'Beta', 'Gamma', 'Delta'].map((name) => ({ name, sellingPrice: 9900, currentStock: 5 }))
+    const four = judgeFacts({ products, sales: { shipping: [], bundles: [], allowedAmounts: [9900] } })
+    assert.match(four, /₡9.900 = cualquiera de: Alpha, Beta, Gamma, Delta\./)
+    const two = judgeFacts({ products: products.slice(0, 2), sales: { shipping: [], bundles: [], allowedAmounts: [9900] } })
+    assert.match(two, /₡9.900 = Alpha o Beta\./)
+    assert.match(JUDGE_INSTRUCTIONS, /está bien para CUALQUIERA de ellos/)
+  })
+
+  it('N5: loadAgentSalesContext has a strict mode that rethrows read failures (live turns stay fail-soft)', () => {
+    const ctx = readFileSync('src/lib/soft-ai/agent-sales-context.ts', 'utf8')
+    assert.match(ctx, /strict\?: boolean/)
+    assert.match(ctx, /if \(input\.strict\) throw error/)
+    assert.doesNotMatch(ctx, /\.catch\(\(\) => null\)/)
   })
 
   it('V3: the judge is told an amount must match the item it is attached to; unlabelled amounts still listed', async () => {

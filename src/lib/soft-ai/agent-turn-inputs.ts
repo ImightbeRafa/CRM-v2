@@ -22,6 +22,7 @@ import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
 import type { InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import { guideShortcutCatalog, renderShortcutTemplate } from '@/lib/soft-ai/shortcuts'
+import { brandFactsDomains } from '@/lib/soft-ai/llm/output-validator'
 import {
   deriveSalesState,
   formatSalesTurnBlock,
@@ -240,6 +241,7 @@ export function assembleAgentRuntimeInputs(input: {
     salesAllowedDeals: sales ? salesAllowedDeals(sales) : [],
     salesFreeShipping: Boolean(sales?.promo?.freeShipping),
     salesFreeShippingRule: sales ? salesFreeShippingRule(sales) : null,
+    brandDomains: brandFactsDomains(input.agent.brandFacts),
     salesTrace: salesState ? { stage: salesState.stage, said: salesState.said } : null,
     toolCtx: {
       ...input.toolCtxBase,

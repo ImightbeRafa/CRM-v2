@@ -1,3 +1,25 @@
+## 2026-10-15 — "Corregir" round 2: DATA-52 blocker + INT-104/105/109/110/111 + N1–N9 (claudio/agents2-phase1)
+
+- DATA-52 / N1: purged corrections versions keep body '[purged]' (the 028 body CHECK needs ≥ 1 char; '' 500'd the 4th
+  save) and the purge is best-effort (never fails a saved example or skips its audit).
+- INT-104: "N mil" / "Nmil" = N×1000 with or without ₡/¢ in the live validator and at save; save also checks "a 5.000",
+  "Son 5.000 en total", "5000 cada uno", "c/u" (years after desde/año/en el and "2 a 4 días" are not amounts).
+- INT-105: "8888,1234" / "8888 -- 1234" (payment-guard separators), Arabic-Indic digits folded at save, "tu pago está ok".
+- INT-109: one generic link pattern (soft-ai/links.ts: any label.tld + "bit . ly", "bit(.)ly", "punto com"); new live
+  reason 'foreign_link' (model replies may only link the brand's website / catalog / maps domain; repairable; owner
+  saved replies sent by code are not checked) — same policy for live and Probar.
+- INT-110 / N7: a new example continues only from the approved corrections doc bound to the agent; replaced versions
+  are marked metadata.agentTuningReplacedBy; an owner-archived / unbound doc starts fresh.
+- INT-111 / N6: "nunca" = nunca / jamás / evitá / evitar / "no" + forbidding verb; "no te olvides de" = Siempre; the
+  never-exemption applies only to rule saves.
+- N2: conversation text keeps numbered lists ("1." "2."), no "modelo"/"sistema"/"bote" false hits, store lines never
+  labelled "[texto del cliente]". N3: ≤ 5 fix_* rows / 40% of the catalog, newest first (createdAt). N4: all items per
+  judge amount ("cualquiera de"). N5: loadAgentSalesContext strict mode for buildSuite. N8: reclaimed sends get the
+  right replyBy (turn-origin.ts). N9: owner text refused only for real Betsy line forms; numbered answers → "1.".
+- Lock: every saveSalesSetup without a tx now takes the agent-row lock (settings promo / aiDisclosure, Studio apply).
+- Proof: tsc 0, lint 0, test:soft-ai 645/645, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34.
+
 ## 2026-10-15 — "Corregir" + quick-check grader: SecureDog INT-103…108 / DATA-51 + Verifier V1…V11 fixes (claudio/agents2-phase1)
 
 - INT-103: customer text is sanitized before it can reach a corrections document (sanitizeTuneQuestion: NFKC, invisible/bidi/NEL

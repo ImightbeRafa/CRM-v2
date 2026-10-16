@@ -111,7 +111,9 @@ export function judgeFacts(input: Pick<SuiteInput, 'products' | 'sales'>): strin
     const amounts = [...new Set(sales.allowedAmounts.map((a) => Math.round(a)))].sort((a, b) => a - b).slice(0, 40)
     const rows = amounts.map((a) => {
       const l = labels.get(a)
-      return l?.length ? `${money(a)} = ${l.slice(0, 2).join(' o ')}` : money(a)
+      // N4: every item that shares the amount, never truncated ("cualquiera de: …" past 3).
+      if (!l?.length) return money(a)
+      return l.length > 3 ? `${money(a)} = cualquiera de: ${l.join(', ')}` : `${money(a)} = ${l.join(' o ')}`
     })
     parts.push(`Montos válidos (cada monto vale solo para lo que dice): ${rows.join('; ')}.`)
   }

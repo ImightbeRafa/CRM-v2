@@ -15,6 +15,7 @@ import { hasConfirmationWording, renderShortcutTemplate, shortcutByKey, type Run
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
 import { fillPaymentToken, paymentNumberProblems } from '@/lib/soft-ai/payment-guard'
 import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
+import { brandDomainsFrom, foreignLinks } from '@/lib/soft-ai/links'
 
 /**
  * Backstop for short payment confirmations the confirmation-wording check misses ("Sí, ya se acreditó", "Sí, lo
@@ -22,7 +23,7 @@ import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
  * chat goes to a person (SecureDog INT-93). Delivery wording ("te llega en 2 a 4 días") is not matched.
  */
 const PAYMENT_STATUS_REPLY_RE =
-  /(acredit|se\s+aplic|aplicad[oa]|reflej|(nos|me)\s+(lleg|entr)[oó]|ya\s+(nos\s+|me\s+)?(lleg|entr)[oó]|recibimos|recibido|lo\s+vimos|la\s+vimos|lo\s+tenemos|todo\s+en\s+orden|est[aá]\s+en\s+orden|es\s+correct[oa]|est[aá]\s+confirmad[oa]|qued[oó]\s+(pagad|confirmad)|lleg[oó]\s+bien|todo\s+(bien|listo|sali[oó])|ya\s+est[aá](?![\p{L}])|ya\s+se\s+hizo|(ning[uú]n|sin)\s+problema|list[oa]\s+(tu|el|su)\s+pago)/iu
+  /(acredit|se\s+aplic|aplicad[oa]|reflej|(nos|me)\s+(lleg|entr)[oó]|ya\s+(nos\s+|me\s+)?(lleg|entr)[oó]|recibimos|recibido|lo\s+vimos|la\s+vimos|lo\s+tenemos|todo\s+en\s+orden|est[aá]\s+en\s+orden|es\s+correct[oa]|est[aá]\s+confirmad[oa]|qued[oó]\s+(pagad|confirmad)|lleg[oó]\s+bien|todo\s+(bien|listo|sali[oó])|ya\s+est[aá](?![\p{L}])|ya\s+se\s+hizo|(ning[uú]n|sin)\s+problema|list[oa]\s+(tu|el|su)\s+pago|(?<![\p{L}])(?:est[aá]|qued[oó]|sali[oó]|todo)\s+(?:ok|okay|okey|oki)(?![\p{L}])|(?:tu|el|su)\s+pago\s+(?:\p{L}+\s+)?(?:ok|okay|okey)(?![\p{L}]))/iu
 
 export type OutputValidationResult = {
   ok: boolean
@@ -175,16 +176,27 @@ const PURCHASE_INTENTS = new Set<AgentIntent>(['price', 'how_to_buy'])
 
 export function extractMoneyAmounts(text: string): number[] {
   // NFKC: the full-width "￠" becomes "¢" (INT-104: "¢" is a colón sign too).
-  const matches = (text || '').normalize('NFKC').matchAll(/[₡¢$]\s?(\d(?:[\d.\s]*\d)?)|\b(\d[\d.,]*)\s*(?:colones|crc|usd)\b/gi)
+  // "N mil" / "Nmil" is N × 1000, with or without a currency sign ("₡15 mil", "¢15 mil", "15 mil colones", "cuesta
+  // 15 mil"); "2 mil años" is not money (INT-104).
+  const matches = (text || '').normalize('NFKC').matchAll(MONEY_AMOUNT_RE)
   const amounts: number[] = []
   for (const match of matches) {
-    const raw = (match[1] || match[2] || '').replace(/\s/g, '')
+    const raw = (match[1] || match[3] || match[5] || '').replace(/\s/g, '')
+    const thousand = Boolean(match[2] || match[4] || match[5])
     const normalized = raw.replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.')
-    const value = Number(normalized)
+    const value = Number(normalized) * (thousand ? 1000 : 1)
     if (Number.isFinite(value) && value > 0) amounts.push(value)
   }
   return amounts
 }
+
+/** The brand's own domains: website, catalog and maps link from brand facts (INT-109). */
+export function brandFactsDomains(facts: Pick<BrandFacts, 'website' | 'catalogUrl' | 'location'> | null | undefined): string[] {
+  return brandDomainsFrom([facts?.website, facts?.catalogUrl, facts?.location?.mapsUrl])
+}
+
+const MONEY_AMOUNT_RE =
+  /[₡¢$]\s?(\d(?:[\d.\s]*\d)?)(\s*mil(?![\p{L}]))?|(?<![\d.,\p{L}])(\d[\d.,]*)(\s*mil)?\s*(?:colones|crc|usd)(?![\p{L}])|(?<![\d.,₡¢$\p{L}])(\d{1,3})\s*mil(?![\p{L}])(?!\s+(?:años|personas|seguidores|clientes|unidades))/giu
 
 function amountAllowed(amount: number, allowed: number[]): boolean {
   const rounded = Math.round(amount)
@@ -207,12 +219,18 @@ export function validateAgentOutput(input: {
   customerText?: string
   /** The conversation is about a payment (recent payment words / media / payment already discussed): same backstop. */
   paymentContext?: boolean
+  /**
+   * INT-109: the brand's own domains (links.ts brandDomainsFrom of the brand facts). When given, any other link or
+   * domain in the reply is 'foreign_link' (none configured → every link is foreign). Undefined = not checked.
+   */
+  brandDomains?: readonly string[] | null
 }): OutputValidationResult {
   const reasons: string[] = []
   const text = input.text || ''
   const cited = new Set(input.citedToolNames)
   const highlighted: number[] = []
 
+  if (input.brandDomains && foreignLinks(text, input.brandDomains).length > 0) reasons.push('foreign_link')
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
   if (CREATED_CLAIM_RE.test(text)) reasons.push('write_claim')
   if (dealProblemWithRule(text, input.allowedDeals ?? [], input.freeShippingRule)) reasons.push('deal_offer')
@@ -325,6 +343,11 @@ export function applyFinalOutputPolicy(input: {
    * line + the final question) instead of being held for a person. Off for the owner's own saved replies.
    */
   shortenLongReply?: boolean
+  /**
+   * INT-109: the text was written by the model (live turn / Probar): any link outside the brand's own site is
+   * 'foreign_link'. Off for the owner's own saved replies sent by code (inbound-decision), which are the owner's text.
+   */
+  linkCheck?: boolean
 }): FinalOutputPolicy {
   const facts = input.brandFacts || { schemaVersion: 1 }
   const style = input.replyStyle || DEFAULT_REPLY_STYLE
@@ -391,6 +414,8 @@ export function applyFinalOutputPolicy(input: {
     allowedDeals: input.allowedDeals,
     freeShippingRule: input.freeShippingRule,
     customerText: input.customerText,
+    // INT-109: live and Probar both come through here — a reply may only link the brand's own site.
+    brandDomains: input.linkCheck ? brandFactsDomains(facts) : undefined,
   })
 
   const merged = [...new Set([...reasons, ...validated.reasons])]

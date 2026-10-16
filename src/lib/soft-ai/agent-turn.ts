@@ -101,6 +101,7 @@ import {
 } from '@/lib/soft-ai/agent-mode-server'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 import { readSoftTenantAiConfig } from '@/lib/feature-flags'
+import { turnWasCodeDecided } from '@/lib/soft-ai/turn-origin'
 
 type JobPayload = {
   platform?: string | null
@@ -518,8 +519,11 @@ export async function executeAgentLayerTurn(
     const planned = reclaimed?.planned === true
     const reclaimedHandoff: TurnHandoff | null =
       planned && reclaimed?.handoffKind ? { kind: reclaimed.handoffKind, reason: reclaimed.handoffReason || 'review' } : null
+    // N8: replyBy on the reclaimed send — the turn row says whether code wrote this text.
+    const reclaimedCodeDecided = await turnWasCodeDecided(row.tenantId, resolved.agent.id, existing)
     return finishDeliveryOrSuggest({
       plannedReply: planned,
+      codeDecided: reclaimedCodeDecided,
       handoff: reclaimedHandoff,
       persistedMode,
       row,
@@ -752,6 +756,7 @@ export async function executeAgentLayerTurn(
     replyStyle: resolved.agent.replyStyle,
     shortcuts,
     shortenLongReply: true,
+    linkCheck: true,
   })
   const needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
   // B1: what goes out is planned by code: the model reply (checked), the safe line, or the hand-off text.
@@ -1573,6 +1578,7 @@ async function runAgentTestTurnInner(input: {
       replyStyle: runtimeAgent.replyStyle,
       shortcuts,
       shortenLongReply: true,
+      linkCheck: true,
     })
     // Same plan as the live turn (B1): checked model reply, safe line, or hand-off text.
     const plan = planModelTurnDelivery({

@@ -191,7 +191,8 @@ export function formatHistoryForPrompt(messages: SoftAiHistoryMessage[]): string
       // Our own earlier messages, so the agent recognises what it already said (and doesn't repeat it).
       const who = m.direction === 'inbound' ? 'Cliente' : 'Vos (tienda)'
       // One line per message and no lookalike markers: a customer cannot forge a store line or Betsy's data block.
-      const content = stripBetsyLookalikes(m.content || '').replace(/\s*\n\s*/g, ' / ')
+      // Store lines are never labelled "[texto del cliente]" (N2).
+      const content = stripBetsyLookalikes(m.content || '', m.direction === 'inbound' ? '[texto del cliente]' : '[texto omitido]').replace(/\s*\n\s*/g, ' / ')
       return `[${who} ${m.sentAt}] ${redactSensitiveForProvider(content)}`
     })
     .join('\n')

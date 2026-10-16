@@ -5,7 +5,10 @@
  */
 import {
   hasPaymentClaimCue,
+  hasChoiceClaimOrStatusWord,
+  hasPaymentStatusClaim,
   isPaymentCompletionClaim,
+  NEGATION_RE,
   paymentChoiceGrammar,
   paymentChoiceShape,
   pendingMethodMention,
@@ -119,19 +122,32 @@ export function paymentMethodPick(text: string, awaitingChoice: boolean, offered
  * sales state and the inbound decision (outbound texts in order).
  */
 /** N2: loose contra-entrega / efectivo wording (not a question, no claim / completion cue). */
-const ORDER_METHOD_LOOSE_RE = /(?<![\p{L}])(?:contra\s?entrega|(?:pago\s+|pagar\s+)?al\s+recibir(?:lo|la)?|efectivo|cash)(?![\p{L}])/iu
+/** Loose method words, each with its method (the LAST one named in a message wins). */
+const LOOSE_METHOD_RE =
+  /(?<![\p{L}])(?:(sinpe)|(transfer\p{L}*)|(tarjeta)|(contra\s?entrega|(?:pago\s+|pagar\s+)?al\s+recibir(?:lo|la)?)|(efectivo|cash))(?![\p{L}])/giu
 const MAX_CARRY_INBOUND = 8
 
-function looseOrderMethod(text: string): ChosenPaymentMethod | null {
+/**
+ * The LAST method a customer message names ("antes pagaba contra entrega pero ahora prefiero sinpe" → sinpe). Never
+ * from a question, a negated message ("no quiero contra entrega", "sinpe no"), a claim / completion / status message
+ * or one with digits / ₡ / ✅.
+ */
+function looseLastMethod(text: string): ChosenPaymentMethod | null {
   const t = stripFormatChars(text || '')
-  if (/[?¿]/.test(t) || !ORDER_METHOD_LOOSE_RE.exec(t)) return null
-  if (hasPaymentClaimCue(t) || isPaymentCompletionClaim(t) || RECEIPT_RE.test(t)) return null
-  return /efectivo|cash/i.test(t) && !/contra\s?entrega|recibir/i.test(t) ? 'efectivo' : 'contra_entrega'
+  if (/[?¿\d₡¢$#✅✔☑👍💸]/u.test(t) || NEGATION_RE.test(t)) return null
+  if (hasPaymentClaimCue(t) || isPaymentCompletionClaim(t) || hasPaymentStatusClaim(t) || RECEIPT_RE.test(t)) return null
+  // Done / sent / status / dispute words ("mandado por sinpe", "ya", "ahí va", "sinpe, revisá").
+  if (hasChoiceClaimOrStatusWord(t)) return null
+  let last: ChosenPaymentMethod | null = null
+  for (const m of t.matchAll(LOOSE_METHOD_RE)) {
+    last = m[1] ? 'sinpe' : m[2] ? 'transferencia' : m[3] ? 'tarjeta' : m[4] ? 'contra_entrega' : 'efectivo'
+  }
+  return last
 }
 
 /**
- * N2: the contra-entrega / efectivo choice the customer made since the store's LAST method question (this message or
- * up to 8 earlier ones), while no payment details / order block went out after that question. Pure.
+ * N2: the method the customer named LAST since the store's LAST method question (this message or up to 8 earlier
+ * ones), while no payment details / order block went out after that question. Pure.
  */
 export function carriedOrderMethod(history: SoftAiHistoryMessage[], inboundText: string, offered: readonly string[]): ChosenPaymentMethod | null {
   let at = -1
@@ -147,7 +163,7 @@ export function carriedOrderMethod(history: SoftAiHistoryMessage[], inboundText:
   if (after.some((m) => m.direction === 'outbound' && (paymentDetailsIn(m.content || '') || ORDER_BLOCK_RE.test(m.content || '')))) return null
   const inbound = [...after.filter((m) => m.direction === 'inbound').map((m) => m.content || ''), inboundText].slice(-(MAX_CARRY_INBOUND + 1))
   for (let i = inbound.length - 1; i >= 0; i -= 1) {
-    const method = looseOrderMethod(inbound[i])
+    const method = looseLastMethod(inbound[i])
     if (method) return resolvePaymentChoice(method, offered)
   }
   return null

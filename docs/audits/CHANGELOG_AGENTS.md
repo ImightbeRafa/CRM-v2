@@ -1,3 +1,20 @@
+## 2026-10-16 — agents2-format: SecureDog INT-114 reopened (claudio/agents2-format)
+
+- Structure: decideInbound runs the classifier / safety hand-off FIRST; the method choice and the logistics mention
+  only run when the message is not payment_proof_or_risk. The classifier itself treats an exact choice as a sales
+  answer only while the store's method question is pending (and after every claim check).
+- New status lexicon (with a payment noun): verifiquen, third-person past (pagó / hizo / mandó / envió / depositó /
+  transfirió / pasó), salió / se fue / cayó / entró, ayer / anoche / esta mañana / a las tres / hace un momento,
+  ahí (le) va / van, me avisa; without a question: desde la cuenta, al número, a nombre de, OK, completo,
+  efectuado. These also cancel the intent exemption.
+- pendingMethodMention: only an exact choice + an explicit logistics phrase (y retiro en tienda, con envío a …,
+  a domicilio, para …); negations (no / ni / nunca / tampoco) are never choices or carried methods; the carried
+  method is the LAST one the customer named.
+- N6 wording: the bell / toast says "Pidió pagar en efectivo — confirmá los datos" for order_ready_cash (from the
+  dedupe key).
+- Proof: tsc 0, lint 0, test:soft-ai 766/766, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34. Not deployed.
+
 ## 2026-10-16 — agents2-format round 3 follow-up: intent phrasing is never a completion claim (claudio/agents2-format)
 
 - Intent / future wording (quiero / voy a / prefiero / puedo / quisiera pagar, para pagar, le / te / les pago, pagaría,

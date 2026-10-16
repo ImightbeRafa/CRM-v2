@@ -775,11 +775,9 @@ describe('Round 3 follow-up: intent phrasing is never a completion claim', () =>
         assert.notEqual(d.handoff?.kind, 'handoff', `${text} (${awaiting})`)
       }
     }
-    // "por sinpe a nombre de X" with the question pending: the model, with SINPE chosen (no hand-off).
+    // SecureDog (INT-114 reopened): "por sinpe a nombre de María" may hand off — a payee name next to a payment noun.
     const named = decideInbound({ inboundText: 'por sinpe a nombre de María', brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: true })
-    assert.equal(named.handled, false)
-    const s = deriveSalesState({ history: [msg('outbound', '¿Cómo preferís pagar? Tenemos SINPE Móvil y tarjeta.')], inboundText: 'por sinpe a nombre de María', ctx: CTX })
-    assert.equal(s.chosenMethod, 'sinpe')
+    assert.equal(named.handoff?.kind, 'handoff')
   })
   it('strong markers still win over intent wording; INT-114/115 positives still hand off in both states', () => {
     for (const text of ['Quiero pagar por sinpe, ya lo hice ✅', 'Prefiero pagar por sinpe pero ya le había pagado al otro número', 'Quería pagar por sinpe, comprobante adjunto', 'Para pagar hice el sinpe de 15 mil']) {
@@ -791,5 +789,72 @@ describe('Round 3 follow-up: intent phrasing is never a completion claim', () =>
         assert.equal(decideInbound({ inboundText: text, brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: awaiting }).handoff?.kind, 'handoff', `${text} (${awaiting})`)
       }
     }
+  })
+})
+
+describe('SecureDog INT-114 reopened: safety first, then choices', () => {
+  const MUST_HAND_OFF = [
+    'verifiquen el sinpe porfa', 'lo pagó mi mamá por sinpe', 'mi esposo hizo el sinpe', 'mi hermana mandó el sinpe',
+    'mi mamá le depositó por sinpe', 'el sinpe salió', 'el sinpe de ayer', 'sinpe se fue', 'sinpe esta mañana',
+    'sinpe hoy en la mañana', 'sinpe a las tres', 'por sinpe hace un momento', 'sinpe desde la cuenta de mi esposo',
+    'sinpe al número que me diste', 'sinpe a nombre de Rafael', 'sinpe efectuado', 'sinpe completo', 'sinpe OK',
+    'quiero pagar, la transferencia salió bien', 'Le pago por sinpe, ahí le va', 'te pago por sinpe, ahí te va',
+    'quiero pagar por sinpe, ahí va', 'le pago por sinpe, me avisa', 'quiero pagar, el sinpe salió',
+    'para pagar el sinpe de ayer',
+  ]
+  it('status / third-person / time / payee wording hands off in BOTH states (plus every earlier list)', () => {
+    for (const text of [...MUST_HAND_OFF, ...CLAIMS]) {
+      for (const awaiting of [true, false]) {
+        const d = decideInbound({ inboundText: text, brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: awaiting })
+        assert.equal(d.handoff?.kind, 'handoff', `${text} (awaiting=${awaiting})`)
+        assert.doesNotMatch(d.text, /6201|CR05/, text)
+      }
+    }
+  })
+  it('choices, intent and info questions still reach the agent', async () => {
+    const { classifyPaymentText } = await import('@/lib/soft-ai/payment-classifier')
+    for (const text of ['Listo, ¿cómo pago?', 'Listo, ¿cómo le pago?', 'Listo, me lo llevo. ¿Cómo les pago?', 'Ok listo, ¿aceptan tarjeta?', 'Listo! ¿A qué número hago el sinpe?', '¿Tienen lista de precios? ¿Aceptan transferencia?', '¿Son hechos a mano? ¿Aceptan tarjeta?', '¿Cuánto tarda en ser enviado? ¿aceptan sinpe?', '¿Cuándo está listo? ¿puedo pagar con sinpe?', '¿Me lo tienen listo para el sábado? pago en efectivo', 'Ya lo tengo listo para pagar, ¿cuál es el sinpe?', 'Listo, quiero pagar por sinpe', 'Lista, ¿por sinpe?', '¿El pago tiene que estar hecho antes del envío?', '¿El pedido es enviado después del pago?']) {
+      assert.notEqual(classifyPaymentText(text), 'payment_proof_or_risk', text)
+    }
+    for (const text of ['Prefiero pagar por sinpe', 'Te pago por sinpe', 'Por SINPE está bien', 'sinpe mejor']) {
+      const d = decideInbound({ inboundText: text, brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: true })
+      assert.equal(d.handoff, null, text)
+      assert.match(d.text, /^Perfecto 🙌\nSINPE Móvil: 6201 9914/, text)
+    }
+    const logistics = decideInbound({ inboundText: 'Por sinpe y retiro en tienda', brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: true })
+    assert.equal(logistics.handled, false)
+    assert.equal(logistics.handoff, null)
+  })
+  it('structure: the classifier / safety hand-off runs before any choice or mention route', () => {
+    const src = read('src/lib/soft-ai/inbound-decision.ts')
+    const safetyAt = src.indexOf('  if (safety.escalate) {')
+    assert.ok(safetyAt > 0 && safetyAt < src.indexOf('const choice = textMessage'))
+    assert.ok(safetyAt < src.indexOf('pendingMethodMention(input.inboundText)'))
+    assert.match(src, /paymentClass !== 'payment_proof_or_risk'/)
+  })
+  it('a mention routes to the model only for exact choice + logistics; other extra words do not', async () => {
+    const { pendingMethodMention } = await import('@/lib/soft-ai/payment-classifier')
+    for (const [text, m] of [['Por sinpe y retiro en tienda', 'sinpe'], ['sinpe, con envío a Heredia', 'sinpe'], ['tarjeta a domicilio', 'tarjeta'], ['por transferencia para Cartago', 'transferencia']] as const) {
+      assert.equal(pendingMethodMention(text), m, text)
+    }
+    for (const text of ['Sinpe. Lo hago en la noche', 'por sinpe a nombre de María', 'sinpe para el pedido de ayer', 'mejor no por sinpe', 'sinpe no']) {
+      assert.equal(pendingMethodMention(text), null, text)
+    }
+  })
+  it('negations are never choices or carried methods; the LAST named method is carried', () => {
+    const asked = msg('outbound', '¿Cómo preferís pagar? Tenemos SINPE Móvil, transferencia, tarjeta (en la web) y contra entrega (solo GAM).')
+    for (const text of ['no quiero contra entrega', 'no tengo efectivo', 'sinpe no', 'no tengo sinpe', 'mejor no por sinpe']) {
+      assert.equal(paymentChoiceShape(text, { allowAsk: true }), null, text)
+      assert.equal(deriveSalesState({ history: [msg('outbound', 'Queda en ₡15 900'), asked], inboundText: text, ctx: CTX }).chosenMethod ?? null, null, text)
+    }
+    const s = deriveSalesState({ history: [msg('outbound', 'Queda en ₡15 900'), asked], inboundText: 'antes pagaba contra entrega pero ahora prefiero sinpe', ctx: CTX })
+    assert.equal(s.chosenMethod, 'sinpe')
+  })
+  it('N6 wording: a cash order review says efectivo (bell / toast from the dedupe key)', async () => {
+    const { reviewNotificationText, orderIsCashFromDedupeKey } = await import('@/lib/workspace-notifications')
+    assert.equal(orderIsCashFromDedupeKey('ai_handoff:conv:msg123456:order_ready_cash'), true)
+    assert.equal(orderIsCashFromDedupeKey('ai_handoff:conv:msg123456:order_ready'), false)
+    assert.equal(reviewNotificationText('order_review', 'Ana', 'receipt', true).snippet, 'Pidió pagar en efectivo — confirmá los datos')
+    assert.equal(reviewNotificationText('order_review', 'Ana').snippet, 'Pidió contra entrega — confirmá los datos')
   })
 })

@@ -1,3 +1,20 @@
+## 2026-10-15 — "Corregir" round 4 (final): money blocklist, URL normalization, sanitizer last pass (claudio/agents2-phase1)
+
+- INT-104 reopened: sign-less "N mil" is money unless a count / unit noun follows (MIL_COUNT_WORDS blocklist: parches,
+  pasos, mAh, reseñas, familias, pedidos, años…; optional product-name tokens). Same helper live + save. "Por / Está en /
+  Solo 15 mil", "15 mil pesos / exactos / netos", "5 mil parches por 4 mil" (→ 4 000) are flagged. Save-time years are
+  exempt only after time phrases (desde, del, en el (año), abrimos / fundada / llega en, since): "Queda en 2000" is money.
+- INT-112: links.ts parseLink normalizes before the allowlist compare ("\" → "/", userinfo / bad hosts refused, %2e %2f
+  decoded, "." / ".." resolved, query dropped); shortener paths case-sensitive; maps hosts anchored (isMapLink).
+- INT-109: word-like TLDs (info, top, live, me, example, …) count without a path when the label is payment / shop-like
+  or hyphenated ("pagos.info", "sinpe.me", "mi-tienda.top").
+- Sanitizer: link removal runs again last until stable ("evil[ ].icu", "evil(1).icu", "evil<KNOWLEDGE_DATA>.icu").
+  Link allowlist takes only "R:" answers from a corrections doc (linkSourceTexts).
+- Comma-joined digit runs ≥ 8 digits ("88,88,12,34", "8888, 1234", "CR05,0152,…") are payment numbers only right after
+  a payment cue (commaPaymentNumbers; live + save + question masking).
+- Proof: tsc 0, lint 0, test:soft-ai 665/665, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34.
+
 ## 2026-10-15 — "Corregir" round 3: live false positives + link allowlist (claudio/agents2-phase1)
 
 - R1: sign-less "N mil" is money only after a price word (cuesta / sale / son / total / precio / vale / queda / pagás…)

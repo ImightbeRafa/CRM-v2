@@ -15,9 +15,10 @@ import { hasConfirmationWording } from '@/lib/soft-ai/shortcuts'
 import { stripBetsyLookalikes } from '@/lib/soft-ai/sales-state'
 import { redactPiiText, redactSensitiveForProvider } from '@/lib/soft-ai/llm/redact'
 import { DATA_FENCE_TAG_RE, stripFormatChars } from '@/lib/soft-ai/prompt-fence'
-import { CR_IBAN_RE, DIGIT_SEP, LONG_NUMBER_RE, PAY_WORDS_RE } from '@/lib/soft-ai/payment-guard'
+import { commaPaymentNumbers, CR_IBAN_RE, DIGIT_SEP, LONG_NUMBER_RE, PAY_WORDS_RE } from '@/lib/soft-ai/payment-guard'
 import { bareMilAmounts, dealProblem, freeShippingRuleOk, hasThousandsSeparator, type FreeShippingRule } from '@/lib/soft-ai/llm/output-validator'
 import { foreignLinks, linkRegex, type LinkAllowlist } from '@/lib/soft-ai/links'
+import { isAgentTuningSource } from '@/lib/soft-ai/knowledge-types'
 
 export const TUNE_SAVE_AS = ['example', 'saved_reply', 'rule'] as const
 export type TuneSaveAs = (typeof TUNE_SAVE_AS)[number]
@@ -116,12 +117,21 @@ export function sanitizeTuneQuestion(text: string): string {
   t = maskLongDigits(t)
   // A phone written "8888,1234" (comma is not a general digit separator any more, INT-113).
   t = t.replace(/(?<![\d,])\d{4},\d{4}(?![\d,])/g, '…')
+  for (const run of commaPaymentNumbers(t)) t = t.split(run).join('…')
   t = redactSensitiveForProvider(redactPiiText(t))
   t = t.replace(DATA_FENCE_TAG_RE, ' ')
   t = t.replace(/[<>[\]{}`]/g, ' ')
   t = t.replace(/(?<!\d)\(?\d{1,2}\)/g, ' ')
   t = oneLine(t)
-  return t.length > TUNE_QUESTION_MAX ? t.slice(0, TUNE_QUESTION_MAX).trim() : t
+  t = t.length > TUNE_QUESTION_MAX ? t.slice(0, TUNE_QUESTION_MAX).trim() : t
+  // Round 4: removing brackets / tags / "(1)" can glue a new link together ("evil[ ].icu" → "evil .icu"): run link
+  // removal (incl. spelled forms) again as the LAST step, until stable (max 3 passes).
+  for (let pass = 0; pass < 3; pass += 1) {
+    const next = oneLine(t.replace(linkRegex(), ' '))
+    if (next === t) break
+    t = next
+  }
+  return t
 }
 
 /** Kept for callers of the first version: same as sanitizeTuneQuestion. */
@@ -204,6 +214,21 @@ export function parseCorrectionPairs(body: string): CorrectionPair[] {
     if (m && m[1].trim() && m[2].trim()) out.push({ question: m[1].trim(), answer: m[2].trim() })
   }
   return out
+}
+
+/**
+ * Owner-written text whose links the reply checker may allow (INT-112): ACTIVE saved replies (title + body) and
+ * approved knowledge bodies — but from a "Corregir" corrections document only the "R:" answers (the owner's), never
+ * the "P:" lines (the customer's question, round 4).
+ */
+export function linkSourceTexts(input: {
+  shortcuts: ReadonlyArray<{ isActive: boolean; title: string; body: string }>
+  knowledge: ReadonlyArray<{ kind: string; metadata: Record<string, unknown> | null; body: string }>
+}): string[] {
+  return [
+    ...input.shortcuts.filter((row) => row.isActive).flatMap((row) => [row.title, row.body]),
+    ...input.knowledge.flatMap((s) => (isAgentTuningSource(s) ? parseCorrectionPairs(s.body).map((p) => p.answer) : [s.body])),
+  ]
 }
 
 export function formatCorrectionPairs(pairs: CorrectionPair[]): string {
@@ -305,6 +330,8 @@ export function hasPaymentNumbers(text: string): boolean {
     if (DATE_RE.test(m[0].trim())) continue
     return true
   }
+  // Comma-joined right after a payment cue ("SINPE al 88,88,12,34", round 4).
+  if (commaPaymentNumbers(t).length) return true
   // Spelled out next to payment words ("SINPE al ocho ocho ocho ocho…", INT-105).
   if (PAY_WORDS_RE.test(t) && DIGIT_WORDS_RE.test(t)) return true
   return false
@@ -350,8 +377,10 @@ const TRAIL_AMOUNT_RE = new RegExp(
   'giu',
 )
 /** "Envíos desde 2019", "en el 2020", "del año 2018": a year, not an amount (N9). */
-// Round 3 item 7: also right after "en" / "el" ("Abrimos en 2020", "Llega en 2026").
-const YEAR_BEFORE_RE = /(?<![\p{L}])(?:desde|año|años|en|el|del|hasta)\s*$/iu
+// Round 4: a year only after a time phrase ("desde 2019", "del 2018", "en el 2020", "el año 2020", "abrimos en 2020",
+// "fundada en 1998", "llega en 2026", "since 2015"). A plain "en 2000" after a price word ("Queda en 2000") is an amount.
+const YEAR_BEFORE_RE =
+  /(?<![\p{L}])(?:desde|años?|del|hasta|since|en\s+el(?:\s+año)?|el\s+año|abri(?:mos|eron|ó|o)\s+en|fundad[ao]s?\s+en|lleg(?:a|an|ará|amos|ó|o)\s+en|naci(?:mos|ó|o)\s+en|empez(?:amos|ó|o)\s+en)\s*$/iu
 
 function bareAmounts(text: string, re: RegExp): number[] {
   const out: number[] = []

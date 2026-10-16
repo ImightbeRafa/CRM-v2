@@ -176,8 +176,8 @@ const PURCHASE_INTENTS = new Set<AgentIntent>(['price', 'how_to_buy'])
 
 export function extractMoneyAmounts(text: string): number[] {
   // NFKC: the full-width "￠" becomes "¢" (INT-104: "¢" is a colón sign too).
-  // "N mil" / "Nmil" is N × 1000 next to a currency sign or colones ("₡15 mil", "15 mil colones"); sign-less only with
-  // a price word before it (bareMilAmounts, round 3 R1). "₡9.900 mil gracias" is ₡9.900 (R4).
+  // "N mil" / "Nmil" is N × 1000 next to a currency sign or colones ("₡15 mil", "15 mil colones"); sign-less unless a
+  // count noun follows (bareMilAmounts, round 4). "₡9.900 mil gracias" is ₡9.900 (R4).
   const t = (text || '').normalize('NFKC')
   const amounts: number[] = []
   for (const match of t.matchAll(MONEY_AMOUNT_RE)) {
@@ -196,29 +196,32 @@ export function hasThousandsSeparator(digits: string): boolean {
   return /\d[.,\s]\d{3}(?!\d)/.test(digits)
 }
 
-/** A price word up to 3 words before ("cuesta 15 mil", "te sale en 29 mil", "son más de 15 mil"). */
-const MIL_CUE_BEFORE_RE =
-  /(?<![\p{L}])(?:cuestan?|sale|salen|son|total|precios?|valen?|quedan?|pag(?:a|ás|as|an|ar)|cobr\p{L}*|monto|inversi[oó]n)(?![\p{L}])(?:[^\p{L}\p{N}]+\p{L}+){0,3}[^\p{L}\p{N}]*$/iu
-/** Words that may follow a money "N mil" ("cuesta 15 mil el combo"); any other word makes it a count ("5 mil parches"). */
-const MIL_AFTER_OK = new Set(['el', 'la', 'los', 'las', 'y', 'o', 'con', 'cada', 'por', 'en', 'a', 'al', 'más', 'mas', 'nada', 'solo', 'solamente', 'total', 'iva', 'de'])
+/**
+ * Count / unit nouns: "N mil" right before one of these (optionally after "de") is a count, not money (round 4,
+ * INT-104 reopened — a blocklist, so any other wording of a price stays checked).
+ */
+export const MIL_COUNT_WORDS = [
+  'pasos', 'mah', 'ml', 'mg', 'g', 'gr', 'kg', 'km', 'metros', 'm', 'cm', 'unidades', 'personas', 'clientes', 'seguidores',
+  'reseñas', 'comentarios', 'vendidos', 'vendidas', 'ventas', 'pedidos', 'familias', 'parches', 'productos', 'años',
+  'horas', 'minutos', 'likes', 'visitas', 'compras', 'usuarios', 'envíos', 'envios', 'veces', 'opiniones', 'fans',
+]
 
 /**
- * Sign-less "N mil" amounts (round 3 R1): only with a price word before it and no count noun after it. "Ya vendimos más
- * de 5 mil parches", "2 mil reseñas", "10 mil pasos", "5 mil mAh" are not money; "Cuesta 15 mil", "te sale en 29 mil"
- * are. One helper for the live validator and the save-time check (agent-tuning-core colonAmountsIn).
+ * Sign-less "N mil" amounts (round 4): money UNLESS a count / unit noun follows ("5 mil parches", "2 mil reseñas",
+ * "10 mil pasos", "5 mil mAh", "más de 5 mil pedidos"). "Por 15 mil te lo llevás", "Está en 15 mil", "Son 15 mil
+ * pesos", "Cuesta 15 mil exactos", "Son 5 mil parches por 4 mil" (→ 4 000) are money. One helper for the live
+ * validator and the save-time check (agent-tuning-core colonAmountsIn). `extraCountWords`: e.g. the agent's product
+ * name tokens, when the caller has them.
  */
-export function bareMilAmounts(text: string): number[] {
+export function bareMilAmounts(text: string, extraCountWords: readonly string[] = []): number[] {
   const t = (text || '').normalize('NFKC')
+  const counts = new Set([...MIL_COUNT_WORDS, ...extraCountWords.map((w) => w.toLowerCase())])
   const out: number[] = []
   for (const m of t.matchAll(/(?<![\d.,₡¢$\p{L}])(\d{1,3})\s*mil(?![\p{L}])/giu)) {
-    const at = m.index ?? 0
-    const after = t.slice(at + m[0].length)
+    const after = t.slice((m.index ?? 0) + m[0].length)
     if (/^\s*(?:colones|crc|usd)(?![\p{L}])/iu.test(after)) continue // counted with its currency word
-    // Slang currency ("15 mil rojos / tejas") is money on its own; otherwise a price word must come before.
-    const slang = /^\s*(?:rojos|tejas)(?![\p{L}])/iu.test(after)
-    if (!slang && !MIL_CUE_BEFORE_RE.test(t.slice(Math.max(0, at - 60), at))) continue
-    const next = after.match(/^\s+(\p{L}+)/u)?.[1]?.toLowerCase()
-    if (!slang && next && !MIL_AFTER_OK.has(next)) continue
+    const next = after.match(/^\s+(?:de\s+)?(\p{L}+)/iu)?.[1]?.toLowerCase()
+    if (next && counts.has(next)) continue
     out.push(Number(m[1]) * 1000)
   }
   return out

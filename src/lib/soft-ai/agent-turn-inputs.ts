@@ -23,6 +23,7 @@ import type { InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import { guideShortcutCatalog, renderShortcutTemplate } from '@/lib/soft-ai/shortcuts'
 import { brandFactsLinkAllowlist } from '@/lib/soft-ai/llm/output-validator'
+import { linkSourceTexts } from '@/lib/soft-ai/agent-tuning-core'
 import {
   deriveSalesState,
   formatSalesTurnBlock,
@@ -243,12 +244,15 @@ export function assembleAgentRuntimeInputs(input: {
     salesFreeShippingRule: sales ? salesFreeShippingRule(sales) : null,
     // INT-112: same allowlist for live and Probar — brand site, map link, and links the owner wrote in ACTIVE saved
     // replies and APPROVED bound knowledge (PatchHouse ↔ sleep.shopping cross-links pass this way).
-    linkAllowlist: brandFactsLinkAllowlist(input.agent.brandFacts, [
-      ...input.shortcuts.filter((row) => row.isActive).flatMap((row) => [row.title, row.body]),
-      ...(input.knowledge
-        ? [...input.knowledge.brandBook, ...input.knowledge.policies, ...input.knowledge.faqs, ...input.knowledge.channelOverlay].map((s) => s.body)
-        : []),
-    ]),
+    linkAllowlist: brandFactsLinkAllowlist(
+      input.agent.brandFacts,
+      linkSourceTexts({
+        shortcuts: input.shortcuts,
+        knowledge: input.knowledge
+          ? [...input.knowledge.brandBook, ...input.knowledge.policies, ...input.knowledge.faqs, ...input.knowledge.channelOverlay]
+          : [],
+      }),
+    ),
     salesTrace: salesState ? { stage: salesState.stage, said: salesState.said } : null,
     toolCtx: {
       ...input.toolCtxBase,

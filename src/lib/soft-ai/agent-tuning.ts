@@ -41,6 +41,7 @@ import { assertSalesSetupReady, loadSalesSetup, lockAgentForSalesRules, SALES_RU
 import {
   checkCorrectionText,
   correctionAnswer,
+  linkSourceTexts,
   ownerTextProblem,
   placeRule,
   ruleTarget,
@@ -110,10 +111,10 @@ async function ownerLinkAllowlist(tenantId: string, agentId: string, facts: Retu
     listRuntimeShortcuts(tenantId, agentId).catch(() => []),
     loadApprovedKnowledgeForAgent({ tenantId, agentId, socialAccountId: '' }).catch(() => null),
   ])
-  return brandFactsLinkAllowlist(facts, [
-    ...shortcuts.filter((row) => row.isActive).flatMap((row) => [row.title, row.body]),
-    ...(knowledge ? [...knowledge.brandBook, ...knowledge.policies, ...knowledge.faqs].map((s) => s.body) : []),
-  ])
+  return brandFactsLinkAllowlist(
+    facts,
+    linkSourceTexts({ shortcuts, knowledge: knowledge ? [...knowledge.brandBook, ...knowledge.policies, ...knowledge.faqs] : [] }),
+  )
 }
 
 /** The owner's text as written (invisible characters dropped), or a refusal naming the problem phrase (V9). */

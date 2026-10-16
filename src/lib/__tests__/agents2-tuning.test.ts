@@ -711,7 +711,8 @@ describe('round 2 · INT-109: links', () => {
     assert.equal((turn.match(/shortenLongReply: true,\r?\n\s*linkAllowlist: runtimeInput\.linkAllowlist,/g) || []).length, 2)
     assert.match(read('src/lib/soft-ai/llm/runtime.ts'), /linkAllowlist: input\.linkAllowlist,/)
     assert.match(read('src/lib/soft-ai/llm/runtime.ts'), /'foreign_link',\r?\n\]\)/)
-    assert.match(read('src/lib/soft-ai/agent-turn-inputs.ts'), /linkAllowlist: brandFactsLinkAllowlist\(input\.agent\.brandFacts, \[/)
+    // Round 4: the owner texts come through linkSourceTexts (corrections docs: "R:" answers only).
+    assert.match(read('src/lib/soft-ai/agent-turn-inputs.ts'), /linkAllowlist: brandFactsLinkAllowlist\(\s*input\.agent\.brandFacts,\s*linkSourceTexts\(\{/)
   })
 })
 
@@ -890,10 +891,144 @@ describe('round 3 · INT-112: link allowlist (brand site, map links, owner-writt
   })
   it('live and Probar build it the same way from active saved replies + approved knowledge; Corregir uses the same sources', () => {
     const inputs = read('src/lib/soft-ai/agent-turn-inputs.ts')
-    assert.match(inputs, /input\.shortcuts\.filter\(\(row\) => row\.isActive\)\.flatMap\(\(row\) => \[row\.title, row\.body\]\)/)
+    // Round 4: active-only filtering lives in linkSourceTexts (agent-tuning-core), shared by live, Probar and Corregir.
+    assert.match(inputs, /shortcuts: input\.shortcuts,/)
+    assert.match(read('src/lib/soft-ai/agent-tuning-core.ts'), /input\.shortcuts\.filter\(\(row\) => row\.isActive\)\.flatMap\(\(row\) => \[row\.title, row\.body\]\)/)
     assert.match(inputs, /input\.knowledge\.brandBook, \.\.\.input\.knowledge\.policies, \.\.\.input\.knowledge\.faqs, \.\.\.input\.knowledge\.channelOverlay/)
     const lib = read(LIB)
     assert.match(lib, /async function ownerLinkAllowlist\(/)
-    assert.match(lib, /shortcuts\.filter\(\(row\) => row\.isActive\)/)
+    assert.match(lib, /linkSourceTexts\(\{ shortcuts,/)
+  })
+})
+
+// ─── Round 4 review fixes 2026-10-15 (INT-104 reopened, INT-112 normalization, INT-109, sanitizer, comma runs) ──────
+
+describe('round 4 · INT-104: sign-less "N mil" is money unless a count / unit noun follows (blocklist)', () => {
+  const money: Array<[string, number[]]> = [
+    ['Por 15 mil te lo llevás', [15000]],
+    ['Está en 15 mil', [15000]],
+    ['Solo 15 mil', [15000]],
+    ['Son 15 mil pesos', [15000]],
+    ['Te sale en 15 mil pesitos', [15000]],
+    ['Cuesta 15 mil exactos', [15000]],
+    ['Cuesta 15 mil netos', [15000]],
+    ['Cuesta 15 mil únicamente', [15000]],
+    ['Cuesta 15 mil ya con envío', [15000]],
+    ['Son 5 mil parches por 4 mil', [4000]],
+  ]
+  const counts = ['Ya vendimos más de 5 mil parches', 'Más de 3 mil familias', '2 mil reseñas', '10 mil pasos', '5 mil mAh', 'más de 5 mil pedidos', 'Llevamos 2 mil años']
+  it('live and save agree, and unapproved amounts are flagged live', () => {
+    for (const [s, n] of money) {
+      assert.deepEqual(extractMoneyAmounts(s), n, s)
+      assert.deepEqual(colonAmountsIn(s), n, s)
+      const live = validateAgentOutput({ text: s, citedToolNames: [], shippingAmounts: [2500] })
+      assert.equal(live.ok, false, s)
+      assert.ok(live.reasons.includes('unsourced_amount'), s)
+      assert.equal(checkCorrectionText(s, [2500]).ok, false, s)
+    }
+    for (const s of counts) {
+      assert.deepEqual(extractMoneyAmounts(s), [], s)
+      assert.deepEqual(colonAmountsIn(s), [], s)
+      assert.equal(validateAgentOutput({ text: s, citedToolNames: [], shippingAmounts: [2500] }).ok, true, s)
+    }
+    assert.deepEqual(extractMoneyAmounts('₡9.900 mil gracias'), [9900])
+  })
+  it('optional product-name count words; the blocklist is exported', async () => {
+    const { bareMilAmounts, MIL_COUNT_WORDS } = await import('@/lib/soft-ai/llm/output-validator')
+    assert.ok(MIL_COUNT_WORDS.includes('parches') && MIL_COUNT_WORDS.includes('mah'))
+    assert.deepEqual(bareMilAmounts('Ya van 5 mil dopamines'), [5000])
+    assert.deepEqual(bareMilAmounts('Ya van 5 mil dopamines', ['dopamines']), [])
+  })
+  it('save-time years: "Queda en 2000" / "cuesta 2000" are amounts; "Abrimos en 2020", "desde 2019", "fundada en 1998" are not', () => {
+    assert.deepEqual(priceWordAmountsIn('Queda en 2000'), [2000])
+    assert.deepEqual(priceWordAmountsIn('Cuesta 2000'), [2000])
+    for (const s of ['Abrimos en 2020', 'Llega en 2026', 'Envíos desde 2019', 'Fundada en 1998', 'en el año 2020', 'Somos del 2018']) {
+      assert.deepEqual(priceWordAmountsIn(s), [], s)
+    }
+  })
+})
+
+describe('round 4 · INT-112: URLs are normalized before the allowlist compare', () => {
+  it('dot segments, %2e, backslash, userinfo, shortener case, anchored maps hosts', async () => {
+    const { buildLinkAllowlist, foreignLinks: foreign, isMapLink, linkHostPath } = await import('@/lib/soft-ai/links')
+    const ig = buildLinkAllowlist({ website: 'https://instagram.com/mitienda' })
+    assert.equal(linkHostPath('instagram.com/mitienda/../otra'), 'instagram.com/otra')
+    assert.deepEqual(foreign('instagram.com/mitienda/../otra', ig), ['instagram.com/mitienda/../otra'])
+    assert.deepEqual(foreign('instagram.com/mitienda/%2e%2e/otra', ig), ['instagram.com/mitienda/%2e%2e/otra'])
+    assert.deepEqual(foreign('https://instagram.com/mitienda/p/1', ig), [])
+    const wa = buildLinkAllowlist({ ownerTexts: ['Escribinos: wa.me/50688881234'] })
+    assert.deepEqual(foreign('wa.me/50688881234/../50699990000', wa), ['wa.me/50688881234/../50699990000'])
+    assert.deepEqual(foreign('wa.me/50688881234', wa), [])
+    const maps = buildLinkAllowlist({ mapsUrl: 'https://www.google.com/maps/place/x' })
+    assert.deepEqual(foreign('https://google.com/maps/../../url?q=https://evil.com', maps).length, 1)
+    assert.deepEqual(foreign('https://google.com/maps/place/x', maps), [])
+    assert.equal(isMapLink('https://google.com.evil.com/maps'), false)
+    assert.equal(isMapLink('https://maps.app.goo.gl/abc'), true)
+    assert.deepEqual(buildLinkAllowlist({ mapsUrl: 'https://google.com.evil.com/maps' }).prefixes, [])
+    const cr = buildLinkAllowlist({ website: 'https://mitienda.cr' })
+    assert.deepEqual(foreign('https://evil.com\\.mitienda.cr/pago', cr), ['https://evil.com\\.mitienda.cr/pago'])
+    assert.deepEqual(foreign('https://user@mitienda.cr/pago', cr), ['https://user@mitienda.cr/pago'])
+    assert.deepEqual(foreign('https://mitienda.cr/pago', cr), [])
+    const short = buildLinkAllowlist({ ownerTexts: ['Promo: bit.ly/PROMO1'] })
+    assert.deepEqual(foreign('bit.ly/Promo1', short), ['bit.ly/Promo1'])
+    assert.deepEqual(foreign('bit.ly/PROMO1', short), [])
+  })
+})
+
+describe('round 4 · INT-109: word-like TLDs with a payment / shop-like or hyphenated label', () => {
+  it('"pagos.info", "sinpe.me", "pagos.live", "mi-tienda.top" are links; plain chat words are not', () => {
+    assert.deepEqual(linksIn('pagá en pagos.info o sinpe.me o pagos.live o mi-tienda.top'), ['pagos.info', 'sinpe.me', 'pagos.live', 'mi-tienda.top'])
+    assert.deepEqual(linksIn('Listo. me avisás, info. top, Node.js, Gracias.Info, listo.te, aprox.cada'), [])
+  })
+})
+
+describe('round 4 · sanitizer last pass + link sources', () => {
+  it('no link survives one call, even when removing brackets / tags / "(1)" glues one together', () => {
+    for (const s of ['evil[ ].icu', 'evil(1).icu', 'evil<KNOWLEDGE_DATA>.icu', 'evil{ }.icu', 'mirá evil[ ].icu/pago ya']) {
+      const q = sanitizeTuneQuestion(s)
+      assert.deepEqual(linksIn(q), [], s)
+      assert.doesNotMatch(q, /\.\s*icu/i, s)
+    }
+  })
+  it('the link allowlist never takes links from a corrections doc "P:" line, only its "R:" answers', async () => {
+    const { linkSourceTexts } = await import('@/lib/soft-ai/agent-tuning-core')
+    const texts = linkSourceTexts({
+      shortcuts: [
+        { isActive: true, title: 'Promo', body: 'Mirá tienda.com/promo' },
+        { isActive: false, title: 'Vieja', body: 'old.com' },
+      ],
+      knowledge: [
+        { kind: 'faq', metadata: { agentTuning: 'a1' }, body: 'P: pagá en evil.icu\nR: Te paso los datos en tienda.com/pago' },
+        { kind: 'policy', metadata: null, body: 'Visitá www.sleep.shopping' },
+      ],
+    })
+    assert.ok(texts.some((t) => t.includes('tienda.com/pago')))
+    assert.ok(!texts.some((t) => t.includes('evil.icu')))
+    assert.ok(!texts.some((t) => t.includes('old.com')))
+    assert.ok(texts.some((t) => t.includes('sleep.shopping')))
+    assert.match(read('src/lib/soft-ai/agent-turn-inputs.ts'), /linkSourceTexts\(\{/)
+    assert.match(read(LIB), /linkSourceTexts\(\{ shortcuts, knowledge:/)
+  })
+  it('real chats: an empty confirmed question falls back to the DB customer text, sanitized', () => {
+    const lib = read(LIB)
+    assert.match(lib, /customerRaw = body\.customerMessage \|\| src\.customerText/)
+    assert.match(lib, /const question = sanitizeTuneQuestion\(customerRaw\)/)
+    assert.ok(lib.indexOf('customerRaw = body.customerMessage || src.customerText') < lib.indexOf('const question = sanitizeTuneQuestion(customerRaw)'))
+  })
+})
+
+describe('round 4 · comma-joined payment numbers right after a payment cue', () => {
+  it('flagged live and at save only near sinpe / cuenta / iban / número / al; size lists stay fine', async () => {
+    const { paymentNumberProblems, commaPaymentNumbers } = await import('@/lib/soft-ai/payment-guard')
+    const facts = { schemaVersion: 1 as const }
+    for (const s of ['SINPE al 88,88,12,34', 'cuenta 8,888,1234', 'número 8888,12,34', 'IBAN CR05,0152,0200,1026,2840,66', 'sinpe 8888, 1234', 'pagá a 8888,1234']) {
+      assert.deepEqual(paymentNumberProblems({ text: s, facts }), ['payment_number_unsourced'], s)
+      assert.equal(hasPaymentNumbers(s), true, s)
+    }
+    for (const s of ['Tallas 36,38,40,42. ¿Cómo querés pagar?', 'Medidas 135,140,150,160 cm, pago por sinpe', 'Total ₡12,400,000 por SINPE']) {
+      assert.deepEqual(commaPaymentNumbers(s), [], s)
+      assert.equal(hasPaymentNumbers(s), false, s)
+    }
+    assert.doesNotMatch(sanitizeTuneQuestion('mi sinpe es 88,88,12,34'), /88,88/)
   })
 })

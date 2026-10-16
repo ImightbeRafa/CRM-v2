@@ -46,14 +46,37 @@ const digitsOf = (s: string) => s.replace(/\D/g, '')
 export const PAY_WORDS_RE = /sinpe|iban|cuenta|transfer|dep[oó]sit|pag(ar|o|ás|as|ues)|n[uú]mero|plata|dinero|mand[aá]/iu
 // Digits joined by any common separator: spaces, dots, dashes (incl. en/em dash, minus, "--"), slashes, middle dots,
 // "_" (up to 4) — INT-105. A comma is NOT a digit separator (INT-113: "Tallas 36,38,40,42", "9,900 - 12,900",
-// "135,140,150,160 cm" are lists / prices); it counts only in the phone shape "8888,1234" (PHONE_COMMA below).
+// "135,140,150,160 cm" are lists / prices); comma-joined digits count only right after a payment cue
+// (commaPaymentNumbers, round 4).
 export const DIGIT_SEP = '[\\s.\\-\\u2010-\\u2015\\u2212/·_]{0,4}'
 const SEP = DIGIT_SEP
-/** Two 4-digit groups joined by one comma: a phone / SINPE written "8888,1234". */
-const PHONE_COMMA = '(?<![\\d,])\\d{4},\\d{4}(?![\\d,])'
 export const CR_IBAN_RE = new RegExp(`CR${SEP}\\d{2}(?:${SEP}\\d){18}`, 'giu')
-/** 8+ digits with separators (or "8888,1234"), optional +506 (a SINPE / phone / account number). */
-export const LONG_NUMBER_RE = new RegExp(`(?:\\+?506${SEP})?(?:${PHONE_COMMA}|\\d(?:${SEP}\\d){7,})`, 'gu')
+/** 8+ digits with separators, optional +506 (a SINPE / phone / account number). */
+export const LONG_NUMBER_RE = new RegExp(`(?:\\+?506${SEP})?\\d(?:${SEP}\\d){7,}`, 'gu')
+
+/** Digit groups joined by commas (with or without a space): "88,88,12,34", "8888, 1234", "CR05,0152,0200,…". */
+const COMMA_RUN_RE = /(?<![\d,])\d{1,4}(?:,\s?\d{1,4})+(?!\d)/g
+/** A payment cue at most ~4 words before the digits (sinpe, cuenta, IBAN, transferí, depositá, número, "al", "pagá a", CR). */
+const PAY_CUE_BEFORE_RE =
+  /(?<![\p{L}])(?:sinpe|cuenta|iban|transfer\p{L}*|dep[oó]sit\p{L}*|n[uú]mero|al|pag[aá]\s+a|cr)(?![\p{L}])[^\p{L}\p{N}]*(?:[\p{L}\p{N}]+[^\p{L}\p{N}]+){0,4}$/iu
+
+/**
+ * INT-113 / round 4: comma-joined digit runs of 8+ digits that come right after a payment cue are payment numbers
+ * ("SINPE al 88,88,12,34", "cuenta 8888, 1234"). Size lists and price ranges without such a cue are not ("Tallas
+ * 36,38,40,42. ¿Cómo querés pagar?" — the cue comes after the digits). A ₡ / $ amount is never one.
+ */
+export function commaPaymentNumbers(text: string): string[] {
+  const t = (text || '').normalize('NFKC')
+  const out: string[] = []
+  for (const m of t.matchAll(COMMA_RUN_RE)) {
+    if (digitsOf(m[0]).length < 8) continue
+    const at = m.index ?? 0
+    const before = t.slice(Math.max(0, at - 80), at)
+    if (/[₡¢$]\s?$/.test(before)) continue
+    if (PAY_CUE_BEFORE_RE.test(before)) out.push(m[0])
+  }
+  return out
+}
 
 function configuredNumbers(facts: BrandFacts): string[] {
   return [facts.payment?.sinpe?.number, facts.payment?.transfer?.iban].map((n) => digitsOf(n || '')).filter((d) => d.length >= 8)
@@ -84,6 +107,9 @@ export function paymentNumberProblems(input: { text: string; facts: BrandFacts; 
     for (const m of text.match(LONG_NUMBER_RE) ?? []) {
       if (!okNumber(digitsOf(m))) reasons.add('payment_number_unsourced')
     }
+  }
+  for (const m of commaPaymentNumbers(text)) {
+    if (!okNumber(digitsOf(m))) reasons.add('payment_number_unsourced')
   }
   if (!shareable) {
     const all = digitsOf(text)

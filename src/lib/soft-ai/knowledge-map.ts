@@ -98,9 +98,9 @@ const TEXT_TOPICS: Record<string, RegExp> = {
   ingredients: /\bingredientes?\b|\bcontiene\b|\bformula\b|\bcomposicion\b|\bcomponentes?\b/,
   usage: /\bse usan?\b|\bcomo se (usan?|aplica|pone|coloca)\b|\bmodo de uso\b|\bse aplican?\b|\baplicar(lo|la|las|los)?\b|\bse pegan?\b|\bpegal[oa]\b|\bse colocan?\b|\bcolocal[oa]s?\b|\bdespeg/,
   // Bounded digit runs (SecureDog INT-127): \d+ before a word backtracks quadratically on long digit runs.
-  frequency: /\bal dia\b|\bcada dia\b|\bdiari[oa]s?\b|\btodos los dias\b|\bpor noche\b|\bcada noche\b|\bvez al dia\b|(?<!\d)\d{1,4} ?(horas|minutos)\b|\bpor uso\b/,
+  frequency: /\bal dia\b(?! siguiente)|\bcada dia\b|\bdiari[oa]s?\b|\btodos los dias\b|\bpor noche\b|\bcada noche\b|\bvez al dia\b|(?<!\d)\d{1,4} ?(horas|minutos)\b|\bpor uso\b/,
   results: /\bresultados?\b|\bse notan?\b|\bcada (persona|organismo) responde\b|\bno prometemos\b/,
-  warnings: /\bembaraz|\blactancia\b|\bmedico\b|\bdentista\b|\bmenores de\b|\balergi|\birrita/,
+  warnings: /\bembaraz|\blactancia\b|\bmedico\b|\bdentista\b|\bmenores de (edad|\d{1,2} anos)\b|\balergi|\birrita/,
   returns: /\bdevoluci|\breembols|\bgarantia\b|\bdanad[oa]s?\b|\bincomplet[oa]s?\b|\bcambios y devoluciones\b/,
   delivery: /(?<!\d)\d{1,3} ?a ?\d{1,3} ?dias\b|\bdias habiles\b/,
 }
@@ -155,7 +155,7 @@ const coreRe = (core: string) => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(core)
  * The text right after each mention of the product (to the next blank line, ≤700 chars): non-overlapping, at most
  * WINDOWS_PER_DOC per document, computed once per (product, document) and reused for every topic.
  */
-function windowsFor(cache: WindowCache, docIndex: number, d: Doc, core: string): Array<{ start: number; text: string }> {
+function windowsFor(cache: WindowCache, docIndex: number, d: Doc, core: string, otherCores: RegExp[]): Array<{ start: number; text: string }> {
   const key = `${docIndex}\u0000${core}`
   const cached = cache.get(key)
   if (cached) return cached
@@ -167,7 +167,15 @@ function windowsFor(cache: WindowCache, docIndex: number, d: Doc, core: string):
     if (m.index < next) continue
     const rest = d.folded.slice(m.index, m.index + 700)
     const blank = rest.search(/\n\s*\n/)
-    const text = blank > 0 ? rest.slice(0, blank) : rest
+    let text = blank > 0 ? rest.slice(0, blank) : rest
+    // ...and at the first mention of another product ("Focus: …\nEnergy: contiene cafeína" is Energy's fact).
+    let cut = text.length
+    for (const other of otherCores) {
+      other.lastIndex = m[0].length
+      const o = other.exec(text)
+      if (o && o.index > 0 && o.index < cut) cut = o.index
+    }
+    text = text.slice(0, cut)
     out.push({ start: m.index, text })
     next = m.index + text.length
   }
@@ -176,17 +184,39 @@ function windowsFor(cache: WindowCache, docIndex: number, d: Doc, core: string):
 }
 
 /** Paragraphs that name no product: text that applies to all of them ("USO (igual para todos): …"). */
-function generalHit(d: Doc, generalParas: boolean[], topic: RegExp): Hit | null {
+/** Sentences about the store (shipping, orders, payment, promos) never count as product knowledge. */
+const STORE_SENTENCE_RE = /\b(envio|envios|enviamos|envian|entrega|entregamos|entregas|pedido|pedidos|pago|pagos|pagar|promo|promocion|descuento|direccion|compra|compras|comprar|precio|precios|retiro|despacho|mensajer|correos|sinpe|tarjeta|factura|horario|cupon)\w*/
+
+function generalHit(d: Doc, generalParas: boolean[], topic: RegExp, productField: boolean): Hit | null {
   for (let i = 0; i < d.paras.length; i++) {
     if (!generalParas[i]) continue
     const p = d.paras[i]
-    const m = topic.exec(p.folded)
-    if (m) return { source: `general · ${d.name}`, snippet: snippetAt(d.body, p.offset + m.index) }
+    if (!productField) {
+      const m = topic.exec(p.folded)
+      if (m) return { source: `general · ${d.name}`, snippet: snippetAt(d.body, p.offset + m.index) }
+      continue
+    }
+    const re = /[^.!?\n]+/g
+    let sm: RegExpExecArray | null
+    while ((sm = re.exec(p.folded))) {
+      if (STORE_SENTENCE_RE.test(sm[0])) continue
+      const m = topic.exec(sm[0])
+      if (m) return { source: `general · ${d.name}`, snippet: snippetAt(d.body, p.offset + sm.index + m.index) }
+    }
   }
   return null
 }
 
-type Ctx = { visible: Doc[]; hidden: Doc[]; coreRes: RegExp[]; cache: WindowCache; docIndex: Map<Doc, number>; general: Map<Doc, boolean[]> }
+type Ctx = { visible: Doc[]; hidden: Doc[]; coreRes: RegExp[]; cores: string[]; cache: WindowCache; docIndex: Map<Doc, number>; general: Map<Doc, boolean[]>; others: Map<string, RegExp[]> }
+
+/** The other products' name regexes (a product name that contains this one, e.g. "focus plus" vs "focus", is skipped). */
+function otherCoresOf(ctx: Ctx, core: string): RegExp[] {
+  const cached = ctx.others.get(core)
+  if (cached) return cached
+  const list = ctx.cores.filter((c) => c && c !== core && !c.includes(core)).map(coreRe)
+  ctx.others.set(core, list)
+  return list
+}
 
 /** Which paragraphs of a document name no product (computed once per document). */
 function generalParasOf(ctx: Ctx, d: Doc): boolean[] {
@@ -204,7 +234,7 @@ function textField(key: string, label: string, topic: RegExp, core: string | nul
   const general = GENERAL_OK.has(key)
   const productHit = (d: Doc): Hit | null => {
     if (!core) return null
-    for (const w of windowsFor(ctx.cache, ctx.docIndex.get(d) ?? -1, d, core)) {
+    for (const w of windowsFor(ctx.cache, ctx.docIndex.get(d) ?? -1, d, core, otherCoresOf(ctx, core))) {
       const m = topic.exec(w.text)
       if (m) return { source: d.name, snippet: snippetAt(d.body, w.start + m.index) }
     }
@@ -220,8 +250,8 @@ function textField(key: string, label: string, topic: RegExp, core: string | nul
   if (general || !core) {
     // For a product field: only paragraphs naming no product. For a store field: every paragraph.
     const parasOf = (d: Doc) => (core ? generalParasOf(ctx, d) : d.paras.map(() => true))
-    tries.push({ docs: ctx.visible, status: 'ok', find: (d) => generalHit(d, parasOf(d), topic) })
-    tries.push({ docs: ctx.hidden, status: 'hidden', find: (d) => generalHit(d, parasOf(d), topic) })
+    tries.push({ docs: ctx.visible, status: 'ok', find: (d) => generalHit(d, parasOf(d), topic, Boolean(core)) })
+    tries.push({ docs: ctx.hidden, status: 'hidden', find: (d) => generalHit(d, parasOf(d), topic, Boolean(core)) })
   }
   for (const t of tries) {
     for (const d of t.docs) {
@@ -383,7 +413,7 @@ export function buildKnowledgeMap(input: MapInput): KnowledgeMap {
   const hidden: Doc[] = docsIn.filter((d) => !d.visible).map((d) => take(d.name, d.body)).filter((d): d is Doc => d !== null)
   const cores = input.products.map((p) => productCoreName(p.name))
   const docIndex = new Map<Doc, number>([...visible, ...hidden].map((d, i) => [d, i]))
-  const ctx: Ctx = { visible, hidden, coreRes: cores.filter(Boolean).map(coreRe), cache: new Map(), docIndex, general: new Map() }
+  const ctx: Ctx = { visible, hidden, coreRes: cores.filter(Boolean).map(coreRe), cores: cores.filter(Boolean), cache: new Map(), docIndex, general: new Map(), others: new Map() }
 
   const products: MapProduct[] = input.products.map((p, i) => {
     const price: MapField =

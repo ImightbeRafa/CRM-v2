@@ -73,6 +73,20 @@ describe('product text: only real product knowledge counts (verifier F1)', () =>
     assert.equal(fieldsOf(map, 0).ingredients.status, 'ok')
     assert.equal(fieldsOf(map, 1).ingredients.status, 'missing')
   })
+  it('single-line lists: the next product\'s line never lends its facts (verifier round 2 M1)', () => {
+    const faq = doc('Preguntas', '¿Qué parches tienen?\nFocus Patch, para concentrarte.\nEnergy Patch: contiene cafeína natural. Se pega en el hombro.', true, 'faq')
+    const hidden = doc('Productos', 'Focus Patch, ingredientes: melena de león. Se pega en el brazo.', false)
+    const focus = fieldsOf(buildKnowledgeMap(base({ docs: [faq, hidden] })), 0)
+    assert.equal(focus.ingredients.status, 'hidden')
+    assert.equal(focus.usage.status, 'hidden')
+    const energy = fieldsOf(buildKnowledgeMap(base({ docs: [faq, hidden] })), 1)
+    assert.equal(energy.ingredients.status, 'ok')
+  })
+  it('store sentences never count as product facts (verifier round 2 M2)', () => {
+    const policy = doc('Políticas', 'Entregamos al día siguiente en GAM. El descuento se aplica solo en pedidos de la web. No hacemos envíos de pedidos menores de ₡5.000. Enviamos en 24 horas.')
+    const map = buildKnowledgeMap(base({ docs: [policy] }))
+    for (const k of ['usage', 'frequency', 'warnings']) assert.equal(fieldsOf(map, 0)[k].status, 'missing', k)
+  })
   it('general paragraphs that name no product count for use / warnings (with the source marked general)', () => {
     const map = buildKnowledgeMap(base({ docs: [doc('Productos', 'Focus Patch, ingredientes: NAC.\n\nUSO (igual para todos): se pega en piel limpia, uno al día.\n\nSEGURIDAD: embarazo o lactancia, consultar al médico.')] }))
     const energy = fieldsOf(map, 1)

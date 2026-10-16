@@ -23,6 +23,7 @@ type FactsForm = {
   sinpeHolder: string
   bank: string
   iban: string
+  cardUrl: string
   instructionsText: string
   maxLines: string
 }
@@ -44,6 +45,7 @@ const EMPTY: FactsForm = {
   sinpeHolder: '',
   bank: '',
   iban: '',
+  cardUrl: '',
   instructionsText: '',
   maxLines: '4',
 }
@@ -101,6 +103,7 @@ export function BrandFactsEditor({
       sinpeHolder: payment.sinpe?.holderName || '',
       bank: payment.transfer?.bank || '',
       iban: payment.transfer?.iban || '',
+      cardUrl: payment.cardUrl || '',
       instructionsText: payment.instructionsText || '',
       maxLines: style.maxLines != null ? String(style.maxLines) : '4',
     })
@@ -146,6 +149,7 @@ export function BrandFactsEditor({
         methods: form.methods,
         sinpe: { number: form.sinpeNumber, holderName: form.sinpeHolder },
         transfer: { bank: form.bank, iban: form.iban },
+        cardUrl: form.cardUrl,
         instructionsText: form.instructionsText,
       },
     }
@@ -284,6 +288,10 @@ export function BrandFactsEditor({
             <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.iban} disabled={!canEdit} onChange={(e) => setForm({ ...form, iban: e.target.value })} />
           </label>
         </div>
+        <label className="mt-2 block text-xs text-slate-700">
+          Enlace para pagar con tarjeta (opcional; si no, se usa el sitio)
+          <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.cardUrl} disabled={!canEdit} placeholder="https://" onChange={(e) => setForm({ ...form, cardUrl: e.target.value })} />
+        </label>
         <label className="mt-2 block text-xs text-slate-700">
           Instrucciones de pago
           <input autoComplete="off" data-lpignore="true" className={FIELD} value={form.instructionsText} disabled={!canEdit} onChange={(e) => setForm({ ...form, instructionsText: e.target.value })} />

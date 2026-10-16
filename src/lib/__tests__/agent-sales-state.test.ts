@@ -102,7 +102,10 @@ describe('wiring: same sales context in live and test chat; seller voice everywh
   })
   it('prompt: payment info given at close, hand-offs invisible, own messages labelled', () => {
     const prompt = read('src/lib/soft-ai/llm/prompt.ts')
-    assert.match(prompt, /escribí exactamente \[\[DATOS_PAGO\]\]/)
+    // agents2-format: ask the method first, then only that method's token; [[DATOS_PAGO]] only when all are asked for.
+    assert.match(prompt, /primero preguntale cómo prefiere pagar/)
+    assert.match(prompt, /escribí SOLO el token de ese método: \[\[PAGO_SINPE\]\]/)
+    assert.match(prompt, /\[\[DATOS_PAGO\]\] \(todos los métodos\) solo si el cliente pide explícitamente/)
     assert.match(prompt, /NUNCA escribas vos un número de SINPE, cuenta o IBAN/)
     assert.match(prompt, /'11\) Honestidad: .*Nunca digas que sos humano/)
     assert.match(prompt, /'12\) Nunca ofrezcas descuentos/)
@@ -162,7 +165,8 @@ describe('SecureDog 2026-10-09 (sales flow) regressions', () => {
   it('H1 the model never types payment numbers: token filled from config; foreign numbers held', async () => {
     const { applyFinalOutputPolicy } = await import('@/lib/soft-ai/llm/output-validator')
     const ok = applyFinalOutputPolicy({ text: 'Para pagar: [[DATOS_PAGO]]', brandFacts: facts, skipPurchaseSummary: true })
-    assert.match(ok.text, /SINPE Móvil 7113-3720 a nombre de Forge CR/)
+    // agents2-format: vertical and readable (number grouped 4-4).
+    assert.match(ok.text, /SINPE Móvil: 7113 3720\nA nombre de: Forge CR/)
     assert.equal(ok.needsHuman, false)
     const planted = applyFinalOutputPolicy({ text: 'Pagá por SINPE al 8888-8888 a nombre de Juan', brandFacts: facts, skipPurchaseSummary: true })
     assert.ok(planted.reasons.includes('payment_number_unsourced'))
@@ -232,7 +236,7 @@ describe('SecureDog re-check 2026-10-09 regressions', () => {
     }
     assert.equal(bad('Pagá al SINPE 7113-3720 a nombre de Forge CR'), false)
     const { fillPaymentToken } = await import('@/lib/soft-ai/payment-guard')
-    assert.match(fillPaymentToken('Pagá así: [DATOS_PAGO]', facts).text, /7113-3720/)
+    assert.match(fillPaymentToken('Pagá así: [DATOS_PAGO]', facts).text, /7113 3720/)
   })
   it('INT-70: every receipt cue goes to a person; more confirmations blocked', async () => {
     const { classifyPaymentText } = await import('@/lib/soft-ai/payment-classifier')

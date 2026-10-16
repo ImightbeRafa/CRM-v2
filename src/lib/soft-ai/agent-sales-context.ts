@@ -11,7 +11,7 @@ import { loadSalesSetup, salesRulesForPrompt } from '@/lib/soft-ai/agent-sales-s
 import { loadOrderRequirements } from '@/lib/orders/order-requirements-server'
 import { loadCoverage } from '@/lib/shipping/coverage-store'
 import type { MethodCoverage } from '@/lib/shipping/coverage'
-import { canSharePaymentFacts, type BrandFacts } from '@/lib/soft-ai/brand-facts'
+import { canSharePaymentFacts, paymentLabelOptions, paymentMethodsOf, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import { shippingFromFacts, type SalesContext } from '@/lib/soft-ai/sales-state'
 import { promoInEffect } from '@/lib/soft-ai/promo'
 
@@ -125,5 +125,9 @@ export async function loadAgentSalesContext(input: {
     // Shareable = switch on AND the details exist (never ask the model to give details that aren't configured).
     paymentShareable: canSharePaymentFacts(input.brandFacts),
     paymentDigits,
+    // agents2-format: the method question offers only these (+ contra entrega when a shipping method allows it).
+    paymentMethods: paymentMethodsOf(input.brandFacts),
+    cardOnWeb: paymentLabelOptions(input.brandFacts).cardOnWeb,
+    codGamOnly: paymentLabelOptions(input.brandFacts).codGamOnly,
   }
 }

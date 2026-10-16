@@ -6,6 +6,13 @@
 import { hasPaymentClaimCue } from '@/lib/soft-ai/payment-classifier'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
+import {
+  paymentMethodLabels,
+  paymentMethodQuestion,
+  PAYMENT_METHOD_TOKENS,
+  WHATSAPP_FORMAT_RULE,
+  type PaymentMethodKey,
+} from '@/lib/soft-ai/brand-facts'
 
 export type SalesCatalogItem = { name: string; price: number; stockLabel: string }
 export type SalesShippingMethod = { name: string; price: number; coverage: string; cod: string }
@@ -30,9 +37,26 @@ export type SalesContext = {
   promo: { freeShipping: boolean; specialPrice: boolean; codHighlight: boolean; headline: string | null } | null
   /** Owner's combos (sales rules), quoted only as listed. */
   bundles?: SalesBundle[]
+  /**
+   * agents2-format: payment methods configured in the brand facts (paymentMethodsOf), in order. Contra entrega is also
+   * offered when a shipping method allows it (shippingMethods[].cod). Undefined = unknown (older callers / tests).
+   */
+  paymentMethods?: PaymentMethodKey[]
+  /** A card link or website exists: tarjeta is labelled "tarjeta (en la web)". */
+  cardOnWeb?: boolean
+  /** The brand's own contra-entrega text says GAM. */
+  codGamOnly?: boolean
 }
 
-export type SalesStage = 'saludo' | 'descubrir' | 'cotizar' | 'cierre' | 'esperando_comprobante' | 'verificando'
+export type SalesStage =
+  | 'saludo'
+  | 'descubrir'
+  | 'cotizar'
+  | 'cierre'
+  /** agents2-format: the store asked HOW the customer wants to pay and has not given payment details yet. */
+  | 'metodo_pago'
+  | 'esperando_comprobante'
+  | 'verificando'
 
 export type SalesState = {
   stage: SalesStage
@@ -42,6 +66,119 @@ export type SalesState = {
   nextStep: string
   /** B4: quantities 2–5 the CUSTOMER asked for (recent messages). Code computes those totals; never an amount they wrote. */
   quantities?: number[]
+  /** agents2-format: the store already asked how the customer wants to pay (and no payment details were given). */
+  askedMethod?: boolean
+  /** agents2-format: the method the customer picked in this message (efectivo / "al recibir" = contra entrega). */
+  chosenMethod?: ChosenPaymentMethod | null
+}
+
+/** A method the customer can pick; efectivo / "al recibir" count as contra entrega (paid to the courier). */
+export type ChosenPaymentMethod = 'sinpe' | 'transferencia' | 'tarjeta' | 'contra_entrega'
+
+const CHOICE_PATTERNS: Array<[ChosenPaymentMethod, RegExp]> = [
+  ['sinpe', /(?<![\p{L}])sinpe(?![\p{L}])/iu],
+  ['transferencia', /(?<![\p{L}])(transfer\p{L}*|dep[oó]sito\s+bancario|iban)(?![\p{L}])/iu],
+  ['tarjeta', /(?<![\p{L}])(tarjeta|cr[eé]dito|d[eé]bito)(?![\p{L}])/iu],
+  ['contra_entrega', /(?<![\p{L}])(contra\s?entrega|al\s+recibir(lo|la)?|cuando\s+(me\s+)?(llegue|lo\s+reciba|la\s+reciba)|efectivo|en\s+la\s+entrega)(?![\p{L}])/iu],
+]
+
+/** The ONE method a customer message picks (two different methods named = no choice yet). */
+export function parsePaymentMethodChoice(text: string): ChosenPaymentMethod | null {
+  const t = stripFormatChars(text || '')
+  const hits = CHOICE_PATTERNS.filter(([, re]) => re.test(t)).map(([m]) => m)
+  return hits.length === 1 ? hits[0] : null
+}
+
+/** The store's own method question ("¿Cómo preferís pagar?", "¿qué método de pago preferís?"). */
+export const PAYMENT_METHOD_ASKED_RE =
+  /c[oó]mo\s+(prefer[ií]s|quer[eé]s|prefiere|quiere|te\s+gustar[ií]a)\s+pagar|qu[eé]\s+m[eé]todo\s+de\s+pago|con\s+qu[eé]\s+(prefer[ií]s|quer[eé]s)\s+pagar|cu[aá]l\s+m[eé]todo\s+(de\s+pago\s+)?prefer[ií]s/iu
+
+/** A customer naming a method AND asking for its details ("¿a qué número es el SINPE?", "pasame la cuenta para transferir"). */
+const PAY_DETAILS_ASK_RE =
+  /(?<![\p{L}])(n[uú]mero|cuenta|iban|datos|a\s+d[oó]nde|a\s+qui[eé]n|a\s+nombre|link|enlace|p[aá]same|mand[aá]me|c[oó]mo\s+(te\s+|le\s+|les\s+)?pago|quiero\s+pagar|voy\s+a\s+pagar|pago\s+(por|con)|prefiero)(?![\p{L}])/iu
+
+/**
+ * agents2-format: the method this customer message picks — after the store's method question, or naming a method
+ * while asking for its details ("Quiero pagar por SINPE, ¿me pasás el número?"). Null when none / two methods.
+ */
+export function paymentMethodPick(text: string, awaitingChoice: boolean): ChosenPaymentMethod | null {
+  const pick = parsePaymentMethodChoice(text)
+  return pick && (awaitingChoice || PAY_DETAILS_ASK_RE.test(stripFormatChars(text || ''))) ? pick : null
+}
+
+/**
+ * agents2-format: the store asked how the customer wants to pay in its last messages (a reply goes out in up to 3
+ * parts) and gave no payment details after that. Pure; live turn and test chat pass the same history.
+ */
+export function awaitingPaymentMethodChoice(history: SoftAiHistoryMessage[]): boolean {
+  const ours = history.filter((m) => m.direction === 'outbound').slice(-3)
+  const at = ours.map((m) => PAYMENT_METHOD_ASKED_RE.test(m.content || '')).lastIndexOf(true)
+  if (at < 0) return false
+  return !ours.slice(at).some((m) => paymentDetailsIn(m.content || ''))
+}
+
+/** Method names the agent offers: configured methods + contra entrega when a shipping method allows it. */
+export function salesPaymentMethods(ctx: SalesContext): PaymentMethodKey[] {
+  const out = [...(ctx.paymentMethods ?? [])]
+  if (salesCodAvailable(ctx) && !out.includes('contra_entrega')) out.push('contra_entrega')
+  return out
+}
+
+/** Contra entrega is offered: configured as a method, or allowed by a shipping method. */
+export function salesCodAvailable(ctx: SalesContext): boolean {
+  if ((ctx.paymentMethods ?? []).includes('contra_entrega')) return true
+  return ctx.shippingMethods.some((s) => s.cod && !/^\s*no(\s|$)/i.test(s.cod) && !/no\s+aplica/i.test(s.cod))
+}
+
+/** Contra entrega only inside the GAM (shipping methods say "solo GAM"). */
+export function salesCodGamOnly(ctx: SalesContext): boolean {
+  if (ctx.codGamOnly) return true
+  const cods = ctx.shippingMethods.map((s) => s.cod || '').filter((c) => c && !/^\s*no(\s|$)/i.test(c) && !/no\s+aplica/i.test(c))
+  return cods.length > 0 && cods.every((c) => /\bGAM\b/i.test(c))
+}
+
+/** What payment-guard needs to fill [[PAGO_CONTRA_ENTREGA]] in the sales flow. */
+export function salesPaymentOptions(ctx: SalesContext): { codAvailable: boolean; codNote: string | null } {
+  return { codAvailable: salesCodAvailable(ctx), codNote: salesCodGamOnly(ctx) ? 'Solo dentro del GAM.' : null }
+}
+
+/** "¿Cómo preferís pagar? Tenemos SINPE Móvil, tarjeta (en la web) y contra entrega (solo GAM)." */
+export function salesMethodQuestion(ctx: SalesContext): string {
+  return paymentMethodQuestion(
+    paymentMethodLabels(salesPaymentMethods(ctx), { cardOnWeb: ctx.cardOnWeb === true, codGamOnly: salesCodGamOnly(ctx) }),
+  )
+}
+
+const CHOSEN_LABEL: Record<ChosenPaymentMethod, string> = {
+  sinpe: 'SINPE Móvil',
+  transferencia: 'transferencia',
+  tarjeta: 'tarjeta',
+  contra_entrega: 'contra entrega',
+}
+
+/** Next step once the customer picked a method (metodo_pago). */
+function chosenMethodStep(ctx: SalesContext, method: ChosenPaymentMethod): string {
+  const offered = salesPaymentMethods(ctx)
+  if (ctx.paymentMethods && !offered.includes(method)) {
+    return `El cliente eligió ${CHOSEN_LABEL[method]}, pero la tienda no lo ofrece: decíselo con amabilidad y volvé a preguntar con la pregunta de pago.`
+  }
+  if (method === 'contra_entrega') {
+    const gam = salesCodGamOnly(ctx)
+    return [
+      'El cliente eligió contra entrega.',
+      gam
+        ? 'Si el envío es fuera del GAM, decile que contra entrega es solo dentro del GAM y ofrecé los otros métodos (sin escribir [[PAGO_CONTRA_ENTREGA]]).'
+        : '',
+      'Si faltan datos del pedido, pedilos en lista y todavía no escribas el token.',
+      `Si ya tenés todo${gam ? ' y es dentro del GAM' : ''}: confirmá el pedido en una lista corta (producto, total, nombre, dirección), escribí ${PAYMENT_METHOD_TOKENS.contra_entrega} en su propio bloque y decí que enseguida le confirmamos el pedido.`,
+    ]
+      .filter(Boolean)
+      .join(' ')
+  }
+  if (method === 'tarjeta') {
+    return `El cliente eligió tarjeta: mandá SOLO el token ${PAYMENT_METHOD_TOKENS.tarjeta} (Betsy pone el enlace) y decile que cualquier duda te escribe por aquí.`
+  }
+  return `El cliente eligió ${CHOSEN_LABEL[method]}: mandá SOLO el token ${PAYMENT_METHOD_TOKENS[method]} (Betsy pone los datos) y, en un mensaje aparte, pedí que te mande el comprobante cuando haga el pago. Si faltan datos del pedido, pedilos en lista.`
 }
 
 // Unicode-aware word edges (JS \b fails after accented letters: "ya pagué").
@@ -49,7 +186,7 @@ const END = '(?=$|[^\\p{L}\\p{N}_])'
 const START = '(?<![\\p{L}\\p{N}_])'
 // "no lo quiero" / "ya no lo quiero" are NOT buy cues; "quiero una talla/cotización" is a question, not a close.
 const BUY_RE = new RegExp(
-  `${START}(?<!\\bno\\s)(?<!\\bno\\s(?:lo|la|los)\\s)(lo quiero|la quiero|los quiero|me lo llevo|me la llevo|lo compro|c[oó]mo (lo |la )?compro|c[oó]mo hago (el )?pedido|quiero (comprar|pedir|ordenar)|quiero (uno|una)(?!\\s+(talla|cotizaci[oó]n|m[aá]s|otra|otro))|lo pido|hagamos el pedido|c[oó]mo (le )?pago|c[oó]mo pagar|a d[oó]nde (te )?(deposito|pago|transfiero)|d[aá]me (el|los) datos)${END}`,
+  `${START}(?<!\\bno\\s)(?<!\\bno\\s(?:lo|la|los)\\s)(lo quiero|la quiero|los quiero|me lo llevo|me la llevo|lo compro|c[oó]mo (lo |la )?compro|c[oó]mo hago (el )?pedido|quiero (comprar|pedir|ordenar)|quiero (uno|una)(?!\\s+(talla|cotizaci[oó]n|m[aá]s|otra|otro))|lo pido|hagamos el pedido|c[oó]mo (te |le |les )?pago|c[oó]mo pagar|c[oó]mo (te |le |les )?(puedo|podr[ií]a) pagar(te|les)?|a d[oó]nde (te )?(deposito|pago|transfiero)|d[aá]me (el|los) datos)${END}`,
   'iu',
 )
 const NEGATED_BUY_RE = /(^|[^\p{L}])(no|ya no)\s+(lo|la|los)\s+(quiero|compro|pido)/iu
@@ -80,7 +217,9 @@ const NEXT_STEP: Record<SalesStage, string> = {
   cotizar:
     'Ya cotizaste: no repitas precio ni envío. Resolvé la duda puntual y llevá al cierre: preguntá si lo quiere o qué le falta para decidir.',
   cierre:
-    'Respondé primero lo que preguntó (breve). Después CERRÁ: en 1 línea explicá cómo se compra, pedí SOLO los datos del pedido que todavía no dio (en una sola línea) y, si aún no los diste, dá los datos de pago. No repitas precio/envío salvo el total final una vez.',
+    'Respondé primero lo que preguntó (breve). Después CERRÁ: dá el total (precio + envío) en un mensaje, pedí en lista SOLO los datos del pedido que falten, y preguntá cómo prefiere pagar ofreciendo los métodos configurados (la pregunta de pago de abajo). Todavía no des datos de pago. No repitas precio/envío salvo el total final una vez.',
+  metodo_pago:
+    'Esperá que elija el método de pago; si preguntó otra cosa, respondé y volvé a preguntar (la pregunta de pago de abajo). No des datos de pago hasta que elija.',
   esperando_comprobante:
     'Respondé primero lo que preguntó (breve). Ya diste los datos de pago: no los repitas salvo que los pida. Pedí lo que falte del pedido y avisá que cuando haga el pago te mande el comprobante.',
   verificando:
@@ -108,10 +247,16 @@ export function deriveSalesState(input: {
   const last = input.inboundText || ''
   const buyCue = BUY_RE.test(last) && !NEGATED_BUY_RE.test(last)
   const receiptCue = (RECEIPT_RE.test(last) || hasPaymentClaimCue(last))
+  // agents2-format: the store asked HOW to pay and gave no payment details after that question.
+  const askedAt = ours.map((m) => PAYMENT_METHOD_ASKED_RE.test(m)).lastIndexOf(true)
+  const askedMethod = askedAt >= 0 && !ours.slice(askedAt).some((m) => paymentDetailsIn(m))
+  // A pick counts after the store's question, or when the customer names a method and asks for its details.
+  const chosenMethod = paymentMethodPick(last, askedMethod)
 
   let stage: SalesStage
   if (receiptCue) stage = 'verificando'
   else if (said.payment) stage = 'esperando_comprobante'
+  else if (askedMethod || chosenMethod) stage = 'metodo_pago'
   else if (buyCue) stage = 'cierre'
   else if (said.price) stage = 'cotizar'
   else if (ours.length === 0) stage = 'saludo'
@@ -122,7 +267,17 @@ export function deriveSalesState(input: {
     last,
   ]
   const quantities = [...new Set(recentInbound.flatMap((t) => requestedQuantities(t)))].sort((a, b) => a - b)
-  return { stage, said, buyCue, receiptCue, nextStep: NEXT_STEP[stage], quantities }
+  const nextStep = stage === 'metodo_pago' && chosenMethod ? chosenMethodStep(input.ctx, chosenMethod) : NEXT_STEP[stage]
+  return {
+    stage,
+    said,
+    buyCue,
+    receiptCue,
+    nextStep,
+    quantities,
+    askedMethod,
+    chosenMethod: stage === 'metodo_pago' ? chosenMethod : null,
+  }
 }
 
 const QTY_WORD: Record<string, number> = { dos: 2, tres: 3, cuatro: 4, cinco: 5, '2': 2, '3': 3, '4': 4, '5': 5 }
@@ -228,7 +383,11 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
     `Estado de la venta (calculado por Betsy): ya dijiste precio ${tick(state.said.price)} · envío ${tick(state.said.shipping)} · datos de pago ${tick(state.said.payment)} · contra entrega ${tick(state.said.cod)}.`,
     `Etapa: ${state.stage}. Siguiente paso: ${state.nextStep}`,
   )
-  if ((state.stage === 'cierre' || state.stage === 'esperando_comprobante') && !ctx.paymentShareable) {
+  // agents2-format: the method question is built by code from the configured methods (never a dump of every number).
+  if (ctx.paymentShareable && (state.stage === 'cierre' || (state.stage === 'metodo_pago' && !state.chosenMethod))) {
+    lines.push(`Pregunta de pago (usala tal cual, en su propio mensaje): «${salesMethodQuestion(ctx)}»`)
+  }
+  if ((state.stage === 'cierre' || state.stage === 'metodo_pago' || state.stage === 'esperando_comprobante') && !ctx.paymentShareable) {
     // Payment data not shareable by chat: never promise data nobody will send — notify the team (silently).
     lines.push(
       'Los datos de pago NO se comparten por chat: pedí los datos del pedido y llamá escalate_to_human(payment_or_sinpe) para que el equipo se los envíe. Al cliente decile solo que enseguida le pasás cómo pagar.',
@@ -242,7 +401,12 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
 export function salesNeedsHuman(ctx: SalesContext, state: SalesState): boolean {
   // Any receipt cue → a person checks it, whatever the model writes (re-check INT-70).
   if (state.receiptCue) return true
-  return (state.stage === 'cierre' || state.stage === 'esperando_comprobante') && !ctx.paymentShareable
+  return closingStage(state.stage) && !ctx.paymentShareable
+}
+
+/** Stages where payment comes up: the close, the method question and waiting for the receipt. */
+function closingStage(stage: SalesStage): boolean {
+  return stage === 'cierre' || stage === 'metodo_pago' || stage === 'esperando_comprobante'
 }
 
 /**
@@ -250,7 +414,7 @@ export function salesNeedsHuman(ctx: SalesContext, state: SalesState): boolean {
  * cómo pagar 😊", the team is asked to send the data, and the chat stays on IA (never a silent draft, never a flip).
  */
 export function salesCloseWithoutPaymentData(ctx: SalesContext, state: SalesState): boolean {
-  return !state.receiptCue && (state.stage === 'cierre' || state.stage === 'esperando_comprobante') && !ctx.paymentShareable
+  return !state.receiptCue && closingStage(state.stage) && !ctx.paymentShareable
 }
 
 /**
@@ -258,7 +422,8 @@ export function salesCloseWithoutPaymentData(ctx: SalesContext, state: SalesStat
  * not configured) or the customer says they paid: a photo / file now is the receipt.
  */
 export function salesAwaitingReceipt(state: SalesState, history: SoftAiHistoryMessage[] = []): boolean {
-  if (state.said.payment || state.stage === 'esperando_comprobante' || state.stage === 'verificando') return true
+  // metodo_pago: the store already talked about paying (the method question) — a photo now is likely the receipt.
+  if (state.said.payment || state.stage === 'metodo_pago' || state.stage === 'esperando_comprobante' || state.stage === 'verificando') return true
   return history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || ''))
 }
 
@@ -292,10 +457,11 @@ export function salesSystemBlock(ctx: SalesContext): string {
   const lines = [
     '--- Cómo vender (reglas de Betsy) ---',
     'Escribís como vendedor de la tienda por WhatsApp: mensajes cortos (1–3 líneas), naturales, una sola pregunta por mensaje.',
+    WHATSAPP_FORMAT_RULE,
     'Nunca repitas algo que ya dijiste en el historial (precio, envío, contra entrega, datos de pago). Si lo vuelven a preguntar, respondé solo eso, breve.',
     'Cada respuesta avanza la venta: terminá siempre con el siguiente paso del "Estado de la venta".',
     'Mencioná contra entrega solo si lo preguntan o al cerrar, cuando ya sabés la zona.',
-    'Para cerrar: pedí los datos del pedido que falten en una sola línea y dá los datos de pago escribiendo [[DATOS_PAGO]] (Betsy pone los números).',
+    'Para cerrar: dá el total en un mensaje; en otro, pedí en lista (un dato por renglón, con guion) los datos del pedido que falten; y preguntá cómo prefiere pagar. Cuando elija, escribí SOLO el token de ese método ([[PAGO_SINPE]], [[PAGO_TRANSFERENCIA]], [[PAGO_TARJETA]] o [[PAGO_CONTRA_ENTREGA]]; Betsy pone los datos) y pedí el comprobante. [[DATOS_PAGO]] solo si pide todos los datos de pago.',
     'Nunca digas que vas a pasar el chat a otra persona o equipo. Si algo lo tiene que revisar alguien, decí con naturalidad que lo revisás y le confirmás.',
     // PatchHouse activation run 2026-10-15: "¿Quién ganó el mundial?" got the answer before the pitch.
     'Si preguntan algo ajeno a la tienda (deportes, noticias, tareas, chistes, otros temas), NO lo respondas ni des el dato: decí con amabilidad que acá solo ayudás con la tienda y volvé a lo que vende con una pregunta.',

@@ -37,6 +37,7 @@ import {
 import { KNOWLEDGE_NAME_MAX } from '@/lib/soft-ai/knowledge-types'
 import { createShortcut, listShortcuts, shortcutErrorStatus } from '@/lib/soft-ai/shortcut-admin'
 import { TUNE_SHORTCUT_PREFIX, validateShortcutForSave, type ShortcutDraft } from '@/lib/soft-ai/shortcuts'
+import { joinReplyParts } from '@/lib/soft-ai/reply-parts'
 import { assertSalesSetupReady, loadSalesSetup, lockAgentForSalesRules, SALES_RULES_TX, saveSalesSetup, SalesRulesTooLargeError, SalesSetupNotReadyError } from '@/lib/soft-ai/agent-sales-setup'
 import {
   checkCorrectionText,
@@ -354,10 +355,25 @@ export async function loadTuneSource(tenantId: string, agentId: string, messageI
     select: { id: true, content: true },
   })
   if (!customer) throw new TuneRefusal('customer_not_found', 'No encontramos el mensaje del cliente que respondió el agente.', 404)
+  // agents2-format: one reply goes out as up to 3 messages — Corregir works on the whole reply (parts of the same
+  // turn, same agent, same chat, in partIndex order), whichever part was clicked.
+  let agentReply = msg.content || ''
+  if (typeof meta.turnId === 'string' && typeof meta.partCount === 'number' && meta.partCount > 1) {
+    const siblings = await prisma.chatMessage.findMany({
+      where: { tenantId, conversationId: msg.conversationId, direction: 'outbound', metadata: { path: ['turnId'], equals: meta.turnId } },
+      select: { id: true, content: true, metadata: true, sentAt: true },
+      orderBy: { sentAt: 'asc' },
+      take: 10,
+    })
+    agentReply = joinReplyParts(
+      siblings.map((row) => ({ content: row.content || '', metadata: asRecord(row.metadata) })),
+      agentId,
+    ) || agentReply
+  }
   return {
     messageId: msg.id,
     conversationId: msg.conversationId,
-    agentReply: msg.content || '',
+    agentReply,
     customerMessageId: customer.id,
     customerText: customer.content || '',
     decidedByCode,

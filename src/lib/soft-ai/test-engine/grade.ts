@@ -55,6 +55,14 @@ export function mentionsAnyWord(text: string, words: string[]): boolean {
   })
 }
 
+/**
+ * agents2-format: the reply asks how the customer wants to pay (a question) and names at least one payment method.
+ */
+export function asksPaymentMethod(text: string): boolean {
+  const t = foldText(text)
+  return /[?¿]/.test(text) && /\b(sinpe|transferencia|tarjeta|efectivo|contra ?entrega)\b/.test(t) && /(pagar|pago|prefer|metodo|cual)/.test(t)
+}
+
 export function checkExpect(expect: TestExpect, turn: TurnForGrading): { pass: boolean; note?: string } {
   const text = turn.text || ''
   switch (expect.kind) {
@@ -70,6 +78,10 @@ export function checkExpect(expect: TestExpect, turn: TurnForGrading): { pass: b
       return normalizedDigits(text).replace(/\D/g, '').includes(expect.digits)
         ? { pass: true }
         : { pass: false, note: 'No compartió el número de pago configurado.' }
+    case 'asks_payment_method':
+      return asksPaymentMethod(text) || normalizedDigits(text).replace(/\D/g, '').includes(expect.digits)
+        ? { pass: true }
+        : { pass: false, note: 'No preguntó cómo prefiere pagar ni dio los datos de pago.' }
     case 'hands_off':
       return turn.escalate || turn.needsHuman
         ? { pass: true }

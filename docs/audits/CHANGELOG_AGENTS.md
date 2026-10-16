@@ -1,3 +1,35 @@
+## 2026-10-16 — agents2-format: readable replies + ask the payment method first (claudio/agents2-format)
+
+Live WhatsApp test sent one unreadable block (price + order data + every payment number joined with " · "). Now:
+- Multi-message replies: a reply is split at blank lines into at most 3 WhatsApp / Instagram messages (extra
+  paragraphs merge into the last). Every check (money, payment numbers, links, shortening, token filling) still runs on
+  the whole text; the split is last (reply-parts.ts). Live send: part 0 keeps the turn's deliveryKey + content hash,
+  parts 1..n use `${deliveryKey}:p${i}` with their own hash, 700 ms apart, none after 33 s; a later part that is
+  ambiguous stops the loop (never resent) and the turn records errorCode 'partial_delivery'. One ChatMessage per part
+  (partIndex / partCount; toolTrace on part 0 only). Same loop for code-sent saved replies. Probar returns `parts` and
+  shows one bubble per part (one "Corregir" under the last part, with the whole reply); Corregir in real chats joins the
+  parts of the same turn.
+- Style (code-owned, prompt rule 16 + reply style + sales rules): short messages, blank line between ideas, data and
+  options as dash lists, never price + order data + payment in one block, no " · ". maxLines is per message and a dash
+  list counts as one line; shortening is per message and never drops a list, a ₡ line or a token line; a line joined
+  with 2+ " · " is split into lines (same words). "en una sola línea" removed everywhere.
+- Payment method flow: per-method tokens [[PAGO_SINPE]] / [[PAGO_TRANSFERENCIA]] / [[PAGO_TARJETA]] /
+  [[PAGO_CONTRA_ENTREGA]] filled by payment-guard (same share guard + needsHuman fallback; only offered methods),
+  vertical ("SINPE Móvil: 6201 9914\nA nombre de: …"). [[DATOS_PAGO]] kept, vertical, only when all data is asked for.
+  Optional payment.cardUrl (falls back to the website; on the link allowlist). Sales stage 'metodo_pago' (asked how to
+  pay, no details yet) with chosenMethod; the close asks "¿Cómo preferís pagar? Tenemos …" built from the configured
+  methods. Contra entrega: the model confirms zone + order and writes [[PAGO_CONTRA_ENTREGA]] → the reply goes out,
+  then a TRUE hand-off with reason 'order_ready'. After the method question a cue-free "SINPE" / "por transferencia" is
+  a choice answered by code with that method only (+ "mandame el comprobante"); claims / confirm requests / disputes
+  still go to a person. sys_payment_info lists the methods and asks; sys_purchase_summary names methods, no numbers;
+  old default bodies upgraded on read. Owner corrections accept the new tokens.
+- Quick check: "¿Cómo les puedo pagar?" expects the method question (or the configured number); new "pay-sinpe" case
+  expects the number once SINPE is chosen. AGENT_RULES_VERSION → format-r1-2026-10-16 (agents re-run their check).
+- Tests: src/lib/__tests__/agents2-format.test.ts (43). Updated expectations: agent-sales-state, agent-promo,
+  agent-reply-images, soft-ai-payment-classifier (behaviour changed as specified).
+- Proof: tsc 0, lint 0, test:soft-ai 710/710, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34. Not deployed.
+
 ## 2026-10-15 — SecureDog round-4 follow-ups (claudio/agents2-phase1)
 
 - payment-guard: the exact "8888,1234" / "8888, 1234" shape is a payment number whenever the text mentions payment

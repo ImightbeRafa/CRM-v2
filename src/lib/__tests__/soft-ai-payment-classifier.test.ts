@@ -57,7 +57,10 @@ describe('decideInbound payment policy', () => {
     assert.equal(decision.shortcutKey, 'sys_payment_info')
     assert.equal(decision.intent, 'payment_info')
     assert.equal(decision.needsHuman, false)
-    assert.match(decision.text, /88881234/)
+    // agents2-format: "¿cómo pago?" lists the methods and asks which one — no number until a method is chosen.
+    assert.match(decision.text, /- SINPE Móvil/)
+    assert.match(decision.text, /¿Cómo preferís pagar\?/)
+    assert.doesNotMatch(decision.text, /8888/)
     assert.equal(decision.decisionTrace.steps.some((step) => step.step === 'model'), false)
   })
 

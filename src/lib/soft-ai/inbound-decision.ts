@@ -9,7 +9,14 @@ import {
   type ReplyStyle,
 } from '@/lib/soft-ai/brand-facts'
 import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
-import { classifyPaymentText, paymentHandoffReason, type PaymentClassification } from '@/lib/soft-ai/payment-classifier'
+import {
+  classifyPaymentText,
+  isCueFreePaymentChoiceText,
+  paymentHandoffReason,
+  type PaymentClassification,
+} from '@/lib/soft-ai/payment-classifier'
+import { paymentMethodBlock, PAYMENT_METHOD_TOKENS } from '@/lib/soft-ai/payment-guard'
+import { parsePaymentMethodChoice, paymentMethodPick, type ChosenPaymentMethod } from '@/lib/soft-ai/sales-state'
 import { isOptOutText, mediaInboundPlan, routeInboundSafety } from '@/lib/soft-ai/llm/safety-router'
 import { HANDOFF_REASON, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
 import {
@@ -121,6 +128,11 @@ export function decideInbound(input: {
   skipVerbatimIds?: ReadonlySet<string>
   /** The sale already gave the payment details: a photo / file now is treated as the receipt (B6). */
   awaitingReceipt?: boolean
+  /**
+   * agents2-format: the store just asked "¿Cómo preferís pagar?" (sales-state awaitingPaymentMethodChoice): a short,
+   * cue-free reply naming a method is the customer's choice, answered with that method's details only.
+   */
+  awaitingPaymentMethod?: boolean
 }): InboundDecision {
   const paymentClass = classifyPaymentText(input.inboundText)
   const steps: DecisionStep[] = [
@@ -195,6 +207,58 @@ export function decideInbound(input: {
     })
   }
 
+  // agents2-format: the customer picked a method — after the store's question ("SINPE"), or naming one while asking
+  // for its details ("Quiero pagar por SINPE, ¿me pasás el número?"). A bare "SINPE" used to fail closed as a payment
+  // message (→ "ya lo reviso"); with no proof / claim / confirm / refund cue at all it is a choice.
+  const choice =
+    (!input.messageType || input.messageType === 'text') && !isOptOutText(input.inboundText || '') &&
+    isCueFreePaymentChoiceText(input.inboundText)
+      ? paymentMethodPick(input.inboundText, input.awaitingPaymentMethod === true)
+      : null
+  if (choice === 'contra_entrega') {
+    // Contra entrega: the model checks the zone and the order details, then a person takes the order (order_ready).
+    steps.push({ step: 'payment_choice', outcome: 'model', reason: choice })
+    return continueToModel(paymentClass, steps)
+  }
+  if (choice) {
+    const reply = paymentChoiceReply(choice, input.awaitingPaymentMethod ? 'Perfecto 🙌' : 'Claro 🙌')
+    if (!canSharePaymentFacts(input.brandFacts)) {
+      steps.push({ step: 'payment_choice', outcome: 'handoff', reason: 'payment_info_not_shared' })
+      const shortcut = seedShortcut('sys_payment_soon', input.shortcuts)
+      return finish({
+        text: renderShortcutTemplate(shortcut.body, { facts: input.brandFacts }),
+        intent: 'payment_info',
+        shortcutKey: 'sys_payment_soon',
+        escalate: true,
+        paymentClass,
+        steps,
+        facts: input.brandFacts,
+        replyStyle: input.replyStyle,
+        shortcuts: input.shortcuts,
+        forceNeedsHuman: true,
+        extraReasons: ['payment_info_not_shared'],
+        handoff: { kind: 'review', reason: HANDOFF_REASON.paymentData },
+      })
+    }
+    // A method the store does not offer (or without its data): the model answers.
+    if (reply && paymentMethodBlock(input.brandFacts, choice)) {
+      steps.push({ step: 'payment_choice', outcome: choice })
+      return finish({
+        text: reply,
+        intent: 'payment_info',
+        shortcutKey: 'sys_payment_info',
+        escalate: false,
+        paymentClass,
+        steps,
+        facts: input.brandFacts,
+        replyStyle: input.replyStyle,
+        shortcuts: input.shortcuts,
+      })
+    }
+    steps.push({ step: 'payment_choice', outcome: 'model', reason: choice })
+    return continueToModel(paymentClass, steps)
+  }
+
   if (safety.escalate) {
     steps.push({ step: 'safety', outcome: 'handoff', reason: safety.reason })
     const shortcut = seedShortcut(safety.shortcutKey, input.shortcuts)
@@ -224,7 +288,25 @@ export function decideInbound(input: {
 
   if (paymentClass === 'payment_info_safe') {
     if (canSharePaymentFacts(input.brandFacts)) {
+      // agents2-format: one method named ("¿cuál es el número de SINPE?", "¿aceptan tarjeta?") → that method only.
+      const named = isCueFreePaymentChoiceText(input.inboundText) ? parsePaymentMethodChoice(input.inboundText) : null
+      const namedReply = named && named !== 'contra_entrega' && paymentMethodBlock(input.brandFacts, named) ? paymentChoiceReply(named, 'Claro 🙌') : null
+      if (namedReply) {
+        steps.push({ step: 'payment_info', outcome: 'share', reason: named! })
+        return finish({
+          text: namedReply,
+          intent: 'payment_info',
+          shortcutKey: 'sys_payment_info',
+          escalate: false,
+          paymentClass,
+          steps,
+          facts: input.brandFacts,
+          replyStyle: input.replyStyle,
+          shortcuts: input.shortcuts,
+        })
+      }
       steps.push({ step: 'payment_info', outcome: 'share' })
+      // "¿Cómo pago?": the method names and the question (sys_payment_info); the details go out once they pick one.
       const shortcut = seedShortcut('sys_payment_info', input.shortcuts)
       const text = renderShortcutTemplate(shortcut.body, { facts: input.brandFacts })
       return finish({
@@ -284,6 +366,10 @@ export function decideInbound(input: {
     })
   }
 
+  return continueToModel(paymentClass, steps)
+}
+
+function continueToModel(paymentClass: PaymentClassification, steps: DecisionStep[]): InboundDecision {
   steps.push({ step: 'model', outcome: 'continue' })
   return {
     handled: false,
@@ -298,5 +384,22 @@ export function decideInbound(input: {
     paymentClass,
     highlightedAmounts: [],
     decisionTrace: { paymentClass, steps },
+  }
+}
+
+/**
+ * agents2-format: what code sends when the customer picks a method — that method's token (filled by payment-guard
+ * with the configured details, vertical) and, in a second message, what to do next. Null for contra entrega (the
+ * model confirms zone + order, then a person takes it).
+ */
+export function paymentChoiceReply(method: ChosenPaymentMethod, opener = 'Perfecto 🙌'): string | null {
+  switch (method) {
+    case 'sinpe':
+    case 'transferencia':
+      return `${opener}\n${PAYMENT_METHOD_TOKENS[method]}\n\nCuando lo hagás, mandame el comprobante por aquí y lo revisamos 😊`
+    case 'tarjeta':
+      return `${opener}\n${PAYMENT_METHOD_TOKENS.tarjeta}\n\nCualquier duda con el pago, me escribís por aquí 😊`
+    default:
+      return null
   }
 }

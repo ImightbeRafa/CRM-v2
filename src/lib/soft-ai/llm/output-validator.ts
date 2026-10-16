@@ -13,9 +13,10 @@ import {
 } from '@/lib/soft-ai/brand-facts'
 import { hasConfirmationWording, renderShortcutTemplate, shortcutByKey, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
-import { fillPaymentToken, paymentNumberProblems } from '@/lib/soft-ai/payment-guard'
+import { fillPaymentToken, paymentNumberProblems, type PaymentFillOptions, type TokenPaymentMethod } from '@/lib/soft-ai/payment-guard'
 import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
 import { buildLinkAllowlist, foreignLinks, type LinkAllowlist } from '@/lib/soft-ai/links'
+import { MAX_REPLY_PARTS, splitReplyParts } from '@/lib/soft-ai/reply-parts'
 
 /**
  * Backstop for short payment confirmations the confirmation-wording check misses ("Sí, ya se acreditó", "Sí, lo
@@ -232,10 +233,16 @@ export function bareMilAmounts(text: string, extraCountWords: readonly string[] 
  * owner wrote in active saved replies and approved bound knowledge (links.ts buildLinkAllowlist).
  */
 export function brandFactsLinkAllowlist(
-  facts: Pick<BrandFacts, 'website' | 'catalogUrl' | 'location'> | null | undefined,
+  facts: (Pick<BrandFacts, 'website' | 'catalogUrl' | 'location'> & { payment?: { cardUrl?: string } | null }) | null | undefined,
   ownerTexts: Array<string | null | undefined> = [],
 ): LinkAllowlist {
-  return buildLinkAllowlist({ website: facts?.website, catalogUrl: facts?.catalogUrl, mapsUrl: facts?.location?.mapsUrl, ownerTexts })
+  // agents2-format: the owner's card-payment link ([[PAGO_TARJETA]]) is the brand's own link too.
+  return buildLinkAllowlist({
+    website: facts?.website,
+    catalogUrl: facts?.catalogUrl,
+    mapsUrl: facts?.location?.mapsUrl,
+    ownerTexts: facts?.payment?.cardUrl ? [...ownerTexts, facts.payment.cardUrl] : ownerTexts,
+  })
 }
 
 const MONEY_AMOUNT_RE =
@@ -267,6 +274,11 @@ export function validateAgentOutput(input: {
    * reply is 'foreign_link' (nothing configured → every link is foreign). Undefined = not checked.
    */
   linkAllowlist?: LinkAllowlist | null
+  /**
+   * The text the length rule is judged on (agents2-format): the reply BEFORE payment tokens were filled, so a
+   * configured payment block counts as the one line the token was. Defaults to `text`.
+   */
+  styleText?: string
 }): OutputValidationResult {
   const reasons: string[] = []
   const text = input.text || ''
@@ -309,8 +321,10 @@ export function validateAgentOutput(input: {
 
   const style = input.replyStyle
   if (style) {
-    const lines = text.split(/\n/).filter((line) => line.trim().length > 0)
-    if (lines.length > style.maxLines + 2) reasons.push('style_too_long')
+    // agents2-format: the limit is PER MESSAGE (each blank-line block goes out on its own, max 3), a dash list counts
+    // as one line.
+    const parts = splitReplyParts(input.styleText ?? text)
+    if (parts.some((part) => messageLineCount(part) > style.maxLines + 2)) reasons.push('style_too_long')
   }
 
   const needsHuman = reasons.length > 0
@@ -322,34 +336,98 @@ export function validateAgentOutput(input: {
   }
 }
 
-const PAYMENT_TOKEN_LINE_RE = /\[\[?\s*DATOS[_\s]PAGO\s*\]?\]/i
+/** Any payment token line ([[DATOS_PAGO]], [[PAGO_SINPE]], …, also with one bracket). */
+const PAYMENT_TOKEN_LINE_RE = /\[\[?\s*(?:DATOS[_\s-]?PAGO|PAGO[_\s-]?(?:SINPE|TRANSFERENCIA|TARJETA|CONTRA[_\s-]?ENTREGA))\s*\]?\]/i
 
-/**
- * B3: keep the reply within maxLines (non-empty lines): the first lines, the [[DATOS_PAGO]] line and the last question
- * (the next step of the sale) are kept, in their original order. Pure; never adds words.
- */
-export function shortenToMaxLines(text: string, maxLines: number): string {
-  const lines = (text || '').split(/\n/).filter((line) => line.trim().length > 0)
-  const limit = Math.max(1, Math.floor(maxLines))
-  if (lines.length <= limit + 2) return text
+// agents2-format: a reply goes out as separate messages (reply-parts.ts, client-safe).
+export { MAX_REPLY_PARTS, splitReplyParts }
+
+const LIST_ITEM_RE = /^\s*(?:[-•*–]|\d{1,2}[.)])\s+\S/
+
+/** Lines of one message: a run of list items ("- …", "• …", "1. …") counts as ONE line. */
+export function messageLineCount(part: string): number {
+  return messageUnits(part).length
+}
+
+/** Units of one message: a single line, or a whole run of list items. */
+function messageUnits(part: string): string[][] {
+  const units: string[][] = []
+  let list: string[] | null = null
+  for (const line of (part || '').split('\n')) {
+    if (!line.trim()) {
+      list = null
+      continue
+    }
+    if (LIST_ITEM_RE.test(line)) {
+      if (!list) {
+        list = []
+        units.push(list)
+      }
+      list.push(line)
+    } else {
+      list = null
+      units.push([line])
+    }
+  }
+  return units
+}
+
+/** Shorten ONE message (B3 rules, per message): null when it cannot be shortened safely. */
+function shortenPart(part: string, limit: number): string | null {
+  const units = messageUnits(part)
+  if (units.length <= limit + 2) return part
   const keep = new Set<number>()
-  const tokenLine = lines.findIndex((line) => PAYMENT_TOKEN_LINE_RE.test(line))
-  if (tokenLine >= 0) keep.add(tokenLine)
-  let question = -1
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    if (/[?¿]/.test(lines[i])) {
-      question = i
+  units.forEach((unit, i) => {
+    // A payment token and a list (the data the customer must send) are never dropped.
+    if (unit.some((line) => PAYMENT_TOKEN_LINE_RE.test(line)) || unit.length > 1 || LIST_ITEM_RE.test(unit[0])) keep.add(i)
+  })
+  for (let i = units.length - 1; i >= 0; i -= 1) {
+    if (unit2text(units[i]).match(/[?¿]/)) {
+      keep.add(i)
       break
     }
   }
-  if (question >= 0) keep.add(question)
-  for (let i = 0; i < lines.length && keep.size < limit; i += 1) keep.add(i)
+  for (let i = 0; i < units.length && keep.size < limit; i += 1) keep.add(i)
   // SecureDog INT-99: never drop a line that qualifies something (an amount, shipping, a negation, the assistant
   // disclosure) or holds part of a payment token — dropping it can change the meaning. Then the reply is not shortened
   // (it stays too long → the safe line goes out instead).
-  const dropped = lines.filter((_, i) => !keep.has(i))
-  if (dropped.some((line) => QUALIFYING_LINE_RE.test(line))) return text
-  return [...keep].sort((a, b) => a - b).map((i) => lines[i]).join('\n')
+  const dropped = units.filter((_, i) => !keep.has(i)).flat()
+  if (dropped.some((line) => QUALIFYING_LINE_RE.test(line))) return null
+  return [...keep].sort((a, b) => a - b).map((i) => unit2text(units[i])).join('\n')
+}
+
+const unit2text = (unit: string[]) => unit.join('\n')
+
+/**
+ * B3: keep each message within maxLines (agents2-format: per message, a list counts as one line): the first lines, the
+ * payment-token line, every list and the last question (the next step of the sale) are kept, in their original order.
+ * Pure; never adds words. Unchanged text when nothing needs (or may be) shortened.
+ */
+export function shortenToMaxLines(text: string, maxLines: number): string {
+  const limit = Math.max(1, Math.floor(maxLines))
+  const parts = splitReplyParts(text)
+  if (parts.every((part) => messageLineCount(part) <= limit + 2)) return text
+  const out: string[] = []
+  for (const part of parts) {
+    const short = shortenPart(part, limit)
+    if (short === null) return text
+    out.push(short)
+  }
+  return out.join('\n\n')
+}
+
+/**
+ * "SINPE 8888 · transferencia BAC · también tarjeta" — one line joined with " · " is unreadable on WhatsApp
+ * (agents2-format): a line with two or more " · " separators becomes one line per item. Same words, same order.
+ */
+export function unjoinDotSeparated(text: string): string {
+  return (text || '')
+    .split('\n')
+    .map((line) => {
+      const pieces = line.split(/\s+·\s+/)
+      return pieces.length >= 3 ? pieces.map((p) => p.trim()).filter(Boolean).join('\n') : line
+    })
+    .join('\n')
 }
 
 const QUALIFYING_LINE_RE = /[₡¢$]|\d{3}|env[ií]o|(?<![\p{L}])(no|nunca|sin|solo|excepto)(?![\p{L}])|asistente\s+virtual|\[\[|\]\]|DATOS|PAGO/iu
@@ -362,6 +440,10 @@ export type FinalOutputPolicy = {
   purchaseSummaryAppended: boolean
   highlightedAmounts: number[]
   intent: string
+  /** The separate messages the text goes out as (splitReplyParts). */
+  parts: string[]
+  /** Payment tokens code filled ('all' = [[DATOS_PAGO]]); a filled contra-entrega token = an order ready for a person. */
+  paymentMethods: Array<TokenPaymentMethod | 'all'>
 }
 
 export function applyFinalOutputPolicy(input: {
@@ -391,6 +473,8 @@ export function applyFinalOutputPolicy(input: {
    * it is 'foreign_link'. Not given for the owner's own saved replies sent by code (inbound-decision).
    */
   linkAllowlist?: LinkAllowlist | null
+  /** Sales flow: contra entrega offered by a shipping method (agent-sales-context) for [[PAGO_CONTRA_ENTREGA]]. */
+  paymentOptions?: PaymentFillOptions
 }): FinalOutputPolicy {
   const facts = input.brandFacts || { schemaVersion: 1 }
   const style = input.replyStyle || DEFAULT_REPLY_STYLE
@@ -406,6 +490,12 @@ export function applyFinalOutputPolicy(input: {
   }
   text = extractShortcutTag(text).text
   if (input.shortenLongReply) {
+    // agents2-format: "a · b · c" on one line becomes one line per item (model text only; same words).
+    const unjoined = unjoinDotSeparated(text)
+    if (unjoined !== text) {
+      text = unjoined
+      reasons.push('unjoined')
+    }
     const short = shortenToMaxLines(text, style.maxLines)
     if (short !== text) {
       text = short
@@ -418,7 +508,9 @@ export function applyFinalOutputPolicy(input: {
   if (!text) reasons.push('empty_output')
   // Payment identifiers come from configuration only (INT-69): fill the token, then every payment-looking number
   // must be a configured one (when shareable) or one the customer wrote.
-  const filled = fillPaymentToken(text, facts)
+  // The length rule is judged with each token as its one line (a configured payment block is not "too long").
+  let styleText = text
+  const filled = fillPaymentToken(text, facts, input.paymentOptions)
   text = filled.text
   if (filled.needsHuman) reasons.push('payment_info_not_shared')
   reasons.push(...paymentNumberProblems({ text, facts, customerText: input.customerText }))
@@ -441,6 +533,7 @@ export function applyFinalOutputPolicy(input: {
       reasons.push('brand_facts_missing')
     } else if (!text.includes(rendered)) {
       text = `${text}\n${rendered}`.trim()
+      styleText = `${styleText}\n${rendered}`.trim()
       purchaseSummaryAppended = true
       reasons.push('purchase_summary_appended')
     }
@@ -459,10 +552,11 @@ export function applyFinalOutputPolicy(input: {
     customerText: input.customerText,
     // INT-109: live and Probar both come through here — a reply may only link the brand's own site.
     linkAllowlist: input.linkAllowlist ?? undefined,
+    styleText,
   })
 
   const merged = [...new Set([...reasons, ...validated.reasons])]
-  const blocking = merged.filter((reason) => reason !== 'purchase_summary_appended' && reason !== 'shortened')
+  const blocking = merged.filter((reason) => reason !== 'purchase_summary_appended' && reason !== 'shortened' && reason !== 'unjoined')
   return {
     text,
     ok: blocking.length === 0,
@@ -471,5 +565,8 @@ export function applyFinalOutputPolicy(input: {
     purchaseSummaryAppended,
     highlightedAmounts: validated.highlightedAmounts || [],
     intent,
+    // agents2-format: the messages this reply goes out as (split last, after every check ran on the whole text).
+    parts: splitReplyParts(text),
+    paymentMethods: filled.methods,
   }
 }

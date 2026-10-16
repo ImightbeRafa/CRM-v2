@@ -68,7 +68,7 @@ import {
   type TurnHandoff,
 } from '@/lib/soft-ai/agent-turn-outcome'
 import { notifyHandoff } from '@/lib/soft-ai/handoff-notify'
-import { isMediaLikeMessageType, mediaAwaitingReceipt } from '@/lib/soft-ai/sales-state'
+import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt } from '@/lib/soft-ai/sales-state'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
@@ -78,7 +78,8 @@ import { selectReplyImages, sendableImageReplyIds, type ReplyImage } from '@/lib
 import type { AgentAsset } from '@/lib/soft-ai/agent-assets'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import { AGENT_IMAGE_DEADLINE_MS, loadSentAgentImageShas, sendAgentImagesOnce } from '@/lib/soft-ai/agent-media-send'
-import { applyFinalOutputPolicy, validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
+import { applyFinalOutputPolicy, splitReplyParts, validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
+import { AGENT_PARTS_DEADLINE_MS, planReplyParts, REPLY_PART_GAP_MS } from '@/lib/soft-ai/reply-parts'
 import { maskConfiguredPaymentSecrets, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import { redactToolTrace } from '@/lib/soft-ai/llm/redact'
 import {
@@ -597,6 +598,7 @@ export async function executeAgentLayerTurn(
     // A keyword reply WITH images whose image can't go out now ("Te paso la guía 👇" with nothing) → model answers.
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !liveImageReplyIds.has(id))),
     awaitingReceipt: mediaAwaitingReceipt(trigger.messageType, history, mediaSalesContext),
+    awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
   })
   decision.decisionTrace.historyCount = history.length
 
@@ -757,6 +759,7 @@ export async function executeAgentLayerTurn(
     shortcuts,
     shortenLongReply: true,
     linkAllowlist: runtimeInput.linkAllowlist,
+    paymentOptions: runtimeInput.salesPaymentOptions,
   })
   const needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
   // B1: what goes out is planned by code: the model reply (checked), the safe line, or the hand-off text.
@@ -768,6 +771,7 @@ export async function executeAgentLayerTurn(
       llmEscalateReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
+      codOrderReady: policy.paymentMethods.includes('contra_entrega'),
     }),
     await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
   )
@@ -1196,70 +1200,100 @@ async function finishDeliveryOrSuggestInner(input: {
     }
   }
 
-  const delivery = await deliverOnce({
-    jobId: input.row.id,
-    deliveryKey: input.row.deliveryKey,
-    kind: 'text',
-    contentHash,
-    send: async () => {
-      const result = await sendMetaText({
-        platform: input.payload.platform || 'whatsapp',
-        accessToken,
-        phoneNumberId: account.accountId,
-        pageId: account.pageId || meta.pageId,
-        recipient: input.row.peerId,
-        text: input.outputText,
-      })
-      if (!result.ok) {
-        throw new Error(
-          result.error && /^[A-Z0-9_:-]{3,80}$/i.test(result.error)
-            ? result.error.slice(0, 80).toUpperCase().replace(/[^A-Z0-9_:-]/g, '_')
-            : 'META_SEND_FAILED',
-        )
+  // agents2-format: the reply goes out as up to 3 messages (one per paragraph), in order, each claimed exactly once.
+  const partsPlan = planReplyParts({ text: input.outputText, deliveryKey: input.row.deliveryKey, contentHash, hash: hashSoftAiDeliveryContent })
+  const partsDeadlineAt = (input.startedAt ?? Date.now()) + AGENT_PARTS_DEADLINE_MS
+  let firstSkipped = false
+  let partial = false
+  for (const part of partsPlan) {
+    if (part.index > 0) {
+      // Late turn: the remaining parts are not sent (the job lease must not run out mid-reply).
+      if (Date.now() + REPLY_PART_GAP_MS > partsDeadlineAt) {
+        partial = true
+        break
       }
-      return result
-    },
-    providerDeliveryId: (result) => result.providerMessageId,
-  })
+      await new Promise((resolve) => setTimeout(resolve, REPLY_PART_GAP_MS))
+    }
+    let delivery: { skipped: boolean; providerDeliveryId?: string; result?: { providerMessageId?: string } }
+    try {
+      delivery = await deliverOnce({
+        jobId: input.row.id,
+        deliveryKey: part.deliveryKey,
+        kind: 'text',
+        contentHash: part.contentHash,
+        send: async () => {
+          const result = await sendMetaText({
+            platform: input.payload.platform || 'whatsapp',
+            accessToken,
+            phoneNumberId: account.accountId,
+            pageId: account.pageId || meta.pageId,
+            recipient: input.row.peerId,
+            text: part.text,
+          })
+          if (!result.ok) {
+            throw new Error(
+              result.error && /^[A-Z0-9_:-]{3,80}$/i.test(result.error)
+                ? result.error.slice(0, 80).toUpperCase().replace(/[^A-Z0-9_:-]/g, '_')
+                : 'META_SEND_FAILED',
+            )
+          }
+          return result
+        },
+        providerDeliveryId: (result) => result.providerMessageId,
+      })
+    } catch (error) {
+      // The first message keeps the old behaviour (the turn fails, nothing was sent). A later part that is ambiguous
+      // or failed stops the loop: never resent, the earlier parts stay delivered.
+      if (part.index === 0) throw error
+      console.error('[soft-ai reply part]', { turnId: input.turnId, part: part.index, code: error instanceof Error ? error.message.slice(0, 60) : 'error' })
+      partial = true
+      break
+    }
+    if (part.index === 0) firstSkipped = delivery.skipped
 
-  const providerMessageId =
-    delivery.providerDeliveryId ||
-    (!delivery.skipped ? delivery.result?.providerMessageId : undefined)
+    const providerMessageId =
+      delivery.providerDeliveryId ||
+      (!delivery.skipped ? delivery.result?.providerMessageId : undefined)
 
-  await dualWriteChatMessage({
-    tenantId: input.row.tenantId,
-    socialAccountId: input.row.socialAccountId,
-    direction: 'outbound',
-    content: input.outputText,
-    sentAt: new Date(),
-    peerId: input.row.peerId,
-    peerName: input.payload.senderName || input.conversation.peerName || null,
-    providerMessageId: providerMessageId || null,
-    messageType: 'text',
-    // Marks the team reply only up to the customer message this turn answered.
-    answersMessageId: input.row.messageId,
-    deliveryStatus: 'sent',
-    platform: input.payload.platform || 'whatsapp',
-    metadata: {
-      softAi: true,
-      agentId: input.agent.id,
-      agentVersion: input.agent.version,
-      // Snapshot at send time. /chats labels this bubble from these fields, not the live binding.
-      agentName: input.agent.name,
-      agentEmoji: input.agent.emoji,
-      turnId: input.turnId,
-      toolTrace: input.toolTrace,
-      to: input.row.peerId,
-      platform: input.payload.platform,
-      providerMessageId,
-      automationJobId: input.row.id,
-      deliverySkipped: delivery.skipped,
-      // "Corregir" (agent-tuning.ts): the customer message this answered, and whether code or the agent wrote it.
+    await dualWriteChatMessage({
+      tenantId: input.row.tenantId,
+      socialAccountId: input.row.socialAccountId,
+      direction: 'outbound',
+      content: part.text,
+      sentAt: new Date(),
+      peerId: input.row.peerId,
+      peerName: input.payload.senderName || input.conversation.peerName || null,
+      providerMessageId: providerMessageId || null,
+      messageType: 'text',
+      // Marks the team reply only up to the customer message this turn answered.
       answersMessageId: input.row.messageId,
-      replyBy: input.codeDecided ? 'code' : 'agent',
-    },
-    suppressSoftAi: true,
-  })
+      deliveryStatus: 'sent',
+      platform: input.payload.platform || 'whatsapp',
+      metadata: {
+        softAi: true,
+        agentId: input.agent.id,
+        agentVersion: input.agent.version,
+        // Snapshot at send time. /chats labels this bubble from these fields, not the live binding.
+        agentName: input.agent.name,
+        agentEmoji: input.agent.emoji,
+        turnId: input.turnId,
+        // The trace once per turn (first message), not copied onto every part.
+        ...(part.index === 0 ? { toolTrace: input.toolTrace } : {}),
+        to: input.row.peerId,
+        platform: input.payload.platform,
+        providerMessageId,
+        automationJobId: input.row.id,
+        deliverySkipped: delivery.skipped,
+        // "Corregir" (agent-tuning.ts): the customer message this answered, and whether code or the agent wrote it.
+        answersMessageId: input.row.messageId,
+        replyBy: input.codeDecided ? 'code' : 'agent',
+        // agents2-format: which message of the reply this is (Corregir joins the parts of one turn).
+        partIndex: part.index,
+        partCount: partsPlan.length,
+      },
+      suppressSoftAi: true,
+    })
+  }
 
   await prisma.chatAgentTurn.update({
     where: { id: input.turnId },
@@ -1267,6 +1301,8 @@ async function finishDeliveryOrSuggestInner(input: {
       status: 'delivered',
       skipReason: null,
       completedAt: new Date(),
+      // Some parts of the reply did not go out (late turn / ambiguous send): visible in the turn row.
+      ...(partial ? { errorCode: 'partial_delivery' } : {}),
     },
   })
 
@@ -1281,7 +1317,7 @@ async function finishDeliveryOrSuggestInner(input: {
   return {
     status: 'delivered',
     turnId: input.turnId,
-    skippedDelivery: delivery.skipped,
+    skippedDelivery: firstSkipped,
   }
 }
 
@@ -1347,6 +1383,8 @@ async function runAgentTestTurnInner(input: {
   sentImageIds?: string[]
 }): Promise<{
   text: string
+  /** agents2-format: the messages a real chat would get (one bubble each in Probar); joined = text. */
+  parts: string[]
   toolTrace: unknown
   decisionTrace: unknown
   tokens: { input: number; output: number; cached: number }
@@ -1447,6 +1485,7 @@ async function runAgentTestTurnInner(input: {
     // Budget spent: answer immediately, spend nothing and write nothing (no model call, no turn row).
     return {
       text: '',
+      parts: [],
       toolTrace: [],
       decisionTrace: { blockedBy },
       tokens: { input: 0, output: 0, cached: 0 },
@@ -1491,6 +1530,7 @@ async function runAgentTestTurnInner(input: {
     shortcuts,
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !probarImageReplyIds.has(id))),
     awaitingReceipt: mediaAwaitingReceipt(input.messageType || 'text', history, probarMediaSalesContext),
+    awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
   })
   decision.decisionTrace.historyCount = history.length
   decision.decisionTrace.blockedBy = blockedBy
@@ -1579,6 +1619,7 @@ async function runAgentTestTurnInner(input: {
       shortcuts,
       shortenLongReply: true,
       linkAllowlist: runtimeInput.linkAllowlist,
+      paymentOptions: runtimeInput.salesPaymentOptions,
     })
     // Same plan as the live turn (B1): checked model reply, safe line, or hand-off text.
     const plan = planModelTurnDelivery({
@@ -1588,6 +1629,7 @@ async function runAgentTestTurnInner(input: {
       llmEscalateReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
+      codOrderReady: policy.paymentMethods.includes('contra_entrega'),
     })
     text = plan.text
     handoff = plan.handoff
@@ -1687,6 +1729,7 @@ async function runAgentTestTurnInner(input: {
 
   return {
     text,
+    parts: text ? splitReplyParts(text) : [],
     toolTrace,
     decisionTrace: toolTrace,
     tokens,

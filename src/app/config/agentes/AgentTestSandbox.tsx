@@ -7,6 +7,7 @@ import { selectWhatsappTestChannel, type TestChannelOption } from '@/lib/soft-ai
 import { ProbarScenarios } from '@/app/config/agentes/ProbarScenarios'
 import { CorrectionPanel } from '@/components/aurora/agentes/CorrectionPanel'
 import { TUNE_CODE_REPLY_NOTE } from '@/lib/soft-ai/agent-tuning-core'
+import { replyPartsOf } from '@/lib/soft-ai/reply-parts'
 
 export type WaBubble = {
   kind: 'text'
@@ -23,6 +24,18 @@ export type WaBubble = {
   inbound?: string
   /** Agent bubbles: code answered (keyword saved reply / system message), not the model (V11). */
   decidedByCode?: boolean
+  /**
+   * agents2-format: a reply arrives as up to 3 messages (one bubble each). Every part carries the whole reply so
+   * "Corregir" works on it once (actions sit under the last part).
+   */
+  turnText?: string
+  partIndex?: number
+  partCount?: number
+}
+
+/** The bubble that carries the "Corregir" / 👍 actions of its reply (the last part, or a single bubble). */
+function isLastPart(bubble: WaBubble): boolean {
+  return bubble.partIndex === undefined || bubble.partCount === undefined || bubble.partIndex === bubble.partCount - 1
 }
 
 type TurnResult = {
@@ -244,6 +257,8 @@ export function AgentTestSandbox({
       // "Nueva conversación" pressed meanwhile: drop the late answer.
       if (forSession !== sessionRef.current) return
       const outbound = typeof data.text === 'string' ? data.text : ''
+      // agents2-format: one bubble per message the customer would get.
+      const parts = replyPartsOf(data)
       const images = Array.isArray(data.images)
         ? (data.images as Array<{ assetId?: unknown; url?: unknown; name?: unknown }>)
             .filter((img) => typeof img.assetId === 'string' && typeof img.url === 'string' && img.url.startsWith(`/api/chat/agents/${agentId}/assets/`))
@@ -255,20 +270,25 @@ export function AgentTestSandbox({
       setHistory((prev) =>
         [
           ...prev,
-          ...(outbound && !blockedBefore
-            ? [
-                {
+          ...(outbound && !blockedBefore && parts.length
+            ? parts.map((part, index) => {
+                const lastPart = index === parts.length - 1
+                return {
                   kind: 'text' as const,
                   from: 'agent' as const,
-                  text: outbound,
+                  text: part,
                   at: now,
                   inbound,
                   decidedByCode: data.decidedByCode === true,
-                  images: images.length ? images : undefined,
-                  why: Array.isArray(data.why) ? (data.why as string[]) : undefined,
-                  latencyMs: typeof data.latencyMs === 'number' ? data.latencyMs : undefined,
-                },
-              ]
+                  turnText: outbound,
+                  partIndex: index,
+                  partCount: parts.length,
+                  // Images before the first message (like WhatsApp); what it used / time under the last one.
+                  images: index === 0 && images.length ? images : undefined,
+                  why: lastPart && Array.isArray(data.why) ? (data.why as string[]) : undefined,
+                  latencyMs: lastPart && typeof data.latencyMs === 'number' ? data.latencyMs : undefined,
+                }
+              })
             : [
                 // No reply would reach a real client: say why instead of showing nothing.
                 {
@@ -342,7 +362,7 @@ export function AgentTestSandbox({
           <p className="text-sm text-slate-700">Escribí como cliente para ver la respuesta.</p>
         ) : (
           history.map((bubble, index) => {
-            const canTune = canEdit && bubble.from === 'agent' && Boolean(bubble.text)
+            const canTune = canEdit && bubble.from === 'agent' && Boolean(bubble.text) && isLastPart(bubble)
             // V5: the customer message this turn was run for (stored on the bubble), not "the previous bubble".
             const asked = canTune ? bubble.inbound ?? '' : ''
             return (
@@ -379,7 +399,7 @@ export function AgentTestSandbox({
                       agentId={agentId}
                       agentName={agentName}
                       customerMessage={asked}
-                      agentReply={bubble.text}
+                      agentReply={bubble.turnText ?? bubble.text}
                       onClose={() => setCorrecting(null)}
                       onAskAgain={() => askAgain(bubble, asked)}
                     />

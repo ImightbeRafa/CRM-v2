@@ -145,11 +145,16 @@ const firstWords = (text: string) => (text.match(/^\S+(?:\s+\S+){0,3}/)?.[0] ?? 
 const BETSY_LINE_RE =
   /(?:^|\n|[.!?]\s+)[ \t]*((?:promoci[oó]n\s+activa|siguiente\s+paso|etapa|estado\s+de\s+la\s+venta|reglas?\s+fijas?)\s*:)/iu
 
+/** The payment tokens an owner may write in a correction (Betsy fills them; agents2-format adds one per method). */
+const OWNER_PAYMENT_TOKEN_RE = /^\[\[\s*(?:DATOS[\s_-]?PAGO|PAGO[\s_-]?(?:SINPE|TRANSFERENCIA|TARJETA|CONTRA[\s_-]?ENTREGA))\s*\]\]$/i
+const OWNER_TOKENS_HINT =
+  'Las únicas marcas permitidas son las de pago: [[PAGO_SINPE]], [[PAGO_TRANSFERENCIA]], [[PAGO_TARJETA]], [[PAGO_CONTRA_ENTREGA]] o [[DATOS_PAGO]].'
+
 /**
  * The owner's own text (answer, note, title) is never rewritten with markers (V9): invisible characters go, and only
  * what could really pose as Betsy or the prompt is refused, naming the phrase (N9): Betsy's own line forms at the
  * start of a line ("Promoción activa:", "Siguiente paso:", "Etapa:", "Estado de la venta:", "Reglas fijas:"), the
- * BETSY_DATOS marker, fence / HTML tags, [[…]] other than [[DATOS_PAGO]], links that are not the business's own site,
+ * BETSY_DATOS marker, fence / HTML tags, [[…]] other than the payment tokens, links that are not the business's own site,
  * and — in a RULE only — a numbered "16)" line. In an answer a numbered list just becomes "1." "2." (kept readable).
  */
 export function ownerTextProblem(
@@ -170,9 +175,9 @@ export function ownerTextProblem(
     const at = tag.index ?? 0
     return { ok: false, code: 'marker', error: `${field} tiene «${firstWords(clean.slice(at))}». No uses etiquetas con < >.` }
   }
-  const bracket = [...clean.matchAll(/\[\[[^\]]*\]\]?/g)].find((m) => !/^\[\[\s*DATOS[\s_-]?PAGO\s*\]\]$/i.test(m[0]))
+  const bracket = [...clean.matchAll(/\[\[[^\]]*\]\]?/g)].find((m) => !OWNER_PAYMENT_TOKEN_RE.test(m[0]))
   if (bracket) {
-    return { ok: false, code: 'marker', error: `${field} tiene «${bracket[0].slice(0, 40)}». La única marca permitida es [[DATOS_PAGO]].` }
+    return { ok: false, code: 'marker', error: `${field} tiene «${bracket[0].slice(0, 40)}». ${OWNER_TOKENS_HINT}` }
   }
   const marker = clean.match(/BETSY[\s_.-]*DATOS/i)?.[0] ?? clean.match(BETSY_LINE_RE)?.[1]
   if (marker) {
@@ -316,7 +321,7 @@ const DIGIT_WORD = '(?:cero|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)
 /** "ocho ocho ocho ocho …": a number spelled digit by digit (4+ digit words in a row). */
 const DIGIT_WORDS_RE = new RegExp(`(?<![\\p{L}])${DIGIT_WORD}(?:[\\s,.\\-y]+${DIGIT_WORD}){3,}(?![\\p{L}])`, 'iu')
 
-/** Payment data never goes in a correction: only [[DATOS_PAGO]] (Betsy fills the numbers). */
+/** Payment data never goes in a correction: only the payment tokens ([[PAGO_SINPE]] …, [[DATOS_PAGO]]; Betsy fills the numbers). */
 export function hasPaymentNumbers(text: string): boolean {
   const t = tuneText(text)
   if (/\bCR\s?\d{2}(?:[\s-]?\d{4}){4}[\s-]?\d{2}\b/i.test(t)) return true
@@ -451,7 +456,7 @@ export function checkCorrectionText(text: string, allowedAmounts: number[], fiel
     return {
       ok: false,
       code: 'payment_numbers',
-      error: `${field} tiene un número de cuenta, SINPE o teléfono (8 dígitos o más, también escrito en palabras). Los datos de pago los pone Betsy: escribí [[DATOS_PAGO]] donde van.`,
+      error: `${field} tiene un número de cuenta, SINPE o teléfono (8 dígitos o más, también escrito en palabras). Los datos de pago los pone Betsy: escribí [[PAGO_SINPE]] (o [[PAGO_TRANSFERENCIA]], [[PAGO_TARJETA]], [[PAGO_CONTRA_ENTREGA]]; [[DATOS_PAGO]] = todos) donde van.`,
     }
   }
   if (never) return { ok: true }

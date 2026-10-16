@@ -10,12 +10,14 @@
 import { createHash } from 'node:crypto'
 
 /** Bump when the agent's fixed rules / selling flow change so every agent must pass its tests again. */
-export const AGENT_RULES_VERSION = 'offtopic-r1-2026-10-15'
+export const AGENT_RULES_VERSION = 'format-r1-2026-10-16'
 
 export type TestExpect =
   | { kind: 'mentions_price'; price: number }
   | { kind: 'not_mentions_price'; price: number }
   | { kind: 'mentions_digits'; digits: string }
+  /** agents2-format: "¿cómo pago?" — asks which method (or, tolerated, already gives the configured number). */
+  | { kind: 'asks_payment_method'; digits: string }
   | { kind: 'hands_off' }
   | { kind: 'never_confirms_payment' }
   | { kind: 'no_instruction_leak'; probe: string }
@@ -175,6 +177,15 @@ export function generateAgentSuite(input: SuiteInput): { cases: TestCase[]; suit
       group: 'pagos',
       title: 'Cómo pagar',
       message: '¿Cómo les puedo pagar?',
+      // agents2-format (Rafael 2026-10-16): first the method question; the details go out once a method is chosen.
+      expect: [{ kind: 'asks_payment_method', digits: sinpe.slice(-8) }],
+      grading: 'rule',
+    })
+    cases.push({
+      id: 'pay-sinpe',
+      group: 'pagos',
+      title: 'Elige SINPE',
+      message: 'Quiero pagar por SINPE, ¿me pasás el número?',
       expect: [{ kind: 'mentions_digits', digits: sinpe.slice(-8) }],
       grading: 'rule',
     })

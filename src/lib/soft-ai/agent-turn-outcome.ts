@@ -41,6 +41,8 @@ export const HANDOFF_REASON = {
   modelAsked: 'escalate',
   paymentData: 'payment_details',
   review: 'review',
+  /** agents2-format: a contra-entrega order is complete — the customer got the confirmation, a person takes it. */
+  orderReady: 'order_ready',
 } as const
 
 /** Customer texts code sends instead of a reply that cannot go out as written (reserved, tuteo, seller voice). */
@@ -72,6 +74,11 @@ export function planModelTurnDelivery(input: {
   receiptCue?: boolean
   /** Close with payment data not shared by chat (sales-state salesCloseWithoutPaymentData). */
   paymentDataByTeam?: boolean
+  /**
+   * agents2-format: the checked reply carries the filled contra-entrega block ([[PAGO_CONTRA_ENTREGA]]): the order is
+   * ready — the reply goes out first, then a TRUE hand-off with reason 'order_ready' (settleHandoff after the send).
+   */
+  codOrderReady?: boolean
 }): TurnDeliveryPlan {
   const text = (input.text || '').trim()
   const usable = input.textOk && text.length > 0
@@ -82,6 +89,9 @@ export function planModelTurnDelivery(input: {
     return { text: SAFE_LINE.payment, handoff: input.llmHandoff ?? { kind: 'handoff', reason: HANDOFF_REASON.payment } }
   }
   const modelPaymentEscalate = input.llmEscalateReason === 'payment_or_sinpe'
+  if (input.codOrderReady && usable && !modelPaymentEscalate && input.llmHandoff?.kind !== 'review') {
+    return { text, handoff: { kind: 'handoff', reason: HANDOFF_REASON.orderReady } }
+  }
   if (input.llmHandoff?.kind === 'handoff' && !(input.paymentDataByTeam && modelPaymentEscalate)) {
     return {
       text: modelPaymentEscalate || !usable ? SAFE_LINE.payment : text,

@@ -32,11 +32,12 @@ import {
   salesCloseWithoutPaymentData,
   salesFreeShippingRule,
   salesNeedsHuman,
+  salesPaymentOptions,
   salesSystemBlock,
   type SalesContext,
 } from '@/lib/soft-ai/sales-state'
 import {
-  PAYMENT_TOKEN,
+  PAYMENT_METHOD_TOKENS,
   formatBrandFactsForPrompt,
   parseBrandFactsSafe,
   parseReplyStyleSafe,
@@ -217,16 +218,22 @@ export function assembleAgentRuntimeInputs(input: {
     linkedOrderId: null,
     pricingVersion: DEFAULT_PRICING_VERSION,
     brandFactsBlock: formatBrandFactsForPrompt(promptFacts),
-    // Bodies rendered for the model (no raw {{brand.…}}); payment numbers stay out — they become [[DATOS_PAGO]].
+    // Bodies rendered for the model (no raw {{brand.…}}); payment numbers stay out. agents2-format: a payment summary
+    // becomes the method NAMES (the agent asks which one first), a SINPE field becomes [[PAGO_SINPE]].
     shortcutCatalog: guideShortcutCatalog(
       input.shortcuts.map((row) => ({
         ...row,
         // Same facts as the brand block (no store shipping under the sales flow); no customer name in the system
         // instructions (it is customer-controlled and would break prompt caching) — the name is in the chat anyway.
-        body: renderShortcutTemplate(row.body.replace(/\{\{\s*brand\.payment\.[a-zA-Z0-9_.]+\s*\}\}/g, PAYMENT_TOKEN), {
-          facts: promptFacts,
-          clientFirstName: null,
-        }),
+        body: renderShortcutTemplate(
+          row.body
+            .replace(/\{\{\s*brand\.payment\.sinpe\.[a-zA-Z0-9_.]+\s*\}\}/g, PAYMENT_METHOD_TOKENS.sinpe)
+            .replace(/\{\{\s*brand\.payment\.(?!methods(?:List)?\s*\}\})[a-zA-Z0-9_.]+\s*\}\}/g, '{{brand.payment.methods}}'),
+          {
+            facts: promptFacts,
+            clientFirstName: null,
+          },
+        ),
       })),
       input.replyImageShortcutIds,
     ),
@@ -253,7 +260,8 @@ export function assembleAgentRuntimeInputs(input: {
           : [],
       }),
     ),
-    salesTrace: salesState ? { stage: salesState.stage, said: salesState.said } : null,
+    salesPaymentOptions: sales ? salesPaymentOptions(sales) : undefined,
+    salesTrace: salesState ? { stage: salesState.stage, said: salesState.said, chosenMethod: salesState.chosenMethod ?? null } : null,
     toolCtx: {
       ...input.toolCtxBase,
       enabledTools,

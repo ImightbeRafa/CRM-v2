@@ -175,6 +175,25 @@ export function hasPaymentWord(text: string): boolean {
   return PAYMENT_RE.test(text || '') || hasPaymentProofCue(text) || hasPaymentClaimCue(text || '')
 }
 
+/**
+ * agents2-format: right after the store asked "¿Cómo preferís pagar?", a short reply naming a method ("SINPE", "por
+ * sinpe porfa", "transferencia") is a CHOICE, not a payment claim — but only with no proof / claim / confirm /
+ * refund / payment-state cue at all ("ya hice el sinpe", "sinpe, ¿me confirmás?" stay with a person). Pure.
+ */
+export function isCueFreePaymentChoiceText(text: string): boolean {
+  const value = (text || '').trim()
+  if (!value || value.split(/\s+/).length > 25) return false
+  return !(
+    SENT_AMOUNT_CLAIM_RE.test(value) ||
+    PROOF_CUE_RE.test(value) ||
+    hasPaymentClaimCue(value) ||
+    CONFIRM_CUE_RE.test(value) ||
+    CONFIRM_PAYMENT_RE.test(value) ||
+    RISK_CUE_RE.test(value) ||
+    PAYMENT_STATUS_CUE_RE.test(value)
+  )
+}
+
 /** notifyHandoff reason code when a payment message goes to a person: 'complaint' (refund / dispute) or 'payment'. */
 export function paymentHandoffReason(text: string): 'payment' | 'complaint' {
   const value = text || ''

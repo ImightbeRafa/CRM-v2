@@ -56,6 +56,8 @@ export type SoftAiLlmRuntimeInput = {
   clientName?: string | null
   linkedOrderId?: string | null
   toolCtx: SoftAiToolRunContext
+  /** Meter label for sandbox turns: manual Probar vs automatic checks (quick check, unlock, test runs). */
+  usageFeature?: 'probar' | 'agent_test'
   pricingVersion: string
   brandFactsBlock?: string | null
   shortcutCatalog?: string | null
@@ -221,7 +223,7 @@ export async function runSoftAiLlmRuntime(
         maxOutputTokens: 700,
         usage: {
           tenantId: input.tenantId,
-          feature: input.toolCtx.sandbox ? 'probar' : 'inbox_agent',
+          feature: input.toolCtx.sandbox ? (input.usageFeature ?? 'probar') : 'inbox_agent',
           agentId: input.agentId,
           conversationId: input.toolCtx.sandbox ? null : input.toolCtx.conversationId,
         },
@@ -322,7 +324,7 @@ export async function runSoftAiLlmRuntime(
         maxOutputTokens: 700,
         usage: {
           tenantId: input.tenantId,
-          feature: input.toolCtx.sandbox ? 'probar' : 'inbox_agent',
+          feature: input.toolCtx.sandbox ? (input.usageFeature ?? 'probar') : 'inbox_agent',
           agentId: input.agentId,
           conversationId: input.toolCtx.sandbox ? null : input.toolCtx.conversationId,
         },
@@ -358,7 +360,7 @@ export async function runSoftAiLlmRuntime(
           maxOutputTokens: 700,
           usage: {
             tenantId: input.tenantId,
-            feature: input.toolCtx.sandbox ? 'probar' : 'inbox_agent',
+            feature: input.toolCtx.sandbox ? (input.usageFeature ?? 'probar') : 'inbox_agent',
             agentId: input.agentId,
             conversationId: input.toolCtx.sandbox ? null : input.toolCtx.conversationId,
           },
@@ -456,7 +458,7 @@ export async function runSoftAiLlmRuntime(
           maxOutputTokens: 500,
           usage: {
             tenantId: input.tenantId,
-            feature: input.toolCtx.sandbox ? 'probar' : 'inbox_agent',
+            feature: input.toolCtx.sandbox ? (input.usageFeature ?? 'probar') : 'inbox_agent',
             agentId: input.agentId,
             conversationId: input.toolCtx.sandbox ? null : input.toolCtx.conversationId,
           },

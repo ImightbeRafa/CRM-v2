@@ -217,6 +217,7 @@ async function defaultRunCanaryTurn(input: {
     windowOpen: true,
     conversationAiMode: 'ai_active',
     ignoreLayerFlag: true,
+    usageFeature: 'agent_test',
   })
   return {
     text: turn.text,

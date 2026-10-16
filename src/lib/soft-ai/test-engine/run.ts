@@ -370,6 +370,7 @@ async function runCase(run: TestRunRow, tc: TestCase): Promise<{ result: CaseRes
         windowOpen: true,
         conversationAiMode: 'ai_active',
         ignoreLayerFlag: true,
+        usageFeature: 'agent_test',
       })
       costMicros = Math.round((out.estimatedCostUsd || 0) * 1_000_000)
       // A blocked test turn is not an agent answer: stop the run with a plain reason instead of grading silence.

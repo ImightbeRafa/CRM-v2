@@ -15,7 +15,7 @@ import { prisma as globalPrisma } from '@/lib/db';
 
 // Optional: Whitelist of allowed super admin emails for additional security layer
 // Add to .env: SUPER_ADMIN_EMAILS=peter@peter.com,admin@example.com
-const SUPER_ADMIN_WHITELIST = process.env.SUPER_ADMIN_EMAILS?.split(',').map(e => e.trim()) || [];
+const SUPER_ADMIN_WHITELIST = process.env.SUPER_ADMIN_EMAILS?.split(',').map(e => e.trim().toLowerCase()).filter(Boolean) || [];
 
 /**
  * Check if a user is a super admin
@@ -64,7 +64,7 @@ export async function isSuperAdmin(userId: string): Promise<boolean> {
     // If no whitelist is set, only database flag is checked
     // If whitelist exists, user MUST be in both database AND whitelist
     const inWhitelist = SUPER_ADMIN_WHITELIST.length === 0 || 
-                       SUPER_ADMIN_WHITELIST.includes(user.email);
+                       SUPER_ADMIN_WHITELIST.includes(user.email.trim().toLowerCase());
 
     const isSuper = hasFlag && inWhitelist;
 

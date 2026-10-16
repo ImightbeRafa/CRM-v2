@@ -57,7 +57,14 @@ describe('AI usage meter (SQL 048)', () => {
     // Every model call in the runtime (main loop, text-only final call, B7 rewrite) carries its usage tag.
     const calls = (runtime.match(/await softAiResponsesCreate\(\{/g) || []).length
     assert.ok(calls >= 3)
-    assert.equal((runtime.match(/feature: input\.toolCtx\.sandbox \? 'probar' : 'inbox_agent'/g) || []).length, calls)
+    assert.equal(
+      (runtime.match(/feature: input\.toolCtx\.sandbox \? \(input\.usageFeature \?\? 'probar'\) : 'inbox_agent'/g) || []).length,
+      calls,
+    )
+    // Automatic checks (quick check / test runs, unlock canaries) are metered as agent tests, not manual Probar.
+    assert.match(read('src/lib/soft-ai/test-engine/run.ts'), /usageFeature: 'agent_test'/)
+    assert.match(read('src/lib/soft-ai/agent-unlock.ts'), /usageFeature: 'agent_test'/)
+    assert.match(read('src/lib/soft-ai/agent-turn.ts'), /runtimeInput\.usageFeature = input\.usageFeature \?\? 'probar'/)
     assert.match(read('src/lib/soft-ai/shortcut-import-server.ts'), /feature: 'shortcut_import'/)
     assert.match(read('src/lib/customer-paste-grok.ts'), /feature: 'customer_paste'/)
   })

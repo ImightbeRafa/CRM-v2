@@ -1410,6 +1410,8 @@ async function runAgentTestTurnInner(input: {
   ignoreLayerFlag?: boolean
   /** Images this test chat already showed (asset ids). */
   sentImageIds?: string[]
+  /** Meter label: automatic checks pass 'agent_test' so they don't count as manual Probar. */
+  usageFeature?: 'probar' | 'agent_test'
 }): Promise<{
   text: string
   /** agents2-format: the messages a real chat would get (one bubble each in Probar); joined = text. */
@@ -1627,6 +1629,7 @@ async function runAgentTestTurnInner(input: {
         platform: account.platform || 'whatsapp',
       },
     })
+    runtimeInput.usageFeature = input.usageFeature ?? 'probar'
     const llm = await runSoftAiLlmRuntime(runtimeInput)
     llmTrace = llm.toolTrace
     escalateReason = llm.escalateReason ?? null

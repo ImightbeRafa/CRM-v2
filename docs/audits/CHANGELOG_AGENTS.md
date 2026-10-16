@@ -1,3 +1,14 @@
+## 2026-10-16 — Admin › IA usage: "Not found" + test-traffic labels (claudio/ai-usage-fix)
+
+- "Not found" on Logística › Admin › IA = /api/super-admin/ai-usage owner check (isSuperAdmin flag AND, when set,
+  SUPER_ADMIN_EMAILS). The rest of the Admin page only needs the logistics-admin flag, so a logistics admin without the
+  owner flag sees the page but not IA. The tab now says so in plain words instead of "Not found".
+- SUPER_ADMIN_EMAILS compare is now case-insensitive (trim + lowercase both sides); no widening.
+- Meter: automatic agent checks (power-on quick check / test runs, unlock canaries) are recorded as `agent_test`
+  ("Probar y activar") instead of `probar`; manual Probar stays `probar`, live replies `inbox_agent`.
+- Proof: tsc 0, eslint touched files 0, ai-usage-meter 6/6, test:soft-ai 750/750, test:soft-ai-agent 319/319,
+  test:security 271/271. Not deployed.
+
 ## 2026-10-16 — agents2-format fix round: Verifier FAIL + integration verifier + SecureDog INT-114..118 (claudio/agents2-format)
 
 - INT-114 / Verifier #1 (HIGH): a payment-method choice is now an ALLOWLIST GRAMMAR over the whole message

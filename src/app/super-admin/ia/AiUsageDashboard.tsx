@@ -289,7 +289,11 @@ export default function AiUsageDashboard() {
     setError(null)
     try {
       const res = await fetch(`/api/super-admin/ai-usage?${query}`, { cache: 'no-store' })
-      const json = (await res.json()) as Payload & { error?: string }
+      // The API answers 404 to anyone who is not a platform owner (it does not reveal the panel exists).
+      if (res.status === 404) {
+        throw new Error('Esta cuenta no tiene acceso de dueño de plataforma. Entrá con la cuenta de dueño de Betsy para ver el uso de IA.')
+      }
+      const json = (await res.json().catch(() => ({}))) as Payload & { error?: string }
       if (!res.ok) throw new Error(json.error || 'Error al cargar')
       setPayload(json)
     } catch (e) {

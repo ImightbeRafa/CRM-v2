@@ -16,8 +16,8 @@ import { stripBetsyLookalikes } from '@/lib/soft-ai/sales-state'
 import { redactPiiText, redactSensitiveForProvider } from '@/lib/soft-ai/llm/redact'
 import { DATA_FENCE_TAG_RE, stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import { CR_IBAN_RE, DIGIT_SEP, LONG_NUMBER_RE, PAY_WORDS_RE } from '@/lib/soft-ai/payment-guard'
-import { dealProblem, freeShippingRuleOk, type FreeShippingRule } from '@/lib/soft-ai/llm/output-validator'
-import { foreignLinks, linkRegex } from '@/lib/soft-ai/links'
+import { bareMilAmounts, dealProblem, freeShippingRuleOk, hasThousandsSeparator, type FreeShippingRule } from '@/lib/soft-ai/llm/output-validator'
+import { foreignLinks, linkRegex, type LinkAllowlist } from '@/lib/soft-ai/links'
 
 export const TUNE_SAVE_AS = ['example', 'saved_reply', 'rule'] as const
 export type TuneSaveAs = (typeof TUNE_SAVE_AS)[number]
@@ -81,7 +81,7 @@ const COLONES_AFTER_RE = /^\s*(?:mil\s+)?colones/i
 const SIX_DIGITS_RE = new RegExp(`(?<!\\d)\\d(?:${DIGIT_SEP}\\d){5,}(?!\\d)`, 'gu')
 
 // INT-109: one generic link pattern (links.ts), shared with the live reply checker.
-export { brandDomainsFrom, linkHost, linksIn } from '@/lib/soft-ai/links'
+export { brandDomainsFrom, buildLinkAllowlist, linkHost, linksIn, type LinkAllowlist } from '@/lib/soft-ai/links'
 
 /**
  * Save-time normalizer: NFKC, no invisible characters, and Arabic-Indic / Extended Arabic-Indic digits (U+0660–0669,
@@ -114,6 +114,8 @@ export function sanitizeTuneQuestion(text: string): string {
   t = t.replace(EMAIL_RE, '…')
   t = t.replace(linkRegex(), ' ')
   t = maskLongDigits(t)
+  // A phone written "8888,1234" (comma is not a general digit separator any more, INT-113).
+  t = t.replace(/(?<![\d,])\d{4},\d{4}(?![\d,])/g, '…')
   t = redactSensitiveForProvider(redactPiiText(t))
   t = t.replace(DATA_FENCE_TAG_RE, ' ')
   t = t.replace(/[<>[\]{}`]/g, ' ')
@@ -143,7 +145,8 @@ const BETSY_LINE_RE =
 export function ownerTextProblem(
   text: string,
   field: string,
-  brandDomains: string[] = [],
+  /** INT-112: the same allowlist the live checker uses (or a plain list of the brand's own hosts). */
+  allowedLinks: LinkAllowlist | string[] = [],
   kind: 'answer' | 'rule' = 'answer',
 ): { ok: true; text: string } | { ok: false; code: TuneRefusalCode; error: string } {
   let clean = tuneText(text).trim()
@@ -169,9 +172,12 @@ export function ownerTextProblem(
       error: `${field} tiene «${marker.slice(0, 40)}», que parece un texto interno del sistema. Escribilo con otras palabras.`,
     }
   }
-  const link = foreignLinks(clean, brandDomains)[0]
+  const link = foreignLinks(clean, allowedLinks)[0]
   if (link) {
-    const own = brandDomains.length ? ` Solo se permite el sitio de tu negocio (${brandDomains.join(', ')}).` : ' Solo se permite el sitio de tu negocio (configuralo en los datos del negocio).'
+    const shown = Array.isArray(allowedLinks) ? allowedLinks : [...(allowedLinks as LinkAllowlist).hosts, ...(allowedLinks as LinkAllowlist).prefixes]
+    const own = shown.length
+      ? ` Solo se permiten los enlaces de tu negocio (${shown.slice(0, 4).join(', ')}).`
+      : ' Solo se permite el sitio de tu negocio (configuralo en los datos del negocio).'
     return { ok: false, code: 'link', error: `${field} tiene un enlace («${link.slice(0, 40)}»).${own}` }
   }
   return { ok: true, text: clean }
@@ -314,17 +320,20 @@ export function colonAmountsIn(text: string): number[] {
     [
       `[₡¢]\\s?(\\d{1,3}(?:[.,\\s]\\d{3})+|\\d+)(\\s*mil(?![\\p{L}]))?`,
       `(?<![\\d.,])(\\d{1,3}(?:[.,\\s]\\d{3})+|\\d+)(\\s*mil)?\\s*colones`,
-      `(?<![\\d.,₡¢$\\p{L}])(\\d{1,3})\\s*mil(?![\\p{L}])${NOT_MONEY_AFTER}`,
     ].join('|'),
     'giu',
   )
-  for (const m of tuneText(text).matchAll(re)) {
-    const digits = (m[1] || m[3] || m[5] || '').replace(/\D/g, '')
-    const thousand = Boolean(m[2] || m[4] || m[5])
+  const t = tuneText(text)
+  for (const m of t.matchAll(re)) {
+    const spaced = m[1] || m[3] || ''
+    const digits = spaced.replace(/\D/g, '')
+    // R4: "₡9.900 mil gracias" is ₡9.900 — a number with a thousands separator is never multiplied.
+    const thousand = Boolean(m[2] || m[4]) && !hasThousandsSeparator(spaced)
     const n = Number(digits) * (thousand ? 1000 : 1)
     if (Number.isFinite(n) && n > 0) out.push(n)
   }
-  return out
+  // Sign-less "N mil": the live validator's own helper (R1), so save and send agree.
+  return [...out, ...bareMilAmounts(t)]
 }
 
 const BARE_NUMBER = '(?<![\\d.,/])(\\d{1,3}(?:[.,\\s]\\d{3})+|\\d{4,7})(?![\\d]|[.,/]\\d)'
@@ -341,7 +350,8 @@ const TRAIL_AMOUNT_RE = new RegExp(
   'giu',
 )
 /** "Envíos desde 2019", "en el 2020", "del año 2018": a year, not an amount (N9). */
-const YEAR_BEFORE_RE = /(?:desde|año|años|en\s+el|del|el\s+año|hasta)\s*$/iu
+// Round 3 item 7: also right after "en" / "el" ("Abrimos en 2020", "Llega en 2026").
+const YEAR_BEFORE_RE = /(?<![\p{L}])(?:desde|año|años|en|el|del|hasta)\s*$/iu
 
 function bareAmounts(text: string, re: RegExp): number[] {
   const out: number[] = []

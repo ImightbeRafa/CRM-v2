@@ -141,8 +141,12 @@ async function ready(): Promise<boolean> {
 /** The client to read / write with: prisma, or an interactive transaction (agent-tuning.ts rule saves lock the agent row). */
 export type SalesSetupDb = Pick<Prisma.TransactionClient, '$queryRaw' | '$executeRaw' | 'shippingMethod'>
 
-export async function loadSalesSetup(tenantId: string, agentId: string, db: SalesSetupDb = prisma): Promise<SalesSetup> {
-  if (!(await ready())) return { offeredShippingMethodIds: [], salesRules: EMPTY_SALES_RULES }
+/**
+ * `readyChecked`: the caller already ran assertSalesSetupReady() outside its transaction (round 3: no readiness
+ * probes inside the locked transaction).
+ */
+export async function loadSalesSetup(tenantId: string, agentId: string, db: SalesSetupDb = prisma, readyChecked = false): Promise<SalesSetup> {
+  if (!readyChecked && !(await ready())) return { offeredShippingMethodIds: [], salesRules: EMPTY_SALES_RULES }
   const rows = await db.$queryRaw<Array<{ offeredShippingMethodIds: string[] | null; salesRules: unknown }>>`
     SELECT "offeredShippingMethodIds", "salesRules" FROM "ChatAgentSettings"
      WHERE "tenantId" = ${tenantId} AND "agentId" = ${agentId} LIMIT 1`
@@ -164,14 +168,22 @@ export class SalesSetupNotReadyError extends Error {
  * Locks the agent row for a read-merge-write of its selling rules (SELECT … FOR UPDATE): every rules save — settings
  * (promo, aiDisclosure), Studio apply, "Corregir" rules — goes through it, so two saves at once never drop a change.
  */
+/** Transaction limits for a locked rules save: wait up to 10 s for the lock / a connection, run up to 15 s. */
+export const SALES_RULES_TX = { maxWait: 10_000, timeout: 15_000 } as const
+
+/** Readiness, checked ONCE before a locked transaction (never inside it). */
+export async function assertSalesSetupReady(): Promise<void> {
+  if (!(await ready())) throw new SalesSetupNotReadyError()
+}
+
 export async function lockAgentForSalesRules(tx: Pick<Prisma.TransactionClient, '$queryRaw'>, tenantId: string, agentId: string) {
   await tx.$queryRaw`SELECT "id" FROM "ChatAgent" WHERE "id" = ${agentId} AND "tenantId" = ${tenantId} FOR UPDATE`
 }
 
 /**
  * Upsert (caller checked agent ∈ tenant + edit permission). Method ids are filtered to the tenant's own.
- * Without `db` it runs in its own transaction holding the agent row lock; with `db` the caller's transaction must
- * already hold it (agent-tuning.ts saveRule).
+ * Without `db` it checks readiness once, then runs in its own transaction holding the agent row lock; with `db` the
+ * caller already checked readiness (assertSalesSetupReady) and its transaction holds the lock (agent-tuning saveRule).
  */
 export async function saveSalesSetup(
   tenantId: string,
@@ -180,17 +192,14 @@ export async function saveSalesSetup(
   userId: string,
   db?: SalesSetupDb,
 ): Promise<SalesSetup> {
-  if (!(await ready())) throw new SalesSetupNotReadyError()
   if (!db) {
-    return prisma.$transaction(
-      async (tx) => {
-        await lockAgentForSalesRules(tx, tenantId, agentId)
-        return saveSalesSetup(tenantId, agentId, patch, userId, tx)
-      },
-      { timeout: 15_000 },
-    )
+    await assertSalesSetupReady()
+    return prisma.$transaction(async (tx) => {
+      await lockAgentForSalesRules(tx, tenantId, agentId)
+      return saveSalesSetup(tenantId, agentId, patch, userId, tx)
+    }, SALES_RULES_TX)
   }
-  const current = await loadSalesSetup(tenantId, agentId, db)
+  const current = await loadSalesSetup(tenantId, agentId, db, true)
   let ids = current.offeredShippingMethodIds
   if (patch.offeredShippingMethodIds) {
     const wanted = patch.offeredShippingMethodIds.filter((x) => typeof x === 'string').slice(0, 20)

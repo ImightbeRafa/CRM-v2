@@ -407,7 +407,8 @@ describe('INT-104 / INT-105: "¢", "₡3 mil", bare and spelled amounts, payment
     const lib = read(LIB)
     assert.match(lib, /allowedDeals: facts\.allowedDeals/)
     assert.match(lib, /salesFreeShippingRule\(ctx\)/)
-    assert.match(lib, /brandDomainsFrom\(\[facts\.website, facts\.catalogUrl\]\)/)
+    // Round 3 (INT-112): the same allowlist as live — brand site, map link, owner-written links.
+    assert.match(lib, /links: await ownerLinkAllowlist\(tenantId, agent\.id, facts\)/)
   })
 })
 
@@ -495,7 +496,8 @@ describe('DATA-51: what is kept', () => {
     assert.match(lib, /export const PURGED_BODY = '\[purged\]'/)
     assert.match(lib, /data: \{ body: PURGED_BODY, contentPurgedAt: new Date\(\) \}/)
     assert.doesNotMatch(lib, /body: ''/)
-    assert.match(lib, /try \{\s*await purgeOldCorrections\(tenantId, agent\.id\)\s*\} catch \(error\) \{\s*console\.warn\(/)
+    // Round 3 item 8: marking replaced versions is inside the same best-effort try.
+    assert.match(lib, /try \{\s*for \(const id of [^\n]*await markReplaced\(tenantId, id, created\.id\)\s*await purgeOldCorrections\(tenantId, agent\.id\)\s*\} catch \(error\) \{\s*console\.warn\(/)
     assert.match(lib, /versions\.slice\(TUNE_VERSIONS_WITH_CONTENT\)\.filter\(\(v\) => v\.status === 'archived'\)/)
     assert.doesNotMatch(lib, /\.delete(Many)?\(/)
     assert.match(lib, /auditBody: 'omit' \}\)\r?\n\s*await approveKnowledgeSource\(\{ tenantId, sourceId: created\.id, \.\.\.actor, auditBody: 'omit' \}\)/)
@@ -593,9 +595,13 @@ describe('V5 / V10 / V11 / concurrency', () => {
     // aiDisclosure, Studio apply), so all rules writers serialize on the same row.
     const setup = read('src/lib/soft-ai/agent-sales-setup.ts')
     assert.match(setup, /SELECT "id" FROM "ChatAgent" WHERE "id" = \$\{agentId\} AND "tenantId" = \$\{tenantId\} FOR UPDATE/)
-    assert.match(setup, /if \(!db\) \{\s*return prisma\.\$transaction\(\s*async \(tx\) => \{\s*await lockAgentForSalesRules\(tx, tenantId, agentId\)/)
+    // Round 3 item 6: readiness checked once outside; maxWait 10 s / timeout 15 s.
+    assert.match(setup, /if \(!db\) \{\s*await assertSalesSetupReady\(\)\s*return prisma\.\$transaction\(async \(tx\) => \{\s*await lockAgentForSalesRules\(tx, tenantId, agentId\)/)
+    assert.match(setup, /SALES_RULES_TX = \{ maxWait: 10_000, timeout: 15_000 \}/)
+    assert.match(lib, /await assertSalesSetupReady\(\)\s*return prisma\.\$transaction\(/)
+    assert.match(lib, /loadSalesSetup\(tenantId, agentId, tx, true\)/)
     assert.match(lib, /await lockAgentForSalesRules\(tx, tenantId, agentId\)/)
-    assert.match(lib, /loadSalesSetup\(tenantId, agentId, tx\)/)
+    assert.match(lib, /loadSalesSetup\(tenantId, agentId, tx, true\)/)
     assert.match(lib, /actorUserId, tx\)/)
   })
 })
@@ -612,7 +618,7 @@ describe('round 2 · INT-104: "N mil" and bare amounts in price-ish context', ()
       assert.ok(live.reasons.includes('unsourced_amount'), text)
     }
     assert.equal(validateAgentOutput({ text: 'Cuesta ₡15 mil', citedToolNames: [], quoteAmounts: [15000] }).ok, true)
-    assert.deepEqual(colonAmountsIn('Cuesta 15 mil o ₡3 mil'), [15000, 3000])
+    assert.deepEqual(colonAmountsIn('Cuesta 15 mil o ₡3 mil').sort((a, b) => a - b), [3000, 15000])
   })
   it('save-time: "a 5.000", "Son 5.000 en total", "5000 cada uno", "c/u" — not years or "2 a 4 días"', () => {
     assert.deepEqual(priceWordAmountsIn('Te lo dejo a 5.000'), [5000])
@@ -684,27 +690,28 @@ describe('round 2 · INT-109: links', () => {
     assert.doesNotMatch(q, /bit|punto com|x\.shop/)
     assert.equal(ownerTextProblem('Mirá bit(.)ly/x', 'La respuesta', ['tienda.com']).ok, false)
   })
-  it('live: a model reply may only link the brand site (none configured → any link fails); owner saved replies are not checked', async () => {
-    const { applyFinalOutputPolicy, brandFactsDomains } = await import('@/lib/soft-ai/llm/output-validator')
-    assert.deepEqual(validateAgentOutput({ text: 'Mirá bit.ly/x9', citedToolNames: [], brandDomains: ['tienda.com'] }).reasons, ['foreign_link'])
-    assert.equal(validateAgentOutput({ text: 'Mirá www.tienda.com/promo', citedToolNames: [], brandDomains: ['tienda.com'] }).ok, true)
-    assert.deepEqual(validateAgentOutput({ text: 'Mirá tienda.com', citedToolNames: [], brandDomains: [] }).reasons, ['foreign_link'])
-    assert.deepEqual(brandFactsDomains({ website: 'https://www.tienda.com', catalogUrl: 'https://cat.tienda.com/x', location: { mapsUrl: 'https://maps.app.goo.gl/abc' } }), [
-      'tienda.com',
-      'cat.tienda.com',
-      'maps.app.goo.gl',
-    ])
+  // Round 3 (INT-112): the plain brand-domain list became an allowlist (brand site, map link, owner-written links).
+  it('live: a model reply may only link allowed links (none configured → any link fails); owner saved replies are not checked', async () => {
+    const { applyFinalOutputPolicy, brandFactsLinkAllowlist } = await import('@/lib/soft-ai/llm/output-validator')
+    const shop = brandFactsLinkAllowlist({ website: 'https://www.tienda.com' })
+    assert.deepEqual(validateAgentOutput({ text: 'Mirá bit.ly/x9', citedToolNames: [], linkAllowlist: shop }).reasons, ['foreign_link'])
+    assert.equal(validateAgentOutput({ text: 'Mirá www.tienda.com/promo', citedToolNames: [], linkAllowlist: shop }).ok, true)
+    assert.deepEqual(validateAgentOutput({ text: 'Mirá tienda.com', citedToolNames: [], linkAllowlist: brandFactsLinkAllowlist({}) }).reasons, ['foreign_link'])
+    assert.deepEqual(
+      brandFactsLinkAllowlist({ website: 'https://www.tienda.com', catalogUrl: 'https://cat.tienda.com/x', location: { mapsUrl: 'https://maps.app.goo.gl/abc' } }),
+      { hosts: ['tienda.com', 'cat.tienda.com'], prefixes: ['maps.app.goo.gl/abc'] },
+    )
     const facts = { schemaVersion: 1 as const, website: 'https://tienda.com' }
-    const model = applyFinalOutputPolicy({ text: '¡Hola! Mirá bit.ly/x9 😊', intent: 'other', brandFacts: facts, linkCheck: true })
+    const model = applyFinalOutputPolicy({ text: '¡Hola! Mirá bit.ly/x9 😊', intent: 'other', brandFacts: facts, linkAllowlist: brandFactsLinkAllowlist(facts) })
     assert.ok(model.reasons.includes('foreign_link'))
     const owner = applyFinalOutputPolicy({ text: '¡Hola! Mirá bit.ly/x9 😊', intent: 'other', brandFacts: facts })
     assert.ok(!owner.reasons.includes('foreign_link'))
-    // Probar ↔ live parity: both model paths run the same policy with linkCheck; the repair loop knows the reason.
+    // Probar ↔ live parity: both model paths pass the same runtime allowlist; the repair loop knows the reason.
     const turn = read('src/lib/soft-ai/agent-turn.ts')
-    assert.equal((turn.match(/shortenLongReply: true,\r?\n\s*linkCheck: true,/g) || []).length, 2)
-    assert.match(read('src/lib/soft-ai/llm/runtime.ts'), /brandDomains: input\.brandDomains,/)
+    assert.equal((turn.match(/shortenLongReply: true,\r?\n\s*linkAllowlist: runtimeInput\.linkAllowlist,/g) || []).length, 2)
+    assert.match(read('src/lib/soft-ai/llm/runtime.ts'), /linkAllowlist: input\.linkAllowlist,/)
     assert.match(read('src/lib/soft-ai/llm/runtime.ts'), /'foreign_link',\r?\n\]\)/)
-    assert.match(read('src/lib/soft-ai/agent-turn-inputs.ts'), /brandDomains: brandFactsDomains\(input\.agent\.brandFacts\)/)
+    assert.match(read('src/lib/soft-ai/agent-turn-inputs.ts'), /linkAllowlist: brandFactsLinkAllowlist\(input\.agent\.brandFacts, \[/)
   })
 })
 
@@ -784,5 +791,109 @@ describe('round 2 · N9: owner text is refused only for real Betsy forms', () =>
     assert.equal(ownerTextProblem('El siguiente paso es mandarme tu dirección', 'La respuesta').ok, true)
     assert.equal(ownerTextProblem('Gracias.Info del envío abajo', 'La respuesta').ok, true)
     assert.equal(ownerTextProblem('Envíos desde 2019', 'La respuesta').ok, true)
+  })
+})
+
+// ─── Round 3 review fixes 2026-10-15 (R1–R4, INT-112/113, link false positives, lock, years) ───────────────────────
+
+describe('round 3 · R1 / R4: "N mil" is money only with a money cue (one helper live + save)', () => {
+  const notMoney = ['Ya vendimos más de 5 mil parches', 'Más de 3 mil familias', '2 mil reseñas', '10 mil pasos', '5 mil mAh', 'más de 5 mil pedidos', 'Son más de 5 mil parches']
+  const money: Array<[string, number]> = [['Cuesta 15 mil', 15000], ['te sale en 29 mil', 29000], ['15 mil colones', 15000], ['₡15 mil', 15000], ['Cuesta 15 mil el combo', 15000], ['15 mil rojos', 15000]]
+  it('counts are not amounts; price-word / currency forms are', () => {
+    for (const s of notMoney) {
+      assert.deepEqual(extractMoneyAmounts(s), [], s)
+      assert.deepEqual(colonAmountsIn(s), [], s)
+      assert.equal(validateAgentOutput({ text: s, citedToolNames: [], shippingAmounts: [2500] }).ok, true, s)
+    }
+    for (const [s, n] of money) {
+      assert.deepEqual(extractMoneyAmounts(s), [n], s)
+      assert.deepEqual(colonAmountsIn(s), [n], s)
+    }
+    assert.equal(validateAgentOutput({ text: 'te sale en 29 mil', citedToolNames: [], shippingAmounts: [2500] }).ok, false)
+  })
+  it('R4: "₡9.900 mil gracias" is ₡9.900, never ₡9.900.000', () => {
+    assert.deepEqual(extractMoneyAmounts('₡9.900 mil gracias'), [9900])
+    assert.deepEqual(colonAmountsIn('₡9.900 mil gracias'), [9900])
+    assert.equal(validateAgentOutput({ text: 'Son ₡9.900 mil gracias por escribir', citedToolNames: [], quoteAmounts: [9900] }).ok, true)
+  })
+  it('one helper: the save-time check uses the live bareMilAmounts', () => {
+    assert.match(read('src/lib/soft-ai/agent-tuning-core.ts'), /return \[\.\.\.out, \.\.\.bareMilAmounts\(t\)\]/)
+  })
+})
+
+describe('round 3 · item 7: years are not amounts', () => {
+  it('"Abrimos en 2020", "Llega en 2026", "desde 2019", "del 2018"', () => {
+    for (const s of ['Abrimos en 2020', 'Llega en 2026', 'Envíos desde 2019', 'Somos del 2018', 'en el 2020']) {
+      assert.deepEqual(priceWordAmountsIn(s), [], s)
+      assert.equal(checkCorrectionText(s, [9900]).ok, true, s)
+    }
+    assert.deepEqual(priceWordAmountsIn('Te lo dejo a 5.000'), [5000])
+  })
+})
+
+describe('round 3 · INT-113 / R3: a comma joins digits only in the phone shape', () => {
+  it('sizes, price ranges and measures are not payment numbers; "8888,1234" still is', async () => {
+    const { paymentNumberProblems } = await import('@/lib/soft-ai/payment-guard')
+    const facts = { schemaVersion: 1 as const }
+    for (const s of ['Tallas 36,38,40,42. ¿Cómo querés pagar?', 'Precio: 9,900 - 12,900 según tamaño. Pagás por SINPE', 'Medidas 135,140,150,160 cm, pago por sinpe']) {
+      assert.deepEqual(paymentNumberProblems({ text: s, facts }), [], s)
+      assert.equal(hasPaymentNumbers(s), false, s)
+    }
+    assert.deepEqual(paymentNumberProblems({ text: 'SINPE al 8888,1234', facts }), ['payment_number_unsourced'])
+    assert.equal(hasPaymentNumbers('SINPE al 8888,1234'), true)
+    assert.doesNotMatch(sanitizeTuneQuestion('mi cel 8888,1234'), /8888|1234/)
+  })
+})
+
+describe('round 3 · links: no false positives, uppercase TLDs and IPs detected', () => {
+  it('normal chat text is not a link', () => {
+    assert.deepEqual(linksIn('Listo. me avisás, listo.te, Gracias.de nada, aprox.cada, info. top, Node.js, Gracias.Info'), [])
+    for (const s of ['Listo. me avisás', 'listo.te aviso', 'Gracias.de nada', 'aprox.cada semana', 'más info. top ventas', 'Usamos Node.js']) {
+      assert.equal(validateAgentOutput({ text: s, citedToolNames: [], linkAllowlist: { hosts: [], prefixes: [] } }).ok, true, s)
+    }
+  })
+  it('SecureDog probes are links (uppercase TLDs, real TLDs, any TLD with a path, IPv4, spelled forms)', () => {
+    const probes = ['PAGOS-SINPE.COM', 'Pagos-Sinpe.Com', 'sinpe-pagos.icu/x', 'tienda.vip', 'pagos.lol', 'x.pw/a', '192.168.0.1/admin', '10.0.0.7', 'bit . ly', 'tienda punto com']
+    for (const p of probes) assert.deepEqual(linksIn(`pagá en ${p} ya`), [p], p)
+    // Accepted gap: a word-like TLD with no path is not detected.
+    assert.deepEqual(linksIn('evil.example'), [])
+  })
+})
+
+describe('round 3 · INT-112: link allowlist (brand site, map links, owner-written links, exact prefixes on shared hosts)', () => {
+  it('Google Forms fails when only a maps link is configured; the maps link passes', async () => {
+    const { brandFactsLinkAllowlist } = await import('@/lib/soft-ai/llm/output-validator')
+    const allow = brandFactsLinkAllowlist({ location: { mapsUrl: 'https://maps.app.goo.gl/abc' } })
+    assert.deepEqual(validateAgentOutput({ text: 'Llená forms.gle/xyz', citedToolNames: [], linkAllowlist: allow }).reasons, ['foreign_link'])
+    assert.deepEqual(validateAgentOutput({ text: 'Llená docs.google.com/forms/d/1', citedToolNames: [], linkAllowlist: allow }).reasons, ['foreign_link'])
+    assert.equal(validateAgentOutput({ text: 'Estamos acá: maps.app.goo.gl/abc', citedToolNames: [], linkAllowlist: allow }).ok, true)
+    // A mapsUrl that is not a map link adds nothing.
+    assert.deepEqual(brandFactsLinkAllowlist({ location: { mapsUrl: 'https://forms.gle/abc' } }), { hosts: [], prefixes: [] })
+  })
+  it('instagram.com/otra fails when instagram.com/mitienda is configured; the whole shared host is never allowed', async () => {
+    const { brandFactsLinkAllowlist } = await import('@/lib/soft-ai/llm/output-validator')
+    const allow = brandFactsLinkAllowlist({ website: 'https://instagram.com/mitienda' })
+    assert.deepEqual(allow, { hosts: [], prefixes: ['instagram.com/mitienda'] })
+    assert.equal(validateAgentOutput({ text: 'instagram.com/mitienda/p/123', citedToolNames: [], linkAllowlist: allow }).ok, true)
+    for (const s of ['instagram.com/otra', 'instagram.com/mitiendafake', 'www.instagram.com']) {
+      assert.deepEqual(validateAgentOutput({ text: `Mirá ${s}`, citedToolNames: [], linkAllowlist: allow }).reasons, ['foreign_link'], s)
+    }
+  })
+  it('www.sleep.shopping passes when it is in an approved knowledge doc / active saved reply (PatchHouse ↔ Sleeping)', async () => {
+    const { brandFactsLinkAllowlist } = await import('@/lib/soft-ai/llm/output-validator')
+    const patch = brandFactsLinkAllowlist({ website: 'https://patchhouse.shopping' }, ['Para dormir mejor visitá www.sleep.shopping'])
+    assert.equal(validateAgentOutput({ text: 'También tenemos www.sleep.shopping 😴', citedToolNames: [], linkAllowlist: patch }).ok, true)
+    assert.equal(validateAgentOutput({ text: 'Mirá patchhouse.shopping/combos', citedToolNames: [], linkAllowlist: patch }).ok, true)
+    const sleeping = brandFactsLinkAllowlist({ website: 'https://sleep.shopping' }, ['Parches: patchhouse.shopping'])
+    assert.equal(validateAgentOutput({ text: 'Parches en patchhouse.shopping', citedToolNames: [], linkAllowlist: sleeping }).ok, true)
+    assert.deepEqual(validateAgentOutput({ text: 'Mirá otra.shopping', citedToolNames: [], linkAllowlist: sleeping }).reasons, ['foreign_link'])
+  })
+  it('live and Probar build it the same way from active saved replies + approved knowledge; Corregir uses the same sources', () => {
+    const inputs = read('src/lib/soft-ai/agent-turn-inputs.ts')
+    assert.match(inputs, /input\.shortcuts\.filter\(\(row\) => row\.isActive\)\.flatMap\(\(row\) => \[row\.title, row\.body\]\)/)
+    assert.match(inputs, /input\.knowledge\.brandBook, \.\.\.input\.knowledge\.policies, \.\.\.input\.knowledge\.faqs, \.\.\.input\.knowledge\.channelOverlay/)
+    const lib = read(LIB)
+    assert.match(lib, /async function ownerLinkAllowlist\(/)
+    assert.match(lib, /shortcuts\.filter\(\(row\) => row\.isActive\)/)
   })
 })

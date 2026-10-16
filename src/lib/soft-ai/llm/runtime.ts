@@ -23,6 +23,7 @@ import {
 import { softAiToolDefinitions } from '@/lib/soft-ai/llm/tool-definitions'
 import { runA1Tool, type SoftAiToolRunContext } from '@/lib/soft-ai/llm/tool-runner'
 import { validateAgentOutput, type FreeShippingRule } from '@/lib/soft-ai/llm/output-validator'
+import type { LinkAllowlist } from '@/lib/soft-ai/links'
 import { runAgentFallback } from '@/lib/soft-ai/llm/fallback'
 import { redactToolTrace } from '@/lib/soft-ai/llm/redact'
 import { billedTokens, estimateCostMicros } from '@/lib/soft-ai/llm/usage'
@@ -75,8 +76,8 @@ export type SoftAiLlmRuntimeInput = {
   salesFreeShipping?: boolean
   /** Store rule "envío gratis desde ₡X": the words pass only next to that amount (output-validator). */
   salesFreeShippingRule?: FreeShippingRule | null
-  /** INT-109: the brand's own domains — any other link in a reply is 'foreign_link'. */
-  brandDomains?: string[]
+  /** INT-109 / INT-112: links a reply may carry (brandFactsLinkAllowlist) — any other is 'foreign_link'. */
+  linkAllowlist?: LinkAllowlist
   /** Sales state for the turn trace (debug only; not sent to the model separately). */
   salesTrace?: { stage: string; said: Record<string, boolean> } | null
 }
@@ -424,7 +425,7 @@ export async function runSoftAiLlmRuntime(
         allowedDeals: input.salesAllowedDeals,
         freeShippingRule: input.salesFreeShippingRule,
         customerText: input.inboundText,
-        brandDomains: input.brandDomains,
+        linkAllowlist: input.linkAllowlist,
         paymentContext: conversationPaymentContext(input.history, input.inboundText),
       })
     let validation = validate(finalText)

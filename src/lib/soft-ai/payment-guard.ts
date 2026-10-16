@@ -45,12 +45,15 @@ export function fillPaymentToken(text: string, facts: BrandFacts): { text: strin
 const digitsOf = (s: string) => s.replace(/\D/g, '')
 export const PAY_WORDS_RE = /sinpe|iban|cuenta|transfer|dep[oó]sit|pag(ar|o|ás|as|ues)|n[uú]mero|plata|dinero|mand[aá]/iu
 // Digits joined by any common separator: spaces, dots, dashes (incl. en/em dash, minus, "--"), slashes, middle dots,
-// "_" (up to 4), or a single comma with no space ("8888,1234"; "9.900, 12.400" stays a list) — INT-105.
-export const DIGIT_SEP = '(?:[\\s.\\-\\u2010-\\u2015\\u2212/·_]{1,4}|,)?'
+// "_" (up to 4) — INT-105. A comma is NOT a digit separator (INT-113: "Tallas 36,38,40,42", "9,900 - 12,900",
+// "135,140,150,160 cm" are lists / prices); it counts only in the phone shape "8888,1234" (PHONE_COMMA below).
+export const DIGIT_SEP = '[\\s.\\-\\u2010-\\u2015\\u2212/·_]{0,4}'
 const SEP = DIGIT_SEP
+/** Two 4-digit groups joined by one comma: a phone / SINPE written "8888,1234". */
+const PHONE_COMMA = '(?<![\\d,])\\d{4},\\d{4}(?![\\d,])'
 export const CR_IBAN_RE = new RegExp(`CR${SEP}\\d{2}(?:${SEP}\\d){18}`, 'giu')
-/** 8+ digits with separators, optional +506 (a SINPE / phone / account number). */
-export const LONG_NUMBER_RE = new RegExp(`(?:\\+?506${SEP})?\\d(?:${SEP}\\d){7,}`, 'gu')
+/** 8+ digits with separators (or "8888,1234"), optional +506 (a SINPE / phone / account number). */
+export const LONG_NUMBER_RE = new RegExp(`(?:\\+?506${SEP})?(?:${PHONE_COMMA}|\\d(?:${SEP}\\d){7,})`, 'gu')
 
 function configuredNumbers(facts: BrandFacts): string[] {
   return [facts.payment?.sinpe?.number, facts.payment?.transfer?.iban].map((n) => digitsOf(n || '')).filter((d) => d.length >= 8)

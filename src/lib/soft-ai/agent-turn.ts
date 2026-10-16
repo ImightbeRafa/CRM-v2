@@ -756,7 +756,7 @@ export async function executeAgentLayerTurn(
     replyStyle: resolved.agent.replyStyle,
     shortcuts,
     shortenLongReply: true,
-    linkCheck: true,
+    linkAllowlist: runtimeInput.linkAllowlist,
   })
   const needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
   // B1: what goes out is planned by code: the model reply (checked), the safe line, or the hand-off text.
@@ -1578,7 +1578,7 @@ async function runAgentTestTurnInner(input: {
       replyStyle: runtimeAgent.replyStyle,
       shortcuts,
       shortenLongReply: true,
-      linkCheck: true,
+      linkAllowlist: runtimeInput.linkAllowlist,
     })
     // Same plan as the live turn (B1): checked model reply, safe line, or hand-off text.
     const plan = planModelTurnDelivery({

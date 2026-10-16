@@ -1,3 +1,19 @@
+## 2026-10-15 — "Corregir" round 3: live false positives + link allowlist (claudio/agents2-phase1)
+
+- R1: sign-less "N mil" is money only after a price word (cuesta / sale / son / total / precio / vale / queda / pagás…)
+  and not before a count noun ("5 mil parches", "2 mil reseñas", "10 mil pasos", "5 mil mAh" are not); one helper
+  (output-validator bareMilAmounts) for live and save. R4: "₡9.900 mil gracias" stays ₡9.900.
+- INT-112: links a model reply may carry = brand website / catalog host, the maps URL only when it is a map link, and
+  links the owner wrote in ACTIVE saved replies + APPROVED bound knowledge; shared hosts (instagram, wa.me, bit.ly,
+  forms.gle, docs.google.com…) only by exact path prefix. Same allowlist for live, Probar and Corregir.
+- Links (INT-109 leftovers): uppercase TLDs and bare IPv4 detected; "Listo. me avisás", "listo.te", "Gracias.de nada",
+  "aprox.cada", "info. top", "Node.js" are not links (word-like TLDs need a path; accepted gap: "evil.example").
+- INT-113: a comma joins digits only as "8888,1234" (sizes / price ranges / measures are not payment numbers).
+- Years after en / el / desde / del / año are not amounts. Locked rules saves: readiness checked once outside,
+  maxWait 10 s / timeout 15 s. markReplaced is inside the best-effort try.
+- Proof: tsc 0, lint 0, test:soft-ai 656/656, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34.
+
 ## 2026-10-15 — "Corregir" round 2: DATA-52 blocker + INT-104/105/109/110/111 + N1–N9 (claudio/agents2-phase1)
 
 - DATA-52 / N1: purged corrections versions keep body '[purged]' (the 028 body CHECK needs ≥ 1 char; '' 500'd the 4th

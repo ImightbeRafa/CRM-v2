@@ -23,7 +23,10 @@ import { loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import { salesAllowedAmounts, salesFreeShippingRule } from '@/lib/soft-ai/sales-state'
 import { redactPiiText } from '@/lib/soft-ai/llm/redact'
 import { turnWasCodeDecided } from '@/lib/soft-ai/turn-origin'
-import type { FreeShippingRule } from '@/lib/soft-ai/llm/output-validator'
+import { brandFactsLinkAllowlist, type FreeShippingRule } from '@/lib/soft-ai/llm/output-validator'
+import type { LinkAllowlist } from '@/lib/soft-ai/links'
+import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
+import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
 import {
   approveKnowledgeSource,
   bindKnowledgeToAgent,
@@ -34,9 +37,8 @@ import {
 import { KNOWLEDGE_NAME_MAX } from '@/lib/soft-ai/knowledge-types'
 import { createShortcut, listShortcuts, shortcutErrorStatus } from '@/lib/soft-ai/shortcut-admin'
 import { TUNE_SHORTCUT_PREFIX, validateShortcutForSave, type ShortcutDraft } from '@/lib/soft-ai/shortcuts'
-import { loadSalesSetup, lockAgentForSalesRules, saveSalesSetup, SalesRulesTooLargeError, SalesSetupNotReadyError } from '@/lib/soft-ai/agent-sales-setup'
+import { assertSalesSetupReady, loadSalesSetup, lockAgentForSalesRules, SALES_RULES_TX, saveSalesSetup, SalesRulesTooLargeError, SalesSetupNotReadyError } from '@/lib/soft-ai/agent-sales-setup'
 import {
-  brandDomainsFrom,
   checkCorrectionText,
   correctionAnswer,
   ownerTextProblem,
@@ -76,7 +78,8 @@ type SalesFacts = {
   allowed: number[]
   allowedDeals: Array<'free_shipping' | 'special_price'>
   freeShippingRule: FreeShippingRule | null
-  brandDomains: string[]
+  /** INT-112: the same link allowlist the live checker builds (brand site, map link, owner-written links). */
+  links: LinkAllowlist
 }
 
 /** Prices the agent may quote (the same list the live validator uses + mapped prices for big catalogs), its promo deals and own site. */
@@ -97,13 +100,25 @@ async function salesFactsFor(tenantId: string, agent: { id: string; brandFacts: 
     allowed,
     allowedDeals: [...(ctx.promo?.freeShipping ? (['free_shipping'] as const) : []), ...(ctx.promo?.specialPrice ? (['special_price'] as const) : [])],
     freeShippingRule: salesFreeShippingRule(ctx),
-    brandDomains: brandDomainsFrom([facts.website, facts.catalogUrl]),
+    links: await ownerLinkAllowlist(tenantId, agent.id, facts),
   }
 }
 
+/** Same sources as the live allowlist (agent-turn-inputs): active saved replies + approved bound knowledge. */
+async function ownerLinkAllowlist(tenantId: string, agentId: string, facts: ReturnType<typeof parseBrandFactsSafe>): Promise<LinkAllowlist> {
+  const [shortcuts, knowledge] = await Promise.all([
+    listRuntimeShortcuts(tenantId, agentId).catch(() => []),
+    loadApprovedKnowledgeForAgent({ tenantId, agentId, socialAccountId: '' }).catch(() => null),
+  ])
+  return brandFactsLinkAllowlist(facts, [
+    ...shortcuts.filter((row) => row.isActive).flatMap((row) => [row.title, row.body]),
+    ...(knowledge ? [...knowledge.brandBook, ...knowledge.policies, ...knowledge.faqs].map((s) => s.body) : []),
+  ])
+}
+
 /** The owner's text as written (invisible characters dropped), or a refusal naming the problem phrase (V9). */
-function ownerText(text: string, field: string, brandDomains: string[], kind: 'answer' | 'rule' = 'answer'): string {
-  const r = ownerTextProblem(text, field, brandDomains, kind)
+function ownerText(text: string, field: string, links: LinkAllowlist, kind: 'answer' | 'rule' = 'answer'): string {
+  const r = ownerTextProblem(text, field, links, kind)
   if (!r.ok) throw new TuneRefusal(r.code, r.error)
   return r.text
 }
@@ -179,12 +194,13 @@ async function saveExample(tenantId: string, agent: { id: string; name: string }
     ? await prisma.chatKnowledgeSource.findMany({ where: { tenantId, id: { in: links.map((l) => l.sourceId) }, ...tuningOf(agent.id) }, select: { id: true } })
     : []
   for (const s of stale) await unbindKnowledgeFromAgent({ tenantId, agentId: agent.id, sourceId: s.id, ...actor })
-  for (const id of new Set([...(current ? [current.id] : []), ...stale.map((s) => s.id)])) await markReplaced(tenantId, id, created.id)
-  // Best effort (DATA-52): the example is saved; trimming old versions must never fail it or skip the audit.
+  // Best effort (DATA-52, round 3 item 8): the example is saved; marking replaced versions and trimming old ones must
+  // never fail it or skip the audit.
   try {
+    for (const id of new Set([...(current ? [current.id] : []), ...stale.map((s) => s.id)])) await markReplaced(tenantId, id, created.id)
     await purgeOldCorrections(tenantId, agent.id)
   } catch (error) {
-    console.warn('[agent-tuning] purge of old corrections versions failed', error instanceof Error ? error.name : 'unknown')
+    console.warn('[agent-tuning] marking / purging old corrections versions failed', error instanceof Error ? error.name : 'unknown')
   }
   return { targetId: created.id, unchanged: false }
 }
@@ -242,10 +258,11 @@ async function saveSavedReply(tenantId: string, agentId: string, body: string, t
  * the read, the merge and the write, so a second save waits and then reads the first one's lines.
  */
 async function saveRule(tenantId: string, agentId: string, note: string, actorUserId: string) {
+  await assertSalesSetupReady()
   return prisma.$transaction(
     async (tx) => {
       await lockAgentForSalesRules(tx, tenantId, agentId)
-      const setup = await loadSalesSetup(tenantId, agentId, tx)
+      const setup = await loadSalesSetup(tenantId, agentId, tx, true)
       const placed = placeRule(setup.salesRules, note)
       if (!placed.text) throw new TuneRefusal('empty', 'La regla quedó vacía. Escribila completa, por ejemplo: "nunca prometas bajar de peso".')
       // saveSalesSetup keeps the 8 KB CHECK (SalesRulesTooLargeError) and re-parses the lists (max 10 each).
@@ -254,7 +271,7 @@ async function saveRule(tenantId: string, agentId: string, note: string, actorUs
       await tx.chatAgent.updateMany({ where: { id: agentId, tenantId }, data: { version: { increment: 1 }, updatedBy: actorUserId } })
       return { target: placed.target, text: placed.text }
     },
-    { timeout: 15_000 },
+    SALES_RULES_TX,
   )
 }
 
@@ -388,9 +405,9 @@ export async function tuneAgent(input: { tenantId: string; agentId: string; body
 
   const facts = await salesFactsFor(tenantId, agent)
   // V9: the owner's wording is kept as written; markers, tags or links are refused, naming the phrase.
-  const corrected = body.saveAs === 'rule' ? '' : ownerText(body.correctedReply, 'La respuesta', facts.brandDomains)
-  const note = body.note ? ownerText(body.note, 'La nota', facts.brandDomains, body.saveAs === 'rule' ? 'rule' : 'answer') : null
-  const title = body.title ? ownerText(body.title, 'El título', facts.brandDomains) : null
+  const corrected = body.saveAs === 'rule' ? '' : ownerText(body.correctedReply, 'La respuesta', facts.links)
+  const note = body.note ? ownerText(body.note, 'La nota', facts.links, body.saveAs === 'rule' ? 'rule' : 'answer') : null
+  const title = body.title ? ownerText(body.title, 'El título', facts.links) : null
   if (body.saveAs !== 'rule') refuseIfBad(corrected, facts, 'La respuesta')
   // V7: a "nunca …" line names what NOT to say ("nunca digas que el pago está confirmado"): no wording / amount checks.
   // N6: only when the note IS the rule; a note riding on an example / saved reply always gets every check.

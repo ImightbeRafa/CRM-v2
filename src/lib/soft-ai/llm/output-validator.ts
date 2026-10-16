@@ -15,7 +15,7 @@ import { hasConfirmationWording, renderShortcutTemplate, shortcutByKey, type Run
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
 import { fillPaymentToken, paymentNumberProblems } from '@/lib/soft-ai/payment-guard'
 import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
-import { brandDomainsFrom, foreignLinks } from '@/lib/soft-ai/links'
+import { buildLinkAllowlist, foreignLinks, type LinkAllowlist } from '@/lib/soft-ai/links'
 
 /**
  * Backstop for short payment confirmations the confirmation-wording check misses ("Sí, ya se acreditó", "Sí, lo
@@ -176,27 +176,67 @@ const PURCHASE_INTENTS = new Set<AgentIntent>(['price', 'how_to_buy'])
 
 export function extractMoneyAmounts(text: string): number[] {
   // NFKC: the full-width "￠" becomes "¢" (INT-104: "¢" is a colón sign too).
-  // "N mil" / "Nmil" is N × 1000, with or without a currency sign ("₡15 mil", "¢15 mil", "15 mil colones", "cuesta
-  // 15 mil"); "2 mil años" is not money (INT-104).
-  const matches = (text || '').normalize('NFKC').matchAll(MONEY_AMOUNT_RE)
+  // "N mil" / "Nmil" is N × 1000 next to a currency sign or colones ("₡15 mil", "15 mil colones"); sign-less only with
+  // a price word before it (bareMilAmounts, round 3 R1). "₡9.900 mil gracias" is ₡9.900 (R4).
+  const t = (text || '').normalize('NFKC')
   const amounts: number[] = []
-  for (const match of matches) {
-    const raw = (match[1] || match[3] || match[5] || '').replace(/\s/g, '')
-    const thousand = Boolean(match[2] || match[4] || match[5])
+  for (const match of t.matchAll(MONEY_AMOUNT_RE)) {
+    const spaced = match[1] || match[3] || ''
+    const raw = spaced.replace(/\s/g, '')
+    const thousand = Boolean(match[2] || match[4]) && !hasThousandsSeparator(spaced)
     const normalized = raw.replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.')
     const value = Number(normalized) * (thousand ? 1000 : 1)
     if (Number.isFinite(value) && value > 0) amounts.push(value)
   }
-  return amounts
+  return [...amounts, ...bareMilAmounts(t)]
 }
 
-/** The brand's own domains: website, catalog and maps link from brand facts (INT-109). */
-export function brandFactsDomains(facts: Pick<BrandFacts, 'website' | 'catalogUrl' | 'location'> | null | undefined): string[] {
-  return brandDomainsFrom([facts?.website, facts?.catalogUrl, facts?.location?.mapsUrl])
+/** "9.900", "12,900", "12 900": already a full amount — a following "mil" is not a multiplier (R4). */
+export function hasThousandsSeparator(digits: string): boolean {
+  return /\d[.,\s]\d{3}(?!\d)/.test(digits)
+}
+
+/** A price word up to 3 words before ("cuesta 15 mil", "te sale en 29 mil", "son más de 15 mil"). */
+const MIL_CUE_BEFORE_RE =
+  /(?<![\p{L}])(?:cuestan?|sale|salen|son|total|precios?|valen?|quedan?|pag(?:a|ás|as|an|ar)|cobr\p{L}*|monto|inversi[oó]n)(?![\p{L}])(?:[^\p{L}\p{N}]+\p{L}+){0,3}[^\p{L}\p{N}]*$/iu
+/** Words that may follow a money "N mil" ("cuesta 15 mil el combo"); any other word makes it a count ("5 mil parches"). */
+const MIL_AFTER_OK = new Set(['el', 'la', 'los', 'las', 'y', 'o', 'con', 'cada', 'por', 'en', 'a', 'al', 'más', 'mas', 'nada', 'solo', 'solamente', 'total', 'iva', 'de'])
+
+/**
+ * Sign-less "N mil" amounts (round 3 R1): only with a price word before it and no count noun after it. "Ya vendimos más
+ * de 5 mil parches", "2 mil reseñas", "10 mil pasos", "5 mil mAh" are not money; "Cuesta 15 mil", "te sale en 29 mil"
+ * are. One helper for the live validator and the save-time check (agent-tuning-core colonAmountsIn).
+ */
+export function bareMilAmounts(text: string): number[] {
+  const t = (text || '').normalize('NFKC')
+  const out: number[] = []
+  for (const m of t.matchAll(/(?<![\d.,₡¢$\p{L}])(\d{1,3})\s*mil(?![\p{L}])/giu)) {
+    const at = m.index ?? 0
+    const after = t.slice(at + m[0].length)
+    if (/^\s*(?:colones|crc|usd)(?![\p{L}])/iu.test(after)) continue // counted with its currency word
+    // Slang currency ("15 mil rojos / tejas") is money on its own; otherwise a price word must come before.
+    const slang = /^\s*(?:rojos|tejas)(?![\p{L}])/iu.test(after)
+    if (!slang && !MIL_CUE_BEFORE_RE.test(t.slice(Math.max(0, at - 60), at))) continue
+    const next = after.match(/^\s+(\p{L}+)/u)?.[1]?.toLowerCase()
+    if (!slang && next && !MIL_AFTER_OK.has(next)) continue
+    out.push(Number(m[1]) * 1000)
+  }
+  return out
+}
+
+/**
+ * INT-112: what a model reply may link — brand website / catalog, the maps URL when it is a map link, and links the
+ * owner wrote in active saved replies and approved bound knowledge (links.ts buildLinkAllowlist).
+ */
+export function brandFactsLinkAllowlist(
+  facts: Pick<BrandFacts, 'website' | 'catalogUrl' | 'location'> | null | undefined,
+  ownerTexts: Array<string | null | undefined> = [],
+): LinkAllowlist {
+  return buildLinkAllowlist({ website: facts?.website, catalogUrl: facts?.catalogUrl, mapsUrl: facts?.location?.mapsUrl, ownerTexts })
 }
 
 const MONEY_AMOUNT_RE =
-  /[₡¢$]\s?(\d(?:[\d.\s]*\d)?)(\s*mil(?![\p{L}]))?|(?<![\d.,\p{L}])(\d[\d.,]*)(\s*mil)?\s*(?:colones|crc|usd)(?![\p{L}])|(?<![\d.,₡¢$\p{L}])(\d{1,3})\s*mil(?![\p{L}])(?!\s+(?:años|personas|seguidores|clientes|unidades))/giu
+  /[₡¢$]\s?(\d(?:[\d.\s]*\d)?)(\s*mil(?![\p{L}]))?|(?<![\d.,\p{L}])(\d[\d.,]*)(\s*mil)?\s*(?:colones|crc|usd)(?![\p{L}])/giu
 
 function amountAllowed(amount: number, allowed: number[]): boolean {
   const rounded = Math.round(amount)
@@ -220,17 +260,17 @@ export function validateAgentOutput(input: {
   /** The conversation is about a payment (recent payment words / media / payment already discussed): same backstop. */
   paymentContext?: boolean
   /**
-   * INT-109: the brand's own domains (links.ts brandDomainsFrom of the brand facts). When given, any other link or
-   * domain in the reply is 'foreign_link' (none configured → every link is foreign). Undefined = not checked.
+   * INT-109 / INT-112: what the reply may link (brandFactsLinkAllowlist). When given, any other link or domain in the
+   * reply is 'foreign_link' (nothing configured → every link is foreign). Undefined = not checked.
    */
-  brandDomains?: readonly string[] | null
+  linkAllowlist?: LinkAllowlist | null
 }): OutputValidationResult {
   const reasons: string[] = []
   const text = input.text || ''
   const cited = new Set(input.citedToolNames)
   const highlighted: number[] = []
 
-  if (input.brandDomains && foreignLinks(text, input.brandDomains).length > 0) reasons.push('foreign_link')
+  if (input.linkAllowlist && foreignLinks(text, input.linkAllowlist).length > 0) reasons.push('foreign_link')
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
   if (CREATED_CLAIM_RE.test(text)) reasons.push('write_claim')
   if (dealProblemWithRule(text, input.allowedDeals ?? [], input.freeShippingRule)) reasons.push('deal_offer')
@@ -344,10 +384,10 @@ export function applyFinalOutputPolicy(input: {
    */
   shortenLongReply?: boolean
   /**
-   * INT-109: the text was written by the model (live turn / Probar): any link outside the brand's own site is
-   * 'foreign_link'. Off for the owner's own saved replies sent by code (inbound-decision), which are the owner's text.
+   * INT-109 / INT-112: the text was written by the model (live turn / Probar, same runtime allowlist): any link not on
+   * it is 'foreign_link'. Not given for the owner's own saved replies sent by code (inbound-decision).
    */
-  linkCheck?: boolean
+  linkAllowlist?: LinkAllowlist | null
 }): FinalOutputPolicy {
   const facts = input.brandFacts || { schemaVersion: 1 }
   const style = input.replyStyle || DEFAULT_REPLY_STYLE
@@ -415,7 +455,7 @@ export function applyFinalOutputPolicy(input: {
     freeShippingRule: input.freeShippingRule,
     customerText: input.customerText,
     // INT-109: live and Probar both come through here — a reply may only link the brand's own site.
-    brandDomains: input.linkCheck ? brandFactsDomains(facts) : undefined,
+    linkAllowlist: input.linkAllowlist ?? undefined,
   })
 
   const merged = [...new Set([...reasons, ...validated.reasons])]

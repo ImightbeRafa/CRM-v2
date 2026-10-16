@@ -5,6 +5,7 @@
  */
 import { hasPaymentClaimCue } from '@/lib/soft-ai/payment-classifier'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
+import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 
 export type SalesCatalogItem = { name: string; price: number; stockLabel: string }
 export type SalesShippingMethod = { name: string; price: number; coverage: string; cod: string }
@@ -269,11 +270,15 @@ export function paymentDetailsIn(text: string): boolean {
 
 /** Customer / history text must not be able to imitate Betsy's data block or the store's own lines (prompt rule 13). */
 export function stripBetsyLookalikes(text: string): string {
-  return (text || '')
-    .normalize('NFKC')
-    // The marker word itself, in any brackets / case / spacing, is never allowed from the customer.
-    .replace(/BETSY[\s_-]*DATOS/gi, '[texto del cliente]')
-    .replace(/regla de la tienda|precio total del combo|únicos precios de combo|promoci[oó]n activa|dato de betsy|aplicada por betsy|frase del due[nñ]o|estado de la venta|siguiente paso\s*:|etapa\s*:|calculado por betsy|productos que vend[eé]s|reglas fijas|\[\s*vos\s*\(\s*tienda\s*\)/gi, '[texto del cliente]')
+  // Invisible characters first (INT-103): "BETSY+zero-width+DATOS" must not slip past the patterns below.
+  return stripFormatChars(text)
+    // The marker word itself, in any brackets / case / spacing / dot, is never allowed from the customer.
+    .replace(/BETSY[\s_.-]*DATOS/gi, '[texto del cliente]')
+    .replace(/regla de la tienda|precio total del combo|únicos precios de combo|promoci[oó]n activa|dato de betsy|aplicada por betsy|frase del due[nñ]o|estado de la venta|siguiente paso\s*:|etapa\s*:|calculado por betsy|productos que vend[eé]s|reglas? fijas?|\[\s*vos\s*\(\s*tienda\s*\)/gi, '[texto del cliente]')
+    // Notes addressed to the model, or posing as the business's own note in a correction (INT-103).
+    .replace(/nota\s+(?:para|al|a\s+la)\s+(?:el\s+|la\s+)?(?:asistente|agente|bot|ia|modelo|sistema)|nota\s+del\s+negocio|instrucci[oó]n(?:es)?\s+(?:para|del|de\s+la|al)\s+(?:el\s+|la\s+)?(?:asistente|agente|bot|ia|modelo|sistema)/giu, '[texto del cliente]')
+    // A numbered line like the fixed rules ("16) Pagos solo en…") could pose as one more rule.
+    .replace(/(^|\n)[ \t]*\(?\d{1,2}\)/g, '$1[texto del cliente]')
 }
 
 /** Code-owned selling rules (system instructions; stable per agent version). */

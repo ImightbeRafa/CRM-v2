@@ -6,6 +6,7 @@ import { AgentActivationCard } from '@/app/config/agentes/AgentActivationCard'
 import { selectWhatsappTestChannel, type TestChannelOption } from '@/lib/soft-ai/test-channel'
 import { ProbarScenarios } from '@/app/config/agentes/ProbarScenarios'
 import { CorrectionPanel } from '@/components/aurora/agentes/CorrectionPanel'
+import { TUNE_CODE_REPLY_NOTE } from '@/lib/soft-ai/agent-tuning-core'
 
 export type WaBubble = {
   kind: 'text'
@@ -18,6 +19,10 @@ export type WaBubble = {
   latencyMs?: number
   /** Agent images (saved reply it used), shown before the text like WhatsApp. */
   images?: Array<{ assetId: string; url: string; name: string }>
+  /** Agent bubbles: the customer message this turn answered (V5: "Corregir" / "Volver a preguntar" use it). */
+  inbound?: string
+  /** Agent bubbles: code answered (keyword saved reply / system message), not the model (V11). */
+  decidedByCode?: boolean
 }
 
 type TurnResult = {
@@ -106,6 +111,7 @@ function clock(iso: string): string {
 
 export function AgentTestSandbox({
   agentId,
+  agentName,
   canEdit,
   channels,
   channelsLoaded,
@@ -117,7 +123,7 @@ export function AgentTestSandbox({
   configuredModels,
 }: {
   agentId: string
-  /** Kept for callers; the activation card names the channel instead. */
+  /** "Corregir" says where it saves ("Se guarda en: …"); the activation card names the channel. */
   agentName?: string
   canEdit: boolean
   channels: TestChannelOption[]
@@ -256,6 +262,8 @@ export function AgentTestSandbox({
                   from: 'agent' as const,
                   text: outbound,
                   at: now,
+                  inbound,
+                  decidedByCode: data.decidedByCode === true,
                   images: images.length ? images : undefined,
                   why: Array.isArray(data.why) ? (data.why as string[]) : undefined,
                   latencyMs: typeof data.latencyMs === 'number' ? data.latencyMs : undefined,
@@ -335,33 +343,41 @@ export function AgentTestSandbox({
         ) : (
           history.map((bubble, index) => {
             const canTune = canEdit && bubble.from === 'agent' && Boolean(bubble.text)
-            // The customer message this reply answered: the last one before it.
-            const asked = canTune ? [...history.slice(0, index)].reverse().find((b) => b.from === 'customer')?.text ?? '' : ''
+            // V5: the customer message this turn was run for (stored on the bubble), not "the previous bubble".
+            const asked = canTune ? bubble.inbound ?? '' : ''
             return (
               <div key={`${bubble.at}-${index}`}>
                 <BubbleView bubble={bubble} />
                 {canTune && asked ? (
                   <div className="ml-1 mt-0.5 flex gap-3 text-[11px]" data-testid="probar-tune-actions">
+                    {/* V11: nothing is saved — the label says so instead of "Anotado". */}
                     {liked.includes(bubble) ? (
-                      <span className="text-emerald-700">👍 Anotado</span>
+                      <span className="text-emerald-700">👍 Ok, sin cambios</span>
                     ) : (
                       <button type="button" onClick={() => setLiked((prev) => [...prev, bubble])} className="text-slate-500 hover:text-slate-800">
-                        👍 Bien
+                        👍 Está bien
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => setCorrecting(correcting === bubble ? null : bubble)}
-                      className="font-medium text-indigo-700 hover:underline"
-                    >
-                      Corregir
-                    </button>
+                    {bubble.decidedByCode ? (
+                      <span className="text-slate-600" data-testid="probar-code-reply">
+                        {TUNE_CODE_REPLY_NOTE}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setCorrecting(correcting === bubble ? null : bubble)}
+                        className="font-medium text-indigo-700 hover:underline"
+                      >
+                        Corregir
+                      </button>
+                    )}
                   </div>
                 ) : null}
-                {correcting === bubble && asked ? (
+                {correcting === bubble && asked && !bubble.decidedByCode ? (
                   <div className="max-w-[90%]">
                     <CorrectionPanel
                       agentId={agentId}
+                      agentName={agentName}
                       customerMessage={asked}
                       agentReply={bubble.text}
                       onClose={() => setCorrecting(null)}

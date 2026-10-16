@@ -43,11 +43,13 @@ export function fillPaymentToken(text: string, facts: BrandFacts): { text: strin
 }
 
 const digitsOf = (s: string) => s.replace(/\D/g, '')
-const PAY_WORDS_RE = /sinpe|iban|cuenta|transfer|dep[oó]sit|pag(ar|o|ás|as|ues)|n[uú]mero|plata|dinero|mand[aá]/iu
-// Digits joined by any common separator: spaces, dots, dashes (incl. en/em dash), slashes, middle dots.
-const SEP = '[\\s.\\-\\u2010-\\u2015/·]{0,3}'
-const CR_IBAN_RE = new RegExp(`CR${SEP}\\d{2}(?:${SEP}\\d){18}`, 'giu')
-const LONG_NUMBER_RE = new RegExp(`(?:\\+?506${SEP})?\\d(?:${SEP}\\d){7,}`, 'gu')
+export const PAY_WORDS_RE = /sinpe|iban|cuenta|transfer|dep[oó]sit|pag(ar|o|ás|as|ues)|n[uú]mero|plata|dinero|mand[aá]/iu
+// Digits joined by any common separator: spaces, dots, dashes (incl. en/em dash, minus), slashes, middle dots, "_".
+export const DIGIT_SEP = '[\\s.\\-\\u2010-\\u2015\\u2212/·_]{0,3}'
+const SEP = DIGIT_SEP
+export const CR_IBAN_RE = new RegExp(`CR${SEP}\\d{2}(?:${SEP}\\d){18}`, 'giu')
+/** 8+ digits with separators, optional +506 (a SINPE / phone / account number). */
+export const LONG_NUMBER_RE = new RegExp(`(?:\\+?506${SEP})?\\d(?:${SEP}\\d){7,}`, 'gu')
 
 function configuredNumbers(facts: BrandFacts): string[] {
   return [facts.payment?.sinpe?.number, facts.payment?.transfer?.iban].map((n) => digitsOf(n || '')).filter((d) => d.length >= 8)

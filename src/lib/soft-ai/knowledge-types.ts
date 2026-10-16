@@ -6,6 +6,16 @@ export const KNOWLEDGE_BODY_MAX = 12_000
 export const KNOWLEDGE_NAME_MAX = 80
 export const KNOWLEDGE_LAYER2_CHAR_BUDGET = 4_000
 export const KNOWLEDGE_LAYER34_CHAR_BUDGET = 3_000
+/**
+ * The agent's own "· Correcciones" FAQ (metadata.agentTuning, agent-tuning.ts) has its own budget (V1): it never
+ * pushes other FAQs out of the 3 000-char FAQ + overlay budget, and a long overlay never drops it.
+ */
+export const KNOWLEDGE_TUNING_CHAR_BUDGET = 2_400
+
+/** A FAQ written by "Corregir" (stamped with the agent id). */
+export function isAgentTuningSource(source: { kind: string; metadata: Record<string, unknown> | null }): boolean {
+  return source.kind === 'faq' && typeof source.metadata?.agentTuning === 'string' && source.metadata.agentTuning.length > 0
+}
 
 export const KNOWLEDGE_KINDS = [
   'brand_book',
@@ -98,8 +108,8 @@ export function isKnowledgeStatus(value: string): value is KnowledgeStatus {
 
 /** Detect monetary figures for the Revisar step (CRC / $ / colones). */
 export function findMonetaryFigures(body: string): string[] {
-  const re = /[₡$]\s?\d[\d.,]*|\d[\d.,]*\s*(?:colones|crc|usd)/gi
-  const found = body.match(re) || []
+  const re = /[₡¢$]\s?\d[\d.,]*|\d[\d.,]*\s*(?:colones|crc|usd)/gi
+  const found = (body || '').normalize('NFKC').match(re) || []
   return [...new Set(found.map((s) => s.trim()))]
 }
 
@@ -138,11 +148,21 @@ export function budgetKnowledgeSlice(slice: ApprovedKnowledgeSlice): ApprovedKno
     layer34 += s.body.length
     channelOverlay.push(s)
   }
+  // V1: corrections first, on their own budget; other FAQs share the FAQ + overlay budget as before.
+  let tuning = 0
+  const tuningFaqs: KnowledgeSourceDto[] = []
   for (const s of slice.faqs) {
+    if (isAgentTuningSource(s)) {
+      if (tuning + s.body.length > KNOWLEDGE_TUNING_CHAR_BUDGET) continue
+      tuning += s.body.length
+      tuningFaqs.push(s)
+      continue
+    }
     if (layer34 + s.body.length > KNOWLEDGE_LAYER34_CHAR_BUDGET) continue
     layer34 += s.body.length
     faqs.push(s)
   }
+  faqs.unshift(...tuningFaqs)
 
   const keptIds = new Set(
     [...brandBook, ...policies, ...channelOverlay, ...faqs].map((s) => s.id),

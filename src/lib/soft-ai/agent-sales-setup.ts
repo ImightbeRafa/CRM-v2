@@ -6,6 +6,7 @@
 import 'server-only'
 
 import { prisma } from '@/lib/db'
+import type { Prisma } from '@prisma/client'
 import { isColumnReady, isTableReady } from '@/lib/soft-ai/table-ready'
 import { EMPTY_PROMO, headlineHasNumberWords, parsePromo, type AgentPromo } from '@/lib/soft-ai/promo'
 import { dealProblem } from '@/lib/soft-ai/llm/output-validator'
@@ -137,9 +138,12 @@ async function ready(): Promise<boolean> {
   return (await isTableReady('ChatAgentSettings')) && (await isColumnReady('ChatAgentSettings', 'salesRules'))
 }
 
-export async function loadSalesSetup(tenantId: string, agentId: string): Promise<SalesSetup> {
+/** The client to read / write with: prisma, or an interactive transaction (agent-tuning.ts rule saves lock the agent row). */
+export type SalesSetupDb = Pick<Prisma.TransactionClient, '$queryRaw' | '$executeRaw' | 'shippingMethod'>
+
+export async function loadSalesSetup(tenantId: string, agentId: string, db: SalesSetupDb = prisma): Promise<SalesSetup> {
   if (!(await ready())) return { offeredShippingMethodIds: [], salesRules: EMPTY_SALES_RULES }
-  const rows = await prisma.$queryRaw<Array<{ offeredShippingMethodIds: string[] | null; salesRules: unknown }>>`
+  const rows = await db.$queryRaw<Array<{ offeredShippingMethodIds: string[] | null; salesRules: unknown }>>`
     SELECT "offeredShippingMethodIds", "salesRules" FROM "ChatAgentSettings"
      WHERE "tenantId" = ${tenantId} AND "agentId" = ${agentId} LIMIT 1`
   const row = rows[0]
@@ -162,20 +166,21 @@ export async function saveSalesSetup(
   agentId: string,
   patch: Partial<{ offeredShippingMethodIds: string[]; salesRules: Partial<SalesRules> }>,
   userId: string,
+  db: SalesSetupDb = prisma,
 ): Promise<SalesSetup> {
   if (!(await ready())) throw new SalesSetupNotReadyError()
-  const current = await loadSalesSetup(tenantId, agentId)
+  const current = await loadSalesSetup(tenantId, agentId, db)
   let ids = current.offeredShippingMethodIds
   if (patch.offeredShippingMethodIds) {
     const wanted = patch.offeredShippingMethodIds.filter((x) => typeof x === 'string').slice(0, 20)
-    const own = await prisma.shippingMethod.findMany({ where: { tenantId, id: { in: wanted } }, select: { id: true } })
+    const own = await db.shippingMethod.findMany({ where: { tenantId, id: { in: wanted } }, select: { id: true } })
     const ownSet = new Set(own.map((m) => m.id))
     ids = wanted.filter((x) => ownSet.has(x))
   }
   const rules = patch.salesRules ? parseSalesRules({ ...current.salesRules, ...patch.salesRules }) : current.salesRules
   // A clean error instead of the raw CHECK violation (all field caps together can pass 8 000 bytes).
   if (salesRulesOctets(rules) > SALES_RULES_MAX_OCTETS) throw new SalesRulesTooLargeError()
-  await prisma.$executeRaw`
+  await db.$executeRaw`
     INSERT INTO "ChatAgentSettings" ("agentId", "tenantId", "offeredShippingMethodIds", "salesRules", "updatedBy", "updatedAt")
     VALUES (${agentId}, ${tenantId}, ${ids}::text[], ${JSON.stringify(rules)}::jsonb, ${userId}, NOW())
     ON CONFLICT ("agentId") DO UPDATE SET

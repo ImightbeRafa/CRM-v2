@@ -33,7 +33,8 @@ export type OutputValidationResult = {
 
 export type AuthorizedAmountSource = 'inventory' | 'shipping' | 'quote'
 
-const MONEY_RE = /[₡$]\s?\d|\d[\d.,]*\s*(colones|crc|usd)/i
+// "¢" (U+00A2) is written for the colón too (SecureDog INT-104).
+const MONEY_RE = /[₡¢$]\s?\d|\d[\d.,]*\s*(colones|crc|usd)/i
 /** Deals the agent may never invent (fixed rule 12, INT-72): discounts, promos, free shipping, gifts, "te lo dejo en". */
 const DEAL_RE =
   // No bare "gratis" / "%" (free pickup, "100% algodón" are fine); deal phrasing only.
@@ -55,7 +56,7 @@ const FREE_SHIPPING_WORDING_RE = new RegExp(
     'incluye(?:n)?\\s+(?:el\\s+)?env[ií]o',
     'no\\s+(?:te\\s+|le\\s+|les\\s+)?(?:cobr\\p{L}*|pag\\p{L}*)\\s+(?:el\\s+|nada\\s+de\\s+|nada\\s+por\\s+el\\s+)?env[ií]o',
     'sin\\s+(?:cargo|costo|cobro)\\s+(?:de|por|del)\\s+env[ií]o',
-    'env[ií]o\\s*[:(]?\\s*(?:₡\\s?0(?![\\d.,])|gratis)',
+    'env[ií]o\\s*[:(]?\\s*(?:[₡¢]\\s?0(?![\\d.,])|gratis)',
     'te\\s+(?:lo|la|los|las)\\s+(?:mando|env[ií]o|llevo)\\s+gratis',
     // INT-92: more ways to say it.
     'env[ií]o\\s+(?:no\\s+tiene|sin)\\s+(?:ning[uú]n\\s+)?(?:costo|cargo|cobro)',
@@ -64,7 +65,7 @@ const FREE_SHIPPING_WORDING_RE = new RegExp(
     '(?:entrega|despacho|delivery)\\s+(?:\\p{L}+\\s+){0,2}?(?:gratis|gratuit\\p{L}*|sin\\s+costo|incluid\\p{L}*)',
     'sin\\s+(?:costo|cargo|cobro)\\s+(?:el|del|de|por)\\s+(?:env[ií]o|entrega|despacho)',
     'no\\s+se\\s+(?:cobr|pag)\\p{L}*\\s+(?:el\\s+)?(?:env[ií]o|entrega|despacho)',
-    'env[ií]o\\s+(?:\\p{L}+\\s+){0,3}?₡\\s?0(?![\\d.,])',
+    'env[ií]o\\s+(?:\\p{L}+\\s+){0,3}?[₡¢]\\s?0(?![\\d.,])',
     'por\\s+cuenta\\s+nuestra',
     'free\\s+(?:shipping|delivery)',
   ].map((p) => `(?:${p})`).join('|'),
@@ -173,7 +174,8 @@ const PAY_CUE_RE = /\b(pago|sinpe|transferencia|tarjeta|efectivo|contra\s*entreg
 const PURCHASE_INTENTS = new Set<AgentIntent>(['price', 'how_to_buy'])
 
 export function extractMoneyAmounts(text: string): number[] {
-  const matches = text.matchAll(/[₡$]\s?(\d(?:[\d.\s]*\d)?)|\b(\d[\d.,]*)\s*(?:colones|crc|usd)\b/gi)
+  // NFKC: the full-width "￠" becomes "¢" (INT-104: "¢" is a colón sign too).
+  const matches = (text || '').normalize('NFKC').matchAll(/[₡¢$]\s?(\d(?:[\d.\s]*\d)?)|\b(\d[\d.,]*)\s*(?:colones|crc|usd)\b/gi)
   const amounts: number[] = []
   for (const match of matches) {
     const raw = (match[1] || match[2] || '').replace(/\s/g, '')
@@ -289,7 +291,7 @@ export function shortenToMaxLines(text: string, maxLines: number): string {
   return [...keep].sort((a, b) => a - b).map((i) => lines[i]).join('\n')
 }
 
-const QUALIFYING_LINE_RE = /[₡$]|\d{3}|env[ií]o|(?<![\p{L}])(no|nunca|sin|solo|excepto)(?![\p{L}])|asistente\s+virtual|\[\[|\]\]|DATOS|PAGO/iu
+const QUALIFYING_LINE_RE = /[₡¢$]|\d{3}|env[ií]o|(?<![\p{L}])(no|nunca|sin|solo|excepto)(?![\p{L}])|asistente\s+virtual|\[\[|\]\]|DATOS|PAGO/iu
 
 export type FinalOutputPolicy = {
   text: string

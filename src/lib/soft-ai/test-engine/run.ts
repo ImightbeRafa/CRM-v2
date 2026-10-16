@@ -214,7 +214,9 @@ export async function buildSuite(tenantId: string, agent: { id: string; name: st
     : null
   const facts = parseBrandFactsSafe(agent.brandFacts)
   // The grader sees the same selling data the agent sees (shipping, combos, allowed amounts) — 2026-10-15 quick check.
-  const salesCtx = await loadAgentSalesContext({ tenantId, agentId: agent.id, inventoryItemIds: mapped, brandFacts: facts }).catch(() => null)
+  // V4: no catch — a load failure must fail the run clearly, never build a different suite (and hash) silently.
+  // An agent without a sales setup still gets a context (loadAgentSalesContext falls back to empty lists).
+  const salesCtx = await loadAgentSalesContext({ tenantId, agentId: agent.id, inventoryItemIds: mapped, brandFacts: facts })
   return generateAgentSuite({
     agentName: agent.name,
     systemInstructions: agent.systemInstructions || '',

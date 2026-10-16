@@ -4,11 +4,21 @@
  * "Corregir" panel (Agentes IA 2.0 · E): the owner writes how the agent should have answered and saves it as an
  * example (recommended), a saved reply or a rule. Used in the test chat (AgentTestSandbox) and in real chats
  * (the inbox thread). The server checks everything (POST /api/chat/agents/[id]/tune) and its Spanish message is shown.
+ *
+ * Review fixes 2026-10-15: the customer's question is an editable field prefilled with the cleaned text ("Así lo va a
+ * ver el agente") and what the owner confirms is sent (INT-103); real chats send only the message id and the server
+ * loads both texts (INT-107); the panel says which agent it saves to (INT-108) and shows the exact rule line (INT-106);
+ * a reply sent by code points to Respuestas guardadas (V11).
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
+  ruleLine,
+  sanitizeTuneQuestion,
+  TUNE_CODE_REPLY_NOTE,
   TUNE_CORRECTED_MAX,
+  TUNE_DEFAULT_TITLE,
   TUNE_NOTE_MAX,
+  TUNE_QUESTION_MAX,
   TUNE_TITLE_MAX,
   type TuneSaveAs,
 } from '@/lib/soft-ai/agent-tuning-core'
@@ -22,27 +32,83 @@ const SAVE_AS: Array<{ value: TuneSaveAs; label: string; hint: string }> = [
 const FIELD =
   'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm !text-slate-900 disabled:bg-slate-100 disabled:!text-slate-600'
 
+type Loaded = { customerMessage: string; agentReply: string; agentName: string | null; decidedByCode: boolean }
+
 export function CorrectionPanel({
   agentId,
+  agentName,
+  messageId,
   customerMessage,
   agentReply,
+  decidedByCode,
   onClose,
   onAskAgain,
 }: {
   agentId: string
-  customerMessage: string
-  agentReply: string
+  /** Shown as "Se guarda en: …" (real chats: from the server). */
+  agentName?: string | null
+  /** Real chats: the AI message id; the server loads the customer message and the reply itself. */
+  messageId?: string
+  /** Test chat: the customer message this reply answered. */
+  customerMessage?: string
+  agentReply?: string
+  /** Test chat: code answered (a keyword saved reply / system message), not the agent. */
+  decidedByCode?: boolean
   onClose: () => void
   /** Test chat: re-send the same customer message to see the new answer. */
   onAskAgain?: () => void
 }) {
-  const [corrected, setCorrected] = useState(agentReply.slice(0, TUNE_CORRECTED_MAX))
+  const [loaded, setLoaded] = useState<Loaded | null>(
+    messageId
+      ? null
+      : {
+          customerMessage: sanitizeTuneQuestion(customerMessage || ''),
+          agentReply: agentReply || '',
+          agentName: agentName ?? null,
+          decidedByCode: decidedByCode === true,
+        },
+  )
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [question, setQuestion] = useState(loaded?.customerMessage ?? '')
+  const [corrected, setCorrected] = useState((loaded?.agentReply ?? '').slice(0, TUNE_CORRECTED_MAX))
   const [note, setNote] = useState('')
   const [title, setTitle] = useState('')
   const [saveAs, setSaveAs] = useState<TuneSaveAs>('example')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    if (!messageId) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/tune?messageId=${encodeURIComponent(messageId)}`)
+        const data = (await res.json().catch(() => null)) as
+          | { error?: unknown; customerMessage?: unknown; agentReply?: unknown; agentName?: unknown; decidedByCode?: unknown }
+          | null
+        if (cancelled) return
+        if (!res.ok || !data) {
+          setLoadError(typeof data?.error === 'string' ? data.error : 'No se pudo cargar el mensaje.')
+          return
+        }
+        const next: Loaded = {
+          customerMessage: typeof data.customerMessage === 'string' ? data.customerMessage : '',
+          agentReply: typeof data.agentReply === 'string' ? data.agentReply : '',
+          agentName: typeof data.agentName === 'string' ? data.agentName : agentName ?? null,
+          decidedByCode: data.decidedByCode === true,
+        }
+        setLoaded(next)
+        setQuestion(next.customerMessage)
+        setCorrected(next.agentReply.slice(0, TUNE_CORRECTED_MAX))
+      } catch {
+        if (!cancelled) setLoadError('No se pudo cargar el mensaje. Revisá tu conexión.')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [agentId, messageId, agentName])
 
   async function save() {
     setBusy(true)
@@ -52,8 +118,9 @@ export function CorrectionPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerMessage: customerMessage.slice(0, 500),
-          agentReply: agentReply.slice(0, 1500),
+          ...(messageId ? { messageId } : { agentReply: (loaded?.agentReply ?? '').slice(0, 1500) }),
+          // What the owner confirmed in "Así lo va a ver el agente" (the server cleans it again).
+          customerMessage: question.trim().slice(0, TUNE_QUESTION_MAX),
           correctedReply: corrected.trim(),
           note: note.trim() || undefined,
           saveAs,
@@ -79,6 +146,38 @@ export function CorrectionPanel({
     }
   }
 
+  const closeButton = (
+    <button type="button" onClick={onClose} className="rounded-lg px-2.5 py-1 text-[12px] font-medium text-slate-600 ring-1 ring-slate-200">
+      Cerrar
+    </button>
+  )
+
+  if (loadError) {
+    return (
+      <div className="mt-2 space-y-2 rounded-lg bg-white p-3 text-[12px] !text-slate-900 ring-1 ring-slate-200" data-testid="correction-panel">
+        <p role="alert" className="text-red-800">
+          {loadError}
+        </p>
+        {closeButton}
+      </div>
+    )
+  }
+  if (!loaded) {
+    return (
+      <div className="mt-2 rounded-lg bg-white p-3 text-[12px] text-slate-600 ring-1 ring-slate-200" data-testid="correction-panel">
+        Cargando…
+      </div>
+    )
+  }
+  if (loaded.decidedByCode) {
+    return (
+      <div className="mt-2 space-y-2 rounded-lg bg-white p-3 text-[12px] !text-slate-900 ring-1 ring-slate-200" data-testid="correction-code-reply">
+        <p>{TUNE_CODE_REPLY_NOTE}</p>
+        {closeButton}
+      </div>
+    )
+  }
+
   if (saved) {
     return (
       <div className="mt-2 rounded-lg bg-emerald-50 p-3 text-[12px] text-emerald-900 ring-1 ring-emerald-100" data-testid="correction-saved">
@@ -96,9 +195,7 @@ export function CorrectionPanel({
               Volver a preguntar
             </button>
           ) : null}
-          <button type="button" onClick={onClose} className="rounded-lg px-2.5 py-1 text-[12px] font-medium text-slate-600 ring-1 ring-slate-200">
-            Cerrar
-          </button>
+          {closeButton}
         </div>
       </div>
     )
@@ -106,16 +203,30 @@ export function CorrectionPanel({
 
   const needsText = saveAs !== 'rule' && !corrected.trim()
   const needsNote = saveAs === 'rule' && !note.trim()
+  const needsQuestion = !question.trim()
+  const rulePreview = saveAs === 'rule' ? ruleLine(note) : ''
   return (
     <div className="mt-2 space-y-2 rounded-lg bg-white p-3 text-left text-[12px] !text-slate-900 ring-1 ring-slate-200" data-testid="correction-panel">
-      <div className="space-y-1">
-        <p className="text-[11px] text-slate-600">
-          <span className="font-medium">El cliente escribió:</span> {customerMessage || '—'}
+      {loaded.agentName ? (
+        <p className="text-[11px] text-slate-600" data-testid="correction-target">
+          <span className="font-medium">Se guarda en:</span> {loaded.agentName}
         </p>
-        <p className="text-[11px] text-slate-600">
-          <span className="font-medium">El agente respondió:</span> {agentReply || '—'}
-        </p>
-      </div>
+      ) : null}
+      <label className="block">
+        <span className="font-medium">Así lo va a ver el agente</span>
+        <span className="block text-[11px] text-slate-600">La pregunta del cliente, sin datos personales ni enlaces. Podés acortarla.</span>
+        <input
+          className={`${FIELD} mt-1`}
+          maxLength={TUNE_QUESTION_MAX}
+          value={question}
+          disabled={busy}
+          onChange={(e) => setQuestion(e.target.value)}
+          data-testid="correction-question"
+        />
+      </label>
+      <p className="text-[11px] text-slate-600">
+        <span className="font-medium">El agente respondió:</span> {loaded.agentReply || '—'}
+      </p>
       <label className="block">
         <span className="font-medium">Cómo debería responder</span>
         <textarea
@@ -167,12 +278,17 @@ export function CorrectionPanel({
             maxLength={TUNE_TITLE_MAX}
             value={title}
             disabled={busy}
-            placeholder="Si lo dejás vacío, usa la pregunta del cliente"
+            placeholder={`Si lo dejás vacío: «${TUNE_DEFAULT_TITLE}»`}
             onChange={(e) => setTitle(e.target.value)}
           />
         </label>
       ) : null}
       {needsNote ? <p className="text-[11px] text-slate-600">Para guardar una regla, escribila en Nota.</p> : null}
+      {rulePreview ? (
+        <p className="text-[11px] text-slate-700" data-testid="correction-rule-preview">
+          <span className="font-medium">Se va a guardar como:</span> {rulePreview}
+        </p>
+      ) : null}
       {error ? (
         <p role="alert" className="text-[12px] text-red-800">
           {error}
@@ -181,7 +297,7 @@ export function CorrectionPanel({
       <div className="flex gap-2">
         <button
           type="button"
-          disabled={busy || needsText || needsNote}
+          disabled={busy || needsText || needsNote || needsQuestion}
           onClick={() => void save()}
           className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[12px] font-medium text-white disabled:bg-indigo-400"
         >

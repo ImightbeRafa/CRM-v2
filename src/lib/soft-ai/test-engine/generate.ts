@@ -89,8 +89,31 @@ export function judgeFacts(input: Pick<SuiteInput, 'products' | 'sales'>): strin
     parts.push(`Envíos: ${sales.shipping.slice(0, 6).map((s) => `${clean(s.name, 60)}: ${s.price > 0 ? money(s.price) : 'sin costo'}`).join('; ')}.`)
   }
   if (sales?.allowedAmounts?.length) {
+    // V3: every valid amount says what it is the price of — a sum is valid only for that item (+ that shipping).
+    const labels = new Map<number, string[]>()
+    const add = (amount: number, label: string) => {
+      const k = Math.round(amount)
+      if (k <= 0) return
+      const list = labels.get(k) ?? []
+      if (!list.includes(label)) list.push(label)
+      labels.set(k, list)
+    }
+    const ships = (sales.shipping ?? []).filter((s) => s.price > 0)
+    for (const p of input.products.filter((x) => x.sellingPrice > 0)) {
+      add(p.sellingPrice, clean(p.name, 60))
+      for (const s of ships) add(p.sellingPrice + s.price, `${clean(p.name, 60)} + ${clean(s.name, 40)}`)
+    }
+    for (const s of ships) add(s.price, clean(s.name, 60))
+    for (const b of sales.bundles ?? []) {
+      add(b.price, `${clean(b.name, 60)}${b.shippingIncluded ? ' (envío incluido)' : ''}`)
+      if (!b.shippingIncluded) for (const s of ships) add(b.price + s.price, `${clean(b.name, 60)} + ${clean(s.name, 40)}`)
+    }
     const amounts = [...new Set(sales.allowedAmounts.map((a) => Math.round(a)))].sort((a, b) => a - b).slice(0, 40)
-    parts.push(`Montos válidos (precio, envío, un producto o combo más un envío): ${amounts.map(money).join(', ')}.`)
+    const rows = amounts.map((a) => {
+      const l = labels.get(a)
+      return l?.length ? `${money(a)} = ${l.slice(0, 2).join(' o ')}` : money(a)
+    })
+    parts.push(`Montos válidos (cada monto vale solo para lo que dice): ${rows.join('; ')}.`)
   }
   return parts.join(' ')
 }

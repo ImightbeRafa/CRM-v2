@@ -664,6 +664,7 @@ export async function executeAgentLayerTurn(
     // then moves the chat to a person and notifies (also when the send is blocked).
     return finishDeliveryOrSuggest({
       plannedReply: true,
+      codeDecided: true,
       handoff: plan.handoff,
       suppressSend: plan.suppressSend,
       persistedMode,
@@ -1011,6 +1012,8 @@ async function finishDeliveryOrSuggestInner(input: {
   suppressSend?: boolean
   /** agentState mode for this chat (null-column chats re-resolve with the line at the pre-send re-read). */
   persistedMode?: SoftAiAgentMode | null
+  /** The text was decided by code before the model (keyword saved reply / system message): "Corregir" points to Respuestas guardadas. */
+  codeDecided?: boolean
 }): Promise<AgentTurnDispatchResult> {
   const decisionBase = {
     effectiveBehavior: input.effectiveBehavior,
@@ -1246,6 +1249,9 @@ async function finishDeliveryOrSuggestInner(input: {
       providerMessageId,
       automationJobId: input.row.id,
       deliverySkipped: delivery.skipped,
+      // "Corregir" (agent-tuning.ts): the customer message this answered, and whether code or the agent wrote it.
+      answersMessageId: input.row.messageId,
+      replyBy: input.codeDecided ? 'code' : 'agent',
     },
     suppressSoftAi: true,
   })
@@ -1359,6 +1365,8 @@ async function runAgentTestTurnInner(input: {
   images: ReplyImage[]
   /** B1: what live would do after this text — hand the chat to a person, or ask a person to review (stays on IA). */
   handoff: TurnHandoff | null
+  /** "Corregir" (V11): code answered before the model (keyword saved reply / system message). */
+  decidedByCode: boolean
 }> {
   const agent = await prisma.chatAgent.findFirst({
     where: { id: input.agentId, tenantId: input.tenantId },
@@ -1454,6 +1462,7 @@ async function runAgentTestTurnInner(input: {
       why: ['se acabó el límite diario de pruebas de este negocio: probá mañana'],
       images: [],
       handoff: null,
+      decidedByCode: false,
     }
   }
 
@@ -1692,6 +1701,8 @@ async function runAgentTestTurnInner(input: {
     why: probarWhy({ toolTrace: llmTrace, escalate, escalateReason, fallbackUsed, validationReasons, shortcutKey, blockedBy }),
     images,
     handoff,
+    // "Corregir" (V11): code answered before the model (keyword saved reply / system message) — edit that reply instead.
+    decidedByCode: !notBound && !needsModel && Boolean(text),
   }
 }
 

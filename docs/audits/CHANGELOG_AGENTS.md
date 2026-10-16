@@ -1,3 +1,28 @@
+## 2026-10-15 — "Corregir" + quick-check grader: SecureDog INT-103…108 / DATA-51 + Verifier V1…V11 fixes (claudio/agents2-phase1)
+
+- INT-103: customer text is sanitized before it can reach a corrections document (sanitizeTuneQuestion: NFKC, invisible/bidi/NEL
+  chars dropped, look-alike markers, links, emails, 6+ digit runs with payment-guard separators, PII masks, no < > [ ] { } `,
+  no "16)", one line ≤ 200) and shown editable in the panel ("Así lo va a ver el agente"). Owner text is never rewritten:
+  ownerTextProblem refuses markers / tags / numbered rules / [[…]] / non-brand links naming the phrase (V9). Saved-reply
+  title/key never from customer text. Fence tags neutralized in every KNOWLEDGE_DATA block (FAQ, brand facts, saved replies;
+  "</ KNOWLEDGE_DATA>", "KNOWLEDGE DATA", zero-width, missing ">"). Look-alike filter: "regla fija", numbered rules,
+  BETSY.DATOS / BETSY DATOS, notes to the assistant.
+- INT-104/105: "¢" is a colón sign (live validator + knowledge review + tuning); "₡3 mil"; bare amounts next to price words and
+  amounts in words refused; payment numbers with any separator or spelled out; promo-aware deal check; links only to the brand site.
+- INT-106/V7: "evitá/evitar/evite" rules; the panel shows "Se va a guardar como: Nunca: …"; never-rules skip wording/amount/deal
+  checks; dates are not payment numbers.
+- INT-107/108/V6/V11: real chats send only messageId; the server loads the AI reply + its customer message (tenant, conversation,
+  agent snapshot); Corregir only on messages with their own agentId; AI messages now record answersMessageId + replyBy
+  (code-sent replies point to Respuestas guardadas); Probar bubbles keep their own inbound (V5); "👍 Está bien" saves nothing.
+- DATA-51: audit keeps the reply masked (≤ 500) + messageId; corrections create/approve audits keep the body length only;
+  only the latest 3 corrections versions keep their text (older archived bodies emptied + contentPurgedAt, no deletes).
+- V1: corrections FAQ has its own 2 400-char prompt budget. V2: fix_* saved replies listed first, sortOrder 10 newest first,
+  catalog kept/dropped by whole rows. V3: judge facts label every valid amount. V4: buildSuite no longer hides a sales-context
+  failure. V10: corrections doc found across approved/archived; P2002/errors mapped per save type. Rule saves lock the agent row.
+- Route: 16 KB body cap before parsing; GET ?messageId= for the panel. No SQL.
+- Proof: tsc 0, lint 0, test:soft-ai 629/629, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent 317/317,
+  test:agentes-ui 34/34.
+
 ## 2026-10-15 — Agentes IA 2.0 · E "Corregir" (live tuning) (claudio/agents2-tuning)
 
 - Owner fixes a wrong AI answer in the test chat ("👍 Bien" / "Corregir" under each reply, "Volver a preguntar" rewinds and re-sends)

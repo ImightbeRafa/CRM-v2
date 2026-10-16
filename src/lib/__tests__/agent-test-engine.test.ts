@@ -262,9 +262,29 @@ describe('2026-10-15 PatchHouse quick check: the grader sees shipping, combos an
     assert.match(facts, /Dopamine Patch: ₡9.900/)
     assert.match(facts, /Combo 2 paquetes \(a elección\): ₡17.900 \(más el envío\)/)
     assert.match(facts, /Envío a domicilio \(todo el país\): ₡3.000/)
-    assert.match(facts, /Montos válidos[^:]*: ₡3.000, ₡9.900, ₡12.900, ₡17.900, ₡20.900/)
+    // V3 (2026-10-15): every valid amount is labelled with what it is the price of (same amounts, same order).
+    assert.match(
+      facts,
+      /Montos válidos[^:]*: ₡3.000 = Envío a domicilio \(todo el país\); ₡9.900 = Dopamine Patch; ₡12.900 = Dopamine Patch \+ Envío a domicilio \(todo el país\); ₡17.900 = Combo 2 paquetes \(a elección\); ₡20.900 = Combo 2 paquetes \(a elección\) \+ Envío a domicilio \(todo el país\)\./,
+    )
     const run = readFileSync('src/lib/soft-ai/test-engine/run.ts', 'utf8')
     assert.match(run, /loadAgentSalesContext\(\{ tenantId, agentId: agent\.id, inventoryItemIds: mapped, brandFacts: facts \}\)/)
     assert.match(run, /allowedAmounts: salesAllowedAmounts\(salesCtx\)/)
+  })
+
+  it('V3: the judge is told an amount must match the item it is attached to; unlabelled amounts still listed', async () => {
+    const { judgeFacts } = await import('@/lib/soft-ai/test-engine/generate')
+    const { JUDGE_INSTRUCTIONS } = await import('@/lib/soft-ai/test-engine/grade')
+    assert.match(JUDGE_INSTRUCTIONS, /un monto tiene que coincidir con el producto, combo o envío al que la respuesta lo asocia/)
+    assert.match(JUDGE_INSTRUCTIONS, /producto suelto cotizado al precio de un combo/)
+    const facts = judgeFacts({ products: [], sales: { shipping: [], bundles: [], allowedAmounts: [5000] } })
+    assert.match(facts, /Montos válidos[^:]*: ₡5.000\./)
+  })
+
+  it('V4: buildSuite never swallows a sales-context load failure into a different suite hash', () => {
+    const run = readFileSync('src/lib/soft-ai/test-engine/run.ts', 'utf8')
+    const at = run.indexOf('const salesCtx = await loadAgentSalesContext(')
+    assert.ok(at > 0)
+    assert.doesNotMatch(run.slice(at, run.indexOf('\n', at)), /\.catch\(/)
   })
 })

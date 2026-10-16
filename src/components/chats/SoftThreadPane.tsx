@@ -15,6 +15,7 @@ import Link from 'next/link'
 import { Check, CheckCheck, ChevronLeft, Hand, Info, PanelRight, Paperclip, Pause, Play, Send, ShoppingBag, Smile, Sparkles, User, X, Zap } from 'lucide-react'
 import { AgentFeedbackButtons } from '@/components/chats/AgentFeedbackButtons'
 import { CorrectionPanel } from '@/components/aurora/agentes/CorrectionPanel'
+import { TUNE_CODE_REPLY_NOTE, tuneTargetFromMetadata } from '@/lib/soft-ai/agent-tuning-core'
 import { CatalogPicker } from '@/components/chats/composer/CatalogPicker'
 import { useAiTermsAccepted } from '@/components/chats/useAiTermsAccepted'
 import {
@@ -449,16 +450,6 @@ export function SoftThreadPane({
     setTuningId(null)
   }, [conversation?.recipientId, conversation?.socialAccountId])
   /** The customer message an AI reply answered: the last inbound text before it. */
-  const askedBefore = (messageId: string): string => {
-    const all = conversation?.messages ?? []
-    const at = all.findIndex((m) => m.id === messageId)
-    for (let i = at - 1; i >= 0; i -= 1) {
-      const m = all[i]
-      if (m.direction === 'inbound' && m.content && !isPlaceholderToken(m.content)) return m.content
-    }
-    return ''
-  }
-
   if (!conversation) {
     return (
       <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-au-tint-fafbfc px-6 text-center">
@@ -881,22 +872,29 @@ export function SoftThreadPane({
               softAi && msg.metadata && typeof msg.metadata === 'object' && !Array.isArray(msg.metadata)
                 ? ((msg.metadata as Record<string, unknown>).turnId as unknown)
                 : null
-            // "Corregir": the agent that sent it (send snapshot), else the one serving the line now.
-            const tuneAgentId =
+            // "Corregir" (INT-108 / V6 / V11): only on a message with its own recorded agent (send snapshot, never the
+            // agent serving the line now) and a way to find the customer message it answered; code-sent replies point
+            // to Respuestas guardadas instead.
+            const tuneTarget =
               softAi && outbound && canTuneAgent && !msg.id?.startsWith('demo-ai-') && msg.content && !isPlaceholderToken(msg.content)
-                ? (msg.metadata && typeof msg.metadata === 'object' && !Array.isArray(msg.metadata) && typeof (msg.metadata as Record<string, unknown>).agentId === 'string'
-                    ? ((msg.metadata as Record<string, unknown>).agentId as string)
-                    : null) || conversation.agentId || null
+                ? tuneTargetFromMetadata(msg.metadata)
                 : null
-            const tuneButton = tuneAgentId ? (
-              <button
-                type="button"
-                onClick={() => setTuningId(tuningId === msg.id ? null : msg.id)}
-                className="ml-1 rounded px-1 text-[10.5px] font-medium text-au-ink-5b6cff hover:underline"
-                data-testid="soft-thread-tune"
-              >
-                Corregir
-              </button>
+            const tuneAgentId = tuneTarget?.agentId ?? null
+            const tuneButton = tuneTarget ? (
+              tuneTarget.codeReply ? (
+                <span className="ml-1 px-1 text-[10.5px] text-slate-500" title={TUNE_CODE_REPLY_NOTE} data-testid="soft-thread-tune-code">
+                  Respuesta guardada
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setTuningId(tuningId === msg.id ? null : msg.id)}
+                  className="ml-1 rounded px-1 text-[10.5px] font-medium text-au-ink-5b6cff hover:underline"
+                  data-testid="soft-thread-tune"
+                >
+                  Corregir
+                </button>
+              )
             ) : null
             const showMedia = messageHasMedia(msg)
             // Any stored `[type]` token (media, share, story_mention, ig_reel…) is never shown
@@ -1029,11 +1027,11 @@ export function SoftThreadPane({
                       )}
                     </p>
                   ) : null}
-                  {tuneAgentId && tuningId === msg.id ? (
+                  {tuneAgentId && tuneTarget && !tuneTarget.codeReply && tuningId === msg.id ? (
                     <CorrectionPanel
                       agentId={tuneAgentId}
-                      customerMessage={askedBefore(msg.id)}
-                      agentReply={msg.content || ''}
+                      agentName={tuneTarget.agentName}
+                      messageId={msg.id}
                       onClose={() => setTuningId(null)}
                     />
                   ) : null}

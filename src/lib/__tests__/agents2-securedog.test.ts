@@ -172,3 +172,43 @@ describe('SecureDog INT-125: noun-first payment confirmations are blocked in a p
     }
   })
 })
+
+describe('2026-10-16 Sleeping quick check: "Pack" bundles with shipping included are a fact, not a promo', () => {
+  it('accepts the owner\'s own bundle word and a bracketed name note; keeps INT-84..92 protections', async () => {
+    const { salesFreeShippingRule } = await import('@/lib/soft-ai/sales-state')
+    const sleeping = salesFreeShippingRule({
+      bundles: [
+        { name: 'Pack 2 bolsas (60 noches)', price: 19800, shippingIncluded: true },
+        { name: 'Pack 3 bolsas (90 noches)', price: 28500, shippingIncluded: true },
+      ],
+      catalog: [{ name: 'SleepingPatches', price: 9900 }],
+    } as never)
+    assert.deepEqual(sleeping?.bundleWords, ['pack'])
+    assert.deepEqual(sleeping?.otherNames, [])
+    for (const reply of [
+      'Cada bolsa de SleepingPatches trae 30 parches y sale en ₡9 900 más el envío 🌙\nSi querés, el pack de 2 bolsas (60 noches) queda en ₡19 800 con el envío incluido.',
+      'El Pack 2 bolsas (60 noches) sale en ₡19 800 con envío incluido 😊',
+      'El pack de 3 bolsas de SleepingPatches cuesta ₡28 500 y ya incluye el envío.',
+    ]) {
+      const v = validateAgentOutput({ text: reply, citedToolNames: [], freeShippingRule: sleeping } as never)
+      assert.ok(!v.reasons.includes('deal_offer'), reply)
+    }
+    for (const reply of [
+      'El envío es gratis 😊',
+      'Una bolsa sale en ₡9 900 con envío incluido',
+      'Los packs de 2 y 3 bolsas traen envío incluido (₡19 800 y ₡28 500)',
+      'El pack de 2 bolsas queda en ₡19 800 con envío incluido, y para vos también la bolsa sola',
+      'El pack de 2 bolsas (envío gratis) sale en ₡9 900',
+    ]) {
+      const v = validateAgentOutput({ text: reply, citedToolNames: [], freeShippingRule: sleeping } as never)
+      assert.ok(v.reasons.includes('deal_offer'), reply)
+    }
+    // PatchHouse (several products): naming another product next to "envío incluido" is still refused (INT-91).
+    const ph = salesFreeShippingRule({
+      bundles: [{ name: 'Combo Trío (3 paquetes a elección)', price: 26900, shippingIncluded: true }],
+      catalog: [{ name: 'Focus Patch', price: 9900 }, { name: 'Energy Patch', price: 9900 }],
+    } as never)
+    assert.ok(validateAgentOutput({ text: 'El Focus va con el combo Trío a ₡26 900 con envío incluido', citedToolNames: [], freeShippingRule: ph } as never).reasons.includes('deal_offer'))
+    assert.ok(!validateAgentOutput({ text: 'El Combo Trío (3 paquetes a elección) sale en ₡26 900 con envío incluido 🌿', citedToolNames: [], freeShippingRule: ph } as never).reasons.includes('deal_offer'))
+  })
+})

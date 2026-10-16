@@ -641,12 +641,20 @@ export function salesAllowedDeals(ctx: SalesContext): Array<'free_shipping' | 's
  * says "combo" and quotes one of these exact prices, nothing else (output-validator freeShippingRuleOk). Store-wide
  * "free shipping from ₡X" is NOT offered to the model at all (SecureDog INT-84/85: not checkable from wording).
  */
-export function salesFreeShippingRule(ctx: SalesContext): { includedPrices: number[]; otherNames: string[] } | null {
+export function salesFreeShippingRule(ctx: SalesContext): { includedPrices: number[]; otherNames: string[]; bundleWords: string[] } | null {
   const includedPrices = (ctx.bundles ?? []).filter((b) => b.shippingIncluded).map((b) => Math.round(b.price))
   if (!includedPrices.length) return null
+  const firstWord = (name: string) => (name.trim().split(/[\s\-–—]+/)[0] || '').toLowerCase()
+  // The owner's own word for a bundle ("Combo", "Pack", "Kit"): first word of each bundle name.
+  const bundleWords = [...new Set((ctx.bundles ?? []).map((b) => firstWord(b.name)).filter((w) => /^\p{L}{3,}$/u.test(w)))]
   // First word of each catalog item ("Focus", "GLP"): naming one next to "envío incluido" is not a combo fact (INT-91).
-  const otherNames = [...new Set((ctx.catalog ?? []).map((c) => (c.name.trim().split(/[\s\-–—]+/)[0] || '').toLowerCase()).filter((w) => w.length >= 3))]
-  return { includedPrices, otherNames }
+  // A one-product store has no OTHER item to stretch the fact to: its bundles are of that product (Sleeping).
+  const catalog = ctx.catalog ?? []
+  const otherNames =
+    catalog.length > 1
+      ? [...new Set(catalog.map((c) => firstWord(c.name)).filter((w) => w.length >= 3 && !bundleWords.includes(w)))]
+      : []
+  return { includedPrices, otherNames, bundleWords }
 }
 
 const MEDIA_LIKE_TYPES = new Set(['image', 'document', 'audio', 'video', 'voice', 'sticker'])

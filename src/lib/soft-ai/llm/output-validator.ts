@@ -110,7 +110,17 @@ const FREE_SHIPPING_EXCEPTION_RE =
  * Combos the owner marked as including shipping (exact prices), plus words that name other things the agent sells
  * (catalog items): a clause that names one of them is not only about the included combo (INT-91).
  */
-export type FreeShippingRule = { includedPrices: number[]; otherNames?: string[] }
+export type FreeShippingRule = { includedPrices: number[]; otherNames?: string[]; bundleWords?: string[] }
+
+/**
+ * A bracketed note with no amount and no shipping words ("Pack 2 bolsas (60 noches)") is part of the name, not a
+ * clause break: blank it out (same length, so match positions stay valid).
+ */
+function maskNameParentheticals(text: string): string {
+  return text.replace(/\(([^()\n]*)\)/g, (m, inner: string) =>
+    /[₡¢$]|\d{4,}|\d[.,\s]\d{3}|env[ií]o|entrega|despacho|gratis|incluid/iu.test(inner) ? m : ' '.repeat(m.length),
+  )
+}
 
 /** Words that stretch one combo's fact to more items, anywhere in the reply (INT-91). */
 const FREE_SHIPPING_SPREAD_RE = /(?<![\p{L}])(tambi[eé]n|igual(?:mente)?|lo\s+mismo|ambos|ambas|los\s+dos|las\s+dos|todos|todas|van|incluyen|traen|vienen)(?![\p{L}])/iu
@@ -134,8 +144,11 @@ function clauseSpans(text: string): Array<[number, number]> {
  * such phrase must sit in ONE clause (never split across a break) that says "combo", quotes only included-combo
  * prices (at least one), and has no wording that makes it personal or an exception (SecureDog INT-84/85).
  */
-export function freeShippingRuleOk(text: string, rule: FreeShippingRule): boolean {
+export function freeShippingRuleOk(rawText: string, rule: FreeShippingRule): boolean {
   const near = (a: number, b: number) => Math.abs(a - b) <= 1
+  const text = maskNameParentheticals(rawText)
+  const extraWords = (rule.bundleWords ?? []).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).filter(Boolean)
+  const bundleWordRe = new RegExp(`(?<![\\p{L}])(?:combos?|packs?|kits?${extraWords.length ? '|' + extraWords.map((w) => `${w}s?`).join('|') : ''})(?![\\p{L}])`, 'giu')
   const matches = freeShippingWording(text)
   if (matches.length === 0 || rule.includedPrices.length === 0) return false
   // One included combo per fact: nothing in the reply may stretch it to other items.
@@ -146,8 +159,8 @@ export function freeShippingRuleOk(text: string, rule: FreeShippingRule): boolea
     const span = spans.find(([s, e]) => m.index >= s && m.index < e)
     if (!span || m.end > span[1]) return false
     const clause = text.slice(span[0], span[1])
-    // Exactly one combo named in the clause (not "el Combo Trío y el Combo 2").
-    if ((clause.match(/(?<![\p{L}])combos?(?![\p{L}])/giu) || []).length !== 1) return false
+    // Exactly one combo / pack named in the clause (not "el Combo Trío y el Combo 2").
+    if ((clause.match(bundleWordRe) || []).length !== 1) return false
     if (FREE_SHIPPING_EXCEPTION_RE.test(clause)) return false
     const lower = clause.toLowerCase()
     if (others.some((n) => new RegExp(`(?<![\\p{L}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, 'iu').test(lower))) return false

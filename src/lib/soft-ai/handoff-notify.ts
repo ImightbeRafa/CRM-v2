@@ -18,7 +18,14 @@ import 'server-only'
 
 import { prisma } from '@/lib/db'
 import { presenceStore } from '@/lib/chat-presence'
-import { filterChatMembers, notifyUsers, reviewKindForHandoffCode, HANDOFF_REASON_LABELS } from '@/lib/workspace-notifications'
+import {
+  filterChatMembers,
+  notifyUsers,
+  paymentReviewVariant,
+  reviewKindForHandoffCode,
+  HANDOFF_REASON_LABELS,
+  PAYMENT_CLAIM_KEY_SUFFIX,
+} from '@/lib/workspace-notifications'
 import { ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
 import { hasPermission, type Role } from '@/lib/rbac'
 
@@ -96,6 +103,16 @@ export function reviewTagForHandoffCode(code: string | null | undefined): string
  * Who hears about money / an order waiting on a person: the assignee first, then the whole chat team (also
  * when the chat already has an owner — whoever is logged in can act). Unique, at most 10.
  */
+/**
+ * Review alert key: the hand-off key, plus ':claim' for a payment alert whose customer message was not a
+ * photo / file (text "ya pagué", model payment escalation, fail-closed "Pago") — the bell then says
+ * "Dice que ya pagó…" instead of "Mandó el comprobante". Derived here (agent-turn.ts passes no flag).
+ */
+export function reviewDedupeKey(baseKey: string, kind: 'payment_review' | 'order_review', lastInboundMessageType: string | null | undefined): string {
+  if (kind !== 'payment_review') return baseKey
+  return paymentReviewVariant(lastInboundMessageType) === 'receipt' ? baseKey : `${baseKey}${PAYMENT_CLAIM_KEY_SUFFIX}`
+}
+
 export function reviewRecipients(assignee: string | null | undefined, team: string[]): string[] {
   return orderAssigneeCandidates([[assignee], team]).slice(0, MAX_RECIPIENTS)
 }
@@ -195,7 +212,7 @@ export async function notifyHandoff(input: {
     const lastInbound = await prisma.chatMessage.findFirst({
       where: { tenantId: input.tenantId, conversationId: conv.id, direction: 'inbound' },
       orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
-      select: { id: true },
+      select: { id: true, messageType: true },
     })
 
     let assignee: string | null = null
@@ -235,7 +252,7 @@ export async function notifyHandoff(input: {
         actorUserId: null,
         kind: reviewKind,
         userIds: recipients,
-        dedupeKey: () => key,
+        dedupeKey: () => reviewDedupeKey(key, reviewKind, lastInbound?.messageType),
         conversationId: conv.id,
       })
       return

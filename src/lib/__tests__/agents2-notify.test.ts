@@ -12,11 +12,14 @@ import {
   normalizeHandoffReason,
   reviewRecipients,
   reviewTagForHandoffCode,
+  reviewDedupeKey,
 } from '@/lib/soft-ai/handoff-notify'
 import {
   HANDOFF_REASON_LABELS,
   isReviewNotificationKind,
   reviewKindForHandoffCode,
+  paymentReviewVariant,
+  paymentVariantFromDedupeKey,
   reviewNotificationText,
 } from '@/lib/workspace-notifications'
 import {
@@ -45,6 +48,7 @@ import {
   reviewTagCounts,
   type SoftConversation,
 } from '@/lib/chat-soft-copilot'
+import { patchConversationBodySchema } from '@/lib/chat-conversation-api'
 
 const read = (rel: string) => readFileSync(path.join(process.cwd(), rel), 'utf8')
 const NOW = Date.UTC(2026, 9, 16, 15, 0, 0)
@@ -277,7 +281,10 @@ describe('notify · inbox chips and thread banner', () => {
     assert.match(inbox, /new URLSearchParams\(\{ tag, limit: '50' \}\)/)
     assert.match(inbox, /reviewFilters=\{REVIEW_CHIP_DEFS\.map/)
     assert.match(inbox, /async function resolveReviewTag\(tag: SoftTag\)/)
-    assert.match(inbox, /tags: nextTags,/)
+    assert.match(inbox, /removeTag: tag,/)
+    // The banner never sends a whole tags array.
+    const resolve = inbox.slice(inbox.indexOf('async function resolveReviewTag'), inbox.indexOf('async function setAgentControl'))
+    assert.doesNotMatch(resolve, /tags: /)
     const list = read('src/components/chats/SoftConversationList.tsx')
     assert.match(list, /data-testid="chat-review-filters"/)
     const pane = read('src/components/chats/SoftThreadPane.tsx')
@@ -288,5 +295,54 @@ describe('notify · inbox chips and thread banner', () => {
     assert.match(pane, /onClick=\{onCreateOrder\}/)
     // Linking an order never clears the review tags.
     assert.doesNotMatch(read('src/lib/chat-order-attach.ts'), /Pago por verificar|Pedido por confirmar|PAYMENT_REVIEW_TAG|ORDER_REVIEW_TAG/)
+  })
+})
+
+describe('notify · F8 payment snippet: receipt vs claim', () => {
+  it('only a photo / file customer message is a receipt', () => {
+    assert.equal(paymentReviewVariant('image'), 'receipt')
+    assert.equal(paymentReviewVariant('document'), 'receipt')
+    for (const t of ['text', 'audio', 'sticker', '', null, undefined]) assert.equal(paymentReviewVariant(t), 'claim')
+  })
+
+  it('a claim travels as a ":claim" key suffix (payment only); receipts and orders keep the plain key', () => {
+    const base = 'ai_handoff:conv_12345678:msg_aaaa1111:payment'
+    assert.equal(reviewDedupeKey(base, 'payment_review', 'image'), base)
+    assert.equal(reviewDedupeKey(base, 'payment_review', 'text'), `${base}:claim`)
+    assert.equal(reviewDedupeKey('ai_handoff:c:m:order_ready', 'order_review', 'text'), 'ai_handoff:c:m:order_ready')
+    assert.equal(paymentVariantFromDedupeKey(`${base}:claim`), 'claim')
+    assert.equal(paymentVariantFromDedupeKey(base), 'receipt')
+    const src = read('src/lib/soft-ai/handoff-notify.ts')
+    assert.match(src, /select: \{ id: true, messageType: true \}/)
+    assert.match(src, /dedupeKey: \(\) => reviewDedupeKey\(key, reviewKind, lastInbound\?\.messageType\)/)
+    assert.match(read('src/lib/workspace-notifications.ts'), /reviewNotificationText\(r\.kind, who, paymentVariantFromDedupeKey\(r\.dedupeKey\)\)/)
+  })
+
+  it('snippets: receipt vs "ya pagó" claim; the title stays the same', () => {
+    const receipt = reviewNotificationText('payment_review', 'Ana', 'receipt')
+    const claim = reviewNotificationText('payment_review', 'Ana', 'claim')
+    assert.equal(receipt.snippet, 'Mandó el comprobante — revisalo y confirmá el pedido')
+    assert.equal(claim.snippet, 'Dice que ya pagó o tiene una duda de pago — revisalo')
+    assert.equal(receipt.title, claim.title)
+    assert.equal(claim.title, '💳 Verificá un pago · Ana')
+  })
+})
+
+describe('notify · F10 atomic single-tag removal', () => {
+  it('PATCH accepts { removeTag } alone, refuses it combined with tags', () => {
+    assert.ok(patchConversationBodySchema.safeParse({ removeTag: PAYMENT_REVIEW_TAG }).success)
+    assert.ok(patchConversationBodySchema.safeParse({ removeTag: ORDER_REVIEW_TAG, status: 'en_curso' }).success)
+    assert.ok(!patchConversationBodySchema.safeParse({ removeTag: PAYMENT_REVIEW_TAG, tags: [] }).success)
+    assert.ok(!patchConversationBodySchema.safeParse({ removeTag: '' }).success)
+    assert.ok(!patchConversationBodySchema.safeParse({ removeTag: 'x'.repeat(41) }).success)
+  })
+
+  it('the route removes one tag with array_remove, scoped by tenant, same update_sales permission', () => {
+    const route = read('src/app/api/chat/conversations/[id]/route.ts')
+    assert.match(route, /authenticateAPIWithPermission\(request, 'update_sales'\)/)
+    assert.match(route, /SET "tags" = array_remove\("tags", \$\{body\.removeTag\}\)/)
+    assert.match(route, /WHERE "id" = \$\{existing\.id\} AND "tenantId" = \$\{auth\.tenantId\}/)
+    // Parameterised tagged template only (no string-built SQL).
+    assert.doesNotMatch(route, /\$executeRawUnsafe|\$queryRawUnsafe/)
   })
 })

@@ -1071,6 +1071,8 @@ export function SoftCopilotInboxV2() {
   async function patchConversation(partial: {
     status?: ConversationStatus
     tags?: SoftTag[]
+    /** Server removes just this tag (array_remove), never a whole-array write. */
+    removeTag?: SoftTag
     assignedUserId?: string | null
   }): Promise<boolean> {
     if (!selectedConversationId) return false
@@ -1183,10 +1185,10 @@ export function SoftCopilotInboxV2() {
     if (!selectedConversation || reviewBusy || !selectedConversation.tags.includes(tag)) return
     setReviewBusy(true)
     try {
-      const nextTags = selectedConversation.tags.filter((t) => t !== tag)
       const paidStage = tag === PAYMENT_REVIEW_TAG ? activeChatStages.find((s) => s.key === 'pagado') : undefined
+      // Only this tag, removed atomically on the server (a stale local tag list can never overwrite others).
       const ok = await patchConversation({
-        tags: nextTags,
+        removeTag: tag,
         ...(paidStage && selectedConversation.status !== paidStage.key ? { status: paidStage.key } : {}),
       }).catch(() => false)
       if (ok) {

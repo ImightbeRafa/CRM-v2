@@ -68,6 +68,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
     }
 
+    // agents2-notify: one tag out, atomically in the database (array_remove), scoped to this business —
+    // a concurrent AI-added tag or a teammate's change is never overwritten by a stale client array.
+    let removedTag = false
+    if (body.removeTag !== undefined) {
+      const n = await prisma.$executeRaw`
+        UPDATE public."ChatConversation"
+           SET "tags" = array_remove("tags", ${body.removeTag})
+         WHERE "id" = ${existing.id} AND "tenantId" = ${auth.tenantId} AND ${body.removeTag} = ANY("tags")`
+      removedTag = n > 0
+    }
+
     const updated = await prisma.chatConversation.update({
       where: { id: existing.id },
       data: {
@@ -111,6 +122,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       if (added.length || removed.length) {
         void recordActivity({ ...base, verb: 'chat.tags.set', props: { added: added.join(',').slice(0, 80), removed: removed.join(',').slice(0, 80) } })
       }
+    }
+    if (removedTag) {
+      void recordActivity({ ...base, verb: 'chat.tags.set', props: { added: '', removed: String(body.removeTag).slice(0, 80) } })
     }
     if (body.assignedUserId !== undefined && body.assignedUserId !== existing.assignedUserId) {
       void recordActivity({ ...base, verb: 'chat.assign', props: { to: body.assignedUserId ?? null } })

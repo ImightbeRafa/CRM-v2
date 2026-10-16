@@ -1,3 +1,13 @@
+## 2026-10-16 — notify verifier fixes F8 / F10 (claudio/agents2-notify)
+
+- F8: payment alerts say "Mandó el comprobante…" only when the customer message was a photo / file (derived in
+  notifyHandoff from the last inbound messageType; agent-turn.ts unchanged); text claims / model escalations get
+  "Dice que ya pagó o tiene una duda de pago — revisalo" (":claim" dedupe-key suffix, no new column).
+- F10: "Pago verificado" / "Confirmado" send PATCH { removeTag } — one tag removed atomically with array_remove,
+  tenant-scoped, same update_sales permission; never a whole tags array from the client.
+- Proof: tsc 0, lint 0, test:soft-ai 687/687, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34.
+
 ## 2026-10-16 — Pago por verificar / Pedido por confirmar alerts (claudio/agents2-notify)
 
 - Hand-off codes 'payment' (receipt) and new 'order_ready' (contra-entrega order complete; producer lands in the

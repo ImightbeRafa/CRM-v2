@@ -8,6 +8,8 @@
  * - Tab title: "(N) " prefix while N such alerts are unread.
  */
 
+import { safeReturnPath } from '@/lib/safe-return-path'
+
 export const REVIEW_ALERT_KINDS = ['payment_review', 'order_review'] as const
 export type ReviewAlertKind = (typeof REVIEW_ALERT_KINDS)[number]
 
@@ -68,10 +70,14 @@ export function titleWithCount(title: string, count: number): string {
   return `(${count > 99 ? '99+' : count}) ${base}`
 }
 
-/** Client guard before router.push: same-origin app paths only (no "//host", no "https:", no "javascript:"). */
+/**
+ * Client guard before router.push: same-origin app paths only (no "//host", no "https:", no "javascript:"). SecureDog:
+ * the shared open-redirect guard (safeReturnPath) also refuses control characters ("/\t/evil.com"), backslashes and
+ * encoded tricks; the href must come back unchanged.
+ */
 export function isSafeInternalHref(href: string | null | undefined): href is string {
   const h = String(href || '')
-  return h.startsWith('/') && !h.startsWith('//') && !h.startsWith('/\\')
+  return h.length > 0 && safeReturnPath(h, { fallback: '' }) === h
 }
 
 /**

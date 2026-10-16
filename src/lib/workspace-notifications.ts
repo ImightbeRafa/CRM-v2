@@ -44,6 +44,8 @@ export const AI_NO_REPLY_REASONS: Record<string, string> = {
 export const HANDOFF_REASON_LABELS: Record<string, string> = {
   payment: 'Comprobante de pago',
   order_ready: 'Pedido contra entrega por confirmar',
+  // agents2-format N6: the same order review, paid in cash.
+  order_ready_cash: 'Pidió pagar en efectivo — confirmá los datos',
   payment_details: 'Hay que pasarle los datos de pago',
   human_request: 'Pidió hablar con una persona',
   complaint: 'Reclamo o devolución',
@@ -71,7 +73,7 @@ export type ReviewNotificationKind = 'payment_review' | 'order_review'
 
 export function reviewKindForHandoffCode(code: string | null | undefined): ReviewNotificationKind | null {
   if (code === 'payment') return 'payment_review'
-  if (code === 'order_ready') return 'order_review'
+  if (code === 'order_ready' || code === 'order_ready_cash') return 'order_review'
   return null
 }
 

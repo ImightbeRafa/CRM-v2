@@ -43,6 +43,8 @@ export const HANDOFF_REASON = {
   review: 'review',
   /** agents2-format: a contra-entrega order is complete — the customer got the confirmation, a person takes it. */
   orderReady: 'order_ready',
+  /** N6: the same order review, the customer pays in cash (efectivo). */
+  orderReadyCash: 'order_ready_cash',
 } as const
 
 /** Customer texts code sends instead of a reply that cannot go out as written (reserved, tuteo, seller voice). */
@@ -79,6 +81,8 @@ export function planModelTurnDelivery(input: {
    * ready — the reply goes out first, then a TRUE hand-off with reason 'order_ready' (settleHandoff after the send).
    */
   codOrderReady?: boolean
+  /** N6: the order is paid in cash (a filled [[PAGO_EFECTIVO]] the customer chose) → reason 'order_ready_cash'. */
+  orderReadyCash?: boolean
 }): TurnDeliveryPlan {
   const text = (input.text || '').trim()
   const usable = input.textOk && text.length > 0
@@ -92,7 +96,10 @@ export function planModelTurnDelivery(input: {
   if (input.codOrderReady && !modelPaymentEscalate && input.llmHandoff?.kind !== 'review') {
     // SecureDog INT-117: a reply that failed a check (e.g. "tu pedido quedó registrado") never goes out as written —
     // the safe line does — but the order still reaches a person (the hand-off is never lost).
-    return { text: usable ? text : SAFE_LINE.review, handoff: { kind: 'handoff', reason: HANDOFF_REASON.orderReady } }
+    return {
+      text: usable ? text : SAFE_LINE.review,
+      handoff: { kind: 'handoff', reason: input.orderReadyCash ? HANDOFF_REASON.orderReadyCash : HANDOFF_REASON.orderReady },
+    }
   }
   if (input.llmHandoff?.kind === 'handoff' && !(input.paymentDataByTeam && modelPaymentEscalate)) {
     return {

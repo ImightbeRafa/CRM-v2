@@ -169,10 +169,16 @@ function dealProblemWithRule(text: string, allowed: ReadonlyArray<'free_shipping
   return dealProblem(text, [...allowed, 'free_shipping']) || !freeShippingRuleOk(text, rule)
 }
 
-// SecureDog INT-117: also the order "confirmations" a contra-entrega close could make up ("tu pedido quedó
-// registrado", "ya agendé", "sale mañana", "tu entrega queda para el lunes").
+// Everywhere: "ya creé / registré", and (N3) "tu pedido / tu orden / tu compra" + a confirmation verb. Not "sale
+// mañana" (a delivery time) nor "tu pedido está listo para retirar".
 const CREATED_CLAIM_RE =
-  /ya\s+(cre[eé]|registr[eé]|arm[eé])|pedido\s+creado|acabo\s+de\s+crear|pedido\s+(?:ya\s+)?(?:qued[oó]\s+|est[aá]\s+)?(?:registrado|anotado|agendado|confirmado|listo)|(?<![\p{L}])agend[eé](?![\p{L}])|sale\s+(?:hoy|ma[nñ]ana)|tu\s+entrega\s+(?:queda|est[aá])\s+(?:para|agendada)/iu
+  /ya\s+(cre[eé]|registr[eé]|arm[eé])|pedido\s+creado|acabo\s+de\s+crear|(?:tu|su)\s+(?:pedido|orden|compra)\s+(?:ya\s+)?(?:qued[oó]\s+|est[aá]\s+|fue\s+)?(?:registrad|anotad|confirmad|agendad)[oa]/iu
+/**
+ * SecureDog INT-117 (+ residual): ONLY on the contra-entrega / efectivo closing turn the agent must not make up the
+ * order's confirmation or schedule — a person confirms after the order_ready hand-off.
+ */
+const ORDER_CLOSING_CLAIM_RE =
+  /pedido\s+(?:ya\s+)?(?:qued[oó]\s+|est[aá]\s+)?(?:registrad|anotad|agendad|confirmad|list)[oa]|(?:orden|compra)\s+(?:ya\s+)?(?:qued[oó]\s+|est[aá]\s+)?(?:registrad|anotad|agendad|confirmad|list)[oa]|(?<![\p{L}])agend[eé](?![\p{L}])|anot[eé]\s+(?:tu|el|su)\s+pedido|sale\s+(?:hoy|ma[nñ]ana)|te\s+(?:lo|la|los|las)\s+mando\s+(?:hoy|ma[nñ]ana)|ma[nñ]ana\s+te\s+llega|(?:queda|qued[oó])\s+(?:programad|agendad)\p{L}*|te\s+(?:lo|la|los|las)\s+despachamos|va\s+en\s+camino|tu\s+entrega\s+(?:queda|est[aá])\s+(?:para|agendada)/iu
 const UNIT_COST_RE = /unitCost|costo\s+unitario|precio\s+de\s+costo/i
 const SHIP_CUE_RE = /env[ií]o|retiro|domicilio|\bGAM\b|correos|mensajer/i
 const PAY_CUE_RE = /\b(pago|sinpe|transferencia|tarjeta|efectivo|contra\s*entrega)\b/i
@@ -279,6 +285,8 @@ export function validateAgentOutput(input: {
   styleText?: string
   /** The text links are judged on (the reply before payment tokens were filled). Defaults to `text`. */
   linkText?: string
+  /** N3: the contra-entrega / efectivo closing turn — the order-confirmation wording check applies. */
+  orderClosing?: boolean
 }): OutputValidationResult {
   const reasons: string[] = []
   const text = input.text || ''
@@ -289,7 +297,7 @@ export function validateAgentOutput(input: {
   // configuration needs no allowlist entry, and the allowlist never widens to a whole payment host (Verifier F2).
   if (input.linkAllowlist && foreignLinks(input.linkText ?? text, input.linkAllowlist).length > 0) reasons.push('foreign_link')
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
-  if (CREATED_CLAIM_RE.test(text)) reasons.push('write_claim')
+  if (CREATED_CLAIM_RE.test(text) || (input.orderClosing && ORDER_CLOSING_CLAIM_RE.test(text))) reasons.push('write_claim')
   if (dealProblemWithRule(text, input.allowedDeals ?? [], input.freeShippingRule)) reasons.push('deal_offer')
   if (hasConfirmationWording(text)) reasons.push('confirmation_wording')
   if ((input.paymentContext || (input.customerText && hasPaymentWord(input.customerText))) && PAYMENT_STATUS_REPLY_RE.test(text)) {
@@ -448,8 +456,9 @@ export function unjoinDotSeparated(text: string): string {
 const QUALIFYING_LINE_RE = /[₡¢$]|\d{3}|env[ií]o|(?<![\p{L}])(no|nunca|sin|solo|excepto)(?![\p{L}])|asistente\s+virtual|\[\[|\]\]|DATOS|PAGO/iu
 
 /** Anything token-like left after code filled the payment tokens (never sent; a person looks). */
-const LEFTOVER_TOKEN_RE = /\[\[|\]\]|[【】]|PAGO_|DATOS_(?:DE_)?PAGO/iu
-const LEFTOVER_TOKEN_STRIP_RE = /\[\[[^\]\n]{0,60}\]\]|【[^】\n]{0,60}】|\[\[|\]\]|[【】]|(?<![\p{L}])(?:PAGO_[\p{L}_]*|DATOS_(?:DE_)?PAGO)(?![\p{L}])/iu
+// Also single-bracket "[PAGO …]" / "[DATOS …]", "PAGO_SINPE" / "PAGO-SINPE" and the upper-case "DATOS PAGO" (SecureDog).
+const LEFTOVER_TOKEN_RE = /\[\[|\]\]|[【】]|\[\s*(?:PAGO|DATOS)\b|PAGO[_-]\p{L}|DATOS_(?:DE_)?PAGO|DATOS[ -](?:DE[ -])?PAGO(?![\p{Ll}])/u
+const LEFTOVER_TOKEN_STRIP_RE = /\[\[[^\]\n]{0,60}\]\]|【[^】\n]{0,60}】|\[\s*(?:PAGO|DATOS)[^\]\n]{0,40}\]|\[\[|\]\]|[【】]|(?<![\p{L}])(?:PAGO[_-][\p{L}_-]*|DATOS_(?:DE_)?PAGO|DATOS[ -](?:DE[ -])?PAGO)(?![\p{L}])/u
 
 export type FinalOutputPolicy = {
   text: string
@@ -585,6 +594,10 @@ export function applyFinalOutputPolicy(input: {
     linkAllowlist: input.linkAllowlist ?? undefined,
     styleText,
     linkText: styleText,
+    orderClosing:
+      filled.methods.some((m) => m === 'contra_entrega' || m === 'efectivo') ||
+      input.paymentOptions?.chosenMethod === 'contra_entrega' ||
+      input.paymentOptions?.chosenMethod === 'efectivo',
   })
 
   const merged = [...new Set([...reasons, ...validated.reasons])]

@@ -14,6 +14,7 @@ import {
   classifyPaymentText,
   isCueFreePaymentChoiceText,
   paymentHandoffReason,
+  pendingMethodMention,
   type PaymentClassification,
 } from '@/lib/soft-ai/payment-classifier'
 import { paymentMethodBlock, PAYMENT_METHOD_TOKENS } from '@/lib/soft-ai/payment-guard'
@@ -223,6 +224,15 @@ export function decideInbound(input: {
     steps.push({ step: 'payment_choice', outcome: 'model', reason: choice })
     return continueToModel(paymentClass, steps)
   }
+  if (!choice && textMessage && input.awaitingPaymentMethod) {
+    // N4: the method question is pending and the message names ONE method with something else ("Por sinpe y retiro en
+    // tienda") and no question / claim / status / dispute word: the model answers with that method chosen.
+    const mention = pendingMethodMention(input.inboundText)
+    if (mention) {
+      steps.push({ step: 'payment_choice', outcome: 'model', reason: mention })
+      return continueToModel(paymentClass, steps)
+    }
+  }
   if (choice) {
     const reply = paymentChoiceReply(choice, input.awaitingPaymentMethod ? 'Perfecto 🙌' : 'Claro 🙌')
     if (!canSharePaymentFacts(input.brandFacts)) {
@@ -289,6 +299,11 @@ export function decideInbound(input: {
     })
   }
 
+  if (paymentClass === 'payment_info_safe' && input.awaitingPaymentMethod && canSharePaymentFacts(input.brandFacts)) {
+    // N4: never the method list again while the store's method question is pending — the model answers.
+    steps.push({ step: 'payment_info', outcome: 'model', reason: 'method_question_pending' })
+    return continueToModel(paymentClass, steps)
+  }
   if (paymentClass === 'payment_info_safe') {
     if (canSharePaymentFacts(input.brandFacts)) {
       // agents2-format: one method named ("¿cuál es el número de SINPE?", "¿aceptan tarjeta?") → that method only.

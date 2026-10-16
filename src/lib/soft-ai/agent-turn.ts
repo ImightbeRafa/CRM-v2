@@ -773,6 +773,7 @@ export async function executeAgentLayerTurn(
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
+      orderReadyCash: policy.paymentMethods.includes('efectivo'),
     }),
     await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
   )
@@ -1659,6 +1660,7 @@ async function runAgentTestTurnInner(input: {
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
+      orderReadyCash: policy.paymentMethods.includes('efectivo'),
     })
     text = plan.text
     handoff = plan.handoff

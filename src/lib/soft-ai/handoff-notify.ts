@@ -95,7 +95,7 @@ export function pickFirstEligible(candidates: string[], eligible: ReadonlySet<st
 /** Built-in chat tag the AI adds for a hand-off code: receipt → 'Pago por verificar', COD order → 'Pedido por confirmar'. */
 export function reviewTagForHandoffCode(code: string | null | undefined): string | null {
   if (code === 'payment') return PAYMENT_REVIEW_TAG
-  if (code === 'order_ready') return ORDER_REVIEW_TAG
+  if (code === 'order_ready' || code === 'order_ready_cash') return ORDER_REVIEW_TAG
   return null
 }
 

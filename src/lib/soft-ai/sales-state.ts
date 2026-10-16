@@ -3,7 +3,14 @@
  * already said, so the agent never repeats itself and always moves the sale to the next step. Pure: derived from
  * the same history both the live turn and the test chat already pass in (identical by construction, no new SQL).
  */
-import { hasPaymentClaimCue, isCueFreePaymentChoiceText, paymentChoiceGrammar, paymentChoiceShape, type PaymentChoiceMethod } from '@/lib/soft-ai/payment-classifier'
+import {
+  hasPaymentClaimCue,
+  isPaymentCompletionClaim,
+  paymentChoiceGrammar,
+  paymentChoiceShape,
+  pendingMethodMention,
+  type PaymentChoiceMethod,
+} from '@/lib/soft-ai/payment-classifier'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import {
@@ -55,12 +62,14 @@ export type SalesStage =
   | 'cierre'
   /** agents2-format: the store asked HOW the customer wants to pay and has not given payment details yet. */
   | 'metodo_pago'
+  /** N5: a contra-entrega / efectivo order went to a person (no receipt is expected). */
+  | 'pedido_en_revision'
   | 'esperando_comprobante'
   | 'verificando'
 
 export type SalesState = {
   stage: SalesStage
-  said: { price: boolean; shipping: boolean; payment: boolean; cod: boolean; howToBuy: boolean }
+  said: { price: boolean; shipping: boolean; payment: boolean; cod: boolean; howToBuy: boolean; order?: boolean }
   buyCue: boolean
   receiptCue: boolean
   nextStep: string
@@ -100,7 +109,6 @@ export function resolvePaymentChoice(method: ChosenPaymentMethod, offered: reado
  * "sinpe ✅", "sinpe de 25 mil") are never a choice. Null otherwise.
  */
 export function paymentMethodPick(text: string, awaitingChoice: boolean, offered: readonly string[] = []): ChosenPaymentMethod | null {
-  if (!isCueFreePaymentChoiceText(text)) return null
   const g = paymentChoiceGrammar(text)
   if (!g || (!awaitingChoice && !g.ask)) return null
   return resolvePaymentChoice(g.method, offered)
@@ -110,11 +118,46 @@ export function paymentMethodPick(text: string, awaitingChoice: boolean, offered
  * The store's method question is still pending: it was asked and no payment details went out AFTER it. One rule for the
  * sales state and the inbound decision (outbound texts in order).
  */
+/** N2: loose contra-entrega / efectivo wording (not a question, no claim / completion cue). */
+const ORDER_METHOD_LOOSE_RE = /(?<![\p{L}])(?:contra\s?entrega|(?:pago\s+|pagar\s+)?al\s+recibir(?:lo|la)?|efectivo|cash)(?![\p{L}])/iu
+const MAX_CARRY_INBOUND = 8
+
+function looseOrderMethod(text: string): ChosenPaymentMethod | null {
+  const t = stripFormatChars(text || '')
+  if (/[?¿]/.test(t) || !ORDER_METHOD_LOOSE_RE.exec(t)) return null
+  if (hasPaymentClaimCue(t) || isPaymentCompletionClaim(t) || RECEIPT_RE.test(t)) return null
+  return /efectivo|cash/i.test(t) && !/contra\s?entrega|recibir/i.test(t) ? 'efectivo' : 'contra_entrega'
+}
+
+/**
+ * N2: the contra-entrega / efectivo choice the customer made since the store's LAST method question (this message or
+ * up to 8 earlier ones), while no payment details / order block went out after that question. Pure.
+ */
+export function carriedOrderMethod(history: SoftAiHistoryMessage[], inboundText: string, offered: readonly string[]): ChosenPaymentMethod | null {
+  let at = -1
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const m = history[i]
+    if (m.direction === 'outbound' && PAYMENT_METHOD_ASKED_RE.test(m.content || '')) {
+      at = i
+      break
+    }
+  }
+  if (at < 0) return null
+  const after = history.slice(at + 1)
+  if (after.some((m) => m.direction === 'outbound' && (paymentDetailsIn(m.content || '') || ORDER_BLOCK_RE.test(m.content || '')))) return null
+  const inbound = [...after.filter((m) => m.direction === 'inbound').map((m) => m.content || ''), inboundText].slice(-(MAX_CARRY_INBOUND + 1))
+  for (let i = inbound.length - 1; i >= 0; i -= 1) {
+    const method = looseOrderMethod(inbound[i])
+    if (method) return resolvePaymentChoice(method, offered)
+  }
+  return null
+}
+
 export function methodQuestionPending(outbound: readonly string[]): boolean {
   // Only the store's last 3 messages (one reply = up to 3 parts): an old question is not pending anymore.
   const recent = outbound.slice(-3)
   const at = recent.map((m) => PAYMENT_METHOD_ASKED_RE.test(m)).lastIndexOf(true)
-  return at >= 0 && !recent.slice(at).some((m) => paymentDetailsIn(m))
+  return at >= 0 && !recent.slice(at).some((m) => paymentDetailsIn(m) || ORDER_BLOCK_RE.test(m))
 }
 
 /**
@@ -232,6 +275,8 @@ const NEXT_STEP: Record<SalesStage, string> = {
   descubrir: 'Entendé qué necesita (producto, talla/modelo, para cuándo) con UNA pregunta. Recomendá el producto que encaja.',
   cotizar:
     'Ya cotizaste: no repitas precio ni envío. Resolvé la duda puntual y llevá al cierre: preguntá si lo quiere o qué le falta para decidir.',
+  pedido_en_revision:
+    'Ya pasaste el pedido a la tienda para que lo revise (contra entrega / efectivo): no pidas comprobante ni datos de pago. Respondé breve lo que pregunte y decí que enseguida lo revisamos.',
   cierre:
     'Respondé primero lo que preguntó (breve). Después CERRÁ: dá el total (precio + envío) en un mensaje, pedí en lista SOLO los datos del pedido que falten, y preguntá cómo prefiere pagar ofreciendo los métodos configurados (la pregunta de pago de abajo). Todavía no des datos de pago. No repitas precio/envío salvo el total final una vez.',
   metodo_pago:
@@ -259,6 +304,8 @@ export function deriveSalesState(input: {
     // A configured number next to payment words, or a code-filled method block without digits (card link, bank-only
     // transfer, contra entrega / efectivo) — Verifier 2026-10-16: those never left metodo_pago.
     payment: ours.some((m) => (PAYMENT_WORDS_RE.test(m) && input.ctx.paymentDigits.some((d) => d.length >= 8 && digits(m).includes(d))) || PAYMENT_BLOCK_RE.test(m)),
+    // N5: a contra-entrega / efectivo block is an ORDER handed to a person, not payment details (no receipt to ask for).
+    order: ours.some((m) => ORDER_BLOCK_RE.test(m)),
     cod: /contra\s?entrega/i.test(oursText),
     howToBuy: HOW_TO_BUY_RE.test(oursText),
   }
@@ -267,11 +314,20 @@ export function deriveSalesState(input: {
   const receiptCue = (RECEIPT_RE.test(last) || hasPaymentClaimCue(last))
   // agents2-format: the store asked HOW to pay and gave no payment details after that question.
   const askedMethod = methodQuestionPending(ours)
-  // A pick counts after the store's question, or when the customer names a method and asks for its details.
-  const chosenMethod = paymentMethodPick(last, askedMethod, salesPaymentMethods(input.ctx))
+  // A pick counts after the store's question, or when the customer names a method and asks for its details. N4: with
+  // the question pending, a loose single-method mention counts too. N2: a contra-entrega / efectivo choice made in an
+  // EARLIER message since the question is carried (the customer then sends the order data).
+  const offered = salesPaymentMethods(input.ctx)
+  const mention = askedMethod ? pendingMethodMention(last) : null
+  const chosenMethod =
+    paymentMethodPick(last, askedMethod, offered) ??
+    (mention ? resolvePaymentChoice(mention, offered) : null) ??
+    carriedOrderMethod(input.history, last, offered)
 
   let stage: SalesStage
   if (receiptCue) stage = 'verificando'
+  // N5: the order (contra entrega / efectivo) already went to a person: no receipt, no method question again.
+  else if (said.order && !said.payment) stage = 'pedido_en_revision'
   else if (said.payment) stage = 'esperando_comprobante'
   // A new buy cue after the question ("la quiero", another product) goes back to the close (Verifier F5).
   else if (chosenMethod || (askedMethod && !buyCue)) stage = 'metodo_pago'
@@ -450,7 +506,11 @@ export function salesAwaitingReceipt(state: SalesState, history: SoftAiHistoryMe
  * "Transferencia bancaria: BAC", "Pago contra entrega:", "Pago en efectivo:").
  */
 export const PAYMENT_BLOCK_RE =
-  /(?:^|\n)(?:Podés pagar con tarjeta en \S|Transferencia bancaria:|Transferencia [^\n]{1,80}\n(?:IBAN|A nombre de):|Pago contra entrega:|Pago en efectivo:)/u
+  /(?:^|\n)(?:Podés pagar con tarjeta en \S|Transferencia bancaria:|Transferencia [^\n]{1,80}\n(?:IBAN|A nombre de):)/u
+/** N5: the order blocks (contra entrega / efectivo): an order handed to a person, never "payment details given". */
+export const ORDER_BLOCK_RE = /(?:^|\n)(?:Pago contra entrega:|Pago en efectivo:)/u
+/** The order blocks with their text line (stripped before looking for payment words in the store's messages). */
+const ORDER_BLOCK_STRIP_RE = /(?:^|\n)(?:Pago contra entrega:|Pago en efectivo:)\n?[^\n]*/gu
 
 /** An outbound message that gives payment details: payment words next to an 8+ digit number or an IBAN. */
 export function paymentDetailsIn(text: string): boolean {
@@ -580,7 +640,8 @@ export function mediaAwaitingReceipt(messageType: string | null | undefined, his
   if (!MEDIA_LIKE_TYPES.has(messageType || '')) return false
   if (history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || ''))) return true
   // MEDIA-15: the store already talked about paying ("hacé el SINPE a este número") — a photo now is likely a receipt.
-  if (history.some((m) => m.direction === 'outbound' && PAYMENT_WORDS_RE.test(m.content || ''))) return true
+  // N5: an order block alone (contra entrega / efectivo: "Pagás al recibir…") does not make a photo a receipt.
+  if (history.some((m) => m.direction === 'outbound' && PAYMENT_WORDS_RE.test((m.content || '').replace(ORDER_BLOCK_STRIP_RE, '')))) return true
   return ctx ? salesAwaitingReceipt(deriveSalesState({ history, inboundText: '', ctx }), history) : false
 }
 

@@ -195,7 +195,7 @@ function mentionsOf(ctx: Ctx, d: Doc): Mention[] {
 /** How far back the subject check looks (bounded: never a scan to the start of a very long line). */
 const SUBJECT_LOOKBACK = 120
 /**
- * The product is the SUBJECT of its line or sentence (verifier rounds 3–5):
+ * The product is the SUBJECT of its line or sentence (verifier rounds 3–6):
  * - a statement: only bullets / numbers / "P:" marks come before the name ("Energy: contiene cafeína"). Lead words do
  *   not count, so "El Energy Patch es su complemento ideal" inside the Focus block stays Focus's text;
  * - a question (starts with ¿, or ends with ? shortly after the name): up to 6 question / lead words may come first
@@ -203,6 +203,16 @@ const SUBJECT_LOOKBACK = 120
  *   ("¿Es como el …", "¿Se puede combinar con el …") are object mentions: con / al / junto / combin* are not lead words.
  */
 const STATEMENT_PREFIX_RE = /^[\s\-•*–#>\d.):"“'*]*(?:[pr]\s*:[\s"“'*]*)?$/
+/**
+ * At a true line start one article may lead ("El Focus Patch contiene …\nEl Energy Patch contiene …", round 6 F2) unless
+ * the sentence is a cross-sell ("El Energy Patch es su complemento ideal").
+ */
+const LINE_ARTICLE_PREFIX_RE = /^[\s\-•*–#>\d.):"“'*]*(?:[pr]\s*:[\s"“'*]*)?(?:el|la|los|las)\s+$/
+const CROSS_SELL_RE = /\b(?:complement|combin|acompa|tambien|junto|ademas|promo|igual)\w*/
+/** A question that opens with ¿: any ≤6 words may lead, unless one makes the product an object (round 6 F3). */
+const OPEN_QUESTION_PREFIX_RE = /^[\s\-•*–#>\d.):"“'*]*(?:[pr]\s*:[\s"“'*]*)?¿\s*(?:\p{L}+\s+){0,6}$/u
+const QUESTION_OBJECT_RE =
+  /\b(?:con|al|junto|juntos|combin\w*|mezcl\w*|igual|mismo|misma|diferencia|mejor|peor|entre|ademas|si|o|vs|versus)\b|\b(?:como|que)\s+(?:el|la|los|las|un|una)\s+$/
 const QUESTION_PREFIX_RE =
   /^[\s\-•*–#>\d.):"“'*]*(?:[pr]\s*:[\s"“'*]*)?[¿¡]?\s*(?:(?:el|la|los|las|lo|un|una|que|como|cuanto|cuanta|cuantos|cuantas|cual|cuales|donde|cuando|cada|quien|puedo|puede|pueden|podes|usar|uso|dura|duran|cuesta|cuestan|funciona|funcionan|aplica|aplico|pega|pego|coloca|coloco|pone|pongo|cambia|cambio|en|tiempo|y|tambien|sobre|del|de|se|usa|usan|contiene|contienen|trae|traen|lleva|llevan|sirve|sirven|es|son|para|tiene|tienen|hay|precio|ingredientes|si|me|lo|la)\s+){0,6}$/
 /** "como el …" right before the name is a comparison ("¿Es como el Energy Patch?"), never the subject. */
@@ -226,8 +236,13 @@ function subjectStart(folded: string, index: number): number {
   const prefix = before.slice(at)
   if (STATEMENT_PREFIX_RE.test(prefix)) return from + at
   const after = folded.slice(index, index + SUBJECT_LOOKBACK)
-  const question = /[¿¡]/.test(prefix) || /^[^.!\n]*\?/.test(after)
-  if (!question || COMPARISON_TAIL_RE.test(prefix)) return -1
+  const lineStart = at === 0 ? from === 0 : before[at - 1] === '\n'
+  if (lineStart && LINE_ARTICLE_PREFIX_RE.test(prefix) && !CROSS_SELL_RE.test(/^[^.!?\n]*/.exec(after)?.[0] ?? '')) return from + at
+  // ¡…! is a sentence, not a question; a "?" counts only when it closes the clause the name is in (round 6 F1).
+  if (/¿/.test(prefix)) {
+    return OPEN_QUESTION_PREFIX_RE.test(prefix) && !QUESTION_OBJECT_RE.test(prefix) ? from + at : -1
+  }
+  if (!/^[^.!?\n,;¿¡]*\?/.test(after) || COMPARISON_TAIL_RE.test(prefix)) return -1
   return QUESTION_PREFIX_RE.test(prefix) ? from + at : -1
 }
 

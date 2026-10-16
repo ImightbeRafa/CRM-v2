@@ -7,10 +7,10 @@
 - Files: `src/lib/soft-ai/knowledge-map.ts` (pure), `knowledge-map-server.ts`, `GET /api/chat/agents/[id]/knowledge-map`
   (view_config; gaps need update_config; 20/min + fresh 4/min; 30 s bounded cache; no-store),
   `KnowledgeMapCard.tsx`, `scripts/agent-pack/knowledge-map.ts` (offline pack map). No SQL, no prompt change.
-- Reviews: verifier rounds 1–5 (store words as product facts, hidden text masked, section bleed between products, FAQ
+- Reviews: verifier rounds 1–6 (store words as product facts, hidden text masked, section bleed between products, FAQ
   question boundaries — subject-of-question rule, statements keep the round-3 rule); SecureDog INT-127 (regex DoS,
   cache memory, regex size, masking) fixed; INT-128..131 logged.
-- Proof: tsc, lint, map tests 36/0, test:soft-ai 880/0, soft-ai-agent 319/0, security 271/0, chat-harden 643/0,
+- Proof: tsc, lint, map tests 38/0, test:soft-ai 882/0, soft-ai-agent 319/0, security 271/0, chat-harden 643/0,
   agentes-ui 34/0, ops 40/0; packs PatchHouse 38/38, Sleeping 14/14, PuraSonrisa 32/32.
 - Pending: v1b (fill gaps from the map, own budget lane) needs Rafael's OK; deploy needs Rafael's GO.
 

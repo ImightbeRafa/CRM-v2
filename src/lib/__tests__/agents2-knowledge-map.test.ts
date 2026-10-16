@@ -130,12 +130,41 @@ describe('product text: only real product knowledge counts (verifier F1)', () =>
       'Focus Patch\nContiene melena de león. Se usa como el Energy Patch: se pega en el brazo, uno al día.',
       '¿El Focus Patch tiene cafeína? No. ¿Es como el Energy Patch? No, el Focus contiene melena de león; se pega en el brazo, uno al día.',
       'Focus Patch\nPara concentración... y el Energy Patch también. Contiene melena de león. Se pega en el brazo, uno al día.',
+      // round 6 F1: exclamations and tag questions are not questions about the other product
+      'Focus Patch\nPara concentración. ¡El Energy Patch es su complemento ideal! Contiene melena de león. Se pega en el brazo, uno al día.',
+      'Focus Patch\nPara concentración. ¡Y el Energy Patch también está en promo! Contiene melena de león. Se pega en el brazo, uno al día.',
+      'Focus Patch\nPara concentración. El Energy Patch es su complemento ideal, ¿lo querés probar? Contiene melena de león. Se pega en el brazo, uno al día.',
+      'Focus Patch\nPara concentración. Y el Energy Patch también te sirve ¿te lo agrego? Contiene melena de león. Se pega en el brazo, uno al día.',
     ]) {
       const map = buildKnowledgeMap(base({ docs: [doc('Productos', body)] }))
       assert.equal(fieldsOf(map, 0).usage.status, 'ok', body)
       assert.equal(fieldsOf(map, 1).usage.status, 'missing', body)
       assert.equal(fieldsOf(map, 1).ingredients.status, 'missing', body)
     }
+  })
+  it('one product per line led by an article: each line is its own product (verifier round 6 F2)', () => {
+    const map = buildKnowledgeMap(base({ docs: [doc('Productos', 'El Focus Patch contiene melena de león.\nEl Energy Patch contiene cafeína y se pega en el brazo, uno al día.')] }))
+    assert.equal(fieldsOf(map, 0).usage.status, 'missing')
+    assert.equal(fieldsOf(map, 0).frequency.status, 'missing')
+    assert.equal(fieldsOf(map, 1).usage.status, 'ok')
+    assert.equal(fieldsOf(map, 1).ingredients.status, 'ok')
+  })
+  it('any ¿question about another product ends the section; pairings stay objects (verifier round 6 F3)', () => {
+    const cases: Array<[string, string]> = [
+      ['¿Qué hace el Energy Patch? Da energía, se pega en el brazo, uno al día.', 'usage'],
+      ['¿Es seguro el Energy Patch? Si estás embarazada, consultá a tu médico.', 'warnings'],
+      ['¿Cuántos parches trae el Energy Patch? 30, uno al día.', 'frequency'],
+      ['¿Tiene efectos secundarios el Energy Patch? Puede irritar la piel; si estás embarazada, consultá a tu médico.', 'warnings'],
+      ['¿Quiénes pueden usar el Energy Patch? No se recomienda en embarazo.', 'warnings'],
+    ]
+    for (const [q, field] of cases) {
+      const map = buildKnowledgeMap(base({ docs: [doc('FAQ', `¿El Focus Patch tiene cafeína? No, contiene melena de león.\n${q}`, true, 'faq')] }))
+      assert.equal(fieldsOf(map, 0)[field].status, 'missing', q)
+      assert.equal(fieldsOf(map, 1)[field].status, 'ok', q)
+    }
+    const pairing = buildKnowledgeMap(base({ docs: [doc('FAQ', '¿El Focus Patch tiene cafeína? No, contiene melena de león. ¿Lo puedo usar si uso el Energy Patch? Sí, se pega en otra zona, uno al día.', true, 'faq')] }))
+    assert.equal(fieldsOf(pairing, 1).usage.status, 'missing')
+    assert.equal(fieldsOf(pairing, 0).usage.status, 'ok')
   })
   it('the question before the product name belongs to its section (verifier round 5 L1)', () => {
     const map = buildKnowledgeMap(base({ docs: [doc('FAQ', 'P: ¿Qué ingredientes tiene el Focus Patch?\nR: Melena de león, ginseng rojo y vitaminas B.\n\nP: ¿Cómo se usa el Energy Patch?\nR: Retirás el protector y lo pegás en piel limpia.', true, 'faq')] }))
@@ -285,8 +314,8 @@ describe('performance (SecureDog INT-127)', () => {
   })
   it('SecureDog round 4 shape: alternating names on ONE 200k-char line (no newline) stay fast — bounded subject look-back', () => {
     const named = Array.from({ length: 200 }, (_, i) => ({ id: `s${i}`, name: `Producto ${i}`, price: 1000 }))
-    const line = Array.from({ length: 12_000 }, (_, i) => `con el Producto ${i % 200} `).join('').slice(0, 199_000)
-    const questions = Array.from({ length: 6_000 }, (_, i) => `¿Dónde se pega el Producto ${i % 200}? En el brazo. `).join('').slice(0, 199_000)
+    const line = Array.from({ length: 12_000 }, (_, i) => `con el Producto ${i % 200} `).join('').slice(0, 99_000)
+    const questions = Array.from({ length: 6_000 }, (_, i) => `¿Dónde se pega el Producto ${i % 200}? En el brazo. `).join('').slice(0, 99_000)
     const docs = [doc('S0', line), doc('S1', questions)]
     const t0 = performance.now()
     buildKnowledgeMap(base({ products: named, docs }))

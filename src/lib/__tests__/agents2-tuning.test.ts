@@ -1032,3 +1032,35 @@ describe('round 4 · comma-joined payment numbers right after a payment cue', ()
     assert.doesNotMatch(sanitizeTuneQuestion('mi sinpe es 88,88,12,34'), /88,88/)
   })
 })
+
+describe('SecureDog round-4 follow-ups: comma payment numbers and encoded path separators', () => {
+  it('comma phone shapes next to payment talk are payment numbers; comma-space price lists are not', async () => {
+    const { commaPaymentNumbers } = await import('@/lib/soft-ai/payment-guard')
+    for (const t of [
+      'Pagá: 8888,1234',
+      'Pago 8888,1234',
+      'Datos de pago: Juan Pérez 8888,1234',
+      'Te paso los datos para pagar: 8888,1234',
+      '8888,1234 a nombre de Juan, pagás por SINPE',
+      'SINPE al 8888, 1234',
+      'SINPE al 88,88,12,34',
+    ]) {
+      assert.ok(commaPaymentNumbers(t).length > 0, t)
+    }
+    for (const t of [
+      'Precios al por mayor: 12,900, 15,900',
+      'Envíos al GAM: 2,500, 3,000. Pagás al recibir',
+      'Tallas 36,38,40,42. ¿Cómo querés pagar?',
+      'Medidas 135,140,150,160 cm, pagás contra entrega',
+    ]) {
+      assert.deepEqual(commaPaymentNumbers(t), [], t)
+    }
+  })
+  it('an encoded "/" or "\\" in a link path is refused, never decoded into an allowed prefix', async () => {
+    const { parseLink } = await import('@/lib/soft-ai/links')
+    assert.equal(parseLink('https://instagram.com/otra%2F..%2Fmitienda').bad, true)
+    assert.equal(parseLink('https://wa.me/50677777777%2F..%2F50688888888').bad, true)
+    assert.equal(parseLink('https://instagram.com/otra%5C..%5Cmitienda').bad, true)
+    assert.equal(parseLink('https://instagram.com/mitienda').bad, false)
+  })
+})

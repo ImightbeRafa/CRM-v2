@@ -1,3 +1,11 @@
+## 2026-10-15 — SecureDog round-4 follow-ups (claudio/agents2-phase1)
+
+- payment-guard: the exact "8888,1234" / "8888, 1234" shape is a payment number whenever the text mentions payment
+  (round-3 rule restored); payment cues before a comma run also include pag…, plata, dinero, datos; a comma + space
+  only joins the exact phone shape, so "Precios al por mayor: 12,900, 15,900" is no longer held.
+- links.ts parseLink: an encoded "/" or "\" (%2F / %5C) in a path is refused instead of decoded (browsers do not
+  decode it, so "otra%2F..%2Fmitienda" never matches an allowed prefix). SecureDog: OK to deploy; leftovers Low.
+
 ## 2026-10-15 — "Corregir" round 4 (final): money blocklist, URL normalization, sanitizer last pass (claudio/agents2-phase1)
 
 - INT-104 reopened: sign-less "N mil" is money unless a count / unit noun follows (MIL_COUNT_WORDS blocklist: parches,

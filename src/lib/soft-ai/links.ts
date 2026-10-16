@@ -102,8 +102,10 @@ export function parseLink(link: string): ParsedLink {
   const userinfo = authority.includes('@')
   if (userinfo) authority = authority.slice(authority.lastIndexOf('@') + 1)
   const host = authority.toLowerCase().replace(/:\d*$/, '').replace(/\.+$/, '').replace(/^www\./, '')
-  const bad = !host || /[@\\%\s]/.test(host)
-  const rawPath = rest.split(/[?#]/)[0].replace(/%2e/gi, '.').replace(/%2f/gi, '/').replace(/%5c/gi, '/')
+  const rawPath0 = rest.split(/[?#]/)[0]
+  // Browsers never decode an encoded "/" or "\" in a path, so "otra%2F..%2Fmitienda" is NOT "mitienda": refuse it.
+  const bad = !host || /[@\\%\s]/.test(host) || /%2f|%5c/i.test(rawPath0)
+  const rawPath = rawPath0.replace(/%2e/gi, '.')
   const segments: string[] = []
   for (const seg of rawPath.split('/')) {
     if (!seg || seg === '.') continue

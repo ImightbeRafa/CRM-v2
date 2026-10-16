@@ -58,7 +58,7 @@ export const LONG_NUMBER_RE = new RegExp(`(?:\\+?506${SEP})?\\d(?:${SEP}\\d){7,}
 const COMMA_RUN_RE = /(?<![\d,])\d{1,4}(?:,\s?\d{1,4})+(?!\d)/g
 /** A payment cue at most ~4 words before the digits (sinpe, cuenta, IBAN, transferí, depositá, número, "al", "pagá a", CR). */
 const PAY_CUE_BEFORE_RE =
-  /(?<![\p{L}])(?:sinpe|cuenta|iban|transfer\p{L}*|dep[oó]sit\p{L}*|n[uú]mero|al|pag[aá]\s+a|cr)(?![\p{L}])[^\p{L}\p{N}]*(?:[\p{L}\p{N}]+[^\p{L}\p{N}]+){0,4}$/iu
+  /(?<![\p{L}])(?:sinpe|cuenta|iban|transfer\p{L}*|dep[oó]sit\p{L}*|n[uú]mero|al|pag\p{L}*|plata|dinero|datos|cr)(?![\p{L}])[^\p{L}\p{N}]*(?:[\p{L}\p{N}]+[^\p{L}\p{N}]+){0,4}$/iu
 
 /**
  * INT-113 / round 4: comma-joined digit runs of 8+ digits that come right after a payment cue are payment numbers
@@ -73,7 +73,13 @@ export function commaPaymentNumbers(text: string): string[] {
     const at = m.index ?? 0
     const before = t.slice(Math.max(0, at - 80), at)
     if (/[₡¢$]\s?$/.test(before)) continue
-    if (PAY_CUE_BEFORE_RE.test(before)) out.push(m[0])
+    const phoneShape = /^\d{4},\s?\d{4}$/.test(m[0])
+    // "12,900, 15,900" / "2,500, 3,000": a comma + space separates list items; it joins digit groups only in the
+    // exact phone shape "8888, 1234" (SecureDog round-4 note).
+    if (/,\s/.test(m[0]) && !phoneShape) continue
+    // The exact "8888,1234" shape is a payment number whenever the text talks about payment anywhere (round 3 rule,
+    // restored: "Pago 8888,1234", "8888,1234 a nombre de Juan, pagás por SINPE"); other runs need a cue right before.
+    if ((phoneShape && PAY_WORDS_RE.test(t)) || PAY_CUE_BEFORE_RE.test(before)) out.push(m[0])
   }
   return out
 }

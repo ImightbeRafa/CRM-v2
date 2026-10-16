@@ -45,6 +45,8 @@ type PlayResult = {
   needsHuman?: boolean
   fallbackUsed?: boolean
   blockedBy?: string[]
+  /** Planned hand-off (unknown_answer = the agent did not have the answer). */
+  handoff?: { kind: string; reason?: string } | null
   tokens?: { input: number; output: number; cached: number }
   latencyMs?: number
   model?: string
@@ -267,6 +269,7 @@ export function ProbarScenarios({
               needsHuman: r.needsHuman,
               fallbackUsed: r.fallbackUsed,
               blockedBy: r.blockedBy,
+              handoff: r.handoff,
             },
             step.expect,
           )
@@ -274,7 +277,7 @@ export function ProbarScenarios({
         customer: [...(step.burst ?? []), step.text],
         reply,
         outcome: r.outcome,
-        handedOff: Boolean(r.escalate || r.needsHuman),
+        handedOff: Boolean(r.escalate || r.needsHuman || r.handoff?.reason === 'unknown_answer'),
         evaluation,
         tokens: (r.tokens?.input ?? 0) + (r.tokens?.output ?? 0),
       })

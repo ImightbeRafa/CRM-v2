@@ -45,7 +45,124 @@ export const HANDOFF_REASON = {
   orderReady: 'order_ready',
   /** N6: the same order review, the customer pays in cash (efectivo). */
   orderReadyCash: 'order_ready_cash',
+  /** Rafael 2026-10-16: the agent did not have the answer ("no lo tengo acá, lo confirmo") — a person answers. */
+  unknownAnswer: 'unknown_answer',
 } as const
+
+/**
+ * The agent's reply admits it does not have the answer / promises to check ("El detalle exacto no lo tengo acá. Lo
+ * confirmo y te lo paso."). Model text only (code's own safe lines are not model text).
+ */
+// W / WE = word start / end that also work with accents ("bueno lo tengo" is not "no lo tengo").
+const W = String.raw`(?<!\p{L})`
+const WE = String.raw`(?!\p{L})`
+const CHECK_VERB = String.raw`(?:confirmo|consulto|averiguo|verifico|reviso|pregunto|chequeo)`
+/** "No tengo ese dato" forms: judged on the whole sentence ("…, ¿me lo pasás?" = the customer's data). */
+const MISSING_SOURCE = [
+  // "El detalle exacto de esa mezcla no lo tengo acá" — a store fact named before "no lo tengo".
+  // A qualifier is required ("no la tengo, pero la de menta sí" is stock, not a missing fact).
+  String.raw`${W}(?:detalles?|datos?|informaci[oó]n|info|composici[oó]n|f[oó]rmula|cantidad(?:es)?|mezcla|ingredientes?|componentes?)${WE}[^.?!\n]{0,50}${W}no\s+(?:lo|la|los|las)\s+tengo\s+(?:ac[aá]|aqu[ií]|a\s+mano|detallad\p{L}*|confirmad\p{L}*|exact\p{L}*|publicad\p{L}*)`,
+  String.raw`${W}no\s+tengo\s+(?:ese|esa|el|la|esos|esas)\s+(?:dato|detalle|informaci[oó]n|info)s?${WE}(?!\s+de\s+(?:tu|su)${WE})`,
+  String.raw`${W}no\s+(?:cuento\s+con|manejo)\s+(?:ese|esa|el|la|los|las)\s+(?:dato|detalle|informaci[oó]n|info)s?${WE}(?!\s+de\s+(?:tu|su)${WE})`,
+]
+/** Promise-to-check forms: judged on their own words (a "¿Hacemos el pedido?" after an emoji does not cancel them). */
+const PROMISE_SOURCE = [
+  // "Lo confirmo y te lo paso", "Lo reviso y te confirmo", "Lo confirmo con el equipo y te aviso".
+  String.raw`${W}(?:lo|la|los|las|eso)\s+${CHECK_VERB}(?:\s+[\p{L}]+){0,3}?\s+y\s+te\s+(?:l[oa]s?\s+)?(?:paso|pasos|aviso|confirmo|cuento|escribo|digo)${WE}`,
+  String.raw`${W}(?:eso\s+)?te\s+l[oa]s?\s+confirmo\s+(?:en\s+un\s+rat(?:o|ito)|ahorita|en\s+breve|m[aá]s\s+tarde|luego|pronto|en\s+un\s+momento)`,
+  // Without a pronoun only when the sentence ends there ("Te confirmo en un ratito 😊"), not "Te confirmo en un momento cuál…".
+  String.raw`${W}te\s+confirmo\s+(?:en\s+un\s+rat(?:o|ito)|ahorita|en\s+breve|m[aá]s\s+tarde|luego|pronto|en\s+un\s+momento)(?=\s*(?:[.!…]|\p{Extended_Pictographic}|$))`,
+  // Only the "…lo" forms: "Dejame preguntar: ¿es para vos?" is a sales question.
+  String.raw`${W}(?:d[eé]jame|perm[ií]teme)\s+(?:consultarl[oa]s?|averiguarl[oa]s?|preguntarl[oa]s?|confirmarl[oa]s?)${WE}`,
+  String.raw`${W}(?:voy\s+a|tengo\s+que)\s+(?:consultar|confirmar|averiguar|preguntar)lo${WE}`,
+  String.raw`${W}(?:ese\s+dato|ese\s+detalle|eso)\s+l[oa]s?\s+tengo\s+que\s+(?:confirmar|consultar|averiguar|preguntar)${WE}`,
+]
+/** Both families (the test chat's "must know" check uses this). */
+export const CANNOT_ANSWER_SOURCE = [...MISSING_SOURCE, ...PROMISE_SOURCE].join('|')
+const CANNOT_ANSWER_RE = new RegExp(CANNOT_ANSWER_SOURCE, 'iu')
+const MISSING_RE = new RegExp(MISSING_SOURCE.join('|'), 'iu')
+const PROMISE_RE = new RegExp(PROMISE_SOURCE.join('|'), 'iu')
+
+/**
+ * A sentence about the order / payment / the customer's own data is not a missing store fact ("El total lo confirmo
+ * al preparar el pedido", "No tengo tu provincia, ¿me la pasás?"): those keep their own flow.
+ */
+// ("su / sus" stay out: "su composición" is the product; the customer's own data is "tu".)
+const NOT_A_STORE_FACT_RE =
+  /(?<!\p{L})(?:total|pedido|orden|comprobante|pago|sinpe|transferencia|tu|tus|me\s+l[oa]s?\s+pas[aá]s|pas[aá]me|stock|talla|disponib\p{L}*|en\s+bodega|quedan|me\s+queda|direcci[oó]n|datos\s+de\s+env[ií]o|provincia|cant[oó]n|distrito|nombre|tel[eé]fono|correo|se[nñ]as)(?!\p{L})/iu
+
+/** Whole sentences of one line (a "¿…?" stays inside its sentence): what detection judges. */
+const sentencesOf = (line: string) => line.match(/[^.!?…]+[.!?…]*|[.!?…]+/gu) ?? [line]
+/** Finer pieces for the cut: a "¿…?" question is its own piece even after an emoji. */
+const piecesOf = (line: string) => line.match(/¿[^¿]*?(?:\?+|$)|[^.!?…¿]+[.!?…]*|[.!?…]+/gu) ?? [line]
+const isQuestion = (s: string) => /^\s*¿/.test(s) || /\?\s*\p{Extended_Pictographic}*\s*$/u.test(s.trim())
+
+/** A sentence of the line admits not having a store fact (Betsy's own fixed lines never count). */
+function cannotAnswerLine(line: string, own: Set<string>): boolean {
+  if (own.has(line.trim())) return false
+  return sentencesOf(line).some(
+    (s) =>
+      (MISSING_RE.test(s) && !NOT_A_STORE_FACT_RE.test(s)) ||
+      // The promise piece alone (without the "¿…?" after it) decides: "lo confirmo y te lo paso 😊 ¿Hacemos el pedido?".
+      piecesOf(s).some((p) => !isQuestion(p) && PROMISE_RE.test(p) && !NOT_A_STORE_FACT_RE.test(p)),
+  )
+}
+
+const ownLines = () => new Set(Object.values(SAFE_LINE).map((s) => s.trim()))
+
+export function admitsCannotAnswer(text: string): boolean {
+  // Betsy's own fixed lines ("¡Gracias! Dame un momento, ya lo reviso y te confirmo 😊") are never a missing answer.
+  const own = ownLines()
+  return (text || '').split('\n').some((line) => cannotAnswerLine(line, own))
+}
+
+/** Pieces minus the questions (and a "Mientras tanto," lead-in left dangling before one), tidied. */
+function dropQuestions(pieces: string[], keepUpTo: number): string {
+  const kept: string[] = []
+  let removed = false
+  pieces.forEach((p, i) => {
+    if (i <= keepUpTo || !isQuestion(p)) {
+      kept.push(p)
+      return
+    }
+    removed = true
+    if (kept.length - 1 > keepUpTo && /,\s*$/.test(kept[kept.length - 1])) kept.pop()
+  })
+  const joined = kept.join('')
+  // Only a line that lost a question is tidied ("…te lo paso, ¿te parece?" → "…te lo paso."); a list lead-in keeps its ":".
+  return removed ? joined.replace(/[ \t]{2,}/g, ' ').trimEnd().replace(/\s*[,:;]$/, '.') : joined.trimEnd()
+}
+
+/**
+ * What goes out with a "no lo sé" hand-off: the whole reply (what the agent DID know, lists, payment blocks) minus the
+ * questions AFTER the "no lo tengo / lo confirmo" sentence — the sales push ("¿Con eso te alcanza para decidir, o te lo
+ * llevás?") never follows a promise to check. Nothing before it is touched.
+ */
+export function cutAfterCannotAnswer(text: string): string {
+  if (!admitsCannotAnswer(text)) return text
+  const own = ownLines()
+  let seen = false
+  const out: string[] = []
+  for (const line of text.split('\n')) {
+    if (seen) {
+      // A data list / payment block line has no question mark and stays; a question goes.
+      const kept = dropQuestions(piecesOf(line), -1)
+      if (line.trim() && !kept.trim()) continue
+      out.push(kept)
+      continue
+    }
+    if (!cannotAnswerLine(line, own)) {
+      out.push(line)
+      continue
+    }
+    seen = true
+    const pieces = piecesOf(line)
+    const at = pieces.findIndex((p) => CANNOT_ANSWER_RE.test(p))
+    // (A cue split across pieces cannot happen in practice; then keep the line whole.)
+    out.push(at < 0 ? line : dropQuestions(pieces, at))
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+}
 
 /** Customer texts code sends instead of a reply that cannot go out as written (reserved, tuteo, seller voice). */
 export const SAFE_LINE = {
@@ -101,11 +218,18 @@ export function planModelTurnDelivery(input: {
       handoff: { kind: 'handoff', reason: input.orderReadyCash ? HANDOFF_REASON.orderReadyCash : HANDOFF_REASON.orderReady },
     }
   }
+  const cannotAnswer = usable && admitsCannotAnswer(text)
   if (input.llmHandoff?.kind === 'handoff' && !(input.paymentDataByTeam && modelPaymentEscalate)) {
     return {
-      text: modelPaymentEscalate || !usable ? SAFE_LINE.payment : text,
+      text: modelPaymentEscalate || !usable ? SAFE_LINE.payment : cannotAnswer ? cutAfterCannotAnswer(text) : text,
       handoff: input.llmHandoff,
     }
+  }
+  // Rafael 2026-10-16: "no lo tengo acá, lo confirmo" without escalate_to_human left nobody answering while the agent
+  // kept selling. The answer the agent did have goes out, then the chat goes to a person (alert), whatever it called.
+  // (Payment data sent by the team keeps its own review + "Enseguida te paso cómo pagar" below: a person looks anyway.)
+  if (cannotAnswer && !modelPaymentEscalate && !input.paymentDataByTeam) {
+    return { text: cutAfterCannotAnswer(text), handoff: { kind: 'handoff', reason: HANDOFF_REASON.unknownAnswer } }
   }
   if (input.paymentDataByTeam) {
     return {

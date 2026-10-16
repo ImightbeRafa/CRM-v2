@@ -3,7 +3,10 @@
  * sent, no order / stock / guía) and grades each step with the test chat's own checks (evaluateStep).
  *
  *   node --env-file=.env.local --import tsx --import ./scripts/shim-server-only.mjs \
- *     scripts/agent-pack/probar.ts --pack=<carpeta del pack> [--only=texto] [--max-share=0.6] [--out=file.md]
+ *     scripts/agent-pack/probar.ts --pack=<carpeta del pack> [--coverage] [--only=texto] [--max-share=0.6] [--out=file.md]
+ *
+ * --coverage: knowledge coverage instead of the pack's tests — every product (ingredientes, uso, todos los días,
+ * precio) + store questions; fails on "no lo tengo / lo confirmo" or a hand-off (knowledge-coverage.ts).
  *
  * It spends real AI tokens from the business's daily TEST budget (shared with its staff's test chat): it stops
  * before using more than --max-share of what is left today (default 60 %) and reports the rest as "no corrió".
@@ -16,7 +19,8 @@ import { evaluateStep, type StepExpect } from '@/lib/soft-ai/probar-scenarios'
 import { readChatAgentLayerConfig } from '@/lib/feature-flags'
 import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { loadDailyTestTokens } from '@/lib/soft-ai/agent-claim-gates'
-import { arg, loadPack } from './pack'
+import { coverageScenarios, knowledgeGaps } from '@/lib/soft-ai/knowledge-coverage'
+import { arg, flag, loadPack } from './pack'
 
 type Row = { title: string; step: number; customer: string; reply: string; pass: boolean; notRun: boolean; failures: string[]; why: string; images: number }
 
@@ -32,7 +36,16 @@ async function main() {
   const socialAccountId = pack.target.socialAccountIds[0]
   if (!socialAccountId) throw new Error('El pack necesita target.socialAccountIds (el chat de prueba usa ese canal)')
   const only = (arg('only') || '').toLowerCase()
-  const tests = pack.tests.filter((t) => !only || t.title.toLowerCase().includes(only))
+  // --coverage (Rafael 2026-10-16): instead of the pack's own tests, ask every product and store question a customer
+  // asks; any "no lo tengo / lo confirmo" or hand-off fails. Prints the offline knowledge gaps first.
+  const coverage = flag('coverage')
+  if (coverage) {
+    const knowledge = [...pack.knowledge.map((k) => k.body), ...pack.shortcuts.map((s) => s.body), JSON.stringify(pack.brandFacts)].join('\n\n')
+    const gaps = knowledgeGaps({ knowledge, products: pack.inventory.names })
+    console.log(gaps.length ? `Huecos en el conocimiento del pack (${gaps.length}):` : 'Conocimiento del pack: sin huecos detectados.')
+    for (const g of gaps) console.log(`  - ${g.product ? `${g.product}: ` : 'Tienda: '}${g.topic}`)
+  }
+  const tests = (coverage ? coverageScenarios(pack.inventory.names) : pack.tests).filter((t) => !only || t.title.toLowerCase().includes(only))
 
   const cap = parseChatAgentLayerConfig((await readChatAgentLayerConfig(tenantId)).config).testDailyTokenCap
   const startUsed = await loadDailyTestTokens(tenantId)

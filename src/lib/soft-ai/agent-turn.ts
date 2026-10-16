@@ -1941,7 +1941,7 @@ async function runAgentTestTurnInner(input: {
     shortcutKey,
     model: runtimeAgent.model,
     estimatedCostUsd: testCostMicros / 1_000_000,
-    why: probarWhy({ toolTrace: llmTrace, escalate, escalateReason, fallbackUsed, validationReasons, shortcutKey, blockedBy }),
+    why: probarWhy({ toolTrace: llmTrace, escalate, escalateReason, fallbackUsed, validationReasons, shortcutKey, blockedBy, handoffReason: handoff?.reason }),
     codes: probarOutcomeCodes({ validationReasons, policyReasons, errorCode: llmErrorCode, escalate, escalateReason, handoff }),
     images,
     handoff,

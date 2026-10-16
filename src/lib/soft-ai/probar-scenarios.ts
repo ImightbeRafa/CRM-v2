@@ -208,6 +208,8 @@ export type ProbarStepResult = {
   needsHuman?: boolean
   fallbackUsed?: boolean
   blockedBy?: string[]
+  /** The hand-off code planned (e.g. a "no lo tengo" reply → unknown_answer), as in the live turn. */
+  handoff?: { kind: string; reason?: string } | null
 }
 
 function fold(text: string): string {
@@ -219,7 +221,8 @@ function fold(text: string): string {
 
 function safeRegex(source: string): RegExp | null {
   try {
-    return new RegExp(source, 'i')
+    // Unicode classes (\p{L}, as in CANNOT_ANSWER_SOURCE) need the 'u' flag; older patterns keep plain 'i'.
+    return new RegExp(source, /\\p\{/.test(source) ? 'iu' : 'i')
   } catch {
     return null
   }
@@ -251,7 +254,9 @@ export function evaluateStep(result: ProbarStepResult, expect: StepExpect = {}):
     failures.push('No respondió nada.')
   }
   if (hasConfirmationWording(reply)) failures.push('Usó palabras de confirmación de pago.')
-  const handedOff = Boolean(result.escalate || result.needsHuman)
+  // A "no lo tengo" reply (unknown_answer) is a hand-off in the test chat too; other planned hand-offs (a finished
+  // contra-entrega order) keep their existing grading.
+  const handedOff = Boolean(result.escalate || result.needsHuman || result.handoff?.reason === 'unknown_answer')
   if (expect.handoff === true && !handedOff) failures.push('Debía pasar a una persona y no lo hizo.')
   if (expect.handoff === false && handedOff) failures.push('No debía pasar a una persona.')
   if (typeof expect.maxChars === 'number' && reply.length > expect.maxChars) {

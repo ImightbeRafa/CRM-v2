@@ -175,7 +175,9 @@ export function buildAgentSystemInstructions(input: {
   }
   parts.push(
     '',
-    'Respondé en español de Costa Rica. Si necesitás datos, usá herramientas. Si te falta un dato, preguntá al cliente o decí que lo confirmás; escalate_to_human es solo para pagos/comprobantes, reembolsos o reclamos y cuando pide una persona (reglas 1 y 6), sin decírselo al cliente.',
+    // Rafael 2026-10-16: a fact the agent does not have (an ingredient, a detail not in the store's data) goes to a
+    // person — never a promise to confirm that nobody keeps, and never keep selling after it.
+    'Respondé en español de Costa Rica. Si necesitás datos, usá herramientas. Si te falta un dato DEL CLIENTE, preguntáselo. Si te falta un dato DE LA TIENDA o del producto (ingredientes, detalles, algo que no está en tus datos): decí lo que sí sabés, decí que lo confirmás, llamá escalate_to_human(other) y no sigas vendiendo en ese mensaje. Nunca inventes ni adivines. (El total de varias unidades, el stock y los datos del cliente no son datos que falten.) escalate_to_human también para pagos/comprobantes, reembolsos o reclamos y cuando pide una persona (reglas 1 y 6), sin decírselo al cliente.',
   )
   return { instructions: parts.join('\n'), knowledgeVersions }
 }

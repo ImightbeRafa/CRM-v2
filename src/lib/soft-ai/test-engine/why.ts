@@ -19,6 +19,7 @@ export const RETRYABLE_TECHNICAL_CODES: ReadonlySet<string> = new Set([
 const CONFIG_CODES: ReadonlySet<string> = new Set(['LLM_AUTH', 'LLM_NOT_CONFIGURED', 'XAI_NOT_CONFIGURED'])
 
 const CODE_TEXT: Record<string, string> = {
+  unknown_answer: 'No tenía la respuesta y pasó el chat a una persona (falta en el conocimiento)',
   unsourced_amount: 'El agente mencionó un monto que no está en los datos',
   unsourced_money: 'El agente mencionó un monto que no está en los datos',
   money_mismatch_inventory: 'El agente dio un precio distinto al del inventario',
@@ -68,6 +69,8 @@ export function probarOutcomeCodes(input: {
     ...(input.policyReasons ?? []),
     ...(input.escalate && input.escalateReason ? [`escalate:${input.escalateReason}`] : []),
     ...(input.handoff?.kind === 'review' ? ['review'] : []),
+    // A 'no lo tengo' reply the code handed to a person: the agent lacked the answer (Rafael 2026-10-16).
+    ...(input.handoff?.kind === 'handoff' && input.handoff.reason === 'unknown_answer' ? ['unknown_answer'] : []),
   ]
   return [...new Set(out.filter((c) => typeof c === 'string' && /^[A-Za-z0-9_:.-]{1,60}$/.test(c)))].slice(0, 12)
 }

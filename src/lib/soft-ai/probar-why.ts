@@ -45,6 +45,8 @@ export function probarWhy(input: {
   validationReasons?: string[]
   shortcutKey?: string | null
   blockedBy?: string[]
+  /** The planned hand-off code (unknown_answer = the agent did not have the answer). */
+  handoffReason?: string | null
 }): string[] {
   const out: string[] = []
   const steps = Array.isArray(input.toolTrace) ? (input.toolTrace as Array<Record<string, unknown>>) : []
@@ -71,6 +73,7 @@ export function probarWhy(input: {
   if (input.shortcutKey && !out.includes('usó una respuesta rápida')) {
     out.push(/^[a-z0-9_]{2,40}$/.test(input.shortcutKey) && !input.shortcutKey.startsWith('sys_') ? `usó la respuesta guardada “${input.shortcutKey}”` : 'usó una respuesta rápida')
   }
+  if (input.handoffReason === 'unknown_answer') out.push('pasó a una persona: no tenía la respuesta')
   if (input.escalate) out.push(`pasó a una persona: ${PROBAR_ESCALATE_LABELS[input.escalateReason || 'other'] || 'otro motivo'}`)
   // Codes are internal; the owner only needs to know the AI's own answer was replaced by a safe one.
   if (input.fallbackUsed) out.push('respuesta de respaldo: la IA falló o su respuesta no pasó las reglas')

@@ -1,3 +1,21 @@
+## 2026-10-16 — agents2-unknown: "no lo tengo" goes to a person + knowledge coverage (claudio/release-2026-10-16)
+
+- Live PatchHouse: asked the Stress Relief components, the agent said "no lo tengo acá. Lo confirmo y te lo paso", kept
+  pushing "¿te lo llevás?" and nobody was alerted (the prompt said escalate only for payments). Now: prompt (prompt.ts
+  final rule, sales-state) → missing STORE fact = say what you know, escalate_to_human(other), stop selling; total /
+  stock / customer data are not missing facts. Backstop in planModelTurnDelivery: `admitsCannotAnswer` (per sentence,
+  word-boundary, store-fact nouns, order/payment/customer-data sentences and Betsy's safe lines excluded) → true
+  hand-off `unknown_answer` ("La IA no tenía la respuesta — contestale vos"); the reply keeps everything except the
+  questions after the promise. Payment rules + paymentDataByTeam keep precedence. After hours: text + team line.
+  Probar / quick check show it (code `unknown_answer`, why line, evaluateStep).
+- Knowledge coverage for every agent: `knowledge-coverage.ts` (offline `knowledgeGaps` per product/topic +
+  `coverageScenarios`), `scripts/agent-pack/coverage-gaps.ts` (no DB), `probar.ts --coverage` (live test chat; fails
+  on "no lo tengo / lo confirmo" or a hand-off). Packs: PatchHouse full site ingredients; Sleeping prices, every
+  night, ingredients FAQ, shipping cost — both 0 gaps.
+- Not bumped: AGENT_RULES_VERSION (would force every agent to re-pass the quick check — Rafael's call).
+- Proof: tsc 0, lint 0, test:soft-ai 844/844, soft-ai-agent 319/319, security 271/271, chat-harden 643/643,
+  agentes-ui 34/34, ops 40/40; docker build OK. Not deployed.
+
 ## 2026-10-16 — agents2-datalist: fixed shipping data list (claudio/release-2026-10-16)
 
 - Rafael (not negotiable): every order-data request is exactly Nombre completo / Teléfono / Correo (opcional) /

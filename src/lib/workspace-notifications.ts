@@ -52,6 +52,8 @@ export const HANDOFF_REASON_LABELS: Record<string, string> = {
   complaint: 'Reclamo o devolución',
   owner_reply: 'Respuesta que debe dar una persona',
   escalate: 'Necesita a una persona',
+  // Rafael 2026-10-16: the agent did not have the answer (e.g. an ingredient) — a person answers.
+  unknown_answer: 'La IA no tenía la respuesta — contestale vos',
   review: 'Revisar respuesta de la IA',
 }
 

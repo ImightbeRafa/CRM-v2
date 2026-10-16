@@ -184,7 +184,7 @@ export function afterHoursPromptLine(state: AfterHoursState): string | null {
 /** Hand-off reasons whose customer text gets the after-hours variant (owner_reply keeps the owner's own text). */
 const PAYMENT_REASONS = new Set(['payment'])
 const ORDER_REASONS = new Set(['order_ready', 'order_ready_cash'])
-const PERSON_REASONS = new Set(['human_request', 'escalate', 'complaint'])
+const PERSON_REASONS = new Set(['human_request', 'escalate', 'complaint', 'unknown_answer'])
 
 export function afterHoursHandoffKind(reason: string | null | undefined): 'payment' | 'order' | 'person' | null {
   const r = String(reason || '')
@@ -257,7 +257,8 @@ export function applyAfterHoursText(
   if (plan.handoff?.kind === 'handoff') {
     const kind = afterHoursHandoffKind(plan.handoff.reason)
     if (!kind) return plan.text
-    if (kind === 'person' && plan.handoff.reason === 'human_request' && text && text !== opts.safeReview.trim()) {
+    // A "no lo tengo" answer (unknown_answer) keeps what the agent did know, then says when the team writes.
+    if (kind === 'person' && (plan.handoff.reason === 'human_request' || plan.handoff.reason === 'unknown_answer') && text && text !== opts.safeReview.trim()) {
       body = `${text}\n${afterHoursTeamLine(state.label)}`
     } else {
       const line = afterHoursHandoffLine(kind, state.label, state.transparent)

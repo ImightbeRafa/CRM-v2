@@ -146,6 +146,19 @@ export function classifyPaymentText(text: string): PaymentClassification {
   if (isPaymentCompletionClaim(value)) {
     return 'payment_proof_or_risk'
   }
+  // Follow-up: future / intent phrasing ("Listo, quiero pagar por sinpe", "¿El pago tiene que estar hecho antes del
+  // envío?") and a bare method question after an "ok" ("Lista, ¿por sinpe?") are not claims — the agent answers.
+  // (A plain "¿cómo puedo pagar?" keeps the info path below: the method list.)
+  if (isPaymentIntentText(value) && !INFO_CUE_RE.test(value)) return 'non_payment'
+  // Only after an "ok / listo" and with "por / con" ("Lista, ¿por sinpe?"); a bare "sinpe?" stays ambiguous (a person).
+  if (
+    /[?¿]/.test(value) &&
+    LEADING_LISTO_RE.test(value) &&
+    /(?<![\p{L}])(?:por|con)(?![\p{L}])/iu.test(value) &&
+    paymentChoiceGrammar(value.replace(LEADING_LISTO_RE, '').replace(/[¿?]/g, ' '))
+  ) {
+    return 'non_payment'
+  }
   if (INFO_CUE_RE.test(value)) {
     return 'payment_info_safe'
   }
@@ -230,8 +243,35 @@ const INFO_QUESTION_CUE_RE = /c[oó]mo\s+(?:\p{L}+\s+){0,2}(?:pag\p{L}*|hago)|ac
  * paired with a payment noun anywhere ("Listo, transferencia"). Never: a leading "listo," / "ok listo", "lista de
  * precios", "hechos a mano", "ser enviado", the order being "listo", or an info question ("Listo, ¿cómo pago?").
  */
+/** Intent / future phrasing around paying: never a completion claim by itself. */
+const PAYMENT_INTENT_RE =
+  /(?<![\p{L}])(?:quiero\s+pagar|voy\s+a\s+pagar|prefiero\s+pagar|puedo\s+pagar|quisiera\s+pagar|para\s+pagar|(?:le|te|les)\s+pago|pagar[ií]a|tengo\s+que\s+pagar|hay\s+que\s+pagar|antes\s+del\s+env[ií]o|despu[eé]s\s+del\s+pago)(?![\p{L}])/iu
+/** Strong completion markers that win over intent wording ("ya pagué", ✅, an amount, a reference, "realizada"…). */
+const STRONG_COMPLETION_RE =
+  /[✅✔☑₡#\d]|(?<![\p{L}])(?:ref|ya|pagu[eé]|pagad\p{L}*|hab[ií]a|anterior|comprobante\p{L}*|realizad\p{L}*|exitos\p{L}*|aprobad\p{L}*|doble|error)(?![\p{L}])|ya\s+(?:lo\s+|la\s+|le\s+|te\s+|les\s+)?(?:hice|pagu[eé]|envi[eé]|mand[eé])/iu
+
+/**
+ * Follow-up to N1: intent phrasing with no strong completion marker and no claim / status cue (a leading "listo," /
+ * "ok listo" is an acknowledgement) — the customer is about to pay or asking about it.
+ */
+export function isPaymentIntentText(text: string): boolean {
+  const value = text || ''
+  if (!PAYMENT_INTENT_RE.test(value) || STRONG_COMPLETION_RE.test(value)) return false
+  const v = value.replace(LEADING_LISTO_RE, '')
+  return !(
+    PROOF_CUE_RE.test(v) ||
+    hasPaymentClaimCue(v) ||
+    CONFIRM_CUE_RE.test(v) ||
+    CONFIRM_PAYMENT_RE.test(v) ||
+    RISK_CUE_RE.test(v) ||
+    PAYMENT_STATUS_CUE_RE.test(v)
+  )
+}
+
 export function isPaymentCompletionClaim(text: string): boolean {
   const value = text || ''
+  // Intent ("quiero pagar", "antes del envío") without a strong marker is never a completion claim.
+  if (PAYMENT_INTENT_RE.test(value) && !STRONG_COMPLETION_RE.test(value)) return false
   // "Envío exitoso" (a SINPE notification) — "envío" alone is shipping ("¿el envío va pagado?" is a question).
   if (/(?<![\p{L}])env[ií]o\s+exitos\p{L}*/iu.test(value)) return true
   const hasNoun = new RegExp(`(?<![\\p{L}])${COMPLETION_PAY_NOUN}(?![\\p{L}])`, 'iu').test(value)
@@ -321,7 +361,7 @@ const LOOSE_METHODS: Array<[RegExp, PaymentChoiceMethod]> = [
 ]
 /** Status / dispute / problem words: a message with these is never routed as a choice (a person looks). */
 const STATUS_DISPUTE_RE =
-  /(?<![a-z])(?:cheque\p{L}*|chequ\p{L}*|verific\p{L}*|revis\p{L}*|avis\p{L}*|paso|camino|duplicad\p{L}*|doble|de mas|revers\p{L}*|anul\p{L}*|estafa|fraude|error|lleg\p{L}*|ver|vieron|deja|problema|falla\p{L}*|rechaz\p{L}*|devolu\p{L}*|reembols\p{L}*|cobr\p{L}*|ya|nombre)(?![a-z])/u
+  /(?<![a-z])(?:cheque\p{L}*|chequ\p{L}*|verific\p{L}*|revis\p{L}*|avis\p{L}*|paso|camino|duplicad\p{L}*|doble|de mas|revers\p{L}*|anul\p{L}*|estafa|fraude|error|lleg\p{L}*|ver|vieron|deja|problema|falla\p{L}*|rechaz\p{L}*|devolu\p{L}*|reembols\p{L}*|cobr\p{L}*|ya)(?![a-z])/u
 
 /**
  * N4: after the store's method question, a message that names exactly ONE method (loosely) with something else

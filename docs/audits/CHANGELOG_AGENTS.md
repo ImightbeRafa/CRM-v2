@@ -1,3 +1,13 @@
+## 2026-10-16 — agents2-format round 3 follow-up: intent phrasing is never a completion claim (claudio/agents2-format)
+
+- Intent / future wording (quiero / voy a / prefiero / puedo / quisiera pagar, para pagar, le / te / les pago, pagaría,
+  tengo / hay que pagar, antes del envío, después del pago) without a strong marker (✅, ya + hice / pagué / envié /
+  mandé, realizad, exitos, aprobad, comprobante, había, digits / ₡ / ref) is not a claim → the agent answers. A leading
+  "listo, / ok listo" is an acknowledgement ("Lista, ¿por sinpe?"). A bare "sinpe?" still goes to a person.
+- pendingMethodMention: "nombre" is no longer a status word ("por sinpe a nombre de X" → model, SINPE chosen).
+- Proof: tsc 0, lint 0, test:soft-ai 760/760, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34. Not deployed.
+
 ## 2026-10-16 — agents2-format round 3: integration verifier N1..N6 + SecureDog leftovers (claudio/agents2-format)
 
 - Merged claudio/agents2-phase1 (6bcba9ed: format + notify) into the branch first.

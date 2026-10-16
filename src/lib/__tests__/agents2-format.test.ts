@@ -764,3 +764,32 @@ describe('Round 3 (integration verifier N1..N6 + SecureDog leftovers)', () => {
     assert.equal(isSafeInternalHref('/chats?c=abc'), true)
   })
 })
+
+describe('Round 3 follow-up: intent phrasing is never a completion claim', () => {
+  it('the five phrases go to the agent (choice / model), never a hand-off', async () => {
+    const { classifyPaymentText } = await import('@/lib/soft-ai/payment-classifier')
+    for (const text of ['Listo, quiero pagar por sinpe', 'Lista, ¿por sinpe?', '¿El pago tiene que estar hecho antes del envío?', '¿El pedido es enviado después del pago?']) {
+      assert.notEqual(classifyPaymentText(text), 'payment_proof_or_risk', text)
+      for (const awaiting of [true, false]) {
+        const d = decideInbound({ inboundText: text, brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: awaiting })
+        assert.notEqual(d.handoff?.kind, 'handoff', `${text} (${awaiting})`)
+      }
+    }
+    // "por sinpe a nombre de X" with the question pending: the model, with SINPE chosen (no hand-off).
+    const named = decideInbound({ inboundText: 'por sinpe a nombre de María', brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: true })
+    assert.equal(named.handled, false)
+    const s = deriveSalesState({ history: [msg('outbound', '¿Cómo preferís pagar? Tenemos SINPE Móvil y tarjeta.')], inboundText: 'por sinpe a nombre de María', ctx: CTX })
+    assert.equal(s.chosenMethod, 'sinpe')
+  })
+  it('strong markers still win over intent wording; INT-114/115 positives still hand off in both states', () => {
+    for (const text of ['Quiero pagar por sinpe, ya lo hice ✅', 'Prefiero pagar por sinpe pero ya le había pagado al otro número', 'Quería pagar por sinpe, comprobante adjunto', 'Para pagar hice el sinpe de 15 mil']) {
+      const d = decideInbound({ inboundText: text, brandFacts: FACTS, shortcuts: SHORTCUTS })
+      assert.equal(d.handoff?.kind, 'handoff', text)
+    }
+    for (const text of CLAIMS) {
+      for (const awaiting of [true, false]) {
+        assert.equal(decideInbound({ inboundText: text, brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: awaiting }).handoff?.kind, 'handoff', `${text} (${awaiting})`)
+      }
+    }
+  })
+})

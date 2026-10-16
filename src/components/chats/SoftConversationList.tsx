@@ -69,6 +69,57 @@ interface SoftConversationListProps {
   tags?: SoftTag[]
   activeTag?: SoftTag | null
   onTagClick?: (tag: SoftTag) => void
+  /**
+   * agents2-notify: "💳 Pago por verificar" / "📦 Pedido por confirmar" chips at the top (desktop and
+   * mobile). Shown while a chat waits or while the chip is on; click toggles `activeTag`.
+   */
+  reviewFilters?: Array<{ tag: SoftTag; label: string; emoji: string; tone: 'rose' | 'orange'; count: number }>
+}
+
+function ReviewFilterChips({
+  filters,
+  activeTag,
+  onTagClick,
+}: {
+  filters: NonNullable<SoftConversationListProps['reviewFilters']>
+  activeTag: SoftTag | null
+  onTagClick: (tag: SoftTag) => void
+}) {
+  const shown = filters.filter((f) => f.count > 0 || activeTag === f.tag)
+  if (!shown.length) return null
+  return (
+    <div className="mx-4 mt-3 flex flex-wrap gap-2" data-testid="chat-review-filters">
+      {shown.map((f) => {
+        const active = activeTag === f.tag
+        const tone =
+          f.tone === 'rose'
+            ? active
+              ? 'bg-rose-600 text-white ring-rose-600'
+              : 'bg-rose-50 text-rose-800 ring-rose-200 hover:bg-rose-100'
+            : active
+              ? 'bg-orange-500 text-white ring-orange-500'
+              : 'bg-orange-50 text-orange-900 ring-orange-200 hover:bg-orange-100'
+        return (
+          <button
+            key={f.tag}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onTagClick(f.tag)}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold ring-1 transition-colors ${tone}`}
+            data-testid={f.tone === 'rose' ? 'chat-review-filter-payment' : 'chat-review-filter-order'}
+          >
+            <span aria-hidden>{f.emoji}</span>
+            {f.label}
+            <span
+              className={`rounded-full px-1.5 py-px text-[11px] font-bold ${active ? 'bg-static-white/25 text-white' : 'bg-white text-slate-900'}`}
+            >
+              {f.count}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 /** CHAT-M01 segmented tabs → existing inbox buckets (no new staffing model). */
@@ -137,6 +188,7 @@ export function SoftConversationList({
   tags,
   activeTag,
   onTagClick,
+  reviewFilters,
 }: SoftConversationListProps) {
   // ⌘K on Mac, Ctrl K elsewhere (set after mount so SSR and client markup match).
   const [shortcutHint, setShortcutHint] = useState('Ctrl K')
@@ -280,6 +332,10 @@ export function SoftConversationList({
           variant={compact ? 'card' : 'pill'}
         />
       </div>
+
+      {reviewFilters && onTagClick ? (
+        <ReviewFilterChips filters={reviewFilters} activeTag={activeTag ?? null} onTagClick={onTagClick} />
+      ) : null}
 
       {compact && bucket && onBucketChange ? (
         <div

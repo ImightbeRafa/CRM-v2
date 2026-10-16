@@ -10,12 +10,16 @@
  *   repeating the same event for the same message is a no-op.
  * - Reuses kind 'ai_no_reply' (allowed by SQL 049) with an `ai_handoff:` / `ai_review:` key prefix; the
  *   reason is a short code (never customer text). Never throws.
+ * - agents2-notify: 'payment' (receipt) and 'order_ready' (cash-on-delivery order complete) also tag the chat
+ *   ('Pago por verificar' / 'Pedido por confirmar') and alert the assignee AND the chat team with their own
+ *   kinds ('payment_review' / 'order_review', SQL 049). Other codes keep kind 'ai_no_reply'.
  */
 import 'server-only'
 
 import { prisma } from '@/lib/db'
 import { presenceStore } from '@/lib/chat-presence'
-import { filterChatMembers, notifyUsers, HANDOFF_REASON_LABELS } from '@/lib/workspace-notifications'
+import { filterChatMembers, notifyUsers, reviewKindForHandoffCode, HANDOFF_REASON_LABELS } from '@/lib/workspace-notifications'
+import { ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
 import { hasPermission, type Role } from '@/lib/rbac'
 
 export type HandoffKind = 'handoff' | 'review'
@@ -43,6 +47,10 @@ export function normalizeHandoffReason(reason: string | null | undefined, kind: 
   }
   if (/datos de pago|como pagar|payment_details|payment_data|payment_not_shareable|how_to_pay/.test(s)) {
     return 'payment_details'
+  }
+  // Cash-on-delivery order complete (before 'payment': "pago contra entrega" is an order, not a receipt).
+  if (/order_ready|order_complete|pedido listo|pedido completo|pedido por confirmar|contra ?entrega|contraentrega|cash_on_delivery/.test(s)) {
+    return 'order_ready'
   }
   if (/comprobante|pago|sinpe|transfer|deposito|receipt|payment|paid/.test(s)) return 'payment'
   if (/reclamo|devoluci|reembolso|refund|complaint|dispute|queja/.test(s)) return 'complaint'
@@ -77,10 +85,26 @@ export function pickFirstEligible(candidates: string[], eligible: ReadonlySet<st
   return candidates.find((id) => eligible.has(id)) || null
 }
 
+/** Built-in chat tag the AI adds for a hand-off code: receipt → 'Pago por verificar', COD order → 'Pedido por confirmar'. */
+export function reviewTagForHandoffCode(code: string | null | undefined): string | null {
+  if (code === 'payment') return PAYMENT_REVIEW_TAG
+  if (code === 'order_ready') return ORDER_REVIEW_TAG
+  return null
+}
+
+/**
+ * Who hears about money / an order waiting on a person: the assignee first, then the whole chat team (also
+ * when the chat already has an owner — whoever is logged in can act). Unique, at most 10.
+ */
+export function reviewRecipients(assignee: string | null | undefined, team: string[]): string[] {
+  return orderAssigneeCandidates([[assignee], team]).slice(0, MAX_RECIPIENTS)
+}
+
 async function chatTeam(tenantId: string): Promise<string[]> {
   const members = await prisma.membership.findMany({
     where: { tenantId, isActive: true, user: { active: true } },
     select: { userId: true, role: true },
+    orderBy: { joinedAt: 'asc' },
     take: 50,
   })
   return members
@@ -155,6 +179,19 @@ export async function notifyHandoff(input: {
     if (!conv) return
 
     const code = normalizeHandoffReason(input.reason, input.kind)
+    // Receipt / COD order: mark the chat so it shows under "Pago por verificar" / "Pedido por confirmar"
+    // until a person presses the button in the chat. Idempotent (only when the tag is not there yet).
+    const reviewTag = reviewTagForHandoffCode(code)
+    if (reviewTag) {
+      await prisma.chatConversation
+        .updateMany({
+          where: { id: conv.id, tenantId: input.tenantId, NOT: { tags: { has: reviewTag } } },
+          data: { tags: { push: reviewTag } },
+        })
+        .catch((error: unknown) => {
+          console.error('[soft-ai/handoff-notify] tag', error instanceof Error ? error.name : 'unknown')
+        })
+    }
     const lastInbound = await prisma.chatMessage.findFirst({
       where: { tenantId: input.tenantId, conversationId: conv.id, direction: 'inbound' },
       orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
@@ -187,9 +224,25 @@ export async function notifyHandoff(input: {
       }
     }
 
+    const key = handoffDedupeKey(input.kind, conv.id, handoffAnchor(lastInbound?.id), code)
+    const reviewKind = reviewKindForHandoffCode(code)
+    if (reviewKind) {
+      // Money / an order is waiting: the assignee AND every chat-team member (cap 10), even with an owner.
+      const recipients = reviewRecipients(assignee, await chatTeam(input.tenantId))
+      if (!recipients.length) return
+      await notifyUsers({
+        tenantId: input.tenantId,
+        actorUserId: null,
+        kind: reviewKind,
+        userIds: recipients,
+        dedupeKey: () => key,
+        conversationId: conv.id,
+      })
+      return
+    }
+
     const userIds = assignee ? [assignee] : await chatTeam(input.tenantId)
     if (!userIds.length) return
-    const key = handoffDedupeKey(input.kind, conv.id, handoffAnchor(lastInbound?.id), code)
     await notifyUsers({
       tenantId: input.tenantId,
       actorUserId: null,

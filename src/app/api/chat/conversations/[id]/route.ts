@@ -3,7 +3,7 @@ import { workspaceWriteRateLimit } from '@/lib/rate-limit'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { recordActivity } from '@/lib/activity'
 import { isAllowedChatStage, loadStages, loadTags } from '@/lib/crm-stages-server'
-import { isClosedCategory, stageCategoryOf } from '@/lib/crm-stages'
+import { allowedChatTagKeys, isClosedCategory, stageCategoryOf } from '@/lib/crm-stages'
 import { markClosed } from '@/lib/chat-workspace-sweep'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
@@ -51,8 +51,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
     if (body.tags !== undefined) {
       // New tags must come from the business's catalog (Config › Chats, update_config); tags the
-      // chat already has may stay (e.g. one archived later). SecureDog DATA-07.
-      const allowed = new Set((await loadTags(auth.tenantId)).tags.filter((t) => !t.archived).map((t) => t.key))
+      // chat already has may stay (e.g. one archived later). SecureDog DATA-07. The built-in review
+      // tags ('Pago por verificar' / 'Pedido por confirmar') are always valid (agents2-notify).
+      const allowed = allowedChatTagKeys((await loadTags(auth.tenantId)).tags)
       const had = new Set(existing.tags ?? [])
       const unknown = body.tags.filter((t) => !allowed.has(t) && !had.has(t))
       if (unknown.length) {

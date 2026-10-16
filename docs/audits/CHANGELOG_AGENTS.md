@@ -1,3 +1,22 @@
+## 2026-10-16 — Pago por verificar / Pedido por confirmar alerts (claudio/agents2-notify)
+
+- Hand-off codes 'payment' (receipt) and new 'order_ready' (contra-entrega order complete; producer lands in the
+  reply-format branch): notifyHandoff tags the chat idempotently ('Pago por verificar' / 'Pedido por confirmar', server
+  updateMany push, tenant-scoped) and alerts the assignee AND the chat team (update_sales, cap 10) with kinds
+  'payment_review' / 'order_review' (allowed by SQL 049, no new SQL). Text "💳 Verificá un pago · <cliente>" /
+  "📦 Pedido por confirmar · <cliente>". Other codes unchanged ('ai_no_reply', assignee else team).
+- Built-in tags (crm-stages BUILTIN_CHAT_TAGS, rose / orange): always valid in PATCH and in the inbox catalog, not part of
+  Config › Chats.
+- Bell: one shared poller (15 s visible; hidden only if browser notifications are allowed, 60 s); a NEW unread
+  payment/order alert → chime (sound toggle respected), 20 s toast with "Abrir chat", red count on the bell, "(N)" tab
+  title, native notification when permission is already granted; "Activar avisos del navegador" button in the bell.
+- Inbox: "💳 Pago por verificar · N" / "📦 Pedido por confirmar · N" chips (every open tagged chat, any bucket; tagged
+  chats pinned via ?tag=); thread banner with "Crear pedido" + "Pago verificado" (also moves to a 'pagado' stage if the
+  business has one) / "Confirmado". Linking an order never clears the tags.
+- Tests: src/lib/__tests__/agents2-notify.test.ts (15) in test:soft-ai.
+- Proof: tsc 0, lint 0, test:soft-ai 682/682, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34.
+
 ## 2026-10-15 — SecureDog round-4 follow-ups (claudio/agents2-phase1)
 
 - payment-guard: the exact "8888,1234" / "8888, 1234" shape is a payment number whenever the text mentions payment

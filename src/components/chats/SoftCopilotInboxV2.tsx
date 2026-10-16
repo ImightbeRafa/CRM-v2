@@ -1071,6 +1071,10 @@ export function SoftCopilotInboxV2() {
   async function patchConversation(partial: {
     status?: ConversationStatus
     tags?: SoftTag[]
+    /** Server removes just this tag (array_remove), never a whole-array write. */
+    removeTag?: SoftTag
+    /** Server adds just this tag (array_append when absent, 20-tag cap). */
+    addTag?: SoftTag
     assignedUserId?: string | null
   }): Promise<boolean> {
     if (!selectedConversationId) return false
@@ -1165,11 +1169,10 @@ export function SoftCopilotInboxV2() {
 
   function toggleTag(tag: SoftTag) {
     if (!selectedConversation) return
-    const nextTags = selectedConversation.tags.includes(tag)
-      ? selectedConversation.tags.filter((t) => t !== tag)
-      : [...selectedConversation.tags, tag]
-    void patchConversation({ tags: nextTags }).catch(() => false).then((ok) => {
-      if (!ok) toast({ variant: 'destructive', title: 'No se pudo cambiar la etiqueta', description: 'Puede que la hayan archivado. Recargá la página.' })
+    // SecureDog DATA-53: one tag in / out atomically on the server, never a whole array from a stale copy.
+    const change = selectedConversation.tags.includes(tag) ? { removeTag: tag } : { addTag: tag }
+    void patchConversation(change).catch(() => false).then((ok) => {
+      if (!ok) toast({ variant: 'destructive', title: 'No se pudo cambiar la etiqueta', description: 'Puede que la hayan archivado o que el chat tenga 20 etiquetas. Recargá la página.' })
     })
   }
 
@@ -1183,10 +1186,10 @@ export function SoftCopilotInboxV2() {
     if (!selectedConversation || reviewBusy || !selectedConversation.tags.includes(tag)) return
     setReviewBusy(true)
     try {
-      const nextTags = selectedConversation.tags.filter((t) => t !== tag)
       const paidStage = tag === PAYMENT_REVIEW_TAG ? activeChatStages.find((s) => s.key === 'pagado') : undefined
+      // Only this tag, removed atomically on the server (a stale local tag list can never overwrite others).
       const ok = await patchConversation({
-        tags: nextTags,
+        removeTag: tag,
         ...(paidStage && selectedConversation.status !== paidStage.key ? { status: paidStage.key } : {}),
       }).catch(() => false)
       if (ok) {

@@ -12,6 +12,7 @@ import { prisma } from '@/lib/db'
 import { isMissingRelation } from '@/lib/db-missing-relation'
 import { staffDisplayName } from '@/lib/display-name'
 import { hasPermission, type Role } from '@/lib/rbac'
+import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 
 export const MENTION_MAX = 10
 export type NotificationKind =
@@ -78,12 +79,58 @@ export function isReviewNotificationKind(kind: string | null | undefined): kind 
   return kind === 'payment_review' || kind === 'order_review'
 }
 
+/**
+ * 'payment' covers a photo / file receipt AND text-only "ya pagué" claims, model payment escalations and
+ * fail-closed payment messages. Only a media receipt says "Mandó el comprobante"; the others are a 'claim'.
+ * A claim travels as a `:claim` suffix on the dedupe key (no new column, no customer text).
+ */
+export type PaymentReviewVariant = 'receipt' | 'claim'
+export const PAYMENT_CLAIM_KEY_SUFFIX = ':claim'
+
+/** The hand-off's customer message was a photo / file (the receipt plan only hands off media of these types). */
+export function paymentReviewVariant(lastInboundMessageType: string | null | undefined): PaymentReviewVariant {
+  const t = String(lastInboundMessageType || '').toLowerCase()
+  return t === 'image' || t === 'document' ? 'receipt' : 'claim'
+}
+
+export function paymentVariantFromDedupeKey(dedupeKey: string | null | undefined): PaymentReviewVariant {
+  return String(dedupeKey || '').endsWith(PAYMENT_CLAIM_KEY_SUFFIX) ? 'claim' : 'receipt'
+}
+
+/**
+ * SecureDog DATA-54: a customer-controlled display name / number shown in the bell and toast. No control,
+ * format or bidi characters (no RTL spoofing, no fake line breaks), spaces collapsed, at most 40 characters.
+ */
+export const NOTIFICATION_NAME_MAX = 40
+export function sanitizeNotificationName(who: string | null | undefined): string {
+  return Array.from(
+    stripFormatChars(String(who || ''))
+      .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  )
+    .slice(0, NOTIFICATION_NAME_MAX)
+    .join('')
+    .trim()
+}
+
 /** Bell / toast text for a review alert. `who` = customer name, else number / handle. No message text. */
-export function reviewNotificationText(kind: ReviewNotificationKind, who: string | null | undefined): { title: string; snippet: string } {
-  const name = String(who || '').trim().slice(0, 60) || 'un cliente'
-  return kind === 'payment_review'
-    ? { title: `💳 Verificá un pago · ${name}`, snippet: 'Mandó el comprobante — revisalo y confirmá el pedido' }
-    : { title: `📦 Pedido por confirmar · ${name}`, snippet: 'Pidió contra entrega — confirmá los datos' }
+export function reviewNotificationText(
+  kind: ReviewNotificationKind,
+  who: string | null | undefined,
+  variant: PaymentReviewVariant = 'receipt',
+): { title: string; snippet: string } {
+  const name = sanitizeNotificationName(who) || 'un cliente'
+  if (kind === 'payment_review') {
+    return {
+      title: `💳 Verificá un pago · ${name}`,
+      snippet:
+        variant === 'receipt'
+          ? 'Mandó el comprobante — revisalo y confirmá el pedido'
+          : 'Dice que ya pagó o tiene una duda de pago — revisalo',
+    }
+  }
+  return { title: `📦 Pedido por confirmar · ${name}`, snippet: 'Pidió contra entrega — confirmá los datos' }
 }
 
 const ID_RE = /^[A-Za-z0-9_-]{8,64}$/
@@ -260,7 +307,7 @@ export async function listNotifications(tenantId: string, userId: string, limit 
         })
       } else if (isReviewNotificationKind(r.kind)) {
         const who = r.conversationId ? peer.get(r.conversationId) || peerId.get(r.conversationId) : null
-        const text = reviewNotificationText(r.kind, who)
+        const text = reviewNotificationText(r.kind, who, paymentVariantFromDedupeKey(r.dedupeKey))
         items.push({
           id: r.id,
           kind: r.kind,

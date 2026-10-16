@@ -67,3 +67,20 @@ export function titleWithCount(title: string, count: number): string {
   if (count <= 0) return base
   return `(${count > 99 ? '99+' : count}) ${base}`
 }
+
+/** Client guard before router.push: same-origin app paths only (no "//host", no "https:", no "javascript:"). */
+export function isSafeInternalHref(href: string | null | undefined): href is string {
+  const h = String(href || '')
+  return h.startsWith('/') && !h.startsWith('//') && !h.startsWith('/\\')
+}
+
+/**
+ * SecureDog DATA-54: native (OS / lock-screen) notifications never show the customer's name or number —
+ * "un cliente" instead; the in-app toast and bell keep the sanitized name. The snippet has no customer data.
+ */
+export function nativeNotificationText(item: Pick<AlertItem, 'kind' | 'title' | 'snippet'>): { title: string; body: string } {
+  const body = item.snippet || ''
+  if (item.kind === 'payment_review') return { title: '💳 Verificá un pago · un cliente', body }
+  if (item.kind === 'order_review') return { title: '📦 Pedido por confirmar · un cliente', body }
+  return { title: 'Betsy · nuevo aviso', body: '' }
+}

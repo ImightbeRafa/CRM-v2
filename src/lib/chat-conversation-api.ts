@@ -21,10 +21,26 @@ export const patchConversationBodySchema = z
   .object({
     status: CHAT_CONVERSATION_STATUS.optional(),
     tags: z.array(z.string().min(1).max(40)).max(20).optional(),
+    /**
+     * agents2-notify: remove ONE tag atomically on the server ("Pago verificado" / "Confirmado"), never a
+     * whole-array write from a possibly stale client copy. Not combinable with `tags`.
+     */
+    removeTag: z.string().min(1).max(40).optional(),
+    /** SecureDog DATA-53: add ONE tag atomically (array_append when absent, max 20 tags). Not combinable with `tags`. */
+    addTag: z.string().min(1).max(40).optional(),
     assignedUserId: z.string().cuid().nullable().optional(),
     aiMode: CHAT_CONVERSATION_AI_MODE.nullable().optional(),
   })
   .refine((body) => Object.keys(body).length > 0, { message: 'No fields to update' })
+  .refine((body) => !(body.tags !== undefined && (body.removeTag !== undefined || body.addTag !== undefined)), {
+    message: 'Use tags or addTag / removeTag, not both',
+  })
+  .refine((body) => !(body.addTag !== undefined && body.addTag === body.removeTag), {
+    message: 'addTag and removeTag must differ',
+  })
+
+/** Most tags one chat can carry (same cap as the `tags` array). */
+export const CHAT_TAGS_MAX = 20
 
 export const importLocalStateBodySchema = z.object({
   items: z

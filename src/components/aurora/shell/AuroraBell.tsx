@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { AtSign, Bell, BellRing, Bot, CreditCard, ListChecks, Package } from 'lucide-react'
 import { showBellDot } from '@/lib/aurora-alerts'
-import { isReviewAlertKind, titleWithCount } from '@/lib/notification-alerts'
+import { isReviewAlertKind, isSafeInternalHref, nativeNotificationText, titleWithCount } from '@/lib/notification-alerts'
 import { installNotificationSoundUnlock, playNotificationChime } from '@/lib/notification-sound'
 import { useToast } from '@/app/hooks/use-toast'
 import { ToastAction } from '@/app/components/ui/toast'
@@ -72,7 +72,7 @@ export function AuroraBell() {
           altText="Abrir chat"
           onClick={() => {
             void markRead([top.id])
-            router.push(top.href)
+            if (isSafeInternalHref(top.href)) router.push(top.href)
           }}
         >
           Abrir chat
@@ -82,11 +82,13 @@ export function AuroraBell() {
     try {
       if ('Notification' in window && window.Notification.permission === 'granted') {
         for (const n of fresh.slice(0, 3)) {
-          const native = new window.Notification(n.title, { body: n.snippet ?? undefined, tag: `betsy-${n.id}` })
+          // Lock-screen safe: "un cliente", never the customer's name / number (DATA-54).
+          const text = nativeNotificationText(n)
+          const native = new window.Notification(text.title, { body: text.body || undefined, tag: `betsy-${n.id}` })
           native.onclick = () => {
             window.focus()
             void markRead([n.id])
-            router.push(n.href)
+            if (isSafeInternalHref(n.href)) router.push(n.href)
             native.close()
           }
         }

@@ -12,12 +12,16 @@ import {
   normalizeHandoffReason,
   reviewRecipients,
   reviewTagForHandoffCode,
+  reviewDedupeKey,
 } from '@/lib/soft-ai/handoff-notify'
 import {
   HANDOFF_REASON_LABELS,
   isReviewNotificationKind,
   reviewKindForHandoffCode,
+  paymentReviewVariant,
+  paymentVariantFromDedupeKey,
   reviewNotificationText,
+  sanitizeNotificationName,
 } from '@/lib/workspace-notifications'
 import {
   allowedChatTagKeys,
@@ -36,6 +40,8 @@ import {
   POLL_HIDDEN_MS,
   POLL_VISIBLE_MS,
   titleWithCount,
+  isSafeInternalHref,
+  nativeNotificationText,
   unreadReviewCount,
   type AlertItem,
 } from '@/lib/notification-alerts'
@@ -45,6 +51,7 @@ import {
   reviewTagCounts,
   type SoftConversation,
 } from '@/lib/chat-soft-copilot'
+import { CHAT_TAGS_MAX, patchConversationBodySchema } from '@/lib/chat-conversation-api'
 
 const read = (rel: string) => readFileSync(path.join(process.cwd(), rel), 'utf8')
 const NOW = Date.UTC(2026, 9, 16, 15, 0, 0)
@@ -277,7 +284,10 @@ describe('notify · inbox chips and thread banner', () => {
     assert.match(inbox, /new URLSearchParams\(\{ tag, limit: '50' \}\)/)
     assert.match(inbox, /reviewFilters=\{REVIEW_CHIP_DEFS\.map/)
     assert.match(inbox, /async function resolveReviewTag\(tag: SoftTag\)/)
-    assert.match(inbox, /tags: nextTags,/)
+    assert.match(inbox, /removeTag: tag,/)
+    // The banner never sends a whole tags array.
+    const resolve = inbox.slice(inbox.indexOf('async function resolveReviewTag'), inbox.indexOf('async function setAgentControl'))
+    assert.doesNotMatch(resolve, /tags: /)
     const list = read('src/components/chats/SoftConversationList.tsx')
     assert.match(list, /data-testid="chat-review-filters"/)
     const pane = read('src/components/chats/SoftThreadPane.tsx')
@@ -288,5 +298,131 @@ describe('notify · inbox chips and thread banner', () => {
     assert.match(pane, /onClick=\{onCreateOrder\}/)
     // Linking an order never clears the review tags.
     assert.doesNotMatch(read('src/lib/chat-order-attach.ts'), /Pago por verificar|Pedido por confirmar|PAYMENT_REVIEW_TAG|ORDER_REVIEW_TAG/)
+  })
+})
+
+describe('notify · F8 payment snippet: receipt vs claim', () => {
+  it('only a photo / file customer message is a receipt', () => {
+    assert.equal(paymentReviewVariant('image'), 'receipt')
+    assert.equal(paymentReviewVariant('document'), 'receipt')
+    for (const t of ['text', 'audio', 'sticker', '', null, undefined]) assert.equal(paymentReviewVariant(t), 'claim')
+  })
+
+  it('a claim travels as a ":claim" key suffix (payment only); receipts and orders keep the plain key', () => {
+    const base = 'ai_handoff:conv_12345678:msg_aaaa1111:payment'
+    assert.equal(reviewDedupeKey(base, 'payment_review', 'image'), base)
+    assert.equal(reviewDedupeKey(base, 'payment_review', 'text'), `${base}:claim`)
+    assert.equal(reviewDedupeKey('ai_handoff:c:m:order_ready', 'order_review', 'text'), 'ai_handoff:c:m:order_ready')
+    assert.equal(paymentVariantFromDedupeKey(`${base}:claim`), 'claim')
+    assert.equal(paymentVariantFromDedupeKey(base), 'receipt')
+    const src = read('src/lib/soft-ai/handoff-notify.ts')
+    assert.match(src, /select: \{ id: true, messageType: true \}/)
+    assert.match(src, /dedupeKey: \(\) => reviewDedupeKey\(key, reviewKind, lastInbound\?\.messageType\)/)
+    assert.match(read('src/lib/workspace-notifications.ts'), /reviewNotificationText\(r\.kind, who, paymentVariantFromDedupeKey\(r\.dedupeKey\)\)/)
+  })
+
+  it('snippets: receipt vs "ya pagó" claim; the title stays the same', () => {
+    const receipt = reviewNotificationText('payment_review', 'Ana', 'receipt')
+    const claim = reviewNotificationText('payment_review', 'Ana', 'claim')
+    assert.equal(receipt.snippet, 'Mandó el comprobante — revisalo y confirmá el pedido')
+    assert.equal(claim.snippet, 'Dice que ya pagó o tiene una duda de pago — revisalo')
+    assert.equal(receipt.title, claim.title)
+    assert.equal(claim.title, '💳 Verificá un pago · Ana')
+  })
+})
+
+describe('notify · F10 atomic single-tag removal', () => {
+  it('PATCH accepts { removeTag } alone, refuses it combined with tags', () => {
+    assert.ok(patchConversationBodySchema.safeParse({ removeTag: PAYMENT_REVIEW_TAG }).success)
+    assert.ok(patchConversationBodySchema.safeParse({ removeTag: ORDER_REVIEW_TAG, status: 'en_curso' }).success)
+    assert.ok(!patchConversationBodySchema.safeParse({ removeTag: PAYMENT_REVIEW_TAG, tags: [] }).success)
+    assert.ok(!patchConversationBodySchema.safeParse({ removeTag: '' }).success)
+    assert.ok(!patchConversationBodySchema.safeParse({ removeTag: 'x'.repeat(41) }).success)
+  })
+
+  it('the route removes one tag with array_remove, scoped by tenant, same update_sales permission', () => {
+    const route = read('src/app/api/chat/conversations/[id]/route.ts')
+    assert.match(route, /authenticateAPIWithPermission\(request, 'update_sales'\)/)
+    assert.match(route, /SET "tags" = array_remove\("tags", \$\{body\.removeTag\}\)/)
+    assert.match(route, /WHERE "id" = \$\{existing\.id\} AND "tenantId" = \$\{auth\.tenantId\}/)
+    // Parameterised tagged template only (no string-built SQL).
+    assert.doesNotMatch(route, /\$executeRawUnsafe|\$queryRawUnsafe/)
+  })
+})
+
+describe('SecureDog DATA-53 · atomic tag toggles + audit of review-tag removal', () => {
+  it('PATCH accepts { addTag } / { removeTag }, never with a tags array; same tag twice refused', () => {
+    assert.ok(patchConversationBodySchema.safeParse({ addTag: 'VIP' }).success)
+    assert.ok(patchConversationBodySchema.safeParse({ addTag: 'VIP', removeTag: 'Nuevo' }).success)
+    assert.ok(!patchConversationBodySchema.safeParse({ addTag: 'VIP', tags: ['VIP'] }).success)
+    assert.ok(!patchConversationBodySchema.safeParse({ addTag: 'VIP', removeTag: 'VIP' }).success)
+    assert.ok(!patchConversationBodySchema.safeParse({ addTag: 'x'.repeat(41) }).success)
+    assert.equal(CHAT_TAGS_MAX, 20)
+  })
+
+  it('route: catalog check for addTag, array_append only when absent and under the cap, tenant-scoped', () => {
+    const route = read('src/app/api/chat/conversations/[id]/route.ts')
+    assert.match(route, /if \(body\.addTag !== undefined && !\(existing\.tags \?\? \[\]\)\.includes\(body\.addTag\)\) \{\s*const allowed = allowedChatTagKeys/)
+    assert.match(route, /SET "tags" = array_append\("tags", \$\{body\.addTag\}\)/)
+    assert.match(route, /AND NOT \(\$\{body\.addTag\} = ANY\("tags"\)\) AND cardinality\("tags"\) < \$\{CHAT_TAGS_MAX\}/)
+    assert.match(route, /Máximo \$\{CHAT_TAGS_MAX\} etiquetas por chat/)
+    assert.equal(route.match(/WHERE "id" = \$\{existing\.id\} AND "tenantId" = \$\{auth\.tenantId\}/g)?.length, 2)
+  })
+
+  it('removing a built-in review tag is audited with actor, chat and tag (removeTag or tags array)', () => {
+    const route = read('src/app/api/chat/conversations/[id]/route.ts')
+    assert.match(route, /removedTag && isBuiltinChatTag\(body\.removeTag\)/)
+    assert.match(route, /filter\(\(t\) => isBuiltinChatTag\(t\) && !body\.tags!\.includes\(t\)\)/)
+    assert.match(route, /description: tag === PAYMENT_REVIEW_TAG \? 'Pago marcado como verificado' : 'Pedido marcado como confirmado'/)
+    assert.match(route, /newValues: \{ tagRemoved: tag, conversationId: existing\.id \}/)
+    assert.match(route, /userId: auth\.userId,/)
+  })
+
+  it('inbox toggles send addTag / removeTag, never a full tags array', () => {
+    const inbox = read('src/components/chats/SoftCopilotInboxV2.tsx')
+    assert.match(inbox, /\? \{ removeTag: tag \} : \{ addTag: tag \}/)
+    assert.doesNotMatch(inbox, /patchConversation\(\{ tags:/)
+  })
+})
+
+describe('SecureDog DATA-54 · customer name in alerts', () => {
+  it('strips control / format / bidi characters, collapses spaces, caps 40', () => {
+    assert.equal(sanitizeNotificationName('Ana‮ lanigiro​'), 'Ana lanigiro')
+    assert.equal(sanitizeNotificationName('Ana\n\tMaría   López'), 'Ana María López')
+    assert.equal(sanitizeNotificationName('x'.repeat(80)).length, 40)
+    assert.equal(sanitizeNotificationName('​‮'), '')
+    assert.equal(reviewNotificationText('payment_review', '‮​').title, '💳 Verificá un pago · un cliente')
+    assert.match(read('src/lib/workspace-notifications.ts'), /import \{ stripFormatChars \} from '@\/lib\/soft-ai\/prompt-fence'/)
+  })
+
+  it('native notifications never show the name / number', () => {
+    const n = nativeNotificationText({ kind: 'payment_review', title: '💳 Verificá un pago · Ana 8888-1234', snippet: 'Mandó el comprobante — revisalo y confirmá el pedido' })
+    assert.equal(n.title, '💳 Verificá un pago · un cliente')
+    assert.doesNotMatch(`${n.title} ${n.body}`, /Ana|8888/)
+    assert.equal(nativeNotificationText({ kind: 'order_review', title: '📦 Pedido por confirmar · Ana', snippet: null }).title, '📦 Pedido por confirmar · un cliente')
+    const bell = read('src/components/aurora/shell/AuroraBell.tsx')
+    assert.match(bell, /const text = nativeNotificationText\(n\)/)
+    assert.doesNotMatch(bell, /new window\.Notification\(n\.title/)
+  })
+})
+
+describe('SecureDog INFRA · notifications GET rate limit + client href guard', () => {
+  it('GET is rate limited per tenant:user (30/min) with a 429 the client ignores', () => {
+    const route = read('src/app/api/workspace/notifications/route.ts')
+    assert.match(route, /workspaceNotificationsReadRateLimit\(`\$\{auth\.tenantId\}:\$\{auth\.userId\}`\)/)
+    assert.match(route, /status: 429/)
+    const rl = read('src/lib/rate-limit.ts')
+    assert.match(rl, /export const workspaceNotificationsReadRateLimit = createIdentifierRateLimit\(\{\s*windowMs: 60 \* 1000,\s*maxRequests: 30,/)
+    assert.match(read('src/components/aurora/shell/useWorkspaceNotifications.ts'), /if \(!res\.ok \|\| !json\?\.success\) return/)
+  })
+
+  it('router.push only for same-origin app paths', () => {
+    assert.ok(isSafeInternalHref('/chats?c=abc'))
+    for (const bad of ['//evil.com', '/\\evil.com', 'https://evil.com', 'javascript:alert(1)', '', null, undefined]) {
+      assert.ok(!isSafeInternalHref(bad), String(bad))
+    }
+    const bell = read('src/components/aurora/shell/AuroraBell.tsx')
+    assert.equal(bell.match(/router\.push\(/g)?.length, 2)
+    assert.equal(bell.match(/if \(isSafeInternalHref\((top|n)\.href\)\) router\.push/g)?.length, 2)
   })
 })

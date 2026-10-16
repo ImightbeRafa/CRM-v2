@@ -139,6 +139,10 @@ export function classifyPaymentText(text: string): PaymentClassification {
   if (COD_QUESTION_RE.test(value)) {
     return 'non_payment'
   }
+  // INT-115: "Transferencia realizada", "tarjeta aprobada", "Listo, transferencia", ✅ — a claim, not an info question.
+  if (PAYMENT_COMPLETION_RE.test(value) && (INFO_CUE_RE.test(value) || PAYMENT_RE.test(value))) {
+    return 'payment_proof_or_risk'
+  }
   if (INFO_CUE_RE.test(value)) {
     return 'payment_info_safe'
   }
@@ -180,10 +184,18 @@ export function hasPaymentWord(text: string): boolean {
  * sinpe porfa", "transferencia") is a CHOICE, not a payment claim — but only with no proof / claim / confirm /
  * refund / payment-state cue at all ("ya hice el sinpe", "sinpe, ¿me confirmás?" stay with a person). Pure.
  */
+/**
+ * Done / sent words that make a method mention a CLAIM ("Sinpe pagado", "cancelado por sinpe", "listo, sinpe",
+ * "sinpe ✅", "SINPE ya", "ahí le va el sinpe", "sinpe hace rato") — Verifier 2026-10-16.
+ */
+const CHOICE_CLAIM_WORD_RE =
+  /(?<![\p{L}])(?:pagad\p{L}*|cancelad\p{L}*|list[oa]s?|hech[oa]s?|enviad\p{L}*|mandad\p{L}*|completad\p{L}*|realizad\p{L}*|transferid\p{L}*|depositad\p{L}*|ah[ií]\s+(?:le\s+|te\s+|les\s+)?va|hace\s+(?:un\s+)?rato|ya)(?![\p{L}])|[✅✔☑]/iu
+
 export function isCueFreePaymentChoiceText(text: string): boolean {
   const value = (text || '').trim()
   if (!value || value.split(/\s+/).length > 25) return false
   return !(
+    CHOICE_CLAIM_WORD_RE.test(value) ||
     SENT_AMOUNT_CLAIM_RE.test(value) ||
     PROOF_CUE_RE.test(value) ||
     hasPaymentClaimCue(value) ||
@@ -192,6 +204,81 @@ export function isCueFreePaymentChoiceText(text: string): boolean {
     RISK_CUE_RE.test(value) ||
     PAYMENT_STATUS_CUE_RE.test(value)
   )
+}
+
+/** A payment method a customer can name. */
+export type PaymentChoiceMethod = 'sinpe' | 'transferencia' | 'tarjeta' | 'contra_entrega' | 'efectivo'
+
+/**
+ * Completion / sent / approved words (INT-115, shared with the choice gate): "Transferencia realizada", "tarjeta
+ * aprobada", "Listo, transferencia", "Envío exitoso", ✅ — a claim, never a question about how to pay.
+ */
+export const PAYMENT_COMPLETION_RE =
+  /(?<![\p{L}])(?:realizad\p{L}*|hech[oa]s?|echo|enviad\p{L}*|list[oa]s?|lsito|exitos\p{L}*|aprobad\p{L}*|pagad\p{L}*|cancelad\p{L}*|completad\p{L}*|transferid\p{L}*|depositad\p{L}*)(?![\p{L}])|[✅✔☑]/iu
+
+/** Invisible / formatting characters (zero-width, soft hyphen, BOM…) that could split a word ("he​cho"). */
+const FORMAT_CHARS_RE = /[­͏؜ᅟᅠ឴឵᠋-᠏​-‏‪-‮⁠-⁯ㅤ︀-️﻿ﾠ]/gu
+
+/** NFKC, invisible characters out, accents folded, lowercase, single spaces. Emoji and punctuation stay. */
+function foldChoice(text: string): string {
+  return (text || '')
+    .normalize('NFKC')
+    .replace(FORMAT_CHARS_RE, '')
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const METHOD = String.raw`(sinpe(?: movil)?|transferencia|tarjeta|contra ?entrega|al recibir(?:lo|la)?|efectivo)`
+const LEAD = String.raw`(?:(?:prefiero|mejor|quiero pagar|voy a pagar|pago|quisiera pagar)\s+)?(?:(?:por|con|en)\s+)?(?:el\s+|la\s+)?`
+const TAIL = String.raw`(?:\s*,?\s*(?:porfa|por favor|gracias|pls))?[\s.!🙏😊🙌]*`
+const ASK_HEAD = String.raw`¿?\s*(?:me\s+(?:pasas|pasa|das|da)|cual\s+es|a\s+que)\s+(?:el\s+|los\s+|la\s+)?(?:numero|cuenta|link|datos)`
+const ASK_TAIL = String.raw`\s*\?*${TAIL}`
+/** "SINPE", "por sinpe porfa", "Prefiero SINPE 🙏", "pago al recibirlo", "en efectivo". */
+const CHOICE_RE = new RegExp(String.raw`^${LEAD}${METHOD}${TAIL}$`, 'u')
+/** "quiero pagar por sinpe, ¿me pasás el número?" */
+const CHOICE_THEN_ASK_RE = new RegExp(String.raw`^${LEAD}${METHOD}\s*,?\s*${ASK_HEAD}${ASK_TAIL}$`, 'u')
+/** "¿cuál es el número de sinpe?", "¿me pasás los datos para pagar por transferencia?" */
+const ASK_FOR_METHOD_RE = new RegExp(String.raw`^${ASK_HEAD}\s+(?:de|del|para)(?:\s+pagar\s+por)?(?:\s+(?:el|la))?\s+${METHOD}${ASK_TAIL}$`, 'u')
+/** Anything that makes it more than a choice: digits, references, amounts, the done / like emojis. */
+const CHOICE_REJECT_RE = /[\d#₡¢$✅✔☑👍💸]|(?<![\p{L}])ref(?![\p{L}])/u
+
+function methodOf(word: string): PaymentChoiceMethod {
+  if (word.startsWith('sinpe')) return 'sinpe'
+  if (word === 'transferencia') return 'transferencia'
+  if (word === 'tarjeta') return 'tarjeta'
+  if (word === 'efectivo') return 'efectivo'
+  return 'contra_entrega'
+}
+
+/**
+ * SecureDog INT-114 (HIGH): a payment-method CHOICE is an ALLOWLIST GRAMMAR over the WHOLE message — an optional lead
+ * ("prefiero", "quiero pagar", "por", "con"), ONE method, an optional "porfa / gracias" and only 🙏 😊 🙌; or the same
+ * with one strict detail ask ("¿me pasás el número?"). `ask` = it carried that detail ask. Any digit, "#", "ref", ₡,
+ * ✅ ✔ ☑ 👍 💸, a completion word or anything else → null (the classifier path: a person). Pure.
+ */
+export function paymentChoiceGrammar(text: string): { method: PaymentChoiceMethod; ask: boolean } | null {
+  const raw = (text || '').normalize('NFKC').replace(FORMAT_CHARS_RE, '')
+  if (!raw.trim() || raw.length > 160 || CHOICE_REJECT_RE.test(raw) || PAYMENT_COMPLETION_RE.test(raw)) return null
+  const t = foldChoice(raw)
+  if (CHOICE_REJECT_RE.test(t) || PAYMENT_COMPLETION_RE.test(t)) return null
+  let m = CHOICE_RE.exec(t)
+  if (m) return { method: methodOf(m[1]), ask: false }
+  m = CHOICE_THEN_ASK_RE.exec(t) ?? ASK_FOR_METHOD_RE.exec(t)
+  return m ? { method: methodOf(m[1]), ask: true } : null
+}
+
+/**
+ * The method a message picks when it is SHAPED like a choice (paymentChoiceGrammar); `allowAsk` also accepts the strict
+ * detail-ask forms. Also requires no claim / confirm / dispute cue (belt and braces). Pure.
+ */
+export function paymentChoiceShape(text: string, opts: { allowAsk?: boolean } = {}): PaymentChoiceMethod | null {
+  if (!isCueFreePaymentChoiceText(text)) return null
+  const g = paymentChoiceGrammar(text)
+  return g && (opts.allowAsk || !g.ask) ? g.method : null
 }
 
 /** notifyHandoff reason code when a payment message goes to a person: 'complaint' (refund / dispute) or 'payment'. */

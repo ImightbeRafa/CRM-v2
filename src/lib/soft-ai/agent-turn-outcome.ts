@@ -89,8 +89,10 @@ export function planModelTurnDelivery(input: {
     return { text: SAFE_LINE.payment, handoff: input.llmHandoff ?? { kind: 'handoff', reason: HANDOFF_REASON.payment } }
   }
   const modelPaymentEscalate = input.llmEscalateReason === 'payment_or_sinpe'
-  if (input.codOrderReady && usable && !modelPaymentEscalate && input.llmHandoff?.kind !== 'review') {
-    return { text, handoff: { kind: 'handoff', reason: HANDOFF_REASON.orderReady } }
+  if (input.codOrderReady && !modelPaymentEscalate && input.llmHandoff?.kind !== 'review') {
+    // SecureDog INT-117: a reply that failed a check (e.g. "tu pedido quedó registrado") never goes out as written —
+    // the safe line does — but the order still reaches a person (the hand-off is never lost).
+    return { text: usable ? text : SAFE_LINE.review, handoff: { kind: 'handoff', reason: HANDOFF_REASON.orderReady } }
   }
   if (input.llmHandoff?.kind === 'handoff' && !(input.paymentDataByTeam && modelPaymentEscalate)) {
     return {

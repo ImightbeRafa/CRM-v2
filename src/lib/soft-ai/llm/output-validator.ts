@@ -169,7 +169,10 @@ function dealProblemWithRule(text: string, allowed: ReadonlyArray<'free_shipping
   return dealProblem(text, [...allowed, 'free_shipping']) || !freeShippingRuleOk(text, rule)
 }
 
-const CREATED_CLAIM_RE = /ya\s+(cre[eé]|registr[eé]|arm[eé])|pedido\s+creado|acabo\s+de\s+crear/i
+// SecureDog INT-117: also the order "confirmations" a contra-entrega close could make up ("tu pedido quedó
+// registrado", "ya agendé", "sale mañana", "tu entrega queda para el lunes").
+const CREATED_CLAIM_RE =
+  /ya\s+(cre[eé]|registr[eé]|arm[eé])|pedido\s+creado|acabo\s+de\s+crear|pedido\s+(?:ya\s+)?(?:qued[oó]\s+|est[aá]\s+)?(?:registrado|anotado|agendado|confirmado|listo)|(?<![\p{L}])agend[eé](?![\p{L}])|sale\s+(?:hoy|ma[nñ]ana)|tu\s+entrega\s+(?:queda|est[aá])\s+(?:para|agendada)/iu
 const UNIT_COST_RE = /unitCost|costo\s+unitario|precio\s+de\s+costo/i
 const SHIP_CUE_RE = /env[ií]o|retiro|domicilio|\bGAM\b|correos|mensajer/i
 const PAY_CUE_RE = /\b(pago|sinpe|transferencia|tarjeta|efectivo|contra\s*entrega)\b/i
@@ -233,16 +236,11 @@ export function bareMilAmounts(text: string, extraCountWords: readonly string[] 
  * owner wrote in active saved replies and approved bound knowledge (links.ts buildLinkAllowlist).
  */
 export function brandFactsLinkAllowlist(
-  facts: (Pick<BrandFacts, 'website' | 'catalogUrl' | 'location'> & { payment?: { cardUrl?: string } | null }) | null | undefined,
+  facts: Pick<BrandFacts, 'website' | 'catalogUrl' | 'location'> | null | undefined,
   ownerTexts: Array<string | null | undefined> = [],
 ): LinkAllowlist {
-  // agents2-format: the owner's card-payment link ([[PAGO_TARJETA]]) is the brand's own link too.
-  return buildLinkAllowlist({
-    website: facts?.website,
-    catalogUrl: facts?.catalogUrl,
-    mapsUrl: facts?.location?.mapsUrl,
-    ownerTexts: facts?.payment?.cardUrl ? [...ownerTexts, facts.payment.cardUrl] : ownerTexts,
-  })
+  // The card link ([[PAGO_TARJETA]]) is NOT added here: links are checked before code fills it (applyFinalOutputPolicy).
+  return buildLinkAllowlist({ website: facts?.website, catalogUrl: facts?.catalogUrl, mapsUrl: facts?.location?.mapsUrl, ownerTexts })
 }
 
 const MONEY_AMOUNT_RE =
@@ -279,13 +277,17 @@ export function validateAgentOutput(input: {
    * configured payment block counts as the one line the token was. Defaults to `text`.
    */
   styleText?: string
+  /** The text links are judged on (the reply before payment tokens were filled). Defaults to `text`. */
+  linkText?: string
 }): OutputValidationResult {
   const reasons: string[] = []
   const text = input.text || ''
   const cited = new Set(input.citedToolNames)
   const highlighted: number[] = []
 
-  if (input.linkAllowlist && foreignLinks(text, input.linkAllowlist).length > 0) reasons.push('foreign_link')
+  // Links are judged on the text BEFORE code filled payment tokens (linkText): the card link code adds from
+  // configuration needs no allowlist entry, and the allowlist never widens to a whole payment host (Verifier F2).
+  if (input.linkAllowlist && foreignLinks(input.linkText ?? text, input.linkAllowlist).length > 0) reasons.push('foreign_link')
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
   if (CREATED_CLAIM_RE.test(text)) reasons.push('write_claim')
   if (dealProblemWithRule(text, input.allowedDeals ?? [], input.freeShippingRule)) reasons.push('deal_offer')
@@ -337,17 +339,23 @@ export function validateAgentOutput(input: {
 }
 
 /** Any payment token line ([[DATOS_PAGO]], [[PAGO_SINPE]], …, also with one bracket). */
-const PAYMENT_TOKEN_LINE_RE = /\[\[?\s*(?:DATOS[_\s-]?PAGO|PAGO[_\s-]?(?:SINPE|TRANSFERENCIA|TARJETA|CONTRA[_\s-]?ENTREGA))\s*\]?\]/i
+const PAYMENT_TOKEN_LINE_RE = /\[\[?\s*(?:DATOS[_\s-]?PAGO|PAGO[_\s-]?(?:SINPE|TRANSFERENCIA|TARJETA|CONTRA[_\s-]?ENTREGA|EFECTIVO))\s*\]?\]/i
 
 // agents2-format: a reply goes out as separate messages (reply-parts.ts, client-safe).
 export { MAX_REPLY_PARTS, splitReplyParts }
 
 const LIST_ITEM_RE = /^\s*(?:[-•*–]|\d{1,2}[.)])\s+\S/
 
-/** Lines of one message: a run of list items ("- …", "• …", "1. …") counts as ONE line. */
+/** A dash list counts as one line only up to this many items (a longer list counts item by item). */
+export const LIST_AS_ONE_LINE_MAX = 8
+
+/** Lines of one message: a run of list items ("- …", "• …", "1. …") counts as ONE line (up to 8 items). */
 export function messageLineCount(part: string): number {
-  return messageUnits(part).length
+  return unitsWeight(messageUnits(part))
 }
+
+const unitWeight = (unit: string[]) => (unit.length > LIST_AS_ONE_LINE_MAX ? unit.length : 1)
+const unitsWeight = (units: string[][]) => units.reduce((n, u) => n + unitWeight(u), 0)
 
 /** Units of one message: a single line, or a whole run of list items. */
 function messageUnits(part: string): string[][] {
@@ -375,7 +383,7 @@ function messageUnits(part: string): string[][] {
 /** Shorten ONE message (B3 rules, per message): null when it cannot be shortened safely. */
 function shortenPart(part: string, limit: number): string | null {
   const units = messageUnits(part)
-  if (units.length <= limit + 2) return part
+  if (unitsWeight(units) <= limit + 2) return part
   const keep = new Set<number>()
   units.forEach((unit, i) => {
     // A payment token and a list (the data the customer must send) are never dropped.
@@ -387,7 +395,8 @@ function shortenPart(part: string, limit: number): string | null {
       break
     }
   }
-  for (let i = 0; i < units.length && keep.size < limit; i += 1) keep.add(i)
+  const kept = () => unitsWeight([...keep].map((i) => units[i]))
+  for (let i = 0; i < units.length && kept() < limit; i += 1) keep.add(i)
   // SecureDog INT-99: never drop a line that qualifies something (an amount, shipping, a negation, the assistant
   // disclosure) or holds part of a payment token — dropping it can change the meaning. Then the reply is not shortened
   // (it stays too long → the safe line goes out instead).
@@ -418,19 +427,29 @@ export function shortenToMaxLines(text: string, maxLines: number): string {
 
 /**
  * "SINPE 8888 · transferencia BAC · también tarjeta" — one line joined with " · " is unreadable on WhatsApp
- * (agents2-format): a line with two or more " · " separators becomes one line per item. Same words, same order.
+ * (agents2-format): a line with two or more " · " separators becomes a dash list (one item per line; a lead-in ending
+ * in ":" stays as its own line). Same words, same order; a list is one unit, so shortening never drops an item.
  */
 export function unjoinDotSeparated(text: string): string {
   return (text || '')
     .split('\n')
     .map((line) => {
-      const pieces = line.split(/\s+·\s+/)
-      return pieces.length >= 3 ? pieces.map((p) => p.trim()).filter(Boolean).join('\n') : line
+      const pieces = line.split(/\s+·\s+/).map((p) => p.trim()).filter(Boolean)
+      if (pieces.length < 3) return line
+      const colon = pieces[0].indexOf(':')
+      const lead = colon >= 0 ? pieces[0].slice(0, colon + 1).trim() : ''
+      if (colon >= 0) pieces[0] = pieces[0].slice(colon + 1).trim()
+      const items = pieces.filter(Boolean).map((p) => `- ${p}`)
+      return [lead, ...items].filter(Boolean).join('\n')
     })
     .join('\n')
 }
 
 const QUALIFYING_LINE_RE = /[₡¢$]|\d{3}|env[ií]o|(?<![\p{L}])(no|nunca|sin|solo|excepto)(?![\p{L}])|asistente\s+virtual|\[\[|\]\]|DATOS|PAGO/iu
+
+/** Anything token-like left after code filled the payment tokens (never sent; a person looks). */
+const LEFTOVER_TOKEN_RE = /\[\[|\]\]|[【】]|PAGO_|DATOS_(?:DE_)?PAGO/iu
+const LEFTOVER_TOKEN_STRIP_RE = /\[\[[^\]\n]{0,60}\]\]|【[^】\n]{0,60}】|\[\[|\]\]|[【】]|(?<![\p{L}])(?:PAGO_[\p{L}_]*|DATOS_(?:DE_)?PAGO)(?![\p{L}])/iu
 
 export type FinalOutputPolicy = {
   text: string
@@ -513,6 +532,18 @@ export function applyFinalOutputPolicy(input: {
   const filled = fillPaymentToken(text, facts, input.paymentOptions)
   text = filled.text
   if (filled.needsHuman) reasons.push('payment_info_not_shared')
+  // Any other [[…]] left (an unknown / invented token) is never sent: stripped, and a person looks (Verifier #4).
+  // SecureDog INT-118a: also half tokens, 【…】 look-alikes and bare PAGO_ / DATOS_PAGO / DATOS_DE_PAGO words.
+  if (LEFTOVER_TOKEN_RE.test(text)) {
+    text = text
+      .replace(new RegExp(LEFTOVER_TOKEN_STRIP_RE.source, 'gu'), '')
+      .split('\n')
+      .map((l) => l.replace(/[ \t]{2,}/g, ' ').trim())
+      .join('\n')
+      .trim()
+    styleText = styleText.replace(new RegExp(LEFTOVER_TOKEN_STRIP_RE.source, 'gu'), '')
+    reasons.push('unknown_token')
+  }
   reasons.push(...paymentNumberProblems({ text, facts, customerText: input.customerText }))
 
   const hasMoney = extractMoneyAmounts(text).some((amount) => Math.round(amount) >= 100)
@@ -553,6 +584,7 @@ export function applyFinalOutputPolicy(input: {
     // INT-109: live and Probar both come through here — a reply may only link the brand's own site.
     linkAllowlist: input.linkAllowlist ?? undefined,
     styleText,
+    linkText: styleText,
   })
 
   const merged = [...new Set([...reasons, ...validated.reasons])]

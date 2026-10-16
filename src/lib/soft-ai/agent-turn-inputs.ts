@@ -260,7 +260,8 @@ export function assembleAgentRuntimeInputs(input: {
           : [],
       }),
     ),
-    salesPaymentOptions: sales ? salesPaymentOptions(sales) : undefined,
+    // chosenMethod: a contra-entrega / efectivo block is an order for a person only when the customer chose it (#9).
+    salesPaymentOptions: sales ? { ...salesPaymentOptions(sales), chosenMethod: salesState?.chosenMethod ?? null } : undefined,
     salesTrace: salesState ? { stage: salesState.stage, said: salesState.said, chosenMethod: salesState.chosenMethod ?? null } : null,
     toolCtx: {
       ...input.toolCtxBase,

@@ -54,6 +54,7 @@ import {
 import {
   applySafeLineCap,
   behaviorForOperationMode,
+  HANDOFF_REASON,
   decideTurnOutcome,
   planDecisionDelivery,
   planModelTurnDelivery,
@@ -79,7 +80,7 @@ import type { AgentAsset } from '@/lib/soft-ai/agent-assets'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import { AGENT_IMAGE_DEADLINE_MS, loadSentAgentImageShas, sendAgentImagesOnce } from '@/lib/soft-ai/agent-media-send'
 import { applyFinalOutputPolicy, splitReplyParts, validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
-import { AGENT_PARTS_DEADLINE_MS, planReplyParts, REPLY_PART_GAP_MS } from '@/lib/soft-ai/reply-parts'
+import { AGENT_PARTS_DEADLINE_MS, planReplyParts, remainderPart, REPLY_PART_GAP_MS } from '@/lib/soft-ai/reply-parts'
 import { maskConfiguredPaymentSecrets, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import { redactToolTrace } from '@/lib/soft-ai/llm/redact'
 import {
@@ -329,7 +330,7 @@ export function rebillTurnFields(input: { agentId: string; bindingId: string | n
 export type AgentTurnDispatchResult =
   | { status: 'skipped'; reason?: string }
   | { status: 'suggested'; turnId: string }
-  | { status: 'delivered'; turnId: string; skippedDelivery?: boolean }
+  | { status: 'delivered'; turnId: string; skippedDelivery?: boolean; partialDelivery?: boolean }
   | { status: 'fallback'; turnId?: string }
   | { status: 'legacy' }
 
@@ -771,7 +772,7 @@ export async function executeAgentLayerTurn(
       llmEscalateReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
-      codOrderReady: policy.paymentMethods.includes('contra_entrega'),
+      codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
     }),
     await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
   )
@@ -963,6 +964,11 @@ async function finishDeliveryOrSuggest(
   } finally {
     // Also when the send threw or was blocked (window / token / kill switch): the person must still get the chat.
     if (input.handoff) await settleHandoff(input.row, input.handoff)
+  }
+  // F2: part of the reply did not go out (ambiguous send / kill switch / chat taken): a person is asked to look
+  // (review alert, the chat stays as it is). Only the parts actually sent were written as messages.
+  if (!input.handoff && result.status === 'delivered' && result.partialDelivery) {
+    await settleHandoff(input.row, { kind: 'review', reason: HANDOFF_REASON.review })
   }
   // notifyHandoff already told the team: no second "La IA no respondió" alert.
   if (!input.handoff && (result.status === 'suggested' || result.status === 'skipped')) {
@@ -1160,7 +1166,6 @@ async function finishDeliveryOrSuggestInner(input: {
   const accessToken = decryptSocialAccessToken(account.accessToken)
   if (!accessToken) return denyUnhealthyToken()
   const meta = parseSocialRefreshToken(account.refreshToken)
-  const contentHash = hashSoftAiDeliveryContent(input.outputText)
 
   // Images of the saved reply first (like a person sending the size guide, then the text). Code picks them.
   const platform = input.payload.platform || 'whatsapp'
@@ -1201,18 +1206,26 @@ async function finishDeliveryOrSuggestInner(input: {
   }
 
   // agents2-format: the reply goes out as up to 3 messages (one per paragraph), in order, each claimed exactly once.
-  const partsPlan = planReplyParts({ text: input.outputText, deliveryKey: input.row.deliveryKey, contentHash, hash: hashSoftAiDeliveryContent })
+  const partsPlan = planReplyParts({ text: input.outputText, deliveryKey: input.row.deliveryKey, hash: hashSoftAiDeliveryContent })
   const partsDeadlineAt = (input.startedAt ?? Date.now()) + AGENT_PARTS_DEADLINE_MS
   let firstSkipped = false
   let partial = false
-  for (const part of partsPlan) {
-    if (part.index > 0) {
-      // Late turn: the remaining parts are not sent (the job lease must not run out mid-reply).
-      if (Date.now() + REPLY_PART_GAP_MS > partsDeadlineAt) {
+  for (let i = 0; i < partsPlan.length; i += 1) {
+    let part = partsPlan[i]
+    let lastPart = i === partsPlan.length - 1
+    if (i > 0) {
+      // The kill switch was armed, or a person took / paused the chat, while the reply was going out: stop here.
+      if (await stopRemainingParts(input.row.tenantId, input.row.conversationId)) {
         partial = true
         break
       }
-      await new Promise((resolve) => setTimeout(resolve, REPLY_PART_GAP_MS))
+      if (Date.now() + REPLY_PART_GAP_MS > partsDeadlineAt) {
+        // Late turn (F2): everything left goes out NOW as one last message (never silently dropped).
+        part = remainderPart(partsPlan, i, hashSoftAiDeliveryContent)
+        lastPart = true
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, REPLY_PART_GAP_MS))
+      }
     }
     let delivery: { skipped: boolean; providerDeliveryId?: string; result?: { providerMessageId?: string } }
     try {
@@ -1289,10 +1302,11 @@ async function finishDeliveryOrSuggestInner(input: {
         replyBy: input.codeDecided ? 'code' : 'agent',
         // agents2-format: which message of the reply this is (Corregir joins the parts of one turn).
         partIndex: part.index,
-        partCount: partsPlan.length,
+        partCount: lastPart ? part.index + 1 : partsPlan.length,
       },
       suppressSoftAi: true,
     })
+    if (lastPart) break
   }
 
   await prisma.chatAgentTurn.update({
@@ -1318,6 +1332,21 @@ async function finishDeliveryOrSuggestInner(input: {
     status: 'delivered',
     turnId: input.turnId,
     skippedDelivery: firstSkipped,
+    ...(partial ? { partialDelivery: true } : {}),
+  }
+}
+
+/**
+ * Before each later part of a reply (#7): stop when the kill switch was armed or the chat is no longer the AI's
+ * (a person took it or paused it meanwhile). Fail-safe: a read error stops too.
+ */
+async function stopRemainingParts(tenantId: string, conversationId: string): Promise<boolean> {
+  try {
+    if ((await readAgentKillState(tenantId)).armed) return true
+    const conv = await prisma.chatConversation.findFirst({ where: { id: conversationId, tenantId }, select: { aiMode: true } })
+    return !conv || conv.aiMode === 'human' || conv.aiMode === 'paused'
+  } catch {
+    return true
   }
 }
 
@@ -1629,7 +1658,7 @@ async function runAgentTestTurnInner(input: {
       llmEscalateReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
-      codOrderReady: policy.paymentMethods.includes('contra_entrega'),
+      codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
     })
     text = plan.text
     handoff = plan.handoff

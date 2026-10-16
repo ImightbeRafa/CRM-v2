@@ -143,6 +143,9 @@ export const SHARED_LINK_HOSTS = [
   'instagram.com', 'facebook.com', 'fb.com', 'fb.me', 'm.me', 'wa.me', 'whatsapp.com', 'linktr.ee', 'bit.ly', 'goo.gl',
   'google.com', 'forms.gle', 'tiktok.com', 'youtube.com', 'youtu.be', 't.me', 'x.com', 'twitter.com', 'waze.com',
   'tinyurl.com', 'cutt.ly', 't.co', 'is.gd', 'ow.ly', 'rebrand.ly', 'shorturl.at',
+  // SecureDog INT-116: payment processors host anyone's payment page — never allowed as a whole host.
+  'paypal.me', 'paypal.com', 'buy.stripe.com', 'checkout.stripe.com', 'stripe.com', 'tilopay.com', 'checkout.tilopay.com',
+  'mpago.la', 'mercadopago.com', 'onvopay.com', 'pay.onvopay.com',
 ]
 
 function isSharedHost(host: string): boolean {

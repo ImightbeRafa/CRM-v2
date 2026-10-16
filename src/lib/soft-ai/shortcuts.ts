@@ -102,7 +102,7 @@ const LEGACY_DEFAULT_BODIES = new Map<string, string>([
   ['Podés pagar así: {{brand.payment.summary}}. Un comprobante lo revisa una persona del equipo; por acá no se confirma el pago.', PAYMENT_INFO_BODY],
   ['Podés pagar así: {{brand.payment.summary}}. Cuando lo hagás, mandame el comprobante; el pago queda listo cuando lo revisamos 😊', PAYMENT_INFO_BODY],
   ['Envío: {{brand.shipping.summary}}. Pago: {{brand.payment.summary}}. ¿Lo querés con envío a domicilio o retiro?', PURCHASE_SUMMARY_BODY],
-  ['Para hacer el pedido solo necesito tu nombre completo, teléfono y dirección exacta. ¿Me los pasás?', 'Para armar tu pedido pasame:\n- Nombre completo\n- Teléfono\n- Correo\n- Dirección exacta (provincia, cantón y distrito)'],
+  ['Para hacer el pedido solo necesito tu nombre completo, teléfono y dirección exacta. ¿Me los pasás?', 'Para armar tu pedido pasame:\n- Nombre completo\n- Teléfono\n- Dirección exacta (provincia, cantón y distrito)'],
   ['Recibimos tu mensaje de pago. Una persona del equipo lo revisa y te escribe.', '¡Gracias! Ya lo reviso y te confirmo 😊'],
   ['No pudimos aplicar ese pago. Una persona del equipo te explica el siguiente paso.', 'Revisé el pago y todavía no me aparece aplicado. ¿Me reenviás el comprobante? 😊'],
   ['Tu pedido {{order.orderId}} quedó registrado por el equipo. Te escribimos si falta algún dato.', 'Listo, tu pedido {{order.orderId}} quedó registrado 😊 Te aviso cualquier cosa.'],
@@ -540,7 +540,8 @@ export const SALES_REPLY_TEMPLATES: ShortcutDraft[] = [
     keywords: [],
     deliveryMode: 'guide',
     // agents2-format: the data as a vertical list (one item per line), never one long sentence.
-    body: 'Para armar tu pedido pasame:\n- Nombre completo\n- Teléfono\n- Correo\n- Dirección exacta (provincia, cantón y distrito)',
+    // No "Correo" by default (Verifier F9): the agent asks the business's own order fields (BETSY_DATOS) anyway.
+    body: 'Para armar tu pedido pasame:\n- Nombre completo\n- Teléfono\n- Dirección exacta (provincia, cantón y distrito)',
   },
   {
     key: 'pb_post_venta',

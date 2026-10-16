@@ -5,6 +5,7 @@
 
 import {
   canSharePaymentFacts,
+  paymentMethodsOf,
   type BrandFacts,
   type ReplyStyle,
 } from '@/lib/soft-ai/brand-facts'
@@ -210,13 +211,15 @@ export function decideInbound(input: {
   // agents2-format: the customer picked a method — after the store's question ("SINPE"), or naming one while asking
   // for its details ("Quiero pagar por SINPE, ¿me pasás el número?"). A bare "SINPE" used to fail closed as a payment
   // message (→ "ya lo reviso"); with no proof / claim / confirm / refund cue at all it is a choice.
-  const choice =
-    (!input.messageType || input.messageType === 'text') && !isOptOutText(input.inboundText || '') &&
-    isCueFreePaymentChoiceText(input.inboundText)
-      ? paymentMethodPick(input.inboundText, input.awaitingPaymentMethod === true)
-      : null
-  if (choice === 'contra_entrega') {
-    // Contra entrega: the model checks the zone and the order details, then a person takes the order (order_ready).
+  // SecureDog INT-114: only a message matching the choice ALLOWLIST GRAMMAR (paymentChoiceGrammar) is a choice — the
+  // same gate for every branch (code reply and contra entrega / efectivo → model). Anything else ("hecho por sinpe",
+  // "sinpe ✅", "sinpe de 25 mil", "sinpe, ¿cuándo me llega?") keeps the classifier / safety path below (a person).
+  const textMessage = (!input.messageType || input.messageType === 'text') && !isOptOutText(input.inboundText || '')
+  const choice = textMessage
+    ? paymentMethodPick(input.inboundText, input.awaitingPaymentMethod === true, offeredMethods(input.brandFacts))
+    : null
+  if (choice === 'contra_entrega' || choice === 'efectivo') {
+    // Contra entrega / efectivo: the model checks the zone and the order details, then a person takes the order.
     steps.push({ step: 'payment_choice', outcome: 'model', reason: choice })
     return continueToModel(paymentClass, steps)
   }
@@ -367,6 +370,11 @@ export function decideInbound(input: {
   }
 
   return continueToModel(paymentClass, steps)
+}
+
+/** Methods this store offers (configured + contra entrega from its shipping facts). */
+function offeredMethods(facts: BrandFacts): string[] {
+  return paymentMethodsOf(facts)
 }
 
 function continueToModel(paymentClass: PaymentClassification, steps: DecisionStep[]): InboundDecision {

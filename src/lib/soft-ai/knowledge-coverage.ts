@@ -29,8 +29,8 @@ export function productCoreName(name: string): string {
 }
 
 const PRODUCT_TOPICS: Array<{ key: string; label: string; re: RegExp }> = [
-  // A "- item" list counts only when it is not a price list.
-  { key: 'ingredients', label: 'ingredientes', re: /ingrediente|contiene|lleva\b|formula|compuest|componente|\n\s*-\s+[^\n₡¢$\d]+(?:\n|$)/ },
+  // A "- item" list counts only when it is not a price list (amounts like "13,25 mg" are fine; ₡ / $ lines are not).
+  { key: 'ingredients', label: 'ingredientes', re: /ingrediente|contiene|lleva\b|formula|compuest|componente|\n\s*-\s+[^\n₡¢$]+(?:\n|$)/ },
 ]
 
 const STORE_TOPICS: Array<{ key: string; label: string; re: RegExp }> = [

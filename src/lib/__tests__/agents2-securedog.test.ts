@@ -144,3 +144,31 @@ describe('SecureDog re-review 2026-10-15: INT-100..102, MEDIA-15', () => {
     assert.equal(PERIODIC_REARM_SKIP_REASONS.has('missing_mode'), false)
   })
 })
+
+describe('SecureDog INT-125: noun-first payment confirmations are blocked in a payment conversation', () => {
+  it('blocks "tu pago está bien / entró / ya cayó / vimos tu pago" style replies', () => {
+    for (const reply of [
+      'Sí, tu pago está bien',
+      'Listo, el pago quedó listo',
+      'Sí, tu pago entró',
+      'Tu sinpe ya cayó',
+      'Perfecto, tu pago está correcto',
+      'Ya vimos tu pago',
+      'Ya revisamos tu pago y está bien',
+      'Tu transferencia ya llegó 😊',
+      'El comprobante fue recibido',
+    ]) {
+      assert.ok(validateAgentOutput({ text: reply, citedToolNames: [], customerText: 'ya pagué', paymentContext: true }).reasons.includes('payment_status_claim'), reply)
+    }
+  })
+  it('does not block normal payment-flow replies', () => {
+    for (const reply of [
+      'Cuando hagás el SINPE, mandame el comprobante por aquí 😊',
+      'Cuando tu pago entre, el equipo te confirma',
+      'Podés pagar por SINPE Móvil o con tarjeta en la web',
+      'El envío llega en 2 a 4 días hábiles',
+    ]) {
+      assert.ok(!validateAgentOutput({ text: reply, citedToolNames: [], customerText: '¿cómo pago?', paymentContext: true }).reasons.includes('payment_status_claim'), reply)
+    }
+  })
+})

@@ -24,7 +24,7 @@ import { MAX_REPLY_PARTS, splitReplyParts } from '@/lib/soft-ai/reply-parts'
  * chat goes to a person (SecureDog INT-93). Delivery wording ("te llega en 2 a 4 días") is not matched.
  */
 const PAYMENT_STATUS_REPLY_RE =
-  /(acredit|se\s+aplic|aplicad[oa]|reflej|(nos|me)\s+(lleg|entr)[oó]|ya\s+(nos\s+|me\s+)?(lleg|entr)[oó]|recibimos|recibido|lo\s+vimos|la\s+vimos|lo\s+tenemos|todo\s+en\s+orden|est[aá]\s+en\s+orden|es\s+correct[oa]|est[aá]\s+confirmad[oa]|qued[oó]\s+(pagad|confirmad)|lleg[oó]\s+bien|todo\s+(bien|listo|sali[oó])|ya\s+est[aá](?![\p{L}])|ya\s+se\s+hizo|(ning[uú]n|sin)\s+problema|list[oa]\s+(tu|el|su)\s+pago|(?<![\p{L}])(?:est[aá]|qued[oó]|sali[oó]|todo)\s+(?:ok|okay|okey|oki)(?![\p{L}])|(?:tu|el|su)\s+pago\s+(?:\p{L}+\s+)?(?:ok|okay|okey)(?![\p{L}]))/iu
+  /(acredit|se\s+aplic|aplicad[oa]|reflej|(nos|me)\s+(lleg|entr)[oó]|ya\s+(nos\s+|me\s+)?(lleg|entr)[oó]|recibimos|recibido|lo\s+vimos|la\s+vimos|lo\s+tenemos|todo\s+en\s+orden|est[aá]\s+en\s+orden|es\s+correct[oa]|est[aá]\s+confirmad[oa]|qued[oó]\s+(pagad|confirmad)|lleg[oó]\s+bien|todo\s+(bien|listo|sali[oó])|ya\s+est[aá](?![\p{L}])|ya\s+se\s+hizo|(ning[uú]n|sin)\s+problema|list[oa]\s+(tu|el|su)\s+pago|(?<![\p{L}])(?:est[aá]|qued[oó]|sali[oó]|todo)\s+(?:ok|okay|okey|oki)(?![\p{L}])|(?:tu|el|su)\s+pago\s+(?:\p{L}+\s+)?(?:ok|okay|okey)(?![\p{L}])|(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)\s+(?:\p{L}+\s+){0,2}(?:entr[oó]|cay[oó]|lleg[oó]|est[aá]\s+(?:bien|correct|list)|qued[oó]\s+list|fue\s+recibid)|(?:ya\s+(?:lo\s+|la\s+)?(?:vimos|revisamos|verificamos|confirmamos)|(?<![\p{L}])vimos)\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|est[aá]\s+correct[oa])/iu
 
 export type OutputValidationResult = {
   ok: boolean

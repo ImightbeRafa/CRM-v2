@@ -224,7 +224,8 @@ export async function buildSuite(tenantId: string, agent: { id: string; name: st
     foreignProduct: foreign ? { name: foreign.name, sellingPrice: Number(foreign.sellingPrice) } : null,
     payment: {
       shareable: canSharePaymentFacts(facts),
-      sinpeNumber: facts.payment?.sinpe?.number ?? null,
+      // Only when SINPE is an offered method — the same rule [[PAGO_SINPE]] uses (payment-guard methodAvailable).
+      sinpeNumber: (facts.payment?.methods ?? []).includes('sinpe') ? facts.payment?.sinpe?.number ?? null : null,
     },
     sales: salesCtx
       ? {

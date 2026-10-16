@@ -146,9 +146,9 @@ const BETSY_LINE_RE =
   /(?:^|\n|[.!?]\s+)[ \t]*((?:promoci[oó]n\s+activa|siguiente\s+paso|etapa|estado\s+de\s+la\s+venta|reglas?\s+fijas?)\s*:)/iu
 
 /** The payment tokens an owner may write in a correction (Betsy fills them; agents2-format adds one per method). */
-const OWNER_PAYMENT_TOKEN_RE = /^\[\[\s*(?:DATOS[\s_-]?PAGO|PAGO[\s_-]?(?:SINPE|TRANSFERENCIA|TARJETA|CONTRA[\s_-]?ENTREGA))\s*\]\]$/i
+const OWNER_PAYMENT_TOKEN_RE = /^\[\[\s*(?:DATOS[\s_-]?PAGO|PAGO[\s_-]?(?:SINPE|TRANSFERENCIA|TARJETA|EFECTIVO|CONTRA[\s_-]?ENTREGA))\s*\]\]$/i
 const OWNER_TOKENS_HINT =
-  'Las únicas marcas permitidas son las de pago: [[PAGO_SINPE]], [[PAGO_TRANSFERENCIA]], [[PAGO_TARJETA]], [[PAGO_CONTRA_ENTREGA]] o [[DATOS_PAGO]].'
+  'Las únicas marcas permitidas son las de pago: [[PAGO_SINPE]], [[PAGO_TRANSFERENCIA]], [[PAGO_TARJETA]], [[PAGO_EFECTIVO]], [[PAGO_CONTRA_ENTREGA]] o [[DATOS_PAGO]].'
 
 /**
  * The owner's own text (answer, note, title) is never rewritten with markers (V9): invisible characters go, and only

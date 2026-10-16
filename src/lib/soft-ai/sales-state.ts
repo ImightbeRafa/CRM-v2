@@ -3,7 +3,7 @@
  * already said, so the agent never repeats itself and always moves the sale to the next step. Pure: derived from
  * the same history both the live turn and the test chat already pass in (identical by construction, no new SQL).
  */
-import { hasPaymentClaimCue } from '@/lib/soft-ai/payment-classifier'
+import { hasPaymentClaimCue, isCueFreePaymentChoiceText, paymentChoiceGrammar, paymentChoiceShape, type PaymentChoiceMethod } from '@/lib/soft-ai/payment-classifier'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import {
@@ -68,53 +68,61 @@ export type SalesState = {
   quantities?: number[]
   /** agents2-format: the store already asked how the customer wants to pay (and no payment details were given). */
   askedMethod?: boolean
-  /** agents2-format: the method the customer picked in this message (efectivo / "al recibir" = contra entrega). */
+  /** agents2-format: the method the customer picked in this message (resolvePaymentChoice). */
   chosenMethod?: ChosenPaymentMethod | null
 }
 
-/** A method the customer can pick; efectivo / "al recibir" count as contra entrega (paid to the courier). */
-export type ChosenPaymentMethod = 'sinpe' | 'transferencia' | 'tarjeta' | 'contra_entrega'
+/** A method the customer can pick (efectivo is its own method when configured; otherwise it means contra entrega). */
+export type ChosenPaymentMethod = PaymentChoiceMethod
 
-const CHOICE_PATTERNS: Array<[ChosenPaymentMethod, RegExp]> = [
-  ['sinpe', /(?<![\p{L}])sinpe(?![\p{L}])/iu],
-  ['transferencia', /(?<![\p{L}])(transfer\p{L}*|dep[oó]sito\s+bancario|iban)(?![\p{L}])/iu],
-  ['tarjeta', /(?<![\p{L}])(tarjeta|cr[eé]dito|d[eé]bito)(?![\p{L}])/iu],
-  ['contra_entrega', /(?<![\p{L}])(contra\s?entrega|al\s+recibir(lo|la)?|cuando\s+(me\s+)?(llegue|lo\s+reciba|la\s+reciba)|efectivo|en\s+la\s+entrega)(?![\p{L}])/iu],
-]
-
-/** The ONE method a customer message picks (two different methods named = no choice yet). */
+/** Method words in a text (any shape) — only for tests / display; a CHOICE is paymentChoiceShape. */
 export function parsePaymentMethodChoice(text: string): ChosenPaymentMethod | null {
-  const t = stripFormatChars(text || '')
-  const hits = CHOICE_PATTERNS.filter(([, re]) => re.test(t)).map(([m]) => m)
-  return hits.length === 1 ? hits[0] : null
+  return paymentChoiceShape(text, { allowAsk: true })
 }
 
 /** The store's own method question ("¿Cómo preferís pagar?", "¿qué método de pago preferís?"). */
 export const PAYMENT_METHOD_ASKED_RE =
   /c[oó]mo\s+(prefer[ií]s|quer[eé]s|prefiere|quiere|te\s+gustar[ií]a)\s+pagar|qu[eé]\s+m[eé]todo\s+de\s+pago|con\s+qu[eé]\s+(prefer[ií]s|quer[eé]s)\s+pagar|cu[aá]l\s+m[eé]todo\s+(de\s+pago\s+)?prefer[ií]s/iu
 
-/** A customer naming a method AND asking for its details ("¿a qué número es el SINPE?", "pasame la cuenta para transferir"). */
-const PAY_DETAILS_ASK_RE =
-  /(?<![\p{L}])(n[uú]mero|cuenta|iban|datos|a\s+d[oó]nde|a\s+qui[eé]n|a\s+nombre|link|enlace|p[aá]same|mand[aá]me|c[oó]mo\s+(te\s+|le\s+|les\s+)?pago|quiero\s+pagar|voy\s+a\s+pagar|pago\s+(por|con)|prefiero)(?![\p{L}])/iu
-
 /**
- * agents2-format: the method this customer message picks — after the store's method question, or naming a method
- * while asking for its details ("Quiero pagar por SINPE, ¿me pasás el número?"). Null when none / two methods.
+ * efectivo is its own method when the store offers it; otherwise, when contra entrega is offered, it means paying the
+ * courier (contra entrega). Pure.
  */
-export function paymentMethodPick(text: string, awaitingChoice: boolean): ChosenPaymentMethod | null {
-  const pick = parsePaymentMethodChoice(text)
-  return pick && (awaitingChoice || PAY_DETAILS_ASK_RE.test(stripFormatChars(text || ''))) ? pick : null
+export function resolvePaymentChoice(method: ChosenPaymentMethod, offered: readonly string[]): ChosenPaymentMethod {
+  if (method === 'efectivo' && !offered.includes('efectivo') && offered.includes('contra_entrega')) return 'contra_entrega'
+  return method
 }
 
 /**
- * agents2-format: the store asked how the customer wants to pay in its last messages (a reply goes out in up to 3
- * parts) and gave no payment details after that. Pure; live turn and test chat pass the same history.
+ * agents2-format: the method this customer message picks — only when it matches the choice ALLOWLIST GRAMMAR
+ * (SecureDog INT-114, paymentChoiceGrammar): after the store's method question ("SINPE", "por sinpe porfa"), or with
+ * the strict detail ask ("Quiero pagar por SINPE, ¿me pasás el número?") even without it. Claims ("hecho por sinpe",
+ * "sinpe ✅", "sinpe de 25 mil") are never a choice. Null otherwise.
+ */
+export function paymentMethodPick(text: string, awaitingChoice: boolean, offered: readonly string[] = []): ChosenPaymentMethod | null {
+  if (!isCueFreePaymentChoiceText(text)) return null
+  const g = paymentChoiceGrammar(text)
+  if (!g || (!awaitingChoice && !g.ask)) return null
+  return resolvePaymentChoice(g.method, offered)
+}
+
+/**
+ * The store's method question is still pending: it was asked and no payment details went out AFTER it. One rule for the
+ * sales state and the inbound decision (outbound texts in order).
+ */
+export function methodQuestionPending(outbound: readonly string[]): boolean {
+  // Only the store's last 3 messages (one reply = up to 3 parts): an old question is not pending anymore.
+  const recent = outbound.slice(-3)
+  const at = recent.map((m) => PAYMENT_METHOD_ASKED_RE.test(m)).lastIndexOf(true)
+  return at >= 0 && !recent.slice(at).some((m) => paymentDetailsIn(m))
+}
+
+/**
+ * agents2-format: the store asked how the customer wants to pay and gave no payment details after that (same rule as
+ * deriveSalesState). Pure; live turn and test chat pass the same history.
  */
 export function awaitingPaymentMethodChoice(history: SoftAiHistoryMessage[]): boolean {
-  const ours = history.filter((m) => m.direction === 'outbound').slice(-3)
-  const at = ours.map((m) => PAYMENT_METHOD_ASKED_RE.test(m.content || '')).lastIndexOf(true)
-  if (at < 0) return false
-  return !ours.slice(at).some((m) => paymentDetailsIn(m.content || ''))
+  return methodQuestionPending(history.filter((m) => m.direction === 'outbound').map((m) => m.content || ''))
 }
 
 /** Method names the agent offers: configured methods + contra entrega when a shipping method allows it. */
@@ -154,7 +162,12 @@ const CHOSEN_LABEL: Record<ChosenPaymentMethod, string> = {
   transferencia: 'transferencia',
   tarjeta: 'tarjeta',
   contra_entrega: 'contra entrega',
+  efectivo: 'efectivo',
 }
+
+/** SecureDog INT-117: the agent never confirms an order itself (a person does, after the order_ready hand-off). */
+const NEVER_CONFIRM_ORDER =
+  'NUNCA digas confirmado, registrado, anotado, agendado, listo, ni que sale hoy o mañana.'
 
 /** Next step once the customer picked a method (metodo_pago). */
 function chosenMethodStep(ctx: SalesContext, method: ChosenPaymentMethod): string {
@@ -170,10 +183,13 @@ function chosenMethodStep(ctx: SalesContext, method: ChosenPaymentMethod): strin
         ? 'Si el envío es fuera del GAM, decile que contra entrega es solo dentro del GAM y ofrecé los otros métodos (sin escribir [[PAGO_CONTRA_ENTREGA]]).'
         : '',
       'Si faltan datos del pedido, pedilos en lista y todavía no escribas el token.',
-      `Si ya tenés todo${gam ? ' y es dentro del GAM' : ''}: confirmá el pedido en una lista corta (producto, total, nombre, dirección), escribí ${PAYMENT_METHOD_TOKENS.contra_entrega} en su propio bloque y decí que enseguida le confirmamos el pedido.`,
+      `Si ya tenés todo${gam ? ' y es dentro del GAM' : ''}: resumí el pedido en una lista corta (producto, total, nombre, dirección), escribí ${PAYMENT_METHOD_TOKENS.contra_entrega} en su propio bloque y decí que enseguida lo revisamos. ${NEVER_CONFIRM_ORDER}`,
     ]
       .filter(Boolean)
       .join(' ')
+  }
+  if (method === 'efectivo') {
+    return `El cliente eligió efectivo. Si faltan datos del pedido, pedilos en lista y todavía no escribas el token. Si ya tenés todo: resumí el pedido en una lista corta (producto, total, nombre, entrega o retiro), escribí ${PAYMENT_METHOD_TOKENS.efectivo} en su propio bloque y decí que enseguida lo revisamos. ${NEVER_CONFIRM_ORDER}`
   }
   if (method === 'tarjeta') {
     return `El cliente eligió tarjeta: mandá SOLO el token ${PAYMENT_METHOD_TOKENS.tarjeta} (Betsy pone el enlace) y decile que cualquier duda te escribe por aquí.`
@@ -240,7 +256,9 @@ export function deriveSalesState(input: {
   const said = {
     price: catalogPrices.some((p) => oursAmounts.has(p)) || (catalogPrices.length === 0 && /₡\s?\d/.test(oursText)),
     shipping: shipPrices.some((p) => oursAmounts.has(p)) || /\benv[ií]o\b[^\n]{0,40}₡\s?\d/i.test(oursText),
-    payment: ours.some((m) => PAYMENT_WORDS_RE.test(m) && input.ctx.paymentDigits.some((d) => d.length >= 8 && digits(m).includes(d))),
+    // A configured number next to payment words, or a code-filled method block without digits (card link, bank-only
+    // transfer, contra entrega / efectivo) — Verifier 2026-10-16: those never left metodo_pago.
+    payment: ours.some((m) => (PAYMENT_WORDS_RE.test(m) && input.ctx.paymentDigits.some((d) => d.length >= 8 && digits(m).includes(d))) || PAYMENT_BLOCK_RE.test(m)),
     cod: /contra\s?entrega/i.test(oursText),
     howToBuy: HOW_TO_BUY_RE.test(oursText),
   }
@@ -248,15 +266,15 @@ export function deriveSalesState(input: {
   const buyCue = BUY_RE.test(last) && !NEGATED_BUY_RE.test(last)
   const receiptCue = (RECEIPT_RE.test(last) || hasPaymentClaimCue(last))
   // agents2-format: the store asked HOW to pay and gave no payment details after that question.
-  const askedAt = ours.map((m) => PAYMENT_METHOD_ASKED_RE.test(m)).lastIndexOf(true)
-  const askedMethod = askedAt >= 0 && !ours.slice(askedAt).some((m) => paymentDetailsIn(m))
+  const askedMethod = methodQuestionPending(ours)
   // A pick counts after the store's question, or when the customer names a method and asks for its details.
-  const chosenMethod = paymentMethodPick(last, askedMethod)
+  const chosenMethod = paymentMethodPick(last, askedMethod, salesPaymentMethods(input.ctx))
 
   let stage: SalesStage
   if (receiptCue) stage = 'verificando'
   else if (said.payment) stage = 'esperando_comprobante'
-  else if (askedMethod || chosenMethod) stage = 'metodo_pago'
+  // A new buy cue after the question ("la quiero", another product) goes back to the close (Verifier F5).
+  else if (chosenMethod || (askedMethod && !buyCue)) stage = 'metodo_pago'
   else if (buyCue) stage = 'cierre'
   else if (said.price) stage = 'cotizar'
   else if (ours.length === 0) stage = 'saludo'
@@ -427,8 +445,16 @@ export function salesAwaitingReceipt(state: SalesState, history: SoftAiHistoryMe
   return history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || ''))
 }
 
+/**
+ * The method blocks code fills (payment-guard): recognisable even without digits ("Podés pagar con tarjeta en …",
+ * "Transferencia bancaria: BAC", "Pago contra entrega:", "Pago en efectivo:").
+ */
+export const PAYMENT_BLOCK_RE =
+  /(?:^|\n)(?:Podés pagar con tarjeta en \S|Transferencia bancaria:|Transferencia [^\n]{1,80}\n(?:IBAN|A nombre de):|Pago contra entrega:|Pago en efectivo:)/u
+
 /** An outbound message that gives payment details: payment words next to an 8+ digit number or an IBAN. */
 export function paymentDetailsIn(text: string): boolean {
+  if (PAYMENT_BLOCK_RE.test(text)) return true
   if (!PAYMENT_WORDS_RE.test(text)) return false
   return /\bCR\s?\d{2}(?:[\s-]?\d{4}){4}[\s-]?\d{2}\b/i.test(text) || /(?<!\d)\d{4}[\s.-]?\d{4}(?!\d)/.test(text) || /\d{10,}/.test(text)
 }
@@ -443,6 +469,8 @@ export function stripBetsyLookalikes(text: string, label = '[texto del cliente]'
   return stripFormatChars(text)
     // The marker word itself, in any brackets / case / spacing / dot, is never allowed from the customer.
     .replace(/BETSY[\s_.-]*DATOS/gi, label)
+    // SecureDog INT-118b: Betsy's own tokens ([[PAGO_SINPE]], [[DATOS_PAGO]], [[ATAJO:…]]) never come from chat text.
+    .replace(/[[【]{1,2}\s*(?:PAGO[\s_-]*[\p{L}_ -]{0,30}|DATOS[\s_-]*(?:DE[\s_-]*)?PAGO|ATAJO[^\]】\n]{0,60})\s*[\]】]{1,2}/giu, label)
     .replace(/regla de la tienda|precio total del combo|únicos precios de combo|promoci[oó]n activa|dato de betsy|aplicada por betsy|frase del due[nñ]o|estado de la venta|siguiente paso\s*:|etapa\s*:|calculado por betsy|productos que vend[eé]s|reglas? fijas?|\[\s*vos\s*\(\s*tienda\s*\)/gi, label)
     // Notes addressed to the assistant, or posing as the business's own note in a correction (INT-103). Whole words
     // only, and not "modelo" / "sistema" (N2: "¿trae instrucciones del modelo X100?" is a normal question).
@@ -461,7 +489,7 @@ export function salesSystemBlock(ctx: SalesContext): string {
     'Nunca repitas algo que ya dijiste en el historial (precio, envío, contra entrega, datos de pago). Si lo vuelven a preguntar, respondé solo eso, breve.',
     'Cada respuesta avanza la venta: terminá siempre con el siguiente paso del "Estado de la venta".',
     'Mencioná contra entrega solo si lo preguntan o al cerrar, cuando ya sabés la zona.',
-    'Para cerrar: dá el total en un mensaje; en otro, pedí en lista (un dato por renglón, con guion) los datos del pedido que falten; y preguntá cómo prefiere pagar. Cuando elija, escribí SOLO el token de ese método ([[PAGO_SINPE]], [[PAGO_TRANSFERENCIA]], [[PAGO_TARJETA]] o [[PAGO_CONTRA_ENTREGA]]; Betsy pone los datos) y pedí el comprobante. [[DATOS_PAGO]] solo si pide todos los datos de pago.',
+    'Para cerrar: dá el total en un mensaje; en otro, pedí en lista (un dato por renglón, con guion) los datos del pedido que falten; y preguntá cómo prefiere pagar. Cuando elija, escribí SOLO el token de ese método ([[PAGO_SINPE]], [[PAGO_TRANSFERENCIA]], [[PAGO_TARJETA]], [[PAGO_EFECTIVO]] o [[PAGO_CONTRA_ENTREGA]]; Betsy pone los datos) y pedí el comprobante. [[DATOS_PAGO]] solo si pide todos los datos de pago.',
     'Nunca digas que vas a pasar el chat a otra persona o equipo. Si algo lo tiene que revisar alguien, decí con naturalidad que lo revisás y le confirmás.',
     // PatchHouse activation run 2026-10-15: "¿Quién ganó el mundial?" got the answer before the pitch.
     'Si preguntan algo ajeno a la tienda (deportes, noticias, tareas, chistes, otros temas), NO lo respondas ni des el dato: decí con amabilidad que acá solo ayudás con la tienda y volvé a lo que vende con una pregunta.',

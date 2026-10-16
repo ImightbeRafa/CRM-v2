@@ -1,3 +1,33 @@
+## 2026-10-16 — agents2-format fix round: Verifier FAIL + integration verifier + SecureDog INT-114..118 (claudio/agents2-format)
+
+- INT-114 / Verifier #1 (HIGH): a payment-method choice is now an ALLOWLIST GRAMMAR over the whole message
+  (payment-classifier paymentChoiceGrammar): optional lead (prefiero / quiero pagar / por / con…), ONE method, optional
+  porfa / gracias and only 🙏 😊 🙌; or the strict detail ask ("¿me pasás el número?", "¿cuál es el número de sinpe?").
+  Digits, #, ref, ₡, ✅ ✔ ☑ 👍 💸, completion words, zero-width tricks and anything else → the old classifier path (a
+  person). Same gate for the code reply and the contra-entrega / efectivo → model branch; the broad detail-ask words
+  were removed. The F7 "method + other question → model" idea was dropped in favour of INT-114 (it hands off).
+- INT-115: completion words (realizad, hech, enviad, list, exitos, aprobad, pagad, cancelad, ✅) before the info cue →
+  payment_proof_or_risk ("Transferencia realizada", "tarjeta aprobada", "Envio exitoso…").
+- INT-116 / #2: links are checked on the text BEFORE payment tokens are filled; cardUrl is not on the allowlist,
+  must be https; payment processors (paypal.me/.com, stripe, tilopay, mercadopago, onvopay) are shared hosts.
+- #3: digit-less method blocks are recognisable ("Podés pagar con tarjeta en", "Transferencia bancaria: BAC",
+  "Pago contra entrega:", "Pago en efectivo:") → details given → esperando_comprobante; one pending-question rule
+  (last 3 store messages, no details after) for the sales state and the inbound decision; a new buy cue goes back to
+  the close (F5).
+- #4: efectivo is its own method when configured ([[PAGO_EFECTIVO]]; else it means contra entrega). INT-118a: any
+  leftover [[ / ]] / 【】 / PAGO_ / DATOS_PAGO after filling is stripped and held. Same token twice → one block.
+- #9 / F6 / INT-118b: a contra-entrega / efectivo block triggers order_ready only when the customer CHOSE that method
+  (chosenMethod from customer text); otherwise it is information. Customer / history text cannot carry Betsy tokens.
+- INT-117: the COD step says "resumí el pedido… enseguida lo revisamos" and never confirmed / registrado / agendado /
+  sale hoy-mañana; those are write claims now; a failing COD reply still hands off (safe line + order_ready).
+- Send loop: part-0 hash versioned (parts-v1|) (#6); kill switch / human / paused re-checked before each later part
+  (#7); past 38 s the rest goes out as ONE message instead of being dropped (F2); a partial reply raises a review
+  alert. Corregir joins only text parts with a numeric partIndex (#5). A configured number on its own line is never
+  joined with the next line's digits (#8). Dash list = one line up to 8 items; " · " lines become dash lists (F3).
+  pb_como_comprar without "Correo" (F9). pay-sinpe quick-check case only when SINPE is an offered method.
+- Proof: tsc 0, lint 0, test:soft-ai 722/722, test:chat-harden 643/643, test:security 271/271, test:soft-ai-agent
+  319/319, test:agentes-ui 34/34. Not deployed.
+
 ## 2026-10-16 — agents2-format: readable replies + ask the payment method first (claudio/agents2-format)
 
 Live WhatsApp test sent one unreadable block (price + order data + every payment number joined with " · "). Now:

@@ -79,7 +79,7 @@ export type SoftAiLlmRuntimeInput = {
   /** INT-109 / INT-112: links a reply may carry (brandFactsLinkAllowlist) — any other is 'foreign_link'. */
   linkAllowlist?: LinkAllowlist
   /** Sales flow: contra entrega offered by a shipping method, for [[PAGO_CONTRA_ENTREGA]] (agents2-format). */
-  salesPaymentOptions?: { codAvailable?: boolean; codNote?: string | null }
+  salesPaymentOptions?: { codAvailable?: boolean; codNote?: string | null; chosenMethod?: string | null }
   /** Sales state for the turn trace (debug only; not sent to the model separately). */
   salesTrace?: { stage: string; said: Record<string, boolean>; chosenMethod?: string | null } | null
 }

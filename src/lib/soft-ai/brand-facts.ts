@@ -10,6 +10,13 @@ const urlField = z
   .max(300)
   .refine((value) => value.length === 0 || /^https?:\/\/\S+$/i.test(value), 'url')
 
+/** HTTPS only (the card-payment link, SecureDog INT-116). */
+const httpsUrlField = z
+  .string()
+  .trim()
+  .max(300)
+  .refine((value) => value.length === 0 || /^https:\/\/\S+$/i.test(value), 'url')
+
 const money = z.number().finite().nonnegative()
 
 export const BrandFactsSchema = z
@@ -73,7 +80,7 @@ export const BrandFactsSchema = z
           })
           .optional(),
         /** Where a customer pays by card (falls back to the brand website). [[PAGO_TARJETA]] sends this link. */
-        cardUrl: urlField.optional(),
+        cardUrl: httpsUrlField.optional(),
         instructionsText: z.string().trim().max(300).optional(),
       })
       .optional(),
@@ -286,6 +293,7 @@ export const PAYMENT_METHOD_TOKENS = {
   transferencia: '[[PAGO_TRANSFERENCIA]]',
   tarjeta: '[[PAGO_TARJETA]]',
   contra_entrega: '[[PAGO_CONTRA_ENTREGA]]',
+  efectivo: '[[PAGO_EFECTIVO]]',
 } as const
 
 const PAYMENT_METHOD_LABEL: Record<string, string> = {

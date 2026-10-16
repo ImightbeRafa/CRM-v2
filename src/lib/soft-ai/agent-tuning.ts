@@ -360,13 +360,13 @@ export async function loadTuneSource(tenantId: string, agentId: string, messageI
   let agentReply = msg.content || ''
   if (typeof meta.turnId === 'string' && typeof meta.partCount === 'number' && meta.partCount > 1) {
     const siblings = await prisma.chatMessage.findMany({
-      where: { tenantId, conversationId: msg.conversationId, direction: 'outbound', metadata: { path: ['turnId'], equals: meta.turnId } },
-      select: { id: true, content: true, metadata: true, sentAt: true },
+      where: { tenantId, conversationId: msg.conversationId, direction: 'outbound', messageType: 'text', metadata: { path: ['turnId'], equals: meta.turnId } },
+      select: { id: true, content: true, metadata: true, sentAt: true, messageType: true },
       orderBy: { sentAt: 'asc' },
       take: 10,
     })
     agentReply = joinReplyParts(
-      siblings.map((row) => ({ content: row.content || '', metadata: asRecord(row.metadata) })),
+      siblings.map((row) => ({ content: row.content || '', metadata: asRecord(row.metadata), messageType: row.messageType })),
       agentId,
     ) || agentReply
   }

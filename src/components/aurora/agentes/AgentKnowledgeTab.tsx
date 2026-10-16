@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { ConocimientoWizardInner } from '@/app/config/agentes/conocimiento/ConocimientoWizard'
 import { CARD_STATE_TEXT, cardState, type CardState, type KnowledgeCard } from './knowledge-format'
 import { KnowledgeSourcesTable, type KnowledgeSourceRow } from './KnowledgeSourcesTable'
+import { KnowledgeMapCard } from './KnowledgeMapCard'
 
 const BAR: Record<CardState, { fill: string; width: string }> = {
   approved: { fill: 'bg-gradient-to-r from-[#5B6CFF] to-[#7C5CFF]', width: '100%' },
@@ -90,8 +91,10 @@ export function AgentKnowledgeTab({
     void loadSources()
   }, [loadSources])
 
+  const [mapKey, setMapKey] = useState(0)
   const handleChanged = useCallback(() => {
     void loadSources()
+    setMapKey((k) => k + 1)
     onChanged()
   }, [loadSources, onChanged])
 
@@ -103,6 +106,7 @@ export function AgentKnowledgeTab({
 
   return (
     <div className="space-y-4" data-testid="agent-knowledge-tab">
+      <KnowledgeMapCard agentId={agentId} refreshKey={mapKey} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="knowledge-cards">
         {cards.map((card) => {
           const state = cardState(card)

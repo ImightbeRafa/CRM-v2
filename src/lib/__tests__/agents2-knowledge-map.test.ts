@@ -82,6 +82,19 @@ describe('product text: only real product knowledge counts (verifier F1)', () =>
     const energy = fieldsOf(buildKnowledgeMap(base({ docs: [faq, hidden] })), 1)
     assert.equal(energy.ingredients.status, 'ok')
   })
+  it('a product named mid-sentence (cross-sell) neither cuts the product\'s text nor takes it (verifier round 3 M1)', () => {
+    const body = 'Focus Patch\nIngredientes: melena de león, NAC. Ideal para combinar con el Energy Patch en la mañana. Modo de uso: se pega en el brazo. Uno al día. Embarazo: consultar al médico.'
+    const map = buildKnowledgeMap(base({ docs: [doc('Doc', body)] }))
+    for (const k of ['ingredients', 'usage', 'frequency', 'warnings']) assert.equal(fieldsOf(map, 0)[k].status, 'ok', `focus ${k}`)
+    for (const k of ['ingredients', 'usage', 'frequency', 'warnings']) assert.equal(fieldsOf(map, 1)[k].status, 'missing', `energy ${k}`)
+    // FAQ style: a mid-line mention outside any product section still opens one.
+    const faq = buildKnowledgeMap(base({ docs: [doc('FAQ', '¿El Energy Patch se pega en el brazo? Sí, uno al día.')] }))
+    assert.equal(fieldsOf(faq, 1).usage.status, 'ok')
+  })
+  it('customer-service lines are store sentences (verifier round 3 M2)', () => {
+    const map = buildKnowledgeMap(base({ docs: [doc('Políticas', 'Atendemos todos los días de 8 a 6. Respondemos en menos de 2 horas. Se aplican términos y condiciones.')] }))
+    for (const k of ['usage', 'frequency']) assert.equal(fieldsOf(map, 0)[k].status, 'missing', k)
+  })
   it('store sentences never count as product facts (verifier round 2 M2)', () => {
     const policy = doc('Políticas', 'Entregamos al día siguiente en GAM. El descuento se aplica solo en pedidos de la web. No hacemos envíos de pedidos menores de ₡5.000. Enviamos en 24 horas.')
     const map = buildKnowledgeMap(base({ docs: [policy] }))

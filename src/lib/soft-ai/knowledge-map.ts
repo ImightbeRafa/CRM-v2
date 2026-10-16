@@ -164,7 +164,7 @@ function allCoresRe(cores: string[]): RegExp | null {
 
 /** Paragraphs that name no product: text that applies to all of them ("USO (igual para todos): …"). */
 /** Sentences about the store (shipping, orders, payment, promos) never count as product knowledge. */
-const STORE_SENTENCE_RE = /\b(envio|envios|enviamos|envian|entrega|entregamos|entregas|pedido|pedidos|pago|pagos|pagar|promo|promocion|descuento|direccion|compra|compras|comprar|precio|precios|retiro|despacho|mensajer|correos|sinpe|tarjeta|factura|horario|cupon)\w*/
+const STORE_SENTENCE_RE = /\b(envio|envios|enviamos|envian|entrega|entregamos|entregas|pedido|pedidos|pago|pagos|pagar|promo|promocion|descuento|direccion|compra|compras|comprar|precio|precios|retiro|despacho|mensajer|correos|sinpe|tarjeta|factura|horario|cupon|atend|respond|mensaje|whatsapp|escrib|condicion|termino)\w*|\bconsultas?\b/
 
 type Ctx = {
   visible: Doc[]
@@ -172,6 +172,7 @@ type Ctx = {
   allCores: RegExp | null
   mentions: Map<Doc, Mention[]>
   windows: Map<string, Array<{ start: number; text: string }>>
+  sections: Map<Doc, Array<{ start: number; end: number; core: string }>>
   general: Map<Doc, boolean[]>
   generalHits: Map<string, Hit | null>
   docIndex: Map<Doc, number>
@@ -191,33 +192,48 @@ function mentionsOf(ctx: Ctx, d: Doc): Mention[] {
   return out
 }
 
+/** A mention at the start of its line (after spaces, a bullet, a number or a heading mark): it starts a new section. */
+function startsLine(folded: string, index: number): boolean {
+  const lineStart = folded.lastIndexOf('\n', index - 1) + 1
+  return /^[\s\-•*–#>\d.):]*$/.test(folded.slice(lineStart, index))
+}
+
 /**
- * The text right after each mention of the product, up to the next blank line, the next mention of a DIFFERENT product
- * ("Focus: …\nEnergy: contiene cafeína" is Energy's fact) or 700 chars; non-overlapping, ≤WINDOWS_PER_DOC per document.
- * Cached per (document, product), reused for every topic.
+ * Every product section of a document, in one pass over the mentions (verifier round 3): a section opens at a mention
+ * that starts a line, or at a mid-line mention outside any section ("¿El Focus Patch sirve…?"); it ends at the next blank
+ * line, 700 chars, or the next LINE-START mention of a different product ("Focus: …\nEnergy: contiene cafeína" is Energy's
+ * fact). A mid-line mention inside a section ("ideal para combinar con el Energy Patch") neither ends it nor opens one.
  */
+function sectionsOf(ctx: Ctx, d: Doc): Array<{ start: number; end: number; core: string }> {
+  const cached = ctx.sections.get(d)
+  if (cached) return cached
+  const out: Array<{ start: number; end: number; core: string }> = []
+  let cur: { start: number; end: number; core: string } | null = null
+  for (const m of mentionsOf(ctx, d)) {
+    const lineStart = startsLine(d.folded, m.index)
+    if (cur && m.index < cur.end) {
+      if (m.core === cur.core || !lineStart) continue
+      cur.end = m.index
+    }
+    let end = Math.min(d.folded.length, m.index + 700)
+    const blank = d.folded.slice(m.index, end).search(/\n\s*\n/)
+    if (blank > 0) end = m.index + blank
+    cur = { start: m.index, end, core: m.core }
+    out.push(cur)
+  }
+  ctx.sections.set(d, out)
+  return out
+}
+
+/** The product's sections in one document (≤WINDOWS_PER_DOC), cached per (document, product), reused for every topic. */
 function windowsFor(ctx: Ctx, d: Doc, core: string): Array<{ start: number; text: string }> {
   const key = `${ctx.docIndex.get(d) ?? -1}\u0000${core}`
   const cached = ctx.windows.get(key)
   if (cached) return cached
-  const mentions = mentionsOf(ctx, d)
-  const out: Array<{ start: number; text: string }> = []
-  let next = 0
-  for (let i = 0; i < mentions.length && out.length < WINDOWS_PER_DOC; i++) {
-    const m = mentions[i]
-    if (m.core !== core || m.index < next) continue
-    let end = Math.min(d.folded.length, m.index + 700)
-    const blank = d.folded.slice(m.index, end).search(/\n\s*\n/)
-    if (blank > 0) end = m.index + blank
-    for (let j = i + 1; j < mentions.length && mentions[j].index < end; j++) {
-      if (mentions[j].core !== core) {
-        end = mentions[j].index
-        break
-      }
-    }
-    out.push({ start: m.index, text: d.folded.slice(m.index, end) })
-    next = end
-  }
+  const out = sectionsOf(ctx, d)
+    .filter((s) => s.core === core)
+    .slice(0, WINDOWS_PER_DOC)
+    .map((s) => ({ start: s.start, text: d.folded.slice(s.start, s.end) }))
   ctx.windows.set(key, out)
   return out
 }
@@ -445,7 +461,7 @@ export function buildKnowledgeMap(input: MapInput): KnowledgeMap {
   const hidden: Doc[] = docsIn.filter((d) => !d.visible).map((d) => take(d.name, d.body)).filter((d): d is Doc => d !== null)
   const cores = input.products.map((p) => productCoreName(p.name.slice(0, MAP_NAME_MAX)))
   const docIndex = new Map<Doc, number>([...visible, ...hidden].map((d, i) => [d, i]))
-  const ctx: Ctx = { visible, hidden, allCores: allCoresRe(cores), mentions: new Map(), windows: new Map(), general: new Map(), generalHits: new Map(), docIndex }
+  const ctx: Ctx = { visible, hidden, allCores: allCoresRe(cores), mentions: new Map(), windows: new Map(), sections: new Map(), general: new Map(), generalHits: new Map(), docIndex }
 
   const products: MapProduct[] = input.products.map((p, i) => {
     const price: MapField =

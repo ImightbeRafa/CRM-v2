@@ -195,21 +195,40 @@ function mentionsOf(ctx: Ctx, d: Doc): Mention[] {
 /** How far back the subject check looks (bounded: never a scan to the start of a very long line). */
 const SUBJECT_LOOKBACK = 120
 /**
- * The product is the SUBJECT of its line or sentence: only bullets / numbers / ¿¡ and up to 4 question or lead words
- * ("¿Cómo se usa el …", "¿Qué contiene el …", "El …") come before it since the line or sentence started. An object
- * mention ("ideal para combinar con el Energy Patch", "combinalo con el …") is not. Verifier rounds 3–4.
+ * The product is the SUBJECT of its line or sentence (verifier rounds 3–5):
+ * - a statement: only bullets / numbers / "P:" marks come before the name ("Energy: contiene cafeína"). Lead words do
+ *   not count, so "El Energy Patch es su complemento ideal" inside the Focus block stays Focus's text;
+ * - a question (starts with ¿, or ends with ? shortly after the name): up to 6 question / lead words may come first
+ *   ("¿Dónde se pega el …", "P: ¿Cada cuánto se cambia el …", "Cómo se usa el …?"). Comparisons and pairings
+ *   ("¿Es como el …", "¿Se puede combinar con el …") are object mentions: con / al / junto / combin* are not lead words.
  */
-const SUBJECT_PREFIX_RE =
-  /^[\s\-•*–#>\d.):¿¡"“'*]*(?:(?:el|la|los|las|lo|un|una|que|como|cuanto|cuanta|cuantos|cuantas|cual|y|tambien|sobre|del|de|se|usa|usan|contiene|contienen|trae|traen|lleva|sirve|sirven|es|son|para|tiene|tienen|hay|precio|ingredientes)\s+){0,4}$/
+const STATEMENT_PREFIX_RE = /^[\s\-•*–#>\d.):"“'*]*(?:[pr]\s*:[\s"“'*]*)?$/
+const QUESTION_PREFIX_RE =
+  /^[\s\-•*–#>\d.):"“'*]*(?:[pr]\s*:[\s"“'*]*)?[¿¡]?\s*(?:(?:el|la|los|las|lo|un|una|que|como|cuanto|cuanta|cuantos|cuantas|cual|cuales|donde|cuando|cada|quien|puedo|puede|pueden|podes|usar|uso|dura|duran|cuesta|cuestan|funciona|funcionan|aplica|aplico|pega|pego|coloca|coloco|pone|pongo|cambia|cambio|en|tiempo|y|tambien|sobre|del|de|se|usa|usan|contiene|contienen|trae|traen|lleva|llevan|sirve|sirven|es|son|para|tiene|tienen|hay|precio|ingredientes|si|me|lo|la)\s+){0,6}$/
+/** "como el …" right before the name is a comparison ("¿Es como el Energy Patch?"), never the subject. */
+const COMPARISON_TAIL_RE = /\bcomo\s+(?:el|la|los|las|un|una)\s+$/
 /** Where the line / sentence that makes the product its subject starts, or -1 when the mention is an object. */
 function subjectStart(folded: string, index: number): number {
   const from = Math.max(0, index - SUBJECT_LOOKBACK)
   const before = folded.slice(from, index)
-  // The current line / sentence starts after the last newline or sentence mark in the look-back window.
-  const cut = Math.max(before.lastIndexOf('\n'), before.lastIndexOf('. '), before.lastIndexOf('? '), before.lastIndexOf('! '), before.lastIndexOf('?'), before.lastIndexOf('!'))
+  // The current line / sentence starts after the last newline or sentence mark in the look-back window; an opening
+  // ¿ / ¡ also starts one ("…melena.¿El Energy Patch…") and stays in the prefix.
+  const cut = Math.max(
+    before.lastIndexOf('\n'),
+    before.lastIndexOf('. '),
+    before.lastIndexOf('?'),
+    before.lastIndexOf('!'),
+    before.lastIndexOf('¿') - 1,
+    before.lastIndexOf('¡') - 1,
+  )
   if (cut < 0 && from > 0) return -1
-  const prefix = cut >= 0 ? before.slice(cut + 1) : before
-  return SUBJECT_PREFIX_RE.test(prefix) ? from + cut + 1 : -1
+  const at = cut >= 0 ? cut + 1 : 0
+  const prefix = before.slice(at)
+  if (STATEMENT_PREFIX_RE.test(prefix)) return from + at
+  const after = folded.slice(index, index + SUBJECT_LOOKBACK)
+  const question = /[¿¡]/.test(prefix) || /^[^.!\n]*\?/.test(after)
+  if (!question || COMPARISON_TAIL_RE.test(prefix)) return -1
+  return QUESTION_PREFIX_RE.test(prefix) ? from + at : -1
 }
 
 /**
@@ -225,17 +244,20 @@ function sectionsOf(ctx: Ctx, d: Doc): Array<{ start: number; end: number; core:
   const out: Array<{ start: number; end: number; core: string }> = []
   let cur: { start: number; end: number; core: string } | null = null
   for (const m of mentionsOf(ctx, d)) {
+    if (cur && m.index < cur.end && m.core === cur.core) continue
+    const at = subjectStart(d.folded, m.index)
     if (cur && m.index < cur.end) {
-      if (m.core === cur.core) continue
-      const at = subjectStart(d.folded, m.index)
       if (at < 0) continue
       // The previous section ends where this line / sentence starts ("¿Cómo se usa el Energy Patch?" is Energy's).
       cur.end = Math.max(cur.start + 1, Math.min(cur.end, at))
     }
+    // The section starts with its own question ("P: ¿Qué ingredientes tiene el Focus Patch?"), never inside the previous one.
+    const prevEnd: number = cur ? cur.end : 0
+    const start: number = at >= 0 ? Math.max(at, prevEnd) : m.index
     let end = Math.min(d.folded.length, m.index + 700)
     const blank = d.folded.slice(m.index, end).search(/\n\s*\n/)
     if (blank > 0) end = m.index + blank
-    cur = { start: m.index, end, core: m.core }
+    cur = { start, end, core: m.core }
     out.push(cur)
   }
   ctx.sections.set(d, out)

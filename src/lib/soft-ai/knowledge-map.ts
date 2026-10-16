@@ -424,7 +424,7 @@ export function findConflicts(input: Pick<MapInput, 'products' | 'brandFacts' | 
       if (!/\b(envio|envios|entrega|llega|llegan|despacho)\b/.test(l.folded)) continue
       const bad = [...l.folded.matchAll(/(?<!\d)(\d{1,3}) ?a ?(\d{1,3}) ?dias/g)].map((m) => `${m[1]}-${m[2]}`).find((r) => etaRanges.size && !etaRanges.has(r))
       if (bad) {
-        out.push({ key: 'shipping_time', label: 'Tiempo de entrega', detail: `"${l.doc}" dice ${bad.replace('-', ' a ')} días; la configuración dice "${maskMapText(ea!.etaText)}".` })
+        out.push({ key: 'shipping_time', label: 'Tiempo de entrega', detail: `"${l.doc}" dice ${bad.replace('-', ' a ')} días; la configuración dice "${maskMapText(ea?.etaText ?? "")}".` })
         break
       }
     }

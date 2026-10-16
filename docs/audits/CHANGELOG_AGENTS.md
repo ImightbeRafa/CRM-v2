@@ -1,3 +1,20 @@
+## 2026-10-16 — agents2-datalist: fixed shipping data list (claudio/release-2026-10-16)
+
+- Rafael (not negotiable): every order-data request is exactly Nombre completo / Teléfono / Correo (opcional) /
+  Provincia / Cantón / Distrito / Dirección exacta con señas (retiro: first three). Live PatchHouse reply had dropped
+  provincia/cantón.
+- `order-data-list.ts` `canonicalizeOrderDataList` (pure) rewrites a SHIPPING data request (names a place / address +
+  name or phone; list, inline comma / slash / dot / emoji, or "necesito tu …" form) to that list inside
+  `applyFinalOutputPolicy` after unjoining (live, Probar, saved replies); reason `data_list` (non-blocking, benign in
+  quick-check why). Left as written: pickup / lookup / invoice lists (no place), ✅/👍 checklists, summaries with
+  values, follow-ups ("solo me falta…"), product / payment lists. Extra business fields stay after the list.
+- A list holding the fixed list counts as one line up to 12 items (others stay at 8) — no "too long" hand-off.
+- Prompt names the exact list (agent-sales-context orderFields, whole-label dedupe; sales-state closing lines;
+  oneLine cap 160). `pb_como_comprar` default + legacy upgrade. Packs (betsy-agent-packs patchhouse/sleeping) updated.
+- Verifier: round 1 FAIL (H1/H2, M3–M5, L6/L7) → round 2 PASS WITH NOTES (M1–M3, L4, L6) → fixed.
+- Proof: tsc 0, lint 0, test:soft-ai 826/826 (new agents2-data-list), soft-ai-agent 319/319, security 271/271,
+  chat-harden 643/643. Not deployed.
+
 ## 2026-10-16 — agents2-pace/hours: Verifier F1–F7 + SecureDog INT-120..124, DATA-55/56 (claudio/agents2-pace)
 
 - F1: automation-processor kicks the newest waiting job of the same conversation (tenant-scoped) once after a job

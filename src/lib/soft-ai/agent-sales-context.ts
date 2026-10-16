@@ -14,8 +14,15 @@ import type { MethodCoverage } from '@/lib/shipping/coverage'
 import { canSharePaymentFacts, paymentLabelOptions, paymentMethodsOf, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import { shippingFromFacts, type SalesContext } from '@/lib/soft-ai/sales-state'
 import { promoInEffect } from '@/lib/soft-ai/promo'
+import { PICKUP_DATA_FIELDS, SHIPPING_DATA_FIELDS } from '@/lib/soft-ai/order-data-list'
 
 const INLINE_CATALOG_MAX = 30
+/**
+ * Customer fields that ARE one of the fixed shipping list's (a business field "Correo" is not asked twice). Whole label
+ * only: "Nombre de quien recibe" or "Teléfono alterno" stay.
+ */
+const BASE_FIELD_RE =
+  /^\s*(nombre( completo)?|tel[eé]fono|celular|correo( electr[oó]nico)?|e-?mail|provincia|cant[oó]n|distrito|direcci[oó]n( exacta)?( con (otras )?señas)?)\s*$/i
 
 function placesText(places: string[]): string {
   const shown = places.slice(0, 6).map((p) => p.split('|').map((x) => x.replace(/\b\p{L}/gu, (c) => c.toUpperCase())).join(' / '))
@@ -72,14 +79,12 @@ export async function loadAgentSalesContext(input: {
   // to the agent's own shipping facts so it can still quote (these amounts are already allowed by the validator).
   const fromFacts = methods.length === 0 ? shippingFromFacts(input.brandFacts.shipping) : []
 
+  // Rafael 2026-10-16: the shipping data is this exact list (order-data-list.ts); code rewrites any other wording.
   const orderFields = [
-    'Nombre',
-    // On WhatsApp the number is already known; ask only if they want another contact number.
-    'Teléfono (si es otro distinto a este chat)',
     ...(input.brandFacts.shipping?.ra?.enabled ? ['Envío o retiro en tienda'] : []),
-    'Provincia, cantón y distrito (si es envío)',
-    'Dirección exacta con otras señas (si es envío)',
-    ...(requirements?.customerFields ?? []).map((f) => f.label),
+    `Si es envío, exactamente: ${SHIPPING_DATA_FIELDS.join(' / ')}`,
+    ...(input.brandFacts.shipping?.ra?.enabled ? [`Si es retiro: ${PICKUP_DATA_FIELDS.join(' / ')}`] : []),
+    ...(requirements?.customerFields ?? []).filter((f) => !BASE_FIELD_RE.test(f.label)).map((f) => f.label),
     ...(requirements?.productFields ?? []).map((f) => (f.options?.length ? `${f.label} (${f.options.slice(0, 8).join('/')})` : f.label)),
   ]
 

@@ -16,6 +16,7 @@ import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
 import { fillPaymentToken, paymentNumberProblems, type PaymentFillOptions, type TokenPaymentMethod } from '@/lib/soft-ai/payment-guard'
 import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
 import { buildLinkAllowlist, foreignLinks, type LinkAllowlist } from '@/lib/soft-ai/links'
+import { canonicalizeOrderDataList, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
 import { MAX_REPLY_PARTS, splitReplyParts } from '@/lib/soft-ai/reply-parts'
 
 /**
@@ -372,13 +373,21 @@ const LIST_ITEM_RE = /^\s*(?:[-•*–]|\d{1,2}[.)])\s+\S/
 
 /** A dash list counts as one line only up to this many items (a longer list counts item by item). */
 export const LIST_AS_ONE_LINE_MAX = 8
+/**
+ * The fixed shipping data list (7) + business fields: up to this many items still count as one line, so a data
+ * request is never "too long" (2026-10-16). Only for a list that holds the fixed list.
+ */
+export const DATA_LIST_AS_ONE_LINE_MAX = 12
 
 /** Lines of one message: a run of list items ("- …", "• …", "1. …") counts as ONE line (up to 8 items). */
 export function messageLineCount(part: string): number {
   return unitsWeight(messageUnits(part))
 }
 
-const unitWeight = (unit: string[]) => (unit.length > LIST_AS_ONE_LINE_MAX ? unit.length : 1)
+const unitWeight = (unit: string[]) => {
+  const max = unit.length > LIST_AS_ONE_LINE_MAX && unit.join('\n').includes(SHIPPING_DATA_LIST) ? DATA_LIST_AS_ONE_LINE_MAX : LIST_AS_ONE_LINE_MAX
+  return unit.length > max ? unit.length : 1
+}
 const unitsWeight = (units: string[][]) => units.reduce((n, u) => n + unitWeight(u), 0)
 
 /** Units of one message: a single line, or a whole run of list items. */
@@ -540,6 +549,15 @@ export function applyFinalOutputPolicy(input: {
       text = unjoined
       reasons.push('unjoined')
     }
+  }
+  // Rafael 2026-10-16 (not negotiable): a shipping-data request goes out as the exact fixed list (after unjoining, so
+  // a dot-joined request is caught too; before shortening, so the list is kept whole).
+  const canonicalList = canonicalizeOrderDataList(text)
+  if (canonicalList !== text) {
+    text = canonicalList
+    reasons.push('data_list')
+  }
+  if (input.shortenLongReply) {
     const short = shortenToMaxLines(text, style.maxLines)
     if (short !== text) {
       text = short
@@ -617,7 +635,7 @@ export function applyFinalOutputPolicy(input: {
   })
 
   const merged = [...new Set([...reasons, ...validated.reasons])]
-  const blocking = merged.filter((reason) => reason !== 'purchase_summary_appended' && reason !== 'shortened' && reason !== 'unjoined')
+  const blocking = merged.filter((reason) => reason !== 'purchase_summary_appended' && reason !== 'shortened' && reason !== 'unjoined' && reason !== 'data_list')
   return {
     text,
     ok: blocking.length === 0,

@@ -84,7 +84,7 @@ const msg = (direction: 'inbound' | 'outbound', content: string) => ({ id: `${di
 /** The live test's model reply, in the new format (what the prompt asks for). */
 const CLOSE_REPLY = [
   'El combo GLP-1 + Focus con envío a Cartago queda en ₡20 900 🌿',
-  'Para armar tu pedido pasame:\n- Nombre completo\n- Teléfono\n- Correo\n- Dirección exacta (provincia, cantón y distrito)',
+  'Para armar tu pedido pasame:\n- Nombre completo\n- Teléfono\n- Correo (opcional)\n- Provincia\n- Cantón\n- Distrito\n- Dirección exacta con señas',
   '¿Cómo preferís pagar? Tenemos SINPE Móvil, tarjeta (en la web) y contra entrega (solo GAM).',
 ].join('\n\n')
 
@@ -369,7 +369,7 @@ describe('3b. sales state: metodo_pago', () => {
     const s = deriveSalesState({ history: [msg('outbound', 'Queda en ₡15 900')], inboundText: 'lo quiero', ctx: CTX })
     assert.equal(s.stage, 'cierre')
     assert.match(s.nextStep, /preguntá cómo prefiere pagar/)
-    assert.match(s.nextStep, /pedí en lista SOLO los datos del pedido que falten/)
+    assert.match(s.nextStep, /pedí los datos del pedido con la lista fija de "Datos que necesita un pedido"/)
     assert.equal(salesMethodQuestion(CTX), '¿Cómo preferís pagar? Tenemos SINPE Móvil, transferencia, tarjeta (en la web) y contra entrega (solo GAM).')
     assert.match(formatSalesTurnBlock(CTX, s), /Pregunta de pago \(usala tal cual, en su propio mensaje\): «¿Cómo preferís pagar\? Tenemos SINPE Móvil/)
     const noGam = { ...CTX, cardOnWeb: false, shippingMethods: [{ name: 'Envío', price: 3000, coverage: 'todo el país', cod: 'sí, donde llega' }] }
@@ -471,10 +471,15 @@ describe('3c. deterministic replies', () => {
     assert.match(rendered, /Pago: SINPE Móvil, transferencia, tarjeta \(en la web\) y contra entrega \(solo GAM\)/)
     assert.doesNotMatch(rendered, /6201|CR05/)
   })
-  it('pb_como_comprar asks for the data as a list (no extra "Correo"; F9)', () => {
+  it('pb_como_comprar asks for the fixed shipping list (Rafael 2026-10-16; correo optional)', () => {
     const body = SALES_REPLY_TEMPLATES.find((s) => s.key === 'pb_como_comprar')!.body
-    assert.equal(body, 'Para armar tu pedido pasame:\n- Nombre completo\n- Teléfono\n- Dirección exacta (provincia, cantón y distrito)')
+    assert.equal(
+      body,
+      'Para armar tu pedido pasame:\n- Nombre completo\n- Teléfono\n- Correo (opcional)\n- Provincia\n- Cantón\n- Distrito\n- Dirección exacta con señas',
+    )
     assert.equal(upgradeLegacyShortcutBody('Para hacer el pedido solo necesito tu nombre completo, teléfono y dirección exacta. ¿Me los pasás?'), body)
+    // The previous 3-line default upgrades too.
+    assert.equal(upgradeLegacyShortcutBody('Para armar tu pedido pasame:\n- Nombre completo\n- Teléfono\n- Dirección exacta (provincia, cantón y distrito)'), body)
   })
   it('choices SHAPED like a choice: that method only, then the receipt ask (no hand-off)', () => {
     for (const [text, method] of [['SINPE', 'sinpe'], ['sinpe porfa', 'sinpe'], ['por sinpe', 'sinpe'], ['Prefiero SINPE 🙏', 'sinpe'], ['tarjeta', 'tarjeta'], ['contra entrega', 'contra_entrega'], ['quiero pagar por sinpe, me pasás el número?', 'sinpe']] as const) {

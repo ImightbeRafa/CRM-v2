@@ -51,7 +51,7 @@ const CODE_TEXT: Record<string, string> = {
 }
 
 /** Not failures by themselves (the reply was adjusted, not replaced). */
-const BENIGN: ReadonlySet<string> = new Set(['shortened', 'unjoined', 'purchase_summary_appended'])
+const BENIGN: ReadonlySet<string> = new Set(['shortened', 'unjoined', 'purchase_summary_appended', 'data_list'])
 
 /** Probar / quick check: the raw outcome codes of one test turn (deduped, bounded). Pure. */
 export function probarOutcomeCodes(input: {

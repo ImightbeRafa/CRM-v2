@@ -11,6 +11,7 @@ import {
   completeJob,
   completeLateJob,
   failJob,
+  NEWEST_BURST_JOB_ORDER,
   withProcessingTimeout,
   type ClaimedChatAutomationJob,
 } from '@/lib/soft-ai/automation-queue'
@@ -165,7 +166,8 @@ export async function kickNextConversationJob(row: Pick<ClaimedChatAutomationJob
         status: { in: ['pending', 'retry'] },
         availableAt: { lte: new Date() },
       },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      // The job the claim would pick (newest customer message first), not one the claim holds back.
+      orderBy: NEWEST_BURST_JOB_ORDER,
       select: { id: true },
     })
     if (next) void processJobById(next.id, { kick: false }).catch(() => undefined)

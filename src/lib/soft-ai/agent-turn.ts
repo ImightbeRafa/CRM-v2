@@ -29,12 +29,16 @@ import {
 import { newerBurstJobPending, type ClaimedChatAutomationJob } from '@/lib/soft-ai/automation-queue'
 import {
   burstHasLaterBubble,
+  burstOutgrowsWindow,
   burstReviewIn,
   burstOptOutIn,
   planBurstInbound,
+  BURST_LOAD_MAX,
+  BURST_MAX_AGE_MS,
   BURST_YIELD_MAX_AGE_MS,
   shouldYieldToNewerBurst,
   unansweredBurst,
+  type BurstMessage,
 } from '@/lib/soft-ai/inbound-burst'
 import {
   collectDryRunBlockers,
@@ -236,7 +240,7 @@ function plannedMarkers(base: { needsHuman: boolean; fallbackUsed: boolean; esca
 async function loadHistory(
   conversationId: string,
   triggerMessageId: string,
-): Promise<{ history: SoftAiHistoryMessage[]; messageTypeOf: Map<string, string | null> }> {
+): Promise<{ history: SoftAiHistoryMessage[]; messageTypeOf: Map<string, string | null>; loadedRows: number }> {
   const rows = await prisma.chatMessage.findMany({
     where: chatHistoryWhere(conversationId, triggerMessageId),
     orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
@@ -259,7 +263,46 @@ async function loadHistory(
       sentAt: r.sentAt.toISOString(),
     })),
     messageTypeOf: new Map(kept.map((r) => [r.id, r.messageType ?? null])),
+    loadedRows: rows.length,
   }
+}
+
+/**
+ * Burst = one reply, longer than the history window (a WhatsApp multi-forward of 24+ bubbles): the customer's
+ * unanswered bubbles on their own — inbound after the store's last reply, sent at most BURST_MAX_AGE_MS before the
+ * trigger, newest BURST_LOAD_MAX — so every one still gets its opt-out / receipt / payment-claim check. Only what the
+ * burst checks is loaded (text, type, time); the model keeps its 24-row window. Same tenant and chat only.
+ */
+async function loadUnansweredInbound(input: {
+  tenantId: string
+  conversationId: string
+  triggerMessageId: string
+  triggerSentAt: Date
+}): Promise<BurstMessage[]> {
+  const since = new Date(input.triggerSentAt.getTime() - BURST_MAX_AGE_MS)
+  const lastReply = await prisma.chatMessage.findFirst({
+    where: { tenantId: input.tenantId, conversationId: input.conversationId, direction: 'outbound' },
+    orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
+    select: { sentAt: true },
+  })
+  const rows = await prisma.chatMessage.findMany({
+    where: {
+      tenantId: input.tenantId,
+      conversationId: input.conversationId,
+      direction: 'inbound',
+      id: { not: input.triggerMessageId },
+      sentAt: lastReply && lastReply.sentAt >= since ? { gt: lastReply.sentAt } : { gte: since },
+    },
+    orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
+    take: BURST_LOAD_MAX,
+    select: { content: true, messageType: true, sentAt: true },
+  })
+  return rows.reverse().map((r) => ({
+    direction: 'inbound' as const,
+    content: r.content,
+    messageType: r.messageType ?? null,
+    sentAt: r.sentAt.toISOString(),
+  }))
 }
 
 /**
@@ -926,13 +969,25 @@ export async function executeAgentLayerTurn(
     fallbackPlatform: payload.platform || 'whatsapp',
   })
 
-  const { history, messageTypeOf } = await loadHistory(row.conversationId, trigger.id)
+  const { history, messageTypeOf, loadedRows } = await loadHistory(row.conversationId, trigger.id)
   const liveInventoryIds = await loadMappedInventoryIds(row.tenantId, resolved.agent.id)
   // Burst = one reply: the customer's earlier unanswered bubbles of this burst (photos / audios included).
-  const burstEarlier = unansweredBurst(
+  const windowBurst = unansweredBurst(
     history.map((m) => ({ ...m, messageType: messageTypeOf.get(m.id) ?? null })),
     trigger,
   )
+  // A burst longer than the history window (24+ bubbles): every bubble is still checked (loaded on its own).
+  const burstEarlier = burstOutgrowsWindow({ loadedRows, windowMax: HISTORY_WINDOW_MAX, history, burst: windowBurst })
+    ? unansweredBurst(
+        await loadUnansweredInbound({
+          tenantId: row.tenantId,
+          conversationId: row.conversationId,
+          triggerMessageId: trigger.id,
+          triggerSentAt: trigger.sentAt,
+        }),
+        trigger,
+      )
+    : windowBurst
   // Burst = one reply (Verifier r2 #2): a bubble sent after this trigger landed since the first check and its job is
   // queued → that job answers the whole burst (and takes any hand-off in it), never this one and then that one too.
   if (burstHasLaterBubble(burstEarlier, trigger) && (await yieldsToNewerBurst(row, trigger.sentAt))) {

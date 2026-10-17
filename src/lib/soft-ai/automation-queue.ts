@@ -20,6 +20,12 @@ export const MAX_ATTEMPTS = 5
 export const BURST_SETTLE_MS = 3_500
 /** A newer job of the same chat that becomes claimable within this horizon holds the older ones back (claim SQL). */
 export const BURST_HOLD_SECONDS = 10
+/** Newest first as the claim SQL sees it: by the customer message's sentAt, then createdAt / id. */
+export const NEWEST_BURST_JOB_ORDER = [
+  { message: { sentAt: 'desc' } },
+  { createdAt: 'desc' },
+  { id: 'desc' },
+] satisfies Prisma.ChatAutomationJobOrderByWithRelationInput[]
 
 export type SoftAiJobStatus =
   | 'pending'
@@ -216,6 +222,9 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
   // SUPERSEDED after a successful claim (A1 single-flight / burst coalesce).
   // Burst = one reply: a newer job still settling (claimable within BURST_HOLD_SECONDS) also holds the older ones
   // back, so the first bubble of a burst is not answered alone while the next one is seconds away.
+  // "Newer" is by the customer message's sentAt, then createdAt / id (burst hardening): a bubble Meta delivers late
+  // (sent earlier, job created later) never becomes the answering job; it is one of the burst's other bubbles. The
+  // message is joined, never locked (FOR UPDATE OF current): ChatAutomationJob.messageId is a required FK (cascade).
   // Single-flight partial unique on status=processing defers concurrent claimants.
   try {
     const rows = await prisma.$queryRaw<
@@ -236,6 +245,7 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
       WITH candidate AS (
         SELECT current."id", current."conversationId"
         FROM "ChatAutomationJob" current
+        JOIN "ChatMessage" current_msg ON current_msg."id" = current."messageId"
         WHERE (${id || null}::text IS NULL OR current."id" = ${id || null})
           AND current."availableAt" <= CURRENT_TIMESTAMP
           AND EXISTS (
@@ -253,8 +263,9 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
           AND NOT EXISTS (
             SELECT 1
             FROM "ChatAutomationJob" newer
+            JOIN "ChatMessage" newer_msg ON newer_msg."id" = newer."messageId"
             WHERE newer."conversationId" = current."conversationId"
-              AND (newer."createdAt", newer."id") > (current."createdAt", current."id")
+              AND (newer_msg."sentAt", newer."createdAt", newer."id") > (current_msg."sentAt", current."createdAt", current."id")
               AND newer."status" IN ('pending', 'retry')
               AND newer."availableAt" <= CURRENT_TIMESTAMP + ${Prisma.raw(`INTERVAL '${BURST_HOLD_SECONDS} seconds'`)}
           )
@@ -266,8 +277,8 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
               AND inflight."leaseExpiresAt" > CURRENT_TIMESTAMP
               AND inflight."id" <> current."id"
           )
-        ORDER BY current."createdAt" DESC, current."id" DESC
-        FOR UPDATE SKIP LOCKED
+        ORDER BY current_msg."sentAt" DESC, current."createdAt" DESC, current."id" DESC
+        FOR UPDATE OF current SKIP LOCKED
         LIMIT ${limit}
       )
       UPDATE "ChatAutomationJob" job

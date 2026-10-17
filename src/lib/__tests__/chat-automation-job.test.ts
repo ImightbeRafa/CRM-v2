@@ -152,7 +152,7 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
     }
   })
 
-  it('webhook persists job before 200 and voids processJobById; cron is separate safety net', () => {
+  it('webhook persists job before 200 and dispatches it after the burst settle; cron is separate safety net', () => {
     const webhook = read('src/app/api/chat/webhook/route.ts')
     const cron = read('src/app/api/cron/chat-automation/route.ts')
     // Production runs on Cloudflare: the */1 safety-net cron lives in wrangler.jsonc and the Worker
@@ -160,10 +160,11 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
     const wrangler = read('wrangler.jsonc')
     const worker = read('src/cf-container-worker.ts')
     assert.match(webhook, /enqueueSoftAiAfterInbound/)
-    assert.match(webhook, /processJobById/)
+    assert.match(webhook, /processJobAfterSettle/)
     const enqueueAt = webhook.indexOf('enqueueSoftAiAfterInbound')
     const returnAt = webhook.lastIndexOf('return NextResponse.json')
-    const voidAt = webhook.indexOf('void processJobById')
+    // Burst = one reply (2026-10-17): the immediate dispatch waits BURST_SETTLE_MS (processJobAfterSettle).
+    const voidAt = webhook.indexOf('processJobAfterSettle(jobId')
     assert.ok(enqueueAt > 0 && returnAt > enqueueAt)
     assert.ok(voidAt > enqueueAt)
     assert.match(cron, /CRON_SECRET/)

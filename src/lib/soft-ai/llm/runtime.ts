@@ -494,8 +494,16 @@ export async function runSoftAiLlmRuntime(
     // SecureDog INT-93: a reply that sounds like it confirms a payment, or the model asking for a person on a message
     // about a payment, is a real PAYMENT hand-off (fixed "ya lo reviso" text + the chat goes to a person) — never the
     // "safe line and stay on IA" path, which would let the model try again on the next message.
+    // luna-10 live (2026-10-17): a lone "confirmad[oa]" ("No tengo información confirmada sobre…" on a side-effects
+    // question) is still never sent, but it is only a PAYMENT hand-off ("Pago por verificar") when payment or an order
+    // is in play: the reply or the customer's message has a payment word, or the reply talks about the order.
+    const confirmationIsPayment =
+      validation.reasons.includes('confirmation_wording') &&
+      (hasPaymentWord(finalText) ||
+        hasPaymentWord(input.inboundText || '') ||
+        /(?<![\p{L}])(pedido|orden|compra)(?![\p{L}])/iu.test(finalText))
     const paymentRisk =
-      validation.reasons.includes('confirmation_wording') ||
+      confirmationIsPayment ||
       validation.reasons.includes('payment_status_claim') ||
       (structured.needsHuman && hasPaymentWord(input.inboundText || ''))
     if (paymentRisk) {

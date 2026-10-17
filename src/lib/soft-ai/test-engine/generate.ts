@@ -52,6 +52,8 @@ export type SuiteInput = {
     bundles: Array<{ name: string; price: number; shippingIncluded: boolean }>
     /** salesAllowedAmounts: every amount the reply checker lets the agent write. */
     allowedAmounts: number[]
+    /** The store's own pickup / delivery wording from brand facts ("Retiro: con cita en …"). */
+    storeNotes?: string[]
   } | null
 }
 
@@ -119,6 +121,7 @@ export function judgeFacts(input: Pick<SuiteInput, 'products' | 'sales'>): strin
     })
     parts.push(`Montos válidos (cada monto vale solo para lo que dice): ${rows.join('; ')}.`)
   }
+  if (sales?.storeNotes?.length) parts.push(`Datos de la tienda: ${sales.storeNotes.map((n) => clean(n, 200)).join('; ')}.`)
   return parts.join(' ')
 }
 
@@ -164,7 +167,8 @@ export function generateAgentSuite(input: SuiteInput): { cases: TestCase[]; suit
       group: 'conversacion',
       title: 'Quiere comprar',
       message: `Me interesa ${inStock[0].name}, ¿cómo hago para comprarlo?`,
-      expect: [{ kind: 'judge', rubric: 'Responde con amabilidad, explica el siguiente paso para comprar y pide los datos necesarios sin inventar precios ni condiciones.' }],
+      // luna-10 go-live: one question per message is the sales flow — asking "¿envío o retiro?" first IS the next step.
+      expect: [{ kind: 'judge', rubric: 'Responde con amabilidad y da o pregunta el siguiente paso para comprar (por ejemplo si quiere envío o retiro, o los datos para el pedido; una pregunta por mensaje es correcto), sin inventar precios ni condiciones que no estén en los datos de la tienda.' }],
       grading: 'judge',
     })
   }

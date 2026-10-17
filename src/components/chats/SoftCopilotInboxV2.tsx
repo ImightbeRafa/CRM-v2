@@ -68,7 +68,7 @@ import {
 } from '@/lib/soft-ai/agent-state'
 import { lineHealth, lineIsDown, summarizeLineCounts } from '@/lib/chat-line-filter'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
-import { WA_OUTBOUND_ACCEPT } from '@/lib/chat-outbound-media'
+import { IG_OUTBOUND_ACCEPT, WA_OUTBOUND_ACCEPT } from '@/lib/chat-outbound-media'
 import { WA_CAPTION_MAX, type ChatQuickReply, type QuickReplyChange, type QuickReplyMedia } from '@/lib/chat-quick-replies'
 import { hasOrderDraft } from '@/lib/order-draft'
 import { useSession } from 'next-auth/react'
@@ -1073,6 +1073,8 @@ export function SoftCopilotInboxV2() {
     tags?: SoftTag[]
     /** Server removes just this tag (array_remove), never a whole-array write. */
     removeTag?: SoftTag
+    /** With removeTag on a review tag: 'dismissed' = false alarm (audit wording only). */
+    reviewOutcome?: 'resolved' | 'dismissed'
     /** Server adds just this tag (array_append when absent, 20-tag cap). */
     addTag?: SoftTag
     assignedUserId?: string | null
@@ -1194,6 +1196,22 @@ export function SoftCopilotInboxV2() {
       }).catch(() => false)
       if (ok) {
         toast({ variant: 'success', title: tag === PAYMENT_REVIEW_TAG ? 'Pago verificado' : 'Pedido confirmado' })
+      } else {
+        toast({ variant: 'destructive', title: 'No se pudo guardar', description: 'Probá de nuevo o recargá la página.' })
+      }
+    } finally {
+      setReviewBusy(false)
+    }
+  }
+
+  /** "No es pago" / "Descartar": a false alarm — remove the review tag, no stage change, audited as dismissed. */
+  async function dismissReviewTag(tag: SoftTag) {
+    if (!selectedConversation || reviewBusy || !selectedConversation.tags.includes(tag)) return
+    setReviewBusy(true)
+    try {
+      const ok = await patchConversation({ removeTag: tag, reviewOutcome: 'dismissed' }).catch(() => false)
+      if (ok) {
+        toast({ variant: 'success', title: tag === PAYMENT_REVIEW_TAG ? 'Aviso de pago quitado' : 'Aviso de pedido quitado' })
       } else {
         toast({ variant: 'destructive', title: 'No se pudo guardar', description: 'Probá de nuevo o recargá la página.' })
       }
@@ -1760,7 +1778,11 @@ export function SoftCopilotInboxV2() {
 
   const threadSharedProps = {
     presence: presenceText,
-    reviewTags: { onResolve: (tag: SoftTag) => void resolveReviewTag(tag), busy: reviewBusy },
+    reviewTags: {
+      onResolve: (tag: SoftTag) => void resolveReviewTag(tag),
+      onDismiss: (tag: SoftTag) => void dismissReviewTag(tag),
+      busy: reviewBusy,
+    },
     // "Corregir" on AI messages: only people who can edit agents (the API checks update_config again).
     canTuneAgent: canManageQuickReplies,
     snooze: snoozeAvailable
@@ -1820,7 +1842,7 @@ export function SoftCopilotInboxV2() {
     assignment: { assignees, viewerUserId, onAssign: (id: string | null) => void assignTo(id), busy: assignBusy },
     attachments: outboundMedia
       ? {
-          accept: WA_OUTBOUND_ACCEPT,
+          accept: selectedConversation?.platform === 'instagram' ? IG_OUTBOUND_ACCEPT : WA_OUTBOUND_ACCEPT,
           onSendFile: handleSendFile,
           onSendRecent: handleSendRecent,
           onSendQuickReplyMedia: handleSendQuickReplyMedia,

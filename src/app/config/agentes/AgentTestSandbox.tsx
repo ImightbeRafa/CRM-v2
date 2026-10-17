@@ -256,7 +256,9 @@ export function AgentTestSandbox({
       // History = everything before this message (the message itself is already shown as a bubble).
       const all = historyRef.current.filter((bubble) => bubble.from !== 'system')
       const idx = all.map((b) => b.from === 'customer' && b.text === inbound).lastIndexOf(true)
-      const before = idx >= 0 ? all.slice(0, idx) : all
+      // Burst = one reply: a reply to an earlier queued message lands after this one in the list — keep it (as in a
+      // real chat, that message is answered), and leave out only this message and the customer's later ones.
+      const before = idx >= 0 ? all.filter((b, i) => i !== idx && !(i > idx && b.from === 'customer')) : all
       const res = await fetch(`/api/chat/agents/${agentId}/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

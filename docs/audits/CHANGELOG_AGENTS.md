@@ -1,3 +1,82 @@
+## 2026-10-17 (night) — PR #100 burst fix + quick replies + confirmation false alarm, deployed 5820a6fc
+
+- PR #100 (one reply per burst, photo + text answered) fast-forwarded onto claudio/luna-10 (28f83c72). The "/" menu shows all quick replies (was 8 of 37), and quick-reply photos work on Instagram. A lone "confirmada" in a blocked reply is no longer a payment hand-off without payment context (live 467818).
+- First real Instagram photo send: agent ph_glp1 image to 467818 at 20:59:47Z, accepted by Meta (provider id stored).
+- Checks: tsc 0, lint clean, soft-ai 1011/1011, chat-harden 662/662, security 271/271, backups 21/21.
+
+## 2026-10-17 (late night) — Burst = one reply + media with text (branch claudio/inbox-burst, NOT deployed)
+
+- Seen live on PatchHouse IG: a customer's 2–3 bubbles within seconds (ad share + "¡Hola! Quiero más información.",
+  "Top" + "GLP1") got one turn each: two greetings, or "¿Cuál te interesa?" right before the real answer.
+- Fix: each inbound job waits `BURST_SETTLE_MS` (3.5 s) before it can be claimed, and the webhook dispatches it after
+  that (`processJobAfterSettle`). At claim time, a newer job of the same chat that becomes claimable within 10 s holds
+  the older ones back, and the newest job then supersedes them as before. A job that is already running checks for a
+  newer queued bubble (`newerBurstJobPending`) after the claim gates and again right before each send. If one is
+  there and the trigger is under 60 s old, the job stops as `superseded` (the generated row keeps its tokens) and the
+  newer job answers the whole burst. Delivery keys and per-chat single-flight are unchanged.
+- Media + text (User 722630: "Que costo tiene" + photo got "¿Me contás por escrito…?"): `inbound-burst.ts` plans the
+  burst. With customer text, the text is decided / answered normally and a person is still asked to look at the photo
+  or audio (review hand-off, the chat stays on IA). A receipt-looking photo anywhere in the burst keeps the receipt
+  path. Photo / audio alone, stickers and caption opt-outs keep today's behaviour. Probar now plans bursts the same
+  way (shared `decideBurstTurn`, `burst-decision.ts`).
+- Every unanswered bubble is judged as if it still had its own job:
+  - A TRUE hand-off in any bubble or caption wins (opt-out, payment claim, hand-off keyword reply, "agente").
+  - A question that needs the model is never dropped because the newest bubble got a code reply. The model answers
+    the whole burst, unless the other bubbles are only greetings.
+  - A review another bubble would have raised (payment data sent by hand) is settled after the reply.
+  - A "STOP" anywhere in the burst keeps the later waiting ack silent.
+- Legacy Soft path (agent layer off): no settle, immediate dispatch as before.
+- Verifier round 1 FAIL, then fixed:
+  - (High) A TRUE hand-off in any text bubble of the burst wins ("Quiero hablar con una persona" + "por favor"). A
+    planned hand-off never yields, and neither does a reclaimed job.
+  - No job for an inbound with no content.
+  - The burst stops at the store's last reply wherever it sits, in send order.
+  - The photo caption joins the answered text.
+  - The photo review is a separate flag, so the reply keeps its images and the repeat guard, and it survives a reclaim.
+  - Superseded tokens count toward the daily cap, and a superseded job always kicks the newer one.
+  - The first round's "tsc clean" was wrong: the new test had type errors. Now exit 0.
+- Verifier round 2 PASS WITH NOTES; its Medium (opt-out in an earlier photo caption) fixed, and a burst photo review
+  no longer hides the "La IA no respondió" alert.
+- Verifier round 3 FAIL (High: the earlier question was dropped when the newest bubble got a code reply) and
+  SecureDog round 1 "fix before prod" (two Medium regressions). All fixed in 051587ed:
+  - STOP in any bubble; each bubble and caption decided alone.
+  - Strict placeholder list; file-name captions are not text.
+  - The daily cap counts every live model run (a pre-existing gap with duplicate_reply / safe_line_repeat).
+  - At most one written-then-dropped reply per burst.
+  - The supersede write is scoped by tenant.
+  - No burst time window.
+  - In Probar, the burst review is shown and the sandbox history keeps replies to earlier queued messages.
+- Verifier round 4 PASS WITH NOTES and SecureDog round 2 PASS (production). Their notes are fixed too:
+  - Two different code replies in one burst ("¿Cómo pago?" + an owner's "precio" reply) → the model answers both.
+  - A "lo quiero" in an earlier bubble keeps the buy cue for the sales stage.
+  - The greeting list is wider ("Buen día", "Bueno", "Claro", "Hola, ¿cómo estás?"), and `[fallback]` is a placeholder.
+  - A running job yields only to a newer job whose message was sent after its own (an old message Meta delivered late
+    never takes the burst).
+  - The waiting ack reads every customer message since the hand-off for an opt-out.
+  - Verifier round 5 + 6 (merge) PASS WITH NOTES: a later "mejor no" cancels an earlier "lo quiero" ("ya no tengo
+    dudas" does not); Probar loads the sale state for an earlier photo like live; the photo-receipt check
+    keeps reading the newest message only.
+- Tests: `inbound-burst.test.ts` (30, they run the real `decideBurstTurn`). Source-text asserts updated in
+  chat-automation-job, luna10-hard-blocks, agents2-b-sales, agents2-pace and probar-scenarios (same intent, new
+  names). test:soft-ai 1011/1011, test:chat-harden 645/645, test:security 271/271, tsc + lint clean.
+
+## 2026-10-17 (late) — Instagram photos (staff + agent), deployed 6a80d638
+
+- Instagram sends were text-only. Photos (JPG/PNG, 5 MB) now upload to the Page (/{page}/message_attachments, platform=instagram) and go out by attachment_id. No public link to our files. The type is `image` first, then `MEDIA_SHARE` only after a clean 4xx. A staff caption is its own text row, sent after the photo is saved. Agent saved-reply images work on Instagram (live, planning and Probar share imageChannel()).
+- Verifier round 1: FAIL on parity (fixed); F2–F5 fixed. SecureDog: OK, 2 Lows fixed (INT-148, DATA-62). Tests: soft-ai 981/981, chat-harden 659/659, security 271/271.
+- NOT verified against live Meta (field names, the image vs MEDIA_SHARE type, attachment id lifetime). First real send is the test.
+
+## 2026-10-17 (night) — PatchHouse Instagram + WhatsApp LIVE on gpt-6-luna
+
+- Deploy D1 (8ce27b4e), then D1b: the quick-check judge gets the store facts (pickup, shipping, payment methods), plus a
+  **"No es pago" / "Descartar"** button on the review banner. It clears a false payment/order alert without marking it
+  paid or moving the stage, and is audited as dismissed (`reviewOutcome`). test:soft-ai 981/981, tsc + lint clean.
+- PatchHouse ventas: Luna v51. A new rule says never repeat the customer's name, phone or address and never make an order recap
+  (Luna wrote one on her own). Instagram + WhatsApp re-activated; quick check 6/6.
+- dailyTokenCap 250k → 2M (scripts/agent-pack/daily-cap.ts, audited). The old cap blocked every reply.
+- ~80 waiting Instagram chats answered. Lesson: never process jobs from a laptop. Local kicks cannot decrypt the
+  IG token and burn retry attempts (one job, 732710, hit MAX_ATTEMPTS). Use a sweep that exits before kicking, or the server cron.
+
 ## 2026-10-17 (evening) — luna-10 release gate PASSED (NOT deployed)
 
 - Payment classifier now has a **live-equivalence gate** (SecureDog r8). Where live e2b9fd2c would answer too, the agent

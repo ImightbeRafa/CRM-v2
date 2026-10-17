@@ -5,6 +5,7 @@
  */
 
 import {
+  BURST_SETTLE_MS,
   claimJobById,
   claimBatch,
   completeJob,
@@ -177,9 +178,12 @@ export async function processClaimedJob(row: ClaimedChatAutomationJob, opts?: { 
   const kick = opts?.kick !== false
   const work = dispatch(row)
   try {
-    await withProcessingTimeout(work)
+    const result = await withProcessingTimeout(work)
     await completeJob(row)
-    if (kick) void kickNextConversationJob(row)
+    // Burst = one reply: a job that yielded to a newer bubble always hands over to it (also a kicked job), so the
+    // newer job never waits for the cron. Bounded: a job only yields while a newer one is queued.
+    const superseded = result?.status === 'skipped' && 'reason' in result && result.reason === 'superseded'
+    if (kick || superseded) void kickNextConversationJob(row)
     return { id: row.id, status: 'completed' as const }
   } catch (error) {
     const terminal = await failJob(row, error)
@@ -203,6 +207,17 @@ export async function processJobById(id: string, opts?: { kick?: boolean }) {
   const row = await claimJobById(id)
   if (!row) return { id, status: 'not_claimed' as const }
   return processClaimedJob(row, opts)
+}
+
+/**
+ * Burst = one reply: the webhook's best-effort dispatch, once the job's settle time (BURST_SETTLE_MS) is over. When
+ * the customer sent another bubble meanwhile, this claim finds nothing (the newer job holds it back) and the newer
+ * job's own dispatch answers the whole burst. Never throws; the cron is the safety net.
+ */
+export function processJobAfterSettle(id: string, settleMs: number = BURST_SETTLE_MS): void {
+  setTimeout(() => {
+    void processJobById(id).catch((error) => console.error('[soft-ai/automation] settle dispatch failed', error))
+  }, settleMs > 0 ? settleMs + 250 : 0)
 }
 
 export async function processAutomationBatch(limit = 2) {

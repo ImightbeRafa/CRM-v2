@@ -269,7 +269,8 @@ describe('verifier + SecureDog round 2 (luna-10)', () => {
   it('#4: every "don\'t contact me" is an opt-out, asking for a person is not', () => {
     for (const t of ['STOP', 'no me escriban más', 'NO MÁS MENSAJES', 'ya no me manden nada', 'quiero darme de baja', 'no me contacten más', 'No quiero un asistente virtual', 'No quiero que me atienda una inteligencia artificial', 'No me escriban']) assert.ok(isOptOutText(t), t)
     for (const t of ['Me podría atender un asesor', 'quiero hablar con una persona', 'no quiero el combo', 'no me llegó el pedido']) assert.equal(isOptOutText(t), false, t)
-    assert.match(fs.readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8'), /optOut: isOptOutText\(handoffTrigger\?\.content\) \|\| isOptOutText\(input\.payload\.content\)/)
+    // Burst = one reply (2026-10-17): the same two checks, plus the burst marker and every message since the hand-off.
+    assert.match(fs.readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8'), /optOut:\s+isOptOutText\(handoffTrigger\?\.content\) \|\|\s+isOptOutText\(input\.payload\.content\)/)
   })
   it('#5: a new place / product the customer asked about is a new answer; the same answer twice is still dropped', () => {
     assert.equal(isNearRepeat('El envío a Limón cuesta ₡2.500 y llega en 2 días hábiles', ['El envío a San José cuesta ₡2.500 y llega en 2 días hábiles'], 'y a limón?'), false)
@@ -619,8 +620,10 @@ describe("SecureDog round 6 (luna-10): bursts, comma claims, third person, perfe
   it("live and Probar pass the whole burst to the decision and the reply checks", () => {
     const src = fs.readFileSync("src/lib/soft-ai/agent-turn.ts", "utf8")
     assert.equal(src.split("earlierCustomerTexts: earlierCustomerTexts(history),").length - 1, 2)
-    assert.ok(src.includes("customerText: burstCustomerText(history, payload.content || ''),"))
-    assert.ok(src.includes("customerText: burstCustomerText(input.history ?? [], input.inboundText),"))
+    // Burst = one reply (2026-10-17): live checks the planned burst text (the customer text when the trigger is a photo).
+    assert.ok(src.includes("customerText: burstCustomerText(history, burst.inboundText),"))
+    // Probar plans the burst like live (2026-10-17).
+    assert.ok(src.includes("customerText: burstCustomerText(input.history ?? [], probarBurst.inboundText),"))
     assert.ok(fs.readFileSync("src/lib/soft-ai/llm/runtime.ts", "utf8").includes("customerText: burstCustomerText(input.history, input.inboundText),"))
   })
   it("SecureDog round 7: a claim typed while the store's reply was being written still counts (time window, not order)", async () => {

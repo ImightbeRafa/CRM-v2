@@ -444,6 +444,17 @@ function offeredMethods(facts: BrandFacts): string[] {
   return paymentMethodsOf(facts)
 }
 
+/**
+ * Burst = one reply (Verifier r3 #1): the newest bubble got a code reply ("¿Cómo pago?" → the method list) but an
+ * earlier bubble of the burst needs the model ("Quiero 2 del kit grande con envío a Limón"). The model answers the
+ * whole burst instead, so no question is left without an answer (same precedent: link_plus_product_question).
+ */
+export function continueBurstToModel(decision: InboundDecision, reason: string): InboundDecision {
+  // The code step that would have answered stays in the trace; the model step is added after it.
+  const steps: DecisionStep[] = [...decision.decisionTrace.steps, { step: 'burst_model', outcome: 'continue', reason }]
+  return continueToModel(decision.paymentClass, steps)
+}
+
 function continueToModel(paymentClass: PaymentClassification, steps: DecisionStep[]): InboundDecision {
   steps.push({ step: 'model', outcome: 'continue' })
   return {

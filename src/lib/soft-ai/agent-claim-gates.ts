@@ -102,7 +102,9 @@ export async function loadDailyBilledTokens(tenantId: string, agentId?: string):
       tenantId,
       ...(agentId ? { agentId } : {}),
       createdAt: { gte: start },
-      status: { notIn: ['skipped'] },
+      // SecureDog INT (burst review): every live row counts — a turn that ran the model and was then skipped
+      // (superseded by a newer bubble, duplicate_reply, safe_line_repeat, a pre-send gate) spent its tokens too.
+      // Rows skipped before the model carry 0 tokens (schema default), so they add nothing.
       mode: { not: 'test' },
     },
     _sum: {

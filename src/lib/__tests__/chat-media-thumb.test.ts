@@ -81,3 +81,14 @@ test('never more than 2 previews build at the same time', async () => {
   const results = await Promise.all(Array.from({ length: 8 }, () => makeChatThumbnail(jpeg, 320)))
   assert.ok(results.every((r) => r && r.length > 0), 'all 8 queued requests finish')
 })
+
+test('Instagram voice notes (type audio, video/mp4) play in the audio player, not a video box', async () => {
+  const { chatMediaKind } = await import('../../components/chats/ChatMediaBubble')
+  assert.equal(chatMediaKind({ messageType: 'audio', mediaMimeType: 'video/mp4' }), 'audio')
+  assert.equal(chatMediaKind({ messageType: 'voice', mediaMimeType: 'video/mp4' }), 'audio')
+  assert.equal(chatMediaKind({ messageType: 'audio', mediaMimeType: 'audio/ogg; codecs=opus' }), 'audio')
+  assert.equal(chatMediaKind({ messageType: 'video', mediaMimeType: 'video/mp4' }), 'video')
+  assert.equal(chatMediaKind({ messageType: undefined, mediaMimeType: 'video/mp4' }), 'video')
+  assert.equal(chatMediaKind({ messageType: 'sticker', mediaMimeType: 'image/webp' }), 'image')
+  assert.equal(chatMediaKind({ messageType: 'document', mediaMimeType: 'application/pdf' }), 'file')
+})

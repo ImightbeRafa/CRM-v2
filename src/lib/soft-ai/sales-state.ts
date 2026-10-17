@@ -265,6 +265,13 @@ const BUY_RE = new RegExp(
   'iu',
 )
 const NEGATED_BUY_RE = /(^|[^\p{L}])(no|ya no)\s+(lo|la|los)\s+(quiero|compro|pido)/iu
+/**
+ * Burst = one reply: a later bubble that takes the purchase back ("mejor no", "olvidalo", "después te escribo").
+ * Verifier r6: "ya no" / "ah no" only on their own ("ya no lo quiero", "Ah no."), never "ya no tengo dudas" or
+ * "Ah no sabía, ¿y el envío?".
+ */
+const RETRACT_BUY_RE =
+  /(^|[^\p{L}])(mejor\s+no|ya\s+no\s+(lo|la|los|las|me\s+interesa|gracias)|olv[ií]d(a|e)lo|despu[eé]s\s+(te|les|le)\s+(escribo|aviso|confirmo)|lo\s+(voy\s+a\s+)?pienso|no\s+gracias|d[eé]jalo)([^\p{L}]|$)|^\s*ah\s+no\s*[.!]*\s*$/iu
 const RECEIPT_RE = new RegExp(
   `${START}(ya (te |les |lo |la )?(pagu[eé]|deposit[eé]|transfer[ií]|hice el (sinpe|dep[oó]sito)|envi[eé] el sinpe)|comprobante|te (mand[eé]|envi[eé]) (el (sinpe|pago|comprobante)|la plata|el dinero)|(ya )?(est[aá]|qued[oó]) pagad[oa]|^\\s*pagad[oa]\\s*[!.✅👍]*\\s*$)${END}`,
   'iu',
@@ -307,6 +314,8 @@ export function deriveSalesState(input: {
   history: SoftAiHistoryMessage[]
   inboundText: string
   ctx: SalesContext
+  /** Burst = one reply: read the buy cue across the unanswered burst (default). False: the newest message only. */
+  burstBuyCue?: boolean
 }): SalesState {
   const ours = input.history.filter((m) => m.direction === 'outbound').map((m) => m.content || '')
   const oursText = ours.join('\n')
@@ -326,7 +335,27 @@ export function deriveSalesState(input: {
     howToBuy: HOW_TO_BUY_RE.test(oursText),
   }
   const last = input.inboundText || ''
-  const buyCue = BUY_RE.test(last) && !NEGATED_BUY_RE.test(last)
+  // Burst = one reply (Verifier r4 #2 / r5 #1): "Lo quiero" + "¿Hacen envíos a Limón?" answered by ONE turn — the
+  // newest customer message since the store last wrote that says either way decides: a buy cue counts, a later
+  // retraction ("Lo quiero" + "Ah no, mejor no") cancels it.
+  const unanswered: string[] = []
+  if (input.burstBuyCue !== false) {
+    for (let i = input.history.length - 1; i >= 0 && input.history[i].direction !== 'outbound'; i--) {
+      unanswered.push(input.history[i].content || '')
+    }
+  }
+  let buyCue = false
+  for (const t of [last, ...unanswered]) {
+    if (!t.trim()) continue
+    // Same order as a single message: "no lo quiero" → no; a buy cue → yes ("Lo quiero, ya no tengo dudas"); only a
+    // message with no buy cue of its own can retract an earlier one.
+    if (NEGATED_BUY_RE.test(t)) break
+    if (BUY_RE.test(t)) {
+      buyCue = true
+      break
+    }
+    if (RETRACT_BUY_RE.test(t)) break
+  }
   const receiptCue = (RECEIPT_RE.test(last) || hasPaymentClaimCue(last))
   // agents2-format: the store asked HOW to pay and gave no payment details after that question.
   const askedMethod = methodQuestionPending(ours)
@@ -677,7 +706,8 @@ export function mediaAwaitingReceipt(messageType: string | null | undefined, his
   // MEDIA-15: the store already talked about paying ("hacé el SINPE a este número") — a photo now is likely a receipt.
   // N5: an order block alone (contra entrega / efectivo: "Pagás al recibir…") does not make a photo a receipt.
   if (history.some((m) => m.direction === 'outbound' && PAYMENT_WORDS_RE.test((m.content || '').replace(ORDER_BLOCK_STRIP_RE, '')))) return true
-  return ctx ? salesAwaitingReceipt(deriveSalesState({ history, inboundText: '', ctx }), history) : false
+  // Verifier r5 #2: the receipt check keeps the newest-message buy cue (a burst "lo quiero" never undoes metodo_pago).
+  return ctx ? salesAwaitingReceipt(deriveSalesState({ history, inboundText: '', ctx, burstBuyCue: false }), history) : false
 }
 
 export function isMediaLikeMessageType(messageType: string | null | undefined): boolean {

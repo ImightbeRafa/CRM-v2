@@ -1,4 +1,4 @@
-## 2026-10-17 (late night) — Burst hardening: long bursts, 24 h bound, newest message answers (branch claudio/inbox-burst-harden → claudio/inbox-burst, NOT deployed)
+## 2026-10-17 (late night) — Burst hardening: long bursts, 24 h bound, newest message answers (branch claudio/inbox-burst-harden on luna-10 @ 933288b4, NOT deployed)
 
 - Long bursts (Low residual from the PR #100 reviews): the safety checks only saw the 24 loaded history rows, so in a
   burst of 24+ bubbles (a WhatsApp multi-forward) the first bubbles got no opt-out / receipt / payment-claim check.
@@ -28,6 +28,12 @@
   a realistic stale-receipt test. Softened: the receipt wording above. Left open, with a separate follow-up: a job
   stuck in `processing` with an expired lease plus a newer pending job can block that chat's claim. It also makes a
   cron batch return nothing (single-flight P2002). This is already in the base branch, not caused by this slice.
+
+## 2026-10-17 (night) — PR #100 burst fix + quick replies + confirmation false alarm, deployed 5820a6fc
+
+- PR #100 (one reply per burst, photo + text answered) fast-forwarded onto claudio/luna-10 (28f83c72). The "/" menu shows all quick replies (was 8 of 37), and quick-reply photos work on Instagram. A lone "confirmada" in a blocked reply is no longer a payment hand-off without payment context (live 467818).
+- First real Instagram photo send: agent ph_glp1 image to 467818 at 20:59:47Z, accepted by Meta (provider id stored).
+- Checks: tsc 0, lint clean, soft-ai 1011/1011, chat-harden 662/662, security 271/271, backups 21/21.
 
 ## 2026-10-17 (late night) — Burst = one reply + media with text (branch claudio/inbox-burst, NOT deployed)
 

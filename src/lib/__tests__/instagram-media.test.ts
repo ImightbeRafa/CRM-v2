@@ -149,3 +149,16 @@ describe('instagram photos · SecureDog', () => {
     assert.ok(!r.ok && !r.error.includes(token) && !('data' in r))
   })
 })
+
+describe('quick replies · "/" menu and Instagram photos', () => {
+  it('the "/" menu lists every quick reply (no 8-item cut)', async () => {
+    const { filterQuickReplies } = await import('../chat-quick-replies')
+    const items = Array.from({ length: 37 }, (_, i) => ({ shortcut: `r${i}`, text: `t${i}` })) as never[]
+    assert.equal(filterQuickReplies(items, '').length, 37)
+  })
+
+  it('quick-reply photos are allowed on Instagram (server keeps photos-only)', () => {
+    const pane = readFileSync('src/components/chats/SoftThreadPane.tsx', 'utf8')
+    assert.match(pane, /\(conversation\?\.platform === 'whatsapp' \|\| conversation\?\.platform === 'instagram'\) &&\s+isSoftHumanComposerEnabled\(agentMode\)/)
+  })
+})

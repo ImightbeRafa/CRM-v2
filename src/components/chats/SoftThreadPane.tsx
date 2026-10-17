@@ -421,7 +421,8 @@ export function SoftThreadPane({
     if (next.media.length) {
       const filesAllowed =
         Boolean(attachments?.onSendQuickReplyMedia) &&
-        conversation?.platform === 'whatsapp' &&
+        // Instagram too: photos go out, anything else is refused per file by the server (photos only there).
+        (conversation?.platform === 'whatsapp' || conversation?.platform === 'instagram') &&
         isSoftHumanComposerEnabled(agentMode)
       if (filesAllowed) {
         setPendingFile(null)
@@ -429,8 +430,8 @@ export function SoftThreadPane({
         setPendingQuickMedia(next.media)
       } else {
         setDropError(
-          conversation?.platform !== 'whatsapp'
-            ? 'Los archivos de esta respuesta solo se envían por WhatsApp: se insertó el texto.'
+          conversation?.platform !== 'whatsapp' && conversation?.platform !== 'instagram'
+            ? 'Esta línea no permite enviar archivos: se insertó el texto.'
             : 'El envío de archivos no está disponible: se insertó el texto.',
         )
       }

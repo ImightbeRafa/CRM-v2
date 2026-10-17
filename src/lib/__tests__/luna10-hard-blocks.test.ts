@@ -815,3 +815,16 @@ describe("verifier round 13 (luna-10): a debt / balance question never rides the
     assert.deepEqual(bad, [])
   })
 })
+
+describe("SecureDog round 8 F1 (luna-10): after a closed ask, only an order question rides along", () => {
+  it("repros hold", async () => {
+    const { classifyPaymentText } = await import("../soft-ai/payment-classifier")
+    const person = ['Les pago hoy. ¿Tienen lo de Juan?', 'Te pago por sinpe. ¿Les confirmo Juan?', 'Voy a pagar mañana. ¿Está lo de Juan?', 'Les pago hoy. ¿Les sale lo de mi esposo?', 'Les pago hoy. ¿Ven lo de mi esposo?', 'Les pago hoy. ¿Les sirvio lo de Juan?']
+    const agent = ['¿Me lo tienen listo para el sábado? pago en efectivo', 'Te pago por sinpe. ¿Cuándo me llega?', 'Les pago hoy', 'Te pago ahorita por sinpe, ¿me pasás el número?']
+    const bad: string[] = []
+    for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
+    for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    
+    assert.deepEqual(bad, [])
+  })
+})

@@ -731,6 +731,7 @@ testInventoryMatchPickPreservesSiblingProducts();
 testGapFillUpgradesPartialMultiProductUnderCapture();
 testMashedPendingPickFlowKeepsFourLines();
 testResponsesHelpers();
+testLunaPlaceholderValuesAreEmpty();
 
 console.log('Staff bot helper tests passed (gpt-6-luna).');
 
@@ -853,4 +854,14 @@ function testResponsesHelpers() {
   assert.equal(body.tools?.[0].type, 'function');
   assert.equal((body.tools?.[0] as any).name, 'get_orders');
   assert.equal((body.tools?.[0] as any).function, undefined);
+}
+
+function testLunaPlaceholderValuesAreEmpty() {
+  // luna-10: gpt-6-luna writes "." / "-" / "N/A" for unknown strict-schema fields; they must never reach an order.
+  const out = bot.sanitizeAIExtractedArgs({ intent: 'new_order', customerName: 'Ana Mora', phone: '88880000', email: '.', products: [{ name: 'DOPAMINE PATCH', sku: '.', quantity: 1 }], comments: '-', courier: 'N/A' } as any, '' as any);
+  assert.equal(out.email, undefined);
+  assert.equal(out.comments, undefined);
+  assert.equal(out.courier, undefined);
+  assert.equal(out.products[0].sku, undefined);
+  assert.equal(out.products[0].name, 'DOPAMINE PATCH');
 }

@@ -760,6 +760,9 @@ function isTemplatePlaceholderValue(value: unknown): boolean {
   if (/^["']?\s*e\.?\s*g\.?\b/i.test(trimmed)) return true;
   if (/^["']?\s*ej\.?\s*[:.]/i.test(trimmed)) return true;
   if (/^["']?\s*ejemplo\s*[:.]/i.test(trimmed)) return true;
+  // luna-10: gpt-6-luna fills an unknown strict-schema field with "." / "-" / "N/A" — that is empty, never a value.
+  if (/^[\s.\-_–—*·/\\|,;:]+$/.test(trimmed)) return true;
+  if (/^(n\/?a|null|none|ninguno|ninguna|nada|sin\s+dato)$/i.test(trimmed)) return true;
   if (/^\(opcional\)$/i.test(trimmed)) return true;
   if (/^\(optional\)$/i.test(trimmed)) return true;
   if (/^<[^>]*>$/.test(trimmed)) return true;
@@ -860,7 +863,7 @@ async function extractOrderArgsWithAi(
   const customFieldsBlock = describeCustomFieldsForAIExtraction(customFieldsConfig);
   const systemPrompt = [
     'Extract order data for Betsy CRM from messy WhatsApp Spanish. Return only the structured schema fields.',
-    'Do not invent. If unclear, use null or empty arrays. Never duplicate the same text into multiple fields.',
+    'Do not invent. If unclear, use null or empty arrays (never ".", "-" or "N/A" as a value). Never duplicate the same text into multiple fields.',
     'Order fields: customerName, phone, email, products, quantity, total, orderType, paymentMethod, courier, province, canton, district, address, comments, customFields.',
     'Costa Rica rules: phone is 8 digits, optionally with +506. Never use a cedula/ID as phone. EA means delivery/Correos/guia/domicilio. RA means pickup/retiro/local.',
     'Location: province/canton/district are Costa Rica places. Accept comma OR slash separators: "Heredia/Barva/San Pablo" => province=Heredia, canton=Barva, district=San Pablo. If labels exist, trust labels. If a user writes "Canton:Mora Colon" and also "Distrito:Brasil de Mora", use canton="Mora", district="Brasil de Mora". A product or total is never district/address.',
@@ -1045,7 +1048,7 @@ function sanitizeAIExtractedArgs(
       .map((p: any) => ({
         name: typeof p.name === 'string' ? p.name.trim() : undefined,
         quantity: Math.max(1, Math.floor(Number(p.quantity) || 1)),
-        ...(typeof p.sku === 'string' && p.sku.trim() ? { sku: String(p.sku).trim() } : {}),
+        ...(typeof p.sku === 'string' && p.sku.trim() && !isTemplatePlaceholderValue(p.sku) ? { sku: String(p.sku).trim() } : {}),
       }))
       .filter((p: any) => (p.name && !isTemplatePlaceholderValue(p.name)) || p.sku);
 
@@ -2501,6 +2504,14 @@ function zodToOpenAITool(name: string, schema: { description: string; parameters
     strict: false,
   };
 }
+
+/** luna-10: read-only probe for the provider check script (scripts/staff-bot-luna-check.ts) — no tool is ever run. */
+export const __staffBotAiProbe = {
+  createStaffBotResponse,
+  extractOrderArgsWithAi,
+  buildTools: () => buildToolsArray(toolSchemas),
+  model: STAFF_BOT_MODEL,
+};
 
 // Build tools array from per-request schemas (avoids mutating shared global)
 function buildToolsArray(schemas: typeof toolSchemas) {

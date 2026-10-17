@@ -618,7 +618,7 @@ export function RecentMediaPopover({
         </span>
         <span>
           <span className="block text-[13px] font-semibold text-slate-800">Subir desde el equipo</span>
-          <span className="block text-[11.5px] text-slate-500">Foto, video, audio o documento (máx. 9 MB)</span>
+          <span className="block text-[11.5px] text-slate-500">Foto, video, audio o documento (máx. 9 MB) · Instagram: solo fotos</span>
         </span>
       </button>
       <div className="px-3 pb-3 pt-2.5">

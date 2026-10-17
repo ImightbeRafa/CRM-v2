@@ -532,7 +532,9 @@ export function SoftThreadPane({
   // F37-03: unlock composer whenever paused / human takeover (incl. DEMO).
   const composerEnabled = isSoftHumanComposerEnabled(agentMode)
   const aiBlocked = agentMode === 'ai_active' && aiTermsAccepted === false
-  const canAttach = Boolean(attachments) && conversation.platform === 'whatsapp' && composerEnabled && !sending
+  // Instagram sends photos only (JPG / PNG, 8 MB; the server re-checks); WhatsApp any supported file.
+  const mediaLine = conversation.platform === 'whatsapp' || conversation.platform === 'instagram'
+  const canAttach = Boolean(attachments) && mediaLine && composerEnabled && !sending
 
   /** Stage a dropped / pasted file like the paperclip does (preview + optional caption). */
   function stageFile(file: File) {
@@ -599,9 +601,13 @@ export function SoftThreadPane({
         >
           <Paperclip className="h-8 w-8" aria-hidden />
           <p className="text-[14px] font-semibold">
-            {canAttach ? 'Soltá la imagen para adjuntarla' : conversation.platform !== 'whatsapp' ? 'Por ahora solo se envían archivos por WhatsApp' : 'Tomá control del chat para enviar archivos'}
+            {canAttach ? 'Soltá la imagen para adjuntarla' : !mediaLine ? 'Esta línea no permite enviar archivos' : 'Tomá control del chat para enviar archivos'}
           </p>
-          {canAttach ? <p className="text-[12px] opacity-80">Foto, video, audio o documento · máx. 9 MB</p> : null}
+          {canAttach ? (
+            <p className="text-[12px] opacity-80">
+              {conversation.platform === 'instagram' ? 'Por Instagram: solo fotos JPG o PNG · máx. 5 MB' : 'Foto, video, audio o documento · máx. 9 MB'}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {channelDownMessage ? <ChannelDownBanner message={channelDownMessage} /> : null}
@@ -1513,7 +1519,7 @@ export function SoftThreadPane({
                   <Zap className="h-[18px] w-[18px]" aria-hidden />
                 </button>
               ) : null}
-              {attachments && conversation.platform === 'whatsapp' ? (
+              {attachments && mediaLine ? (
                 <>
                   <input
                     ref={fileInputRef}
@@ -1541,7 +1547,7 @@ export function SoftThreadPane({
                     disabled={sending || !composerEnabled}
                     aria-label="Adjuntar archivo"
                     aria-expanded={attachMenuOpen}
-                    title="Adjuntar foto, video, audio o documento"
+                    title={conversation.platform === 'instagram' ? 'Adjuntar foto (JPG o PNG)' : 'Adjuntar foto, video, audio o documento'}
                     className={`flex items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF] disabled:opacity-40 ${
                       compact ? 'h-10 w-9' : 'h-9 w-9'
                     } ${attachMenuOpen ? 'bg-slate-100 text-au-ink-5b6cff' : ''}`}

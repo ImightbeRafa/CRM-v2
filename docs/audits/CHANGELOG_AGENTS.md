@@ -53,6 +53,12 @@
   chat-automation-job, luna10-hard-blocks, agents2-b-sales, agents2-pace and probar-scenarios (same intent, new
   names). test:soft-ai 1011/1011, test:chat-harden 645/645, test:security 271/271, tsc + lint clean.
 
+## 2026-10-17 (late) — Instagram photos (staff + agent), deployed 6a80d638
+
+- Instagram sends were text-only. Photos (JPG/PNG, 5 MB) now upload to the Page (/{page}/message_attachments, platform=instagram) and go out by attachment_id. No public link to our files. The type is `image` first, then `MEDIA_SHARE` only after a clean 4xx. A staff caption is its own text row, sent after the photo is saved. Agent saved-reply images work on Instagram (live, planning and Probar share imageChannel()).
+- Verifier round 1: FAIL on parity (fixed); F2–F5 fixed. SecureDog: OK, 2 Lows fixed (INT-148, DATA-62). Tests: soft-ai 981/981, chat-harden 659/659, security 271/271.
+- NOT verified against live Meta (field names, the image vs MEDIA_SHARE type, attachment id lifetime). First real send is the test.
+
 ## 2026-10-17 (night) — PatchHouse Instagram + WhatsApp LIVE on gpt-6-luna
 
 - Deploy D1 (8ce27b4e), then D1b: the quick-check judge gets the store facts (pickup, shipping, payment methods), plus a

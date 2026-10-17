@@ -59,7 +59,7 @@ let seq = 0
 type Msg = BurstMessage & { id: string; content: string; sentAt: string }
 const inbound = (content: string, s: number, messageType = 'text'): Msg => ({ id: `m${++seq}`, direction: 'inbound', content, messageType, sentAt: at(s) })
 const outbound = (content: string, s: number): Msg => ({ id: `m${++seq}`, direction: 'outbound', content, messageType: 'text', sentAt: at(s) })
-const PAYMENT_DETAILS_SENT = () => outbound('Perfecto 🙌 Hacé el SINPE al 6201-9914 y me mandás el comprobante por aquí', -120)
+const PAYMENT_DETAILS_SENT = (s = -120) => outbound('Perfecto 🙌 Hacé el SINPE al 6201-9914 y me mandás el comprobante por aquí', s)
 
 /** Live / Probar: plan the burst, then decideBurstTurn (no DB). */
 function run(trigger: { content: string; messageType?: string; s: number }, history: Msg[], brandFacts: BrandFacts = facts, extra: RuntimeShortcut[] = []) {
@@ -93,8 +93,8 @@ const PRICE_REPLY: RuntimeShortcut = {
 }
 
 /** Receipt variant: the burst plan's receipt check reads the history like live (mediaAwaitingReceipt). */
-function runAwaitingReceipt(trigger: { content: string; messageType?: string; s: number }, burstBubbles: Msg[]) {
-  const history = [PAYMENT_DETAILS_SENT(), ...burstBubbles]
+function runAwaitingReceipt(trigger: { content: string; messageType?: string; s: number }, burstBubbles: Msg[], paymentSentS = -120) {
+  const history = [PAYMENT_DETAILS_SENT(paymentSentS), ...burstBubbles]
   const t = { content: trigger.content, messageType: trigger.messageType || 'text', sentAt: at(trigger.s) }
   const burstEarlier = unansweredBurst(history, t)
   const burst = planBurstInbound({ trigger: t, earlier: burstEarlier, awaitingReceipt: (type) => type === 'image' || type === 'document' })
@@ -473,10 +473,18 @@ describe('burst hardening · every bubble checked, a day at most, newest message
   })
 
   it('an unanswered receipt photo from days ago does not turn a new "hola" into the receipt path', () => {
-    const stale = runAwaitingReceipt({ content: 'hola', s: 0 }, [inbound('[image]', -2 * DAY_S, 'image')])
+    // Real order: payment data 3 days ago, the photo 2 days ago, "hola" now.
+    const stale = runAwaitingReceipt({ content: 'hola', s: 0 }, [inbound('[image]', -2 * DAY_S, 'image')], -3 * DAY_S)
     assert.equal(stale.burst.reason, 'single')
     const fresh = runAwaitingReceipt({ content: 'hola', s: 0 }, [inbound('[image]', -60, 'image')])
     assert.equal(fresh.burst.reason, 'burst_receipt')
+  })
+
+  it('the shadow replay measures the 24 h bound from the real message time (Probar API cannot set it)', () => {
+    const turn = read('src/lib/soft-ai/agent-turn.ts')
+    assert.match(turn, /const probarTrigger = \{ content: input\.inboundText, messageType: input\.messageType \|\| 'text', sentAt: input\.replaySentAt \?\? new Date\(\) \}/)
+    assert.match(read('scripts/agent-pack/shadow.ts'), /replaySentAt: m\.sentAt,/)
+    assert.doesNotMatch(read('src/lib/soft-ai/agent-admin.ts'), /replaySentAt/)
   })
 
   it('the bound matches the waiting sweep\'s 24 h reply window', () => {
@@ -518,7 +526,12 @@ describe('burst hardening · every bubble checked, a day at most, newest message
     const fn = turn.slice(turn.indexOf('async function loadUnansweredInbound'), turn.indexOf('async function yieldsToNewerBurst'))
     assert.match(fn, /where: \{ tenantId: input\.tenantId, conversationId: input\.conversationId, direction: 'outbound' \}/)
     assert.match(fn, /tenantId: input\.tenantId,\s+conversationId: input\.conversationId,\s+direction: 'inbound',\s+id: \{ not: input\.triggerMessageId \},/)
-    assert.match(fn, /sentAt: lastReply && lastReply\.sentAt >= since \? \{ gt: lastReply\.sentAt \} : \{ gte: since \}/)
+    // After the last reply in (sentAt, id) order, like the history window (same-second tie kept).
+    assert.match(fn, /select: \{ id: true, sentAt: true \}/)
+    assert.match(
+      fn,
+      /lastReply && lastReply\.sentAt >= since\s+\? \{ OR: \[\{ sentAt: \{ gt: lastReply\.sentAt \} \}, \{ sentAt: lastReply\.sentAt, id: \{ gt: lastReply\.id \} \}\] \}\s+: \{ sentAt: \{ gte: since \} \}/,
+    )
     assert.match(fn, /take: BURST_LOAD_MAX,\s+select: \{ content: true, messageType: true, sentAt: true \},/)
     const live = turn.slice(turn.indexOf('export async function executeAgentLayerTurn'), turn.indexOf('function persistedTurnStatus'))
     assert.match(

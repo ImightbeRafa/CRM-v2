@@ -4,14 +4,18 @@
   burst of 24+ bubbles (a WhatsApp multi-forward) the first bubbles got no opt-out / receipt / payment-claim check.
   When the history window is full and every row in it is an unanswered bubble (`burstOutgrowsWindow`), the live turn
   now loads the unanswered bubbles on their own (`loadUnansweredInbound`). It reads only text, type and send time,
-  scoped to the tenant and chat, after the store's last reply, newest 100 (`BURST_LOAD_MAX`). The model still reads
-  its 24-row window. In the normal case nothing extra is loaded.
+  scoped to the tenant and chat, after the store's last reply in the history's own (sentAt, id) order, newest 100
+  (`BURST_LOAD_MAX`). Every bubble gets the opt-out / payment-claim / hand-off check. The receipt check is weaker:
+  whether a photo is "awaiting a receipt" still reads the 24-row window, which in this case holds no store message.
+  A receipt photo early in a long burst therefore gets the photo review (`text_with_media`), not the receipt path.
+  The model still reads its 24-row window. In the normal case nothing extra is loaded.
 - 24 h bound (`BURST_MAX_AGE_MS`): a bubble sent more than a day before the trigger is no longer part of its burst.
   Before, an unanswered "STOP" or receipt photo from days ago turned a new "hola" into an opt-out hand-off or the
   receipt path. 24 h is the waiting sweep's horizon (`DAY_MS`): only a message inside the reply window is still owed
   an answer, and the customer writing again is a new conversation. The trade-off is that a job superseded after more
   than a day in the queue (outage, AI switched off) has its bubble shown in the inbox but not judged. A bad date never
-  drops a bubble.
+  drops a bubble. The shadow replay (`shadow.ts`) passes the real message time (`replaySentAt`, never settable from
+  the Probar API), so a replayed burst is bounded like live.
 - Newest message answers: the claim SQL ordered and held jobs by the job's `createdAt`. A bubble Meta delivered late
   (sent earlier, job created later) could become the answering job, with the newest bubble only a secondary one.
   The claim now orders and holds by the customer message's `sentAt`, then `createdAt` / `id` (joined, never locked:
@@ -19,7 +23,11 @@
   the partial unique index and `supersedeOlderJobs` are unchanged. This was proven on a throwaway Docker Postgres
   (8 scenarios, including late delivery, same-second WhatsApp timestamps, the settle hold, single-flight and two
   concurrent claimants), and the message row was checked to stay unlocked during a claim.
-- Tests: `inbound-burst.test.ts` +6.
+- Tests: `inbound-burst.test.ts` +7.
+- Verifier round 1: PASS WITH NOTES. Fixed: shadow parity of the 24 h bound, the same-second tie at the last reply,
+  a realistic stale-receipt test. Softened: the receipt wording above. Left open, with a separate follow-up: a job
+  stuck in `processing` with an expired lease plus a newer pending job can block that chat's claim. It also makes a
+  cron batch return nothing (single-flight P2002). This is already in the base branch, not caused by this slice.
 
 ## 2026-10-17 (late night) — Burst = one reply + media with text (branch claudio/inbox-burst, NOT deployed)
 

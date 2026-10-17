@@ -283,7 +283,7 @@ async function loadUnansweredInbound(input: {
   const lastReply = await prisma.chatMessage.findFirst({
     where: { tenantId: input.tenantId, conversationId: input.conversationId, direction: 'outbound' },
     orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
-    select: { sentAt: true },
+    select: { id: true, sentAt: true },
   })
   const rows = await prisma.chatMessage.findMany({
     where: {
@@ -291,7 +291,11 @@ async function loadUnansweredInbound(input: {
       conversationId: input.conversationId,
       direction: 'inbound',
       id: { not: input.triggerMessageId },
-      sentAt: lastReply && lastReply.sentAt >= since ? { gt: lastReply.sentAt } : { gte: since },
+      // After the last reply in the history's own (sentAt, id) order: a bubble sent in the same WhatsApp second as a
+      // reply typed on the phone still counts when its id sorts after it (Verifier: same-second tie).
+      ...(lastReply && lastReply.sentAt >= since
+        ? { OR: [{ sentAt: { gt: lastReply.sentAt } }, { sentAt: lastReply.sentAt, id: { gt: lastReply.id } }] }
+        : { sentAt: { gte: since } }),
     },
     orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
     take: BURST_LOAD_MAX,
@@ -2025,6 +2029,11 @@ async function runAgentTestTurnInner(input: {
   usageFeature?: 'probar' | 'agent_test'
   /** agents2-hours: "Simular fuera de horario" (Probar only). */
   simulateAfterHours?: boolean
+  /**
+   * Burst hardening: when a real message was sent (shadow replay only — never from the Probar API). The burst's 24 h
+   * bound is measured from it, as live measures it from the trigger; default now.
+   */
+  replaySentAt?: Date
 }): Promise<{
   text: string
   /** agents2-format: the messages a real chat would get (one bubble each in Probar); joined = text. */
@@ -2169,7 +2178,7 @@ async function runAgentTestTurnInner(input: {
   const probarInventoryIds = await loadMappedInventoryIds(input.tenantId, runtimeAgent.id)
   // Burst = one reply: the same burst planning as live (history messages keep their type when the caller sends it —
   // silent trial, burst scripts; the Probar UI sends text only). The trigger is sent "now".
-  const probarTrigger = { content: input.inboundText, messageType: input.messageType || 'text', sentAt: new Date() }
+  const probarTrigger = { content: input.inboundText, messageType: input.messageType || 'text', sentAt: input.replaySentAt ?? new Date() }
   const probarBurstEarlier = unansweredBurst(history, probarTrigger)
   // Like live: a photo / file / audio here or earlier in the burst needs the sale's state before the decision.
   const probarMediaSalesContext =

@@ -13,6 +13,7 @@ import { prisma } from '@/lib/db'
 import { coverageScenarios } from '@/lib/soft-ai/knowledge-coverage'
 import type { ScenarioStep } from '@/lib/soft-ai/probar-scenarios'
 import { normalizeForRepeat } from '@/lib/soft-ai/repeat-guard'
+import { redactSensitiveForProvider } from '@/lib/soft-ai/llm/redact'
 import { arg, loadPack } from './pack'
 
 export type ExamHistoryLine = { direction: 'inbound' | 'outbound'; content: string }
@@ -31,17 +32,30 @@ const SYNTHETIC_DATA = 'María Pérez Solís\n8888-0000\nCartago, Oreamuno, San 
 const ADDRESS_WORDS = /\b(calle|avenida|ave\.?|casa|frente|metros|esquina|barrio|residencial|condominio|apartamento|apto|del\s+(?:palo|super|parque|iglesia)|\d{2,3}\s?m(?:ts)?\b)/giu
 
 /** Removes customer data. A message that is mostly an address/data block becomes one synthetic data block. */
+/** Unicode-aware word edges ("\b" is ASCII-only: "José" / "Ángela" slipped through — SecureDog). */
+const L_BEFORE = String.raw`(?<![\p{L}\p{N}])`
+const L_AFTER = String.raw`(?![\p{L}\p{N}])`
+
 export function redactCustomerText(text: string, peerName?: string | null): string {
-  let t = (text || '').replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[correo]')
-  t = t.replace(/\+?\d[\d\s-]{6,}\d/g, '[número]')
+  let t = redactSensitiveForProvider(text || '')
+  t = t.replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[correo]')
+  t = t.replace(/(?<![\p{L}\p{N}])@[\w.]{2,30}/gu, '[usuario]')
+  // Phones, cédulas, accounts — also written with dots ("8888.8888", "1.1234.0567").
+  t = t.replace(/\+?\d[\d\s.-]{6,}\d/g, '[número]')
   t = t.replace(/\bCR\d{2}[\d\s]{10,}\b/gi, '[cuenta]')
   for (const w of String(peerName || '').split(/\s+/).filter((x) => x.length >= 3)) {
-    t = t.replace(new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'giu'), '[nombre]')
+    t = t.replace(new RegExp(`${L_BEFORE}${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${L_AFTER}`, 'giu'), '[nombre]')
   }
-  // "Soy Ana", "me llamo Ana Pérez", "mi nombre es …": the following capitalised words are a name.
-  t = t.replace(/\b([Ss]oy|[Mm]e llamo|[Mm]i nombre es|[Aa] nombre de)\s+((?:[A-ZÁÉÍÓÚÑ][\p{L}'-]+\s?){1,4})/gu, '$1 [nombre] ')
-  const addressHits = (t.match(ADDRESS_WORDS) || []).length
-  const dataLabels = (t.match(/\b(nombre( completo)?|tel[eé]fono|celular|provincia|cant[oó]n|distrito|direcci[oó]n|señas|correo)\b/giu) || []).length
+  // "Soy Ana", "me llamo maria fernanda rodriguez", "mi nombre es …": up to 4 words after it are a name (any case).
+  t = t.replace(/(?<![\p{L}\p{N}])(soy|me llamo|mi nombre es|a nombre de)\s+((?:[\p{L}'-]+\s?){1,4})/giu, (_m, intro: string, words: string) => {
+    // "soy de Cartago", "soy cliente": the next word is not a name.
+    if (/^(de|del|la|el|una?|cliente|nuev[oa]|mayor|menor|estudiante|al[eé]rgic[oa])\b/iu.test(words)) return `${intro} ${words}`
+    return `${intro} [nombre] `
+  })
+  // Judged on the ORIGINAL text: the '[nombre]' placeholder must never count as a data-form label.
+  const original = text || ''
+  const addressHits = (original.match(ADDRESS_WORDS) || []).length
+  const dataLabels = (original.match(/(?<![\p{L}\p{N}])(nombre( completo)?|tel[eé]fono|celular|provincia|cant[oó]n|distrito|direcci[oó]n|señas|correo)(?![\p{L}\p{N}])/giu) || []).length
   if (dataLabels >= 2 || addressHits >= 2 || (addressHits >= 1 && /\[número\]/.test(t))) return SYNTHETIC_DATA
   return t
 }

@@ -13,13 +13,11 @@ import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { runAgentTestTurn } from '@/lib/soft-ai/agent-turn'
 import { evaluateStep } from '@/lib/soft-ai/probar-scenarios'
-import { mutateChatAgentLayerConfig } from '@/lib/soft-ai/agent-layer-config-mutate'
-import { readChatAgentLayerConfig } from '@/lib/feature-flags'
-import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { softAiResponsesCreate, parseSoftAiResponseText } from '@/lib/soft-ai/llm/client'
 import { LUNA_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
 import { arg, loadPack } from './pack'
 import { codeChecks, grade, reviewerKnowledge } from './exam'
+import { withExamSession } from './test-session'
 
 type Persona = {
   id: string
@@ -111,15 +109,10 @@ async function main() {
   if (!agent || !user) throw new Error('Agente o usuario no encontrado')
   const socialAccountId = arg('account') || pack.target.socialAccountIds[0]
 
-  const before = parseChatAgentLayerConfig((await readChatAgentLayerConfig(tenantId)).config).testDailyTokenCap
-  // Another exam / shopper run is going (its raised cap is still there): never stack, or the cap could stay raised.
-  if (before >= cap) throw new Error(`El tope de pruebas ya está en ${before.toLocaleString('es-CR')}: otra prueba está corriendo. Esperá a que termine.`)
-  await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: Math.max(c.testDailyTokenCap, cap) }))
-  console.log(`Tope de pruebas: ${before.toLocaleString('es-CR')} → ${cap.toLocaleString('es-CR')} (se restaura al final)`)
   type Turn = { customer: string; reply: string; handoff: string | null; findings: Array<{ cls: string; serious: boolean; why: string }>; grader: Awaited<ReturnType<typeof grade>> | null }
   const results: Array<{ persona: Persona; run: number; turns: Turn[]; personaFindings: string[]; serious: number }> = []
   let cost = 0
-  try {
+  await withExamSession({ tenantId, actorEmail: pack.target.actorEmail, cap, label: 'shoppers' }, async () => {
     for (let run = 1; run <= runs; run++) {
       for (const persona of personas) {
         const session = randomUUID()
@@ -152,10 +145,7 @@ async function main() {
       }
       process.stdout.write('\n')
     }
-  } finally {
-    await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: before }))
-    console.log(`Tope de pruebas restaurado: ${before.toLocaleString('es-CR')}`)
-  }
+  })
 
   const bad = results.filter((r) => r.serious > 0)
   const flagged = results.filter((r) => !r.serious && r.turns.some((x) => x.grader?.verdict === 'serious'))

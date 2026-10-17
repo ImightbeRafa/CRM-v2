@@ -14,6 +14,8 @@ import type { AfterHoursState } from '@/lib/soft-ai/business-hours'
 export const WAITING_ACK_KEY_PREFIX = 'waiting_ack:'
 /** A hand-off older than this is no longer "waiting" (the 24 h reply window has closed anyway). */
 export const WAITING_ACK_MAX_AGE_MS = 24 * 3_600_000
+/** SecureDog: one "sigue esperando" team alert per chat per this window. */
+export const WAITING_ALERT_THROTTLE_MS = 15 * 60_000
 
 export const WAITING_ACK_TEXT = 'Ya le avisé al equipo 🙌 En un momento te escriben por aquí 😊'
 

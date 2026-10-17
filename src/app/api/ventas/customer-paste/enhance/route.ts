@@ -6,6 +6,7 @@ import { readTenantUiReadiness } from '@/lib/feature-flags';
 import { createIdentifierRateLimit } from '@/lib/rate-limit';
 import { enhanceCustomerPasteWithAi, isCustomerPasteAiConfigured } from '@/lib/customer-paste-ai';
 import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server';
+import { isPlatformAiPaused } from '@/lib/soft-ai/agent-kill-switch';
 
 export const maxDuration = 15;
 
@@ -37,6 +38,8 @@ export async function POST(request: NextRequest) {
   const readiness = await readTenantUiReadiness(auth.tenantId);
   if (!readiness.aiCustomerPaste) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (!isCustomerPasteAiConfigured()) return NextResponse.json({ error: 'AI enhancement is not configured' }, { status: 503 });
+  // SecureDog: it spends the inbox AI key — the platform-wide AI pause stops it too.
+  if (await isPlatformAiPaused()) return NextResponse.json({ error: 'AI is paused' }, { status: 503 });
   if (!(await isAiTermsAcceptedNow(auth.tenantId))) {
     return NextResponse.json({ error: 'AI terms not accepted', code: 'AI_TERMS_NOT_ACCEPTED' }, { status: 403 });
   }

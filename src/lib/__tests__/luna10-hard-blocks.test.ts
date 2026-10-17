@@ -209,3 +209,39 @@ describe('verifier round 1 (luna-10)', () => {
     assert.match(fs.readFileSync('src/lib/soft-ai/waiting-sweep.ts', 'utf8'), /\.find\(\(r\) => \(r\.metadata as \{ waitingAck\?: unknown \} \| null\)\?\.waitingAck !== true\)/)
   })
 })
+
+describe('SecureDog round 1 (luna-10)', () => {
+  it('waiting ack: line health + kill re-check right before the send; one "sigue esperando" alert per 15 min', () => {
+    const turn = fs.readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
+    const ack = turn.slice(turn.indexOf('async function ackWaitingCustomer'), turn.indexOf('Daily token caps sum turns'))
+    assert.match(ack, /account\.isActive !== false && !account\.disconnectedAt && tokenStatus !== 'revoked' && tokenStatus !== 'expired'/)
+    assert.ok(ack.indexOf('(await readAgentKillState(row.tenantId)).armed || (await isPlatformAiPaused())') < ack.indexOf('const ackDelivery = await deliverOnce('))
+    assert.match(ack, /createdAt: \{ gte: new Date\(Date\.now\(\) - WAITING_ALERT_THROTTLE_MS\) \}/)
+  })
+  it('Pegar cliente stops on the platform AI pause', () => {
+    assert.match(fs.readFileSync('src/app/api/ventas/customer-paste/enhance/route.ts', 'utf8'), /if \(await isPlatformAiPaused\(\)\) return NextResponse\.json/)
+  })
+  it('exam / shoppers / shadow only run through the safe test session (terms, kill, actor, audited cap, signals)', () => {
+    const session = fs.readFileSync('scripts/agent-pack/test-session.ts', 'utf8')
+    for (const re of [/isAiTermsAcceptedNow\(tenantId\)/, /readAgentKillState\(tenantId\)\)\.armed/, /isPlatformAiPaused\(\)/, /\['OWNER', 'ADMIN'\]/, /logAudit\(/, /process\.once\('SIGINT'/, /process\.once\('SIGTERM'/]) assert.match(session, re)
+    for (const f of ['exam', 'shoppers', 'shadow']) {
+      const src = fs.readFileSync(`scripts/agent-pack/${f}.ts`, 'utf8')
+      assert.match(src, /withExamSession\(/, f)
+      assert.doesNotMatch(src, /mutateChatAgentLayerConfig/, f)
+    }
+  })
+  it('the bank / reviewer redaction removes accented names, dotted numbers, @handles and keeps prices', async () => {
+    const { redactCustomerText } = await import('../../../scripts/agent-pack/exam-bank')
+    assert.equal(redactCustomerText('Hola soy José Ramírez, quiero info', 'José Ramírez'), 'Hola soy [nombre] [nombre], quiero info')
+    assert.equal(redactCustomerText('me llamo maria fernanda rodriguez'), 'me llamo [nombre] ')
+    assert.equal(redactCustomerText('cédula 1.1234.0567 y cel 8888.8888'), 'cédula [número] y cel [número]')
+    assert.equal(redactCustomerText('búscame en @ana.perez_cr'), 'búscame en [usuario]')
+    assert.equal(redactCustomerText('El Focus cuesta ₡9 900'), 'El Focus cuesta ₡9 900')
+    assert.equal(redactCustomerText('soy de Cartago'), 'soy de Cartago')
+  })
+  it('accented introduction names never get a second greeting', () => {
+    const N = { afterHours: true, transparent: true }
+    assert.equal(withNightIntro('¡Hola! Soy José de La Tienda 🌿 El Focus cuesta ₡9 900.', N, { name: 'José', store: 'La Tienda', introduced: false }), '¡Hola! Soy José, asistente virtual de La Tienda 🌙\n\nEl Focus cuesta ₡9 900.')
+    assert.equal(withNightIntro('¡Hola! Soy Ángela de La Tienda, ¿en qué te ayudo?', N, { name: 'Ángela', store: 'La Tienda', introduced: false }), '¡Hola! Soy Ángela de La Tienda, ¿en qué te ayudo?')
+  })
+})

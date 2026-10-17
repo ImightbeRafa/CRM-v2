@@ -15,9 +15,6 @@ import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { runAgentTestTurn } from '@/lib/soft-ai/agent-turn'
 import { evaluateStep } from '@/lib/soft-ai/probar-scenarios'
-import { mutateChatAgentLayerConfig } from '@/lib/soft-ai/agent-layer-config-mutate'
-import { readChatAgentLayerConfig } from '@/lib/feature-flags'
-import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { softAiResponsesCreate, parseSoftAiResponseText } from '@/lib/soft-ai/llm/client'
 import { LUNA_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
 import { isWithinBusinessHours, parseBusinessHours } from '@/lib/soft-ai/business-hours'
@@ -25,6 +22,7 @@ import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { arg, loadPack } from './pack'
 import { codeChecks, reviewerKnowledge } from './exam'
 import { redactCustomerText } from './exam-bank'
+import { withExamSession } from './test-session'
 
 const BURST_MS = 90_000
 
@@ -51,7 +49,7 @@ async function compare(input: { tenantId: string; knowledge: string; history: st
         'Las frases del sitio ("apoya…", "ayuda a reducir antojos", "acompaña el ánimo") NO son promesas. Nombrar los métodos de pago para preguntar cuál prefiere es CORRECTO. De noche decir cuándo escribe el equipo es CORRECTO.',
         'Respondé solo el JSON; reason: una frase corta.',
       ].join('\n'),
-      input: [{ type: 'message', role: 'user', content: [`CONOCIMIENTO:\n${input.knowledge}`, `HORARIO: ${input.night ? 'de noche' : 'de día'}`, `CHAT ANTERIOR:\n${input.history || '(nada)'}`, `CLIENTE: ${input.customer}`, `AGENTE IA: ${input.agent || '(no respondió)'}`, `EQUIPO: ${input.team ?? '(no respondió)'}`].join('\n\n') }],
+      input: [{ type: 'message', role: 'user', content: [`CONOCIMIENTO:\n${input.knowledge}`, `HORARIO: ${input.night ? 'de noche' : 'de día'}`, `CHAT ANTERIOR:\n${redactCustomerText(input.history) || '(nada)'}`, `CLIENTE: ${redactCustomerText(input.customer)}`, `AGENTE IA: ${redactCustomerText(input.agent) || '(no respondió)'}`, `EQUIPO: ${input.team ? redactCustomerText(input.team) : '(no respondió)'}`].join('\n\n') }],
       reasoningEffort: 'low',
       maxOutputTokens: 300,
       timeoutMs: 30_000,
@@ -85,13 +83,10 @@ async function main() {
   if (!acc) throw new Error('Canal no encontrado en este negocio')
 
   const convs = await prisma.chatConversation.findMany({ where: { tenantId, socialAccountId: account, lastInboundAt: { gte: since } }, select: { id: true, peerName: true } })
-  const before = parseChatAgentLayerConfig((await readChatAgentLayerConfig(tenantId)).config).testDailyTokenCap
-  if (before >= cap) throw new Error(`El tope de pruebas ya está en ${before.toLocaleString('es-CR')}: otra prueba está corriendo.`)
-  await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: Math.max(c.testDailyTokenCap, cap) }))
   type Row = { conv: string; at: string; night: boolean; customer: string; agent: string; handoff: string | null; team: string | null; teamMinutes: number | null; findings: Array<{ cls: string; serious: boolean; why: string }>; review: Awaited<ReturnType<typeof compare>> }
   const rows: Row[] = []
   let cost = 0
-  try {
+  await withExamSession({ tenantId, actorEmail: pack.target.actorEmail, cap, label: 'shadow' }, async () => {
     for (const c of convs) {
       const msgs = await prisma.chatMessage.findMany({
         where: { tenantId, conversationId: c.id },
@@ -129,9 +124,7 @@ async function main() {
         process.stdout.write(findings.some((f) => f.serious) ? '✖' : review.agent === 'serious' ? '?' : '·')
       }
     }
-  } finally {
-    await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: before }))
-  }
+  })
   process.stdout.write('\n')
   const serious = rows.filter((r) => r.findings.some((f) => f.serious))
   const count = (k: string) => rows.filter((r) => r.review.compare === k).length

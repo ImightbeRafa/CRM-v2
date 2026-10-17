@@ -84,7 +84,7 @@ import {
   type TurnHandoff,
 } from '@/lib/soft-ai/agent-turn-outcome'
 import { notifyHandoff } from '@/lib/soft-ai/handoff-notify'
-import { decideWaitingAck, isOptOutText, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS } from '@/lib/soft-ai/waiting-ack'
+import { decideWaitingAck, isOptOutText, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS, WAITING_ALERT_THROTTLE_MS } from '@/lib/soft-ai/waiting-ack'
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { dropRepeatedParts, REPEAT_WINDOW_MS } from '@/lib/soft-ai/repeat-guard'
 import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt } from '@/lib/soft-ai/sales-state'
@@ -429,14 +429,26 @@ async function ackWaitingCustomer(input: {
 
     const hoursSetup = await loadHoursSetup(row.tenantId, input.agent.id)
     const hours = afterHoursState(hoursSetup.hours, new Date(), { aiDisclosure: hoursSetup.aiDisclosure })
-    await notifyHandoff({
-      tenantId: row.tenantId,
-      conversationId: row.conversationId,
-      socialAccountId: row.socialAccountId,
-      kind: 'handoff',
-      reason: 'customer_waiting',
-      quietUntil: hours.afterHours ? hours.opensAt : null,
+    // SecureDog (INT): at most one "sigue esperando" alert per chat every 15 minutes ("gracias", "👍" × 50 ≠ 50 bells).
+    const recentWaitingAlert = await prisma.workspaceNotification.findFirst({
+      where: {
+        tenantId: row.tenantId,
+        conversationId: row.conversationId,
+        dedupeKey: { startsWith: `ai_handoff:${row.conversationId}:`, contains: ':customer_waiting' },
+        createdAt: { gte: new Date(Date.now() - WAITING_ALERT_THROTTLE_MS) },
+      },
+      select: { id: true },
     })
+    if (!recentWaitingAlert) {
+      await notifyHandoff({
+        tenantId: row.tenantId,
+        conversationId: row.conversationId,
+        socialAccountId: row.socialAccountId,
+        kind: 'handoff',
+        reason: 'customer_waiting',
+        quietUntil: hours.afterHours ? hours.opensAt : null,
+      })
+    }
     if (!decision.ack) return
 
     const text = waitingAckText(hours)
@@ -470,14 +482,18 @@ async function ackWaitingCustomer(input: {
 
     const account = await prisma.socialAccount.findFirst({
       where: { id: row.socialAccountId, tenantId: row.tenantId },
-      select: { accessToken: true, refreshToken: true, accountId: true, pageId: true },
+      select: { accessToken: true, refreshToken: true, accountId: true, pageId: true, isActive: true, disconnectedAt: true, tokenStatus: true },
     })
     const accessToken = account?.accessToken ? decryptSocialAccessToken(account.accessToken) : null
-    if (!account || !accessToken) {
-      await prisma.chatAgentTurn.update({ where: { id: ackTurnId }, data: { status: 'failed', errorCode: 'token_unhealthy', completedAt: new Date() } })
+    // SecureDog (INT): a disconnected / revoked / expired line never sends, like the main reply's token gate.
+    const tokenStatus = String(account?.tokenStatus || '').toLowerCase()
+    const lineHealthy = Boolean(account && accessToken && account.isActive !== false && !account.disconnectedAt && tokenStatus !== 'revoked' && tokenStatus !== 'expired')
+    // Kill switch armed meanwhile (incident): re-checked right before the send.
+    if (!lineHealthy || (await readAgentKillState(row.tenantId)).armed || (await isPlatformAiPaused())) {
+      await prisma.chatAgentTurn.update({ where: { id: ackTurnId }, data: { status: 'skipped', skipReason: lineHealthy ? 'kill_switch' : 'token_unhealthy', completedAt: new Date() } })
       return
     }
-    const meta = parseSocialRefreshToken(account.refreshToken)
+    const meta = parseSocialRefreshToken(account!.refreshToken)
     const platform = input.payload.platform || 'whatsapp'
     const ackDelivery = await deliverOnce({
       jobId: row.id,
@@ -485,7 +501,7 @@ async function ackWaitingCustomer(input: {
       kind: 'text',
       contentHash: hashSoftAiDeliveryContent(text),
       send: async () => {
-        const result = await sendMetaText({ platform, accessToken, phoneNumberId: account.accountId, pageId: account.pageId || meta.pageId, recipient: row.peerId, text })
+        const result = await sendMetaText({ platform, accessToken: accessToken!, phoneNumberId: account!.accountId, pageId: account!.pageId || meta.pageId, recipient: row.peerId, text })
         if (!result.ok) throw new Error('META_SEND_FAILED')
         return result
       },

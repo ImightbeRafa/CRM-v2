@@ -206,7 +206,7 @@ export function withNightIntro(
   // Verifier F1: only a SHORT intro clause with no digits / questions, ending at "." "!" an emoji, a line break or the
   // end, is rewritten ("Hola, soy Sofi y el Stress Down cuesta ₡12.000" is left alone — it is not just an intro).
   const selfIntro = new RegExp(
-    `^(?:¡?\\s*(?:hola|buenas(?:\\s+noches)?)\\s*[!,.]?\\s*)?soy\\s+${escapeRe(name)}\\b([^\\n.!?¿\\d\\p{Extended_Pictographic}]{0,40})(?=[.!\\n]|[\\p{Extended_Pictographic}]|$)[.!]?[ \\t]*(?:[\\p{Extended_Pictographic}\\uFE0F][ \\t]*)*`,
+    `^(?:¡?\\s*(?:hola|buenas(?:\\s+noches)?)\\s*[!,.]?\\s*)?soy\\s+${escapeRe(name)}(?![\\p{L}\\p{N}])([^\\n.!?¿\\d\\p{Extended_Pictographic}]{0,40})(?=[.!\\n]|[\\p{Extended_Pictographic}]|$)[.!]?[ \\t]*(?:[\\p{Extended_Pictographic}\\uFE0F][ \\t]*)*`,
     'iu',
   )
   const clause = t.match(selfIntro)
@@ -215,7 +215,8 @@ export function withNightIntro(
     return rest ? `${intro}\n\n${rest}` : intro
   }
   // The model introduced itself in a way that cannot be rewritten safely: never a second greeting on top.
-  if (new RegExp(`\\bsoy\\s+${escapeRe(name)}\\b`, 'iu').test(t.split('\n')[0] || '')) return text
+  // SecureDog: a Unicode boundary — "\b" is ASCII-only, so "José" / "Ángela" never matched (double greeting).
+  if (new RegExp(`(?<![\\p{L}\\p{N}])soy\\s+${escapeRe(name)}(?![\\p{L}\\p{N}])`, 'iu').test(t.split('\n')[0] || '')) return text
   if (who.introduced) return text
   return `${intro}\n\n${t}`
 }

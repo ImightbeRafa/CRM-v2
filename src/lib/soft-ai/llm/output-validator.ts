@@ -337,12 +337,12 @@ const NOT_A_NEGATION_RE = /\b(?:sin\s+dudas?|sin\s+problemas?|no\s+te\s+preocup[
 const HEALTH_GROUP_RE =
   // Verifier round 8: no bare "corazón" (a Costa Rican endearment); SecureDog round 6: "del corazón", hipertensión,
   // anticoagulantes, gestación, adultos mayores.
-  /(?<![\p{L}])(?:embaraz\p{L}*|lactan\p{L}*|amamant\p{L}*|de\s+mamar|gestaci[oó]n|gestante|encinta|beb[eé]s?|ni[nñ][oa]s?|hij[oa]s?\s+(?:de\s+)?\d+\s+a[nñ]os|menores|adultos?\s+mayores|todas\s+las\s+edades|arritmi\p{L}*|ancian\p{L}*|tercera\s+edad|(?:problemas?|enfermedad\p{L}*|condici[oó]n)\s+(?:del?\s+)?coraz[oó]n|del\s+coraz[oó]n|cardiopat\p{L}*|hipertens\p{L}*|anticoagul\p{L}*|presi[oó]n\s+alta|medicament\p{L}*|medicinas?|pastillas?|presi[oó]n|diab[eé]t\p{L}*|anticonceptiv\p{L}*|tiroides|marcapasos|card[ií]ac\p{L}*|epilep\p{L}*|c[aá]ncer|quimio\p{L}*|antidepresiv\p{L}*|ansiol[ií]tic\p{L}*|sertralina|fluoxetina|escitalopram|clonazepam|alprazolam|ozempic|semaglutid\p{L}*|metformina|insulina|levotiroxina|warfarina|parkinson|alzheimer|hipotiroid\p{L}*|hipertiroid\p{L}*|menor(?:es)?\s+de\s+edad|(?:tengo|tiene|tienen|cumpl\p{L}*|hij[oa]s?\s+de|ni[nñ][oa]s?\s+de|persona\s+de|se[nñ]or[a]?\s+de)\s+(?:[1-9]|1[0-7]|[6-9]\d)\s+a[nñ]os|dando\s+(?:pecho|de\s+mamar)|posparto|postparto|reci[eé]n\s+parid\p{L}*|tratamiento\s+m[eé]dico|me\s+operaron|cirug[ií]a|operaci[oó]n|(?:mis|tus|sus|los)\s+hij[oa]s?(?=[^.?!\n]{0,30}(?:usar|tomar|poner|aplicar))|(?:usar|tomar|poner)\p{L}*[^.?!\n]{0,30}(?:mis|tus|sus|los)\s+hij[oa]s?)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:embaraz\p{L}*|lactan\p{L}*|amamant\p{L}*|de\s+mamar|gestaci[oó]n|gestante|encinta|beb[eé]s?|ni[nñ][oa]s?|hij[oa]s?\s+(?:de\s+)?\d+\s+a[nñ]os|menores|adultos?\s+mayores|todas\s+las\s+edades|arritmi\p{L}*|ancian\p{L}*|tercera\s+edad|(?:problemas?|enfermedad\p{L}*|condici[oó]n)\s+(?:del?\s+)?coraz[oó]n|del\s+coraz[oó]n|cardiopat\p{L}*|hipertens\p{L}*|anticoagul\p{L}*|presi[oó]n\s+alta|medicament\p{L}*|medicinas?|pastillas?|presi[oó]n|diab[eé]t\p{L}*|anticonceptiv\p{L}*|tiroides|marcapasos|card[ií]ac\p{L}*|epilep\p{L}*|c[aá]ncer|quimio\p{L}*|antidepresiv\p{L}*|ansiol[ií]tic\p{L}*|sertralina|fluoxetina|escitalopram|clonazepam|alprazolam|ozempic|semaglutid\p{L}*|metformina|insulina|levotiroxina|warfarina|parkinson|alzheimer|hipotiroid\p{L}*|hipertiroid\p{L}*|menor(?:es)?\s+de\s+edad|(?:tengo|tiene|tienen|cumpl\p{L}*|(?:hij|sobrin|niet|herman|prim|abuel|t[ií])[oa]s?\s+de|ni[nñ][oa]s?\s+de|mam[aá]\s+de|pap[aá]\s+de|personas?\s+de|se[nñ]or[a]?\s+de)\s+(?:[1-9]|1[0-7]|[6-9]\d)\s+a[nñ]os|dando\s+(?:pecho|de\s+mamar)|posparto|postparto|reci[eé]n\s+parid\p{L}*|tratamiento\s+m[eé]dico|me\s+operaron|cirug[ií]a|operaci[oó]n|(?:mis|tus|sus|los)\s+hij[oa]s?(?=[^.?!\n]{0,30}(?:usar|tomar|poner|aplicar))|(?:usar|tomar|poner)\p{L}*[^.?!\n]{0,30}(?:mis|tus|sus|los)\s+hij[oa]s?)(?![\p{L}])/iu
 /** The strong assurances; "podés / puede / se puede" alone are weak (next to a doctor referral they are fine). */
 // Verifier round 11: "segur…" but not "seguridad" ("por seguridad, consultá con tu médico" is caution, not a promise).
-const STRONG_HEALTH_ASSURANCE = String.raw`segur(?!idad)\p{L}*|apt[oa]s?|(?:ning[uú]n|sin)\s+inconvenientes?|no\s+hay\s+(?:ning[uú]n\s+)?inconvenientes?|sin\s+(?:ning[uú]n\s+)?problemas?|no\s+hay\s+(?:ning[uú]n\s+)?problemas?|no\s+pasa\s+nada|tranquil\p{L}*|recomendad\p{L}*|ideal(?:es)?|perfect[oa]s?|efectos?\s+secundarios?|contraindicaci\p{L}*|riesgos?|peligros\p{L}*|da[nñ]in\p{L}*|hace\s+da[nñ]o|hacen\s+da[nñ]o|afecta\p{L}*|interact\p{L}*|interfier\p{L}*|compatible\p{L}*|inofensiv\p{L}*|inocu\p{L}*|sin\s+miedo`
+const STRONG_HEALTH_ASSURANCE = String.raw`segur(?!idad)\p{L}*|apt[oa]s?|(?:ning[uú]n|sin)\s+inconvenientes?|no\s+hay\s+(?:ning[uú]n\s+)?inconvenientes?|sin\s+(?:ning[uú]n\s+)?problemas?|no\s+hay\s+(?:ning[uú]n\s+)?problemas?|no\s+pasa\s+nada|tranquil\p{L}*|recomendad\p{L}*|ideal(?:es)?|perfect[oa]s?|efectos?\s+secundarios?|contraindicaci\p{L}*|riesgos?|peligros\p{L}*|da[nñ]in\p{L}*|hace\s+da[nñ]o|hacen\s+da[nñ]o|afecta\p{L}*|interact\p{L}*|interfier\p{L}*|compatible\p{L}*|inofensiv\p{L}*|inocu\p{L}*|sin\s+miedo|con\s+(?:toda\s+)?confianza|sin\s+pena|no\s+(?:le|te|les)\s+va\s+a\s+(?:hacer|pasar)\s+nada|va\s+bien|le\s+va\s+bien`
 const STRONG_HEALTH_ASSURANCE_RE = new RegExp(String.raw`(?<![\p{L}])(?:${STRONG_HEALTH_ASSURANCE})(?![\p{L}])`, 'iu')
-const HEALTH_ASSURANCE_RE = new RegExp(String.raw`(?<![\p{L}])(?:${STRONG_HEALTH_ASSURANCE}|pod[eé]s|puede[ns]?|pued[eé]s|se\s+puede)(?![\p{L}])`, 'iu')
+const HEALTH_ASSURANCE_RE = new RegExp(String.raw`(?<![\p{L}])(?:${STRONG_HEALTH_ASSURANCE}|pod[eé]s|puede[ns]?|pued[eé]s|se\s+puede|podr[ií]as?)(?![\p{L}])`, 'iu')
 /** Names that only look like a sensitive group ("el Día del Niño"). */
 const NOT_A_GROUP_RE = /d[ií]a\s+del?\s+ni[nñ][oa]s?/giu
 const HEALTH_REFERRAL_RE =
@@ -378,7 +378,7 @@ const INDIRECT_BEFORE_RE = /(?<![\p{L}])(?:si|sobre\s+si|saber\s+si)\s+(?:\p{L}+
 // SecureDog round 7: only "puede (ser) que…" and "podés estar tomando / estar con…" are a possibility — never "puede ser
 // usado", "podés estar usándolo".
 const POSSIBILITY_AFTER_RE = /^\s+(?:(?:ser\s+)?que|estar\s+(?:tomando|con|en\s+tratamiento|bajo))(?![\p{L}])/iu
-const WEAK_ASSURANCE_RE = /^(?:pod[eé]s|puede[ns]?|pued[eé]s|se\s+puede)$/iu
+const WEAK_ASSURANCE_RE = /^(?:pod[eé]s|puede[ns]?|pued[eé]s|se\s+puede|podr[ií]as?)$/iu
 
 /** Harm words: with a "no" in front they ARE the assurance ("no es peligroso", "no afecta", "no interactúa"). */
 const HARM_WORD_RE = /^(?:riesgos?|peligros\p{L}*|da[nñ]in\p{L}*|hacen?\s+da[nñ]o|afecta\p{L}*|interact\p{L}*|interfier\p{L}*|efectos?\s+secundarios?|contraindicaci\p{L}*)$/iu
@@ -432,7 +432,11 @@ export function healthContextAssurance(reply: string, customerText: string): str
   const c = (customerText || '').normalize('NFKC').replace(NOT_A_GROUP_RE, ' ')
   // Verifier round 10: "¿Es seguro comprar por aquí?" / "¿hay riesgo de que se pierda el paquete?" are about paying or
   // shipping — the bare safety words count only when the customer is not asking about money or delivery.
-  const safetyWords = /(?<![\p{L}])(?:segur\p{L}*|riesgo\p{L}*|da[nñ]o|peligro\p{L}*|efectos?\s+secundarios?)(?![\p{L}])/iu.test(c) && !MONEY_OR_SHIPPING_RE.test(c)
+  // SecureDog round 8: judged per message — a shopping word in an EARLIER message ("Quiero comprar 2") no longer switches
+  // the safety words of a later one ("¿Le hace daño a mi gastritis?") off.
+  const safetyWords = c
+    .split('\n')
+    .some((line) => /(?<![\p{L}])(?:segur\p{L}*|riesgo\p{L}*|da[nñ]o|peligro\p{L}*|efectos?\s+secundarios?|mal)(?![\p{L}])/iu.test(line) && !MONEY_OR_SHIPPING_RE.test(line))
   if (!HEALTH_GROUP_RE.test(c) && !safetyWords) return null
   const t = (reply || '').normalize('NFKC')
   const referral = HEALTH_REFERRAL_RE.test(t)
@@ -446,7 +450,8 @@ export function healthContextAssurance(reply: string, customerText: string): str
   // SecureDog round 7: a bare answer is the promise itself — "No, para nada" / "No, ninguno" to a harm question, "¡Sí,
   // claro!" to "¿lo puedo usar / tomar…?" — unless the reply sends them to their doctor.
   const harmQuestion = /(?<![\p{L}])(?:da[nñ]o|segur\p{L}*|riesgo\p{L}*|peligro\p{L}*|efectos?\s+secundarios?|contraindicaci\p{L}*|afecta\p{L}*)(?![\p{L}])/iu.test(c)
-  const canIQuestion = /(?<![\p{L}])(?:(?:lo|la|los|las)\s+)?(?:puedo|pueden|podr[ií]a|puede)\s+(?:usar|tomar|poner|aplicar|combinar)|(?:usar|tomar)l[oa]s?\b/iu.test(c)
+  // SecureDog round 8: also "¿es seguro / es apto / sirve / se puede … en el embarazo?" (a bare "¡Sí!" answers those too).
+  const canIQuestion = /(?<![\p{L}])(?:(?:lo|la|los|las)\s+)?(?:puedo|pueden|podr[ií]a|puede)\s+(?:usar|tomar|poner|aplicar|combinar)|(?:usar|tomar)l[oa]s?\b|(?<![\p{L}])(?:es|son)\s+(?:segur\p{L}*|apt[oa]s?|bueno|buena)|(?<![\p{L}])(?:se\s+puede|sirve|hace\s+(?:da[nñ]o|mal))(?![\p{L}])/iu.test(c)
   const opening = t.trim().split(/[.!?\n]/u)[0] || ''
   if (!referral && harmQuestion && /^\s*¡?\s*(?:no|para\s+nada|ninguno|ninguna|nada|cero)(?![\p{L}])/iu.test(opening)) return opening.trim()
   if (!referral && canIQuestion && /^\s*¡?\s*(?:s[ií]|claro|dale|obvio|por\s+supuesto)(?![\p{L}])/iu.test(opening)) return opening.trim()

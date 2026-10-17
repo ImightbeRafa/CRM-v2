@@ -259,16 +259,46 @@ export function isPlainAskMessage(value: string): boolean {
   })
 }
 
-/** An agent-side exit only for a plain ask; anything else with payment words → a person. */
+/**
+ * SecureDog round 8 (release gate): someone else's paying act riding inside an ask sentence ("Quiero pagar el resto, Juan pago
+ * la mitad", "¿Me pasás el número, que mi esposo puso la mitad?"). An unaccented -o paying verb is the third-person past
+ * unless a first-person / question frame sits right before it ("les pago", "cómo pago", "lo pago") or it is the noun
+ * ("el pago"); mandó / pasó / envió / puso / dio / hizo + a money word are always someone's act.
+ */
+const PAY_O_RE = /(?<![\p{L}])(?:pag|cancel|deposit|abon|sinpe|sinpi|adelant|cubri|complet|liquid|mand|pas|envi|gir|tir)[oó](?![\p{L}])|(?<![\p{L}])(?:puso|dio|hizo)(?![\p{L}])/giu
+const SENT_O_RE = /(?<![\p{L}])(?<!(?:te|le|les|se\s+l[oa]s?|yo)\s+)(?:mand|pas|envi|gir|tir)[oó]\s+(?:(?:la|el|los|las|lo|una|un|su|mi)\s+)?(?:plata|platica|dinero|sinpe|mitad|resto|pago|adelanto|parte|transferencia|dep[oó]sito|todo|otra|\d)/iu
+const DID_RE = /(?<![\p{L}])(?:puso|pusieron|pusimos|dio|di[oó]|hizo|cubri[oó]|liquid[oó])\s+(?:(?:la|el|los|las|lo|una|un|su|mi)\s+)?(?:plata|platica|dinero|sinpe|mitad|resto|pago|adelanto|parte|transferencia|dep[oó]sito|todo|otra|\d)/iu
+const FRAME_BEFORE_RE = /(?:^|[\s¿¡,.!?])(?:yo|te|le|les|lo|la|los|las|aceptan|reciben|hacen|tienen|hay|de|con|por|para|sin|en|a|otro|otra|mismo|cualquier|cu[aá]l|cu[aá]nto|ning[uú]n|alg[uú]n|nuestro|tus|sus|mis|c[oó]mo|cu[aá]ndo|d[oó]nde|qu[eé]|si|el|del|al|un|mi|tu|su|este|ese|primer|cada|y|o|mejor|hoy|ma[nñ]ana|ahorita|ahora|despu[eé]s|luego|tambi[eé]n|solo|s[oó]lo|entonces|bueno|ok|dale|listo)\s*$/iu
+/** A balance only the store knows — "el resto", "la mitad", "lo que falta", "mi parte", "el saldo". */
+const PARTIAL_STATE_RE = /(?<![\p{L}])(?:mitad|resto|saldo|adelanto|lo\s+que\s+(?:falta|queda|resta)|lo\s+dem[aá]s|lo\s+otro|la\s+otra(?:\s+parte)?|(?:mi|su|tu)\s+parte|faltante|debiendo|cubiert[oa]|saldad[oa])(?![\p{L}])/iu
+export function hasFreePayAct(value: string): boolean {
+  const v = (value || '').normalize('NFKC')
+  if (SENT_O_RE.test(v) || DID_RE.test(v)) return true
+  for (const m of v.matchAll(PAY_O_RE)) {
+    const idx = m.index ?? 0
+    const head = v.slice(0, idx)
+    const prev = head.slice(Math.max(0, head.length - 24))
+    if (/(?:^|[.!?¿¡\n])\s*$/u.test(head)) continue
+    if (FRAME_BEFORE_RE.test(prev)) {
+      const after = v.slice(idx + m[0].length)
+      if (/(?:^|\s)(?:lo|la|los|las)\s*$/iu.test(prev) && /^\s+(?:\p{Lu}\p{Ll}+|(?:mi|su|tu|el|la)\s+\p{L}{3,})(?![\p{L}])/u.test(after)) return true
+      continue
+    }
+    return true
+  }
+  return false
+}
+
+/** An agent-side exit only for a plain ask with no third-person paying act and no balance word; else → a person. */
 function plainOr(value: string, cls: PaymentClassification): PaymentClassification {
-  return isPlainAskMessage(value) ? cls : 'payment_proof_or_risk'
+  return isPlainAskMessage(value) && !hasFreePayAct(value) && !PARTIAL_STATE_RE.test(value) ? cls : 'payment_proof_or_risk'
 }
 
 /** Refund wording (INT-81): goes to a person unless it is a plain return-policy question. */
 const REFUND_RE = /(?<![\p{L}])(devol\p{L}*|devuelv\p{L}*|regres(en|e|ar|ame|enme)\s+(la\s+plata|el\s+dinero|mi\s+plata|mi\s+dinero|lo\s+que\s+(di|pagu[eé])))/iu
 // A greeting may come first ("Hola, ¿puedo devolverlo si no me queda?"); only the FIRST sentence is the question.
 const RETURN_POLICY_QUESTION_RE =
-  /^\s*((hola|buenas|buenos\s+d[ií]as|buenas\s+(tardes|noches)|disculpe|una\s+consulta|consulta)[\s,.!]*)?¿?\s*(puedo|se\s+puede|pueden|c[oó]mo|hacen|aceptan|tienen|hay|cu[aá]l\s+es|qu[eé])(?![\p{L}])[^.!?\n]*(devol\p{L}*|devuelv\p{L}*|cambi\p{L}*)/iu
+  /^\s*((hola|buenas|buenos\s+d[ií]as|buenas\s+(tardes|noches)|disculpe|una\s+consulta|consulta)[\s,.!]*)?¿?\s*(puedo|se\s+puede|pueden|c[oó]mo|hacen|aceptan|tienen|hay|(?:cu[aá]l\s+es|qu[eé])\s+(?:la\s+|el\s+|los\s+|las\s+)?(?:pol[ií]tica|plazo|garant[ií]a|condiciones|proceso\s+(?:de|para)))(?![\p{L}])[^.!?\n]*(devol\p{L}*|devuelv\p{L}*|cambi\p{L}*)/iu
 const MONEY_WORD_RE = /plata|dinero|pago|sinpe|reembols|₡|lo\s+que\s+(di|pagu[eé])/iu
 /** Returning something TO the customer = money back: never a return-policy question. */
 const REFUND_TO_ME_RE = /(?<![\p{L}])(devolverme|devu[eé]lvanme|devu[eé]lvame|me\s+devuelv\p{L}*|me\s+lo\s+devuelv\p{L}*)/iu

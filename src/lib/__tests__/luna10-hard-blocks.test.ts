@@ -12,6 +12,12 @@ import { SHIPPING_DATA_LIST } from '../soft-ai/order-data-list'
 import { parseSalesRules } from '../soft-ai/agent-sales-setup'
 import { afterHoursHandoffLine, afterHoursPromptLine, afterHoursState, applyAfterHoursText, withNightIntro } from '../soft-ai/business-hours'
 import { HANDOFF_REASON_LABELS } from '../workspace-notifications'
+import { isOptOutText as isRouterOptOutText, mediaInboundPlan, routeInboundSafety } from '../soft-ai/llm/safety-router'
+import { decideInbound } from '../soft-ai/inbound-decision'
+import { planBurstInbound } from '../soft-ai/inbound-burst'
+import { parseBrandFacts } from '../soft-ai/brand-facts'
+import { RESERVED_SHORTCUT_SEEDS, type RuntimeShortcut } from '../soft-ai/shortcuts'
+import { instagramMessageType, parseMetaChatPayload } from '../meta-chat'
 
 describe('results_claim (no promised effects)', () => {
   const promises = [
@@ -817,5 +823,111 @@ describe("SecureDog round 8 F1 (luna-10): after a closed ask, only an order ques
     for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
     
     assert.deepEqual(bad, [])
+  })
+})
+
+describe('SecureDog PR #100 follow-ups: opt-out parity + Instagram PDF receipts', () => {
+  const shortcuts: RuntimeShortcut[] = RESERVED_SHORTCUT_SEEDS.map((row, index) => ({ ...row, id: `s-${index}`, isActive: true, sortOrder: index }))
+  const facts = parseBrandFacts({ schemaVersion: 1 })
+
+  // Every phrase the waiting ack treats as "stop writing to me" must also hand off before the model.
+  const stopPhrases = [
+    'STOP', 'basta', 'basta ya', 'Ya basta!', 'no me escriban más', 'No me escribas más', 'no me vuelvan a escribir',
+    'quiero darme de baja', 'darme de baja por favor', 'no me manden nada', 'ya no me manden nada', 'no me contacten más',
+    'NO MÁS MENSAJES', 'Ya no quiero mensajes', 'no quiero recibir más mensajes', 'déjenme en paz', 'dejen de escribirme',
+    'unsubscribe', 'No me escriban', 'no me escriban por favor', 'No quiero un asistente virtual',
+    'No quiero que me atienda una inteligencia artificial', 'no quiero hablar con un bot', 'Ya basta! ¿Cuántas veces les digo?',
+    'Basta, ¿pueden dejar de escribirme?', '¡¿Basta ya?!', 'Basta ya?', 'Estoy harta con ustedes, basta de mensajes', 'Con todo respeto, basta',
+    'basta con los mensajes', 'No, basta', 'no me escriban más por favor, gracias',
+    'No me escriban más por aquí', 'no me escriban más por este medio', 'No me contacten más por WhatsApp',
+    'no me escriban más en este número', 'No me manden más a este número', 'no me escriban más que no me interesa',
+    'No me molesten más en todo el día', 'no me escriban más del tema', 'no me manden nada hasta nuevo aviso',
+    'Les dije que basta', 'Basta que no me interesa', 'Basta con esto!', 'Ya basta con eso', 'Basta con las promociones',
+    'Con todo respeto basta ya', 'Basta ¿cuántas veces les digo?', 'Basta cuantas veces les digo?', 'Ya basta ¿no entienden?',
+    'Basta ya ¿no entienden?', 'Basta ya no entienden?', 'Basta de mensajes ¿ok?', 'Les dije que basta ¿no?', 'Ya basta ¿sí?',
+    '¿Pueden parar ya? basta', 'Ya basta ¿cuántas veces les digo que no me escriban?', 'basta por favor ¿si?', '¡Basta!',
+    'basta...', 'Basta, no me interesa?',
+  ]
+  const normal = [
+    'no me llegó el pedido', 'no quiero el combo', 'No me manden el catálogo todavía', 'no me contesten así',
+    'no me escriba al otro número', 'hola, quiero info',
+  ]
+
+  it('the safety router opt-out is at least as wide as the waiting-ack list', () => {
+    for (const t of stopPhrases) {
+      assert.ok(isOptOutText(t), `waiting-ack ${t}`)
+      assert.ok(isRouterOptOutText(t), `router ${t}`)
+      const r = routeInboundSafety({ inboundText: t })
+      assert.equal(r.escalate && r.reason, 'opt_out', t)
+    }
+  })
+  it('normal phrases stay with the model in both lists', () => {
+    for (const t of normal) {
+      assert.equal(isOptOutText(t), false, `waiting-ack ${t}`)
+      assert.equal(isRouterOptOutText(t), false, `router ${t}`)
+    }
+    // 'basta' = 'is enough' and order details stay with the model; the waiting ack keeps its base list (it only skips one ack).
+    for (const t of ['¿Con un parche basta para todo el día?', 'con eso basta', '¿basta con uno?', 'Me basta con uno', 'Un parche no basta, quiero dos', 'No basta con lavarlo', 'basta con el pequeño', 'creo que me basta el de 30 días', 'Basta con que me lo manden el lunes', 'Me basta y me sobra', 'no me manden más de 3', 'No me mandes nada al correo, solo por aquí',
+      '¿Con un parche ya basta?', 'Con eso ya basta, gracias', 'Con uno ya basta', '¿Ya basta con uno?',
+      '¿Basta con esta crema o necesito algo más?', '¿Basta con eso?', 'basta con esa talla?', '¿Basta con esto para todo el mes?',
+      '¿Basta una aplicación al día?', '¿Basta un parche?', 'Basta una vez al día?', '¿Basta para dos personas?', 'no basta?']) {
+      assert.equal(isRouterOptOutText(t), false, `router ${t}`)
+      assert.ok(isOptOutText(t), `waiting-ack ${t}`)
+    }
+    // A product question in the router (probar-scenarios); the waiting ack keeps its wider bot refusal.
+    assert.equal(isRouterOptOutText('No quiero una máquina tan grande'), false)
+  })
+  it('a person request hands off in the router but is no opt-out for the waiting ack (that customer gets the ack)', () => {
+    for (const t of ['quiero hablar con una persona', 'quiero hablar con un asesor', 'agente']) {
+      assert.equal(isOptOutText(t), false, t)
+      assert.ok(isRouterOptOutText(t), t)
+    }
+  })
+  it('decideInbound: "basta" / "no me escriban más" / "darme de baja" hand off (human_request), never the model', () => {
+    for (const t of ['basta', 'no me escriban más', 'quiero darme de baja', 'no me manden nada', 'quiero hablar con una persona']) {
+      const d = decideInbound({ inboundText: t, brandFacts: facts, shortcuts })
+      assert.equal(d.escalate, true, t)
+      assert.equal(d.shortcutKey, 'sys_handoff_optout', t)
+      assert.deepEqual(d.handoff, { kind: 'handoff', reason: 'human_request' }, t)
+    }
+    for (const t of ['no me llegó el pedido', 'no quiero el combo']) {
+      assert.notEqual(decideInbound({ inboundText: t, brandFacts: facts, shortcuts }).shortcutKey, 'sys_handoff_optout', t)
+    }
+  })
+
+  const igFile = () => ({
+    mid: 'mid.ig.pdf',
+    attachments: [{ type: 'file', payload: { url: 'https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=1' } }],
+  })
+  it('Instagram file attachments (PDF receipts) are stored as a document', () => {
+    assert.equal(instagramMessageType(igFile()), 'document')
+    assert.equal(instagramMessageType({ attachments: [{ type: 'image' }] }), 'image')
+    assert.equal(instagramMessageType({ attachments: [{ type: 'share' }] }), 'share')
+    assert.equal(instagramMessageType({ text: 'hola' }), 'text')
+    assert.equal(instagramMessageType({}), 'unknown')
+    const parsed = parseMetaChatPayload({
+      object: 'instagram',
+      entry: [{ id: '17841400000000001', messaging: [{ sender: { id: '999' }, recipient: { id: '17841400000000001' }, timestamp: 1_700_000_000_000, message: igFile() }] }],
+    })
+    assert.equal(parsed.messages[0]?.messageType, 'document')
+    assert.equal(parsed.messages[0]?.metadata.messageType, 'document')
+    assert.equal(parsed.messages[0]?.content, '[file]')
+  })
+  it('an Instagram PDF gets the receipt path / review, and the burst planner treats it as media', () => {
+    assert.equal(mediaInboundPlan({ messageType: 'document', caption: '[file]', awaitingReceipt: true }), 'receipt')
+    assert.equal(mediaInboundPlan({ messageType: 'document', caption: '[file]' }), 'ask_in_writing')
+    const receipt = decideInbound({ inboundText: '[file]', messageType: 'document', brandFacts: facts, shortcuts, awaitingReceipt: true })
+    assert.equal(receipt.escalate, true)
+    assert.deepEqual(receipt.handoff, { kind: 'handoff', reason: 'payment' })
+    const review = decideInbound({ inboundText: '[file]', messageType: 'document', brandFacts: facts, shortcuts })
+    assert.deepEqual(review.handoff, { kind: 'review', reason: 'review' })
+    const now = Date.now()
+    const plan = planBurstInbound({
+      trigger: { content: '¿Ya les llegó?', messageType: 'text', sentAt: new Date(now) },
+      earlier: [{ direction: 'inbound', content: '[file]', messageType: 'document', sentAt: new Date(now - 3000) }],
+      awaitingReceipt: (type) => type === 'document',
+    })
+    assert.equal(plan.reason, 'burst_receipt')
+    assert.equal(plan.messageType, 'document')
   })
 })

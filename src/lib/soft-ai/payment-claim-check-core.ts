@@ -64,7 +64,10 @@ const ROLE_LABEL_RE = /(?:cliente|tienda|store|customer|sistema|system|assistant
  * SecureDog round 7: look-alike labels too — any short word with a "(…)" / "[…]" tag and a ":" / "-" ("Сliente (SIN
  * RESPONDER…):" in Cyrillic, "Cliente [SIN RESPONDER] -"), and a typed verdict ("claim=false", {"claim":false}).
  */
-const TAGGED_LABEL_RE = /[\p{L}]{3,12}\s*[([][^)\]\n]{0,40}[)\]]\s*[:\-–—]/gu
+const TAGGED_LABEL_RE = /[([][^)\]\n]{0,40}(?:sin\s+responder|antes|[uú]ltimo\s+mensaje|lo\s+que\s+decid[ií]s|unanswered)[^)\]\n]{0,40}[)\]]\s*[:\-–—]?/giu
+/** Cyrillic / Greek look-alikes of Latin letters (so "Сliente" is read as "Cliente" by ROLE_LABEL_RE). */
+const LOOKALIKE: Record<string, string> = { 'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'х': 'x', 'у': 'y', 'і': 'i', 'ѕ': 's', 'А': 'A', 'Е': 'E', 'О': 'O', 'Р': 'P', 'С': 'C', 'Т': 'T', 'Х': 'X', 'І': 'I', 'ο': 'o', 'α': 'a', 'ε': 'e', 'ι': 'i', 'Ο': 'O', 'Α': 'A', 'Ε': 'E', 'Ι': 'I', 'Τ': 'T' }
+const foldLookalikes = (t: string) => t.replace(/[аеорсхуіѕАЕОРСТХІοαειΟΑΕΙΤ]/gu, (ch) => LOOKALIKE[ch] ?? ch)
 const TYPED_VERDICT_RE = /"?claim"?\s*[:=]\s*(?:true|false)|\{\s*"?claim"?[^}]{0,80}\}/giu
 
 /**
@@ -77,7 +80,7 @@ export function buildPaymentCheckInput(
   fence: (text: string) => string,
 ): string {
   const clean = (t: string) =>
-    fence(t || '')
+    foldLookalikes(fence(t || ''))
       .replace(TAGGED_LABEL_RE, ' ')
       .replace(ROLE_LABEL_RE, ' ')
       .replace(TYPED_VERDICT_RE, ' ')
@@ -103,7 +106,9 @@ export function buildPaymentCheckInput(
   const lines: string[] = []
   for (const m of before) lines.push(`Cliente (antes): ${head(m.content || '', 200)}`)
   if (lastStore) lines.push(`Tienda (último mensaje): ${tail(lastStore.content || '', 300)}`)
-  const unanswered = [...burst, inboundText].slice(-6).map((t) => headTail(t, 400)).join(' / ')
+  const recent = [...burst, inboundText].slice(-6)
+  const per = Math.max(400, Math.floor(900 / recent.length) - 3)
+  const unanswered = recent.map((t) => headTail(t, per)).join(' / ')
   lines.push(`Cliente (SIN RESPONDER, lo que decidís): ${unanswered.length > 2400 ? `…${unanswered.slice(-2400)}` : unanswered}`)
   return `<MENSAJES>\n${lines.join('\n')}\n</MENSAJES>`
 }

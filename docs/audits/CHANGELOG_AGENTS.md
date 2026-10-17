@@ -1,3 +1,14 @@
+## 2026-10-17 (night) — PatchHouse Instagram + WhatsApp LIVE on gpt-6-luna
+
+- Deploy D1 (8ce27b4e), then D1b: the quick-check judge gets the store facts (pickup, shipping, payment methods), plus a
+  **"No es pago" / "Descartar"** button on the review banner. It clears a false payment/order alert without marking it
+  paid or moving the stage, and is audited as dismissed (`reviewOutcome`). test:soft-ai 981/981, tsc + lint clean.
+- PatchHouse ventas: Luna v51. A new rule says never repeat the customer's name, phone or address and never make an order recap
+  (Luna wrote one on her own). Instagram + WhatsApp re-activated; quick check 6/6.
+- dailyTokenCap 250k → 2M (scripts/agent-pack/daily-cap.ts, audited). The old cap blocked every reply.
+- ~80 waiting Instagram chats answered. Lesson: never process jobs from a laptop. Local kicks cannot decrypt the
+  IG token and burn retry attempts (one job, 732710, hit MAX_ATTEMPTS). Use a sweep that exits before kicking, or the server cron.
+
 ## 2026-10-17 (evening) — luna-10 release gate PASSED (NOT deployed)
 
 - Payment classifier now has a **live-equivalence gate** (SecureDog r8). Where live e2b9fd2c would answer too, the agent

@@ -179,8 +179,10 @@ async function main() {
   const useGrader = !flag('no-grader')
   const examCap = Number(arg('cap') || 12_000_000)
   const bank = JSON.parse(readFileSync(join(dir, 'exam-bank.json'), 'utf8')) as ExamBank
-  // --only matches the title, the item id, or any step text.
-  const items = bank.items.filter((i) => (!only || i.title.toLowerCase().includes(only) || i.id.toLowerCase() === only || i.steps.some((st) => (st.text || '').toLowerCase().includes(only))) && (!sources.length || sources.includes(i.source)))
+  // --only matches the title, the item id, or any step text; --ids=a,b,c (or --ids=@file.json, an array) re-runs a list.
+  const idsArg = arg('ids') || ''
+  const ids = new Set<string>(idsArg.startsWith('@') ? (JSON.parse(readFileSync(idsArg.slice(1), 'utf8')) as string[]) : idsArg.split(',').map((x) => x.trim()).filter(Boolean))
+  const items = bank.items.filter((i) => (!ids.size || ids.has(i.id)) && (!only || i.title.toLowerCase().includes(only) || i.id.toLowerCase() === only || i.steps.some((st) => (st.text || '').toLowerCase().includes(only))) && (!sources.length || sources.includes(i.source)))
   const forbid = ((pack as unknown as { exam?: { forbid?: Array<{ re: string; why: string }> } }).exam?.forbid) ?? []
   const knowledge = reviewerKnowledge(pack)
 

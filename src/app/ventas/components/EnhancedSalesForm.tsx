@@ -89,6 +89,9 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   const storageKeyRef = useRef(storageKey);
   const prefillAppliedRef = useRef(false);
   const { user } = useCurrentUser();
+  // Read at apply time (the chat prefill effect runs once; the user may load after mount).
+  const userRef = useRef(user);
+  userRef.current = user;
   // The business this form writes into: drafts are tagged with it and only restored in it.
   const { data: sessionData, status: sessionStatus } = useSession();
   const sessionBusiness = ((sessionData?.user as { tenantId?: string } | undefined)?.tenantId) || null;
@@ -349,7 +352,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
               shippingCost: 0,
               iva: 0,
               total: p.baseCost * p.cantidad,
-              vendedor: user?.username || '',
+              vendedor: userRef.current?.username || '',
               mensajeria: '',
               tamano: '',
               personalizado: '',

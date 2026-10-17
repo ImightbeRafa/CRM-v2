@@ -203,11 +203,19 @@ export function withNightIntro(
   if (!t || /asistente virtual/iu.test(t)) return text
   const store = (who.store || '').trim()
   const intro = `¡Hola! Soy ${name}, asistente virtual${store ? ` de ${store}` : ''} 🌙`
-  const selfIntro = new RegExp(`^(?:¡?\\s*(?:hola|buenas(?:\\s+noches)?)\\s*[!,.]?\\s*)?soy\\s+${escapeRe(name)}\\b[^.!?\\n\\p{Extended_Pictographic}]*[.!]?[ \\t]*(?:[\\p{Extended_Pictographic}\\uFE0F][ \\t]*)*`, 'iu')
-  if (selfIntro.test(t)) {
-    const rest = t.replace(selfIntro, '').trim()
+  // Verifier F1: only a SHORT intro clause with no digits / questions, ending at "." "!" an emoji, a line break or the
+  // end, is rewritten ("Hola, soy Sofi y el Stress Down cuesta ₡12.000" is left alone — it is not just an intro).
+  const selfIntro = new RegExp(
+    `^(?:¡?\\s*(?:hola|buenas(?:\\s+noches)?)\\s*[!,.]?\\s*)?soy\\s+${escapeRe(name)}\\b([^\\n.!?¿\\d\\p{Extended_Pictographic}]{0,40})(?=[.!\\n]|[\\p{Extended_Pictographic}]|$)[.!]?[ \\t]*(?:[\\p{Extended_Pictographic}\\uFE0F][ \\t]*)*`,
+    'iu',
+  )
+  const clause = t.match(selfIntro)
+  if (clause && !/[,;:]\s*\S/.test(clause[1] || '')) {
+    const rest = t.slice(clause[0].length).trim()
     return rest ? `${intro}\n\n${rest}` : intro
   }
+  // The model introduced itself in a way that cannot be rewritten safely: never a second greeting on top.
+  if (new RegExp(`\\bsoy\\s+${escapeRe(name)}\\b`, 'iu').test(t.split('\n')[0] || '')) return text
   if (who.introduced) return text
   return `${intro}\n\n${t}`
 }

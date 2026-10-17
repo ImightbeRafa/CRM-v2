@@ -84,7 +84,7 @@ import {
   type TurnHandoff,
 } from '@/lib/soft-ai/agent-turn-outcome'
 import { notifyHandoff } from '@/lib/soft-ai/handoff-notify'
-import { decideWaitingAck, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS } from '@/lib/soft-ai/waiting-ack'
+import { decideWaitingAck, isOptOutText, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS } from '@/lib/soft-ai/waiting-ack'
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { dropRepeatedParts, REPEAT_WINDOW_MS } from '@/lib/soft-ai/repeat-guard'
 import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt } from '@/lib/soft-ai/sales-state'
@@ -392,27 +392,40 @@ async function ackWaitingCustomer(input: {
       select: { id: true, decisionTrace: true, completedAt: true, triggerMessageId: true },
     })
     const handoffKind = lastTurn ? readOutcomeMarkers(lastTurn.decisionTrace)?.handoffKind ?? null : null
-    const since = lastTurn?.completedAt ?? new Date()
-    const outboundSince = lastTurn
-      ? await prisma.chatMessage.findMany({
-          where: { tenantId: row.tenantId, conversationId: row.conversationId, direction: 'outbound', sentAt: { gt: since } },
-          select: { metadata: true },
-          take: 50,
-        })
-      : []
+    // Verifier F9: most human-mode messages are not after an agent hand-off — leave before the heavier checks.
+    if (!lastTurn || handoffKind !== 'handoff') return
+    const since = lastTurn.completedAt ?? new Date()
+    const outboundSince = await prisma.chatMessage.findMany({
+      where: { tenantId: row.tenantId, conversationId: row.conversationId, direction: 'outbound', sentAt: { gt: since } },
+      select: { metadata: true },
+      take: 50,
+    })
     const probe = await resolveChatAgent({ tenantId: row.tenantId, socialAccountId: row.socialAccountId, conversationAiMode: 'ai_active' })
     const gates = probe.kind === 'resolved' ? await runPreModelGates({ tenantId: row.tenantId, socialAccountId: row.socialAccountId, agentId: probe.agent.id }) : null
-    const lineOn = probe.kind === 'resolved' && probe.agent.operationMode === 'ai_full' && probe.unlockedForSend && Boolean(gates?.ok)
-    const key = lastTurn ? waitingAckKey(lastTurn.id) : ''
-    const alreadyAcked = lastTurn ? Boolean(await prisma.chatAgentTurn.findUnique({ where: { automationDeliveryKey: key }, select: { id: true } })) : false
+    // Verifier F3: the kill switch, the platform pause and the AI terms stop the ack like any other send.
+    const lineOn =
+      probe.kind === 'resolved' &&
+      probe.agent.operationMode === 'ai_full' &&
+      probe.unlockedForSend &&
+      Boolean(gates?.ok) &&
+      !(await readAgentKillState(row.tenantId)).armed &&
+      !(await isPlatformAiPaused()) &&
+      (await isAiTermsAcceptedNow(row.tenantId))
+    // Verifier F7: after "STOP" / "no quiero bot" the customer gets no more automatic text (the team is still alerted).
+    const handoffTrigger = lastTurn.triggerMessageId
+      ? await prisma.chatMessage.findFirst({ where: { id: lastTurn.triggerMessageId, tenantId: row.tenantId }, select: { content: true } })
+      : null
+    const key = waitingAckKey(lastTurn.id)
+    const alreadyAcked = Boolean(await prisma.chatAgentTurn.findUnique({ where: { automationDeliveryKey: key }, select: { id: true } }))
     const decision = decideWaitingAck({
-      lastTurn: lastTurn ? { id: lastTurn.id, handoffKind, completedAt: lastTurn.completedAt } : null,
+      lastTurn: { id: lastTurn.id, handoffKind, completedAt: lastTurn.completedAt },
       humanWroteSince: outboundSince.some((m) => !isSoftAiOutboundMetadata(m.metadata)),
       lineOn,
       alreadyAcked,
+      optOut: isOptOutText(handoffTrigger?.content),
       now: new Date(),
     })
-    if (!decision.realert || !lastTurn) return
+    if (!decision.realert) return
 
     const hoursSetup = await loadHoursSetup(row.tenantId, input.agent.id)
     const hours = afterHoursState(hoursSetup.hours, new Date(), { aiDisclosure: hoursSetup.aiDisclosure })
@@ -1392,6 +1405,7 @@ async function finishDeliveryOrSuggestInner(input: {
   // sends are not "earlier" (lease reclaim must re-plan the same parts). Hand-offs / safe lines are code texts with
   // their own caps and pass unchanged.
   let outgoingText = input.outputText
+  let repeatAllDropped = false
   if (!input.handoff && !input.escalate && !input.needsHuman) {
     const recent = await prisma.chatMessage.findMany({
       where: {
@@ -1418,6 +1432,14 @@ async function finishDeliveryOrSuggestInner(input: {
         return persistDecidedTurn({ turnId: input.turnId, outcome: { outcome: 'skip', reason: 'duplicate_reply' }, operationMode: input.agent.operationMode, setMode: false })
       }
       outgoingText = input.afterHours?.afterHours ? afterHoursReviewLine(input.afterHours.label, input.afterHours.transparent) : SAFE_LINE.review
+      repeatAllDropped = true
+    }
+    // Verifier F4: the turn row holds what really goes out (the safe-line cap and Corregir read it).
+    if (outgoingText !== input.outputText) {
+      await prisma.chatAgentTurn.update({
+        where: { id: input.turnId },
+        data: { outputText: outgoingText, outputHash: hashSoftAiOutput(outgoingText) },
+      })
     }
   }
 
@@ -1427,7 +1449,7 @@ async function finishDeliveryOrSuggestInner(input: {
     .findUnique({ where: { jobId_deliveryKey: { jobId: input.row.id, deliveryKey: input.row.deliveryKey } }, select: { id: true } })
     .then(Boolean)
   // A re-run of a job whose text was already attempted sends no new images (they belong to that first answer).
-  if (!textAlreadyClaimed && platform === 'whatsapp' && account.accountId && input.outputText && !input.escalate && !input.handoff && input.replyAssets?.size && outgoingText === input.outputText) {
+  if (!textAlreadyClaimed && platform === 'whatsapp' && account.accountId && input.outputText && !input.escalate && !input.handoff && input.replyAssets?.size && !repeatAllDropped) {
     const pick = selectReplyImages({
       shortcutKey: input.replyShortcutKey,
       shortcuts: input.shortcuts ?? [],

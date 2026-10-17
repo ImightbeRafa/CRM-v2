@@ -5,7 +5,8 @@
  *  - the customer gets ONE code-written line per hand-off ("Ya le avisé al equipo…", after hours: when they write);
  *  - the team is alerted again ('customer_waiting'), once per customer message.
  * Never when a person already wrote after the hand-off, never when a person took the chat by hand (no agent
- * hand-off turn), never when the line is off. Never changes aiMode. Pure (decision + texts); the send lives in
+ * hand-off turn), never when the line is off (kill switch / platform pause / AI terms included), never after an opt-out.
+ * Never changes aiMode. Pure (decision + texts); the send lives in
  * agent-turn.ts.
  */
 import type { AfterHoursState } from '@/lib/soft-ai/business-hours'
@@ -27,6 +28,13 @@ export function waitingAckText(hours: Pick<AfterHoursState, 'afterHours' | 'labe
 
 export type WaitingAckDecision = { ack: boolean; realert: boolean; reason: string }
 
+/** "STOP", "no quiero bot", "no me escriban más": the customer asked for no automatic messages. */
+const OPT_OUT_RE = /^\s*stop\b|\bno\s+(quiero|me\s+(escriban|manden|contesten))\b[^.?!]{0,20}\b(bot|robot|ia|m[aá]quina|autom[aá]tic|mensajes|m[aá]s)|\bbasta\b|\bunsubscribe\b|\bdejen\s+de\s+(escribir|mandar)/iu
+
+export function isOptOutText(text: string | null | undefined): boolean {
+  return OPT_OUT_RE.test(text || '')
+}
+
 export function decideWaitingAck(input: {
   /** The latest delivered agent turn of the chat (waiting acks excluded). */
   lastTurn: { id: string; handoffKind: string | null; completedAt: Date | null } | null
@@ -36,6 +44,8 @@ export function decideWaitingAck(input: {
   lineOn: boolean
   /** This hand-off already got its one ack. */
   alreadyAcked: boolean
+  /** The hand-off came from an opt-out ("STOP", "no quiero bot"): alert the team, never write to the customer. */
+  optOut?: boolean
   now: Date
 }): WaitingAckDecision {
   const no = (reason: string): WaitingAckDecision => ({ ack: false, realert: false, reason })
@@ -46,5 +56,6 @@ export function decideWaitingAck(input: {
   if (!at || input.now.getTime() - at > WAITING_ACK_MAX_AGE_MS) return no('handoff_too_old')
   if (input.humanWroteSince) return no('person_already_answered')
   if (input.alreadyAcked) return { ack: false, realert: true, reason: 'already_acked' }
+  if (input.optOut) return { ack: false, realert: true, reason: 'opt_out' }
   return { ack: true, realert: true, reason: 'customer_waiting' }
 }

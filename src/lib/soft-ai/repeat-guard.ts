@@ -51,22 +51,32 @@ export function mayAlwaysRepeat(part: string): boolean {
   return t.includes(SHIPPING_DATA_LIST) || t.includes(PICKUP_DATA_LIST) || /\d{4}[\s-]?\d{4}/.test(t) || /\bCR\d{2}/i.test(t)
 }
 
+/** Numbers in a text (prices, days, quantities): "₡2.500" and "₡3.500" are different answers. */
+function numbersIn(text: string): string {
+  return [...(text || '').matchAll(/\d[\d.,\s]*\d|\d/g)].map((m) => m[0].replace(/[^\d]/g, '')).sort().join('|')
+}
+
 /** True when `part` says (nearly) the same as one of the earlier messages. */
 export function isNearRepeat(part: string, previous: string[]): boolean {
   const n = normalizeForRepeat(part)
   if (n.length < MIN_REPEAT_CHARS) return false
   const nw = words(n)
+  const nNumbers = numbersIn(part)
   for (const prevMessage of previous) {
     for (const prevPart of splitReplyParts(prevMessage, 50)) {
       const p = normalizeForRepeat(prevPart)
       if (!p) continue
+      // Verifier F2: a different price / day / amount is a new answer, never a repeat.
+      if (numbersIn(prevPart) !== nNumbers) continue
       if (p === n) return true
       if (n.length >= 25 && p.includes(n)) return true
       const pw = words(p)
       if (nw.size >= MIN_WORDS_FOR_JACCARD && pw.size >= MIN_WORDS_FOR_JACCARD && jaccard(nw, pw) >= JACCARD_MIN) return true
       const nc = contentWords(n)
-      if (nc.size >= MIN_CONTENT_WORDS) {
-        const pc = contentWords(p)
+      const pc = contentWords(p)
+      // Paraphrase only between messages of similar size (a long list "contains" every product name).
+      const similarSize = pc.size > 0 && nc.size / pc.size >= 0.6 && nc.size / pc.size <= 1.6
+      if (nc.size >= MIN_CONTENT_WORDS && similarSize) {
         let shared = 0
         for (const w of nc) if (pc.has(w)) shared += 1
         if (shared / nc.size >= CONTENT_SHARE_MIN) return true

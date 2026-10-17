@@ -179,7 +179,8 @@ describe('C · sweep queries are tenant-scoped, bounded, newest first', () => {
   it('line + chats + messages + jobs always carry the tenant', () => {
     assert.match(sweep, /socialAccount\.findFirst\(\{\s*where: \{ id: socialAccountId, tenantId \}/)
     assert.match(sweep, /chatConversation\.findMany\(\{\s*where: \{\s*tenantId: input\.tenantId,\s*socialAccountId: input\.socialAccountId,/)
-    assert.match(sweep, /chatMessage\.findFirst\(\{\s*where: \{ tenantId: conv\.tenantId, conversationId: conv\.id \}/)
+    // luna-10 (Verifier F6): the latest few messages, so the waiting ack can be skipped — still tenant-scoped.
+    assert.match(sweep, /chatMessage\.findMany\(\{\s*where: \{ tenantId: conv\.tenantId, conversationId: conv\.id \}/)
     assert.match(sweep, /if \(jobRow && jobRow\.tenantId !== conv\.tenantId\)/)
     assert.match(sweep, /where: \{ tenantId: input\.tenantId, socialAccountId: input\.socialAccountId, peerId: input\.peerId \}/)
     assert.match(sweep, /socialAccount\.findMany\(\{\s*where: \{ tenantId, id: \{ in: allowlist \} \}/)

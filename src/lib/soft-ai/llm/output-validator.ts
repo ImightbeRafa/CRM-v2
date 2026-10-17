@@ -280,12 +280,23 @@ function amountAllowed(amount: number, allowed: number[]): boolean {
  * an effect, a time to results, other people's results, a cure or weight loss. A promise right after a negation
  * ("no promete bajar de peso", "no cura") is the honest disclaimer and passes.
  */
+/** Verifier F5: "la diferencia en el precio", "el resultado del pedido", "en la página" are about the order, not a body. */
+const NOT_ABOUT_THE_BODY = String.raw`(?!\s+(?:en|del|de)\s+(?:(?:tu|la|el|su|los|las)\s+)?(?:precio|pedido|compra|p[aá]gina|web|env[ií]o|tienda|paquete|cuenta|pago))`
+/** What an effect on the body sounds like (other people's experience only counts with one of these nearby). */
+const BODY_EFFECT = String.raw`(?:cambio|resultado|mejor|diferencia|efecto|beneficio|energ|calma|concentra|alivio|[aá]nimo|antojo|sueño|peso|ansiedad|estr[eé]s|dorm|duerm|relaja|funciona)`
 const RESULTS_CLAIM_RES: RegExp[] = [
-  /\b(?:muchas|varias|algunas|la\s+mayor[ií]a\s+de\s+las?|miles\s+de)\s+(?:personas|clientes|clientas|usuarios|usuarias|gente)\s+(?:(?:nos\s+|me\s+)?(?:cuentan|dicen|comentan)\s+que\s+)?(?:ya\s+)?(?:notan|sienten|ven|reportan|comentan|dicen|han\s+notado|han\s+sentido|nota|siente)\b/iu,
-  /\b(?:vas\s+a(?:\s+poder)?|vas\s+a\s+empezar\s+a|podr[áa]s|pod[ée]s|empez[áa]s\s+a)\s+(?:notar|sentir|ver)\s+(?:los\s+|las\s+|un\s+|una\s+|el\s+|la\s+)?(?:cambios?|resultados?|mejor[ií]as?|diferencias?|efectos?|beneficios?)\b/iu,
-  /\b(?:notar[áa]s|sentir[áa]s|ver[áa]s)\s+(?:los\s+|las\s+|un\s+|una\s+|el\s+|la\s+)?(?:cambios?|resultados?|mejor[ií]as?|diferencias?|efectos?)\b/iu,
+  new RegExp(
+    String.raw`\b(?:muchas|varias|algunas|la\s+mayor[ií]a\s+de\s+las?|miles\s+de)\s+(?:personas|clientes|clientas|usuarios|usuarias|gente)\s+(?:(?:nos\s+|me\s+)?(?:cuentan|dicen|comentan)\s+que\b|(?:ya\s+)?(?:notan|sienten|ven|reportan|han\s+notado|han\s+sentido|nota|siente)\b)[^.!?\n]{0,40}?${BODY_EFFECT}`,
+    'iu',
+  ),
+  new RegExp(
+    String.raw`\b(?:vas\s+a(?:\s+poder)?|vas\s+a\s+empezar\s+a|podr[áa]s|pod[ée]s|empez[áa]s\s+a)\s+(?:notar|sentir|ver)\s+(?:los\s+|las\s+|un\s+|una\s+|el\s+|la\s+)?(?:cambios?|resultados?|mejor[ií]as?|diferencias?|efectos?|beneficios?)\b${NOT_ABOUT_THE_BODY}`,
+    'iu',
+  ),
+  new RegExp(String.raw`\b(?:notar[áa]s|sentir[áa]s|ver[áa]s)\s+(?:los\s+|las\s+|un\s+|una\s+|el\s+|la\s+)?(?:cambios?|resultados?|mejor[ií]as?|diferencias?|efectos?)\b${NOT_ABOUT_THE_BODY}`, 'iu'),
   /\b(?:cambios?|resultados?|efectos?|mejor[ií]as?)\s+(?:visibles\s+)?(?:en|desde|a\s+partir\s+de|durante)\s+(?:los\s+|las\s+)?(?:primer(?:os|as)|pocos|pocas|\d+)\s+(?:d[ií]as?|semanas?|horas?)\b/iu,
-  /\b(?:garantiza(?:do|da|mos|n)?|te\s+garantizo)\b/iu,
+  // "envío garantizado" / "pago seguro garantizado" are about the order: only a guaranteed effect counts.
+  /\b(?:te\s+garantizo\s+que|garantiza(?:do|da|mos|n)?\s+(?:que\s+(?:funciona|vas|te)|(?:los\s+|el\s+)?(?:resultados?|efecto|cambio)))/iu,
   /\b(?:cura|curan|curar|sana|sanan)\s+(?:la|el|tu|tus|los|las|de)\b/iu,
   /\b(?:baj(?:ar|[áa]s|ar[áa]s)|perder|perd[ée]s|perder[áa]s)\s+(?:de\s+)?(?:peso|kilos|libras)\b|\badelgaz(?:ar|[áa]s|ar[áa]s)\b/iu,
 ]

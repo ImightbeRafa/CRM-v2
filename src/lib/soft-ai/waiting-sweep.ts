@@ -228,9 +228,12 @@ async function prepareConversation(
   platform: string,
   opts: { mode: SweepMode; nowMs: number; minWaitMs: number },
 ): Promise<{ decision: WaitingDecision; job?: PreparedJob }> {
-  const latestRow = await prisma.chatMessage.findFirst({
+  // luna-10 (Verifier F6): the waiting ack ("Ya le avisé al equipo…") never counts as an answer — the customer's
+  // message before it is still the one waiting (Devolver a IA answers it).
+  const recentRows = await prisma.chatMessage.findMany({
     where: { tenantId: conv.tenantId, conversationId: conv.id },
     orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
+    take: 5,
     select: {
       id: true,
       direction: true,
@@ -240,6 +243,7 @@ async function prepareConversation(
       duplicateOfMessageId: true,
     },
   })
+  const latestRow = recentRows.find((r) => (r.metadata as { waitingAck?: unknown } | null)?.waitingAck !== true) ?? null
   const latest = latestRow
     ? {
         id: latestRow.id,

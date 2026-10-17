@@ -283,6 +283,8 @@ export const apiPermissions: Record<string, Permission> = {
   'GET /api/chat/conversations/*/client': 'update_sales',
   'PUT /api/chat/conversations/*/client': 'update_sales',
   'GET /api/chat/conversations/*/orders': 'update_sales',
+  // Chat → order prefill: reads the chat (update_sales); the route also requires create_sales.
+  'POST /api/chat/conversations/*/order-prefill': 'update_sales',
   'POST /api/chat/conversations/*/orders': 'update_sales',
   'DELETE /api/chat/conversations/*/orders': 'update_sales',
   'POST /api/chat/send-guia': 'update_sales',

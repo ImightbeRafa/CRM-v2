@@ -57,6 +57,25 @@ export function customerTextsForPrefill(messages: Array<{ direction: string; con
     .filter((t) => t && !PLACEHOLDER_RE.test(t))
 }
 
+/**
+ * SecureDog H1: the one bounded copy of the customer's text every helper reads — the newest 30 messages, 1 000 chars
+ * each, 6 000 in total (newest kept). Customer text is untrusted input on a shared server.
+ */
+export function boundedCustomerTexts(texts: string[]): string[] {
+  const out: string[] = []
+  let total = 0
+  for (const t of texts.slice(-30).reverse()) {
+    const cut = t.slice(0, 1_000)
+    if (total + cut.length > 6_000) break
+    out.unshift(cut)
+    total += cut.length
+  }
+  return out
+}
+
+const MAX_LINES = 120
+const MAX_LINE = 300
+
 // ── Customer data ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 const LABELS: Array<[keyof PrefillCustomer, RegExp]> = [
@@ -80,7 +99,11 @@ function cleanPhone(value: string): string {
 /** Only labelled lines, a valid email, a phone alone on its line, and a run of lines that is a real location. */
 export function labelledCustomerFields(customerTexts: string[]): PrefillCustomer {
   const out: PrefillCustomer = { ...EMPTY_PREFILL_CUSTOMER }
-  const lines = customerTexts.flatMap((t) => t.split(/\r?\n/)).map((l) => l.trim()).filter(Boolean)
+  const lines = customerTexts
+    .flatMap((t) => t.split(/\r?\n/))
+    .map((l) => l.trim().slice(0, MAX_LINE))
+    .filter(Boolean)
+    .slice(-MAX_LINES)
   for (const line of lines) {
     const m = line.match(/^[\s📍☎️🏠✉️🗺️•\-*]*([^:=]{2,40}?)\s*[:=]\s*(.+)$/u)
     if (m) {
@@ -94,19 +117,30 @@ export function labelledCustomerFields(customerTexts: string[]): PrefillCustomer
         continue
       }
     }
-    const email = line.match(EMAIL_RE)?.[0]
-    if (email && !out.email) out.email = email
+    const email = !out.email && line.includes('@') ? line.match(EMAIL_RE)?.[0] : undefined
+    if (email) out.email = email
     const phone = line.match(PHONE_LINE_RE)
     if (phone && !out.phone) out.phone = `${phone[1]}${phone[2]}`
   }
-  if (!out.province) Object.assign(out, locationFromLines(lines))
+  if (!out.province && out.canton) {
+    const labelled = normalizeLocation({ canton: out.canton, district: out.district })
+    if (labelled.province) Object.assign(out, labelled)
+  }
+  if (!out.province) {
+    const run = locationFromLines(lines)
+    if (run.province) Object.assign(out, run)
+  }
   return out
 }
 
 /** "San José / Moravia / San Vicente" on consecutive lines (or "Moravia, San José"): only names that really exist. */
 function locationFromLines(lines: string[]): Pick<PrefillCustomer, 'province' | 'canton' | 'district'> {
-  const parts = lines.flatMap((l) => l.split(/\s*,\s*/)).map((p) => p.trim()).filter((p) => p && p.length <= 40)
-  const same = (a: string, b: string) => fold(a).replace(/\s+/g, ' ').trim() === fold(b).replace(/\s+/g, ' ').trim()
+  const parts = lines
+    .flatMap((l) => l.split(','))
+    .map((p) => p.trim())
+    .filter((p) => p && p.length <= 40)
+    .slice(0, 80)
+  const same = (a: string, b: string) => locKey(a) === locKey(b)
   // A run that starts with the province ("San José / Moravia / San Vicente").
   for (let i = 0; i < parts.length; i++) {
     const loc = normalizeLocation({ province: parts[i], canton: parts[i + 1] || '', district: parts[i + 2] || '' })
@@ -125,17 +159,32 @@ function locationFromLines(lines: string[]): Pick<PrefillCustomer, 'province' | 
  * A canton name that exists in only one province fills that province.
  */
 export function normalizeLocation(input: { province?: string; canton?: string; district?: string }): Pick<PrefillCustomer, 'province' | 'canton' | 'district'> {
-  const eq = (a: string, b: string) => fold(a).replace(/\s+/g, ' ').trim() === fold(b).replace(/\s+/g, ' ').trim()
-  let province = costaRicaLocations.find((p) => eq(p.nombre, input.province || ''))
-  if (!province && input.canton) {
-    const owners = costaRicaLocations.filter((p) => p.cantones.some((c) => eq(c.nombre, input.canton || '')))
-    if (owners.length === 1) province = owners[0]
+  const pKey = locKey(input.province || '')
+  const cKey = locKey(input.canton || '')
+  let province = PROVINCE_BY_KEY.get(pKey)
+  if (!province && cKey) {
+    const owners = CANTON_OWNERS.get(cKey)
+    if (owners?.length === 1) province = owners[0]
   }
   if (!province) return { province: '', canton: '', district: '' }
-  const canton = province.cantones.find((c) => eq(c.nombre, input.canton || ''))
+  const canton = province.cantones.find((c) => locKey(c.nombre) === cKey)
   if (!canton) return { province: province.nombre, canton: '', district: '' }
-  const district = canton.distritos.find((d) => eq(d, input.district || ''))
+  const dKey = locKey(input.district || '')
+  const district = canton.distritos.find((d) => locKey(d) === dKey)
   return { province: province.nombre, canton: canton.nombre, district: district || '' }
+}
+
+function locKey(value: string): string {
+  return value.length > 60 ? '' : fold(value).replace(/\s+/g, ' ').trim()
+}
+/** Built once (SecureDog H1): folded province / canton lookups. */
+const PROVINCE_BY_KEY = new Map(costaRicaLocations.map((p) => [locKey(p.nombre), p]))
+const CANTON_OWNERS = new Map<string, typeof costaRicaLocations>()
+for (const p of costaRicaLocations) {
+  for (const c of p.cantones) {
+    const k = locKey(c.nombre)
+    CANTON_OWNERS.set(k, [...(CANTON_OWNERS.get(k) ?? []), p])
+  }
 }
 
 /** Final customer data: the AI's answer when it ran (empty stays empty), else the labelled fields; location validated. */
@@ -158,8 +207,14 @@ export function productWords(name: string): string[] {
 }
 
 function hasWord(msgTokens: string[], word: string): boolean {
-  // "glp1" / "glp 1" still name the GLP patch.
-  return msgTokens.some((t) => t === word || (/^[a-z]+$/.test(word) && new RegExp(`^${word}\\d{1,2}$`).test(t)))
+  // "glp1" / "glp 1" still name the GLP patch. String checks only (no regex per token — SecureDog H1).
+  const lettersOnly = /^[a-z]+$/.test(word)
+  return msgTokens.some((t) => {
+    if (t === word) return true
+    if (!lettersOnly || !t.startsWith(word)) return false
+    const rest = t.slice(word.length)
+    return rest.length > 0 && rest.length <= 2 && /^\d+$/.test(rest)
+  })
 }
 
 function mentions(msgTokens: string[], squashed: string, words: string[]): boolean {
@@ -173,7 +228,7 @@ function quantityIn(msgTokens: string[], firstWord: string): number {
   const text = msgTokens.join(' ')
   const w = firstWord.replace(/[^a-z0-9]/g, '')
   const numbers = `\\d{1,2}|${Object.keys(NUMBER_WORDS).join('|')}`
-  const before = new RegExp(`(?:^|\\s)(${numbers})\\s+(?:x\\s+)?(?:(?:paquetes?|unidades?)\\s+)?(?:(?:de|del)\\s+)?(?:(?:el|la|los|las)\\s+)?${w}(?:\\d{0,2})(?:\\s|$)`)
+  const before = new RegExp(`(?:^|\\s)(${numbers})\\s+(?:x\\s+)?(?:(?:paquetes?|unidades?|parches?|patch(?:es)?|cajas?)\\s+)?(?:(?:de|del)\\s+)?(?:(?:el|la|los|las)\\s+)?${w}(?:\\d{0,2})(?:\\s|$)`)
   const after = new RegExp(`(?:^|\\s)${w}\\d{0,2}(?:\\s\\d{1,2})?\\s+(?:x\\s*|x|por\\s+)(\\d{1,2})(?:\\s|$)`)
   const afterTight = new RegExp(`(?:^|\\s)${w}\\d{0,2}(?:\\s\\d{1,2})?\\s+x(\\d{1,2})(?:\\s|$)`)
   const raw = text.match(before)?.[1] ?? text.match(afterTight)?.[1] ?? text.match(after)?.[1]
@@ -216,7 +271,7 @@ export function matchPrefillProducts(
 const PICKUP_RE = /\bretiro\b|\bretirar(lo|la)?\b|\brecoger(lo|la)?\b|\bpaso\s+a\s+(recoger|retirar)/
 /** "envío" as a noun only ("te envío el comprobante" is a verb). */
 const DELIVERY_RE =
-  /\b(el|con|un|de|hacen|hacer|por|para|y)\s+envio\b|\benvio\s+a\s+(domicilio|la\s+casa|mi\s+casa)\b|\ba\s+domicilio\b|\bque\s+me\s+lo\s+(envien|manden|traigan)\b|\bme\s+lo\s+(envian|mandan|traen)\b|\bcontra\s*entrega\b|^\s*envio\s*[.!]?\s*$/
+  /\b(el|con|un|hacen|hacer|por|para)\s+envio\b|\benvio\s+a\s+(domicilio|la\s+casa|mi\s+casa)\b|\ba\s+domicilio\b|\bque\s+me\s+lo\s+(envien|manden|traigan)\b|\bme\s+lo\s+(envian|mandan|traen)\b|\bcontra\s*entrega\b|^\s*envio\s*[.!]?\s*$/
 const COD_RE = /\bcontra\s*entrega\b|\bpago\s+al\s+(recibir|mensajero)\b/
 
 /** Pickup vs delivery and contra entrega, from what the customer chose (latest mention wins). */
@@ -225,6 +280,8 @@ export function detectOrderChoices(customerTexts: string[]): OrderPrefillChoices
   let paymentChoice: OrderPrefillChoices['paymentChoice'] = null
   for (const raw of customerTexts) {
     const t = fold(raw)
+    // A question ("¿cuánto cuesta el envío?", "¿hacen contra entrega?") is not a choice.
+    if (/\?\s*$/.test(t)) continue
     if (PICKUP_RE.test(t)) orderType = 'RA'
     if (DELIVERY_RE.test(t)) orderType = 'EA'
     if (COD_RE.test(t)) paymentChoice = 'contra_entrega'

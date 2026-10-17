@@ -3,6 +3,7 @@ import 'server-only';
 import { z } from 'zod';
 import { LUNA_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types';
 import { isSoftAiProviderConfigured, parseSoftAiResponseText, softAiResponsesCreate } from '@/lib/soft-ai/llm/client';
+import { redactSensitiveForProvider } from '@/lib/soft-ai/llm/redact';
 import type { CustomerPasteCandidate } from '@/lib/customer-paste';
 
 /**
@@ -52,7 +53,11 @@ export async function enhanceCustomerPasteWithAi(input: {
     input: [{
       type: 'message',
       role: 'user',
-      content: JSON.stringify({ rawText: input.rawText.slice(0, 6_000), heuristic: input.heuristic }),
+      // SecureDog H2: card / account / cédula numbers are masked before any provider call (as for agent turns).
+      content: JSON.stringify({
+        rawText: redactSensitiveForProvider(input.rawText.slice(0, 6_000)),
+        heuristic: Object.fromEntries(Object.entries(input.heuristic).map(([k, v]) => [k, typeof v === 'string' ? redactSensitiveForProvider(v) : v])),
+      }),
     }],
     // Extraction needs no reasoning: 'none' keeps it fast and deterministic (temperature 0).
     reasoningEffort: 'none',

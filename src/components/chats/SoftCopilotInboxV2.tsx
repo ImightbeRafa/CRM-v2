@@ -1749,7 +1749,6 @@ export function SoftCopilotInboxV2() {
     const resolveTag = selectedConversation.tags.includes(ORDER_REVIEW_TAG) ? ORDER_REVIEW_TAG : null
     setOrderPrefillLoading(true)
     toast({ title: 'Preparando el pedido con los datos del chat…' })
-    setResolveTagOnOrder(resolveTag)
     let prefill: OrderFormPrefill | null = null
     try {
       const res = await fetch(`/api/chat/conversations/${encodeURIComponent(requestedId)}/order-prefill`, {
@@ -1773,6 +1772,7 @@ export function SoftCopilotInboxV2() {
     // Verifier: the person moved to another chat while this loaded → this chat's data never opens there.
     if (selectedConversationIdRef.current !== requestedId) return
     setChatOrderPrefill(prefill ? { conversationId: requestedId, prefill } : null)
+    setResolveTagOnOrder(resolveTag)
     setCreateOrderOpen(true)
   }
 
@@ -2121,7 +2121,8 @@ export function SoftCopilotInboxV2() {
             ...(chatPrefillForOpenChat ?? {}),
             // The customer's own data first; the chat's name / WhatsApp number when they did not write one.
             name: chatPrefillForOpenChat?.name || selectedConversation.recipientName || undefined,
-            phone: chatPrefillForOpenChat?.phone || (selectedConversation.platform === 'whatsapp' ? selectedConversation.recipientId : undefined),
+            // SecureDog L3: on WhatsApp the verified chat number is the order phone (a typed number never replaces it).
+            phone: selectedConversation.platform === 'whatsapp' ? selectedConversation.recipientId : chatPrefillForOpenChat?.phone || undefined,
             username: selectedConversation.platform === 'instagram' ? selectedConversation.recipientName || undefined : undefined,
           }}
           onCreated={handleOrderCreated}

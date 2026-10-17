@@ -1,32 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { hasPermission, type Role } from '@/lib/rbac'
+import { isSameOriginRequest } from '@/lib/same-origin'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
 import { prisma } from '@/lib/db'
 import { loadConversationForTenant } from '@/lib/chat-conversation-route-helpers'
-import { enhanceCustomerPasteWithAi, isCustomerPasteAiConfigured } from '@/lib/customer-paste-ai'
-import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
-import { isPlatformAiPaused } from '@/lib/soft-ai/agent-kill-switch'
 import {
+  boundedCustomerTexts,
   customerTextsForPrefill,
   detectOrderChoices,
   finalizeCustomer,
   labelledCustomerFields,
   matchPrefillProducts,
-  type PrefillCustomer,
 } from '@/lib/chat-order-prefill-core'
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 export const maxDuration = 15
 
 /**
  * Chat → order prefill (Rafael 2026-10-17). It never creates anything: a person reviews the form and submits it.
- * POST (no body) so the business's billing write guard applies to the AI spend like any other action.
+ * SecureDog H2: no AI here — the accepted AI terms cover the agent's replies only, so the form is filled from what the
+ * customer clearly wrote (labelled lines, email, phone alone on its line, a real location, product names). Turning an AI
+ * clean-up on needs Rafael's terms update first. POST so the billing write guard applies.
  */
 const limiter = createIdentifierRateLimit({ windowMs: 60 * 60 * 1000, maxRequests: 60, identifier: 'chat-order-prefill' })
 const LOOKBACK_MS = 72 * 60 * 60 * 1000
+const NO_STORE = { 'Cache-Control': 'no-store' }
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const auth = await authenticateAPIWithPermission(request, 'create_sales')
+  if (!isSameOriginRequest(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  // Reading the chat is update_sales (like every /api/chat/conversations route); making the order is create_sales.
+  const auth = await authenticateAPIWithPermission(request, 'update_sales')
   if (!auth.ok) return auth.response
+  if (!hasPermission(auth.role as Role, 'create_sales')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const limited = await limiter(`${auth.tenantId}:${auth.userId}`)
   if (!limited.allowed) return NextResponse.json({ error: 'Demasiados intentos. Esperá un momento.' }, { status: 429, headers: limited.headers })
 
@@ -35,36 +42,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   if (!conversation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const rows = await prisma.chatMessage.findMany({
-    where: { tenantId: auth.tenantId, conversationId: conversation.id, sentAt: { gte: new Date(Date.now() - LOOKBACK_MS) } },
+    where: { tenantId: auth.tenantId, conversationId: conversation.id, direction: 'inbound', sentAt: { gte: new Date(Date.now() - LOOKBACK_MS) } },
     orderBy: { sentAt: 'desc' },
-    take: 60,
+    take: 30,
     select: { direction: true, content: true },
   })
-  const customerTexts = customerTextsForPrefill(rows.reverse())
-  const rawText = customerTexts.join('\n').slice(-6_000)
-
-  // Only clearly-labelled values without the AI; with it, the AI's answer is final (an empty field stays empty).
-  const labelled = labelledCustomerFields(customerTexts)
-  let customer: PrefillCustomer = labelled
-  let source: 'ai' | 'labels' = 'labels'
-  // The chat's text already goes to Luna for this business's agent: same gates (AI terms accepted, AI not paused).
-  if (rawText.trim().length >= 3 && isCustomerPasteAiConfigured() && !(await isPlatformAiPaused()) && (await isAiTermsAcceptedNow(auth.tenantId))) {
-    try {
-      const ai = await enhanceCustomerPasteWithAi({ tenantId: auth.tenantId, userId: auth.userId, rawText, heuristic: { ...labelled, username: '' } })
-      customer = {
-        name: ai.name ?? '',
-        phone: ai.phone ?? '',
-        email: ai.email ?? '',
-        province: ai.province ?? '',
-        canton: ai.canton ?? '',
-        district: ai.district ?? '',
-        address: ai.address ?? '',
-      }
-      source = 'ai'
-    } catch (error) {
-      console.warn('[chat/order-prefill] AI clean-up skipped', error instanceof Error ? error.name : 'unknown')
-    }
-  }
+  // SecureDog H1: one bounded copy of the customer's text (30 messages × 1 000 chars, 6 000 total) feeds every helper.
+  const customerTexts = boundedCustomerTexts(customerTextsForPrefill(rows.reverse()))
 
   const items = await prisma.inventoryItem.findMany({
     where: { tenantId: auth.tenantId, isActive: true },
@@ -75,12 +59,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
   return NextResponse.json(
     {
-      customer: finalizeCustomer(customer),
+      customer: finalizeCustomer(labelledCustomerFields(customerTexts)),
       orderType: choices.orderType,
       paymentChoice: choices.paymentChoice,
       products: matchPrefillProducts(items, customerTexts),
-      source,
+      source: 'labels',
     },
-    { headers: limited.headers },
+    { headers: { ...limited.headers, ...NO_STORE } },
   )
 }

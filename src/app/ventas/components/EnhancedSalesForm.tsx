@@ -236,6 +236,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   // Auto-save functionality
   const autoSave = useCallback(async () => {
     if (!isClient || (orderInfo.products.length === 0 && !orderInfo.customerInfo.name)) return;
+    // A chat's form has its own draft writer (writeChatDraft), which skips an untouched chat prefill.
+    if (draftKey) return;
 
     setAutoSaveStatus('saving');
     try {
@@ -256,7 +258,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       console.error('Auto-save failed:', error);
       setAutoSaveStatus('unsaved');
     }
-  }, [orderInfo, isClient]);
+  }, [orderInfo, isClient, draftKey]);
 
   // Auto-save every 30 seconds
   useEffect(() => {

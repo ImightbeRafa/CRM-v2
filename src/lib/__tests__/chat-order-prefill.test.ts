@@ -102,18 +102,66 @@ describe('chat → order prefill: products and choices (verifier round 1)', () =
   })
 })
 
+describe('chat → order prefill: verifier round 2', () => {
+  it('a labelled canton / district without a province line is kept and fills its province', () => {
+    const f = labelledCustomerFields(['Cantón: Moravia', 'Distrito: San Vicente'])
+    assert.deepEqual([f.province, f.canton, f.district], ['San José', 'Moravia', 'San Vicente'])
+  })
+
+  it('"N parches / cajas de X" sets the quantity', () => {
+    assert.equal(matchPrefillProducts(INVENTORY, ['3 parches de glp'])[0].cantidad, 3)
+    assert.equal(matchPrefillProducts(INVENTORY, ['dos cajas de glp'])[0].cantidad, 2)
+  })
+
+  it('a payment phrase or a question never flips pickup to delivery', () => {
+    assert.equal(detectOrderChoices(['paso a recoger', 'ya pagué y envío el comprobante']).orderType, 'RA')
+    assert.equal(detectOrderChoices(['paso a retirar', '¿cuánto cuesta el envío?']).orderType, 'RA')
+    assert.deepEqual(detectOrderChoices(['¿hacen contra entrega?']), { orderType: null, paymentChoice: null })
+  })
+
+  it("a chat form's draft is written only by the chat draft writer; the alert link is set after the chat check", () => {
+    const form = readFileSync('src/app/ventas/components/EnhancedSalesForm.tsx', 'utf8')
+    const autoSaveHead = form.slice(form.indexOf('const autoSave = useCallback'), form.indexOf('const autoSave = useCallback') + 400)
+    assert.ok(autoSaveHead.includes('if (draftKey) return;'))
+    const inbox = readFileSync('src/components/chats/SoftCopilotInboxV2.tsx', 'utf8')
+    assert.match(inbox, /if \(selectedConversationIdRef\.current !== requestedId\) return\s+setChatOrderPrefill\([^\n]+\)\s+setResolveTagOnOrder\(resolveTag\)\s+setCreateOrderOpen\(true\)/)
+  })
+})
+
 describe('chat → order prefill: wiring (verifier round 1)', () => {
-  it('read-only POST route: create_sales (+ billing guard), tenant-scoped, AI answer final when it ran', () => {
+  it('read-only POST route: update_sales + create_sales, same-origin, no-store, tenant-scoped, NO AI (SecureDog H2)', () => {
     const r = readFileSync('src/app/api/chat/conversations/[id]/order-prefill/route.ts', 'utf8')
     assert.match(r, /export async function POST\(/)
     assert.doesNotMatch(r, /export async function GET\(/)
-    assert.match(r, /authenticateAPIWithPermission\(request, 'create_sales'\)/)
-    assert.match(r, /where: \{ tenantId: auth\.tenantId, conversationId: conversation\.id/)
-    assert.match(r, /!\(await isPlatformAiPaused\(\)\) && \(await isAiTermsAcceptedNow\(auth\.tenantId\)\)/)
-    assert.match(r, /name: ai\.name \?\? ''/)
-    assert.match(r, /customer: finalizeCustomer\(customer\)/)
-    assert.doesNotMatch(r, /parseCustomerPaste/)
+    assert.match(r, /if \(!isSameOriginRequest\(request\)\)/)
+    assert.match(r, /authenticateAPIWithPermission\(request, 'update_sales'\)/)
+    assert.match(r, /hasPermission\(auth\.role as Role, 'create_sales'\)/)
+    assert.match(r, /where: \{ tenantId: auth\.tenantId, conversationId: conversation\.id, direction: 'inbound'/)
+    assert.match(r, /const customerTexts = boundedCustomerTexts\(/)
+    assert.match(r, /'Cache-Control': 'no-store'/)
+    // The accepted AI terms cover agent replies only: no provider call here until the terms are updated.
+    assert.doesNotMatch(r, /enhanceCustomerPasteWithAi|softAiResponsesCreate|customer-paste-ai/)
     assert.doesNotMatch(r, /\.create\(|\.update\(|\.upsert\(/)
+    assert.match(readFileSync('src/lib/rbac.ts', 'utf8'), /'POST \/api\/chat\/conversations\/\*\/order-prefill': 'update_sales'/)
+  })
+
+  it('SecureDog H1: 60 messages × 4 096 chars and 500 products stay fast (bounded once, no per-token regex)', async () => {
+    const { boundedCustomerTexts } = await import('../chat-order-prefill-core')
+    const hostile = Array.from({ length: 60 }, (_, i) => (i % 2 ? 'a,' : 'x@y.').repeat(1_024))
+    const items = Array.from({ length: 500 }, (_, i) => ({ id: String(i), name: 'Producto Especial ' + i + ' Plus', category: 'X', sellingPrice: 1 }))
+    const started = Date.now()
+    const texts = boundedCustomerTexts(hostile)
+    labelledCustomerFields(texts)
+    matchPrefillProducts(items, texts)
+    detectOrderChoices(texts)
+    const ms = Date.now() - started
+    assert.ok(texts.join('').length <= 6_000)
+    assert.ok(ms < 300, 'took ' + ms + ' ms')
+  })
+
+  it('SecureDog H2: the Ventas AI helper masks card / cédula / IBAN before the provider call', () => {
+    const ai = readFileSync('src/lib/customer-paste-ai.ts', 'utf8')
+    assert.match(ai, /rawText: redactSensitiveForProvider\(input\.rawText\.slice\(0, 6_000\)\)/)
   })
 
   it('inbox: chat switch drops a late result; the alert clears once the order exists, even if linking fails', () => {
@@ -125,6 +173,8 @@ describe('chat → order prefill: wiring (verifier round 1)', () => {
     const created = inbox.slice(inbox.indexOf('const handleOrderCreated'), inbox.indexOf("fetch('/api/chat/order-link'"))
     assert.match(created, /patchConversation\(\{ removeTag: settleTag \}\)/)
     assert.match(inbox, /busy: reviewBusy \|\| orderPrefillLoading/)
+    // SecureDog L3: on WhatsApp the verified chat number stays the order phone.
+    assert.match(inbox, /phone: selectedConversation\.platform === 'whatsapp' \? selectedConversation\.recipientId : chatPrefillForOpenChat\?\.phone/)
   })
 
   it('form: a restored draft keeps its delivery choice and products; no draft until a person edits', () => {

@@ -498,3 +498,16 @@ describe("SecureDog round 5 + verifier round 7 (luna-10): plain-ask gate on ever
     assert.deepEqual(bad2, [])
   })
 })
+
+describe("advisor (luna-10): unmistakable payment confirmations are held on every reply", () => {
+  it("held with no payment words in the chat; ordinary payment / delivery lines pass", () => {
+    const v = (text: string, customerText = 'hola') => (validateAgentOutput({ text, citedToolNames: [], customerText } as any).reasons || []).includes('payment_status_claim')
+    const held = ['¡Listo! Recibimos tu sinpe 🙌', 'Pago verificado, gracias', 'Tu pago ya está confirmado', 'Ya se acreditó 😊', 'Verificamos tu pago y sale mañana']
+    const ok = ['Cuando hagas el SINPE, mandame el comprobante y lo revisamos 😊', 'Podés pagar con tarjeta en la web', 'Te llega en 2 a 4 días', 'Un compañero revisa tu comprobante y te confirma']
+    const bad: string[] = []
+    for (const t of held) if (!v(t)) bad.push('MISSED ' + t)
+    for (const t of ok) if (v(t)) bad.push('FALSE+ ' + t)
+    
+    assert.deepEqual(bad, [])
+  })
+})

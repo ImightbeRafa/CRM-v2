@@ -16,7 +16,7 @@ import { getPageIdFromMetaChatMetadata, partnerRemovedWhatsAppWhere } from '@/li
 import { resolveWebhookSocialAccount } from '@/lib/chat-webhook-account'
 import { chatWebhookInvalidSignatureRateLimit } from '@/lib/rate-limit'
 import { enqueueSoftAiAfterInbound } from '@/lib/soft-ai/inbound-hook'
-import { processJobById } from '@/lib/soft-ai/automation-processor'
+import { processJobAfterSettle } from '@/lib/soft-ai/automation-processor'
 import {
   applyDeliveryStatusUpdate,
   applyPeerReadWatermark,
@@ -411,9 +411,9 @@ export async function POST(request: NextRequest) {
       },
     )
 
-    // Best-effort immediate dispatch after persist; cron is the safety net.
+    // Best-effort dispatch after persist, once the burst settle time is over; cron is the safety net.
     for (const jobId of softAiJobIds) {
-      void processJobById(jobId)
+      processJobAfterSettle(jobId)
     }
 
     return NextResponse.json({

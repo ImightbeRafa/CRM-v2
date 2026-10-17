@@ -26,7 +26,13 @@ import {
   deliverOnce,
   hashSoftAiDeliveryContent,
 } from '@/lib/soft-ai/automation-delivery'
-import type { ClaimedChatAutomationJob } from '@/lib/soft-ai/automation-queue'
+import { newerBurstJobPending, type ClaimedChatAutomationJob } from '@/lib/soft-ai/automation-queue'
+import {
+  planBurstInbound,
+  shouldYieldToNewerBurst,
+  unansweredBurst,
+  withBurstMediaReview,
+} from '@/lib/soft-ai/inbound-burst'
 import {
   collectDryRunBlockers,
   hashSoftAiOutput,
@@ -226,7 +232,7 @@ function plannedMarkers(base: { needsHuman: boolean; fallbackUsed: boolean; esca
 async function loadHistory(
   conversationId: string,
   triggerMessageId: string,
-): Promise<SoftAiHistoryMessage[]> {
+): Promise<{ history: SoftAiHistoryMessage[]; messageTypeOf: Map<string, string | null> }> {
   const rows = await prisma.chatMessage.findMany({
     where: chatHistoryWhere(conversationId, triggerMessageId),
     orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
@@ -236,17 +242,37 @@ async function loadHistory(
       direction: true,
       content: true,
       sentAt: true,
+      // Burst = one reply: which earlier bubbles of the burst are photos / audios (inbound-burst.ts).
+      messageType: true,
     },
   })
-  return rows
-    .reverse()
-    .filter((r) => r.direction === 'inbound' || r.direction === 'outbound')
-    .map((r) => ({
+  const kept = rows.reverse().filter((r) => r.direction === 'inbound' || r.direction === 'outbound')
+  return {
+    history: kept.map((r) => ({
       id: r.id,
       direction: r.direction as 'inbound' | 'outbound',
       content: r.content,
       sentAt: r.sentAt.toISOString(),
-    }))
+    })),
+    messageTypeOf: new Map(kept.map((r) => [r.id, r.messageType ?? null])),
+  }
+}
+
+/**
+ * Burst = one reply: a newer customer bubble of this chat is queued and this trigger is still fresh → this job stops
+ * (superseded) and the newer job answers the whole burst. Checked before the model and right before the send.
+ */
+async function yieldsToNewerBurst(row: ClaimedChatAutomationJob, triggerSentAt: Date): Promise<boolean> {
+  return shouldYieldToNewerBurst({ newerPending: await newerBurstJobPending(row), triggerSentAt })
+}
+
+/** A generated reply that is not sent because a newer burst job answers instead (tokens stay on the row). */
+async function markTurnSuperseded(turnId: string): Promise<AgentTurnDispatchResult> {
+  await prisma.chatAgentTurn.updateMany({
+    where: { id: turnId, status: 'generated' },
+    data: { status: 'skipped', skipReason: 'superseded', completedAt: new Date() },
+  })
+  return { status: 'skipped', reason: 'superseded' }
 }
 
 async function loadTriggerMessage(messageId: string, tenantId: string, conversationId: string) {
@@ -718,6 +744,21 @@ export async function executeAgentLayerTurn(
     return { status: 'skipped', reason: claimGate.skipReason }
   }
 
+  // Burst = one reply: the customer's next bubble is already queued → that job answers the whole burst.
+  if (await yieldsToNewerBurst(row, trigger.sentAt)) {
+    await persistSkippedTurn({
+      tenantId: row.tenantId,
+      conversationId: row.conversationId,
+      socialAccountId: row.socialAccountId,
+      agent: resolved.agent,
+      bindingId: resolved.binding.id,
+      triggerMessageId: row.messageId,
+      deliveryKey: row.deliveryKey,
+      skipReason: 'superseded',
+    })
+    return { status: 'skipped', reason: 'superseded' }
+  }
+
   const preModel = await runPreModelGates({
     tenantId: row.tenantId,
     socialAccountId: row.socialAccountId,
@@ -833,10 +874,16 @@ export async function executeAgentLayerTurn(
     fallbackPlatform: payload.platform || 'whatsapp',
   })
 
-  const history = await loadHistory(row.conversationId, trigger.id)
+  const { history, messageTypeOf } = await loadHistory(row.conversationId, trigger.id)
   const liveInventoryIds = await loadMappedInventoryIds(row.tenantId, resolved.agent.id)
-  // B6: only a photo / file / audio needs the sale's state before the decision (receipt or not).
-  const mediaSalesContext = isMediaLikeMessageType(trigger.messageType)
+  // Burst = one reply: the customer's earlier unanswered bubbles of this burst (photos / audios included).
+  const burstEarlier = unansweredBurst(
+    history.map((m) => ({ ...m, messageType: messageTypeOf.get(m.id) ?? null })),
+    trigger,
+  )
+  // B6: only a photo / file / audio (here or earlier in the burst) needs the sale's state before the decision.
+  const mediaSalesContext =
+    isMediaLikeMessageType(trigger.messageType) || burstEarlier.some((m) => isMediaLikeMessageType(m.messageType))
     ? await loadAgentSalesContext({
         tenantId: row.tenantId,
         agentId: resolved.agent.id,
@@ -851,19 +898,28 @@ export async function executeAgentLayerTurn(
     (payload.platform || 'whatsapp') === 'whatsapp' && replyAssets.size
       ? sendableImageReplyIds(replyAssets, await loadSentAgentImageShas(row.tenantId, row.conversationId))
       : new Set<string>()
+  // "Que costo tiene" + photo: the text is answered, a person still looks at the photo (a receipt keeps its path).
+  const burst = planBurstInbound({
+    trigger: { content: payload.content || '', messageType: trigger.messageType, sentAt: trigger.sentAt },
+    earlier: burstEarlier,
+    awaitingReceipt: (type) => mediaAwaitingReceipt(type, history, mediaSalesContext),
+  })
   const decision = decideInbound({
-    inboundText: payload.content || '',
-    messageType: trigger.messageType,
+    inboundText: burst.inboundText,
+    messageType: burst.messageType,
     brandFacts: resolved.agent.brandFacts,
     replyStyle: resolved.agent.replyStyle,
     shortcuts,
     // A keyword reply WITH images whose image can't go out now ("Te paso la guía 👇" with nothing) → model answers.
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !liveImageReplyIds.has(id))),
-    awaitingReceipt: mediaAwaitingReceipt(trigger.messageType, history, mediaSalesContext),
+    awaitingReceipt: mediaAwaitingReceipt(burst.messageType, history, mediaSalesContext),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     earlierCustomerTexts: earlierCustomerTexts(history),
   })
   decision.decisionTrace.historyCount = history.length
+  if (burst.reason !== 'single' || burst.mediaReview) {
+    decision.decisionTrace.steps.unshift({ step: 'burst', outcome: burst.reason, ...(burst.mediaReview ? { reason: 'media_review' } : {}) })
+  }
 
   if (decision.handled) {
     // B1: code plans what goes out (its own text, or the safe line when it failed a check) — never a silent draft.
@@ -872,10 +928,11 @@ export async function executeAgentLayerTurn(
       await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
     )
     const handledText = withNightIntro(finalizePlannedText(plan, payload, trigger.sentAt, hours), hours, nightIntroWho(resolved.agent, history))
+    const handledHandoff = withBurstMediaReview(plan.handoff, burst.mediaReview)
     const outputHash = hashSoftAiOutput(handledText)
     const handledMarkers: OutcomeMarkers = plannedMarkers(
       { needsHuman: decision.needsHuman, fallbackUsed: false, escalate: decision.escalate },
-      plan.handoff,
+      handledHandoff,
     )
     const trace = redactAgentTrace(
       withOutcomeMarkers(decision.decisionTrace, handledMarkers),
@@ -929,12 +986,14 @@ export async function executeAgentLayerTurn(
         errorCode: decision.escalate ? decision.shortcutKey : null,
       },
     })
+    // Burst = one reply: the customer's next bubble arrived meanwhile → the newer job answers everything.
+    if (await yieldsToNewerBurst(row, trigger.sentAt)) return markTurnSuperseded(turn.id)
     // B1: no flip here. The hand-off text goes out first through every gate (pre-flip mode); finishDeliveryOrSuggest
     // then moves the chat to a person and notifies (also when the send is blocked).
     return finishDeliveryOrSuggest({
       plannedReply: true,
       codeDecided: true,
-      handoff: plan.handoff,
+      handoff: handledHandoff,
       suppressSend: plan.suppressSend,
       persistedMode,
       row,
@@ -982,7 +1041,7 @@ export async function executeAgentLayerTurn(
     agent: resolved.agent,
     account: canal,
     history,
-    inboundText: payload.content || '',
+    inboundText: burst.inboundText,
     clientName: conversation.peerName,
     shortcuts,
     replyImageShortcutIds: liveImageReplyIds,
@@ -1016,7 +1075,7 @@ export async function executeAgentLayerTurn(
     quoteAmounts: runtimeInput.salesAllowedAmounts,
     skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
     // SecureDog round 6: the whole burst since the store last wrote ("Estoy embarazada" + "¿Lo puedo usar?").
-    customerText: burstCustomerText(history, payload.content || ''),
+    customerText: burstCustomerText(history, burst.inboundText),
     allowedDeals: runtimeInput.salesAllowedDeals,
     freeShipping: runtimeInput.salesFreeShipping,
     freeShippingRule: runtimeInput.salesFreeShippingRule,
@@ -1026,7 +1085,7 @@ export async function executeAgentLayerTurn(
     shortenLongReply: true,
     linkAllowlist: runtimeInput.linkAllowlist,
     // Verifier round 4: "pasame los datos" … "gracias" — every customer message since the store last answered.
-    paymentOptions: { ...runtimeInput.salesPaymentOptions, customerText: customerTextSinceLastAnswer(history, payload.content) },
+    paymentOptions: { ...runtimeInput.salesPaymentOptions, customerText: customerTextSinceLastAnswer(history, burst.inboundText) },
   })
   const needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
   // B1: what goes out is planned by code: the model reply (checked), the safe line, or the hand-off text.
@@ -1044,9 +1103,10 @@ export async function executeAgentLayerTurn(
     await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
   )
   const finalText = withNightIntro(finalizePlannedText(modelPlan, payload, trigger.sentAt, hours), hours, nightIntroWho(resolved.agent, history))
+  const modelHandoffPlanned = withBurstMediaReview(modelPlan.handoff, burst.mediaReview)
   const modelMarkers: OutcomeMarkers = plannedMarkers(
     { needsHuman, fallbackUsed: llm.fallbackUsed, escalate: llm.escalate },
-    modelPlan.handoff,
+    modelHandoffPlanned,
   )
   const modelTrace = redactAgentTrace(
     withOutcomeMarkers(
@@ -1125,10 +1185,12 @@ export async function executeAgentLayerTurn(
     },
   })
 
+  // Burst = one reply: a bubble arrived while the model wrote → the newer job answers the whole burst instead.
+  if (await yieldsToNewerBurst(row, trigger.sentAt)) return markTurnSuperseded(turn.id)
   // B1: no flip before the send (the old flip made the pre-send re-read skip → silent draft). See finishDeliveryOrSuggest.
   return finishDeliveryOrSuggest({
     plannedReply: true,
-    handoff: modelPlan.handoff,
+    handoff: modelHandoffPlanned,
     suppressSend: modelPlan.suppressSend,
     persistedMode,
     row,

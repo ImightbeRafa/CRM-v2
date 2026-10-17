@@ -5,6 +5,7 @@
  */
 
 import {
+  BURST_SETTLE_MS,
   claimJobById,
   claimBatch,
   completeJob,
@@ -203,6 +204,17 @@ export async function processJobById(id: string, opts?: { kick?: boolean }) {
   const row = await claimJobById(id)
   if (!row) return { id, status: 'not_claimed' as const }
   return processClaimedJob(row, opts)
+}
+
+/**
+ * Burst = one reply: the webhook's best-effort dispatch, once the job's settle time (BURST_SETTLE_MS) is over. When
+ * the customer sent another bubble meanwhile, this claim finds nothing (the newer job holds it back) and the newer
+ * job's own dispatch answers the whole burst. Never throws; the cron is the safety net.
+ */
+export function processJobAfterSettle(id: string): void {
+  setTimeout(() => {
+    void processJobById(id).catch((error) => console.error('[soft-ai/automation] settle dispatch failed', error))
+  }, BURST_SETTLE_MS + 250)
 }
 
 export async function processAutomationBatch(limit = 2) {

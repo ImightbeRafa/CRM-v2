@@ -124,7 +124,7 @@ export function paymentMethodPick(text: string, awaitingChoice: boolean, offered
 /** N2: loose contra-entrega / efectivo wording (not a question, no claim / completion cue). */
 /** Loose method words, each with its method (the LAST one named in a message wins). */
 const LOOSE_METHOD_RE =
-  /(?<![\p{L}])(?:(sinpe)|(transfer\p{L}*)|(tarjeta)|(contra\s?entrega|(?:pago\s+|pagar\s+)?al\s+recibir(?:lo|la)?)|(efectivo|cash))(?![\p{L}])/giu
+  /(?<![\p{L}])(?:(sinpe|simpe|sinpi|simpi)|(transfer\p{L}*)|(tarjeta)|(contra\s?entrega|(?:pago\s+|pagar\s+)?al\s+recibir(?:lo|la)?)|(efectivo|cash))(?![\p{L}])/giu
 const MAX_CARRY_INBOUND = 8
 
 /**

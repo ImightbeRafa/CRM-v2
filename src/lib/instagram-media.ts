@@ -6,10 +6,11 @@ import 'server-only'
  * Instagram only takes JPG / PNG photos up to 8 MB here (video / audio / documents stay WhatsApp-only).
  */
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
+import { redactMetaMessage } from '@/lib/social-account-token-health'
 
 export const INSTAGRAM_IMAGE_MAX_BYTES = 8 * 1024 * 1024
 export const INSTAGRAM_IMAGE_MIMES: ReadonlySet<string> = new Set(['image/jpeg', 'image/png'])
-export const INSTAGRAM_MEDIA_ONLY_PHOTOS = 'Por Instagram solo se pueden enviar fotos JPG o PNG (máx. 8 MB).'
+export const INSTAGRAM_MEDIA_ONLY_PHOTOS = 'Por Instagram solo se pueden enviar fotos JPG o PNG.'
 
 async function readJson(res: Response): Promise<any> {
   const text = await res.text()
@@ -48,7 +49,9 @@ export async function uploadInstagramImage(opts: {
   })
   const data = await readJson(res)
   const attachmentId = data?.attachment_id != null ? String(data.attachment_id) : ''
-  if (!res.ok || !attachmentId) return { ok: false, error: data?.error?.message || 'Instagram no aceptó la foto.', data }
+  if (!res.ok || !attachmentId) {
+    return { ok: false, error: redactMetaMessage(String(data?.error?.message || ''), opts.accessToken) || 'Instagram no aceptó la foto.' }
+  }
   return { ok: true, attachmentId }
 }
 
@@ -62,9 +65,12 @@ export async function sendInstagramImage(opts: {
   recipient: string
   attachmentId: string
   timeoutMs: number
-}): Promise<{ ok: true; providerMessageId: string | null; data: unknown } | { ok: false; error: string; data?: unknown }> {
+}): Promise<
+  | { ok: true; providerMessageId: string | null; data: unknown }
+  | { ok: false; error: string; data?: unknown; /** Meta refused the request (4xx): nothing went out. */ rejected: boolean }
+> {
   const url = addAppSecretProofToUrl(buildMetaGraphUrl(instagramPath(opts.pageId, 'messages')), opts.accessToken)
-  let last: { error: string; data?: unknown } = { error: 'Falló el envío por Instagram' }
+  let last: { error: string; data?: unknown; rejected: boolean } = { error: 'Falló el envío por Instagram', rejected: false }
   for (const type of ['image', 'MEDIA_SHARE']) {
     const res = await fetch(url, {
       method: 'POST',
@@ -81,21 +87,24 @@ export async function sendInstagramImage(opts: {
       const id = data?.message_id || data?.messages?.[0]?.id
       return { ok: true, providerMessageId: id ? String(id) : null, data }
     }
-    last = { error: data?.error?.message || 'Falló el envío por Instagram', data }
+    last = {
+      error: redactMetaMessage(String(data?.error?.message || ''), opts.accessToken) || 'Falló el envío por Instagram',
+      rejected: res.status >= 400 && res.status < 500,
+    }
     // Only a clean rejection of the request is retried with the other type; anything else may have gone out.
     if (res.status < 400 || res.status >= 500) break
   }
   return { ok: false, ...last }
 }
 
-/** Plain Instagram text (the caption after a photo — Instagram photos carry no caption). */
+/** Plain Instagram text (the caption after a photo — Instagram photos carry no caption). Returns Meta's message id. */
 export async function sendInstagramText(opts: {
   pageId: string | null | undefined
   accessToken: string
   recipient: string
   text: string
   timeoutMs: number
-}): Promise<boolean> {
+}): Promise<{ ok: boolean; providerMessageId: string | null }> {
   const url = addAppSecretProofToUrl(buildMetaGraphUrl(instagramPath(opts.pageId, 'messages')), opts.accessToken)
   const res = await fetch(url, {
     method: 'POST',
@@ -103,5 +112,7 @@ export async function sendInstagramText(opts: {
     body: JSON.stringify({ messaging_type: 'RESPONSE', recipient: { id: opts.recipient }, message: { text: opts.text } }),
     signal: AbortSignal.timeout(opts.timeoutMs),
   })
-  return res.ok
+  const data = await readJson(res)
+  const id = data?.message_id || data?.messages?.[0]?.id
+  return { ok: res.ok, providerMessageId: id ? String(id) : null }
 }

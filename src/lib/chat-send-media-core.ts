@@ -130,7 +130,6 @@ export async function sendWhatsAppMediaBytes(opts: {
   let mediaId: string | null = null
   let providerMessageId: string | undefined
   let sendData: any
-  let igAttachmentId: string | null = null
   if (platform === 'instagram') {
     // 1–2) Upload the photo to the Page (Meta gets the bytes, never a link), then send it; the caption follows as text.
     const pageId = found.pageId || parseSocialRefreshToken(found.refreshToken).pageId
@@ -139,7 +138,6 @@ export async function sendWhatsAppMediaBytes(opts: {
       console.error('[chat/send-media] instagram upload failed', { error: up.error })
       return { ok: false, error: up.error, status: 502 }
     }
-    igAttachmentId = up.attachmentId
     const sentImg = await sendInstagramImage({ pageId, accessToken, recipient, attachmentId: up.attachmentId, timeoutMs: META_TIMEOUT_MS })
     if (!sentImg.ok) {
       console.error('[chat/send-media] instagram send failed', { error: sentImg.error })
@@ -147,10 +145,7 @@ export async function sendWhatsAppMediaBytes(opts: {
     }
     providerMessageId = sentImg.providerMessageId || undefined
     sendData = sentImg.data
-    if (caption.trim()) {
-      const captionSent = await sendInstagramText({ pageId, accessToken, recipient, text: caption.trim(), timeoutMs: META_TIMEOUT_MS }).catch(() => false)
-      if (!captionSent) console.warn('[chat/send-media] instagram caption not sent')
-    }
+    // The caption goes out as its own text AFTER the photo row is saved (below), never stored unsent.
   } else {
     // 1) Upload the file to Meta → media id.
     const upload = new FormData()
@@ -209,7 +204,8 @@ export async function sendWhatsAppMediaBytes(opts: {
     tenantId,
     socialAccountId: found.id,
     direction: 'outbound',
-    content: outboundMediaContent(media.kind, caption),
+    // Instagram: the photo row is just the photo; its caption is a separate text row (only once it is sent).
+    content: outboundMediaContent(media.kind, platform === 'instagram' ? '' : caption),
     sentAt: new Date(),
     receivedAt: null,
     peerId: recipient,
@@ -228,7 +224,6 @@ export async function sendWhatsAppMediaBytes(opts: {
         provider: platform,
         platform,
         messageType: media.kind,
-        ...(igAttachmentId ? { igAttachmentId } : {}),
         ...(opts.metadata ?? {}),
         ...(clientRequestId ? { clientRequestId } : {}),
       },
@@ -292,6 +287,34 @@ export async function sendWhatsAppMediaBytes(opts: {
       quickReplyShortcut: opts.quickReplyShortcut,
       media: true,
     })
+  }
+
+  // Instagram caption: sent after the photo is saved, stored as its own text row only when Meta accepted it.
+  if (platform === 'instagram' && providerMessageId && caption.trim()) {
+    const pageId = found.pageId || parseSocialRefreshToken(found.refreshToken).pageId
+    const text = caption.trim()
+    const sentText = await sendInstagramText({ pageId, accessToken, recipient, text, timeoutMs: META_TIMEOUT_MS }).catch(() => null)
+    if (sentText?.ok) {
+      const captionWrite = await dualWriteChatMessage({
+        tenantId,
+        socialAccountId: found.id,
+        direction: 'outbound',
+        content: text,
+        sentAt: new Date(),
+        receivedAt: null,
+        peerId: recipient,
+        providerMessageId: sentText.providerMessageId,
+        messageType: 'text',
+        deliveryStatus: sentText.providerMessageId ? 'sent' : 'pending',
+        platform,
+        senderUserId: userId,
+        metadata: mergeHumanSenderMetadata({ to: recipient, provider: platform, platform, captionOfMessageId: write.messageId }, snapshot),
+        suppressSoftAi: true,
+      })
+      if (!isPersistedDualWrite(captionWrite)) console.warn('[chat/send-media] instagram caption sent but not stored')
+    } else {
+      console.warn('[chat/send-media] instagram caption not sent')
+    }
   }
 
   const saved = await db.chatMessage.findFirst({ where: { id: write.messageId, tenantId } })

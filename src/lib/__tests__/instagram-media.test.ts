@@ -98,6 +98,54 @@ describe('instagram photos · wiring', () => {
   it('agent images on Instagram: no WhatsApp media id stored, attachment id kept for reuse', () => {
     const src = readFileSync('src/lib/soft-ai/agent-media-send.ts', 'utf8')
     assert.match(src, /providerMediaId: platform === 'whatsapp' \? mediaId : null/)
-    assert.match(src, /\.\.\.\(platform === 'instagram' \? \{ igAttachmentId: mediaId \} : \{\}\)/)
+    assert.match(src, /\.\.\.\(platform === 'instagram' \? \{ igAttachmentId: igFreshId \|\| mediaId \} : \{\}\)/)
+    // Staff photos never keep the attachment id (SecureDog Low 2).
+    assert.doesNotMatch(readFileSync('src/lib/chat-send-media-core.ts', 'utf8'), /igAttachmentId/)
+  })
+})
+
+describe('instagram photos · review fixes', () => {
+  it('a refused send says nothing went out (4xx) vs maybe sent (5xx)', async () => {
+    mockFetch([{ status: 400, body: {} }, { status: 400, body: {} }])
+    const a = await sendInstagramImage({ pageId: '1', accessToken: 't', recipient: 'p', attachmentId: '9', timeoutMs: 1000 })
+    assert.equal(!a.ok && a.rejected, true)
+    mockFetch([{ status: 502, body: {} }])
+    const b = await sendInstagramImage({ pageId: '1', accessToken: 't', recipient: 'p', attachmentId: '9', timeoutMs: 1000 })
+    assert.equal(!b.ok && b.rejected, false)
+  })
+
+  it('agent images: live planning, delivery and Probar use the same channel rule (WhatsApp + Instagram)', async () => {
+    const { imageChannel } = await import('../soft-ai/agent-turn')
+    assert.equal(imageChannel('instagram'), true)
+    assert.equal(imageChannel('whatsapp'), true)
+    assert.equal(imageChannel(undefined), true)
+    assert.equal(imageChannel('messenger'), false)
+    const turn = readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
+    assert.match(turn, /const liveImageReplyIds =\s+imageChannel\(payload\.platform\)/)
+    assert.match(turn, /const probarImageReplyIds = imageChannel\(account\.platform\)/)
+    assert.match(turn, /!fallbackUsed && imageChannel\(account\.platform\)/)
+  })
+
+  it('staff caption: own text row, sent only after the photo row is saved, never stored unsent', () => {
+    const core = readFileSync('src/lib/chat-send-media-core.ts', 'utf8')
+    assert.match(core, /content: outboundMediaContent\(media\.kind, platform === 'instagram' \? '' : caption\)/)
+    assert.ok(core.indexOf('sendInstagramText({') > core.indexOf('const write = await dualWriteChatMessage'))
+    assert.match(core, /if \(sentText\?\.ok\) \{\s+const captionWrite = await dualWriteChatMessage/)
+  })
+
+  it('agent: a refused reused attachment id is re-uploaded once (nothing went out)', () => {
+    const src = readFileSync('src/lib/soft-ai/agent-media-send.ts', 'utf8')
+    assert.match(src, /if \(!r\.ok && r\.rejected && cached\) \{/)
+    assert.match(src, /igAttachmentId: igFreshId \|\| mediaId/)
+  })
+})
+
+describe('instagram photos · SecureDog', () => {
+  it('a token Meta echoes in an error never reaches the caller', async () => {
+    const token = 'EAAB' + 'x'.repeat(40)
+    mockFetch([{ status: 400, body: { error: { message: `Malformed access token ${token}` } } }])
+    const r = await uploadInstagramImage({ pageId: '1', accessToken: token, bytes: PNG, mime: 'image/png', timeoutMs: 1000 })
+    assert.equal(r.ok, false)
+    assert.ok(!r.ok && !r.error.includes(token) && !('data' in r))
   })
 })

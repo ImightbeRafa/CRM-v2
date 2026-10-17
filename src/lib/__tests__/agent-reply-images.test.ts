@@ -127,7 +127,7 @@ test('runtime strips the tag before validation; test chat gets images, not on ha
   const tagAt = runtime.indexOf('extractShortcutTag(structured.text)')
   assert.ok(tagAt > 0 && tagAt < runtime.indexOf('validateAgentOutput({', tagAt))
   const turn = readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
-  assert.match(turn, /text && !escalate && !notBound && !needsHuman && !fallbackUsed && \(account\.platform \|\| 'whatsapp'\) === 'whatsapp'\s*\?\s*selectReplyImages/)
+  assert.match(turn, /text && !escalate && !notBound && !needsHuman && !fallbackUsed && imageChannel\(account\.platform\)\s*\?\s*selectReplyImages/)
   assert.match(turn, /alreadySent: input\.sentImageIds/)
 })
 

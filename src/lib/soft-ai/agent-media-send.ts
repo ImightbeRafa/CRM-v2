@@ -134,6 +134,7 @@ export async function sendAgentImagesOnce(ctx: AgentImageSend, assets: AgentAsse
           ? await uploadToInstagram(ctx.pageId ?? null, ctx.accessToken, asset, ctx.deadlineAt)
           : await uploadToWhatsApp(ctx.phoneNumberId, ctx.accessToken, asset, ctx.deadlineAt))
       if (!mediaId) continue
+      let igFreshId: string | null = null
       const delivery = await deliverOnce({
         jobId: ctx.job.id,
         // Keyed by image only (stable when earlier images are filtered out on a re-run).
@@ -142,7 +143,16 @@ export async function sendAgentImagesOnce(ctx: AgentImageSend, assets: AgentAsse
         contentHash: asset.sha256,
         send: async () => {
           if (platform === 'instagram') {
-            const r = await sendInstagramImage({ pageId: ctx.pageId ?? null, accessToken: ctx.accessToken, recipient: ctx.job.peerId, attachmentId: mediaId, timeoutMs: META_TIMEOUT_MS })
+            const pageId = ctx.pageId ?? null
+            let r = await sendInstagramImage({ pageId, accessToken: ctx.accessToken, recipient: ctx.job.peerId, attachmentId: mediaId, timeoutMs: META_TIMEOUT_MS })
+            // A reused id Meta refused (4xx: nothing went out) may have expired: one fresh upload, one more send.
+            if (!r.ok && r.rejected && cached) {
+              const fresh = await uploadToInstagram(pageId, ctx.accessToken, asset, ctx.deadlineAt)
+              if (fresh) {
+                igFreshId = fresh
+                r = await sendInstagramImage({ pageId, accessToken: ctx.accessToken, recipient: ctx.job.peerId, attachmentId: fresh, timeoutMs: META_TIMEOUT_MS })
+              }
+            }
             if (!r.ok) throw new Error('META_IMAGE_SEND_FAILED')
             return { providerMessageId: r.providerMessageId || undefined }
           }
@@ -189,7 +199,7 @@ export async function sendAgentImagesOnce(ctx: AgentImageSend, assets: AgentAsse
           agentAssetSha: asset.sha256,
           to: ctx.job.peerId,
           platform,
-          ...(platform === 'instagram' ? { igAttachmentId: mediaId } : {}),
+          ...(platform === 'instagram' ? { igAttachmentId: igFreshId || mediaId } : {}),
           providerMessageId,
           automationJobId: ctx.job.id,
         },

@@ -333,6 +333,12 @@ async function sendMetaText(opts: {
   }
 }
 
+/** Channels where the agent's saved-reply images really go out (live, planning and Probar use the same rule). */
+export function imageChannel(platform: string | null | undefined): boolean {
+  const p = platform || 'whatsapp'
+  return p === 'whatsapp' || p === 'instagram'
+}
+
 async function channelHasActivationRecord(tenantId: string, socialAccountId: string): Promise<boolean> {
   const flag = await prisma.tenantFeatureFlag.findFirst({
     where: { tenantId, scope: tenantId, key: CHAT_AGENT_LAYER_V1_FLAG },
@@ -846,9 +852,9 @@ export async function executeAgentLayerTurn(
     : null
   const shortcuts = await listRuntimeShortcuts(row.tenantId, resolved.agent.id)
   const replyAssets = await loadReplyAssets(row.tenantId, resolved.agent.id)
-  // Only replies whose image would really go out are marked "(va con imagen)" (WhatsApp, not yet sent in this chat).
+  // Only replies whose image would really go out are marked "(va con imagen)" (WhatsApp / Instagram, not yet sent in this chat).
   const liveImageReplyIds =
-    (payload.platform || 'whatsapp') === 'whatsapp' && replyAssets.size
+    imageChannel(payload.platform) && replyAssets.size
       ? sendableImageReplyIds(replyAssets, await loadSentAgentImageShas(row.tenantId, row.conversationId))
       : new Set<string>()
   const decision = decideInbound({
@@ -1979,8 +1985,7 @@ async function runAgentTestTurnInner(input: {
         brandFacts: runtimeAgent.brandFacts,
       })
     : null
-  const probarImageReplyIds =
-    (account.platform || 'whatsapp') === 'whatsapp' ? sendableImageReplyIds(replyAssets, input.sentImageIds) : new Set<string>()
+  const probarImageReplyIds = imageChannel(account.platform) ? sendableImageReplyIds(replyAssets, input.sentImageIds) : new Set<string>()
   const decision = decideInbound({
     inboundText: input.inboundText,
     messageType: input.messageType || 'text',
@@ -2138,8 +2143,8 @@ async function runAgentTestTurnInner(input: {
   decision.decisionTrace.wouldSend = wouldSend
   // Images of the saved reply it used (code-picked, never twice in the same chat; none on a hand-off).
   const images =
-    // Same as live: WhatsApp only, never on a hand-off / needs-a-person / fallback answer.
-    text && !escalate && !notBound && !needsHuman && !fallbackUsed && (account.platform || 'whatsapp') === 'whatsapp'
+    // Same as live: WhatsApp / Instagram, never on a hand-off / needs-a-person / fallback answer.
+    text && !escalate && !notBound && !needsHuman && !fallbackUsed && imageChannel(account.platform)
       ? selectReplyImages({ shortcutKey, shortcuts, assetsByShortcut: replyAssets, alreadySent: input.sentImageIds }).images
       : []
   const toolTrace = redactAgentTrace(

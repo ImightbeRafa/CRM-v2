@@ -605,7 +605,7 @@ export function SoftThreadPane({
           </p>
           {canAttach ? (
             <p className="text-[12px] opacity-80">
-              {conversation.platform === 'instagram' ? 'Por Instagram: solo fotos JPG o PNG · máx. 8 MB' : 'Foto, video, audio o documento · máx. 9 MB'}
+              {conversation.platform === 'instagram' ? 'Por Instagram: solo fotos JPG o PNG · máx. 5 MB' : 'Foto, video, audio o documento · máx. 9 MB'}
             </p>
           ) : null}
         </div>

@@ -188,9 +188,11 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /**
  * luna-10 (Rafael 2026-10-17): at night a transparent agent ALWAYS introduces itself as the virtual assistant —
- * code-owned (the model followed the prompt line in 2 of 4 night replies). The model's own self-introduction
- * ("¡Hola! Soy Sofi de PatchHouse CR 🌿") is rewritten in place; with none, the intro goes first only when nobody has
- * written to the customer yet in this chat. Day, discreet, no name, or already says "asistente virtual": unchanged.
+ * code-owned (the model followed the prompt line in 2 of 4 night replies). Verifier round 2: never cut or replace what
+ * the agent wrote — when it introduced itself ("Soy Sofi de PatchHouse CR", "Hola 👋 soy Sofi y sí tenemos envíos"),
+ * ", asistente virtual" is INSERTED right after the name; with no self-introduction, the intro goes first only when
+ * nobody has written to the customer yet in this chat. Day, discreet, no name, or already says "asistente virtual":
+ * unchanged.
  */
 export function withNightIntro(
   text: string,
@@ -201,23 +203,19 @@ export function withNightIntro(
   if (!state.afterHours || !state.transparent || !name) return text
   const t = (text || '').trim()
   if (!t || /asistente virtual/iu.test(t)) return text
-  const store = (who.store || '').trim()
-  const intro = `¡Hola! Soy ${name}, asistente virtual${store ? ` de ${store}` : ''} 🌙`
-  // Verifier F1: only a SHORT intro clause with no digits / questions, ending at "." "!" an emoji, a line break or the
-  // end, is rewritten ("Hola, soy Sofi y el Stress Down cuesta ₡12.000" is left alone — it is not just an intro).
-  const selfIntro = new RegExp(
-    `^(?:¡?\\s*(?:hola|buenas(?:\\s+noches)?)\\s*[!,.]?\\s*)?soy\\s+${escapeRe(name)}\\b([^\\n.!?¿\\d\\p{Extended_Pictographic}]{0,40})(?=[.!\\n]|[\\p{Extended_Pictographic}]|$)[.!]?[ \\t]*(?:[\\p{Extended_Pictographic}\\uFE0F][ \\t]*)*`,
-    'iu',
-  )
-  const clause = t.match(selfIntro)
-  if (clause && !/[,;:]\s*\S/.test(clause[1] || '')) {
-    const rest = t.slice(clause[0].length).trim()
-    return rest ? `${intro}\n\n${rest}` : intro
+  // The first self-introduction in the first line (Unicode word edges: "\b" is ASCII-only — José / Ángela).
+  const firstLineEnd = t.indexOf('\n') === -1 ? t.length : t.indexOf('\n')
+  const self = new RegExp(`(?<![\\p{L}\\p{N}])soy\\s+${escapeRe(name)}(?![\\p{L}\\p{N}])`, 'iu').exec(t.slice(0, firstLineEnd))
+  if (self) {
+    const at = self.index + self[0].length
+    const rest = t.slice(at)
+    // " de PatchHouse CR" / punctuation / emoji / end → ", asistente virtual" + rest; " y sí tenemos…" → a comma closes it.
+    const joiner = /^(\s+de\s|[\s]*$|[,.;:!?)]|\s*[\p{Extended_Pictographic}])/u.test(rest) ? ', asistente virtual' : ', asistente virtual,'
+    return `${t.slice(0, at)}${joiner}${rest}`
   }
-  // The model introduced itself in a way that cannot be rewritten safely: never a second greeting on top.
-  if (new RegExp(`\\bsoy\\s+${escapeRe(name)}\\b`, 'iu').test(t.split('\n')[0] || '')) return text
   if (who.introduced) return text
-  return `${intro}\n\n${t}`
+  const store = (who.store || '').trim()
+  return `¡Hola! Soy ${name}, asistente virtual${store ? ` de ${store}` : ''} 🌙\n\n${t}`
 }
 
 /** Hand-off reasons whose customer text gets the after-hours variant (owner_reply keeps the owner's own text). */

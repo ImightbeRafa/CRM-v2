@@ -1,3 +1,33 @@
+## 2026-10-17 — luna-10: PatchHouse 10/10 + gpt-6-luna as the one model (claudio/luna-10 = deploy 1; claudio/luna-10-d2 = deploy 2; NOT deployed)
+
+- Rafael: Instagram approved by Meta; PatchHouse must be 10/10 on WhatsApp + Instagram; Grok out of the whole site,
+  only `gpt-6-luna` (OpenAI account lists gpt-6-luna 2026-09-14 and gpt-5.6-luna; there is no 6.1 luna).
+- Live data changes (prod DB, via `build-agent --allow-live`, line stayed on): corrected PatchHouse pack (8 h max,
+  full ingredients, 18+, Dopamine = mucuna, no result claims — the 2026-10-16 fix had never reached the live agent);
+  `ph_resultados` and the objections text no longer promise "cambios en los primeros días"; night mode 8:00–20:00
+  every day + `afterHoursDisclosure: transparent` (v48). Backup: `betsy-agent-packs/patchhouse/pack.backup-2026-10-17.json`.
+- Deploy 1 (claudio/luna-10): prompt_cache_key hashed (OpenAI 64-char limit: every Luna turn 400'd → safe line);
+  `results_claim` hard block + pack lint; waiting ack after a hand-off (one line per hand-off, kill/pause/terms/line
+  health gated, 15-min alert throttle, no ack after opt-out, sweep ignores it); repeat guard (20 min, numbers differ =
+  new answer, data list / payment details exempt); code-owned night intro "asistente virtual"; no double after-hours
+  team line; escalate_to_human narrowed (never for prices / combos / shipping / ingredients / use / stock / how to buy);
+  Pegar cliente on Luna via the inbox client (+ platform pause); default model + vision + picker = Luna (older ids
+  still resolve for this one deploy so live lines keep answering).
+- Deploy 2 (claudio/luna-10-d2): Grok removed from the inbox AI (allowlist Luna only, xAI client/env/body deleted,
+  LLM_* codes), prisma default + SQL 054 (non-live agents → Luna). Run order in the SQL header. Staff bot untouched
+  (pending Rafael).
+- Tooling (scripts/agent-pack): exam-bank (redacted real chats + pack tests + coverage + live failures + night),
+  exam (sandbox, N runs, code checks for the serious classes + calibrated reviewer), shoppers (30 personas day/night),
+  shadow (offline silent trial vs the team's replies), all through `test-session.ts` (AI terms, kill, actor, audited
+  test-cap raise restored on Ctrl+C).
+- Reviews: Advisor plan; verifier round 1 FAIL → F1–F9 fixed (6851e183); SecureDog round 1 FIX BEFORE PROD → fixed
+  (52d8ffd2), logged INT-133 (High), DATA-60, INFRA-22, INT-134, INT-135. Round 2 running.
+- Proof: tsc 0, lint 0, test:soft-ai 937/937, security 271/271, chat-harden 644/644, tenant-ui 9/9, agentes-ui 34/34,
+  config-ui 30/30, ops 40/40, bot-inbox 8/8; live scans: 89 saved replies + 10 knowledge docs + 2 selling scripts +
+  16 agents → 0 result promises. Luna sandbox: ~$0.0002–0.0009 per reply.
+- Open for Rafael: deploy GO (two deploys), Activar PatchHouse WA + IG on Luna, staff bot on Luna?, Ley 8968 call on
+  using real chats for the exam / silent trial, Instagram product photos (Betsy cannot send IG media yet).
+
 ## 2026-10-16 — agents2-kmap: "Mapa de conocimiento" per agent, v1a (claudio/knowledge-map, NOT deployed)
 
 - What: Agentes › Conocimiento shows one standard template per product (precio, ingredientes, modo de uso, frecuencia,

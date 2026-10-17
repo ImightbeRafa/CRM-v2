@@ -15,9 +15,6 @@ import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { runAgentTestTurn } from '@/lib/soft-ai/agent-turn'
 import { evaluateStep } from '@/lib/soft-ai/probar-scenarios'
-import { mutateChatAgentLayerConfig } from '@/lib/soft-ai/agent-layer-config-mutate'
-import { readChatAgentLayerConfig } from '@/lib/feature-flags'
-import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { softAiResponsesCreate, parseSoftAiResponseText } from '@/lib/soft-ai/llm/client'
 import { LUNA_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
 import { isWithinBusinessHours, parseBusinessHours } from '@/lib/soft-ai/business-hours'
@@ -25,6 +22,7 @@ import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { arg, loadPack } from './pack'
 import { codeChecks, reviewerKnowledge } from './exam'
 import { redactCustomerText } from './exam-bank'
+import { withExamSession } from './test-session'
 
 const BURST_MS = 90_000
 
@@ -51,7 +49,7 @@ async function compare(input: { tenantId: string; knowledge: string; history: st
         'Las frases del sitio ("apoya…", "ayuda a reducir antojos", "acompaña el ánimo") NO son promesas. Nombrar los métodos de pago para preguntar cuál prefiere es CORRECTO. De noche decir cuándo escribe el equipo es CORRECTO.',
         'Respondé solo el JSON; reason: una frase corta.',
       ].join('\n'),
-      input: [{ type: 'message', role: 'user', content: [`CONOCIMIENTO:\n${input.knowledge}`, `HORARIO: ${input.night ? 'de noche' : 'de día'}`, `CHAT ANTERIOR:\n${input.history || '(nada)'}`, `CLIENTE: ${input.customer}`, `AGENTE IA: ${input.agent || '(no respondió)'}`, `EQUIPO: ${input.team ?? '(no respondió)'}`].join('\n\n') }],
+      input: [{ type: 'message', role: 'user', content: [`CONOCIMIENTO:\n${input.knowledge}`, `HORARIO: ${input.night ? 'de noche' : 'de día'}`, `CHAT ANTERIOR:\n${redactCustomerText(input.history) || '(nada)'}`, `CLIENTE: ${redactCustomerText(input.customer)}`, `AGENTE IA: ${redactCustomerText(input.agent) || '(no respondió)'}`, `EQUIPO: ${input.team ? redactCustomerText(input.team) : '(no respondió)'}`].join('\n\n') }],
       reasoningEffort: 'low',
       maxOutputTokens: 300,
       timeoutMs: 30_000,
@@ -85,13 +83,10 @@ async function main() {
   if (!acc) throw new Error('Canal no encontrado en este negocio')
 
   const convs = await prisma.chatConversation.findMany({ where: { tenantId, socialAccountId: account, lastInboundAt: { gte: since } }, select: { id: true, peerName: true } })
-  const before = parseChatAgentLayerConfig((await readChatAgentLayerConfig(tenantId)).config).testDailyTokenCap
-  if (before >= cap) throw new Error(`El tope de pruebas ya está en ${before.toLocaleString('es-CR')}: otra prueba está corriendo.`)
-  await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: Math.max(c.testDailyTokenCap, cap) }))
   type Row = { conv: string; at: string; night: boolean; customer: string; agent: string; handoff: string | null; team: string | null; teamMinutes: number | null; findings: Array<{ cls: string; serious: boolean; why: string }>; review: Awaited<ReturnType<typeof compare>> }
   const rows: Row[] = []
   let cost = 0
-  try {
+  await withExamSession({ tenantId, actorEmail: pack.target.actorEmail, cap, label: 'shadow' }, async () => {
     for (const c of convs) {
       const msgs = await prisma.chatMessage.findMany({
         where: { tenantId, conversationId: c.id },
@@ -105,10 +100,11 @@ async function main() {
         if (m.direction !== 'inbound' || m.sentAt < since) continue
         const next = msgs[i + 1]
         if (next && next.direction === 'inbound' && next.sentAt.getTime() - m.sentAt.getTime() <= BURST_MS) continue
-        const history = msgs.slice(Math.max(0, i - 24), i).map((h) => ({ direction: (h.direction === 'inbound' ? 'inbound' : 'outbound') as 'inbound' | 'outbound', content: h.content || `[${h.messageType}]`, sentAt: h.sentAt.toISOString() }))
+        // SecureDog L2: the replay itself is redacted (names, phones, addresses) and the customer is just "Cliente".
+        const history = msgs.slice(Math.max(0, i - 24), i).map((h) => ({ direction: (h.direction === 'inbound' ? 'inbound' : 'outbound') as 'inbound' | 'outbound', content: redactCustomerText(h.content || `[${h.messageType}]`, c.peerName), sentAt: h.sentAt.toISOString() }))
         const night = Boolean(schedule.enabled) && !isWithinBusinessHours(schedule, m.sentAt)
-        const text = m.messageType === 'text' ? m.content || '' : `[${m.messageType}] ${m.content || ''}`.trim()
-        const r = await runAgentTestTurn({ tenantId, agentId: agent.id, inboundText: text, socialAccountId: account, actorUserId: user.id, testSessionId: randomUUID(), history, customerName: c.peerName || 'Cliente', modelOverride: LUNA_CHAT_AGENT_MODEL, usageFeature: 'agent_test', simulateAfterHours: night, messageType: (m.messageType as 'text' | 'image' | 'audio' | 'document' | 'video') || 'text' })
+        const text = redactCustomerText(m.messageType === 'text' ? m.content || '' : `[${m.messageType}] ${m.content || ''}`.trim(), c.peerName)
+        const r = await runAgentTestTurn({ tenantId, agentId: agent.id, inboundText: text, socialAccountId: account, actorUserId: user.id, testSessionId: randomUUID(), history, customerName: 'Cliente', modelOverride: LUNA_CHAT_AGENT_MODEL, usageFeature: 'agent_test', simulateAfterHours: night, messageType: (m.messageType as 'text' | 'image' | 'audio' | 'document' | 'video') || 'text' })
         cost += r.estimatedCostUsd || 0
         // What the team really answered: the first person-written message after this customer message.
         const team = msgs.slice(i + 1).find((x) => x.direction === 'outbound' && !isSoftAiOutboundMetadata(x.metadata))
@@ -119,7 +115,7 @@ async function main() {
           at: m.sentAt.toISOString(),
           night,
           customer: redactCustomerText(text, c.peerName),
-          agent: r.text,
+          agent: redactCustomerText(r.text, c.peerName),
           handoff: r.handoff ? `${r.handoff.kind}:${r.handoff.reason}` : null,
           team: team?.content ? redactCustomerText(team.content, c.peerName) : null,
           teamMinutes: team ? Math.round((team.sentAt.getTime() - m.sentAt.getTime()) / 60_000) : null,
@@ -129,9 +125,7 @@ async function main() {
         process.stdout.write(findings.some((f) => f.serious) ? '✖' : review.agent === 'serious' ? '?' : '·')
       }
     }
-  } finally {
-    await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: before }))
-  }
+  })
   process.stdout.write('\n')
   const serious = rows.filter((r) => r.findings.some((f) => f.serious))
   const count = (k: string) => rows.filter((r) => r.review.compare === k).length

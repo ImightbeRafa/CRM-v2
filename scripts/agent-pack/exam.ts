@@ -19,12 +19,11 @@ import { prisma } from '@/lib/db'
 import { runAgentTestTurn } from '@/lib/soft-ai/agent-turn'
 import { evaluateStep, type StepExpect } from '@/lib/soft-ai/probar-scenarios'
 import { resultsClaimIn, validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
-import { mutateChatAgentLayerConfig } from '@/lib/soft-ai/agent-layer-config-mutate'
-import { readChatAgentLayerConfig } from '@/lib/feature-flags'
-import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { softAiResponsesCreate, parseSoftAiResponseText } from '@/lib/soft-ai/llm/client'
 import { LUNA_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
 import { arg, flag, loadPack, type AgentPack } from './pack'
+import { withExamSession } from './test-session'
+import { redactCustomerText } from './exam-bank'
 import type { ExamBank, ExamItem } from './exam-bank'
 
 type Finding = { cls: string; serious: boolean; why: string }
@@ -130,9 +129,10 @@ export async function grade(input: { tenantId: string; knowledge: string; histor
           content: [
             `CONOCIMIENTO DEL NEGOCIO:\n${input.knowledge}`,
             `HORARIO: ${input.night ? 'DE NOCHE (fuera de horario)' : 'de día'}`,
-            `CHAT ANTERIOR:\n${input.history || '(nada)'}`,
-            `CLIENTE: ${input.customer}`,
-            `RESPUESTA DEL AGENTE: ${input.reply || '(no respondió)'}`,
+            // SecureDog: customer data is redacted before it reaches the reviewer AI.
+            `CHAT ANTERIOR:\n${redactCustomerText(input.history) || '(nada)'}`,
+            `CLIENTE: ${redactCustomerText(input.customer)}`,
+            `RESPUESTA DEL AGENTE: ${redactCustomerText(input.reply) || '(no respondió)'}`,
           ].join('\n\n'),
         },
       ],
@@ -186,16 +186,11 @@ async function main() {
   if (!user) throw new Error('Usuario del pack no encontrado')
   const socialAccountId = arg('account') || pack.target.socialAccountIds[0]
 
-  // Raise the TEST cap for this run only; always restore the value that was there.
-  const before = parseChatAgentLayerConfig((await readChatAgentLayerConfig(tenantId)).config).testDailyTokenCap
-  // Another exam / shopper run is going (its raised cap is still there): never stack, or the cap could stay raised.
-  if (before >= examCap) throw new Error(`El tope de pruebas ya está en ${before.toLocaleString('es-CR')}: otra prueba está corriendo. Esperá a que termine.`)
-  await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: Math.max(c.testDailyTokenCap, examCap) }))
-  console.log(`Tope de pruebas: ${before.toLocaleString('es-CR')} → ${examCap.toLocaleString('es-CR')} (se restaura al final)`)
   const rows: Row[] = []
   let cost = 0
   const started = Date.now()
-  try {
+  // AI terms / kill switch / actor checked; TEST cap raised for the run only (audited, restored even on Ctrl+C).
+  await withExamSession({ tenantId, actorEmail: pack.target.actorEmail, cap: examCap, label: 'exam' }, async () => {
     for (let run = 1; run <= runs; run++) {
       for (const [n, item] of items.entries()) {
         const session = randomUUID()
@@ -238,10 +233,7 @@ async function main() {
       }
       process.stdout.write('\n')
     }
-  } finally {
-    await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: before }))
-    console.log(`Tope de pruebas restaurado: ${before.toLocaleString('es-CR')}`)
-  }
+  })
 
   const serious = rows.filter((r) => r.findings.some((f) => f.serious))
   const byCls: Record<string, number> = {}

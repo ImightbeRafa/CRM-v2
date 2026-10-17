@@ -286,7 +286,7 @@ const NOT_ABOUT_THE_BODY = String.raw`(?!\s+(?:en|del|de)\s+(?:(?:tu|la|el|su|lo
 const BODY_EFFECT = String.raw`(?:cambio|resultado|mejor|diferencia|efecto|beneficio|energ|calma|concentra|alivio|[aá]nimo|antojo|sueño|peso|ansiedad|estr[eé]s|dorm|duerm|relaja|funciona)`
 const RESULTS_CLAIM_RES: RegExp[] = [
   new RegExp(
-    String.raw`\b(?:muchas|varias|algunas|la\s+mayor[ií]a\s+de\s+las?|miles\s+de)\s+(?:personas|clientes|clientas|usuarios|usuarias|gente)\s+(?:(?:nos\s+|me\s+)?(?:cuentan|dicen|comentan)\s+que\b|(?:ya\s+)?(?:notan|sienten|ven|reportan|han\s+notado|han\s+sentido|nota|siente)\b)[^.!?\n]{0,40}?${BODY_EFFECT}`,
+    String.raw`\b(?:muchas|varias|algunas|la\s+mayor[ií]a\s+de\s+las?|miles\s+de)\s+(?:personas|clientes|clientas|usuarios|usuarias|gente)\s+(?:(?:nos\s+|me\s+)?(?:cuentan|dicen|comentan)\s+que\b|(?:ya\s+)?(?:notan|sienten|ven|reportan|han\s+notado|han\s+sentido|nota|siente)\b)(?![^.!?\n]{0,40}(?:precio|env[ií]o|pedido|paquete|entrega|atenci|servicio))[^.!?\n]{0,40}?${BODY_EFFECT}`,
     'iu',
   ),
   new RegExp(
@@ -296,7 +296,14 @@ const RESULTS_CLAIM_RES: RegExp[] = [
   new RegExp(String.raw`\b(?:notar[áa]s|sentir[áa]s|ver[áa]s)\s+(?:los\s+|las\s+|un\s+|una\s+|el\s+|la\s+)?(?:cambios?|resultados?|mejor[ií]as?|diferencias?|efectos?)\b${NOT_ABOUT_THE_BODY}`, 'iu'),
   /\b(?:cambios?|resultados?|efectos?|mejor[ií]as?)\s+(?:visibles\s+)?(?:en|desde|a\s+partir\s+de|durante)\s+(?:los\s+|las\s+)?(?:primer(?:os|as)|pocos|pocas|\d+)\s+(?:d[ií]as?|semanas?|horas?)\b/iu,
   // "envío garantizado" / "pago seguro garantizado" are about the order: only a guaranteed effect counts.
-  /\b(?:te\s+garantizo\s+que|garantiza(?:do|da|mos|n)?\s+(?:que\s+(?:funciona|vas|te)|(?:los\s+|el\s+)?(?:resultados?|efecto|cambio)))/iu,
+  /\b(?:te\s+garantizo\s+(?:que|(?:los\s+|el\s+)?(?:resultados?|cambios?|efectos?))|garantiza(?:do|da|mos|n)?\s*:?\s+(?:que\s+(?:funciona|vas|te)|vas\s+a|(?:los\s+|el\s+)?(?:resultados?|efectos?|cambios?))|(?:resultados?|efectos?|cambios?|funciona)\s+garantizad[oa]s?)/iu,
+  // "te va a quitar la ansiedad", "te quita el estrés".
+  /\b(?:te\s+)?(?:va\s+a\s+)?quit(?:a|ar|an)\s+(?:la|el|tu|tus|los|las)\s+(?:ansiedad|estr[eé]s|antojos?|insomnio|dolor(?:es)?|hambre|cansancio|fatiga)\b/iu,
+  // "vas a sentir más energía", "vas a tener más concentración".
+  /\b(?:vas\s+a|va\s+a|te\s+va\s+a\s+(?:dar|hacer))\s+(?:sentir|notar|tener|dormir|rendir)\s+(?:m[aá]s\s+|mucha\s+|much[oa]\s+)?(?:energ|calma|concentra|enfoque|[aá]nimo|relaja|mejor\b|tranquil)/iu,
+  // Time to an effect: "en una semana ves resultados", "desde la primera noche / el primer día".
+  /\b(?:en|desde)\s+(?:una|un|1|2|3|pocos|pocas|la\s+primera|el\s+primer)\s+(?:semanas?|d[ií]as?|noches?|mes(?:es)?|uso)\b[^.!?\n]{0,25}?\b(?:ves|ver[aá]s|vas\s+a\s+(?:ver|notar|sentir)|not[aá]s|notar[aá]s|sent[ií]s|sentir[aá]s|duerm|dorm)/iu,
+  /\b(?:energ[ií]a|duerm\w*|dorm\w*|calma|ansiedad|resultados?|cambios?|efecto|relaja\w*|mejor)\b[^.!?\n]{0,40}?\bdesde\s+(?:el\s+primer\s+d[ií]a|la\s+primera\s+(?:noche|semana|vez)|el\s+primer\s+uso)/iu,
   /\b(?:cura|curan|curar|sana|sanan)\s+(?:la|el|tu|tus|los|las|de)\b/iu,
   /\b(?:baj(?:ar|[áa]s|ar[áa]s)|perder|perd[ée]s|perder[áa]s)\s+(?:de\s+)?(?:peso|kilos|libras)\b|\badelgaz(?:ar|[áa]s|ar[áa]s)\b/iu,
 ]

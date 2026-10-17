@@ -3,7 +3,7 @@
  * (validation, version bump, audit). Dry run by default: prints the pre-checks and what would change.
  *
  *   node --env-file=.env.local --import tsx --import ./scripts/shim-server-only.mjs \
- *     scripts/agent-pack/build-agent.ts --pack=<carpeta del pack> [--apply] [--replace-binding] [--allow-live=<agentId>]
+ *     scripts/agent-pack/build-agent.ts --pack=<carpeta del pack> [--apply] [--replace-binding] [--allow-live=<agentId>] [--confirm-payment]
  *
  * SAFETY: it never activates anything (status stays draft, no flags / allowlist / unlock / caps), never writes
  * InventoryItem or ShippingMethod (shared with /ventas), never runs SQL. It refuses to touch a live agent, a channel
@@ -87,6 +87,19 @@ async function main() {
     )
   }
   if (ALLOW_LIVE_ID && !liveMode && existing?.status !== 'live') blockers.push('--allow-live solo sirve para un agente activo')
+  // SecureDog: a live agent never loses its product list (the app refuses an empty list too).
+  if (liveMode && !pack.inventory.names.length) blockers.push('Modo activo: el pack no trae productos; un agente activo no puede quedar sin productos')
+  // SecureDog: payment details (SINPE / cuenta / tarjeta) change what customers pay to — shown and confirmed on purpose.
+  if (liveMode && existing) {
+    // Compared by content (jsonb re-sorts keys), shown sorted.
+    const payNow = JSON.stringify(stable((existing.brandFacts as { payment?: unknown } | null)?.payment ?? null))
+    const payPack = JSON.stringify(stable((pack.brandFacts as { payment?: unknown } | null)?.payment ?? null))
+    if (payNow !== payPack) {
+      const mask = (j: string) => j.replace(/\d[\d\s.-]{3,}\d/g, (m) => '••••' + m.replace(/\D/g, '').slice(-4))
+      log(`  CAMBIAN LOS DATOS DE PAGO:\n    antes: ${mask(payNow)}\n    pack:  ${mask(payPack)}`)
+      if (!flag('confirm-payment')) blockers.push('Modo activo: los datos de pago cambian — revisalos arriba y agregá --confirm-payment')
+    }
+  }
   if (liveMode && pack.agent.model && pack.agent.model !== existing!.model) {
     blockers.push(`Modo activo: el pack cambia el modelo (${existing!.model} → ${pack.agent.model}); eso apaga la línea hasta Activar. Cambialo desde la app.`)
   }
@@ -99,12 +112,15 @@ async function main() {
     ...pack.knowledge.map((k): [string, string] => [`conocimiento "${k.name}"`, k.body]),
     ...pack.shortcuts.map((s): [string, string] => [`respuesta ${s.key}`, s.body]),
     ...Object.entries(pack.systemReplies ?? {}).map(([k, v]): [string, string] => [`respuesta del sistema ${k}`, v]),
+    // SecureDog: the brand facts and the selling script reach the prompt too.
+    ['datos de la marca', JSON.stringify(pack.brandFacts ?? {})],
+    // The never-say list holds the forbidden phrases themselves ("no decir: muchas personas notan cambios").
+    ['guion de venta', JSON.stringify({ ...(pack.salesRules ?? {}), neverSay: undefined })],
   ]
   for (const [where, text] of packTexts) {
-    for (const line of String(text || '').split('\n')) {
-      const claim = resultsClaimIn(line)
-      if (claim) blockers.push(`${where} promete resultados ("${claim}"): usá solo ingredientes y modo de uso`)
-    }
+    // Line by line (a precise message) and the whole text (a promise split over two lines).
+    const claim = String(text || '').split('\n').map((line) => resultsClaimIn(line)).find(Boolean) ?? resultsClaimIn(String(text || '').replace(/\s+/g, ' '))
+    if (claim) blockers.push(`${where} promete resultados ("${claim}"): usá solo ingredientes y modo de uso`)
   }
 
   // ---- Brand facts + sales rules validate locally first

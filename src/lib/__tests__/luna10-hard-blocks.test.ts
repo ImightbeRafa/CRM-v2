@@ -6,6 +6,8 @@ import { describe, it } from 'node:test'
 import { resultsClaimIn, validateAgentOutput } from '../soft-ai/llm/output-validator'
 import { REPAIRABLE_REASONS, repairInstruction } from '../soft-ai/llm/runtime'
 import { decideWaitingAck, waitingAckKey, waitingAckText } from '../soft-ai/waiting-ack'
+import { customerAsksAgain, dropRepeatedParts, isNearRepeat } from '../soft-ai/repeat-guard'
+import { SHIPPING_DATA_LIST } from '../soft-ai/order-data-list'
 import { HANDOFF_REASON_LABELS } from '../workspace-notifications'
 
 describe('results_claim (no promised effects)', () => {
@@ -83,5 +85,46 @@ describe('waiting ack (customer writes again while a hand-off waits on a person)
   })
   it('the alert has its own label', () => {
     assert.equal(HANDOFF_REASON_LABELS.customer_waiting, 'El cliente sigue esperando — nadie le respondió')
+  })
+})
+
+describe('repeat guard (never send what the chat just got)', () => {
+  const list = 'Contame, ¿sobre cuál parche querés info?\n\n- Focus (concentración) - Energy (energía) - Stress Relief (calma) - Dopamine (ánimo) - GLP-1 (apetito)'
+  it('drops the product list the customer already saw (2026-10-16 live chat)', () => {
+    const r = dropRepeatedParts({ text: '- Focus (concentración) - Energy (energía) - Stress Relief (calma) - Dopamine (ánimo) - GLP-1 (apetito)', previous: [list], customerText: 'Calma' })
+    assert.equal(r.kept.length, 0)
+    assert.equal(r.dropped.length, 1)
+  })
+  it('drops the repeated line but keeps the new part', () => {
+    const prev = ['La fórmula calmante es la mezcla Stress Down, junto con complejo B 😌']
+    const r = dropRepeatedParts({ text: 'La mezcla calmante se llama Stress Down y va con complejo B 😌\n\nLleva lichi, corteza de magnolia, té verde, GABA y ashwagandha.', previous: prev, customerText: 'qué componentes tiene?' })
+    assert.deepEqual(r.kept, ['Lleva lichi, corteza de magnolia, té verde, GABA y ashwagandha.'])
+  })
+  it('the same closing question twice is dropped; short acknowledgements may repeat', () => {
+    assert.ok(isNearRepeat('¿Te lo llevás? ¿Te lo enviamos o lo retirás con cita?', ['¿Te lo llevás? ¿Te lo enviamos o lo retirás con cita?']))
+    assert.equal(isNearRepeat('¡Perfecto! 😊', ['¡Perfecto! 😊']), false)
+  })
+  it('different content passes', () => {
+    const r = dropRepeatedParts({ text: 'El envío a Cartago es ₡3 000 y tarda de 2 a 5 días hábiles.', previous: [list], customerText: 'cuanto es el envio' })
+    assert.equal(r.dropped.length, 0)
+  })
+  it('the customer asks for it again: nothing is dropped', () => {
+    assert.ok(customerAsksAgain('me lo pasás de nuevo?'))
+    assert.ok(customerAsksAgain('no me llegó'))
+    const r = dropRepeatedParts({ text: list, previous: [list], customerText: 'me lo podés mandar otra vez?' })
+    assert.equal(r.dropped.length, 0)
+  })
+  it('a reply never repeats itself inside', () => {
+    const r = dropRepeatedParts({ text: 'Es un suplemento de bienestar, no un medicamento.\n\nEs un suplemento de bienestar, no un medicamento.', previous: ['hola'], customerText: 'x' })
+    assert.equal(r.kept.length, 1)
+  })
+})
+
+describe('repeat guard exemptions', () => {
+  it('the fixed data list and payment details may always repeat', () => {
+    const data = `Para el envío me pasás:\n${SHIPPING_DATA_LIST}`
+    assert.equal(dropRepeatedParts({ text: data, previous: [data], customerText: 'Juan Pérez 8888-8888' }).dropped.length, 0)
+    const sinpe = 'SINPE Móvil 6201-9914 a nombre de Rafael García'
+    assert.equal(dropRepeatedParts({ text: sinpe, previous: [sinpe], customerText: 'a qué número?' }).dropped.length, 0)
   })
 })

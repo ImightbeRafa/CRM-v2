@@ -146,7 +146,9 @@ describe('1. multi-message replies', () => {
   })
   it('send loop (source): sequential, gap, late remainder, stop checks, ambiguous part stops + review alert', () => {
     const turn = read('src/lib/soft-ai/agent-turn.ts')
-    assert.match(turn, /planReplyParts\(\{ text: input\.outputText, deliveryKey: input\.row\.deliveryKey, hash: hashSoftAiDeliveryContent \}\)/)
+    // luna-10 #5: the parts are planned from the reply after the repeat guard (outgoingText).
+    assert.match(turn, /planReplyParts\(\{ text: outgoingText, deliveryKey: input\.row\.deliveryKey, hash: hashSoftAiDeliveryContent \}\)/)
+    assert.match(turn, /let outgoingText = input\.outputText/)
     assert.match(turn, /for \(let i = 0; i < partsPlan\.length; i \+= 1\) \{/)
     assert.match(turn, /if \(await stopRemainingParts\(input\.row\.tenantId, input\.row\.conversationId\)\) \{\s*partial = true\s*break/)
     // agents2-pace: the gap / late rule moved into planPartWait (reply-pace.ts; 'instant' keeps 700 ms + the late rule).

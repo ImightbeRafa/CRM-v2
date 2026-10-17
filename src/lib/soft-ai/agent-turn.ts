@@ -10,6 +10,7 @@ import { afterHoursNoteRejected } from '@/lib/soft-ai/after-hours-note'
 import {
   AFTER_HOURS_REVIEW_PREFIX,
   afterHoursPromptLine,
+  afterHoursReviewLine,
   afterHoursState,
   applyAfterHoursText,
   DEFAULT_BUSINESS_HOURS,
@@ -84,6 +85,7 @@ import {
 import { notifyHandoff } from '@/lib/soft-ai/handoff-notify'
 import { decideWaitingAck, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS } from '@/lib/soft-ai/waiting-ack'
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
+import { dropRepeatedParts, REPEAT_WINDOW_MS } from '@/lib/soft-ai/repeat-guard'
 import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt } from '@/lib/soft-ai/sales-state'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
@@ -1373,13 +1375,46 @@ async function finishDeliveryOrSuggestInner(input: {
   if (!accessToken) return denyUnhealthyToken()
   const meta = parseSocialRefreshToken(account.refreshToken)
 
+  // luna-10 #5: never repeat what the chat got in the last 20 minutes (repeat-guard.ts). This job's own earlier
+  // sends are not "earlier" (lease reclaim must re-plan the same parts). Hand-offs / safe lines are code texts with
+  // their own caps and pass unchanged.
+  let outgoingText = input.outputText
+  if (!input.handoff && !input.escalate && !input.needsHuman) {
+    const recent = await prisma.chatMessage.findMany({
+      where: {
+        tenantId: input.row.tenantId,
+        conversationId: input.row.conversationId,
+        direction: 'outbound',
+        sentAt: { gte: new Date(Date.now() - REPEAT_WINDOW_MS) },
+      },
+      select: { content: true, metadata: true },
+      orderBy: { sentAt: 'desc' },
+      take: 30,
+    })
+    const previous = recent
+      .filter((m) => (m.metadata as { automationJobId?: unknown } | null)?.automationJobId !== input.row.id)
+      .map((m) => m.content || '')
+      .filter(Boolean)
+    const repeat = dropRepeatedParts({ text: input.outputText, previous, customerText: input.payload.content })
+    if (repeat.dropped.length && repeat.kept.length) {
+      outgoingText = repeat.kept.join('\n\n')
+    } else if (repeat.dropped.length) {
+      // Everything was already said: the customer is not getting what they need — a person looks, never a re-run.
+      void notifyHandoff({ tenantId: input.row.tenantId, conversationId: input.row.conversationId, socialAccountId: input.row.socialAccountId, kind: 'review', reason: 'review' })
+      if (await safeLineSentRecently(input.row.tenantId, input.row.conversationId, input.row.deliveryKey)) {
+        return persistDecidedTurn({ turnId: input.turnId, outcome: { outcome: 'skip', reason: 'duplicate_reply' }, operationMode: input.agent.operationMode, setMode: false })
+      }
+      outgoingText = input.afterHours?.afterHours ? afterHoursReviewLine(input.afterHours.label, input.afterHours.transparent) : SAFE_LINE.review
+    }
+  }
+
   // Images of the saved reply first (like a person sending the size guide, then the text). Code picks them.
   const platform = input.payload.platform || 'whatsapp'
   const textAlreadyClaimed = await prisma.chatAutomationDelivery
     .findUnique({ where: { jobId_deliveryKey: { jobId: input.row.id, deliveryKey: input.row.deliveryKey } }, select: { id: true } })
     .then(Boolean)
   // A re-run of a job whose text was already attempted sends no new images (they belong to that first answer).
-  if (!textAlreadyClaimed && platform === 'whatsapp' && account.accountId && input.outputText && !input.escalate && !input.handoff && input.replyAssets?.size) {
+  if (!textAlreadyClaimed && platform === 'whatsapp' && account.accountId && input.outputText && !input.escalate && !input.handoff && input.replyAssets?.size && outgoingText === input.outputText) {
     const pick = selectReplyImages({
       shortcutKey: input.replyShortcutKey,
       shortcuts: input.shortcuts ?? [],
@@ -1412,7 +1447,7 @@ async function finishDeliveryOrSuggestInner(input: {
   }
 
   // agents2-format: the reply goes out as up to 3 messages (one per paragraph), in order, each claimed exactly once.
-  const partsPlan = planReplyParts({ text: input.outputText, deliveryKey: input.row.deliveryKey, hash: hashSoftAiDeliveryContent })
+  const partsPlan = planReplyParts({ text: outgoingText, deliveryKey: input.row.deliveryKey, hash: hashSoftAiDeliveryContent })
   const partsDeadlineAt = (input.startedAt ?? Date.now()) + AGENT_PARTS_DEADLINE_MS
   // agents2-pace: "Velocidad de respuesta" — a typing wait before each message; the time since the customer wrote
   // (model included) counts. A re-run of a job whose text was already attempted goes out at once (no new waits).

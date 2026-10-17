@@ -310,6 +310,14 @@ const RESULTS_CLAIM_RES: RegExp[] = [
   /\b(?:baj(?:ar|[áa]s|ar[áa]s)|perder|perd[ée]s|perder[áa]s)\s+(?:de\s+)?(?:peso|kilos|libras)\b|\badelgaz(?:ar|[áa]s|ar[áa]s)\b/iu,
 ]
 const RESULTS_NEGATION_RE = /\b(?:no|ni|sin|nunca|jam[áa]s)\b[^.!?\n]{0,30}$/iu
+/** An instruction not to say something ("nunca prometas…", "no digas que…", "evitá asegurar…"). */
+const DONT_SAY_RE =
+  /(?<![\p{L}])(?:(?:nunca|no|jam[aá]s)\s+(?:le\s+|les\s+)?(?:promet\p{L}*|dig[aá]s|digan|diga|ofrezc\p{L}*|asegur\p{L}*|garantic\p{L}*|afirm\p{L}*|insinu\p{L}*)|evit[aá]\s+(?:prometer|decir|asegurar|garantizar))(?![\p{L}])/iu
+/** The text of the current sentence up to `index`. */
+function sentenceBefore(text: string, index: number): string {
+  const head = text.slice(0, index)
+  return head.slice(Math.max(head.lastIndexOf('.'), head.lastIndexOf('!'), head.lastIndexOf('?'), head.lastIndexOf('\n')) + 1)
+}
 /** Reassurances that contain "no / sin" but do not deny the claim that follows. */
 const NOT_A_NEGATION_RE = /\b(?:sin\s+dudas?|sin\s+problemas?|no\s+te\s+preocup[eé]s|no\s+se\s+preocupen?|no\s+hay\s+problemas?|no\s+hay\s+dudas?)\b/giu
 
@@ -323,7 +331,7 @@ const NOT_A_NEGATION_RE = /\b(?:sin\s+dudas?|sin\s+problemas?|no\s+te\s+preocup[
 const HEALTH_GROUP_RE =
   /(?<![\p{L}])(?:embaraz\p{L}*|lactan\p{L}*|amamant\p{L}*|beb[eé]s?|ni[nñ][oa]s?|menores|medicament\p{L}*|medicinas?|pastillas?|presi[oó]n|diab[eé]t\p{L}*|anticonceptiv\p{L}*|tiroides|marcapasos|coraz[oó]n|card[ií]ac\p{L}*|epilep\p{L}*|c[aá]ncer|quimio\p{L}*)(?![\p{L}])/iu
 const HEALTH_ASSURANCE_RE =
-  /(?<![\p{L}])(?:segur\p{L}*|apt[oa]s?|sin\s+(?:ning[uú]n\s+)?problemas?|no\s+hay\s+problemas?|no\s+pasa\s+nada|tranquil\p{L}*|pod[eé]s|puede[ns]?|pued[eé]s|se\s+puede|recomendad\p{L}*|ideal(?:es)?|efectos?\s+secundarios?|contraindicaci\p{L}*|riesgos?|peligros\p{L}*|da[nñ]in\p{L}*|hace\s+da[nñ]o|hacen\s+da[nñ]o|afecta\p{L}*|interact\p{L}*|compatible\p{L}*|sin\s+miedo|natural(?:es)?)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:segur\p{L}*|apt[oa]s?|sin\s+(?:ning[uú]n\s+)?problemas?|no\s+hay\s+problemas?|no\s+pasa\s+nada|tranquil\p{L}*|pod[eé]s|puede[ns]?|pued[eé]s|se\s+puede|recomendad\p{L}*|ideal(?:es)?|efectos?\s+secundarios?|contraindicaci\p{L}*|riesgos?|peligros\p{L}*|da[nñ]in\p{L}*|hace\s+da[nñ]o|hacen\s+da[nñ]o|afecta\p{L}*|interact\p{L}*|compatible\p{L}*|sin\s+miedo)(?![\p{L}])/iu
 const HEALTH_REFERRAL_RE =
   /(?<![\p{L}])(?:m[eé]dic[oa]s?|doctor\p{L}*|profesional(?:es)?\s+de\s+(?:la\s+)?salud|consult\p{L}*|ginec\p{L}*|pediatra|farmac[eé]utic\p{L}*)(?![\p{L}])/iu
 /** "No es seguro", "no se recomienda", "no lo uses", "evitá": a warning, not an assurance. */
@@ -348,7 +356,7 @@ export function healthAssuranceIn(text: string): string | null {
     if (NO_SIDE_EFFECTS_RE.test(s)) return s.trim()
     if (NO_RISK_RE.test(s) && !MONEY_OR_SHIPPING_RE.test(s)) return s.trim()
     if (!HEALTH_GROUP_RE.test(s) || !HEALTH_ASSURANCE_RE.test(s)) continue
-    if (HEALTH_WARNING_RE.test(s)) continue
+    if (HEALTH_WARNING_RE.test(s) || DONT_SAY_RE.test(s)) continue
     // A question back or an indirect "si…" next to a doctor referral is the safe answer the prompt asks for.
     if (referral && (/\?\s*$/u.test(s) || INDIRECT_RE.test(s))) continue
     return s.trim()
@@ -366,6 +374,8 @@ export function resultsClaimIn(text: string): string | null {
       // Only the same clause counts ("No te preocupes, resultado garantizado" is a promise) and reassurances are not a "no".
       const before = (t.slice(Math.max(0, (m.index ?? 0) - 40), m.index ?? 0).split(/[,:;¡!]|\s(?:pero|y|aunque)\s/i).pop() || '').replace(NOT_A_NEGATION_RE, ' ')
       if (RESULTS_NEGATION_RE.test(before)) continue
+      // "Nunca prometas curar, tratar o bajar de peso": one "don't say" covers the whole list in that sentence.
+      if (DONT_SAY_RE.test(sentenceBefore(t, m.index ?? 0))) continue
       return m[0]
     }
   }

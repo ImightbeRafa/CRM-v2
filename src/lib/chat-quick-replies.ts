@@ -166,7 +166,8 @@ export function slashQueryAt(text: string, caret: number): { query: string; star
   return { query: match[2], start: before.length - match[2].length - 1 }
 }
 
-export function filterQuickReplies(items: ChatQuickReply[], query: string, limit = 8): ChatQuickReply[] {
+/** The "/" menu scrolls: show every match (a business can have dozens of quick replies). */
+export function filterQuickReplies(items: ChatQuickReply[], query: string, limit = 100): ChatQuickReply[] {
   const q = normalizeShortcut(query)
   if (!q) return items.slice(0, limit)
   const starts = items.filter((i) => i.shortcut.startsWith(q))

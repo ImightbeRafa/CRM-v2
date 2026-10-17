@@ -265,8 +265,13 @@ const BUY_RE = new RegExp(
   'iu',
 )
 const NEGATED_BUY_RE = /(^|[^\p{L}])(no|ya no)\s+(lo|la|los)\s+(quiero|compro|pido)/iu
-/** Burst = one reply: a later bubble that takes the purchase back ("mejor no", "olvidalo", "después te escribo"). */
-const RETRACT_BUY_RE = /(^|[^\p{L}])(mejor\s+no|ah\s+no|olv[ií]d(a|e)lo|ya\s+no|despu[eé]s\s+(te|les|le)\s+(escribo|aviso|confirmo)|lo\s+pienso|no\s+gracias|d[eé]jalo)([^\p{L}]|$)/iu
+/**
+ * Burst = one reply: a later bubble that takes the purchase back ("mejor no", "olvidalo", "después te escribo").
+ * Verifier r6: "ya no" / "ah no" only on their own ("ya no lo quiero", "Ah no."), never "ya no tengo dudas" or
+ * "Ah no sabía, ¿y el envío?".
+ */
+const RETRACT_BUY_RE =
+  /(^|[^\p{L}])(mejor\s+no|ya\s+no\s+(lo|la|los|las|me\s+interesa|gracias)|olv[ií]d(a|e)lo|despu[eé]s\s+(te|les|le)\s+(escribo|aviso|confirmo)|lo\s+(voy\s+a\s+)?pienso|no\s+gracias|d[eé]jalo)([^\p{L}]|$)|^\s*ah\s+no\s*[.!]*\s*$/iu
 const RECEIPT_RE = new RegExp(
   `${START}(ya (te |les |lo |la )?(pagu[eé]|deposit[eé]|transfer[ií]|hice el (sinpe|dep[oó]sito)|envi[eé] el sinpe)|comprobante|te (mand[eé]|envi[eé]) (el (sinpe|pago|comprobante)|la plata|el dinero)|(ya )?(est[aá]|qued[oó]) pagad[oa]|^\\s*pagad[oa]\\s*[!.✅👍]*\\s*$)${END}`,
   'iu',

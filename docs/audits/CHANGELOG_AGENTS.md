@@ -35,6 +35,12 @@ Two safety gaps SecureDog found while reviewing PR #100. Both predate it.
     (this worktree has no own node_modules).
   - tsc and lint are clean.
 
+## 2026-10-17 (night) — PR #100 burst fix + quick replies + confirmation false alarm, deployed 5820a6fc
+
+- PR #100 (one reply per burst, photo + text answered) fast-forwarded onto claudio/luna-10 (28f83c72). The "/" menu shows all quick replies (was 8 of 37), and quick-reply photos work on Instagram. A lone "confirmada" in a blocked reply is no longer a payment hand-off without payment context (live 467818).
+- First real Instagram photo send: agent ph_glp1 image to 467818 at 20:59:47Z, accepted by Meta (provider id stored).
+- Checks: tsc 0, lint clean, soft-ai 1011/1011, chat-harden 662/662, security 271/271, backups 21/21.
+
 ## 2026-10-17 (late night) — Burst = one reply + media with text (branch claudio/inbox-burst, NOT deployed)
 
 - Seen live on PatchHouse IG: a customer's 2–3 bubbles within seconds (ad share + "¡Hola! Quiero más información.",
@@ -84,11 +90,18 @@ Two safety gaps SecureDog found while reviewing PR #100. Both predate it.
   - A running job yields only to a newer job whose message was sent after its own (an old message Meta delivered late
     never takes the burst).
   - The waiting ack reads every customer message since the hand-off for an opt-out.
-  - Verifier round 5 PASS WITH NOTES: a later "mejor no" cancels an earlier "lo quiero"; the photo-receipt check
+  - Verifier round 5 + 6 (merge) PASS WITH NOTES: a later "mejor no" cancels an earlier "lo quiero" ("ya no tengo
+    dudas" does not); Probar loads the sale state for an earlier photo like live; the photo-receipt check
     keeps reading the newest message only.
 - Tests: `inbound-burst.test.ts` (30, they run the real `decideBurstTurn`). Source-text asserts updated in
   chat-automation-job, luna10-hard-blocks, agents2-b-sales, agents2-pace and probar-scenarios (same intent, new
   names). test:soft-ai 1011/1011, test:chat-harden 645/645, test:security 271/271, tsc + lint clean.
+
+## 2026-10-17 (late) — Instagram photos (staff + agent), deployed 6a80d638
+
+- Instagram sends were text-only. Photos (JPG/PNG, 5 MB) now upload to the Page (/{page}/message_attachments, platform=instagram) and go out by attachment_id. No public link to our files. The type is `image` first, then `MEDIA_SHARE` only after a clean 4xx. A staff caption is its own text row, sent after the photo is saved. Agent saved-reply images work on Instagram (live, planning and Probar share imageChannel()).
+- Verifier round 1: FAIL on parity (fixed); F2–F5 fixed. SecureDog: OK, 2 Lows fixed (INT-148, DATA-62). Tests: soft-ai 981/981, chat-harden 659/659, security 271/271.
+- NOT verified against live Meta (field names, the image vs MEDIA_SHARE type, attachment id lifetime). First real send is the test.
 
 ## 2026-10-17 (night) — PatchHouse Instagram + WhatsApp LIVE on gpt-6-luna
 

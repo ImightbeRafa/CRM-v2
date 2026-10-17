@@ -303,6 +303,12 @@ describe('burst = one reply · hand-offs and questions in any bubble', () => {
     assert.equal(deriveSalesState({ history, inboundText: '¿Hacen envíos a Limón?', ctx }).buyCue, true)
     // Verifier r5 #1: a later retraction cancels it; a single message keeps today's rule.
     assert.equal(deriveSalesState({ history, inboundText: 'Ah no, mejor no', ctx }).buyCue, false)
+    assert.equal(deriveSalesState({ history, inboundText: 'Ah no.', ctx }).buyCue, false)
+    assert.equal(deriveSalesState({ history, inboundText: 'olvidalo', ctx }).buyCue, false)
+    // Verifier r6 #2: these do not take the purchase back.
+    for (const t of ['ya no tengo dudas', 'Ah no sabía, ¿y el envío?', '¿Hacen envíos a Limón?']) {
+      assert.equal(deriveSalesState({ history, inboundText: t, ctx }).buyCue, true, t)
+    }
     assert.equal(deriveSalesState({ history: history.slice(0, 1), inboundText: 'Lo quiero, ya no tengo dudas', ctx }).buyCue, true)
     assert.equal(deriveSalesState({ history: history.slice(0, 1), inboundText: 'no lo quiero', ctx }).buyCue, false)
     // Verifier r5 #2: the receipt check reads the newest message only.
@@ -405,6 +411,10 @@ describe('burst = one reply · wiring (source)', () => {
     assert.match(live, /customerText: burstCustomerText\(history, burst\.inboundText\)/)
     assert.match(probar, /history,\s+inboundText: probarBurst\.inboundText,\s+clientName/)
     assert.match(probar, /customerText: customerTextSinceLastAnswer\(input\.history \?\? \[\], probarBurst\.inboundText\)/)
+    // Verifier r6 #1: Probar loads the sale's state for a photo earlier in the burst too (like live).
+    assert.match(probar, /isMediaLikeMessageType\(input\.messageType\) \|\| probarBurstEarlier\.some\(\(m\) => isMediaLikeMessageType\(m\.messageType\)\)/)
+    // Probar keeps each history message's type (a photo earlier in the burst is planned like live).
+    assert.match(probar, /\.\.\.\(message\.messageType \? \{ messageType: message\.messageType \} : \{\}\),/)
     // Probar shows the review live would raise (display only).
     assert.match(probar, /handoff: handoff \?\? probarBurstReview,/)
   })

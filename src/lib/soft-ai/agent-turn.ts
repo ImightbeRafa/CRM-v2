@@ -391,6 +391,12 @@ async function sendMetaText(opts: {
   }
 }
 
+/** Channels where the agent's saved-reply images really go out (live, planning and Probar use the same rule). */
+export function imageChannel(platform: string | null | undefined): boolean {
+  const p = platform || 'whatsapp'
+  return p === 'whatsapp' || p === 'instagram'
+}
+
 async function channelHasActivationRecord(tenantId: string, socialAccountId: string): Promise<boolean> {
   const flag = await prisma.tenantFeatureFlag.findFirst({
     where: { tenantId, scope: tenantId, key: CHAT_AGENT_LAYER_V1_FLAG },
@@ -954,9 +960,9 @@ export async function executeAgentLayerTurn(
     : null
   const shortcuts = await listRuntimeShortcuts(row.tenantId, resolved.agent.id)
   const replyAssets = await loadReplyAssets(row.tenantId, resolved.agent.id)
-  // Only replies whose image would really go out are marked "(va con imagen)" (WhatsApp, not yet sent in this chat).
+  // Only replies whose image would really go out are marked "(va con imagen)" (WhatsApp / Instagram, not yet sent in this chat).
   const liveImageReplyIds =
-    (payload.platform || 'whatsapp') === 'whatsapp' && replyAssets.size
+    imageChannel(payload.platform) && replyAssets.size
       ? sendableImageReplyIds(replyAssets, await loadSentAgentImageShas(row.tenantId, row.conversationId))
       : new Set<string>()
   // "Que costo tiene" + photo: the text is answered, a person still looks at the photo (a receipt keeps its path).
@@ -1627,7 +1633,7 @@ async function finishDeliveryOrSuggestInner(input: {
     .findUnique({ where: { jobId_deliveryKey: { jobId: input.row.id, deliveryKey: input.row.deliveryKey } }, select: { id: true } })
     .then(Boolean)
   // A re-run of a job whose text was already attempted sends no new images (they belong to that first answer).
-  if (!textAlreadyClaimed && platform === 'whatsapp' && account.accountId && input.outputText && !input.escalate && !input.handoff && input.replyAssets?.size && !repeatAllDropped) {
+  if (!textAlreadyClaimed && ((platform === 'whatsapp' && account.accountId) || platform === 'instagram') && input.outputText && !input.escalate && !input.handoff && input.replyAssets?.size && !repeatAllDropped) {
     const pick = selectReplyImages({
       shortcutKey: input.replyShortcutKey,
       shortcuts: input.shortcuts ?? [],
@@ -1647,7 +1653,9 @@ async function finishDeliveryOrSuggestInner(input: {
             peerId: input.row.peerId,
             messageId: input.row.messageId,
           },
-          phoneNumberId: account.accountId,
+          platform: platform === 'instagram' ? 'instagram' : 'whatsapp',
+          phoneNumberId: account.accountId || '',
+          pageId: account.pageId || meta.pageId,
           accessToken,
           agent: { id: input.agent.id, version: input.agent.version, name: input.agent.name, emoji: input.agent.emoji },
           turnId: input.turnId,
@@ -1945,7 +1953,7 @@ async function runAgentTestTurnInner(input: {
   actorUserId: string
   testSessionId: string
   messageType?: 'text' | 'image' | 'audio' | 'document' | 'video'
-  history?: Array<{ direction: 'inbound' | 'outbound'; content: string; sentAt: string }>
+  history?: Array<{ direction: 'inbound' | 'outbound'; content: string; sentAt: string; messageType?: string | null }>
   windowOpen?: boolean
   customerName?: string
   conversationAiMode?: SoftAiAgentMode
@@ -2038,6 +2046,8 @@ async function runAgentTestTurnInner(input: {
       direction: message.direction,
       content: message.content,
       sentAt: message.sentAt,
+      // Burst = one reply: a photo / audio earlier in the burst is planned like live (silent trial, burst scripts).
+      ...(message.messageType ? { messageType: message.messageType } : {}),
     })),
   )
   const flag = await prisma.tenantFeatureFlag.findFirst({
@@ -2102,7 +2112,13 @@ async function runAgentTestTurnInner(input: {
     ? await loadHoursSetup(input.tenantId, runtimeAgent.id).then((h) => afterHoursState(h.hours, new Date(), { simulate: true, aiDisclosure: h.aiDisclosure }))
     : IN_HOURS
   const probarInventoryIds = await loadMappedInventoryIds(input.tenantId, runtimeAgent.id)
-  const probarMediaSalesContext = isMediaLikeMessageType(input.messageType)
+  // Burst = one reply: the same burst planning as live (history messages keep their type when the caller sends it —
+  // silent trial, burst scripts; the Probar UI sends text only). The trigger is sent "now".
+  const probarTrigger = { content: input.inboundText, messageType: input.messageType || 'text', sentAt: new Date() }
+  const probarBurstEarlier = unansweredBurst(history, probarTrigger)
+  // Like live: a photo / file / audio here or earlier in the burst needs the sale's state before the decision.
+  const probarMediaSalesContext =
+    isMediaLikeMessageType(input.messageType) || probarBurstEarlier.some((m) => isMediaLikeMessageType(m.messageType))
     ? await loadAgentSalesContext({
         tenantId: input.tenantId,
         agentId: runtimeAgent.id,
@@ -2110,11 +2126,7 @@ async function runAgentTestTurnInner(input: {
         brandFacts: runtimeAgent.brandFacts,
       })
     : null
-  const probarImageReplyIds =
-    (account.platform || 'whatsapp') === 'whatsapp' ? sendableImageReplyIds(replyAssets, input.sentImageIds) : new Set<string>()
-  // Burst = one reply: the same burst planning as live (Probar history has text bubbles only; sent "now").
-  const probarTrigger = { content: input.inboundText, messageType: input.messageType || 'text', sentAt: new Date() }
-  const probarBurstEarlier = unansweredBurst(history, probarTrigger)
+  const probarImageReplyIds = imageChannel(account.platform) ? sendableImageReplyIds(replyAssets, input.sentImageIds) : new Set<string>()
   const probarBurst = planBurstInbound({
     trigger: probarTrigger,
     earlier: probarBurstEarlier,
@@ -2281,8 +2293,8 @@ async function runAgentTestTurnInner(input: {
   decision.decisionTrace.wouldSend = wouldSend
   // Images of the saved reply it used (code-picked, never twice in the same chat; none on a hand-off).
   const images =
-    // Same as live: WhatsApp only, never on a hand-off / needs-a-person / fallback answer.
-    text && !escalate && !notBound && !needsHuman && !fallbackUsed && (account.platform || 'whatsapp') === 'whatsapp'
+    // Same as live: WhatsApp / Instagram, never on a hand-off / needs-a-person / fallback answer.
+    text && !escalate && !notBound && !needsHuman && !fallbackUsed && imageChannel(account.platform)
       ? selectReplyImages({ shortcutKey, shortcuts, assetsByShortcut: replyAssets, alreadySent: input.sentImageIds }).images
       : []
   const toolTrace = redactAgentTrace(

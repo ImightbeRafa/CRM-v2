@@ -763,3 +763,17 @@ describe("SecureDog round 8 release gate (luna-10): someone else's paying act / 
     assert.deepEqual(bad, [])
   })
 })
+
+describe("verifier round 12 gate (luna-10): the paying-act guard needs a person before the verb; health disclosures pass", () => {
+  it("method answers / envio / page questions reach the agent; health disclosures pass; harm questions still held", async () => {
+    const { classifyPaymentText } = await import("../soft-ai/payment-classifier")
+    const agent = ['Sí, pago contra entrega', 'Dale, pago al recibir', 'Bueno, pago por sinpe, ¿a qué número?', 'Hola, pago contra entrega', 'Va, pago contra entrega', 'Pura vida, pago contra entrega', 'Quiero envio a Heredia, ¿aceptan sinpe?', '¿Cuánto sale envio a Cartago? ¿Aceptan tarjeta?', '¿En la página pago con tarjeta?', 'Quiero el de dormir y la otra caja de energía, ¿cómo pago?', '¿Aceptan sinpe? Lo demás te lo confirmo luego']
+    const bad: string[] = []
+    for (const t of agent) { const c = classifyPaymentText(t, { awaitingPaymentMethod: /^(Sí|Dale|Bueno|Hola|Va|Pura)/.test(t) }); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    const v = (text: string, customerText: string) => (validateAgentOutput({ text, citedToolNames: [], customerText } as any).reasons || []).includes('results_claim')
+    for (const [r, c] of [['¡Sí! El de dormir es el indicado para descansar 😊', 'Duermo muy mal, ¿el de dormir sirve?'], ['¡Sí! El de energía te acompaña durante el día', 'Ando con la energía muy mal, ¿el de energía sirve?'], ['Sí, en piel sensible podría causar enrojecimiento; si pasa, retiralo y consultá al médico.', '¿Tiene efectos secundarios?']] as const) if (v(r, c)) bad.push('FALSE+ (ctx) ' + r)
+    for (const [r, c] of [['¡Sí! 😊', '¿Es seguro en el embarazo?'], ['Sí, podés usarlo sin problema', '¿Le hace daño al bebé?'], ['No, para nada', '¿Le hace mal al bebé?']] as const) if (!v(r, c)) bad.push('MISSED (ctx) ' + r + ' ⇐ ' + c)
+    
+    assert.deepEqual(bad, [])
+  })
+})

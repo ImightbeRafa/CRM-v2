@@ -270,7 +270,9 @@ const SENT_O_RE = /(?<![\p{L}])(?<!(?:te|le|les|se\s+l[oa]s?|yo)\s+)(?:mand|pas|
 const DID_RE = /(?<![\p{L}])(?:puso|pusieron|pusimos|dio|di[oó]|hizo|cubri[oó]|liquid[oó])\s+(?:(?:la|el|los|las|lo|una|un|su|mi)\s+)?(?:plata|platica|dinero|sinpe|mitad|resto|pago|adelanto|parte|transferencia|dep[oó]sito|todo|otra|\d)/iu
 const FRAME_BEFORE_RE = /(?:^|[\s¿¡,.!?])(?:yo|te|le|les|lo|la|los|las|aceptan|reciben|hacen|tienen|hay|de|con|por|para|sin|en|a|otro|otra|mismo|cualquier|cu[aá]l|cu[aá]nto|ning[uú]n|alg[uú]n|nuestro|tus|sus|mis|c[oó]mo|cu[aá]ndo|d[oó]nde|qu[eé]|si|el|del|al|un|mi|tu|su|este|ese|primer|cada|y|o|mejor|hoy|ma[nñ]ana|ahorita|ahora|despu[eé]s|luego|tambi[eé]n|solo|s[oó]lo|entonces|bueno|ok|dale|listo)\s*$/iu
 /** A balance only the store knows — "el resto", "la mitad", "lo que falta", "mi parte", "el saldo". */
-const PARTIAL_STATE_RE = /(?<![\p{L}])(?:mitad|resto|saldo|adelanto|lo\s+que\s+(?:falta|queda|resta)|lo\s+dem[aá]s|lo\s+otro|la\s+otra(?:\s+parte)?|(?:mi|su|tu)\s+parte|faltante|debiendo|cubiert[oa]|saldad[oa])(?![\p{L}])/iu
+const PARTIAL_STATE_RE = /(?<![\p{L}])(?:mitad|resto|saldo|adelanto|lo\s+que\s+(?:falta|queda|resta)|la\s+otra\s+(?:parte|mitad)|(?:mi|su|tu)\s+parte|faltante|debiendo|cubiert[oa]|saldad[oa])(?![\p{L}])/iu
+const PERSON_WORD_RE = /^(?:esposo|esposa|marido|se[nñ]or|se[nñ]ora|do[nñ]a|don|muchach[oa]|cu[nñ]ad[oa]|vecin[oa]|pareja|ex|novi[oa]|suegr[oa]|abuel[oa]|amig[oa]|prim[oa]|t[ií][oa]|sobrin[oa]|niet[oa]|hij[oa]|herman[oa]|mam[aá]|pap[aá]|mami|papi|jefe|jefa|compa\p{L}*|él|ella|ellos|ellas|alguien|chamac[oa]|carajill[oa])$/iu
+const NOT_A_NAME_RE = /^(?:Sinpe|Tarjeta|Contra|Link|Whats\p{L}*|Bac|Bcr|Bn|Correos|Gracias|Hola|Ok|Okey|Sí|Si|Bueno|Dale|Perfecto|Listo|Yo)$/u
 export function hasFreePayAct(value: string): boolean {
   const v = (value || '').normalize('NFKC')
   if (SENT_O_RE.test(v) || DID_RE.test(v)) return true
@@ -278,7 +280,16 @@ export function hasFreePayAct(value: string): boolean {
     const idx = m.index ?? 0
     const head = v.slice(0, idx)
     const prev = head.slice(Math.max(0, head.length - 24))
-    if (/(?:^|[.!?¿¡\n])\s*$/u.test(head)) continue
+    if (/(?:^|[.!?¿¡\n,;:])\s*$/u.test(head)) continue
+    if (!/ó$/u.test(m[0])) {
+      const subj = prev.replace(/(?:\s+(?:ya|se|le|les|te|lo|la|los|las|me))+\s*$/iu, ' ')
+      const word = (subj.match(/(\p{L}+)\s*$/u) || [])[1] || ''
+      const sentenceStart = /(?:^|[.!?¿¡\n])\s*\p{L}+\s*$/u.test(head.slice(0, head.length - (prev.length - subj.length)))
+      const named = /^\p{Lu}\p{Ll}+$/u.test(word) && !sentenceStart && !NOT_A_NAME_RE.test(word)
+      if (named || PERSON_WORD_RE.test(word)) return true
+      if (/(?:^|\s)(?:lo|la|los|las)\s*$/iu.test(prev) && /^\s+(?:\p{Lu}\p{Ll}+|(?:mi|su|tu|el|la)\s+\p{L}{3,})(?![\p{L}])/u.test(v.slice(idx + m[0].length))) return true
+      continue
+    }
     if (FRAME_BEFORE_RE.test(prev)) {
       const after = v.slice(idx + m[0].length)
       if (/(?:^|\s)(?:lo|la|los|las)\s*$/iu.test(prev) && /^\s+(?:\p{Lu}\p{Ll}+|(?:mi|su|tu|el|la)\s+\p{L}{3,})(?![\p{L}])/u.test(after)) return true

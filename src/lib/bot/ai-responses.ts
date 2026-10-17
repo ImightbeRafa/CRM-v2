@@ -3,7 +3,8 @@
  *
  * Chat Completions is legacy. Local conversation-memory stays the source of
  * truth (pending confirmations, sanitized history). Every request uses
- * store:false so the provider does not retain WhatsApp/Telegram PII.
+ * store:false: the provider does not store the conversation for later retrieval (it may still keep abuse-monitoring
+ * logs for up to 30 days, as the AI terms say).
  * Tool follow-ups replay in-memory output items plus function_call_output;
  * we never send previous_response_id (that requires store:true).
  */

@@ -7,6 +7,10 @@
  * Re-pinned 2026-10-17 (luna-10) with Rafael's explicit GO: "Yes, move the staff bot (Telegram/WhatsApp) to Luna too,
  * test it separately, and remove XAI completely." xAI client -> OpenAI gpt-6-luna (OPENAI_API_KEY), xai-responses.ts ->
  * ai-responses.ts, grok-first-order.test.ts -> staff-bot-first-order.test.ts, health check key.
+ *
+ * Re-pinned 2026-10-17 (luna-10) with Rafael's explicit GO: "Yes, move the staff bot (Telegram/WhatsApp) to Luna too,
+ * test it separately, and remove XAI completely." xAI client -> OpenAI gpt-6-luna (OPENAI_API_KEY), xai-responses.ts ->
+ * ai-responses.ts, grok-first-order.test.ts -> staff-bot-first-order.test.ts, health check key.
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
@@ -26,7 +30,7 @@ const PINNED: Record<string, string> = {
   "src/lib/bot/__tests__/staff-bot-first-order.test.ts": "85d481add63088e5",
   "src/lib/bot/access-code.ts": "ebbb7114e348470e",
   "src/lib/bot/ai-agent.ts": "7d10bda564b1ee40",
-  "src/lib/bot/ai-responses.ts": "7dc10a635b35efcf",
+  "src/lib/bot/ai-responses.ts": "777af77a57b39c57",
   "src/lib/bot/ai-tools.ts": "ce6b140fdd176f2a",
   "src/lib/bot/bot-session.ts": "c6c0a852d2407fd9",
   "src/lib/bot/conversation-memory.ts": "6cc9b9178fe08be1",
@@ -84,5 +88,12 @@ describe('staff bot boundary', () => {
       const src = readFileSync(f, 'utf8')
       assert.doesNotMatch(src, /@\/lib\/bot\/|@\/lib\/soft-ai\//, f)
     }
+  })
+})
+
+describe('staff bot probe (luna-10, SecureDog)', () => {
+  it('no route or page imports the raw-provider probe — scripts only', () => {
+    const hits = walk('src/app').filter((f) => /\.(ts|tsx)$/.test(f) && readFileSync(f, 'utf8').includes('__staffBotAiProbe'))
+    assert.deepEqual(hits, [])
   })
 })

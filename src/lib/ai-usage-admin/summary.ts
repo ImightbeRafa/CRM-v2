@@ -23,6 +23,7 @@ export const AI_USAGE_FEATURE_LABELS: Record<string, string> = {
   vision: 'Visión (imágenes)',
   transcription: 'Audio (transcripción)',
   customer_paste: 'Pegar datos de cliente',
+  payment_check: 'Revisión de pagos (¿ya pagó?)',
   staff_bot: 'Bot del staff (texto)',
   staff_bot_voice: 'Bot del staff (voz)',
   template: 'Plantillas WhatsApp',

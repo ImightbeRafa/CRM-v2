@@ -90,7 +90,8 @@ import { dropRepeatedParts, REPEAT_WINDOW_MS } from '@/lib/soft-ai/repeat-guard'
 import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt } from '@/lib/soft-ai/sales-state'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
-import { decideInbound } from '@/lib/soft-ai/inbound-decision'
+import { decideInbound, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
+import { paymentCheckGate, paymentCheckMode, runPaymentClaimCheck } from '@/lib/soft-ai/llm/payment-claim-check'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
 import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
 import { selectReplyImages, sendableImageReplyIds, type ReplyImage } from '@/lib/soft-ai/reply-images'
@@ -213,6 +214,45 @@ async function safeLineSentRecently(tenantId: string, conversationId: string, de
 
 function plannedMarkers(base: { needsHuman: boolean; fallbackUsed: boolean; escalate: boolean }, handoff: TurnHandoff | null): OutcomeMarkers {
   return { ...base, planned: true, handoffKind: handoff?.kind ?? null, handoffReason: handoff?.reason ?? null }
+}
+
+type DecideInboundInput = Parameters<typeof decideInbound>[0]
+
+/**
+ * luna-10 D2: the "¿ya pagó?" model check behind the regex gates, shared by the live turn and Probar / exam (parity).
+ * Runs only on a text turn the regex did not hand off, when the message or the chat is about payment; it finishes
+ * before anything is sent. 'shadow' records the verdict only; 'enforce' turns a claim / error / timeout into the same
+ * payment hand-off as a regex claim. It can only add a hand-off.
+ */
+async function withPaymentClaimCheck(
+  input: DecideInboundInput,
+  decision: InboundDecision,
+  ctx: { tenantId: string; agentId: string; conversationId: string | null; history: Array<{ direction: string; content?: string | null }> },
+): Promise<InboundDecision> {
+  const mode = paymentCheckMode()
+  if (mode === 'off' || decision.escalate || decision.handoff) return decision
+  if (input.messageType && input.messageType !== 'text') return decision
+  if (!paymentCheckGate(input.inboundText, ctx.history)) return decision
+  const result = await runPaymentClaimCheck({
+    inboundText: input.inboundText,
+    history: ctx.history,
+    tenantId: ctx.tenantId,
+    agentId: ctx.agentId,
+    conversationId: ctx.conversationId,
+  })
+  const step = (d: InboundDecision, outcome: string) =>
+    d.decisionTrace.steps.push({ step: 'payment_llm_check', outcome, reason: `${result.kind ?? 'none'} · ${result.ms} ms` })
+  if (result.verdict === 'clear') {
+    step(decision, 'clear')
+    return decision
+  }
+  if (mode === 'shadow') {
+    step(decision, `shadow_${result.verdict}`)
+    return decision
+  }
+  const forced = decideInbound({ ...input, forcePaymentRisk: true })
+  step(forced, result.verdict)
+  return forced
 }
 
 async function loadHistory(
@@ -843,7 +883,7 @@ export async function executeAgentLayerTurn(
     (payload.platform || 'whatsapp') === 'whatsapp' && replyAssets.size
       ? sendableImageReplyIds(replyAssets, await loadSentAgentImageShas(row.tenantId, row.conversationId))
       : new Set<string>()
-  const decision = decideInbound({
+  const decisionInput: DecideInboundInput = {
     inboundText: payload.content || '',
     messageType: trigger.messageType,
     brandFacts: resolved.agent.brandFacts,
@@ -853,6 +893,12 @@ export async function executeAgentLayerTurn(
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !liveImageReplyIds.has(id))),
     awaitingReceipt: mediaAwaitingReceipt(trigger.messageType, history, mediaSalesContext),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
+  }
+  const decision = await withPaymentClaimCheck(decisionInput, decideInbound(decisionInput), {
+    tenantId: row.tenantId,
+    agentId: resolved.agent.id,
+    conversationId: row.conversationId,
+    history,
   })
   decision.decisionTrace.historyCount = history.length
 
@@ -1969,7 +2015,7 @@ async function runAgentTestTurnInner(input: {
     : null
   const probarImageReplyIds =
     (account.platform || 'whatsapp') === 'whatsapp' ? sendableImageReplyIds(replyAssets, input.sentImageIds) : new Set<string>()
-  const decision = decideInbound({
+  const probarDecisionInput: DecideInboundInput = {
     inboundText: input.inboundText,
     messageType: input.messageType || 'text',
     brandFacts: runtimeAgent.brandFacts,
@@ -1978,6 +2024,13 @@ async function runAgentTestTurnInner(input: {
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !probarImageReplyIds.has(id))),
     awaitingReceipt: mediaAwaitingReceipt(input.messageType || 'text', history, probarMediaSalesContext),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
+  }
+  // Parity: Probar / exam run the same "¿ya pagó?" check as the live turn.
+  const decision = await withPaymentClaimCheck(probarDecisionInput, decideInbound(probarDecisionInput), {
+    tenantId: input.tenantId,
+    agentId: runtimeAgent.id,
+    conversationId: null,
+    history,
   })
   decision.decisionTrace.historyCount = history.length
   decision.decisionTrace.blockedBy = blockedBy

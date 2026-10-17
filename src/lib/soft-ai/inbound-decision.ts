@@ -143,12 +143,18 @@ export function decideInbound(input: {
    * cue-free reply naming a method is the customer's choice, answered with that method's details only.
    */
   awaitingPaymentMethod?: boolean
+  /**
+   * luna-10 D2: the "¿ya pagó?" model check said claim (or failed) in enforce mode — the message is treated exactly like
+   * a regex payment claim (same hand-off, same notification). Can only force toward a person.
+   */
+  forcePaymentRisk?: true
 }): InboundDecision {
-  const paymentClass = classifyPaymentText(input.inboundText, {
+  const classified = classifyPaymentText(input.inboundText, {
     awaitingPaymentMethod: input.awaitingPaymentMethod === true && (!input.messageType || input.messageType === 'text'),
   })
+  const paymentClass: PaymentClassification = input.forcePaymentRisk === true ? 'payment_proof_or_risk' : classified
   const steps: DecisionStep[] = [
-    { step: 'payment_class', outcome: paymentClass },
+    { step: 'payment_class', outcome: paymentClass, ...(input.forcePaymentRisk === true ? { reason: `payment_llm_check (regex: ${classified})` } : {}) },
   ]
   const safety = routeInboundSafety({
     inboundText: input.inboundText,

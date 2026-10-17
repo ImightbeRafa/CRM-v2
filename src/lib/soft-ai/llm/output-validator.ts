@@ -308,7 +308,11 @@ const RESULTS_CLAIM_RES: RegExp[] = [
   /\b(?:cura|curan|curar|sana|sanan)\s+(?:la|el|tu|tus|los|las|de)\b/iu,
   // SecureDog INT-138: safety assurances are a promise too ("es seguro en el embarazo", "no tiene efectos secundarios").
   /\b(?:es|son)\s+(?:100\s*%\s+|totalmente\s+|completamente\s+|muy\s+)?segur[oa]s?\s+(?:en|durante|para)\s+(?:el\s+|la\s+|los\s+|las\s+)?(?:embarazo|embarazadas?|lactancia|ni[nñ]\p{L}*|menores|beb[eé]s?|ancian\p{L}*|adultos\s+mayores)/iu,
-  /\bno\s+(?:tiene|tienen|causa|causan|da|dan)\s+(?:ning[uú]n\s+|ningunos?\s+)?(?:efectos?\s+secundarios?|contraindicaci\p{L}+|riesgos?)/iu,
+  /\bno\s+(?:tiene|tienen|causa|causan|da|dan)\s+(?:ning[uú]n\s+|ningunos?\s+)?(?:efectos?\s+secundarios?|contraindicaci\p{L}+)/iu,
+  // Verifier round 5: "riesgo" only in its health shapes ("no causa ningún riesgo", "sin riesgo para el embarazo") —
+  // "el pago con tarjeta no tiene ningún riesgo" is not a health promise.
+  /\bno\s+(?:causa|causan|representa|representan)\s+(?:ning[uú]n\s+)?riesgos?/iu,
+  /\b(?:sin|ning[uú]n|no\s+hay)\s+riesgos?\s+(?:para|en|durante)\s+(?:la\s+salud|el\s+embarazo|la\s+lactancia|ni[nñ]\p{L}*|beb[eé]s?|el\s+coraz[oó]n|su\s+salud|tu\s+salud)/iu,
   /\bpod[eé]s\s+usarl[oa]s?\s+(?:sin\s+problema\s+)?(?:en|durante)\s+(?:el\s+|la\s+)?(?:embarazo|lactancia)/iu,
   /\b(?:baj(?:ar|[áa]s|ar[áa]s)|perder|perd[ée]s|perder[áa]s)\s+(?:de\s+)?(?:peso|kilos|libras)\b|\badelgaz(?:ar|[áa]s|ar[áa]s)\b/iu,
 ]

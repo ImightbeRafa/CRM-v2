@@ -93,14 +93,18 @@ const PAYMENT_QUESTION_RE = new RegExp(
  * "de vuelta", "lo que sobró", "ya lo usé"). Checked after every claim check; anything doubtful stays with a person.
  */
 const FUTURE_SINPE_QUESTION_RE =
-  /(?<![\p{L}])(puedo|se\s+puede|podr[ií]a)\s+hacer(les|te|le)\s+(un|una)\s+(sinpe|transferencia|dep[oó]sito)(?![\p{L}])/iu
+  /(?<![\p{L}])(puedo|se\s+puede|podr[ií]a)\s+hacer(les|te|le)\s+(un|una|el|la)\s+(sinpe|transferencia|dep[oó]sito)(?![\p{L}])/iu
+// Verifier round 5: every common way to ASK for the link ("Me envías el link de pago", "pasame el link", "¿me podés
+// pasar…?", "quiero el link de pago", a bare "¿link de pago?") — the guard below still sends any claim to a person.
 const PAYMENT_LINK_QUESTION_RE =
-  /(?<![\p{L}])(tienen|ten[eé]s|tienes|hay|me\s+(pas[aá]s|mand[aá]s|das|regal[aá]s))\s+(un\s+|el\s+)?(link|enlace)\s+(de|para)\s+(pago|pagar)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:(?:tienen|ten[eé]s|tienes|hay|quiero|quisiera|necesito|me\s+(?:pas[aá]s|pasa|pasan|mand[aá]s|manda|mandan|env[ií]as|env[ií]a|env[ií]an|das|da|dan|regal[aá]s|regala|compart[ií]s|comparte|comparten|pod[eé]s\s+(?:pasar|enviar|mandar|compartir)|puede\s+(?:pasar|enviar|mandar|compartir)|pueden\s+(?:pasar|enviar|mandar|compartir))|p[aá]same|p[aá]seme|m[aá]ndame|m[aá]ndeme|env[ií]ame|env[ií]eme|comp[aá]rteme)\s+(?:un\s+|el\s+)?|^\s*¿?\s*(?:y\s+)?(?:el\s+)?)(?:link|enlace)\s+(?:de|para)\s+(?:pago|pagar)(?![\p{L}])/iu
 const NOT_A_PLAIN_QUESTION_RE =
   /(?<![\p{L}])(ya|hab[ií]a|acabo\s+de|realic[eé]|us[eé]|complet[eé]|envi[eé]|mand[eé]|hice|pagu[eé]|transfer[ií]|deposit[eé]|\p{L}+(amos|imos)|me|mi|mis|vuelta|devol\p{L}*|devuelv\p{L}*|sobr\p{L}*|diferencia|rebot\p{L}*|funciona|fall\p{L}*|error)(?![\p{L}])/iu
 
+// Verifier round 5: past-tense claim verbs only ("pagamos / usamos / hicimos"), not every -amos ("compramos en
+// familia", "queremos"); "ya tengo todo listo / ya quiero" is not a claim.
 const LINK_NOT_PLAIN_RE =
-  /(?<![\p{L}])(ya|hab[ií]a|acabo\s+de|realic[eé]|us[eé]|complet[eé]|envi[eé]|mand[eé]|hice|pagu[eé]|transfer[ií]|deposit[eé]|\p{L}+(amos|imos)|vuelta|devol\p{L}*|devuelv\p{L}*|sobr\p{L}*|diferencia|rebot\p{L}*|funciona|fall\p{L}*|error)(?![\p{L}])/iu
+  /(?<![\p{L}])(ya(?!\s+(?:tengo|tenemos|quiero|queremos|estoy|estamos|decid\p{L}*|eleg\p{L}*))|hab[ií]a|acabo\s+de|realic[eé]|us[eé]|complet[eé]|envi[eé]|mand[eé]|hice|pagu[eé]|transfer[ií]|deposit[eé]|(?:pag|us|complet|mand|envi|transfer|deposit|realiz)amos|hicimos|transferimos|vuelta|devol\p{L}*|devuelv\p{L}*|sobr\p{L}*|diferencia|rebot\p{L}*|funciona|fall\p{L}*|error)(?![\p{L}])/iu
 
 export function isPlainFutureSinpeQuestion(value: string): boolean {
   if (!FUTURE_SINPE_QUESTION_RE.test(value)) return false

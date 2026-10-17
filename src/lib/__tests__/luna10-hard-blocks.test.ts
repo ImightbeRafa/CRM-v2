@@ -368,3 +368,25 @@ describe('SecureDog round 3 (luna-10): INT-136..139', () => {
     assert.match(fs.readFileSync('src/lib/soft-ai/llm/tool-definitions.ts', 'utf8'), /por ejemplo: dolor de pecho/)
   })
 })
+
+describe('verifier round 5 (luna-10): link questions, chosen method, safety wording', () => {
+  it('every way to ask for the link reaches the agent; claims next to it still go to a person', async () => {
+    const { classifyPaymentText } = await import('../soft-ai/payment-classifier')
+    const bad: string[] = []
+    for (const t of ['Quiero comprar los 2 . Me envías el link de pago', 'pasame el link de pago', 'Link de pago?', '¿Ya puedo hacerles el sinpe?', '¿tienen link de pago? Compramos en familia', 'me podés pasar el link de pago?', 'Ya tengo todo listo, mandame el link de pago', 'quiero el link de pago']) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`question went to person: "${t}"`) }
+    for (const t of ['Me pasás el link de pago? ya lo pagamos', 'pasame el link de pago, ya transferimos', 'Me envías el link de pago? me cobró doble', '¿Puedo hacerles el sinpe? ya lo hice', 'Tienes link de pago? ya lo usé', '¿Puedo hacerte un sinpe? lo mandamos hoy']) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`must stay person: "${t}" → ${c}`) }
+    assert.deepEqual(bad, [])
+  })
+  it('[[DATOS_PAGO]] after a chosen method gives only that method', async () => {
+    const { fillPaymentToken } = await import('../soft-ai/payment-guard')
+    const facts: any = { schemaVersion: 1, payment: { shareWithCustomers: true, methods: ['sinpe', 'transferencia', 'tarjeta', 'contra_entrega'], sinpe: { number: '62019914', holderName: 'Rafael García' }, transfer: { bank: 'BAC', iban: 'CR12010200009506464063', holderName: 'X' } } }
+    const r = fillPaymentToken('[[DATOS_PAGO]]', facts, { customerText: 'por sinpe', chosenMethod: 'sinpe' })
+    assert.match(r.text, /6201/)
+    assert.doesNotMatch(r.text, /CR12/)
+    assert.deepEqual(r.methods, ['sinpe'])
+  })
+  it('"no tiene riesgo" is not a health assurance; "no tiene efectos secundarios" still is', () => {
+    assert.equal(resultsClaimIn('El pago con tarjeta no tiene ningún riesgo'), null)
+    assert.ok(resultsClaimIn('No tiene efectos secundarios'))
+  })
+})

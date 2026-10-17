@@ -385,8 +385,10 @@ describe('verifier round 5 (luna-10): link questions, chosen method, safety word
   it('every way to ask for the link reaches the agent; claims next to it still go to a person', async () => {
     const { classifyPaymentText } = await import('../soft-ai/payment-classifier')
     const bad: string[] = []
-    for (const t of ['Quiero comprar los 2 . Me envías el link de pago', 'pasame el link de pago', 'Link de pago?', '¿Ya puedo hacerles el sinpe?', '¿tienen link de pago? Compramos en familia', 'me podés pasar el link de pago?', 'Ya tengo todo listo, mandame el link de pago', 'quiero el link de pago']) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`question went to person: "${t}"`) }
-    for (const t of ['Me pasás el link de pago? ya lo pagamos', 'pasame el link de pago, ya transferimos', 'Me envías el link de pago? me cobró doble', '¿Puedo hacerles el sinpe? ya lo hice', 'Tienes link de pago? ya lo usé', '¿Puedo hacerte un sinpe? lo mandamos hoy']) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`must stay person: "${t}" → ${c}`) }
+    for (const t of ['Quiero comprar los 2 . Me envías el link de pago', 'pasame el link de pago', 'Link de pago?', '¿Ya puedo hacerles el sinpe?', 'me podés pasar el link de pago?', 'quiero el link de pago', '¿Cómo pagamos?']) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`question went to person: "${t}"`) }
+    for (const t of ['Me pasás el link de pago? ya lo pagamos', 'pasame el link de pago, ya transferimos', 'Me envías el link de pago? me cobró doble', '¿Puedo hacerles el sinpe? ya lo hice', 'Tienes link de pago? ya lo usé', '¿Puedo hacerte un sinpe? lo mandamos hoy',
+      // SecureDog r4: anything after the closing "?" (other than one more question), or "listo" anywhere → a person.
+      '¿tienen link de pago? Compramos en familia', 'Ya tengo todo listo, mandame el link de pago']) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`must stay person: "${t}" → ${c}`) }
     assert.deepEqual(bad, [])
   })
   it('[[DATOS_PAGO]] after a chosen method gives only that method', async () => {
@@ -400,5 +402,22 @@ describe('verifier round 5 (luna-10): link questions, chosen method, safety word
   it('"no tiene riesgo" is not a health assurance; "no tiene efectos secundarios" still is', () => {
     assert.equal(resultsClaimIn('El pago con tarjeta no tiene ningún riesgo'), null)
     assert.ok(resultsClaimIn('No tiene efectos secundarios'))
+  })
+})
+
+describe('SecureDog round 4 (luna-10): INT-136 tails, INT-140 "ya pagamos", INT-138 wording, PAYMENT_RE end', () => {
+  it('claims after the question, plural / third-person payments → a person; questions still reach the agent', async () => {
+    const { classifyPaymentText, hasPaymentWord } = await import('../soft-ai/payment-classifier')
+    const bad: string[] = []
+    for (const t of ['¿Puedo hacerles un sinpe? hecho', '¿Puedo hacerles un sinpe? listo', '¿Puedo hacerles un sinpe? Mamá lo canceló', '¿Puedo hacerles un sinpe? Juan lo realizó', '¿Puedo hacerles un sinpe? Lo efectué', '¿Puedo hacerles un sinpe? Lo hicieron ellos', '¿Puedo hacerles un sinpe? va en camino', '¿Puedo hacerles un sinpe? ia esta', '¿Puedo hacerles un sinpe? already sent', '¿Puedo hacerles un sinpe? done', '¿Puedo hacerles un depósito? lo hicieron en el BCR', '¿puedo hacerles un sinpe?✅', 'Tienes link de pago? el otro no me sirvió', 'Tienes link de pago? no me cargó', 'Tienes link de pago? me rechazó la tarjeta', 'Ya pagamos', 'ya lo pagamos', 'Ya pagaron', 'ya cancelamos', 'ya depositamos', 'lo pagamos ayer', 'Les pagaré el resto mañana, el adelanto ya está']) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`must stay person: "${t}" → ${c}`) }
+    for (const t of ['Hola, necesito comprar unos parches de glp-1, puedo hacerles un sinpe y mandar un flash a recogerlos?', 'Muchas gracias \nTienes link de pago? Para la ansiedad cuáles me \nRecomiendas?', '¿Cómo pagamos?', 'Link de pago?']) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`question went to person: "${t}"`) }
+    for (const t of ['pagaré', 'pagaría', 'Ya pagamos']) if (!hasPaymentWord(t)) bad.push('no payment word: ' + t)
+    assert.deepEqual(bad, [])
+  })
+  it('INT-138: more safety-assurance wordings are held; the voseo "no te preocupés" is not a negation', () => {
+    const bad: string[] = []
+    for (const t of ['Es seguro usarlo durante el embarazo', 'lo podés usar en el embarazo sin problema', 'Sin efectos secundarios', 'Es apto para embarazadas', 'Es seguro para tu bebé', 'Es seguro tomarlo con tus medicamentos', 'Sin dudas es seguro en el embarazo', 'No te preocupés que es seguro para niños']) if (!resultsClaimIn(t)) bad.push('MISSED ' + t)
+    for (const t of ['Si tomás medicamentos, consultá con tu médico', 'Es seguro pagar con tarjeta en la web', 'El pago con tarjeta no tiene ningún riesgo']) if (resultsClaimIn(t)) bad.push('FALSE+ ' + t)
+    assert.deepEqual(bad, [])
   })
 })

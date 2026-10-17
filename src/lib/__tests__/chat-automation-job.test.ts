@@ -164,7 +164,7 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
     const enqueueAt = webhook.indexOf('enqueueSoftAiAfterInbound')
     const returnAt = webhook.lastIndexOf('return NextResponse.json')
     // Burst = one reply (2026-10-17): the immediate dispatch waits BURST_SETTLE_MS (processJobAfterSettle).
-    const voidAt = webhook.indexOf('processJobAfterSettle(jobId)')
+    const voidAt = webhook.indexOf('processJobAfterSettle(jobId')
     assert.ok(enqueueAt > 0 && returnAt > enqueueAt)
     assert.ok(voidAt > enqueueAt)
     assert.match(cron, /CRON_SECRET/)

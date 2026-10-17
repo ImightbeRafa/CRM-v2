@@ -247,7 +247,8 @@ describe('agents2-pace: quick check "why" + technical retry', () => {
       assert.match(read(f), /\{!r\.pass && r\.why \? <p[^>]*data-testid="case-why">Por qué: \{r\.why\}/)
     }
     assert.match(read('src/lib/soft-ai/agent-status-server.ts'), /why: typeof x\.why === 'string' \? x\.why\.slice\(0, 300\) : null/)
-    assert.match(read('src/lib/soft-ai/agent-turn.ts'), /codes: probarOutcomeCodes\(\{ validationReasons, policyReasons, errorCode: llmErrorCode, escalate, escalateReason, handoff \}\)/)
+    // Burst = one reply (2026-10-17): Probar also shows the review live would raise after the reply.
+    assert.match(read('src/lib/soft-ai/agent-turn.ts'), /codes: probarOutcomeCodes\(\{ validationReasons, policyReasons, errorCode: llmErrorCode, escalate, escalateReason, handoff: handoff \?\? probarBurstReview \}\)/)
   })
 })
 

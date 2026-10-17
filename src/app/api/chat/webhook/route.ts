@@ -373,6 +373,7 @@ export async function POST(request: NextRequest) {
     const stored = results.filter((result) => result.stored).length
 
     const softAiJobIds: string[] = []
+    const softAiSettleMs = new Map<string, number>()
     for (const result of results) {
       if (!result.stored || !('tenantId' in result) || !result.tenantId) continue
       if ('suppressSoftAi' in result && result.suppressSoftAi) continue
@@ -388,7 +389,10 @@ export async function POST(request: NextRequest) {
         conversationId: result.conversationId,
         messageId: result.messageId,
       })
-      if (enqueued && 'jobId' in enqueued) softAiJobIds.push(enqueued.jobId)
+      if (enqueued && 'jobId' in enqueued) {
+        softAiJobIds.push(enqueued.jobId)
+        softAiSettleMs.set(enqueued.jobId, enqueued.settleMs)
+      }
     }
 
     const durationMs = Date.now() - startedAt
@@ -413,7 +417,7 @@ export async function POST(request: NextRequest) {
 
     // Best-effort dispatch after persist, once the burst settle time is over; cron is the safety net.
     for (const jobId of softAiJobIds) {
-      processJobAfterSettle(jobId)
+      processJobAfterSettle(jobId, softAiSettleMs.get(jobId) ?? 0)
     }
 
     return NextResponse.json({

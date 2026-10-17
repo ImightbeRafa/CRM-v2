@@ -8,7 +8,7 @@
  */
 
 import { prisma } from '@/lib/db'
-import { shouldUseSoftTenantAiV1, readSoftTenantAiConfig } from '@/lib/feature-flags'
+import { shouldUseChatAgentLayerV1, shouldUseSoftTenantAiV1, readSoftTenantAiConfig } from '@/lib/feature-flags'
 import { parseSoftAiConfig } from '@/lib/soft-ai/config'
 import { runSoftAiTurn } from '@/lib/soft-ai/worker'
 import { buildSoftAiServerDeps } from '@/lib/soft-ai/server-deps'
@@ -385,7 +385,7 @@ export async function executeSoftAiInboundTurn(
  */
 export async function enqueueSoftAiAfterInbound(
   args: InboundHookArgs,
-): Promise<{ jobId: string; duplicate: boolean } | { skippedReason: string } | null> {
+): Promise<{ jobId: string; duplicate: boolean; settleMs: number } | { skippedReason: string } | null> {
   try {
     if (!args.conversationId || !args.messageId) {
       return { skippedReason: 'missing_conversation_or_message' }
@@ -395,6 +395,9 @@ export async function enqueueSoftAiAfterInbound(
     if (!(args.content || '').trim()) return { skippedReason: 'empty_content' }
     const enabled = await shouldUseSoftTenantAiV1(args.tenantId)
     if (!enabled) return { skippedReason: 'flag_off' }
+    // Burst = one reply needs the agent layer's burst planning; the legacy Soft turn answers one message at a time,
+    // so it keeps its immediate dispatch (SecureDog INT: no settle there, older bubbles keep their own turns).
+    const settleMs = (await shouldUseChatAgentLayerV1(args.tenantId)) ? BURST_SETTLE_MS : 0
 
     const row = await persistJob({
       tenantId: args.tenantId,
@@ -406,9 +409,9 @@ export async function enqueueSoftAiAfterInbound(
       content: args.content,
       senderName: args.senderName,
       // Burst = one reply: the job waits a few seconds so the customer's next bubble joins it (BURST_SETTLE_MS).
-      availableAt: new Date(Date.now() + BURST_SETTLE_MS),
+      ...(settleMs ? { availableAt: new Date(Date.now() + settleMs) } : {}),
     })
-    return { jobId: row.id, duplicate: row.duplicate }
+    return { jobId: row.id, duplicate: row.duplicate, settleMs }
   } catch (error) {
     console.error('[soft-ai/inbound-hook] enqueue failed', error)
     return null

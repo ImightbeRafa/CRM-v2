@@ -4,27 +4,30 @@
  * A customer often sends 2–3 bubbles within seconds: an ad share + "¡Hola! Quiero más información.", or "Que costo
  * tiene" + a photo. The queue holds the older jobs back while a newer one settles (automation-queue BURST_SETTLE_MS);
  * a job that is already running yields to a newer one before the model and right before the send. The newest job then
- * answers the whole unanswered burst.
- *
- * planBurstInbound decides WHAT that one job answers when the burst mixes media and text:
- * - a receipt-looking photo / file anywhere in the burst keeps the receipt path (a person checks it);
- * - media + customer text → the text is answered normally, and a person is still asked to look at the media (review);
- * - media alone keeps today's behaviour ("¿Me contás por escrito…?" + review; a sticker needs nobody).
- * pickBurstDecision keeps a TRUE hand-off of any other text bubble (opt-out, payment, hand-off keyword reply).
+ * answers the whole unanswered burst — so it must judge EVERY unanswered bubble as if it still had its own job:
+ * - planBurstInbound: what the turn answers when media and text mix (receipt path kept; text answered + photo review);
+ * - resolveBurstDecision: a TRUE hand-off in any bubble wins; a question that needs the model is never dropped
+ *   because the newest bubble got a code reply; a review another bubble owes is kept (burstReviewFor);
+ * - burstOptOut: a "STOP" in any bubble keeps the later waiting ack silent (Verifier F7).
  * Pure: no DB, no clock except the `now` argument.
  */
 
 import { isOptOutText, mediaInboundPlan } from '@/lib/soft-ai/llm/safety-router'
+import { isOptOutText as isWaitingOptOutText } from '@/lib/soft-ai/waiting-ack'
 import type { TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
 
 /** A running job yields to a newer burst job only while its trigger is this young (no starvation on a long chat). */
 export const BURST_YIELD_MAX_AGE_MS = 60_000
-/** Other customer bubbles count as the same burst when sent this close to the trigger (and still unanswered). */
-export const BURST_WINDOW_MS = 2 * 60_000
 
 const MEDIA_TYPES = new Set(['image', 'document', 'audio', 'video', 'voice', 'sticker'])
-/** A bubble that is only a bracket token ("[image]", "[share]", "[reaction]", "[location]") is not customer text. */
-const PLACEHOLDER_RE = /^\s*\[[\p{L}\d_:-]+\]\s*$/u
+/**
+ * The webhook's own bubble tokens (meta-chat.ts: WhatsApp `[${type}]`, Instagram attachment types) — not customer
+ * text. Lowercase and listed on purpose: "[STOP]" or "[urgente]" typed by a customer stays text (SecureDog MEDIA).
+ */
+const PLACEHOLDER_RE =
+  /^\s*\[(image|imagen|video|audio|voice|document|archivo|file|attachment|sticker|location|contact|contacts|share|story_mention|ig_reel|reel|ig_post|ig_story|reaction|unsupported|button|interactive|order|system|template|request_welcome|unknown)\]\s*$/
+/** A WhatsApp document's caption falls back to its file name ("IMG-2026.pdf"): that is not something the customer said. */
+const FILE_NAME_RE = /^[\p{L}\d _.()-]{1,120}\.(pdf|jpe?g|png|gif|webp|heic|docx?|xlsx?|pptx?|txt|csv|mp4|mov|mp3|ogg|opus|m4a|zip)$/iu
 
 export type BurstMessage = {
   direction: 'inbound' | 'outbound'
@@ -49,13 +52,15 @@ export type BurstInboundPlan = {
   reason: 'single' | 'media_with_text' | 'text_with_media' | 'burst_receipt'
 }
 
+type BurstDecisionLike = { handled: boolean; handoff: TurnHandoff | null; shortcutKey: string | null }
+
 function isMedia(type: string | null | undefined): boolean {
   return MEDIA_TYPES.has(type || '')
 }
 
 function realText(content: string | null | undefined): string {
   const text = (content || '').trim()
-  return PLACEHOLDER_RE.test(text) ? '' : text
+  return PLACEHOLDER_RE.test(text) || FILE_NAME_RE.test(text) ? '' : text
 }
 
 function at(value: string | Date): number {
@@ -70,17 +75,16 @@ export function shouldYieldToNewerBurst(input: { newerPending: boolean; triggerS
 }
 
 /**
- * The customer's other bubbles of this burst, oldest first: inbound, after the store's LAST reply (wherever it sits,
- * also after the trigger: what it answered is not answered again), within BURST_WINDOW_MS of the trigger on either
- * side (jobs are created in arrival order, which can differ from send order). History never holds the trigger.
+ * The customer's other unanswered bubbles, oldest first: every inbound after the store's LAST reply (wherever it sits,
+ * also after the trigger: what it answered is not answered again). No time window (SecureDog INT): the newest job
+ * answers for every bubble whose job it superseded, however long the customer kept typing. History never holds the
+ * trigger; the loaded history window (24 rows) is the only bound.
  */
-export function unansweredBurst(history: BurstMessage[], trigger: Pick<BurstTrigger, 'sentAt'>): BurstMessage[] {
-  const triggerAt = at(trigger.sentAt)
+export function unansweredBurst(history: BurstMessage[], _trigger?: Pick<BurstTrigger, 'sentAt'>): BurstMessage[] {
   const out: BurstMessage[] = []
   for (let i = history.length - 1; i >= 0; i--) {
     const m = history[i]
     if (m.direction === 'outbound') break
-    if (Math.abs(triggerAt - at(m.sentAt)) > BURST_WINDOW_MS) continue
     out.unshift(m)
   }
   return out
@@ -154,73 +158,124 @@ export function planBurstInbound(input: {
 }
 
 /**
- * The burst's other real text bubbles and photo / audio captions not already in the planned text, each with its own
- * message type: each is checked for a TRUE hand-off (a caption "Quiero hablar con una persona" too — MEDIA-14).
+ * Every bubble of the burst on its own, with its own message type, unless it IS the planned text: each is decided as
+ * if it still had its own job. A bubble that only appears joined in the planned text ("agente" + photo captioned
+ * "mire esto" → "agente\nmire esto") is still checked alone (SecureDog MEDIA: the bare "agente" hand-off), and so is
+ * the newest photo's caption.
  */
 export function burstOtherTexts(
   earlier: BurstMessage[],
   plan: Pick<BurstInboundPlan, 'inboundText'>,
+  trigger?: Pick<BurstTrigger, 'content' | 'messageType'>,
 ): Array<{ text: string; messageType: string }> {
-  const planned = new Set(plan.inboundText.split('\n').map((t) => t.trim()))
-  return earlier
+  const planned = plan.inboundText.trim()
+  const bubbles = earlier
     .filter((m) => m.direction === 'inbound' && m.messageType !== 'sticker')
     .map((m) => ({ text: realText(m.content), messageType: m.messageType || 'text' }))
-    .filter((m) => m.text && !planned.has(m.text))
+  if (trigger && isMedia(trigger.messageType) && trigger.messageType !== 'sticker') {
+    bubbles.push({ text: realText(trigger.content), messageType: trigger.messageType || 'image' })
+  }
+  return bubbles.filter((m) => m.text && m.text !== planned)
 }
 
 /**
- * The burst's decision: the planned text's own, unless it is not a TRUE hand-off and another text bubble of the
- * burst is one ("Quiero hablar con una persona" + "por favor"): that one wins, as when it had its own job.
+ * The burst's decision:
+ * - a TRUE hand-off in the planned text wins; else a TRUE hand-off in any other bubble wins (opt-out, payment claim,
+ *   a hand-off keyword reply) — as when it had its own job;
+ * - else, when the planned text got a code reply but another bubble needs the model ("Quiero 2 del kit con envío a
+ *   Limón" + "¿Cómo pago?"), the model answers the whole burst (`toModel`) and the code reply's own review is kept.
  */
-export function pickBurstDecision<T extends { handled: boolean; handoff: TurnHandoff | null }>(main: T, others: T[]): T {
-  if (main.handled && main.handoff?.kind === 'handoff') return main
-  return others.find((d) => d.handled && d.handoff?.kind === 'handoff') ?? main
+export function resolveBurstDecision<T extends BurstDecisionLike>(
+  main: T,
+  others: Array<{ text: string; decision: T }>,
+  toModel: (decision: T) => T,
+): { decision: T; carriedReview: TurnHandoff | null } {
+  if (main.handled && main.handoff?.kind === 'handoff') return { decision: main, carriedReview: null }
+  const otherHandoff = others.find((o) => o.decision.handled && o.decision.handoff?.kind === 'handoff')
+  if (otherHandoff) return { decision: otherHandoff.decision, carriedReview: null }
+  // A greeting / thanks bubble ("Hola" + "¿Cómo pago?") asks nothing: the code reply stays.
+  if (main.handled && others.some((o) => !o.decision.handled && !isCourtesyOnly(o.text))) {
+    const carried = main.handoff?.kind === 'review' && main.shortcutKey !== 'sys_media_ask' ? main.handoff : null
+    return { decision: toModel(main), carriedReview: carried }
+  }
+  return { decision: main, carriedReview: null }
+}
+
+const COURTESY_WORD = String.raw`(?:hol+a+|holis?|buenas|buen[oa]s?\s+(?:d[ií]as?|tardes|noches)|hey|saludos|pura\s+vida|upe|(?:muchas\s+)?gracias|ok|okay|okey|dale|perfecto|genial|listo|s[ií]|por\s+favor|porfa)`
+const COURTESY_RE = new RegExp(String.raw`^(?:[\s,.!¡¿?\p{Extended_Pictographic}️]|${COURTESY_WORD}(?![\p{L}\d]))+$`, 'iu')
+
+/** "Hola", "¡Buenas tardes!", "gracias 🙏", "ok": a bubble that asks nothing. */
+export function isCourtesyOnly(text: string): boolean {
+  const t = (text || '').trim()
+  return t.length > 0 && t.length <= 60 && COURTESY_RE.test(t)
 }
 
 /**
  * The review a person still owes the burst after the reply (the chat stays on IA), when the turn plans no hand-off of
- * its own: a review another bubble would have raised on its own job ("¿Cómo pago?" in a store that sends the payment
- * data by hand → payment_details), else the burst's photo / audio (review). "¿Me contás por escrito…?" of a photo
- * is the media review itself.
+ * its own: the planned code reply's review that went to the model (carried), a review another bubble would have
+ * raised on its own job ("¿Cómo pago?" where the store sends the payment data by hand → payment_details), else the
+ * burst's photo / audio (review). "¿Me contás por escrito…?" of a photo is the media review itself.
  */
-export function burstReviewFor<T extends { handled: boolean; handoff: TurnHandoff | null; shortcutKey: string | null }>(input: {
+export function burstReviewFor<T extends BurstDecisionLike>(input: {
   decision: T
-  others: T[]
+  others: Array<{ decision: T }>
   mediaReview: boolean
+  carried?: TurnHandoff | null
 }): TurnHandoff | null {
   if (input.decision.handoff) return null
-  const other = input.others.find(
-    (d) => d !== input.decision && d.handled && d.handoff?.kind === 'review' && d.shortcutKey !== 'sys_media_ask',
-  )
+  if (input.carried) return { kind: 'review', reason: input.carried.reason }
+  const other = input.others
+    .map((o) => o.decision)
+    .find((d) => d !== input.decision && d.handled && d.handoff?.kind === 'review' && d.shortcutKey !== 'sys_media_ask')
   if (other?.handoff) return { kind: 'review', reason: other.handoff.reason }
   return input.mediaReview ? { kind: 'review', reason: 'review' } : null
 }
 
-const BURST_REVIEW_PREFIX = 'review:'
-
-/** The decision-trace step that records the burst plan (and its owed review, so a lease reclaim settles it too). */
-export function burstTraceStep(plan: Pick<BurstInboundPlan, 'reason'>, review: TurnHandoff | null) {
-  return { step: 'burst', outcome: plan.reason, ...(review ? { reason: `${BURST_REVIEW_PREFIX}${review.reason}` } : {}) }
+/** A "STOP" / "no me escriban más" in ANY bubble of the burst (trigger, other texts, captions): no later waiting ack. */
+export function burstOptOut(trigger: Pick<BurstTrigger, 'content'>, earlier: BurstMessage[]): boolean {
+  return [trigger.content, ...earlier.filter((m) => m.direction === 'inbound').map((m) => m.content)].some((t) =>
+    isWaitingOptOutText(t),
+  )
 }
 
-/** The burst review a turn's decision trace planned (lease reclaim), or null. */
-export function burstReviewIn(trace: unknown): TurnHandoff | null {
+const BURST_REVIEW_PREFIX = 'review:'
+
+/** The decision-trace step that records the burst plan, its owed review (lease reclaim) and an opt-out (waiting ack). */
+export function burstTraceStep(plan: Pick<BurstInboundPlan, 'reason'>, review: TurnHandoff | null, optOut = false) {
+  return {
+    step: 'burst',
+    outcome: plan.reason,
+    ...(review ? { reason: `${BURST_REVIEW_PREFIX}${review.reason}` } : {}),
+    ...(optOut ? { optOut: true } : {}),
+  }
+}
+
+function burstStepIn(trace: unknown): Record<string, unknown> | null {
   if (!trace || typeof trace !== 'object') return null
   const steps = (trace as { steps?: unknown }).steps
   if (!Array.isArray(steps)) return null
   for (const s of steps) {
-    if (!s || typeof s !== 'object') continue
-    const step = s as Record<string, unknown>
-    if (step.step === 'burst' && typeof step.reason === 'string' && step.reason.startsWith(BURST_REVIEW_PREFIX)) {
-      const reason = step.reason.slice(BURST_REVIEW_PREFIX.length)
-      return reason ? { kind: 'review', reason } : null
-    }
+    if (s && typeof s === 'object' && (s as Record<string, unknown>).step === 'burst') return s as Record<string, unknown>
   }
   return null
+}
+
+/** The burst review a turn's decision trace planned (lease reclaim), or null. */
+export function burstReviewIn(trace: unknown): TurnHandoff | null {
+  const step = burstStepIn(trace)
+  if (!step || typeof step.reason !== 'string' || !step.reason.startsWith(BURST_REVIEW_PREFIX)) return null
+  const reason = step.reason.slice(BURST_REVIEW_PREFIX.length)
+  return reason ? { kind: 'review', reason } : null
+}
+
+/** Did the turn's burst hold an opt-out ("STOP" + "por favor")? The waiting ack then stays silent. */
+export function burstOptOutIn(trace: unknown): boolean {
+  return burstStepIn(trace)?.optOut === true
 }
 
 /** A bubble of the burst was sent after this job's trigger (its own job may still be queued to answer the burst). */
 export function burstHasLaterBubble(earlier: BurstMessage[], trigger: Pick<BurstTrigger, 'sentAt'>): boolean {
   const triggerAt = at(trigger.sentAt)
+  if (!Number.isFinite(triggerAt)) return false
   return earlier.some((m) => m.direction === 'inbound' && at(m.sentAt) > triggerAt)
 }

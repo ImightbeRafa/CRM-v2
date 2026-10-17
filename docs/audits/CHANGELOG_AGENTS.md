@@ -46,6 +46,7 @@
   - (Low-medium) A job kept by F1 could become claimable while the newer answering job waited on a long retry, then
     supersede it. The claim now holds a job whose message already has a reply after it behind every newer pending
     or retry job, whatever the 10 s horizon. Harness: 11 scenarios.
+  - Verifier round 4: PASS WITH NOTES. Its note is fixed: the collapse shrinks horizontal runs first, so it stays linear.
   - Known: F1 also keeps a bubble typed while a non-yielding turn was writing its reply (before, it was dropped
     unchecked). That bubble now gets its own reply after the newer one, up to a cron minute later.
 - Left open:

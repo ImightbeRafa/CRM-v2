@@ -217,7 +217,8 @@ export function burstOtherTexts(
  * its payment hand-off).
  */
 function collapseSpace(text: string | null | undefined): string {
-  return (text || '').replace(/[^\S\n]*\n\s*/g, '\n').replace(/[^\S\n]+/g, ' ').trim()
+  // Horizontal runs first, then the line breaks: both passes stay linear on a 4 KB run (Verifier r4).
+  return (text || '').replace(/[^\S\n]+/g, ' ').replace(/ ?\n\s*/g, '\n').trim()
 }
 
 /**

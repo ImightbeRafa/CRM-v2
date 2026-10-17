@@ -88,6 +88,10 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
   const storageKey = orderDraftStorageKey(draftKey);
   const storageKeyRef = useRef(storageKey);
   const prefillAppliedRef = useRef(false);
+  /** A saved chat draft was restored: the chat prefill never overrides its delivery choice or products. */
+  const draftRestoredRef = useRef(false);
+  /** The form exactly as the chat prefill left it: no draft is saved until a person changes something. */
+  const prefillSnapshotRef = useRef<string | null>(null);
   const { user } = useCurrentUser();
   // Read at apply time (the chat prefill effect runs once; the user may load after mount).
   const userRef = useRef(user);
@@ -274,6 +278,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     const latest = latestDraftRef.current;
     if (!draftKey || submittedRef.current || !latest || !draftWritable()) return;
     if (latest.products.length === 0 && !latest.customerInfo.address && !latest.customerInfo.province) return;
+    // Opening and closing a chat-prefilled form without touching it leaves no draft behind.
+    if (prefillSnapshotRef.current && prefillSnapshotRef.current === JSON.stringify(latest)) return;
     try {
       localStorage.setItem(
         storageKeyRef.current,
@@ -317,6 +323,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
             comments: parsed.customerInfo?.comments ?? parsed.customerInfo?.comentarios ?? ''
           };
 
+          draftRestoredRef.current = true;
           setOrderInfo(prev => ({
             ...prev,
             customerInfo: { ...prev.customerInfo, ...savedCustomerInfo },
@@ -339,8 +346,9 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     setOrderInfo(prev => {
       // An address only comes in whole (province → canton → district) and only into an empty address.
       const takeAddress = !prev.customerInfo.province && Boolean(initial.province);
+      const fromDraft = draftRestoredRef.current;
       const products =
-        prev.products.length === 0 && initial.products?.length
+        !fromDraft && prev.products.length === 0 && initial.products?.length
           ? initial.products.map((p, i) => ({
               id: `product_${Date.now()}_${i}`,
               type: p.type,
@@ -360,7 +368,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
             }))
           : prev.products;
       const takePayment = initial.paymentChoice === 'contra_entrega' && (prev.paymentChoice || 'pendiente_pago') === 'pendiente_pago';
-      return {
+      const next = {
         ...prev,
         products,
         ...(takePayment ? { paymentChoice: 'contra_entrega' as const, contraEntrega: true } : {}),
@@ -374,9 +382,11 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
           ...(takeAddress
             ? { province: initial.province || '', canton: initial.canton || '', district: initial.district || '' }
             : {}),
-          ...(initial.orderType && !prev.customerInfo.address && !prev.customerInfo.province ? { orderType: initial.orderType } : {}),
+          ...(initial.orderType && !fromDraft && !prev.customerInfo.address && !prev.customerInfo.province ? { orderType: initial.orderType } : {}),
         },
       };
+      prefillSnapshotRef.current = JSON.stringify({ customerInfo: next.customerInfo, products: next.products });
+      return next;
     });
   }, [isClient]);
 

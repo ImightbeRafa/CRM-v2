@@ -108,10 +108,10 @@ const CrearPedidoDrawer = dynamic(
 export function SoftCopilotInboxV2() {
   const { toast } = useToast()
   const [createOrderOpen, setCreateOrderOpen] = useState(false)
-  /** Order data read from the chat (name, address, products…) for the "Crear pedido" form; null = not loaded. */
-  const [chatOrderPrefill, setChatOrderPrefill] = useState<OrderFormPrefill | null>(null)
+  /** Order data read from the chat (name, address, products…) for "Crear pedido" — always tied to its chat. */
+  const [chatOrderPrefill, setChatOrderPrefill] = useState<{ conversationId: string; prefill: OrderFormPrefill } | null>(null)
   const [orderPrefillLoading, setOrderPrefillLoading] = useState(false)
-  /** "Confirmado" on "Pedido por confirmar": the alert clears once that order is created from the form. */
+  /** "Pedido por confirmar" to settle when an order is created from this chat's form. */
   const [resolveTagOnOrder, setResolveTagOnOrder] = useState<SoftTag | null>(null)
   const [accounts, setAccounts] = useState<SoftSocialAccount[]>([])
   const [dtoMap, setDtoMap] = useState<Map<string, ChatConversationListItemDto>>(new Map())
@@ -120,6 +120,13 @@ export function SoftCopilotInboxV2() {
   dtoMapRef.current = dtoMap
   const [threadMessages, setThreadMessages] = useState<Record<string, ChatInboxMessage[]>>({})
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
+  // Another chat opened (or the thread closed): the order form of the previous chat closes with it.
+  useEffect(() => {
+    setCreateOrderOpen(false)
+    setResolveTagOnOrder(null)
+  }, [selectedConversationId])
+  const chatPrefillForOpenChat =
+    chatOrderPrefill && chatOrderPrefill.conversationId === selectedConversationId ? chatOrderPrefill.prefill : null
   // Default = every open chat: new inbound chats have no owner until someone replies.
   const [bucket, setBucket] = useState<InboxBucket>('abiertos')
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>('todos')
@@ -1192,8 +1199,8 @@ export function SoftCopilotInboxV2() {
   async function resolveReviewTag(tag: SoftTag) {
     if (!selectedConversation || reviewBusy || !selectedConversation.tags.includes(tag)) return
     // "Pedido por confirmar" → Confirmado: open "Crear pedido" filled from the chat; the alert clears when it is created.
-    if (tag === ORDER_REVIEW_TAG && !selectedConversation.orderId) {
-      void openCreateOrderFromChat(tag)
+    if (tag === ORDER_REVIEW_TAG) {
+      void openCreateOrderFromChat()
       return
     }
     setReviewBusy(true)
@@ -1735,14 +1742,18 @@ export function SoftCopilotInboxV2() {
   // Order created from this chat: link it (ChatMessage.orderId) and refresh the thread.
   // The order is never rolled back if linking fails.
   /** Open "Crear pedido" already filled from what the customer wrote (a person reviews and submits). */
-  async function openCreateOrderFromChat(resolveTag: SoftTag | null = null) {
-    if (!selectedConversationId || orderPrefillLoading) return
+  async function openCreateOrderFromChat() {
+    const requestedId = selectedConversationId
+    if (!requestedId || !selectedConversation || orderPrefillLoading) return
+    // Any order created from this chat settles its "Pedido por confirmar" alert (Crear pedido or Confirmado).
+    const resolveTag = selectedConversation.tags.includes(ORDER_REVIEW_TAG) ? ORDER_REVIEW_TAG : null
     setOrderPrefillLoading(true)
     toast({ title: 'Preparando el pedido con los datos del chat…' })
     setResolveTagOnOrder(resolveTag)
     let prefill: OrderFormPrefill | null = null
     try {
-      const res = await fetch(`/api/chat/conversations/${encodeURIComponent(selectedConversationId)}/order-prefill`, {
+      const res = await fetch(`/api/chat/conversations/${encodeURIComponent(requestedId)}/order-prefill`, {
+        method: 'POST',
         credentials: 'same-origin',
       })
       const data = res.ok ? await res.json() : null
@@ -1759,7 +1770,9 @@ export function SoftCopilotInboxV2() {
     } finally {
       setOrderPrefillLoading(false)
     }
-    setChatOrderPrefill(prefill)
+    // Verifier: the person moved to another chat while this loaded → this chat's data never opens there.
+    if (selectedConversationIdRef.current !== requestedId) return
+    setChatOrderPrefill(prefill ? { conversationId: requestedId, prefill } : null)
     setCreateOrderOpen(true)
   }
 
@@ -1768,6 +1781,13 @@ export function SoftCopilotInboxV2() {
     const conversationId = selectedConversationId
     const label = `#${order.orderId}`
     if (!conv || !conversationId) return
+    // The order exists (even if linking it below fails): "Pedido por confirmar" clears so it is never created twice.
+    const settleTag = resolveTagOnOrder
+    setResolveTagOnOrder(null)
+    if (settleTag && conv.tags.includes(settleTag)) {
+      const cleared = await patchConversation({ removeTag: settleTag }).catch(() => false)
+      if (!cleared) toast({ variant: 'destructive', title: 'El pedido se creó, pero no se pudo quitar el aviso', description: 'Quitalo con "Descartar".' })
+    }
     try {
       const res = await fetch('/api/chat/order-link', {
         method: 'POST',
@@ -1781,11 +1801,6 @@ export function SoftCopilotInboxV2() {
       })
       if (!res.ok) throw new Error(String(res.status))
       toast({ variant: 'success' as any, title: `Pedido ${label} creado y vinculado al chat` })
-      // Confirmado on "Pedido por confirmar": the order now exists, so the alert clears (audited server-side).
-      if (resolveTagOnOrder && conv.tags.includes(resolveTagOnOrder)) {
-        await patchConversation({ removeTag: resolveTagOnOrder }).catch(() => false)
-      }
-      setResolveTagOnOrder(null)
       setClientPanelRev((n) => n + 1)
       await fetchThreadMessages(conversationId)
     } catch {
@@ -1825,7 +1840,7 @@ export function SoftCopilotInboxV2() {
     reviewTags: {
       onResolve: (tag: SoftTag) => void resolveReviewTag(tag),
       onDismiss: (tag: SoftTag) => void dismissReviewTag(tag),
-      busy: reviewBusy,
+      busy: reviewBusy || orderPrefillLoading,
     },
     // "Corregir" on AI messages: only people who can edit agents (the API checks update_config again).
     canTuneAgent: canManageQuickReplies,
@@ -2097,16 +2112,16 @@ export function SoftCopilotInboxV2() {
           ) : null}
         </div>
       </div>
-      {createOrderOpen && selectedConversation ? (
+      {createOrderOpen && selectedConversation && (!chatOrderPrefill || chatOrderPrefill.conversationId === selectedConversationId) ? (
         <CrearPedidoDrawer
           open
           onOpenChange={setCreateOrderOpen}
           subtitle={`Desde el chat con ${selectedConversation.recipientName || selectedConversation.recipientId}`}
           prefill={{
-            ...chatOrderPrefill,
+            ...(chatPrefillForOpenChat ?? {}),
             // The customer's own data first; the chat's name / WhatsApp number when they did not write one.
-            name: chatOrderPrefill?.name || selectedConversation.recipientName || undefined,
-            phone: chatOrderPrefill?.phone || (selectedConversation.platform === 'whatsapp' ? selectedConversation.recipientId : undefined),
+            name: chatPrefillForOpenChat?.name || selectedConversation.recipientName || undefined,
+            phone: chatPrefillForOpenChat?.phone || (selectedConversation.platform === 'whatsapp' ? selectedConversation.recipientId : undefined),
             username: selectedConversation.platform === 'instagram' ? selectedConversation.recipientName || undefined : undefined,
           }}
           onCreated={handleOrderCreated}

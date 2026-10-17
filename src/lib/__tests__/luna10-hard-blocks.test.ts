@@ -511,3 +511,51 @@ describe("advisor (luna-10): unmistakable payment confirmations are held on ever
     assert.deepEqual(bad, [])
   })
 })
+
+describe("verifier round 8 (luna-10): no backtracking blow-up, everyday payment questions, health shipping lines", () => {
+  it("the prefix grammar stays fast on 300-char repeats (INT-142 ReDoS)", async () => {
+    const { classifyPaymentText } = await import("../soft-ai/payment-classifier")
+    for (const u of ["ok ", "quiero ", "hola ", "gracias ", "ah ok ", "va ", "quiero comprar los y ", "ok, "]) for (const t of [" x ¿aceptan tarjeta?", " ¿me pasás el link de pago? x", " puedo hacerles un sinpe? x"]) {
+      const text = u.repeat(Math.floor((290 - t.length) / u.length)) + t
+      const started = Date.now()
+      classifyPaymentText(text)
+      assert.ok(Date.now() - started < 200, JSON.stringify(u) + " took " + (Date.now() - started) + " ms")
+    }
+  })
+  it("contra entrega / thanks / names / places / context sentences reach the agent; claims still go to a person", async () => {
+    const { classifyPaymentText } = await import("../soft-ai/payment-classifier")
+    const agent = ['Contra entrega. Gracias', 'Va, contra entrega', 'Sí, contra entrega. Gracias!', 'Contra entrega por favor. Ana Rojas, Heredia', 'Pago contra entrega. Estoy en Cartago', 'Vivo en Heredia. ¿Hacen contra entrega?', 'Ana Rojas\nHeredia, San Pablo\n8888-1234\nContra entrega', 'Bueno, quiero pagar contra entrega',
+     'Quiero pagar con tarjeta. Gracias', 'Quisiera saber cómo puedo pagar. Gracias', 'Prefiero pagar contra entrega. Gracias', '¿Hacen contra entrega en San José?', '¿Hacen contra entrega a Jacó?', 'Hola, soy José, ¿aceptan sinpe?', '¿Podré pagar con tarjeta?', '¿Puedo pagar cuando me dé el pedido?',
+     'Me preguntaba si aceptan tarjeta', 'Estaba viendo, ¿aceptan sinpe?', 'Tengo una duda. ¿Aceptan tarjeta?', 'Me llamo Ana Rojas. ¿Cómo puedo pagar?', 'Quiero hacer un pedido. ¿Aceptan sinpe?', '¿Cómo puedo pagar? Me urge',
+     '¿A qué número les paso la plata?', '¿Cómo les mando el dinero?', '¿Les paso la plata por sinpe o por transferencia?', '¿Les envio la plata hoy?', '¿Cuándo les paso la plata?',
+     '¿Tienen link para pagar con tarjeta?', '¿Tienen link de pago para pagar con tarjeta?', '¿Con el link de pago puedo pagar con tarjeta de débito?', '¿Puedo pagar con link de pago?']
+    const person = ['Está pago, ¿hacen contra entrega del envío?', 'La plata ya está', 'Mamá lo canceló. ¿Hacen contra entrega?', 'Ya tienen el link de pago', 'Contra entrega. Ya les pasé la plata', 'Mi esposo pagó con tarjeta, ¿cómo pago el envío?', 'Le di la plata al mensajero, ¿cómo pago el envío?']
+    const bad: string[] = []
+    for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
+    
+    assert.deepEqual(bad, [])
+  })
+  it("health: shipping / guarantee / referral lines pass; inofensivo / inocuo / hijo / dar de mamar are held", () => {
+    const ok = ['Tenemos garantía, así que no hay ningún riesgo', 'No hay riesgo de que se pierda el paquete, va con guía', 'El paquete va asegurado, cero riesgo', 'No hay peligro, el mensajero te llama antes', 'Comprá sin riesgo: si no te gusta, lo cambiamos', 'Te recomiendo consultarlo con tu médico, ya que podés estar tomando medicamentos', 'Es un gran regalo para el Día del Niño, podés pedirlo hoy']
+    const held = ['Es libre de riesgos para la salud', 'No tiene ni un riesgo para tu salud', 'No te hace daño, es natural', 'Es totalmente inofensivo para el bebé', 'Es inocuo en el embarazo', 'Lo puede usar su hijo de 10 años', 'No hay problema si estás dando de mamar', 'Para diabéticos es perfecto', 'Tranqui, no interfiere con tus medicamentos', 'Lo podés combinar con tus pastillas sin problema', 'Lo pueden usar los niños', 'Es seguro para la presión alta', 'No pasa nada si lo usás con medicamentos']
+    const bad: string[] = []
+    for (const t of ok) if (resultsClaimIn(t)) bad.push('FALSE+ ' + t + ' ⇐ ' + resultsClaimIn(t))
+    for (const t of held) if (!resultsClaimIn(t)) bad.push('MISSED ' + t)
+    const ctx = validateAgentOutput({ text: '¡Claro! Podés recibirlo en Cartago mañana 😊', citedToolNames: [], customerText: 'Gracias corazón, ¿me lo pueden enviar a Cartago?' } as any)
+    if (ctx.reasons?.includes('results_claim')) bad.push('context: corazón held')
+    
+    assert.deepEqual(bad, [])
+  })
+  it("a negated method (\"No uso SINPE\", \"Sin tarjeta\") gets the method list, not that one method", async () => {
+    const { decideInbound } = await import("../soft-ai/inbound-decision")
+    const { RESERVED_SHORTCUT_SEEDS } = await import("../soft-ai/shortcuts")
+    const { parseBrandFacts } = await import("../soft-ai/brand-facts")
+    const facts = parseBrandFacts({ schemaVersion: 1, payment: { shareWithCustomers: true, methods: ["sinpe", "tarjeta"], sinpe: { number: "62019914", holderName: "R G" }, cardPaymentUrl: "https://tienda.example.cr" } })
+    const shortcuts = RESERVED_SHORTCUT_SEEDS.map((x, i) => ({ ...x, isActive: true, sortOrder: i }))
+    for (const t of ["No uso SINPE, ¿qué otras formas de pago tienen?", "Sin tarjeta, ¿cómo pago?", "¿Aceptan algo que no sea tarjeta?"]) {
+      const d = decideInbound({ inboundText: t, brandFacts: facts, shortcuts })
+      assert.doesNotMatch(d.text, /6201 ?9914|tienda.example.cr/, t + " → " + d.text)
+    }
+  })
+})

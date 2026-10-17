@@ -333,9 +333,14 @@ const NOT_A_NEGATION_RE = /\b(?:sin\s+dudas?|sin\s+problemas?|no\s+te\s+preocup[
  * right before the assurance ("no es seguro", "no se recomienda").
  */
 const HEALTH_GROUP_RE =
-  /(?<![\p{L}])(?:embaraz\p{L}*|lactan\p{L}*|amamant\p{L}*|beb[eé]s?|ni[nñ][oa]s?|menores|medicament\p{L}*|medicinas?|pastillas?|presi[oó]n|diab[eé]t\p{L}*|anticonceptiv\p{L}*|tiroides|marcapasos|coraz[oó]n|card[ií]ac\p{L}*|epilep\p{L}*|c[aá]ncer|quimio\p{L}*)(?![\p{L}])/iu
-const HEALTH_ASSURANCE_RE =
-  /(?<![\p{L}])(?:segur\p{L}*|apt[oa]s?|sin\s+(?:ning[uú]n\s+)?problemas?|no\s+hay\s+problemas?|no\s+pasa\s+nada|tranquil\p{L}*|pod[eé]s|puede[ns]?|pued[eé]s|se\s+puede|recomendad\p{L}*|ideal(?:es)?|efectos?\s+secundarios?|contraindicaci\p{L}*|riesgos?|peligros\p{L}*|da[nñ]in\p{L}*|hace\s+da[nñ]o|hacen\s+da[nñ]o|afecta\p{L}*|interact\p{L}*|compatible\p{L}*|sin\s+miedo)(?![\p{L}])/iu
+  // Verifier round 8: no "corazón" (a Costa Rican endearment), "cardíaco" stays; + "hijo", "dar de mamar".
+  /(?<![\p{L}])(?:embaraz\p{L}*|lactan\p{L}*|amamant\p{L}*|de\s+mamar|beb[eé]s?|ni[nñ][oa]s?|hij[oa]s?|menores|medicament\p{L}*|medicinas?|pastillas?|presi[oó]n|diab[eé]t\p{L}*|anticonceptiv\p{L}*|tiroides|marcapasos|card[ií]ac\p{L}*|epilep\p{L}*|c[aá]ncer|quimio\p{L}*)(?![\p{L}])/iu
+/** The strong assurances; "podés / puede / se puede" alone are weak (next to a doctor referral they are fine). */
+const STRONG_HEALTH_ASSURANCE = String.raw`segur\p{L}*|apt[oa]s?|sin\s+(?:ning[uú]n\s+)?problemas?|no\s+hay\s+problemas?|no\s+pasa\s+nada|tranquil\p{L}*|recomendad\p{L}*|ideal(?:es)?|perfect[oa]s?|efectos?\s+secundarios?|contraindicaci\p{L}*|riesgos?|peligros\p{L}*|da[nñ]in\p{L}*|hace\s+da[nñ]o|hacen\s+da[nñ]o|afecta\p{L}*|interact\p{L}*|interfier\p{L}*|compatible\p{L}*|inofensiv\p{L}*|inocu\p{L}*|sin\s+miedo`
+const STRONG_HEALTH_ASSURANCE_RE = new RegExp(String.raw`(?<![\p{L}])(?:${STRONG_HEALTH_ASSURANCE})(?![\p{L}])`, 'iu')
+const HEALTH_ASSURANCE_RE = new RegExp(String.raw`(?<![\p{L}])(?:${STRONG_HEALTH_ASSURANCE}|pod[eé]s|puede[ns]?|pued[eé]s|se\s+puede)(?![\p{L}])`, 'iu')
+/** Names that only look like a sensitive group ("el Día del Niño"). */
+const NOT_A_GROUP_RE = /d[ií]a\s+del?\s+ni[nñ][oa]s?/giu
 const HEALTH_REFERRAL_RE =
   /(?<![\p{L}])(?:m[eé]dic[oa]s?|doctor\p{L}*|profesional(?:es)?\s+de\s+(?:la\s+)?salud|consult\p{L}*|ginec\p{L}*|pediatra|farmac[eé]utic\p{L}*)(?![\p{L}])/iu
 /** "No es seguro", "no se recomienda", "no lo uses", "evitá": a warning, not an assurance. */
@@ -347,8 +352,11 @@ const NO_SIDE_EFFECTS_RE =
   /(?<![\p{L}])(?:no\s+(?:hay|tiene|tienen|produce|producen|presenta|presentan|causa|causan|da|dan|genera|generan)|libres?\s+de|cero|sin)\s+(?:ning[uú]n\s+|ningunos?\s+|ninguna\s+)?(?:efectos?\s+(?:secundarios?|adversos?|negativos?)|contraindicaci\p{L}*|reacci[oó]n(?:es)?\s+adversas?)/iu
 /** A bare "no tiene / no hay ningún riesgo / peligro" — health unless the sentence is about paying or shipping. */
 const NO_RISK_RE =
-  /(?<![\p{L}])(?:no\s+(?:tiene|tienen|hay|causa|causan|representa|representan)|cero|sin)\s+(?:ning[uú]n\s+)?(?:riesgos?|peligros?)(?:\s+alguno)?(?![\p{L}])/iu
-const MONEY_OR_SHIPPING_RE = /(?<![\p{L}])(?:pag\p{L}*|sinpe|tarjeta|link|enlace|transfer\p{L}*|env[ií]o|compra\p{L}*|datos|web|p[aá]gina)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:(?:no\s+(?:tiene|tienen|hay|causa|causan|representa|representan)|cero|sin|libres?\s+de)\s+(?:ning[uú]n\s+|ni\s+un\s+)?(?:riesgos?|peligros?)(?:\s+alguno)?|no\s+(?:te\s+|le\s+|les\s+)?(?:hace|hacen)\s+(?:ning[uú]n\s+)?da[nñ]o|inofensiv\p{L}*|inocu[oa]s?)(?![\p{L}])/iu
+// Verifier round 8: shipping / guarantee sentences ("el paquete va asegurado, cero riesgo", "comprá sin riesgo: si no te
+// gusta lo cambiamos", "no hay peligro, el mensajero te llama") are not health.
+const MONEY_OR_SHIPPING_RE =
+  /(?<![\p{L}])(?:pag\p{L}*|sinpe|tarjeta|link|enlace|transfer\p{L}*|env[ií]o|enviamos|compra\p{L}*|compr[aá]|datos|web|p[aá]gina|paquete\p{L}*|mensajer\p{L}*|gu[ií]a|asegurad\p{L}*|garant\p{L}*|cambi\p{L}*|devol\p{L}*|pierd\p{L}*|perd\p{L}*|entrega\p{L}*)(?![\p{L}])/iu
 /** "Para saber si es seguro…", "Sobre si podés…", "¿Podés usarlo con…?": an indirect question, not an assurance. */
 const INDIRECT_RE = /(?<![\p{L}])(?:si|sobre\s+si|saber\s+si)\s+(?:\p{L}+\s+){0,2}?(?:es|son|pod\p{L}*|pued\p{L}*|se\s+puede)(?![\p{L}])/iu
 
@@ -359,8 +367,11 @@ export function healthAssuranceIn(text: string): string | null {
   for (const s of sentences) {
     if (NO_SIDE_EFFECTS_RE.test(s)) return s.trim()
     if (NO_RISK_RE.test(s) && !MONEY_OR_SHIPPING_RE.test(s)) return s.trim()
-    if (!HEALTH_GROUP_RE.test(s) || !HEALTH_ASSURANCE_RE.test(s)) continue
+    if (!HEALTH_GROUP_RE.test(s.replace(NOT_A_GROUP_RE, ' ')) || !HEALTH_ASSURANCE_RE.test(s)) continue
     if (HEALTH_WARNING_RE.test(s) || DONT_SAY_RE.test(s)) continue
+    // "Te recomiendo consultarlo con tu médico, ya que podés estar tomando medicamentos": a referral with only a weak
+    // "podés / puede" in the same sentence is the safe answer.
+    if (HEALTH_REFERRAL_RE.test(s) && !STRONG_HEALTH_ASSURANCE_RE.test(s)) continue
     // A question back or an indirect "si…" next to a doctor referral is the safe answer the prompt asks for.
     if (referral && (/\?\s*$/u.test(s) || INDIRECT_RE.test(s))) continue
     return s.trim()

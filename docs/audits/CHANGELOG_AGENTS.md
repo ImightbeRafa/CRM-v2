@@ -5,14 +5,14 @@
   "Te pago por sinpe"), a closed payment question ("¿me pasás el número?"), a method choice, the link / SINPE
   grammars, or an order question ("¿Me lo tienen listo para el sábado?") — with no third-person paying act, balance
   word (mitad / resto / adelanto…) or debt word (debo / falta / pendiente). Result: 0 worse-than-live payment cases
-  over ~620k generated combinations (g1–g8). Split-payment questions go to a person, as on live.
+  over ~620k generated combinations (g1–g9). Plan questions with contra entrega or a how-to-pay question ("¿Se puede pagar la mitad por sinpe y el resto contra entrega?") are answered, as on live; other split payments ("Les pago la mitad hoy y el resto mañana") go to a person, as on live.
 - Rounds since the last entry, in short: verifier r10–r13 and SecureDog r7–r8 (bursts in a 10-min window; "¿" splits
   sentences; refund-status questions go to a person — INT-147; health: doctor-subject / disclaimer / "podría causar"
   exemptions, bare yes/no answers held, medication / condition / age words; ReDoS fixed — INT-142).
 - Deploy 2: the "¿ya pagó?" check sees the whole unanswered burst (per-message masking, head + tail, no 4k cut,
   look-alike labels folded), its budget counts in the turn, `SOFT_AI_PAYMENT_CHECK` reaches the container, shadow by
   default. Eval vs real Luna: 50/50 claims, ~5% asks flagged; ~10% time-outs at 4.5 s still to be measured in shadow.
-- Gate: verifier r13 PASS, SecureDog r8 PASS (D2 in shadow). Tips: luna-10 40d35653 (979 tests), luna-10-d2 a0568423
+- Gate: verifier r13 PASS, SecureDog r8 PASS (D2 in shadow), confirmed on the head code. Tips: luna-10 40d35653 (979 tests), luna-10-d2 a0568423
   (993), luna-10-staffbot fffe2489. Register: INT-140/141/142/147 Verified; INT-138/144/145 follow-ups, not blocking.
 - Still to do before the runbook: full exam, mystery shoppers, silent trial (test budget resets tomorrow).
 

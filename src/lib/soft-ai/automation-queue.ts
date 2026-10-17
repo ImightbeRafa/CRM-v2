@@ -185,22 +185,36 @@ export async function newerBurstJobPending(
   return Boolean(newer)
 }
 
+/**
+ * The claimed job answers the burst, so its siblings are done. Except a job whose customer message already has a store
+ * reply after it (Meta delivered it late, after the reply went out): that message is not in the claimed job's burst
+ * (the burst starts after the last reply), so the job stays queued and runs on its own afterwards — its opt-out /
+ * "hablar con una persona" / receipt is still checked (SecureDog F1: superseded = checked).
+ */
 async function supersedeOlderJobs(conversationId: string, keepId: string) {
-  await prisma.chatAutomationJob.updateMany({
-    where: {
-      conversationId,
-      id: { not: keepId },
-      status: { in: ['pending', 'retry'] },
-    },
-    data: {
-      status: 'completed',
-      lastErrorCode: 'SUPERSEDED',
-      processedAt: new Date(),
-      payload: Prisma.DbNull,
-      leaseToken: null,
-      leaseExpiresAt: null,
-    },
-  })
+  await prisma.$executeRaw`
+    UPDATE "ChatAutomationJob" job
+    SET "status" = 'completed',
+        "lastErrorCode" = 'SUPERSEDED',
+        "processedAt" = CURRENT_TIMESTAMP,
+        "payload" = NULL,
+        "leaseToken" = NULL,
+        "leaseExpiresAt" = NULL,
+        "updatedAt" = CURRENT_TIMESTAMP
+    WHERE job."conversationId" = ${conversationId}
+      AND job."id" <> ${keepId}
+      AND job."status" IN ('pending', 'retry')
+      AND NOT EXISTS (
+        SELECT 1
+        FROM "ChatMessage" msg
+        JOIN "ChatMessage" reply
+          ON reply."conversationId" = msg."conversationId"
+         AND reply."tenantId" = msg."tenantId"
+         AND reply."direction" = 'outbound'
+         AND (reply."sentAt", reply."id") > (msg."sentAt", msg."id")
+        WHERE msg."id" = job."messageId"
+      )
+  `
 }
 
 async function deferJob(id: string, delayMs = 5_000) {

@@ -281,7 +281,8 @@ async function loadUnansweredInbound(input: {
 }): Promise<BurstMessage[]> {
   const since = new Date(input.triggerSentAt.getTime() - BURST_MAX_AGE_MS)
   const lastReply = await prisma.chatMessage.findFirst({
-    where: { tenantId: input.tenantId, conversationId: input.conversationId, direction: 'outbound' },
+    // Bounded by the day (SecureDog F3): an older reply changes nothing (the day bound applies) and the walk stops.
+    where: { tenantId: input.tenantId, conversationId: input.conversationId, direction: 'outbound', sentAt: { gte: since } },
     orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
     select: { id: true, sentAt: true },
   })

@@ -193,14 +193,29 @@ export function burstOtherTexts(
   plan: Pick<BurstInboundPlan, 'inboundText'>,
   trigger?: Pick<BurstTrigger, 'content' | 'messageType'>,
 ): Array<{ text: string; messageType: string }> {
-  const planned = plan.inboundText.trim()
+  const planned = collapseSpace(plan.inboundText)
   const bubbles = earlier
     .filter((m) => m.direction === 'inbound' && m.messageType !== 'sticker')
-    .map((m) => ({ text: realText(m.content), messageType: m.messageType || 'text' }))
+    .map((m) => ({ text: collapseSpace(realText(m.content)), messageType: m.messageType || 'text' }))
   if (trigger && isMedia(trigger.messageType) && trigger.messageType !== 'sticker') {
-    bubbles.push({ text: realText(trigger.content), messageType: trigger.messageType || 'image' })
+    bubbles.push({ text: collapseSpace(realText(trigger.content)), messageType: trigger.messageType || 'image' })
   }
-  return bubbles.filter((m) => m.text && m.text !== planned)
+  // Up to BURST_LOAD_MAX bubbles: the same text of the same type is decided once (SecureDog F2: per-turn CPU).
+  const seen = new Set<string>()
+  return bubbles.filter((m) => {
+    const key = `${m.messageType}\u0000${m.text}`
+    if (!m.text || m.text === planned || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+/**
+ * Whitespace runs as one space, for the per-bubble checks only (never the planned / model text): a 4 KB run of spaces
+ * or newlines makes the opt-out / payment patterns slow (SecureDog F2) and means nothing to them.
+ */
+function collapseSpace(text: string | null | undefined): string {
+  return (text || '').replace(/\s+/g, ' ').trim()
 }
 
 /**
@@ -267,7 +282,7 @@ export function burstReviewFor<T extends BurstDecisionLike>(input: {
 /** A "STOP" / "no me escriban más" in ANY bubble of the burst (trigger, other texts, captions): no later waiting ack. */
 export function burstOptOut(trigger: Pick<BurstTrigger, 'content'>, earlier: BurstMessage[]): boolean {
   return [trigger.content, ...earlier.filter((m) => m.direction === 'inbound').map((m) => m.content)].some((t) =>
-    isWaitingOptOutText(t),
+    isWaitingOptOutText(collapseSpace(t)),
   )
 }
 

@@ -524,7 +524,6 @@ describe('burst hardening · every bubble checked, a day at most, newest message
     assert.equal(BURST_LOAD_MAX, 100)
     const turn = read('src/lib/soft-ai/agent-turn.ts')
     const fn = turn.slice(turn.indexOf('async function loadUnansweredInbound'), turn.indexOf('async function yieldsToNewerBurst'))
-    assert.match(fn, /where: \{ tenantId: input\.tenantId, conversationId: input\.conversationId, direction: 'outbound' \}/)
     assert.match(fn, /tenantId: input\.tenantId,\s+conversationId: input\.conversationId,\s+direction: 'inbound',\s+id: \{ not: input\.triggerMessageId \},/)
     // After the last reply in (sentAt, id) order, like the history window (same-second tie kept).
     assert.match(fn, /select: \{ id: true, sentAt: true \}/)
@@ -555,5 +554,49 @@ describe('burst hardening · every bubble checked, a day at most, newest message
     const proc = read('src/lib/soft-ai/automation-processor.ts')
     const kick = proc.slice(proc.indexOf('export async function kickNextConversationJob'), proc.indexOf('export async function processClaimedJob'))
     assert.match(kick, /orderBy: NEWEST_BURST_JOB_ORDER,/)
+  })
+})
+
+describe('burst hardening · SecureDog r1 (superseded = checked, per-turn CPU, bounded reply lookup)', () => {
+  it('F1: a job whose message already has a store reply after it is never superseded — it runs on its own afterwards', () => {
+    const queue = read('src/lib/soft-ai/automation-queue.ts')
+    const fn = queue.slice(queue.indexOf('async function supersedeOlderJobs'), queue.indexOf('async function deferJob'))
+    assert.match(fn, /WHERE job\."conversationId" = \$\{conversationId\}\s+AND job\."id" <> \$\{keepId\}\s+AND job\."status" IN \('pending', 'retry'\)/)
+    assert.match(fn, /AND NOT EXISTS \(\s+SELECT 1\s+FROM "ChatMessage" msg\s+JOIN "ChatMessage" reply/)
+    assert.match(fn, /reply\."conversationId" = msg\."conversationId"\s+AND reply\."tenantId" = msg\."tenantId"\s+AND reply\."direction" = 'outbound'\s+AND \(reply\."sentAt", reply\."id"\) > \(msg\."sentAt", msg\."id"\)/)
+    assert.match(fn, /WHERE msg\."id" = job\."messageId"/)
+    assert.match(fn, /"lastErrorCode" = 'SUPERSEDED'/)
+    assert.match(fn, /"payload" = NULL/)
+    // A tagged template: every value is a bound parameter.
+    assert.match(fn, /await prisma\.\$executeRaw`/)
+    assert.doesNotMatch(fn, /executeRawUnsafe|Prisma\.raw/)
+  })
+
+  it('F2: whitespace runs collapse and repeated bubbles are decided once (per-bubble checks only)', () => {
+    const spam = Array.from({ length: 100 }, (_, i) => inbound(`a${' '.repeat(4000)}x`, -100 + i))
+    const others = burstOtherTexts(spam, { inboundText: 'hola' })
+    assert.deepEqual(others, [{ text: 'a x', messageType: 'text' }])
+    assert.deepEqual(
+      burstOtherTexts([inbound('¿Cómo   pago?', 0), inbound('¿Cómo pago?', 1), inbound('¿Cómo pago?', 2, 'image')], { inboundText: 'hola' }),
+      [
+        { text: '¿Cómo pago?', messageType: 'text' },
+        { text: '¿Cómo pago?', messageType: 'image' },
+      ],
+    )
+    // The planned text itself (with its own spacing) is not checked twice.
+    assert.deepEqual(burstOtherTexts([inbound('Quiero  2\ncajas', 0)], { inboundText: 'Quiero 2 cajas' }), [])
+    // A STOP followed by a long run of spaces / newlines is still a STOP.
+    assert.equal(run({ content: 'hola', s: 2 }, [inbound(`no me escriban más${' '.repeat(4000)}`, 0)]).optOut, true)
+    assert.equal(run({ content: 'hola', s: 2 }, [inbound(`STOP${'\n'.repeat(4000)}`, 0)]).optOut, true)
+    const t0 = Date.now()
+    run({ content: 'hola', s: 200 }, Array.from({ length: 100 }, (_, i) => inbound(`no me escriban${' '.repeat(4000)}x${i}`, i)))
+    assert.ok(Date.now() - t0 < 3_000, `100 adversarial bubbles took ${Date.now() - t0} ms`)
+    assert.match(read('src/lib/soft-ai/waiting-ack.ts'), /\(\\s\+por\\s\+favor\)\?\[\\s\.!\]\*\$\|/)
+  })
+
+  it('F3: the last-reply lookup is bounded by the day', () => {
+    const turn = read('src/lib/soft-ai/agent-turn.ts')
+    const fn = turn.slice(turn.indexOf('async function loadUnansweredInbound'), turn.indexOf('async function yieldsToNewerBurst'))
+    assert.match(fn, /where: \{ tenantId: input\.tenantId, conversationId: input\.conversationId, direction: 'outbound', sentAt: \{ gte: since \} \}/)
   })
 })

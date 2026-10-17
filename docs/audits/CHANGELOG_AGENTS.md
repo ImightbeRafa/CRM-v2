@@ -28,6 +28,22 @@
   a realistic stale-receipt test. Softened: the receipt wording above. Left open, with a separate follow-up: a job
   stuck in `processing` with an expired lease plus a newer pending job can block that chat's claim. It also makes a
   cron batch return nothing (single-flight P2002). This is already in the base branch, not caused by this slice.
+- SecureDog round 1: FIX BEFORE PROD, over one Medium (F1). Fixed:
+  - F1: with the sentAt order, a message that Meta delivered late, and that was sent before the store's last reply,
+    was superseded but never checked. That message is outside the claimed job's burst. Now `supersedeOlderJobs`
+    never supersedes a job whose message already has a store reply after it, matched by tenant and chat. That job
+    stays queued and runs on its own afterwards, as live does today for that arrival order, so its opt-out, request
+    for a person or receipt is still checked.
+  - F2 (per-turn CPU on 100 adversarial 4 KB bubbles): the per-bubble checks collapse whitespace runs and decide
+    each repeated bubble once. The waiting ack's opt-out regex tail no longer backtracks. The planned and model text
+    are unchanged.
+  - F3: the last-reply lookup of the long-burst load is bounded by the day.
+- Docker harness: 10 scenarios, including both F1 interleavings. Tests: `inbound-burst.test.ts` +3.
+- Left open:
+  - F4 (rare): a job older than 60 s with 100+ bubbles after its trigger uses the newest 100 and does not merge
+    them with its window.
+  - F6: the expired-lease livelock above.
+  - F5 (info): there is no durable opt-out flag. The 24 h bound only drops an opt-out that no job ever checked.
 
 ## 2026-10-17 (night) — PR #100 burst fix + quick replies + confirmation false alarm, deployed 5820a6fc
 

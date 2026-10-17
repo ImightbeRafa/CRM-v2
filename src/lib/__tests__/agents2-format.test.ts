@@ -536,7 +536,9 @@ describe('3c. deterministic replies', () => {
   it('live turn and Probar pass the pending method question to the decision', () => {
     const turn = read('src/lib/soft-ai/agent-turn.ts')
     assert.equal((turn.match(/awaitingPaymentMethod: awaitingPaymentMethodChoice\(history\),/g) || []).length, 2)
-    assert.equal((turn.match(/paymentOptions: runtimeInput\.salesPaymentOptions,/g) || []).length, 2)
+    // luna-10 (verifier round 4): both call sites pass the sales payment options plus the customer's text since the
+    // store last answered (for [[DATOS_PAGO]] names-only vs details).
+    assert.equal((turn.match(/paymentOptions: \{ \.\.\.runtimeInput\.salesPaymentOptions, customerText: customerTextSinceLastAnswer\(/g) || []).length, 2)
   })
 })
 

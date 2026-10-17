@@ -167,6 +167,16 @@ function finalizePlannedText(plan: TurnDeliveryPlan, payload: JobPayload, trigge
   return withDelayApology(text, { sweep: Boolean(payload.sweep), messageAgeMs: Date.now() - triggerSentAt.getTime() })
 }
 
+/** The customer's messages since the store last wrote, oldest first, plus this one. */
+function customerTextSinceLastAnswer(history: Array<{ direction: string; content?: string | null }>, current: string | null | undefined): string {
+  const since: string[] = []
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].direction === 'outbound') break
+    if (history[i].content) since.unshift(String(history[i].content))
+  }
+  return [...since, current || ''].join('\n')
+}
+
 /** luna-10 night intro: the agent's first name, the store, and whether anyone already wrote to this customer. */
 function nightIntroWho(
   agent: { introductionNames?: string[] | null; brandFacts?: { storeName?: string | null } | null },
@@ -1005,7 +1015,8 @@ export async function executeAgentLayerTurn(
     shortcuts,
     shortenLongReply: true,
     linkAllowlist: runtimeInput.linkAllowlist,
-    paymentOptions: runtimeInput.salesPaymentOptions,
+    // Verifier round 4: "pasame los datos" … "gracias" — every customer message since the store last answered.
+    paymentOptions: { ...runtimeInput.salesPaymentOptions, customerText: customerTextSinceLastAnswer(history, payload.content) },
   })
   const needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
   // B1: what goes out is planned by code: the model reply (checked), the safe line, or the hand-off text.
@@ -2060,7 +2071,7 @@ async function runAgentTestTurnInner(input: {
       shortcuts,
       shortenLongReply: true,
       linkAllowlist: runtimeInput.linkAllowlist,
-      paymentOptions: runtimeInput.salesPaymentOptions,
+      paymentOptions: { ...runtimeInput.salesPaymentOptions, customerText: customerTextSinceLastAnswer(input.history ?? [], input.inboundText) },
     })
     // Same plan as the live turn (B1): checked model reply, safe line, or hand-off text.
     const plan = planModelTurnDelivery({

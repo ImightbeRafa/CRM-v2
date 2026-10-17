@@ -45,7 +45,7 @@ export type PaymentFillOptions = {
 
 /** The customer explicitly asked for the payment details (numbers / account / all the data). */
 const ASKS_PAYMENT_DETAILS_RE =
-  /(?<![\p{L}])(datos|n[uú]mero|cuenta|iban|a\s+nombre\s+de|a\s+d[oó]nde\s+(te\s+|les\s+)?(pago|deposito|transfiero|mando)|todos\s+los\s+(m[eé]todos|datos))(?![\p{L}])/iu
+  /(?<![\p{L}])(datos|n[uú]mero|cuenta|iban|a\s+nombre\s+de|(a\s+)?d[oó]nde\s+(te\s+|les\s+|le\s+)?(pago|deposito|deposit[oa]|transfiero|mando|hago\s+el\s+sinpe)|todos\s+los\s+(m[eé]todos|datos)|info(rmaci[oó]n)?\s+para\s+pagar|(me\s+)?(pas[aá]s?|pasame|pas[eé]me|d[aá]me|mand[aá]me|regal[aá]me)\s+(el|la|los)\s+(sinpe|cuenta|iban|datos|n[uú]mero)|cu[aá]l\s+es\s+(el|la)\s+(sinpe|cuenta|iban))(?![\p{L}])/iu
 
 export function customerAskedPaymentDetails(text: string | null | undefined): boolean {
   return ASKS_PAYMENT_DETAILS_RE.test(text || '')
@@ -54,7 +54,8 @@ export function customerAskedPaymentDetails(text: string | null | undefined): bo
 /** "Tenemos SINPE Móvil, tarjeta y contra entrega (GAM). ¿Cuál preferís?" — names only, from configuration. */
 export function paymentMethodsQuestion(facts: BrandFacts): string {
   const labels = paymentMethodLabels(paymentMethodsOf(facts), paymentLabelOptions(facts))
-  return labels.length ? `Tenemos ${joinEs(labels)}. ¿Cuál preferís?` : ''
+  // Verifier round 4: the sales flow's own method question (PAYMENT_METHOD_ASKED_RE) — the next "SINPE" is a choice.
+  return labels.length ? `Tenemos ${joinEs(labels)}. ¿Cómo preferís pagar?` : ''
 }
 
 /** Owner text as one clean line (no blank lines can ever split a payment block into two messages). */
@@ -185,7 +186,7 @@ export function fillPaymentToken(
     if (filledOnce.has(method)) return ''
     filledOnce.add(method)
     // [[DATOS_PAGO]] without a request for the details → the method names + "¿Cuál preferís?" (no numbers).
-    const namesOnly = method === 'all' && opts.customerText !== undefined && !customerAskedPaymentDetails(opts.customerText)
+    const namesOnly = method === 'all' && opts.customerText !== undefined && !opts.chosenMethod && !customerAskedPaymentDetails(opts.customerText)
     if (namesOnly && canSharePaymentFacts(facts)) {
       const question = paymentMethodsQuestion(facts)
       if (question) return question

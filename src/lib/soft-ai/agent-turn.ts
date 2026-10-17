@@ -2112,7 +2112,13 @@ async function runAgentTestTurnInner(input: {
     ? await loadHoursSetup(input.tenantId, runtimeAgent.id).then((h) => afterHoursState(h.hours, new Date(), { simulate: true, aiDisclosure: h.aiDisclosure }))
     : IN_HOURS
   const probarInventoryIds = await loadMappedInventoryIds(input.tenantId, runtimeAgent.id)
-  const probarMediaSalesContext = isMediaLikeMessageType(input.messageType)
+  // Burst = one reply: the same burst planning as live (history messages keep their type when the caller sends it —
+  // silent trial, burst scripts; the Probar UI sends text only). The trigger is sent "now".
+  const probarTrigger = { content: input.inboundText, messageType: input.messageType || 'text', sentAt: new Date() }
+  const probarBurstEarlier = unansweredBurst(history, probarTrigger)
+  // Like live: a photo / file / audio here or earlier in the burst needs the sale's state before the decision.
+  const probarMediaSalesContext =
+    isMediaLikeMessageType(input.messageType) || probarBurstEarlier.some((m) => isMediaLikeMessageType(m.messageType))
     ? await loadAgentSalesContext({
         tenantId: input.tenantId,
         agentId: runtimeAgent.id,
@@ -2121,9 +2127,6 @@ async function runAgentTestTurnInner(input: {
       })
     : null
   const probarImageReplyIds = imageChannel(account.platform) ? sendableImageReplyIds(replyAssets, input.sentImageIds) : new Set<string>()
-  // Burst = one reply: the same burst planning as live (Probar history has text bubbles only; sent "now").
-  const probarTrigger = { content: input.inboundText, messageType: input.messageType || 'text', sentAt: new Date() }
-  const probarBurstEarlier = unansweredBurst(history, probarTrigger)
   const probarBurst = planBurstInbound({
     trigger: probarTrigger,
     earlier: probarBurstEarlier,

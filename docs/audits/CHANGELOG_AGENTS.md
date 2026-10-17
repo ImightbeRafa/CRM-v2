@@ -47,7 +47,8 @@
   - A running job yields only to a newer job whose message was sent after its own (an old message Meta delivered late
     never takes the burst).
   - The waiting ack reads every customer message since the hand-off for an opt-out.
-  - Verifier round 5 PASS WITH NOTES: a later "mejor no" cancels an earlier "lo quiero"; the photo-receipt check
+  - Verifier round 5 + 6 (merge) PASS WITH NOTES: a later "mejor no" cancels an earlier "lo quiero" ("ya no tengo
+    dudas" does not); Probar loads the sale state for an earlier photo like live; the photo-receipt check
     keeps reading the newest message only.
 - Tests: `inbound-burst.test.ts` (30, they run the real `decideBurstTurn`). Source-text asserts updated in
   chat-automation-job, luna10-hard-blocks, agents2-b-sales, agents2-pace and probar-scenarios (same intent, new

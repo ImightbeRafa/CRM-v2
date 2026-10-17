@@ -13,8 +13,18 @@
   or audio (review hand-off, the chat stays on IA). A receipt-looking photo anywhere in the burst keeps the receipt
   path. Photo / audio alone, stickers and caption opt-outs keep today's behaviour. Probar is unchanged (one message
   per run).
-- Tests: `inbound-burst.test.ts` (15). Two source-text asserts were updated to the new names (webhook dispatch, burst
-  customer text). test:soft-ai 996/996, test:chat-harden 645/645, tsc + lint clean.
+- Verifier round 1 FAIL, then fixed:
+  - (High) A TRUE hand-off in any text bubble of the burst wins ("Quiero hablar con una persona" + "por favor"). A
+    planned hand-off never yields, and neither does a reclaimed job.
+  - No job for an inbound with no content.
+  - The burst stops at the store's last reply wherever it sits, in send order.
+  - The photo caption joins the answered text.
+  - The photo review is a separate flag, so the reply keeps its images and the repeat guard, and it survives a reclaim.
+  - Superseded tokens count toward the daily cap, and a superseded job always kicks the newer one.
+  - The first round's "tsc clean" was wrong: the new test had type errors. Now exit 0.
+- Tests: `inbound-burst.test.ts` (22). Source-text asserts updated in chat-automation-job, luna10-hard-blocks,
+  agents2-b-sales and agents2-pace (same intent, new names). test:soft-ai 1003/1003, test:chat-harden 645/645,
+  tsc + lint clean.
 
 ## 2026-10-17 (night) — PatchHouse Instagram + WhatsApp LIVE on gpt-6-luna
 

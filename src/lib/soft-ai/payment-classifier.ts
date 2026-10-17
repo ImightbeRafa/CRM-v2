@@ -25,7 +25,7 @@ const RISK_CUE_RE =
 
 const INFO_CUE_RE =
   // luna-10 exam: "¿Tienes link de pago?" is the card-payment question (it used to fall through to a person).
-  /\b(c[oó]mo\s+(pago|puedo\s+pagar|se\s+paga)|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|aceptan|n[uú]mero\s+(de\s+)?sinpe|sinpe\s+m[oó]vil|tarjeta|cuenta\s+(bancaria|iban)|transferencia|(link|enlace)\s+(de|para)\s+(pago|pagar))\b/i
+  /\b(c[oó]mo\s+(pago|puedo\s+pagar|se\s+paga)|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|aceptan|n[uú]mero\s+(de\s+)?sinpe|sinpe\s+m[oó]vil|tarjeta|cuenta\s+(bancaria|iban)|transferencia|(tienen|ten[eé]s|tienes|hay|me\s+(pas[aá]s|mand[aá]s|das|regal[aá]s))\s+(un\s+|el\s+)?(link|enlace)\s+(de|para)\s+(pago|pagar))\b/i
 
 const COD_QUESTION_RE =
   /(?<![\p{L}])(contra\s?entrega|pag(o|ar)\s+(al\s+recibir|cuando\s+(lo\s+|la\s+|me\s+)?(recib|lleg))|pago\s+en\s+efectivo\s+al|pag(o|ar)\s+(en|con)\s+efectivo(?![\p{L}]))/iu
@@ -82,7 +82,7 @@ const PAYMENT_QUESTION_RE = new RegExp(
   String.raw`(?<![\p{L}])(` +
     String.raw`(puedo|se\s+puede|pued[eo]n|aceptan|hay\s+que|tengo\s+que|debo)(\s+\p{L}+){0,2}\s+(pagar|pago|pagarles|pagarte)` +
     // luna-10 exam: "¿puedo hacerles un sinpe y mandar un Flash?" — a future question (claims were checked first).
-    String.raw`|(puedo|se\s+puede|pued[eo]n|podr[ií]a)\s+(hacer(les|te|le)?|mandar(les|te|le)?|enviar(les|te|le)?)\s+(un|el|una|la)\s+(sinpe|transferencia|dep[oó]sito)` +
+    String.raw`|(puedo|se\s+puede|pued[eo]n|podr[ií]a)\s+hacer(les|te|le)?\s+(un|una)\s+(sinpe|transferencia|dep[oó]sito)` +
     String.raw`|(c[oó]mo|cu[aá]ndo|d[oó]nde|qu[eé]\s+formas?\s+de)(\s+\p{L}+){0,2}\s+(pago|pagar|se\s+paga|pagos)` +
     String.raw`|(reciben|tienen|aceptan|usan|trabajan\s+con)\s+(sinpe|transferencias?|tarjetas?|efectivo)` +
     String.raw`)(?![\p{L}])`,

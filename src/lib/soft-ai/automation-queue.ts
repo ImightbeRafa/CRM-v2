@@ -12,6 +12,14 @@ export const LEASE_MS = 45_000
 // Must cover the whole agent turn (SOFT_AI_TURN_BUDGET_MS 35 s) + the Meta send (7 s), and stay under the 45 s lease.
 export const PROCESSING_TIMEOUT_MS = 42_000
 export const MAX_ATTEMPTS = 5
+/**
+ * Burst = one reply (2026-10-17, PatchHouse IG): a customer often sends 2–3 messages within seconds (an ad share +
+ * "¡Hola! Quiero más información."). Each inbound job waits this long before it may be claimed, so the newest job of
+ * the burst answers all of it and the older ones are superseded at claim (no double greeting).
+ */
+export const BURST_SETTLE_MS = 3_500
+/** A newer job of the same chat that becomes claimable within this horizon holds the older ones back (claim SQL). */
+export const BURST_HOLD_SECONDS = 10
 
 export type SoftAiJobStatus =
   | 'pending'
@@ -65,6 +73,8 @@ export async function persistJob(input: {
   kind?: typeof SOFT_AI_JOB_KIND
   deliveryKey?: string
   payload?: Record<string, unknown>
+  /** Not claimable before this time (inbound bursts: now + BURST_SETTLE_MS). Default: now. */
+  availableAt?: Date
 }) {
   const deliveryKey = input.deliveryKey || softAiInboundDeliveryKey(input.messageId)
   const payload = {
@@ -85,6 +95,7 @@ export async function persistJob(input: {
         kind: input.kind || SOFT_AI_JOB_KIND,
         deliveryKey,
         payload: payload as Prisma.InputJsonValue,
+        ...(input.availableAt ? { availableAt: input.availableAt } : {}),
       },
       select: { id: true, status: true, deliveryKey: true },
     })
@@ -138,6 +149,33 @@ export async function rearmFinishedJob(input: {
   return res.count === 1
 }
 
+/**
+ * Burst = one reply: is there a newer customer-message job in this chat that will answer the whole burst? Only a
+ * pending / retry job created after this one (same tenant and chat). Checked before the model runs and again right
+ * before the send: this job then stops as superseded and the newer one answers everything.
+ */
+export async function newerBurstJobPending(
+  row: Pick<ClaimedChatAutomationJob, 'id' | 'tenantId' | 'conversationId'>,
+): Promise<boolean> {
+  const self = await prisma.chatAutomationJob.findFirst({
+    where: { id: row.id, tenantId: row.tenantId },
+    select: { createdAt: true },
+  })
+  if (!self) return false
+  const newer = await prisma.chatAutomationJob.findFirst({
+    where: {
+      tenantId: row.tenantId,
+      conversationId: row.conversationId,
+      id: { not: row.id },
+      kind: SOFT_AI_JOB_KIND,
+      status: { in: ['pending', 'retry'] },
+      createdAt: { gt: self.createdAt },
+    },
+    select: { id: true },
+  })
+  return Boolean(newer)
+}
+
 async function supersedeOlderJobs(conversationId: string, keepId: string) {
   await prisma.chatAutomationJob.updateMany({
     where: {
@@ -173,6 +211,8 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
   const leaseExpiresAt = new Date(Date.now() + LEASE_MS)
   // Prefer the newest pending job per conversation; older siblings are
   // SUPERSEDED after a successful claim (A1 single-flight / burst coalesce).
+  // Burst = one reply: a newer job still settling (claimable within BURST_HOLD_SECONDS) also holds the older ones
+  // back, so the first bubble of a burst is not answered alone while the next one is seconds away.
   // Single-flight partial unique on status=processing defers concurrent claimants.
   try {
     const rows = await prisma.$queryRaw<
@@ -213,7 +253,7 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
             WHERE newer."conversationId" = current."conversationId"
               AND (newer."createdAt", newer."id") > (current."createdAt", current."id")
               AND newer."status" IN ('pending', 'retry')
-              AND newer."availableAt" <= CURRENT_TIMESTAMP
+              AND newer."availableAt" <= CURRENT_TIMESTAMP + ${Prisma.raw(`INTERVAL '${BURST_HOLD_SECONDS} seconds'`)}
           )
           AND NOT EXISTS (
             SELECT 1

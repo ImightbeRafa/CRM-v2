@@ -1,3 +1,33 @@
+## 2026-10-17 (late night) — Burst = one reply + media with text (branch claudio/inbox-burst, NOT deployed)
+
+- Seen live on PatchHouse IG: a customer's 2–3 bubbles within seconds (ad share + "¡Hola! Quiero más información.",
+  "Top" + "GLP1") got one turn each: two greetings, or "¿Cuál te interesa?" right before the real answer.
+- Fix: each inbound job waits `BURST_SETTLE_MS` (3.5 s) before it can be claimed, and the webhook dispatches it after
+  that (`processJobAfterSettle`). At claim time, a newer job of the same chat that becomes claimable within 10 s holds
+  the older ones back, and the newest job then supersedes them as before. A job that is already running checks for a
+  newer queued bubble (`newerBurstJobPending`) after the claim gates and again right before each send. If one is
+  there and the trigger is under 60 s old, the job stops as `superseded` (the generated row keeps its tokens) and the
+  newer job answers the whole burst. Delivery keys and per-chat single-flight are unchanged.
+- Media + text (User 722630: "Que costo tiene" + photo got "¿Me contás por escrito…?"): `inbound-burst.ts` plans the
+  burst. With customer text, the text is decided / answered normally and a person is still asked to look at the photo
+  or audio (review hand-off, the chat stays on IA). A receipt-looking photo anywhere in the burst keeps the receipt
+  path. Photo / audio alone, stickers and caption opt-outs keep today's behaviour. Probar is unchanged (one message
+  per run).
+- Verifier round 1 FAIL, then fixed:
+  - (High) A TRUE hand-off in any text bubble of the burst wins ("Quiero hablar con una persona" + "por favor"). A
+    planned hand-off never yields, and neither does a reclaimed job.
+  - No job for an inbound with no content.
+  - The burst stops at the store's last reply wherever it sits, in send order.
+  - The photo caption joins the answered text.
+  - The photo review is a separate flag, so the reply keeps its images and the repeat guard, and it survives a reclaim.
+  - Superseded tokens count toward the daily cap, and a superseded job always kicks the newer one.
+  - The first round's "tsc clean" was wrong: the new test had type errors. Now exit 0.
+- Verifier round 2 PASS WITH NOTES; its Medium (opt-out in an earlier photo caption) fixed, and a burst photo review
+  no longer hides the "La IA no respondió" alert.
+- Tests: `inbound-burst.test.ts` (23). Source-text asserts updated in chat-automation-job, luna10-hard-blocks,
+  agents2-b-sales and agents2-pace (same intent, new names). test:soft-ai 1004/1004, test:chat-harden 645/645,
+  tsc + lint clean.
+
 ## 2026-10-17 (night) — PatchHouse Instagram + WhatsApp LIVE on gpt-6-luna
 
 - Deploy D1 (8ce27b4e), then D1b: the quick-check judge gets the store facts (pickup, shipping, payment methods), plus a

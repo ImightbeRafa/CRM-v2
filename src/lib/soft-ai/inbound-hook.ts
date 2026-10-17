@@ -23,7 +23,7 @@ import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { softAiCanalContextLine } from '@/lib/soft-ai/channel-context'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
-import { persistJob } from '@/lib/soft-ai/automation-queue'
+import { BURST_SETTLE_MS, persistJob } from '@/lib/soft-ai/automation-queue'
 
 type InboundHookArgs = {
   tenantId: string
@@ -390,6 +390,9 @@ export async function enqueueSoftAiAfterInbound(
     if (!args.conversationId || !args.messageId) {
       return { skippedReason: 'missing_conversation_or_message' }
     }
+    // No text and no attachment (e.g. an unsupported Instagram event): the job could only fail (SOFT_AI_PAYLOAD_INVALID),
+    // and as the newest job of a burst it would hold back / supersede the real question (burst = one reply).
+    if (!(args.content || '').trim()) return { skippedReason: 'empty_content' }
     const enabled = await shouldUseSoftTenantAiV1(args.tenantId)
     if (!enabled) return { skippedReason: 'flag_off' }
 
@@ -402,6 +405,8 @@ export async function enqueueSoftAiAfterInbound(
       platform: args.platform,
       content: args.content,
       senderName: args.senderName,
+      // Burst = one reply: the job waits a few seconds so the customer's next bubble joins it (BURST_SETTLE_MS).
+      availableAt: new Date(Date.now() + BURST_SETTLE_MS),
     })
     return { jobId: row.id, duplicate: row.duplicate }
   } catch (error) {

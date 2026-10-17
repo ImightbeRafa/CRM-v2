@@ -102,7 +102,8 @@ export async function loadDailyBilledTokens(tenantId: string, agentId?: string):
       tenantId,
       ...(agentId ? { agentId } : {}),
       createdAt: { gte: start },
-      status: { notIn: ['skipped'] },
+      // Burst = one reply: a reply generated and then superseded by a newer bubble spent its tokens too.
+      OR: [{ status: { notIn: ['skipped'] } }, { skipReason: 'superseded' }],
       mode: { not: 'test' },
     },
     _sum: {

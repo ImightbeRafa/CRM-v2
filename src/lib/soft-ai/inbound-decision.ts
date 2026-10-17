@@ -13,16 +13,24 @@ import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
 import {
   classifyPaymentText,
   isCueFreePaymentChoiceText,
+  isPlainPaymentLinkQuestion,
   paymentHandoffReason,
   pendingMethodMention,
   type PaymentClassification,
 } from '@/lib/soft-ai/payment-classifier'
-import { paymentMethodBlock, PAYMENT_METHOD_TOKENS } from '@/lib/soft-ai/payment-guard'
+import {
+  customerAskedPaymentDetails,
+  paymentDetailsText,
+  paymentMethodBlock,
+  paymentMethodsQuestion,
+  PAYMENT_METHOD_TOKENS,
+} from '@/lib/soft-ai/payment-guard'
 import { parsePaymentMethodChoice, paymentMethodPick, type ChosenPaymentMethod } from '@/lib/soft-ai/sales-state'
 import { isOptOutText, mediaInboundPlan, routeInboundSafety } from '@/lib/soft-ai/llm/safety-router'
 import { HANDOFF_REASON, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
 import {
   matchVerbatimShortcut,
+  PAYMENT_INFO_BODY,
   renderShortcutTemplate,
   reservedShortcutBody,
   shortcutByKey,
@@ -315,7 +323,19 @@ export function decideInbound(input: {
   if (paymentClass === 'payment_info_safe') {
     if (canSharePaymentFacts(input.brandFacts)) {
       // agents2-format: one method named ("¿cuál es el número de SINPE?", "¿aceptan tarjeta?") → that method only.
-      const named = isCueFreePaymentChoiceText(input.inboundText) ? parsePaymentMethodChoice(input.inboundText) : null
+      // luna-10 exam round 2: "¿Tienes link de pago? ¿Para la ansiedad cuál me recomendás?" also asks about products —
+      // the model answers both (it fills [[PAGO_TARJETA]]); a plain link ask = the card block; "¿se puede pagar con
+      // tarjeta?" (exactly one method named) = that method only. Never every account for a one-method question.
+      const linkAsk = isPlainPaymentLinkQuestion(input.inboundText)
+      if (linkAsk && /recom(?:end|iend)/iu.test(input.inboundText)) {
+        steps.push({ step: 'payment_info', outcome: 'model', reason: 'link_plus_product_question' })
+        return continueToModel(paymentClass, steps)
+      }
+      const named = linkAsk
+        ? 'tarjeta'
+        : isCueFreePaymentChoiceText(input.inboundText)
+          ? parsePaymentMethodChoice(input.inboundText) ?? singleMethodNamed(input.inboundText)
+          : singleMethodNamed(input.inboundText)
       const namedReply = named && named !== 'contra_entrega' && paymentMethodBlock(input.brandFacts, named) ? paymentChoiceReply(named, 'Claro 🙌') : null
       if (namedReply) {
         steps.push({ step: 'payment_info', outcome: 'share', reason: named! })
@@ -333,8 +353,16 @@ export function decideInbound(input: {
       }
       steps.push({ step: 'payment_info', outcome: 'share' })
       // "¿Cómo pago?": the method names and the question (sys_payment_info); the details go out once they pick one.
+      // luna-10 exam round 2: a saved reply built on {{brand.payment.summary}} pasted every account and the raw method
+      // keys ("contra_entrega") to "¿se puede con tarjeta?". That dump is never the method question: the default list
+      // body is used instead, and the details go out only when the customer asked for them.
       const shortcut = seedShortcut('sys_payment_info', input.shortcuts)
-      const text = renderShortcutTemplate(shortcut.body, { facts: input.brandFacts })
+      const dumpsDetails = /brand\.payment\.summary/.test(shortcut.body)
+      const text = dumpsDetails
+        ? customerAskedPaymentDetails(input.inboundText)
+          ? paymentDetailsText(input.brandFacts) || renderShortcutTemplate(PAYMENT_INFO_BODY, { facts: input.brandFacts })
+          : renderShortcutTemplate(PAYMENT_INFO_BODY, { facts: input.brandFacts }) || paymentMethodsQuestion(input.brandFacts)
+        : renderShortcutTemplate(shortcut.body, { facts: input.brandFacts })
       return finish({
         text,
         intent: 'payment_info',
@@ -433,4 +461,16 @@ export function paymentChoiceReply(method: ChosenPaymentMethod, opener = 'Perfec
     default:
       return null
   }
+}
+
+const SINGLE_METHOD_WORDS: Array<[ChosenPaymentMethod, RegExp]> = [
+  ['sinpe', /(?<![\p{L}])sinpe(?![\p{L}])/iu],
+  ['transferencia', /(?<![\p{L}])(?:transfer\p{L}*|iban|cuenta\s+bancaria)(?![\p{L}])/iu],
+  ['tarjeta', /(?<![\p{L}])tarjetas?(?![\p{L}])/iu],
+  ['contra_entrega', /contra\s*entrega|al\s+recibir|efectivo/iu],
+]
+/** "¿Se puede pagar con tarjeta?" → 'tarjeta': exactly one method named in a payment-info question, else null. */
+function singleMethodNamed(text: string): ChosenPaymentMethod | null {
+  const hits = SINGLE_METHOD_WORDS.filter(([, re]) => re.test(text || '')).map(([m]) => m)
+  return hits.length === 1 ? hits[0] : null
 }

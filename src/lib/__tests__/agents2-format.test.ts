@@ -868,3 +868,22 @@ describe('SecureDog INT-114 reopened: safety first, then choices', () => {
     assert.equal(reviewNotificationText('order_review', 'Ana').snippet, 'Pidió contra entrega — confirmá los datos')
   })
 })
+
+describe('luna-10 exam round 2: the payment-info reply never dumps every account', () => {
+  const DUMP = SHORTCUTS.map((s) => (s.key === 'sys_payment_info' ? { ...s, body: 'Puedes pagar así: {{brand.payment.summary}}. Cuando lo hagas, mándame el comprobante 😊' } : s))
+  it('a saved reply built on {{brand.payment.summary}} is replaced by the method list + question', () => {
+    const d = decideInbound({ inboundText: '¿cómo puedo pagar?', brandFacts: FACTS, shortcuts: DUMP })
+    assert.equal(d.text, 'Podés pagar con:\n- SINPE Móvil\n- Transferencia\n- Tarjeta (en la web)\n- Contra entrega (solo GAM)\n\n¿Cómo preferís pagar?')
+    assert.doesNotMatch(d.text, /CR05|contra_entrega|Métodos:/)
+  })
+  it('one method named → only that method; a link ask → the card; link + product question → the model', () => {
+    const card = decideInbound({ inboundText: 'Se puede pagar con tarjeta?', brandFacts: FACTS, shortcuts: DUMP })
+    assert.match(card.text, /Podés pagar con tarjeta en https:\/\/tienda\.example\.cr/)
+    assert.doesNotMatch(card.text, /CR05/)
+    const link = decideInbound({ inboundText: 'Quiero comprar los 2 . Me envías el link de pago', brandFacts: FACTS, shortcuts: DUMP })
+    assert.match(link.text, /tienda\.example\.cr/)
+    assert.doesNotMatch(link.text, /CR05/)
+    const both = decideInbound({ inboundText: 'Muchas gracias \nTienes link de pago? Para la ansiedad cuáles me \nRecomiendas?', brandFacts: FACTS, shortcuts: DUMP })
+    assert.equal(both.handled, false)
+  })
+})

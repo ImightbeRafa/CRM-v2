@@ -437,3 +437,52 @@ describe("verifier round 6 (luna-10): allowlist question shapes, no COD narrowin
     assert.deepEqual(bad, [])
   })
 })
+
+describe("SecureDog round 5 + verifier round 7 (luna-10): plain-ask gate on every exit, INT-140 forms, health sentence rule", () => {
+  it("claims behind info / COD / how-to-pay questions go to a person; everyday asks reach the agent", async () => {
+    const { classifyPaymentText, hasPaymentWord } = await import("../soft-ai/payment-classifier")
+    const person = ['¿Puedo hacerles una transferencia? hecho', '¿Puedo hacerles una transferencia? Mamá la realizó', '¿Puedo hacerles un sinpe móvil? hecho', '¿Puedo pagar con tarjeta? listo, ya la pasé', '¿Aceptan transferencia? la realizó mi esposo', '¿Cuál es el número de sinpe? Mamá lo canceló', 'Mi mamá realizó la transferencia', 'Ya realizamos la transferencia', 'La transferencia ya la hicimos', 'La transferencia ya está', 'Mi esposo canceló con tarjeta', '¿Hacen contra entrega? Mamá lo canceló', '¿Puedo pagar con sinpe? Mamá lo canceló', '¿Cuándo se paga? Ya les pasaron la plata', '¿Con qué banco es el sinpe? Mamá lo canceló',
+     'Ya les pasamos la plata', 'Ya les mandamos la plata', 'Ya les mandamos el dinero', 'Ya les enviamos la plata', 'Ya les pasaron la plata', 'Les mandaron la plata', 'ya les enviamos los 15 mil', 'ya les mandamos ₡15000', 'Mi papá lo transfirió', 'Mamá lo canceló', 'Lo canceló mi hermano', 'Se canceló ayer', 'Abonamos ayer', 'La mitad la abonamos', 'ya les cayó', 'ya les cayó?',
+     'Como pagamos por sinpe, ¿cuándo nos llega el pedido?', 'Cuando pagamos el sinpe nos dijeron que llegaba en 2 días']
+    const agent = ['¿Cómo pagamos?', '¿Cómo puedo pagar?', 'Se puede pagar con tarjeta?', '¿Aceptan transferencia?', '¿Cuál es el número de sinpe?', '¿Hacen contra entrega en Cartago?', 'Puedo pagar contra entrega?', '¿Con qué banco es el sinpe?', 'Hola buenas, ¿cómo puedo pagar?', 'Quiero pagar con tarjeta', '¿Cuál es la política de cambios y devoluciones?', '¿El pago es por adelantado?', 'Hola! Quiero comprar 2 parches. ¿Aceptan tarjeta?', '¿Puedo pagar al recibir?', '¿Cuánta plata es?', 'cuanto es el envio?']
+    const bad: string[] = []
+    for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
+    for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    for (const t of ['Ya les pasaron la plata', 'Mamá lo canceló', 'Mi papá lo transfirió']) if (!hasPaymentWord(t)) bad.push('(info) no payment word: ' + t)
+    
+    assert.deepEqual(bad.filter((b) => !b.startsWith("(info)")), [])
+  })
+  it("verifier round 7 repros and false positives", async () => {
+    const { classifyPaymentText } = await import("../soft-ai/payment-classifier")
+    const person = ['¿Puedo hacerles una transferencia? hecho', '¿Puedo hacerles una transferencia? already sent', '¿Puedo hacerles una transferencia? Mamá lo canceló', 'Mamá lo canceló. ¿Puedo hacerles la transferencia del resto?', '¿Puedo hacerles la transferencia otra vez? la anterior falló', '¿Aceptan tarjeta? ya lo usé', '¿Aceptan transferencia? el otro no me sirvió', '¿Cómo puedo pagar el resto? Mi esposo canceló la mitad',
+     'Ya sinpié', 'Ya les sinpié', 'Ya te sinpié, ¿cómo pago el envío?', 'Mi esposo les sinpeó, ¿cómo pagamos el envío?', 'Mi esposo canceló la mitad, quiero pagar el resto', 'Mi mamá lo canceló, quiero pagar el envío', 'Mi esposo lo canceló, ¿cómo pagamos el envío?',
+     'Pasame el link para pagar, el otro no sirvió', 'Quiero pagar con el link pero no me abre', 'Quiero pagar con el link, el otro venció', 'Voy a pagar con el link de nuevo, el otro no funcionó', 'Para pagar el resto me pasás otro link?', 'Quiero pagar por sinpe, el link no me sirvió', 'Quiero pagar otra vez, el otro no funcionó', 'La tarjeta fue rechazada', 'Me rechazaron la tarjeta']
+    const agent = ['Vi el link en la bio, quiero comprar', 'Hola! vi el link en su perfil, quiero comprar el de dormir', '¿Tienen link para comprar?', 'Pasame el link para comprar', 'Me pasas el link de la pagina porfa', '¿Me pasás el link de la tienda para comprar?', '¿El adhesivo da rechazo?', '¿Los parches pueden dar rechazo o alergia?', 'Tengo rechazo a los adhesivos, ¿me sirven?', '¿Se puede apartar con un abono?', '¿Aceptan abono?', '¿Cuánto es el abono para apartar?',
+     'Pura vida, ¿me pasás el link de pago?', 'Upe, ¿tienen link de pago?', 'Mae, pasame el link de pago', 'Holaa, ¿cómo puedo pagar?', 'Quiero los 2 de dormir, me pasás el link de pago?', 'Me interesa el combo. ¿Tienen link de pago?', 'Me pasás el link de pago? Gracias', 'Me podrías pasar el link de pago?', '¿Cuál es el link de pago?', 'Me regalan el link de pago?', '¿Puedo hacerles un sinpe mañana?', '¿Puedo hacerles el sinpe ahora?', '¿Puedo hacerles un sinpe hoy en la noche?', 'Hola 😁 ¿cómo puedo pagar?', 'Listo, quiero pagar por sinpe', 'Quiero pagar con tarjeta']
+    const bad: string[] = []
+    for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
+    for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    
+    assert.deepEqual(bad, [])
+  })
+  it("INT-138: one sentence rule — sensitive group + assurance is held; doctor referrals and payment sentences pass", () => {
+    const held = ['Puede usarlo durante el embarazo sin problema', 'Se puede usar en el embarazo', 'Se puede usar durante la lactancia', 'Lo puedes usar en el embarazo', 'Puedes tomarlo con tus medicamentos', 'Las embarazadas lo pueden usar', 'Es seguro para mujeres embarazadas', 'Apto para embarazadas', 'Totalmente seguro durante la lactancia', 'Es segurísimo en el embarazo', 'Es seguro incluso en el embarazo', 'Es seguro de usar en el embarazo', 'No es peligroso en el embarazo', 'No es dañino para niños', 'No le hace daño al bebé', 'No afecta el embarazo', 'No interactúa con medicamentos', 'No contiene químicos así que es seguro en el embarazo', 'No tiene químicos por eso es seguro en el embarazo', 'No pasa nada es seguro en el embarazo', 'Es natural, no tiene ningún riesgo en el embarazo', 'Sin riesgo para tu bebé', 'Es seguro tomarlo con tus medicamentos',
+     'No hay efectos secundarios', 'No produce efectos secundarios', 'Libre de efectos secundarios', 'Cero efectos secundarios', 'No presenta contraindicaciones', 'No tiene efectos secundarios']
+    const ok = ['Para saber si es seguro en el embarazo, consultá con tu médico', 'Sobre si podés tomarlo con tus medicamentos, lo mejor es consultarlo con tu médico', '¿Podés usarlo con tus medicamentos? Eso lo tiene que decir tu médico', 'Podés usarlos durante el tratamiento de 30 días', 'Es seguro pagar con tarjeta en la web', 'Es apto para todo tipo de piel', 'Podés pagar con tarjeta sin ningún riesgo', 'Durante el embarazo, consultá con tu médico antes de usarlo', 'No se recomienda en el embarazo; consultá con tu médico.', 'El envío es seguro y llega en 2 a 5 días', 'Con piel sensible puede haber enrojecimiento; si pasa, retiralo', 'Tenemos parches para niños? No, son para adultos.', 'Es un suplemento de bienestar, no un medicamento.', 'Podés pedirlo para tu mamá y te llega en 2 días']
+    const bad: string[] = []
+    for (const t of held) if (!resultsClaimIn(t)) bad.push('MISSED ' + t)
+    for (const t of ok) if (resultsClaimIn(t)) bad.push('FALSE+ ' + t + '  ⇐ ' + resultsClaimIn(t))
+    const ctx = validateAgentOutput({ text: '¡Sí! Podés usarlo sin problema 😊', citedToolNames: [], customerText: '¿Lo puedo usar si estoy embarazada?' } as any)
+    if (!ctx.reasons?.includes('results_claim')) bad.push('context: pregnancy "sí podés" not held ' + JSON.stringify(ctx.reasons))
+    const ctxOk = validateAgentOutput({ text: 'Durante el embarazo, consultá con tu médico antes de usarlo 💚', citedToolNames: [], customerText: '¿Lo puedo usar si estoy embarazada?' } as any)
+    if (ctxOk.reasons?.includes('results_claim')) bad.push('context: doctor answer held')
+    const more = ['No tiene ningún riesgo 😊', 'No hay ningún riesgo, es natural', 'No hay peligro para el bebé', 'No le hace daño al bebé', 'No tiene riesgo alguno para tu salud', 'Cero riesgo para tu bebé', 'Son 100% seguros para niños', 'Podés usarlo durante la lactancia sin problema', 'no causa ningún riesgo', 'Es seguro en el embarazo, igual consultá con tu médico']
+    const more2 = ['Pagar por SINPE no tiene ningún riesgo para vos', 'El link de pago es seguro, no hay ningún riesgo para usted']
+    const bad2: string[] = []
+    for (const t of more) if (!resultsClaimIn(t)) bad2.push('MISSED ' + t)
+    for (const t of more2) if (resultsClaimIn(t)) bad2.push('FALSE+ ' + t)
+    
+    assert.deepEqual(bad, [])
+    assert.deepEqual(bad2, [])
+  })
+})

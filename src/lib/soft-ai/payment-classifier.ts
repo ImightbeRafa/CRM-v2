@@ -395,9 +395,13 @@ function closedPaymentMessage(value: string): boolean {
     const body = t.replace(LEADING_GREETING_RE, '')
     if (OK_PREFIX_RE.test(t) || C_INTENT_RE.test(body) || C_QUESTION_RE.test(body) || Boolean(paymentChoiceGrammar(body))) return true
     if (isPlainFutureSinpeQuestion(t + '?') || isPlainPaymentLinkQuestion(t + '?')) return true
-    return q && !PAY_STATEMENT_RE.test(t) && !hasPastOrDoneWord(t, true)
+    // SecureDog round 8 F1: the free question after a closed ask is an ORDER question only ("¿Me lo tienen listo para el
+    // sábado?", "¿Cuándo me llega?") — "¿Tienen lo de Juan?" / "¿Les sale lo de mi esposo?" go to a person.
+    return q && ORDER_QUESTION_RE.test(t) && !hasPastOrDoneWord(t, true)
   })
 }
+const ORDER_QUESTION_RE =
+  /^(?:y\s+)?(?:(?:me\s+)?(?:lo|la|los|las)\s+(?:tienen|tendr[ií]an|pueden\s+tener)\s+list[oa]s?(?:\s+para\s+\p{L}+(?:\s+\p{L}+)?)?|cu[aá]ndo\s+(?:me\s+)?(?:llega|llegar[ií]a|sale|saldr[ií]a|lo\s+env[ií]an|me\s+lo\s+env[ií]an)|cu[aá]nto\s+(?:tarda|dura)\s+(?:en\s+llegar|el\s+env[ií]o)|hacen\s+env[ií]os?\s+a\s+\p{L}+(?:\s+\p{L}+)?|llega\s+a\s+\p{L}+(?:\s+\p{L}+)?)$/iu
 /**
  * The agent-side exit (live-equivalence gate). Where live e2b9fd2c answers too, D1 answers a plain ask (isPlainAskMessage,
  * as before the round-8 guard) — never worse than live. Where live hands off, D1 answers only a closed message: every

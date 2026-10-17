@@ -211,11 +211,13 @@ export function burstOtherTexts(
 }
 
 /**
- * Whitespace runs as one space, for the per-bubble checks only (never the planned / model text): a 4 KB run of spaces
- * or newlines makes the opt-out / payment patterns slow (SecureDog F2) and means nothing to them.
+ * Whitespace runs shrunk to one character, for the per-bubble checks only (never the planned / model text): a 4 KB run
+ * of spaces or newlines makes the opt-out / payment patterns slow (SecureDog F2). A line break stays a line break —
+ * the payment classifier reads it as a sentence end (Verifier r3: "Quiero pagar con tarjeta\nle hice uno" must keep
+ * its payment hand-off).
  */
 function collapseSpace(text: string | null | undefined): string {
-  return (text || '').replace(/\s+/g, ' ').trim()
+  return (text || '').replace(/[^\S\n]*\n\s*/g, '\n').replace(/[^\S\n]+/g, ' ').trim()
 }
 
 /**

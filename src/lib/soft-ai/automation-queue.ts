@@ -281,7 +281,19 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
             WHERE newer."conversationId" = current."conversationId"
               AND (newer_msg."sentAt", newer."createdAt", newer."id") > (current_msg."sentAt", current."createdAt", current."id")
               AND newer."status" IN ('pending', 'retry')
-              AND newer."availableAt" <= CURRENT_TIMESTAMP + ${Prisma.raw(`INTERVAL '${BURST_HOLD_SECONDS} seconds'`)}
+              AND (
+                newer."availableAt" <= CURRENT_TIMESTAMP + ${Prisma.raw(`INTERVAL '${BURST_HOLD_SECONDS} seconds'`)}
+                -- A job kept by supersedeOlderJobs (its message already has a store reply after it) waits for every
+                -- newer job, also one on a long retry, so it never supersedes the burst's answering job (Verifier r3).
+                OR EXISTS (
+                  SELECT 1
+                  FROM "ChatMessage" reply
+                  WHERE reply."conversationId" = current_msg."conversationId"
+                    AND reply."tenantId" = current_msg."tenantId"
+                    AND reply."direction" = 'outbound'
+                    AND (reply."sentAt", reply."id") > (current_msg."sentAt", current_msg."id")
+                )
+              )
           )
           AND NOT EXISTS (
             SELECT 1

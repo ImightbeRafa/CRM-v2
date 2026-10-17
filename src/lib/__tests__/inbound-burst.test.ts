@@ -584,7 +584,16 @@ describe('burst hardening · SecureDog r1 (superseded = checked, per-turn CPU, b
       ],
     )
     // The planned text itself (with its own spacing) is not checked twice.
-    assert.deepEqual(burstOtherTexts([inbound('Quiero  2\ncajas', 0)], { inboundText: 'Quiero 2 cajas' }), [])
+    assert.deepEqual(burstOtherTexts([inbound('Quiero  2 \n\n  cajas', 0)], { inboundText: 'Quiero 2\ncajas' }), [])
+    // Verifier r3: a line break stays a line break (the payment classifier reads it as a sentence end).
+    assert.deepEqual(burstOtherTexts([inbound(`Quiero pagar con tarjeta${'\n'.repeat(4000)}le hice uno`, 0)], { inboundText: 'hola?' }), [
+      { text: 'Quiero pagar con tarjeta\nle hice uno', messageType: 'text' },
+    ])
+    const alone = decideInbound({ inboundText: 'Quiero pagar con tarjeta\nle hice uno\nfunciona?', messageType: 'text', brandFacts: facts, shortcuts })
+    assert.equal(alone.handoff?.kind, 'handoff')
+    const burstPay = run({ content: 'hola?', s: 2 }, [inbound('Quiero pagar con tarjeta\nle hice uno\nfunciona?', 0)])
+    assert.equal(burstPay.decision.handoff?.kind, 'handoff')
+    assert.equal(burstPay.decision.handoff?.reason, alone.handoff?.reason)
     // A STOP followed by a long run of spaces / newlines is still a STOP.
     assert.equal(run({ content: 'hola', s: 2 }, [inbound(`no me escriban más${' '.repeat(4000)}`, 0)]).optOut, true)
     assert.equal(run({ content: 'hola', s: 2 }, [inbound(`STOP${'\n'.repeat(4000)}`, 0)]).optOut, true)
@@ -598,5 +607,16 @@ describe('burst hardening · SecureDog r1 (superseded = checked, per-turn CPU, b
     const turn = read('src/lib/soft-ai/agent-turn.ts')
     const fn = turn.slice(turn.indexOf('async function loadUnansweredInbound'), turn.indexOf('async function yieldsToNewerBurst'))
     assert.match(fn, /where: \{ tenantId: input\.tenantId, conversationId: input\.conversationId, direction: 'outbound', sentAt: \{ gte: since \} \}/)
+  })
+})
+
+describe('burst hardening · Verifier r3 (an answered late job never takes over a newer job on retry)', () => {
+  it('a job whose message already has a store reply after it waits for every newer job, also one on a long retry', () => {
+    const queue = read('src/lib/soft-ai/automation-queue.ts')
+    const claim = queue.slice(queue.indexOf('async function claimRows'), queue.indexOf('export function claimBatch'))
+    assert.match(
+      claim,
+      /newer\."availableAt" <= CURRENT_TIMESTAMP \+ \$\{Prisma\.raw\(`INTERVAL '\$\{BURST_HOLD_SECONDS\} seconds'`\)\}[\s\S]{0,400}OR EXISTS \(\s+SELECT 1\s+FROM "ChatMessage" reply\s+WHERE reply\."conversationId" = current_msg\."conversationId"\s+AND reply\."tenantId" = current_msg\."tenantId"\s+AND reply\."direction" = 'outbound'\s+AND \(reply\."sentAt", reply\."id"\) > \(current_msg\."sentAt", current_msg\."id"\)/,
+    )
   })
 })

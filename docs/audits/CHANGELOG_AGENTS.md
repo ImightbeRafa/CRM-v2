@@ -39,6 +39,15 @@
     are unchanged.
   - F3: the last-reply lookup of the long-burst load is bounded by the day.
 - Docker harness: 10 scenarios, including both F1 interleavings. Tests: `inbound-burst.test.ts` +3.
+- Verifier round 3: FAIL, then fixed:
+  - (Medium, mine) The F2 collapse also turned line breaks into spaces. The payment classifier reads a line break as
+    a sentence end, so "Quiero pagar con tarjeta\nle hice uno" lost its payment hand-off in a burst. Now a line
+    break stays a line break and only runs shrink. Test: that bubble plus "hola?" keeps the hand-off it gets alone.
+  - (Low-medium) A job kept by F1 could become claimable while the newer answering job waited on a long retry, then
+    supersede it. The claim now holds a job whose message already has a reply after it behind every newer pending
+    or retry job, whatever the 10 s horizon. Harness: 11 scenarios.
+  - Known: F1 also keeps a bubble typed while a non-yielding turn was writing its reply (before, it was dropped
+    unchecked). That bubble now gets its own reply after the newer one, up to a cron minute later.
 - Left open:
   - F4 (rare): a job older than 60 s with 100+ bubbles after its trigger uses the newest 100 and does not merge
     them with its window.

@@ -405,6 +405,8 @@ describe('burst = one reply · wiring (source)', () => {
     assert.match(live, /customerText: burstCustomerText\(history, burst\.inboundText\)/)
     assert.match(probar, /history,\s+inboundText: probarBurst\.inboundText,\s+clientName/)
     assert.match(probar, /customerText: customerTextSinceLastAnswer\(input\.history \?\? \[\], probarBurst\.inboundText\)/)
+    // Probar keeps each history message's type (a photo earlier in the burst is planned like live).
+    assert.match(probar, /\.\.\.\(message\.messageType \? \{ messageType: message\.messageType \} : \{\}\),/)
     // Probar shows the review live would raise (display only).
     assert.match(probar, /handoff: handoff \?\? probarBurstReview,/)
   })

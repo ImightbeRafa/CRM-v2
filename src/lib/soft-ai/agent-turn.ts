@@ -1945,7 +1945,7 @@ async function runAgentTestTurnInner(input: {
   actorUserId: string
   testSessionId: string
   messageType?: 'text' | 'image' | 'audio' | 'document' | 'video'
-  history?: Array<{ direction: 'inbound' | 'outbound'; content: string; sentAt: string }>
+  history?: Array<{ direction: 'inbound' | 'outbound'; content: string; sentAt: string; messageType?: string | null }>
   windowOpen?: boolean
   customerName?: string
   conversationAiMode?: SoftAiAgentMode
@@ -2038,6 +2038,8 @@ async function runAgentTestTurnInner(input: {
       direction: message.direction,
       content: message.content,
       sentAt: message.sentAt,
+      // Burst = one reply: a photo / audio earlier in the burst is planned like live (silent trial, burst scripts).
+      ...(message.messageType ? { messageType: message.messageType } : {}),
     })),
   )
   const flag = await prisma.tenantFeatureFlag.findFirst({

@@ -101,7 +101,8 @@ async function main() {
         const next = msgs[i + 1]
         if (next && next.direction === 'inbound' && next.sentAt.getTime() - m.sentAt.getTime() <= BURST_MS) continue
         // SecureDog L2: the replay itself is redacted (names, phones, addresses) and the customer is just "Cliente".
-        const history = msgs.slice(Math.max(0, i - 24), i).map((h) => ({ direction: (h.direction === 'inbound' ? 'inbound' : 'outbound') as 'inbound' | 'outbound', content: redactCustomerText(h.content || `[${h.messageType}]`, c.peerName), sentAt: h.sentAt.toISOString() }))
+        // Burst = one reply: each message keeps its type, so a photo earlier in the burst is planned like live.
+        const history = msgs.slice(Math.max(0, i - 24), i).map((h) => ({ direction: (h.direction === 'inbound' ? 'inbound' : 'outbound') as 'inbound' | 'outbound', content: redactCustomerText(h.content || `[${h.messageType}]`, c.peerName), sentAt: h.sentAt.toISOString(), messageType: h.messageType }))
         const night = Boolean(schedule.enabled) && !isWithinBusinessHours(schedule, m.sentAt)
         const text = redactCustomerText(m.messageType === 'text' ? m.content || '' : `[${m.messageType}] ${m.content || ''}`.trim(), c.peerName)
         const r = await runAgentTestTurn({ tenantId, agentId: agent.id, inboundText: text, socialAccountId: account, actorUserId: user.id, testSessionId: randomUUID(), history, customerName: 'Cliente', modelOverride: LUNA_CHAT_AGENT_MODEL, usageFeature: 'agent_test', simulateAfterHours: night, messageType: (m.messageType as 'text' | 'image' | 'audio' | 'document' | 'video') || 'text' })

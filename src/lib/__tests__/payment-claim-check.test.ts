@@ -150,3 +150,17 @@ describe('payment check — verifier round 9', () => {
     assert.ok(client.includes("const effort = args.reasoningLocked ? (args.reasoningEffort ?? 'none') : openAiEffort(args.reasoningEffort)"))
   })
 })
+
+describe('payment check — verifier round 10', () => {
+  it('a claim at the END of a burst over 4 000 characters still reaches the check (masked, not cut)', async () => {
+    const { runPaymentClaimCheck } = await import('../soft-ai/llm/payment-claim-check')
+    let sent = ''
+    const long = 'quería contarles una historia larga sobre mis compras '.repeat(40)
+    await runPaymentClaimCheck(
+      { inboundText: 'Mamá ya lo hizo, ¿qué sigue? Mi tarjeta 4111 1111 1111 1111', history: [{ direction: 'outbound', content: 'SINPE 6201 9914' }, { direction: 'inbound', content: long }, { direction: 'inbound', content: long }], tenantId: 't1' },
+      { create: async (a: any) => { sent = String(a.input?.[0]?.content || ''); return { output_text: '{"claim":true,"kind":"already_paid"}' } } },
+    )
+    assert.match(sent, /Mamá ya lo hizo, ¿qué sigue\?/)
+    assert.doesNotMatch(sent, /4111 1111 1111 1111/)
+  })
+})

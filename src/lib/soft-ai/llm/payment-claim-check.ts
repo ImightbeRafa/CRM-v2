@@ -14,7 +14,7 @@ import 'server-only'
 
 import { LUNA_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
 import { fenceDataText } from '@/lib/soft-ai/prompt-fence'
-import { redactSensitiveForProvider } from '@/lib/soft-ai/llm/redact'
+import { maskSensitiveForProvider } from '@/lib/soft-ai/llm/redact'
 import { parseSoftAiResponseText, softAiResponsesCreate, type SoftAiResponsesCreateArgs } from '@/lib/soft-ai/llm/client'
 import {
   paymentCheckGate,
@@ -80,7 +80,7 @@ export async function runPaymentClaimCheck(
       model: LUNA_CHAT_AGENT_MODEL,
       instructions: PAYMENT_CHECK_INSTRUCTIONS,
       // Verifier round 9: the same redaction as the main prompt (cédula, card, IBAN never reach the provider).
-      input: [{ role: 'user', content: buildPaymentCheckInput(input.inboundText, input.history, (t) => fenceDataText(redactSensitiveForProvider(t))) }],
+      input: [{ role: 'user', content: buildPaymentCheckInput(input.inboundText, input.history, (t) => fenceDataText(maskSensitiveForProvider(t))) }],
       maxOutputTokens: 40,
       temperature: 0,
       reasoningEffort: 'none',

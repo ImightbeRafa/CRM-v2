@@ -477,6 +477,8 @@ const SINGLE_METHOD_WORDS: Array<[ChosenPaymentMethod, RegExp]> = [
 ]
 /** "¿Se puede pagar con tarjeta?" → 'tarjeta': exactly one method named in a payment-info question, else null. */
 function singleMethodNamed(text: string): ChosenPaymentMethod | null {
+  // Verifier round 8: "No uso SINPE, ¿qué otras formas…?", "Sin tarjeta, ¿cómo pago?" ask for the OTHER methods.
+  if (/(?<![\p{L}])(?:no|sin|ni|otras?|otros?|aparte|adem[aá]s|excepto|menos)(?![\p{L}])/iu.test(text || '')) return null
   const hits = SINGLE_METHOD_WORDS.filter(([, re]) => re.test(text || '')).map(([m]) => m)
   return hits.length === 1 ? hits[0] : null
 }

@@ -431,7 +431,8 @@ export async function runSoftAiLlmRuntime(
         quoteAmounts: input.salesAllowedAmounts,
         allowedDeals: input.salesAllowedDeals,
         freeShippingRule: input.salesFreeShippingRule,
-        customerText: input.inboundText,
+        // SecureDog round 6: the whole burst since the store last wrote, not only the newest message.
+        customerText: burstCustomerText(input.history, input.inboundText),
         linkAllowlist: input.linkAllowlist,
         paymentContext: conversationPaymentContext(input.history, input.inboundText),
       })
@@ -614,6 +615,16 @@ export function escalateKindOf(handoff: TurnHandoff | null): 'technical' | 'hand
  * MEDIA-15: the payment-status backstop also applies when the conversation (not only this message) is about a
  * payment: a payment word or a photo / file / audio in the last 3 customer messages, or the store talked about paying.
  */
+/** The customer's messages since the store last wrote, oldest first, plus this one. */
+export function burstCustomerText(history: Array<{ direction: string; content?: string | null }>, inboundText: string): string {
+  const since: string[] = []
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].direction === 'outbound') break
+    if (history[i].content) since.unshift(String(history[i].content))
+  }
+  return [...since, inboundText || ''].join('\n')
+}
+
 export function conversationPaymentContext(history: Array<{ direction: string; content?: string | null }>, inboundText: string): boolean {
   const inbound = history.filter((m) => m.direction === 'inbound').slice(-3).map((m) => m.content || '')
   const mediaRe = /\[(image|imagen|foto|audio|voice|video|document|documento|archivo|sticker)/i

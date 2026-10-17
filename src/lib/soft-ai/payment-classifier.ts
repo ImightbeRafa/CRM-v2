@@ -62,6 +62,13 @@ const CLAIM_CUE_RE = new RegExp(
       String.raw`(?:pasamos|mandamos|enviamos|depositamos|pasaron|mandaron|enviaron|depositaron|pasó|mandó|envió)\s+(?:la\s+|el\s+|los\s+|las\s+)?(?:plata|dinero|platica|₡\s?\d[\d.,\s]*|\d+(?:[.,\s]\d{3})*\s*(?:mil|k|colones|rojos)(?![\p{L}])|\d{4,})`,
       // Accented "canceló" only: "¿Cómo cancelo?" / "¿Si cancelo hoy…?" are questions about paying.
       String.raw`cancelamos\s+(?:la\s+mitad|el\s+resto|todo|ayer|anoche)|canceló|transfiri[oó]|abonamos|(?:mam[aá]|pap[aá]|esposo|esposa|hermano|hermana|novio|novia|hij[oa])\s+(?:ya\s+)?(?:lo\s+|la\s+|les?\s+)?cancel[oó]`,
+      // SecureDog round 6: a third person doing the paying, accents or not ("mi esposo pago la mitad", "Mi esposo les
+      // mando todo", "te deposito la mitad"); the perfect tense ("ha pagado", "hemos transferido"); "ahorita les cae el
+      // sinpe"; a declined card in the present ("me sale rechazada", "me rechazo la tarjeta").
+      String.raw`(?:esposo|esposa|marido|mam[aá]|mami|pap[aá]|papi|herman[oa]|novi[oa]|hij[oa]|amig[oa]|suegr[oa]|t[ií][oa]|prim[oa]|jefe|jefa)\s+(?:ya\s+)?(?:se\s+)?(?:le\s+|les\s+|te\s+|lo\s+|la\s+|me\s+)?(?:pag|deposit|transfiri|transfer|abon|cancel|mand|pas|envi|sinpe|sinpi|encarg|hiz|realiz)[oó]`,
+      String.raw`(?:he|ha|has|hemos|han)\s+(?:ya\s+)?(?:pagado|transferido|depositado|cancelado|abonado|enviado|mandado|pasado|sinpeado|sinpiado|hecho\s+(?:el|la|un|una)\s+(?:pago|sinpe|transferencia|dep[oó]sito))`,
+      String.raw`(?:les?|te)\s+(?:cae|caer[aá]|va\s+a\s+caer)\s+(?:el\s+|la\s+)?(?:sinpe|pago|dep[oó]sito|plata|transferencia)`,
+      String.raw`(?:me\s+)?(?:sale|salen|aparece)\s+(?:como\s+)?(?:rechazad[oa]|declinad[oa])|me\s+(?:la\s+|lo\s+)?(?:rechaz|declin)[oó]`,
       // Verifier round 8: "la plata ya está", "le di la plata al mensajero".
       String.raw`(?:plata|platica|dinero|pago|sinpe|transferencia|dep[oó]sito|adelanto)\s+ya\s+est[aá]|(?:le|les|te)?\s*di\s+(?:la\s+plata|el\s+dinero|el\s+pago|la\s+platica)`,
       String.raw`pagaron|depositaron|transfirieron|cancelaron|sinpearon|sinpeamos|sinpiaron|sinpiamos|sinpe[eé]|sinpi[eé]|sinpe[oó]|sinpi[oó]|(hicimos|hicieron|mandamos|mandaron|enviamos|enviaron)\s+(el|la|un|una)\s+(sinpe|pago|dep[oó]sito|transferencia)`,
@@ -97,6 +104,8 @@ const PAYMENT_QUESTION_RE = new RegExp(
     String.raw`(puedo|se\s+puede|pued[eo]n|aceptan|hay\s+que|tengo\s+que|debo)(\s+\p{L}+){0,2}\s+(pagar|pago|pagarles|pagarte)` +
     String.raw`|(c[oó]mo|cu[aá]ndo|d[oó]nde|qu[eé]\s+formas?\s+de)(\s+\p{L}+){0,2}\s+(pago|pagar|se\s+paga|pagos|pagamos)` +
     String.raw`|(reciben|tienen|aceptan|usan|trabajan\s+con)\s+(sinpe|transferencias?|tarjetas?|efectivo)` +
+    // "¿Cuándo me llega si pago hoy?", "¿Pago la mitad ahora y la mitad al recibir?" (still behind isPlainAskMessage).
+    String.raw`|(si|cuando)\s+(les?\s+|te\s+)?pago|^\s*¿?\s*(y\s+)?(les?\s+|te\s+)?pago\s+(la\s+mitad|todo|ahora|antes|despu[eé]s|hoy|ma[nñ]ana)` +
     String.raw`)(?![\p{L}])`,
   'iu',
 )
@@ -177,7 +186,7 @@ export function isPlainPaymentLinkQuestion(value: string): boolean {
  * ("Mamá lo canceló", "La transferencia ya está") → a person.
  */
 const ASK_START_RE =
-  /^(?:y\s+)?(?:(?:te\s+|le\s+|les\s+)?pago|me\s+(?:lo|la|los|las)\s+llevo|me\s+pregunt\p{L}*|quer[ií]a\s+saber|quisiera\s+saber|una\s+pregunta|tengo\s+una\s+(?:duda|pregunta|consulta)|(?:s[ií]\s*,?\s*)?contra\s*entrega|en\s+efectivo|quiero|quisiera|queremos|necesito|me\s+gustar[ií]a|voy\s+a|vamos\s+a|prefiero|mejor|me\s+pas\p{L}*|p[aá]same|p[aá]seme|dame|d[eé]me|m[aá]ndame|env[ií]ame|me\s+(?:da|das|dan|manda|mand[aá]s|env[ií]a|env[ií]as)|c[oó]mo|cu[aá]l\p{L}*|cu[aá]ndo|cu[aá]nto\p{L}*|d[oó]nde|qu[eé]|puedo|podemos|se\s+puede|pueden|aceptan|reciben|tienen|ten[eé]s|tienes|hacen|hay|trabajan|es\s+posible|ser[ií]a)(?![\p{L}])/iu
+  /^(?:y\s+)?(?:(?:ya\s+)?(?:lo\s+|la\s+)?(?:tengo|estoy|estamos)\s+list[oa]s?\s+para|(?:te\s+|le\s+|les\s+)?pago|me\s+(?:lo|la|los|las)\s+llevo|me\s+pregunt\p{L}*|quer[ií]a\s+saber|quisiera\s+saber|una\s+pregunta|tengo\s+una\s+(?:duda|pregunta|consulta)|(?:s[ií]\s*,?\s*)?contra\s*entrega|en\s+efectivo|quiero|quisiera|queremos|necesito|me\s+gustar[ií]a|voy\s+a|vamos\s+a|prefiero|mejor|me\s+pas\p{L}*|p[aá]same|p[aá]seme|dame|d[eé]me|m[aá]ndame|env[ií]ame|me\s+(?:da|das|dan|manda|mand[aá]s|env[ií]a|env[ií]as)|c[oó]mo|cu[aá]l\p{L}*|cu[aá]ndo|cu[aá]nto\p{L}*|d[oó]nde|qu[eé]|puedo|podemos|se\s+puede|pueden|aceptan|reciben|tienen|ten[eé]s|tienes|hacen|hay|trabajan|es\s+posible|ser[ií]a)(?![\p{L}])/iu
 /** Accented endings that are not a past tense: question words, "está", "más", "mamá", futures ("llegará"). */
 const ACCENT_OK = new Set(['dé', 'qué', 'está', 'están', 'más', 'sí', 'así', 'aquí', 'ahí', 'allí', 'acá', 'allá', 'mí', 'tú', 'él', 'sé', 'también', 'después', 'además', 'café', 'bebé', 'mamá', 'papá', 'jamás', 'quizá', 'según', 'menú', 'maní', 'podés', 'tenés', 'querés', 'sabés', 'hacés', 'mandás', 'pasás', 'enviás', 'recomendás', 'preferís', 'decís', 'aceptás', 'usás'])
 const PAST_OR_DONE_RE =
@@ -192,7 +201,8 @@ function hasPastOrDoneWord(segment: string, question: boolean): boolean {
   if (PAST_OR_DONE_RE.test(s)) return true
   // "¿Cuándo está listo?", "¿Son hechos a mano?", "¿cuánto tarda en ser enviado?": inside a QUESTION a completion word
   // is about the order; outside one ("…? hecho", "listo, ya la pasé") it is a claim. ✅ ✔ ☑ are never a question.
-  if (PAYMENT_COMPLETION_RE.test(s) && (!question || /[✅✔☑]/u.test(s))) return true
+  // "listo para pagar" = ready to pay (not done).
+  if (PAYMENT_COMPLETION_RE.test(s.replace(/(?<![\p{L}])list[oa]s?\s+para(?![\p{L}])/giu, ' ')) && (!question || /[✅✔☑]/u.test(s))) return true
   // Verifier round 8: a capitalised word after the first one is a name or a place ("José", "Jacó", "San José").
   for (const m of s.matchAll(/\p{L}+/gu)) {
     const w = m[0]
@@ -206,8 +216,10 @@ function hasPastOrDoneWord(segment: string, question: boolean): boolean {
 }
 
 /** A payment noun / verb: a STATEMENT carrying one ("Está pago", "La plata está") is never plain context. */
+// SecureDog round 6: also "doing" verbs and amounts — "Le mande.", "Mi esposo se encargo.", "Se lo dio al mensajero.",
+// "Le pase 20.000." are not plain context.
 const PAY_STATEMENT_RE =
-  /(?<![\p{L}])(?:pag\p{L}*|plata|platica|dinero|comprobante\p{L}*|sinpe\p{L}*|sinpi\p{L}*|transfer\p{L}*|transfi\p{L}*|dep[oó]sit\p{L}*|tarjeta\p{L}*|abon\p{L}*|cancel\p{L}*|cobr\p{L}*|cargo\p{L}*|recibo|monto|saldo|adelanto|resto|mitad|link|enlace|₡)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:pag\p{L}*|plata|platica|dinero|comprobante\p{L}*|sinpe\p{L}*|sinpi\p{L}*|transfer\p{L}*|transfi\p{L}*|dep[oó]sit\p{L}*|tarjeta\p{L}*|abon\p{L}*|cancel\p{L}*|cobr\p{L}*|cargo\p{L}*|recibo|monto|saldo|adelanto|resto|mitad|link|enlace|mand\p{L}*|pas[eéoó]|pasamos|pasaron|envi[eéoó]|enviamos|enviaron|encarg\p{L}*|di[oó]?|dimos|dieron|entreg\p{L}*|hic\p{L}*|hech\p{L}*|resolv\p{L}*|arregl\p{L}*|lleg\p{L}*|ca[ií]\p{L}*|cae|caer\p{L}*|todo|₡)(?![\p{L}])|(?<![\d-])\d{1,3}(?:[.,]\d{3})+(?![\d-])|\d+\s*(?:mil|k|rojos|colones)(?![\p{L}])/iu
 /** Opening words before the ask in a sentence ("Hola, …", "Pura vida, …", "Bueno, …"). */
 const LEADING_GREETING_RE = new RegExp(String.raw`^(?:(?:${GREETING})(?![\p{L}\d])[\s,]+)+`, 'iu')
 
@@ -217,7 +229,8 @@ export function isPlainAskMessage(value: string): boolean {
   // A leading "Listo, / Ok listo," before more text is an acknowledgement ("Listo, ¿cómo pago?").
   const v = clean(value).replace(/^\s*(?:(?:ok|okay|dale|bueno|perfecto)[\s,.!]+)?list[oa][\s,.!]+(?=\S)/iu, '')
   if (!v.trim() || v.length > 300) return false
-  const segments = (v.match(/[^.!?\n]+[.!?\n]*/gu) ?? []).map((raw) => raw.replace(/^[\s¿¡,]+/u, '').trim())
+  // SecureDog round 6: "¿" opens a new sentence too ("Pagado, ¿cómo pago el envío?" = "Pagado." + "¿cómo pago…?").
+  const segments = (v.replace(/¿/gu, '\n¿').match(/[^.!?\n]+[.!?\n]*/gu) ?? []).map((raw) => raw.replace(/^[\s¿¡,]+/u, '').trim())
   if (!segments.length) return false
   // Verifier round 8: every sentence is checked for a claim, then must be a greeting / thanks, a question, a request
   // ("quiero pagar con tarjeta", "pago contra entrega", wherever it sits) or plain context with no payment word
@@ -275,7 +288,8 @@ export function hasPaymentRiskCue(text: string): boolean {
 
 /** "Le envié 15 mil", "Te mandé ₡20.000", "Envié 15000 hace un rato": a payment claim even with no payment word (MEDIA-15). */
 const SENT_AMOUNT_CLAIM_RE =
-  /(?<![\p{L}])(envi[eé]|mand[eé]|pas[eé]|deposit[eé]|transfer[ií]|pagu[eé]|hice)(?:\s+\p{L}+){0,2}?\s+(?:₡\s?\d|\d+(?:[.,\s]\d{3})*\s*(?:mil|k|colones|rojos)(?![\p{L}])|\d{4,})/iu
+  // SecureDog round 6: plural / third person and dotted thousands ("Ya les pasamos 15.000", "Te mandé 20.000").
+  /(?<![\p{L}])(envi[eé]|mand[eé]|pas[eé]|deposit[eé]|transfer[ií]|pagu[eé]|hice|pasamos|mandamos|enviamos|depositamos|pasaron|mandaron|enviaron|depositaron|pas[oó]|mand[oó]|envi[oó]|deposit[oó]|transfiri[oó])(?:\s+\p{L}+){0,2}?\s+(?:₡\s?\d|\d{1,3}(?:[.,\s]\d{3})+|\d+(?:[.,\s]\d{3})*\s*(?:mil|k|colones|rojos)(?![\p{L}])|\d{4,})/iu
 
 export function classifyPaymentText(
   text: string,

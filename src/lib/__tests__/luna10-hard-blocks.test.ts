@@ -559,3 +559,81 @@ describe("verifier round 8 (luna-10): no backtracking blow-up, everyday payment 
     }
   })
 })
+
+describe("SecureDog round 6 (luna-10): bursts, comma claims, third person, perfect tense, per-phrase health exemptions", () => {
+  it("classifier: claims before a comma / in a burst / third person / perfect tense go to a person; real asks still reach the agent", async () => {
+    const { classifyPaymentText } = await import("../soft-ai/payment-classifier")
+    const { decideInbound } = await import("../soft-ai/inbound-decision")
+    const { RESERVED_SHORTCUT_SEEDS } = await import("../soft-ai/shortcuts")
+    const { parseBrandFacts } = await import("../soft-ai/brand-facts")
+    const person = ['Pagado, ¿cómo pago el envío?', 'Mi esposo ha pagado la mitad, ¿cómo pago el resto?', 'Mi esposo ha pagado la mitad, ¿puedo pagar el resto mañana?', 'Mi esposo ha pagado la mitad, ¿el resto lo puedo pagar contra entrega?', '¿Como pago el resto si mi esposo pago la mitad?', 'Quiero pagar el resto, mi esposo deposito la mitad', 'Mi esposo te deposito la mitad, ¿cuál es la cuenta para el resto?', 'Ahorita les cae el sinpe, ¿cuál es el número de pedido?',
+     'Le mande. ¿Cómo pago el envío?', 'Mi esposo se encargo. ¿Cómo pago el envío?', 'Mi mamá se lo dio al mensajero. ¿Cómo pago el envío?', 'Le pase 20.000. ¿Cómo pago el envío?', 'Mi esposo les mando todo. ¿Cómo pago el envío?', 'Mi esposo lo Resolvió. ¿Cómo pago el envío?',
+     'Te mandé 20.000', 'Le pasé 15.000', 'Ya les pasamos 15.000', 'ya le pasé los 25.500', 'Mi esposo le paso 20 mil', 'Ya he pagado', 'He transferido', 'Hemos transferido todo', 'Me sale rechazada la tarjeta, ¿aceptan sinpe?', 'Me rechazo la tarjeta, ¿aceptan sinpe?']
+    const agent = ['¿Cómo pago el envío?', 'Contra entrega. Gracias', 'Vivo en Heredia. ¿Hacen contra entrega?', 'Ana Rojas\nHeredia, San Pablo\n8888-1234\nContra entrega', 'Tengo una duda. ¿Aceptan tarjeta?', '¿Cuándo me llega si pago hoy?', '¿Pago la mitad ahora y la mitad al recibir?', '¿Aceptan transferencia?', 'Hola, ¿puedo pagar con tarjeta?']
+    const bad: string[] = []
+    for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
+    for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    // Burst: "Ya les pagué la mitad" then "¿Cómo pago el resto?" → one decision for both → payment hand-off.
+    const facts = parseBrandFacts({ schemaVersion: 1, payment: { shareWithCustomers: true, methods: ['sinpe'], sinpe: { number: '62019914', holderName: 'R G' } } })
+    const shortcuts = RESERVED_SHORTCUT_SEEDS.map((x, i) => ({ ...x, isActive: true, sortOrder: i }))
+    const d = decideInbound({ inboundText: '¿Cómo pago el resto?', earlierCustomerTexts: ['Ya les pagué la mitad'], brandFacts: facts, shortcuts })
+    if (d.paymentClass !== 'payment_proof_or_risk' || !d.escalate || /6201/.test(d.text)) bad.push('burst not handed off: ' + JSON.stringify({ c: d.paymentClass, e: d.escalate, t: d.text }))
+    const d2 = decideInbound({ inboundText: '¿Cómo pago?', earlierCustomerTexts: ['hola', 'quiero el de dormir'], brandFacts: facts, shortcuts })
+    if (d2.paymentClass === 'payment_proof_or_risk') bad.push('plain burst handed off')
+    
+    assert.deepEqual(bad, [])
+  })
+  it("health: every exemption belongs to the phrase; context covers the whole burst; a referral does not cancel it", () => {
+    const v = (text: string, customerText: string) => (validateAgentOutput({ text, citedToolNames: [], customerText } as any).reasons || []).includes('results_claim')
+    const held = ['No prometemos milagros, pero es totalmente seguro en el embarazo', 'No prometemos nada, pero en una semana vas a notar resultados', 'Nunca prometemos milagros, pero te va a quitar la ansiedad', 'Es seguro aunque tengas problemas del corazón', 'Es seguro en el embarazo, no debés preocuparte', 'No usa químicos, por eso es seguro en el embarazo', 'Es totalmente seguro en el embarazo, y si tenés dudas podés consultar con tu médico', 'Sí, es seguro para adultos mayores']
+    const ctxHeld: Array<[string, string]> = [
+      ['Sí, podés usarlo durante el embarazo, igual consultalo con tu médico', '¿Lo puedo usar si estoy embarazada?'],
+      ['No tiene ningún riesgo, te lo entregamos mañana', 'Estoy embarazada, ¿es seguro?'],
+      ['¿Con tus pastillas? Sí, sin problema. Igual consultá con tu médico.', 'Tomo pastillas para la presión, ¿lo puedo usar?'],
+      ['¡Claro! Podés usarlo sin problema', 'Soy hipertensa, ¿lo puedo usar?'],
+      ['¡Sí! Podés usarlo tranquila', 'Tomo anticoagulantes, ¿lo puedo usar?'],
+      ['Sí, podés usarlo sin problema', 'Estoy en gestación, ¿lo puedo usar?'],
+      ['¡Sí! Podés usarlo sin problema', 'Estoy embarazada\n¿Lo puedo usar?'],
+    ]
+    const ok = ['Para saber si es seguro en el embarazo, consultá con tu médico', 'Te recomiendo consultarlo con tu médico, ya que podés estar tomando medicamentos', 'No es seguro en el embarazo; consultá con tu médico', 'Durante el embarazo, consultá con tu médico antes de usarlo', 'El paquete va asegurado, cero riesgo', 'Es un gran regalo para el Día del Niño, podés pedirlo hoy']
+    const ctxOk: Array<[string, string]> = [
+      ['Durante el embarazo, consultá con tu médico antes de usarlo 💚', '¿Lo puedo usar si estoy embarazada?'],
+      ['¡Claro! Podés recibirlo en Cartago mañana 😊', 'Gracias corazón, ¿me lo pueden enviar a Cartago?'],
+      ['Te recomiendo consultarlo con tu médico, ya que podés estar tomando medicamentos', 'Tomo medicamentos, ¿lo puedo usar?'],
+    ]
+    const bad: string[] = []
+    for (const t of held) if (!resultsClaimIn(t)) bad.push('MISSED ' + t)
+    for (const [r, c] of ctxHeld) if (!v(r, c)) bad.push('MISSED (ctx) ' + r + ' ⇐ ' + c)
+    for (const t of ok) if (resultsClaimIn(t)) bad.push('FALSE+ ' + t + ' ⇐ ' + resultsClaimIn(t))
+    for (const [r, c] of ctxOk) if (v(r, c)) bad.push('FALSE+ (ctx) ' + r + ' ⇐ ' + c)
+    if (!resultsClaimIn('Los parches son suplementos de bienestar, no medicamentos: nunca prometas curar, tratar o bajar de peso.', { instructions: true }) === false) {}
+    if (resultsClaimIn('Los parches son suplementos de bienestar, no medicamentos: nunca prometas curar, tratar o bajar de peso.', { instructions: true })) bad.push('lint: instruction flagged')
+    
+    assert.deepEqual(bad, [])
+  })
+  it("live and Probar pass the whole burst to the decision and the reply checks", () => {
+    const src = fs.readFileSync("src/lib/soft-ai/agent-turn.ts", "utf8")
+    assert.equal(src.split("earlierCustomerTexts: earlierCustomerTexts(history),").length - 1, 2)
+    assert.ok(src.includes("customerText: customerTextSinceLastAnswer(history, payload.content),"))
+    assert.ok(src.includes("customerText: customerTextSinceLastAnswer(input.history ?? [], input.inboundText),"))
+    assert.ok(fs.readFileSync("src/lib/soft-ai/llm/runtime.ts", "utf8").includes("customerText: burstCustomerText(input.history, input.inboundText),"))
+  })
+})
+
+describe("verifier round 9 (luna-10): done-verbs outside a question, hijos is not a health group, more health wordings", () => {
+  it("repros hold", async () => {
+    const { classifyPaymentText } = await import("../soft-ai/payment-classifier")
+    const person = ['¿Aceptan sinpe? Le hice uno', '¿Cómo pago el envío? Lo hice en la mañana', '¿Cómo pago? Lo hice desde la app del banco', '¿Me pasás el número de sinpe? Te lo pase en la mañana', '¿Aceptan sinpe? Le tiré hace un toque', 'Contra entrega se lo di al mensajero', '¿Hacen contra entrega? Le di al mensajero', '¿Cómo pago el resto? Le di 10 mil al mensajero']
+    const agent = ['¿Cómo pago el envío?', 'Contra entrega. Gracias', 'Pago contra entrega. Estoy en Cartago', 'Quiero pagar con tarjeta. Gracias']
+    const bad: string[] = []
+    for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
+    for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    const v = (text: string, customerText: string) => (validateAgentOutput({ text, citedToolNames: [], customerText } as any).reasons || []).includes('results_claim')
+    for (const [r, c] of [['¡Claro! Podés pedirlo con envío a Heredia', 'Es para mi hija, ¿hacen envíos a Heredia?'], ['Se pega en la piel limpia. Podés usarlo de día', 'Mis hijos me lo regalaron, ¿cómo se usa?']] as const) if (v(r, c)) bad.push('FALSE+ (ctx) ' + r)
+    if (resultsClaimIn('Lo podés regalar a tu mamá, a tu pareja o a tus hijos')) bad.push('FALSE+ hijos')
+    if (!v('¡Sí! Podés usarlo sin problema 😊', 'Tengo problemas del corazón, ¿lo puedo usar?')) bad.push('MISSED corazón')
+    for (const t of ['Es 100% natural, no te va a hacer daño', 'Durante la lactancia no hay ningún inconveniente', 'Es seguro para todas las edades', 'No genera dependencia', 'Lo puede usar su hijo de 10 años']) if (!resultsClaimIn(t)) bad.push('MISSED ' + t)
+    
+    assert.deepEqual(bad, [])
+  })
+})

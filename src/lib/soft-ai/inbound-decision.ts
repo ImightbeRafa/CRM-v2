@@ -143,12 +143,19 @@ export function decideInbound(input: {
    * cue-free reply naming a method is the customer's choice, answered with that method's details only.
    */
   awaitingPaymentMethod?: boolean
+  /**
+   * SecureDog round 6: the customer's earlier messages since the store last wrote. A burst ("Ya les pagué la mitad" +
+   * "¿Cómo pago el resto?") is answered by ONE job for the newest message; a claim in any of them is a payment hand-off.
+   */
+  earlierCustomerTexts?: string[]
 }): InboundDecision {
-  const paymentClass = classifyPaymentText(input.inboundText, {
+  const latestClass = classifyPaymentText(input.inboundText, {
     awaitingPaymentMethod: input.awaitingPaymentMethod === true && (!input.messageType || input.messageType === 'text'),
   })
+  const burstClaim = (input.earlierCustomerTexts || []).some((t) => classifyPaymentText(t) === 'payment_proof_or_risk')
+  const paymentClass: PaymentClassification = burstClaim ? 'payment_proof_or_risk' : latestClass
   const steps: DecisionStep[] = [
-    { step: 'payment_class', outcome: paymentClass },
+    { step: 'payment_class', outcome: paymentClass, ...(burstClaim ? { reason: `earlier_message (latest: ${latestClass})` } : {}) },
   ]
   const safety = routeInboundSafety({
     inboundText: input.inboundText,

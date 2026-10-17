@@ -25,11 +25,11 @@ import { MAX_REPLY_PARTS, splitReplyParts } from '@/lib/soft-ai/reply-parts'
  * chat goes to a person (SecureDog INT-93). Delivery wording ("te llega en 2 a 4 días") is not matched.
  */
 const PAYMENT_STATUS_REPLY_RE =
-  /(acredit|se\s+aplic|aplicad[oa]|reflej|(nos|me|les)\s+(lleg|entr|cay)[oó]|ya\s+(nos\s+|me\s+|les\s+)?(lleg|entr|cay)[oó]|recibimos|recibido|lo\s+vimos|la\s+vimos|lo\s+tenemos|todo\s+en\s+orden|est[aá]\s+en\s+orden|es\s+correct[oa]|est[aá]\s+confirmad[oa]|qued[oó]\s+(pagad|confirmad)|lleg[oó]\s+bien|todo\s+(bien|listo|sali[oó])|ya\s+est[aá](?![\p{L}])|ya\s+se\s+hizo|(ning[uú]n|sin)\s+problema|list[oa]\s+(tu|el|su)\s+pago|(?<![\p{L}])(?:est[aá]|qued[oó]|sali[oó]|todo)\s+(?:ok|okay|okey|oki)(?![\p{L}])|(?:tu|el|su)\s+pago\s+(?:\p{L}+\s+)?(?:ok|okay|okey)(?![\p{L}])|(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)\s+(?:\p{L}+\s+){0,2}(?:entr[oó]|cay[oó]|lleg[oó]|est[aá]\s+(?:bien|correct|list)|qued[oó]\s+list|fue\s+recibid)|(?:ya\s+(?:lo\s+|la\s+)?(?:vimos|revisamos|verificamos|confirmamos)|(?<![\p{L}])vimos)\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|est[aá]\s+correct[oa])/iu
+  /(acredit|se\s+aplic|aplicad[oa]|reflej|cay[oó]\s+(?:perfecto|bien)|entr[oó]\s+(?:perfecto|bien)|todo\s+correcto|(nos|me|les)\s+(lleg|entr|cay)[oó]|ya\s+(nos\s+|me\s+|les\s+)?(lleg|entr|cay)[oó]|recibimos|recibido|lo\s+vimos|la\s+vimos|lo\s+tenemos|todo\s+en\s+orden|est[aá]\s+en\s+orden|es\s+correct[oa]|est[aá]\s+confirmad[oa]|qued[oó]\s+(pagad|confirmad)|lleg[oó]\s+bien|todo\s+(bien|listo|sali[oó])|ya\s+est[aá](?![\p{L}])|ya\s+se\s+hizo|(ning[uú]n|sin)\s+problema|list[oa]\s+(tu|el|su)\s+pago|(?<![\p{L}])(?:est[aá]|qued[oó]|sali[oó]|todo)\s+(?:ok|okay|okey|oki)(?![\p{L}])|(?:tu|el|su)\s+pago\s+(?:\p{L}+\s+)?(?:ok|okay|okey)(?![\p{L}])|(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)\s+(?:\p{L}+\s+){0,2}(?:entr[oó]|cay[oó]|lleg[oó]|est[aá]\s+(?:bien|correct|list)|qued[oó]\s+list|fue\s+recibid)|(?:ya\s+(?:lo\s+|la\s+)?(?:vimos|revisamos|verificamos|confirmamos)|(?<![\p{L}])vimos)\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|est[aá]\s+correct[oa])/iu
 
 /** Never said by the agent in any chat: it cannot see the bank ("acreditado", "recibimos tu sinpe", "pago verificado"). */
 const ALWAYS_PAYMENT_STATUS_REPLY_RE =
-  /(?<![\p{L}])(?:acredit\p{L}*|(?:recibimos|ya\s+recibimos|verificamos|confirmamos|ya\s+vimos|vimos)\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|(?:pago|sinpe|dep[oó]sito|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|acreditad[oa]|aprobad[oa])|(?:tu|su)\s+pago\s+(?:ya\s+)?(?:est[aá]|qued[oó]|fue)\s+(?:recibid|confirmad|verificad|acreditad|aprobad)\p{L}*)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:(?:tu|su|el)\s+(?:sinpe|pago|dep[oó]sito|transferencia)\s+ya\s+(?:cay[oó]|lleg[oó]|entr[oó])|ya\s+nos\s+(?:lleg|cay|entr)[oó](?=\s*(?:[.!🙌😊👍]|$|,\s*gracias))|acredit\p{L}*|(?:recibimos|ya\s+recibimos|verificamos|confirmamos|ya\s+vimos|vimos)\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|(?:pago|sinpe|dep[oó]sito|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|acreditad[oa]|aprobad[oa])|(?:tu|su)\s+pago\s+(?:ya\s+)?(?:est[aá]|qued[oó]|fue)\s+(?:recibid|confirmad|verificad|acreditad|aprobad)\p{L}*)(?![\p{L}])/iu
 
 export type OutputValidationResult = {
   ok: boolean
@@ -333,10 +333,11 @@ const NOT_A_NEGATION_RE = /\b(?:sin\s+dudas?|sin\s+problemas?|no\s+te\s+preocup[
  * right before the assurance ("no es seguro", "no se recomienda").
  */
 const HEALTH_GROUP_RE =
-  // Verifier round 8: no "corazón" (a Costa Rican endearment), "cardíaco" stays; + "hijo", "dar de mamar".
-  /(?<![\p{L}])(?:embaraz\p{L}*|lactan\p{L}*|amamant\p{L}*|de\s+mamar|beb[eé]s?|ni[nñ][oa]s?|hij[oa]s?|menores|medicament\p{L}*|medicinas?|pastillas?|presi[oó]n|diab[eé]t\p{L}*|anticonceptiv\p{L}*|tiroides|marcapasos|card[ií]ac\p{L}*|epilep\p{L}*|c[aá]ncer|quimio\p{L}*)(?![\p{L}])/iu
+  // Verifier round 8: no bare "corazón" (a Costa Rican endearment); SecureDog round 6: "del corazón", hipertensión,
+  // anticoagulantes, gestación, adultos mayores.
+  /(?<![\p{L}])(?:embaraz\p{L}*|lactan\p{L}*|amamant\p{L}*|de\s+mamar|gestaci[oó]n|gestante|encinta|beb[eé]s?|ni[nñ][oa]s?|hij[oa]s?\s+(?:de\s+)?\d+\s+a[nñ]os|menores|adultos?\s+mayores|todas\s+las\s+edades|arritmi\p{L}*|ancian\p{L}*|tercera\s+edad|(?:problemas?|enfermedad\p{L}*|condici[oó]n)\s+(?:del?\s+)?coraz[oó]n|del\s+coraz[oó]n|cardiopat\p{L}*|hipertens\p{L}*|anticoagul\p{L}*|presi[oó]n\s+alta|medicament\p{L}*|medicinas?|pastillas?|presi[oó]n|diab[eé]t\p{L}*|anticonceptiv\p{L}*|tiroides|marcapasos|card[ií]ac\p{L}*|epilep\p{L}*|c[aá]ncer|quimio\p{L}*)(?![\p{L}])/iu
 /** The strong assurances; "podés / puede / se puede" alone are weak (next to a doctor referral they are fine). */
-const STRONG_HEALTH_ASSURANCE = String.raw`segur\p{L}*|apt[oa]s?|sin\s+(?:ning[uú]n\s+)?problemas?|no\s+hay\s+problemas?|no\s+pasa\s+nada|tranquil\p{L}*|recomendad\p{L}*|ideal(?:es)?|perfect[oa]s?|efectos?\s+secundarios?|contraindicaci\p{L}*|riesgos?|peligros\p{L}*|da[nñ]in\p{L}*|hace\s+da[nñ]o|hacen\s+da[nñ]o|afecta\p{L}*|interact\p{L}*|interfier\p{L}*|compatible\p{L}*|inofensiv\p{L}*|inocu\p{L}*|sin\s+miedo`
+const STRONG_HEALTH_ASSURANCE = String.raw`segur\p{L}*|apt[oa]s?|(?:ning[uú]n|sin)\s+inconvenientes?|no\s+hay\s+(?:ning[uú]n\s+)?inconvenientes?|sin\s+(?:ning[uú]n\s+)?problemas?|no\s+hay\s+problemas?|no\s+pasa\s+nada|tranquil\p{L}*|recomendad\p{L}*|ideal(?:es)?|perfect[oa]s?|efectos?\s+secundarios?|contraindicaci\p{L}*|riesgos?|peligros\p{L}*|da[nñ]in\p{L}*|hace\s+da[nñ]o|hacen\s+da[nñ]o|afecta\p{L}*|interact\p{L}*|interfier\p{L}*|compatible\p{L}*|inofensiv\p{L}*|inocu\p{L}*|sin\s+miedo`
 const STRONG_HEALTH_ASSURANCE_RE = new RegExp(String.raw`(?<![\p{L}])(?:${STRONG_HEALTH_ASSURANCE})(?![\p{L}])`, 'iu')
 const HEALTH_ASSURANCE_RE = new RegExp(String.raw`(?<![\p{L}])(?:${STRONG_HEALTH_ASSURANCE}|pod[eé]s|puede[ns]?|pued[eé]s|se\s+puede)(?![\p{L}])`, 'iu')
 /** Names that only look like a sensitive group ("el Día del Niño"). */
@@ -352,7 +353,7 @@ const NO_SIDE_EFFECTS_RE =
   /(?<![\p{L}])(?:no\s+(?:hay|tiene|tienen|produce|producen|presenta|presentan|causa|causan|da|dan|genera|generan)|libres?\s+de|cero|sin)\s+(?:ning[uú]n\s+|ningunos?\s+|ninguna\s+)?(?:efectos?\s+(?:secundarios?|adversos?|negativos?)|contraindicaci\p{L}*|reacci[oó]n(?:es)?\s+adversas?)/iu
 /** A bare "no tiene / no hay ningún riesgo / peligro" — health unless the sentence is about paying or shipping. */
 const NO_RISK_RE =
-  /(?<![\p{L}])(?:(?:no\s+(?:tiene|tienen|hay|causa|causan|representa|representan)|cero|sin|libres?\s+de)\s+(?:ning[uú]n\s+|ni\s+un\s+)?(?:riesgos?|peligros?)(?:\s+alguno)?|no\s+(?:te\s+|le\s+|les\s+)?(?:hace|hacen)\s+(?:ning[uú]n\s+)?da[nñ]o|inofensiv\p{L}*|inocu[oa]s?)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:(?:no\s+(?:tiene|tienen|hay|causa|causan|representa|representan)|cero|sin|libres?\s+de)\s+(?:ning[uú]n\s+|ni\s+un\s+)?(?:riesgos?|peligros?)(?:\s+alguno)?|no\s+(?:te\s+|le\s+|les\s+)?(?:hace|hacen|va\s+a\s+hacer|van\s+a\s+hacer)\s+(?:ning[uú]n\s+)?da[nñ]o|no\s+(?:genera|crea|causa|da)\s+(?:dependencia|adicci\p{L}*)|inofensiv\p{L}*|inocu[oa]s?)(?![\p{L}])/iu
 // Verifier round 8: shipping / guarantee sentences ("el paquete va asegurado, cero riesgo", "comprá sin riesgo: si no te
 // gusta lo cambiamos", "no hay peligro, el mensajero te llama") are not health.
 const MONEY_OR_SHIPPING_RE =
@@ -360,28 +361,76 @@ const MONEY_OR_SHIPPING_RE =
 /** "Para saber si es seguro…", "Sobre si podés…", "¿Podés usarlo con…?": an indirect question, not an assurance. */
 const INDIRECT_RE = /(?<![\p{L}])(?:si|sobre\s+si|saber\s+si)\s+(?:\p{L}+\s+){0,2}?(?:es|son|pod\p{L}*|pued\p{L}*|se\s+puede)(?![\p{L}])/iu
 
-export function healthAssuranceIn(text: string): string | null {
+/**
+ * SecureDog round 6: every exemption belongs to the assurance PHRASE itself, not to its sentence. An occurrence is
+ * exempt only when, right before it in its clause, there is a "no / nunca" ("no es seguro"), an indirect "si"
+ * ("para saber si es seguro…", with a doctor referral in the reply), or when the weak "podés / puede" is a possibility
+ * ("podés estar tomando…"). Anything else — "Es seguro en el embarazo, no debés preocuparte", "Sí, podés usarlo,
+ * igual consultá con tu médico" — is an assurance.
+ */
+const ASSURANCE_GLOBAL_RE = new RegExp(HEALTH_ASSURANCE_RE.source, 'giu')
+const NEGATED_BEFORE_RE = /(?<![\p{L}])(?:no|nunca|jam[aá]s|ni)\s+(?:\p{L}+\s+){0,2}$/iu
+const INDIRECT_BEFORE_RE = /(?<![\p{L}])(?:si|sobre\s+si|saber\s+si)\s+(?:\p{L}+\s+){0,2}$/iu
+const POSSIBILITY_AFTER_RE = /^\s+(?:estar|que|ser|tener|haber)(?![\p{L}])/iu
+const WEAK_ASSURANCE_RE = /^(?:pod[eé]s|puede[ns]?|pued[eé]s|se\s+puede)$/iu
+
+/** Harm words: with a "no" in front they ARE the assurance ("no es peligroso", "no afecta", "no interactúa"). */
+const HARM_WORD_RE = /^(?:riesgos?|peligros\p{L}*|da[nñ]in\p{L}*|hacen?\s+da[nñ]o|afecta\p{L}*|interact\p{L}*|interfier\p{L}*|efectos?\s+secundarios?|contraindicaci\p{L}*)$/iu
+
+/** Every assurance occurrence in `s` that no exemption covers. */
+function liveAssurances(s: string, referral: boolean): string[] {
+  const out: string[] = []
+  for (const m of s.matchAll(ASSURANCE_GLOBAL_RE)) {
+    const idx = m.index ?? 0
+    const clause = (s.slice(Math.max(0, idx - 40), idx).split(/[,;:¡!¿?]|\s(?:pero|aunque)\s/iu).pop() || '')
+    if (!HARM_WORD_RE.test(m[0]) && NEGATED_BEFORE_RE.test(clause)) continue
+    if (referral && INDIRECT_BEFORE_RE.test(clause)) continue
+    if (WEAK_ASSURANCE_RE.test(m[0]) && POSSIBILITY_AFTER_RE.test(s.slice(idx + m[0].length))) continue
+    out.push(m[0])
+  }
+  return out
+}
+
+function liveAssuranceIn(s: string, referral: boolean): string | null {
+  return liveAssurances(s, referral)[0] ?? null
+}
+
+export function healthAssuranceIn(text: string, opts: { instructions?: boolean } = {}): string | null {
   const t = (text || '').normalize('NFKC')
   const sentences = t.split(/(?<=[.!?\n;])\s*/u).filter((s) => s.trim())
   const referral = HEALTH_REFERRAL_RE.test(t)
   for (const s of sentences) {
+    // "Nunca prometas…" is an instruction in the pack (lint only); in a live reply "no prometemos nada, pero…" is not.
+    if (opts.instructions && DONT_SAY_RE.test(s)) continue
     if (NO_SIDE_EFFECTS_RE.test(s)) return s.trim()
     if (NO_RISK_RE.test(s) && !MONEY_OR_SHIPPING_RE.test(s)) return s.trim()
-    if (!HEALTH_GROUP_RE.test(s.replace(NOT_A_GROUP_RE, ' ')) || !HEALTH_ASSURANCE_RE.test(s)) continue
-    if (HEALTH_WARNING_RE.test(s) || DONT_SAY_RE.test(s)) continue
-    // "Te recomiendo consultarlo con tu médico, ya que podés estar tomando medicamentos": a referral with only a weak
-    // "podés / puede" in the same sentence is the safe answer.
-    if (HEALTH_REFERRAL_RE.test(s) && !STRONG_HEALTH_ASSURANCE_RE.test(s)) continue
-    // A question back or an indirect "si…" next to a doctor referral is the safe answer the prompt asks for.
-    if (referral && (/\?\s*$/u.test(s) || INDIRECT_RE.test(s))) continue
-    return s.trim()
+    if (!HEALTH_GROUP_RE.test(s.replace(NOT_A_GROUP_RE, ' '))) continue
+    // A question back next to a doctor referral ("¿Con tus medicamentos? Eso lo tiene que decir tu médico").
+    if (referral && /\?\s*$/u.test(s) && !/(?<![\p{L}])(?:s[ií]|claro)(?![\p{L}])/iu.test(s)) continue
+    if (liveAssuranceIn(s, referral)) return s.trim()
   }
   return null
 }
 
-/** First results/health promise in the text (null = none). Shared with the pack lint (build-agent). */
-export function resultsClaimIn(text: string): string | null {
-  const health = healthAssuranceIn(text)
+/** To a health question (pregnancy, medication, condition) any non-exempt "sí / podés / sin problema" is a promise. */
+export function healthContextAssurance(reply: string, customerText: string): string | null {
+  const c = (customerText || '').normalize('NFKC').replace(NOT_A_GROUP_RE, ' ')
+  if (!HEALTH_GROUP_RE.test(c) && !/(?<![\p{L}])(?:segur\p{L}*|riesgo\p{L}*|da[nñ]o|peligro\p{L}*|efectos?\s+secundarios?)(?![\p{L}])/iu.test(c)) return null
+  const t = (reply || '').normalize('NFKC')
+  const referral = HEALTH_REFERRAL_RE.test(t)
+  // "¡Claro! Podés usarlo sin problema": the "sí / claro" may sit in its own sentence.
+  const affirmative = /(?<![\p{L}])(?:s[ií]|claro|dale|obvio|por\s+supuesto)(?![\p{L}])/iu.test(t)
+  for (const s of t.split(/(?<=[.!?\n;])\s*/u).filter((x) => x.trim())) {
+    if (NO_RISK_RE.test(s)) return s.trim()
+    const hits = liveAssurances(s, referral)
+    if (hits.length && (affirmative || hits.some((h) => !WEAK_ASSURANCE_RE.test(h)))) return s.trim()
+  }
+  return null
+}
+
+/** First results/health promise in the text (null = none). `instructions`: pack text (build-agent lint). */
+export function resultsClaimIn(text: string, opts: { instructions?: boolean } = {}): string | null {
+  const health = healthAssuranceIn(text, opts)
   if (health) return health
   const t = (text || '').normalize('NFKC')
   for (const re of RESULTS_CLAIM_RES) {
@@ -390,7 +439,7 @@ export function resultsClaimIn(text: string): string | null {
       const before = (t.slice(Math.max(0, (m.index ?? 0) - 40), m.index ?? 0).split(/[,:;¡!]|\s(?:pero|y|aunque)\s/i).pop() || '').replace(NOT_A_NEGATION_RE, ' ')
       if (RESULTS_NEGATION_RE.test(before)) continue
       // "Nunca prometas curar, tratar o bajar de peso": one "don't say" covers the whole list in that sentence.
-      if (DONT_SAY_RE.test(sentenceBefore(t, m.index ?? 0))) continue
+      if (opts.instructions && DONT_SAY_RE.test(sentenceBefore(t, m.index ?? 0))) continue
       return m[0]
     }
   }
@@ -443,13 +492,8 @@ export function validateAgentOutput(input: {
   if (resultsClaimIn(text)) reasons.push('results_claim')
   // SecureDog round 5 (INT-138): to a pregnancy / medication question, "¡Sí! Podés usarlo sin problema" with no doctor
   // referral is the same promise.
-  else if (
-    input.customerText &&
-    HEALTH_GROUP_RE.test(input.customerText) &&
-    !HEALTH_REFERRAL_RE.test(text) &&
-    /(?<![\p{L}])(?:s[ií]|claro|pod[eé]s|puede[ns]?|se\s+puede|sin\s+problemas?|tranquil\p{L}*|no\s+pasa\s+nada|segur\p{L}*|apt[oa]s?)(?![\p{L}])/iu.test(text) &&
-    HEALTH_ASSURANCE_RE.test(text)
-  ) {
+  // SecureDog round 6: a doctor referral no longer cancels it, and the customer text is the whole burst.
+  else if (input.customerText && healthContextAssurance(text, input.customerText)) {
     reasons.push('results_claim')
   }
   // Advisor (luna-10): the unmistakable "payment received" wordings are held on EVERY reply, payment words or not.

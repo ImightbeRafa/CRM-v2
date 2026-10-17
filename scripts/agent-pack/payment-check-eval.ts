@@ -41,11 +41,19 @@ export const ASKS: Case[] = [
   'Voy a hacer el sinpe ahorita', 'ahorita le hago el sinpe', 'en la noche les pago', '¿y si la tarjeta sale rechazada?',
 ].map((text) => ({ text, history: [{ direction: 'inbound', content: 'quiero el de dormir' }, { direction: 'outbound', content: 'Tenemos SINPE Móvil y tarjeta. ¿Cómo preferís pagar?' }] }))
 
+/** Verifier round 9: plain follow-ups RIGHT AFTER the store sent the payment details (where the prompt leans to claim). */
+export const ASKS_AFTER_DETAILS: Case[] = [
+  'ok gracias', 'perfecto, ahorita lo hago', 'dale, en un rato te lo mando', '¿a nombre de quién sale?', '¿y el envío cuánto es?',
+  '¿cuánto tarda en llegar?', 'ok, ¿me lo mandan a Heredia?', 'mañana temprano les hago el sinpe', '¿puedo pagar mañana?', 'gracias! 😊',
+  '¿el número es 6201 9914?', 'ok, voy a hacerlo ahorita', '¿hasta qué hora puedo pagar hoy?', '¿y si mejor pago con tarjeta?', 'listo, ¿y ahora qué sigue?',
+  '¿le pongo mi nombre en el detalle?', 'ok, en la noche lo hago', '¿aceptan de otro banco?', 'perfecto', 'ya casi lo hago',
+].map((text) => ({ text, history: [{ direction: 'inbound', content: 'quiero el de dormir' }, PAY_DETAILS] }))
+
 async function main() {
   const tenantId = arg('tenant') || ''
   if (!tenantId) throw new Error('--tenant=<id> requerido (el uso se mide en ese negocio)')
   const rows: Array<{ set: 'claim' | 'ask'; text: string; verdict: string; kind: string | null; ms: number }> = []
-  for (const [set, cases] of [['claim', CLAIMS], ['ask', ASKS]] as const) {
+  for (const [set, cases] of [['claim', CLAIMS], ['ask', ASKS], ['ask', ASKS_AFTER_DETAILS]] as const) {
     for (const c of cases) {
       const r = await runPaymentClaimCheck({ inboundText: c.text, history: c.history || [], tenantId })
       rows.push({ set, text: c.text, verdict: r.verdict, kind: r.kind, ms: r.ms })
@@ -60,9 +68,9 @@ async function main() {
   const summary = {
     claims: CLAIMS.length,
     claimsMissed: missed.length,
-    asks: ASKS.length,
+    asks: ASKS.length + ASKS_AFTER_DETAILS.length,
     asksFlagged: flagged.length,
-    asksFlaggedPct: Math.round((flagged.length / ASKS.length) * 1000) / 10,
+    asksFlaggedPct: Math.round((flagged.length / (ASKS.length + ASKS_AFTER_DETAILS.length)) * 1000) / 10,
     errors: errors.length,
     p50ms: pct(50),
     p95ms: pct(95),

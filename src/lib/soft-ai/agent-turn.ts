@@ -178,6 +178,16 @@ function customerTextSinceLastAnswer(history: Array<{ direction: string; content
   return [...since, current || ''].join('\n')
 }
 
+/** The customer's earlier messages since the store last wrote (not this one), oldest first. */
+function earlierCustomerTexts(history: Array<{ direction: string; content?: string | null }>): string[] {
+  const out: string[] = []
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].direction === 'outbound') break
+    if (history[i].content) out.unshift(String(history[i].content))
+  }
+  return out
+}
+
 /** luna-10 night intro: the agent's first name, the store, and whether anyone already wrote to this customer. */
 function nightIntroWho(
   agent: { introductionNames?: string[] | null; brandFacts?: { storeName?: string | null } | null },
@@ -883,6 +893,8 @@ export async function executeAgentLayerTurn(
     (payload.platform || 'whatsapp') === 'whatsapp' && replyAssets.size
       ? sendableImageReplyIds(replyAssets, await loadSentAgentImageShas(row.tenantId, row.conversationId))
       : new Set<string>()
+  // The turn budget starts before the "¿ya pagó?" check (it can take up to 4.5 s).
+  const turnBudgetStartedAt = Date.now()
   const decisionInput: DecideInboundInput = {
     inboundText: payload.content || '',
     messageType: trigger.messageType,
@@ -893,6 +905,7 @@ export async function executeAgentLayerTurn(
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !liveImageReplyIds.has(id))),
     awaitingReceipt: mediaAwaitingReceipt(trigger.messageType, history, mediaSalesContext),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
+    earlierCustomerTexts: earlierCustomerTexts(history),
   }
   const decision = await withPaymentClaimCheck(decisionInput, decideInbound(decisionInput), {
     tenantId: row.tenantId,
@@ -1043,7 +1056,7 @@ export async function executeAgentLayerTurn(
       platform: payload.platform || 'whatsapp',
     },
   })
-  const llm = await runSoftAiLlmRuntime(runtimeInput)
+  const llm = await runSoftAiLlmRuntime({ ...runtimeInput, budgetStartedAt: turnBudgetStartedAt })
 
   const policy = applyFinalOutputPolicy({
     text: llm.text,
@@ -1052,7 +1065,8 @@ export async function executeAgentLayerTurn(
     inventoryPrices: llm.inventoryPrices,
     quoteAmounts: runtimeInput.salesAllowedAmounts,
     skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
-    customerText: payload.content || '',
+    // SecureDog round 6: the whole burst since the store last wrote ("Estoy embarazada" + "¿Lo puedo usar?").
+    customerText: customerTextSinceLastAnswer(history, payload.content),
     allowedDeals: runtimeInput.salesAllowedDeals,
     freeShipping: runtimeInput.salesFreeShipping,
     freeShippingRule: runtimeInput.salesFreeShippingRule,
@@ -2015,6 +2029,7 @@ async function runAgentTestTurnInner(input: {
     : null
   const probarImageReplyIds =
     (account.platform || 'whatsapp') === 'whatsapp' ? sendableImageReplyIds(replyAssets, input.sentImageIds) : new Set<string>()
+  const probarBudgetStartedAt = Date.now()
   const probarDecisionInput: DecideInboundInput = {
     inboundText: input.inboundText,
     messageType: input.messageType || 'text',
@@ -2024,6 +2039,7 @@ async function runAgentTestTurnInner(input: {
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !probarImageReplyIds.has(id))),
     awaitingReceipt: mediaAwaitingReceipt(input.messageType || 'text', history, probarMediaSalesContext),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
+    earlierCustomerTexts: earlierCustomerTexts(history),
   }
   // Parity: Probar / exam run the same "¿ya pagó?" check as the live turn.
   const decision = await withPaymentClaimCheck(probarDecisionInput, decideInbound(probarDecisionInput), {
@@ -2102,7 +2118,7 @@ async function runAgentTestTurnInner(input: {
       },
     })
     runtimeInput.usageFeature = input.usageFeature ?? 'probar'
-    const llm = await runSoftAiLlmRuntime(runtimeInput)
+    const llm = await runSoftAiLlmRuntime({ ...runtimeInput, budgetStartedAt: probarBudgetStartedAt })
     llmTrace = llm.toolTrace
     escalateReason = llm.escalateReason ?? null
     validationReasons = llm.validationReasons ?? []
@@ -2115,7 +2131,7 @@ async function runAgentTestTurnInner(input: {
       inventoryPrices: llm.inventoryPrices,
       quoteAmounts: runtimeInput.salesAllowedAmounts,
       skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
-      customerText: input.inboundText,
+      customerText: customerTextSinceLastAnswer(input.history ?? [], input.inboundText),
       allowedDeals: runtimeInput.salesAllowedDeals,
       freeShipping: runtimeInput.salesFreeShipping,
       freeShippingRule: runtimeInput.salesFreeShippingRule,

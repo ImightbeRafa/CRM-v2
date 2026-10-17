@@ -144,17 +144,25 @@ export function decideInbound(input: {
    */
   awaitingPaymentMethod?: boolean
   /**
+   * SecureDog round 6: the customer's earlier messages since the store last wrote. A burst ("Ya les pagué la mitad" +
+   * "¿Cómo pago el resto?") is answered by ONE job for the newest message; a claim in any of them is a payment hand-off.
+   */
+  earlierCustomerTexts?: string[]
+  /**
    * luna-10 D2: the "¿ya pagó?" model check said claim (or failed) in enforce mode — the message is treated exactly like
    * a regex payment claim (same hand-off, same notification). Can only force toward a person.
    */
   forcePaymentRisk?: true
 }): InboundDecision {
-  const classified = classifyPaymentText(input.inboundText, {
+  const latestClass = classifyPaymentText(input.inboundText, {
     awaitingPaymentMethod: input.awaitingPaymentMethod === true && (!input.messageType || input.messageType === 'text'),
   })
-  const paymentClass: PaymentClassification = input.forcePaymentRisk === true ? 'payment_proof_or_risk' : classified
+  const burstClaim = (input.earlierCustomerTexts || []).some((t) => classifyPaymentText(t) === 'payment_proof_or_risk')
+  const forced = input.forcePaymentRisk === true
+  const paymentClass: PaymentClassification = burstClaim || forced ? 'payment_proof_or_risk' : latestClass
+  const why = forced ? `payment_llm_check (regex: ${latestClass})` : burstClaim ? `earlier_message (latest: ${latestClass})` : null
   const steps: DecisionStep[] = [
-    { step: 'payment_class', outcome: paymentClass, ...(input.forcePaymentRisk === true ? { reason: `payment_llm_check (regex: ${classified})` } : {}) },
+    { step: 'payment_class', outcome: paymentClass, ...(why ? { reason: why } : {}) },
   ]
   const safety = routeInboundSafety({
     inboundText: input.inboundText,

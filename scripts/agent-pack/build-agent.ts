@@ -119,7 +119,9 @@ async function main() {
   ]
   for (const [where, text] of packTexts) {
     // Line by line (a precise message) and the whole text (a promise split over two lines).
-    const claim = String(text || '').split('\n').map((line) => resultsClaimIn(line)).find(Boolean) ?? resultsClaimIn(String(text || '').replace(/\s+/g, ' '))
+    // "Nunca prometas…" is allowed in instructions / knowledge only; saved replies go to customers word for word.
+    const opts = { instructions: /^(?:instrucciones|conocimiento)/.test(where) }
+    const claim = String(text || '').split('\n').map((line) => resultsClaimIn(line, opts)).find(Boolean) ?? resultsClaimIn(String(text || '').replace(/\s+/g, ' '), opts)
     if (claim) blockers.push(`${where} promete resultados ("${claim}"): usá solo ingredientes y modo de uso`)
   }
 

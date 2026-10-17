@@ -57,7 +57,8 @@ describe('INT-93: payment claims never reach a confirming reply', () => {
     assert.match(runtime, /validation\.reasons\.includes\('confirmation_wording'\)/)
     assert.match(runtime, /validation\.reasons\.includes\('payment_status_claim'\)/)
     assert.match(runtime, /structured\.needsHuman && hasPaymentWord\(input\.inboundText/)
-    assert.match(runtime, /customerText: input\.inboundText/)
+    // SecureDog round 6 (luna-10): the reply check reads the whole burst since the store last wrote.
+    assert.match(runtime, /customerText: burstCustomerText\(input\.history, input\.inboundText\)/)
   })
   it('a media caption with a confirm/review verb is a receipt', () => {
     const d = decideInbound({ inboundText: 'revisen porfa', messageType: 'image', brandFacts: { schemaVersion: 1 }, shortcuts: RESERVED_SHORTCUT_SEEDS.map((s) => ({ ...s, isActive: true, sortOrder: 0 })) } as never)

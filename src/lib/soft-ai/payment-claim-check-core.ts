@@ -28,31 +28,55 @@ const MONEY_WORDS_RE =
  * word, or the chat already talked about payment (the store sent payment details / the customer used payment words in
  * the last 3 messages) — where "listo, ya está" means "I paid".
  */
+/** The customer's messages since the store last wrote (oldest first) — a burst is answered by one job. */
+function unansweredCustomerTexts(history: PaymentCheckHistory): { burst: string[]; storeIndex: number } {
+  const burst: string[] = []
+  let i = history.length - 1
+  for (; i >= 0; i--) {
+    if (history[i].direction === 'outbound') break
+    if (history[i].content) burst.unshift(String(history[i].content))
+  }
+  return { burst, storeIndex: i }
+}
+
 export function paymentCheckGate(inboundText: string, history: PaymentCheckHistory): boolean {
   const text = inboundText || ''
   if (!text.trim()) return false
-  if (MONEY_WORDS_RE.test(text) || hasPaymentWord(text)) return true
+  // SecureDog round 6: the whole unanswered burst, not only the newest message.
+  for (const t of [...unansweredCustomerTexts(history).burst, text]) if (MONEY_WORDS_RE.test(t) || hasPaymentWord(t)) return true
   const recentInbound = history.filter((m) => m.direction === 'inbound').slice(-3).map((m) => m.content || '')
   if (recentInbound.some((t) => hasPaymentWord(t))) return true
   return history.some((m) => m.direction === 'outbound' && hasPaymentWord(m.content || ''))
 }
 
-/** Last 2 customer messages + the store's last message + the current one, each cut, fenced as data. */
+/** Role labels a customer could type to look like another speaker in the prompt. */
+const ROLE_LABEL_RE = /(?:cliente|tienda|store|customer|sistema|system|assistant|asistente)\s*(?:\([^)\n]{0,40}\))?\s*:/giu
+
+/**
+ * Two earlier customer messages + the store's last message + EVERYTHING the customer wrote since (the burst), fenced as
+ * data. SecureDog round 6: the burst keeps its END (a claim often closes a long message), and role labels are removed.
+ */
 export function buildPaymentCheckInput(
   inboundText: string,
   history: PaymentCheckHistory,
   fence: (text: string) => string,
 ): string {
-  const cut = (t: string, n: number) => {
-    const v = fence(t || '').replace(/\s+/g, ' ').trim()
+  const clean = (t: string) => fence(t || '').replace(ROLE_LABEL_RE, ' ').replace(/\s+/g, ' ').trim()
+  const head = (t: string, n: number) => {
+    const v = clean(t)
     return v.length > n ? `${v.slice(0, n)}…` : v
   }
-  const lastStore = [...history].reverse().find((m) => m.direction === 'outbound')
-  const prevCustomer = history.filter((m) => m.direction === 'inbound').slice(-2)
+  const tail = (t: string, n: number) => {
+    const v = clean(t)
+    return v.length > n ? `…${v.slice(-n)}` : v
+  }
+  const { burst, storeIndex } = unansweredCustomerTexts(history)
+  const lastStore = storeIndex >= 0 ? history[storeIndex] : undefined
+  const before = history.slice(0, Math.max(0, storeIndex)).filter((m) => m.direction === 'inbound').slice(-2)
   const lines: string[] = []
-  for (const m of prevCustomer) lines.push(`Cliente (antes): ${cut(m.content || '', 200)}`)
-  if (lastStore) lines.push(`Tienda (último mensaje): ${cut(lastStore.content || '', 300)}`)
-  lines.push(`Cliente (ÚLTIMO, el que decidís): ${cut(inboundText, 600)}`)
+  for (const m of before) lines.push(`Cliente (antes): ${head(m.content || '', 200)}`)
+  if (lastStore) lines.push(`Tienda (último mensaje): ${tail(lastStore.content || '', 300)}`)
+  lines.push(`Cliente (SIN RESPONDER, lo que decidís): ${tail([...burst, inboundText].join(' / '), 900)}`)
   return `<MENSAJES>\n${lines.join('\n')}\n</MENSAJES>`
 }
 

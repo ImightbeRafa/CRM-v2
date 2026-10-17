@@ -39,6 +39,11 @@ import { HANDOFF_REASON, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outco
 import { hasPaymentWord, paymentHandoffReason } from '@/lib/soft-ai/payment-classifier'
 
 export type SoftAiLlmRuntimeInput = {
+  /**
+   * luna-10 D2: when the turn's 35 s budget started (before the "¿ya pagó?" check). Retries / repair / follow-ups fit
+   * in what is LEFT, so check + model + send stay inside the 42 s job and the 45 s lease.
+   */
+  budgetStartedAt?: number
   tenantId: string
   agentId: string
   agentVersion: number
@@ -126,6 +131,7 @@ export async function runSoftAiLlmRuntime(
   input: SoftAiLlmRuntimeInput,
 ): Promise<SoftAiLlmRuntimeResult> {
   const started = Date.now()
+  const budgetStarted = Math.min(started, input.budgetStartedAt ?? started)
   let inputTokens = 0
   let cachedInputTokens = 0
   let outputTokens = 0
@@ -153,7 +159,7 @@ export async function runSoftAiLlmRuntime(
     } catch (error) {
       // Only when a FULL attempt (same timeout) still fits in the turn budget (35 s, inside the 42 s job / 45 s lease).
       const timeoutMs = args.timeoutMs ?? SOFT_AI_FIRST_CALL_TIMEOUT_MS
-      if (retried || !isRetryableSoftAiError(error) || !retryFits(started, timeoutMs)) throw error
+      if (retried || !isRetryableSoftAiError(error) || !retryFits(budgetStarted, timeoutMs)) throw error
       retried = true
       toolTrace.push({ retry: { reason: 'model_error' } })
       return rawSoftAiResponsesCreate({ ...args, timeoutMs })
@@ -210,7 +216,7 @@ export async function runSoftAiLlmRuntime(
         3_000,
         Math.min(
           modelCalls === 1 ? SOFT_AI_FIRST_CALL_TIMEOUT_MS : SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS,
-          SOFT_AI_TURN_BUDGET_MS - (Date.now() - started),
+          SOFT_AI_TURN_BUDGET_MS - (Date.now() - budgetStarted),
         ),
       )
       const response = await softAiResponsesCreate({
@@ -311,7 +317,7 @@ export async function runSoftAiLlmRuntime(
     // The model used every round on lookups (e.g. inventory, then shipping knowledge) and never wrote the answer:
     // one last call that MUST answer in text from what it found (no more tools), inside the turn's time budget.
     // Before (2026-10-09) this was skipped when the rounds were used up → empty output → human hand-off.
-    const remainingMs = SOFT_AI_TURN_BUDGET_MS - (Date.now() - started)
+    const remainingMs = SOFT_AI_TURN_BUDGET_MS - (Date.now() - budgetStarted)
     if (!finalText && toolCalls > 0 && remainingMs > 3_000) {
       const response = await softAiResponsesCreate({
         model: input.model,
@@ -345,7 +351,7 @@ export async function runSoftAiLlmRuntime(
     if (finalText && !extractShortcutTag(parseStructuredAgentOutput(finalText).text).text) finalText = ''
 
     // B2: empty or tag-only answer → ONE more try (text only) before the safe line, when the turn budget allows.
-    if (!finalText && !retried && !escalate && retryFits(started, SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS)) {
+    if (!finalText && !retried && !escalate && retryFits(budgetStarted, SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS)) {
       retried = true
       toolTrace.push({ retry: { reason: 'empty_output' } })
       try {
@@ -431,14 +437,15 @@ export async function runSoftAiLlmRuntime(
         quoteAmounts: input.salesAllowedAmounts,
         allowedDeals: input.salesAllowedDeals,
         freeShippingRule: input.salesFreeShippingRule,
-        customerText: input.inboundText,
+        // SecureDog round 6: the whole burst since the store last wrote, not only the newest message.
+        customerText: burstCustomerText(input.history, input.inboundText),
         linkAllowlist: input.linkAllowlist,
         paymentContext: conversationPaymentContext(input.history, input.inboundText),
       })
     let validation = validate(finalText)
     // B7: a reply that breaks a rule (made-up amount, a deal, "ya quedó pagado"…) gets ONE rewrite with the reasons
     // before anything is handed to a person. The rewrite passes the same checks or the original hand-off stands.
-    const repairLeftMs = SOFT_AI_TURN_BUDGET_MS - (Date.now() - started)
+    const repairLeftMs = SOFT_AI_TURN_BUDGET_MS - (Date.now() - budgetStarted)
     // Never on payment wording (a "ya quedó pagado" reply means the customer is talking about a payment → person).
     const repairable = validation.reasons.length > 0 && validation.reasons.every((r) => REPAIRABLE_REASONS.has(r))
     if (validation.needsHuman && repairable && !structured.needsHuman && !escalate && repairLeftMs > 5_000) {
@@ -607,6 +614,16 @@ export function escalateKindOf(handoff: TurnHandoff | null): 'technical' | 'hand
  * MEDIA-15: the payment-status backstop also applies when the conversation (not only this message) is about a
  * payment: a payment word or a photo / file / audio in the last 3 customer messages, or the store talked about paying.
  */
+/** The customer's messages since the store last wrote, oldest first, plus this one. */
+export function burstCustomerText(history: Array<{ direction: string; content?: string | null }>, inboundText: string): string {
+  const since: string[] = []
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].direction === 'outbound') break
+    if (history[i].content) since.unshift(String(history[i].content))
+  }
+  return [...since, inboundText || ''].join('\n')
+}
+
 export function conversationPaymentContext(history: Array<{ direction: string; content?: string | null }>, inboundText: string): boolean {
   const inbound = history.filter((m) => m.direction === 'inbound').slice(-3).map((m) => m.content || '')
   const mediaRe = /\[(image|imagen|foto|audio|voice|video|document|documento|archivo|sticker)/i

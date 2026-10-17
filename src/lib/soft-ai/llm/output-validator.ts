@@ -274,6 +274,36 @@ function amountAllowed(amount: number, allowed: number[]): boolean {
   return allowed.some((candidate) => Math.abs(Math.round(candidate) - rounded) <= 1)
 }
 
+/**
+ * Results / health promises (2026-10-17, live PatchHouse: "Muchas personas notan cambios en los primeros días").
+ * Supplements may say what the site says ("apoya la relajación", "ayuda a reducir antojos"); they may never promise
+ * an effect, a time to results, other people's results, a cure or weight loss. A promise right after a negation
+ * ("no promete bajar de peso", "no cura") is the honest disclaimer and passes.
+ */
+const RESULTS_CLAIM_RES: RegExp[] = [
+  /\b(?:muchas|varias|algunas|la\s+mayor[ií]a\s+de\s+las?|miles\s+de)\s+(?:personas|clientes|clientas|usuarios|usuarias|gente)\s+(?:(?:nos\s+|me\s+)?(?:cuentan|dicen|comentan)\s+que\s+)?(?:ya\s+)?(?:notan|sienten|ven|reportan|comentan|dicen|han\s+notado|han\s+sentido|nota|siente)\b/iu,
+  /\b(?:vas\s+a(?:\s+poder)?|vas\s+a\s+empezar\s+a|podr[áa]s|pod[ée]s|empez[áa]s\s+a)\s+(?:notar|sentir|ver)\s+(?:los\s+|las\s+|un\s+|una\s+|el\s+|la\s+)?(?:cambios?|resultados?|mejor[ií]as?|diferencias?|efectos?|beneficios?)\b/iu,
+  /\b(?:notar[áa]s|sentir[áa]s|ver[áa]s)\s+(?:los\s+|las\s+|un\s+|una\s+|el\s+|la\s+)?(?:cambios?|resultados?|mejor[ií]as?|diferencias?|efectos?)\b/iu,
+  /\b(?:cambios?|resultados?|efectos?|mejor[ií]as?)\s+(?:visibles\s+)?(?:en|desde|a\s+partir\s+de|durante)\s+(?:los\s+|las\s+)?(?:primer(?:os|as)|pocos|pocas|\d+)\s+(?:d[ií]as?|semanas?|horas?)\b/iu,
+  /\b(?:garantiza(?:do|da|mos|n)?|te\s+garantizo)\b/iu,
+  /\b(?:cura|curan|curar|sana|sanan)\s+(?:la|el|tu|tus|los|las|de)\b/iu,
+  /\b(?:baj(?:ar|[áa]s|ar[áa]s)|perder|perd[ée]s|perder[áa]s)\s+(?:de\s+)?(?:peso|kilos|libras)\b|\badelgaz(?:ar|[áa]s|ar[áa]s)\b/iu,
+]
+const RESULTS_NEGATION_RE = /\b(?:no|ni|sin|nunca|jam[áa]s)\b[^.!?\n]{0,30}$/iu
+
+/** First results/health promise in the text (null = none). Shared with the pack lint (build-agent). */
+export function resultsClaimIn(text: string): string | null {
+  const t = (text || '').normalize('NFKC')
+  for (const re of RESULTS_CLAIM_RES) {
+    for (const m of t.matchAll(new RegExp(re.source, `${re.flags.replace('g', '')}g`))) {
+      const before = t.slice(Math.max(0, (m.index ?? 0) - 40), m.index ?? 0)
+      if (RESULTS_NEGATION_RE.test(before)) continue
+      return m[0]
+    }
+  }
+  return null
+}
+
 export function validateAgentOutput(input: {
   text: string
   citedToolNames: string[]
@@ -317,6 +347,7 @@ export function validateAgentOutput(input: {
   if (CREATED_CLAIM_RE.test(text) || (input.orderClosing && ORDER_CLOSING_CLAIM_RE.test(text))) reasons.push('write_claim')
   if (dealProblemWithRule(text, input.allowedDeals ?? [], input.freeShippingRule)) reasons.push('deal_offer')
   if (hasConfirmationWording(text)) reasons.push('confirmation_wording')
+  if (resultsClaimIn(text)) reasons.push('results_claim')
   if ((input.paymentContext || (input.customerText && hasPaymentWord(input.customerText))) && PAYMENT_STATUS_REPLY_RE.test(text)) {
     reasons.push('payment_status_claim')
   }

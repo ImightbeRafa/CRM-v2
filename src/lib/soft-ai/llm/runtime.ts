@@ -678,6 +678,7 @@ export const REPAIRABLE_REASONS: ReadonlySet<string> = new Set([
   'write_claim',
   'unit_cost_leak',
   'style_too_long',
+  'results_claim',
   'foreign_link',
 ])
 
@@ -690,6 +691,8 @@ const REPAIR_REASON_TEXT: Record<string, string> = {
   unit_cost_leak: 'mencionaste un costo interno',
   style_too_long: 'quedó muy largo',
   foreign_link: 'pusiste un enlace que no es del sitio del negocio (no pongas enlaces)',
+  results_claim:
+    'prometiste un resultado o efecto (cambios, en cuántos días, lo que notan otras personas, curar o bajar de peso); decí solo los ingredientes y el modo de uso de los datos del negocio, y que cada organismo responde diferente',
 }
 
 /** Rewrite request (B7): only reason names from code, never customer text. */

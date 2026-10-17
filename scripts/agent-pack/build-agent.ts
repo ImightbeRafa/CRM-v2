@@ -39,6 +39,7 @@ import { readChatAgentLayerConfig } from '@/lib/feature-flags'
 import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { loadDailyTestTokens } from '@/lib/soft-ai/agent-claim-gates'
 import { agentsServingUnboundChannels } from '@/lib/soft-ai/agent-settings'
+import { resultsClaimIn } from '@/lib/soft-ai/llm/output-validator'
 import { arg, flag, loadPack } from './pack'
 
 const APPLY = flag('apply')
@@ -90,6 +91,21 @@ async function main() {
     blockers.push(`Modo activo: el pack cambia el modelo (${existing!.model} → ${pack.agent.model}); eso apaga la línea hasta Activar. Cambialo desde la app.`)
   }
   log(existing ? `Agente existente ${existing.id} (v${existing.version}, ${existing.status}${liveMode ? ', MODO ACTIVO' : ''})` : 'Agente nuevo')
+
+  // ---- No results / health promise anywhere the agent reads or copies (2026-10-17: ph_resultados said
+  // "muchas personas … notan cambios en los primeros días" and the live agent repeated it).
+  const packTexts: Array<[string, string]> = [
+    ['instrucciones', pack.agent.systemInstructions],
+    ...pack.knowledge.map((k): [string, string] => [`conocimiento "${k.name}"`, k.body]),
+    ...pack.shortcuts.map((s): [string, string] => [`respuesta ${s.key}`, s.body]),
+    ...Object.entries(pack.systemReplies ?? {}).map(([k, v]): [string, string] => [`respuesta del sistema ${k}`, v]),
+  ]
+  for (const [where, text] of packTexts) {
+    for (const line of String(text || '').split('\n')) {
+      const claim = resultsClaimIn(line)
+      if (claim) blockers.push(`${where} promete resultados ("${claim}"): usá solo ingredientes y modo de uso`)
+    }
+  }
 
   // ---- Brand facts + sales rules validate locally first
   let brandFacts: ReturnType<typeof parseBrandFacts> | null = null

@@ -167,9 +167,20 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         action: 'UPDATE',
         entityType: 'ChatConversation',
         entityId: existing.id,
-        description: tag === PAYMENT_REVIEW_TAG ? 'Pago marcado como verificado' : 'Pedido marcado como confirmado',
+        description:
+          body.reviewOutcome === 'dismissed' && tag === body.removeTag
+            ? tag === PAYMENT_REVIEW_TAG
+              ? 'Aviso de pago descartado (no era un pago)'
+              : 'Aviso de pedido descartado (no era un pedido)'
+            : tag === PAYMENT_REVIEW_TAG
+              ? 'Pago marcado como verificado'
+              : 'Pedido marcado como confirmado',
         oldValues: { tag },
-        newValues: { tagRemoved: tag, conversationId: existing.id },
+        newValues: {
+          tagRemoved: tag,
+          conversationId: existing.id,
+          outcome: body.reviewOutcome === 'dismissed' && tag === body.removeTag ? 'dismissed' : 'resolved',
+        },
         userId: auth.userId,
         userRole: auth.role,
         tenantId: auth.tenantId,

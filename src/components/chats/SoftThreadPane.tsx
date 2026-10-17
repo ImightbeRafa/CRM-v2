@@ -168,7 +168,7 @@ interface SoftThreadPaneProps {
    * agents2-notify: "Pago verificado" / "Confirmado" in the review banner (removes the built-in tag).
    * The banner shows whenever the chat has the tag; without this prop it has no resolve button.
    */
-  reviewTags?: { onResolve: (tag: SoftTag) => void; busy?: boolean }
+  reviewTags?: { onResolve: (tag: SoftTag) => void; onDismiss?: (tag: SoftTag) => void; busy?: boolean }
   /** Chat owner picker (Asignarme / teammates / Sin asignar). Hidden when absent. */
   assignment?: {
     assignees: ChatAssignee[]
@@ -202,6 +202,8 @@ const REVIEW_BANNERS: Array<{
   title: string
   detail: string
   resolveLabel: string
+  /** False alarm: clears the alert without marking it paid / confirmed (audited as dismissed). */
+  dismissLabel: string
   className: string
   buttonClass: string
   testId: string
@@ -211,6 +213,7 @@ const REVIEW_BANNERS: Array<{
     title: '💳 Pago por verificar',
     detail: 'el cliente mandó el comprobante',
     resolveLabel: 'Pago verificado',
+    dismissLabel: 'No es pago',
     className: 'border-rose-200 bg-rose-50 text-rose-900',
     buttonClass: 'bg-rose-600 hover:bg-rose-700',
     testId: 'chat-review-banner-payment',
@@ -220,6 +223,7 @@ const REVIEW_BANNERS: Array<{
     title: '📦 Pedido por confirmar',
     detail: 'pidió contra entrega, confirmá los datos',
     resolveLabel: 'Confirmado',
+    dismissLabel: 'Descartar',
     className: 'border-orange-200 bg-orange-50 text-orange-950',
     buttonClass: 'bg-orange-600 hover:bg-orange-700',
     testId: 'chat-review-banner-order',
@@ -819,6 +823,19 @@ export function SoftThreadPane({
                   >
                     <ShoppingBag className="h-3.5 w-3.5" aria-hidden />
                     {orderDraftPending ? 'Continuar pedido' : 'Crear pedido'}
+                  </button>
+                ) : null}
+                {reviewTags?.onDismiss ? (
+                  <button
+                    type="button"
+                    disabled={reviewTags.busy}
+                    onClick={() => reviewTags.onDismiss?.(b.tag)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-60"
+                    data-testid={`${b.testId}-dismiss`}
+                    title="No era real: quita el aviso sin marcarlo como pagado ni confirmado"
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden />
+                    {b.dismissLabel}
                   </button>
                 ) : null}
                 {reviewTags ? (

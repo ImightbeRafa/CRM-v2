@@ -374,8 +374,9 @@ describe('SecureDog DATA-53 · atomic tag toggles + audit of review-tag removal'
     const route = read('src/app/api/chat/conversations/[id]/route.ts')
     assert.match(route, /removedTag && isBuiltinChatTag\(body\.removeTag\)/)
     assert.match(route, /filter\(\(t\) => isBuiltinChatTag\(t\) && !body\.tags!\.includes\(t\)\)/)
-    assert.match(route, /description: tag === PAYMENT_REVIEW_TAG \? 'Pago marcado como verificado' : 'Pedido marcado como confirmado'/)
-    assert.match(route, /newValues: \{ tagRemoved: tag, conversationId: existing\.id \}/)
+    // + 'dismissed' wording for "No es pago" / "Descartar" (still audited, same actor / chat / tag).
+    assert.match(route, /: tag === PAYMENT_REVIEW_TAG\s+\? 'Pago marcado como verificado'\s+: 'Pedido marcado como confirmado'/)
+    assert.match(route, /newValues: \{\s+tagRemoved: tag,\s+conversationId: existing\.id,/)
     assert.match(route, /userId: auth\.userId,/)
   })
 
@@ -427,5 +428,25 @@ describe('SecureDog INFRA · notifications GET rate limit + client href guard', 
     assert.equal(bell.match(/router\.push\(/g)?.length, 3)
     assert.equal(bell.match(/router\.push\('\/chats'\)/g)?.length, 1)
     assert.equal(bell.match(/if \(isSafeInternalHref\((top|n)\.href\)\) router\.push/g)?.length, 2)
+  })
+})
+
+describe('notify · "No es pago" / "Descartar" dismiss a false alarm', () => {
+  it('schema takes reviewOutcome only as resolved | dismissed', () => {
+    assert.ok(patchConversationBodySchema.safeParse({ removeTag: 'Pago por verificar', reviewOutcome: 'dismissed' }).success)
+    assert.ok(patchConversationBodySchema.safeParse({ removeTag: 'Pago por verificar', reviewOutcome: 'resolved' }).success)
+    assert.ok(!patchConversationBodySchema.safeParse({ removeTag: 'Pago por verificar', reviewOutcome: 'paid' }).success)
+  })
+
+  it('dismiss removes only the tag (no paid stage) and is audited as dismissed', () => {
+    const inbox = read('src/components/chats/SoftCopilotInboxV2.tsx')
+    assert.match(inbox, /patchConversation\(\{ removeTag: tag, reviewOutcome: 'dismissed' \}\)/)
+    const route = read('src/app/api/chat/conversations/[id]/route.ts')
+    assert.match(route, /Aviso de pago descartado \(no era un pago\)/)
+    assert.match(route, /outcome: body\.reviewOutcome === 'dismissed' && tag === body\.removeTag \? 'dismissed' : 'resolved'/)
+    const pane = read('src/components/chats/SoftThreadPane.tsx')
+    assert.match(pane, /dismissLabel: 'No es pago'/)
+    assert.match(pane, /dismissLabel: 'Descartar'/)
+    assert.match(pane, /-dismiss`\}/)
   })
 })

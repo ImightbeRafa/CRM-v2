@@ -26,6 +26,11 @@ export const patchConversationBodySchema = z
      * whole-array write from a possibly stale client copy. Not combinable with `tags`.
      */
     removeTag: z.string().min(1).max(40).optional(),
+    /**
+     * With removeTag on a built-in review tag: 'dismissed' = a person says it was a false alarm ("No es pago" /
+     * "Descartar"), not a verified payment / confirmed order. Only changes the audit wording; default 'resolved'.
+     */
+    reviewOutcome: z.enum(['resolved', 'dismissed']).optional(),
     /** SecureDog DATA-53: add ONE tag atomically (array_append when absent, max 20 tags). Not combinable with `tags`. */
     addTag: z.string().min(1).max(40).optional(),
     assignedUserId: z.string().cuid().nullable().optional(),

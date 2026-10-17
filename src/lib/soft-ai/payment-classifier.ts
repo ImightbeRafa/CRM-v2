@@ -24,8 +24,7 @@ const RISK_CUE_RE =
   /\b(reembolso|devoluci[oó]n\s+del\s+dinero|me\s+cobraron|doble\s+cobro|reclamo|disputa|fraude)\b/i
 
 const INFO_CUE_RE =
-  // luna-10 exam: "¿Tienes link de pago?" is the card-payment question (it used to fall through to a person).
-  /\b(c[oó]mo\s+(pago|puedo\s+pagar|se\s+paga)|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|aceptan|n[uú]mero\s+(de\s+)?sinpe|sinpe\s+m[oó]vil|tarjeta|cuenta\s+(bancaria|iban)|transferencia|(tienen|ten[eé]s|tienes|hay|me\s+(pas[aá]s|mand[aá]s|das|regal[aá]s))\s+(un\s+|el\s+)?(link|enlace)\s+(de|para)\s+(pago|pagar))\b/i
+  /\b(c[oó]mo\s+(pago|puedo\s+pagar|se\s+paga)|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|aceptan|n[uú]mero\s+(de\s+)?sinpe|sinpe\s+m[oó]vil|tarjeta|cuenta\s+(bancaria|iban)|transferencia)\b/i
 
 const COD_QUESTION_RE =
   /(?<![\p{L}])(contra\s?entrega|pag(o|ar)\s+(al\s+recibir|cuando\s+(lo\s+|la\s+|me\s+)?(recib|lleg))|pago\s+en\s+efectivo\s+al|pag(o|ar)\s+(en|con)\s+efectivo(?![\p{L}]))/iu
@@ -81,13 +80,43 @@ const CLAIM_CUE_RE = new RegExp(
 const PAYMENT_QUESTION_RE = new RegExp(
   String.raw`(?<![\p{L}])(` +
     String.raw`(puedo|se\s+puede|pued[eo]n|aceptan|hay\s+que|tengo\s+que|debo)(\s+\p{L}+){0,2}\s+(pagar|pago|pagarles|pagarte)` +
-    // luna-10 exam: "¿puedo hacerles un sinpe y mandar un Flash?" — a future question (claims were checked first).
-    String.raw`|(puedo|se\s+puede|pued[eo]n|podr[ií]a)\s+hacer(les|te|le)?\s+(un|una)\s+(sinpe|transferencia|dep[oó]sito)` +
     String.raw`|(c[oó]mo|cu[aá]ndo|d[oó]nde|qu[eé]\s+formas?\s+de)(\s+\p{L}+){0,2}\s+(pago|pagar|se\s+paga|pagos)` +
     String.raw`|(reciben|tienen|aceptan|usan|trabajan\s+con)\s+(sinpe|transferencias?|tarjetas?|efectivo)` +
     String.raw`)(?![\p{L}])`,
   'iu',
 )
+
+/**
+ * luna-10 exam + SecureDog INT-136/137: two plain questions the agent answers — "¿puedo hacerles un sinpe…?" (paying in
+ * the future) and "¿tienen link de pago?". Only the exact shapes, and refused when anything in the message looks like a
+ * claim, a status, a refund or someone else's account ("ya lo envié", "lo realicé", "lo mandamos", "a mi cuenta",
+ * "de vuelta", "lo que sobró", "ya lo usé"). Checked after every claim check; anything doubtful stays with a person.
+ */
+const FUTURE_SINPE_QUESTION_RE =
+  /(?<![\p{L}])(puedo|se\s+puede|podr[ií]a)\s+hacer(les|te|le)\s+(un|una)\s+(sinpe|transferencia|dep[oó]sito)(?![\p{L}])/iu
+const PAYMENT_LINK_QUESTION_RE =
+  /(?<![\p{L}])(tienen|ten[eé]s|tienes|hay|me\s+(pas[aá]s|mand[aá]s|das|regal[aá]s))\s+(un\s+|el\s+)?(link|enlace)\s+(de|para)\s+(pago|pagar)(?![\p{L}])/iu
+const NOT_A_PLAIN_QUESTION_RE =
+  /(?<![\p{L}])(ya|hab[ií]a|acabo\s+de|realic[eé]|us[eé]|complet[eé]|envi[eé]|mand[eé]|hice|pagu[eé]|transfer[ií]|deposit[eé]|\p{L}+(amos|imos)|me|mi|mis|vuelta|devol\p{L}*|devuelv\p{L}*|sobr\p{L}*|diferencia|rebot\p{L}*|funciona|fall\p{L}*|error)(?![\p{L}])/iu
+
+const LINK_NOT_PLAIN_RE =
+  /(?<![\p{L}])(ya|hab[ií]a|acabo\s+de|realic[eé]|us[eé]|complet[eé]|envi[eé]|mand[eé]|hice|pagu[eé]|transfer[ií]|deposit[eé]|\p{L}+(amos|imos)|vuelta|devol\p{L}*|devuelv\p{L}*|sobr\p{L}*|diferencia|rebot\p{L}*|funciona|fall\p{L}*|error)(?![\p{L}])/iu
+
+export function isPlainFutureSinpeQuestion(value: string): boolean {
+  if (!FUTURE_SINPE_QUESTION_RE.test(value)) return false
+  // "¿Ya puedo hacerles el sinpe?" is still a question: drop that leading "ya" before the claim words check.
+  const rest = value.replace(/^\s*¿?\s*ya\s+(?=puedo|se\s+puede|podr)/iu, '')
+  return !NOT_A_PLAIN_QUESTION_RE.test(rest) && !PAYMENT_STATUS_CUE_RE.test(rest)
+}
+
+export function isPlainPaymentLinkQuestion(value: string): boolean {
+  if (!PAYMENT_LINK_QUESTION_RE.test(value)) return false
+  // The claim words are judged outside the question itself ("¿me pasás el link…?" — that "me" is the question).
+  const rest = value.replace(PAYMENT_LINK_QUESTION_RE, ' ')
+  // "me / mi" only signal a refund in the sinpe shape ("¿me pueden hacer un sinpe…?"); here they are ordinary
+  // ("¿tienes link de pago? ¿cuál me recomendás?").
+  return !LINK_NOT_PLAIN_RE.test(rest) && !PAYMENT_STATUS_CUE_RE.test(rest)
+}
 
 /** Refund wording (INT-81): goes to a person unless it is a plain return-policy question. */
 const REFUND_RE = /(?<![\p{L}])(devol\p{L}*|devuelv\p{L}*|regres(en|e|ar|ame|enme)\s+(la\s+plata|el\s+dinero|mi\s+plata|mi\s+dinero|lo\s+que\s+(di|pagu[eé])))/iu
@@ -113,7 +142,7 @@ export function hasPaymentClaimCue(text: string): boolean {
 
 /** Legacy broad net. Ambiguous hits default to human. */
 const PAYMENT_RE =
-  /\b(sinpe|transferencia|pago|pagar|comprobante|ib[aá]n|cuenta\s*banc|deposit[oa]|efectivo\s*contra)\b/i
+  /\b(sinpe|transferencia|pago|pagar|comprobante|ib[aá]n|cuenta\s*banc|dep[oó]sit[oa]|efectivo\s*contra)(?![\p{L}])/iu
 
 export function hasPaymentProofCue(text: string): boolean {
   return PROOF_CUE_RE.test(text || '')
@@ -146,15 +175,16 @@ export function classifyPaymentText(
   }
   // Contra entrega / "¿puedo pagar cuando lo recibo?" is a sales question (zone coverage), not payment data:
   // the agent answers it (Rafael 2026-10-09 — it used to hand off with "ya lo reviso").
-  if (COD_QUESTION_RE.test(value)) {
-    return 'non_payment'
-  }
   // INT-114 reopened: third-person payments, "salió / se fue / entró", times ("ayer", "esta mañana", "a las tres"),
   // "desde la cuenta / al número / a nombre de", "verifiquen", "ahí le va", "me avisa" next to a payment noun.
+  // SecureDog INT-139: checked BEFORE the contra-entrega shortcut ("contra entrega? el sinpe salió ayer" is a claim).
   if (hasPaymentStatusClaim(value)) return 'payment_proof_or_risk'
   // INT-115: "Transferencia realizada", "tarjeta aprobada", "Listo, transferencia", ✅ — a claim, not an info question.
   if (isPaymentCompletionClaim(value)) {
     return 'payment_proof_or_risk'
+  }
+  if (COD_QUESTION_RE.test(value)) {
+    return 'non_payment'
   }
   // The store asked "¿Cómo preferís pagar?": an exact choice ("SINPE", "Por SINPE está bien") or a choice + a
   // logistics phrase ("Por sinpe y retiro en tienda") is a sales answer — only after every claim check above.
@@ -174,9 +204,11 @@ export function classifyPaymentText(
   ) {
     return 'non_payment'
   }
+  if (isPlainPaymentLinkQuestion(value)) return 'payment_info_safe'
   if (INFO_CUE_RE.test(value)) {
     return 'payment_info_safe'
   }
+  if (isPlainFutureSinpeQuestion(value)) return 'non_payment'
   // An explicit "how / can I pay" question ("¿puedo pagar en efectivo?", "¿cuándo se paga?") is answered by the agent
   // under the fixed payment rules; everything else with payment words stays with a person (fail closed).
   if (PAYMENT_RE.test(value) && PAYMENT_QUESTION_RE.test(value)) {

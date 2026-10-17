@@ -306,6 +306,10 @@ const RESULTS_CLAIM_RES: RegExp[] = [
   new RegExp(String.raw`\b(?:en|desde|a\s+(?:la|los|las|el))\s+(?:(?:una|un|\d+|pocos|pocas|la\s+primera|el\s+primer|primera|primer)\s+)?(?:semanas?|d[ií]as?|noches?|mes(?:es)?|uso)\b[^.!?\n]{0,25}?\b(?:(?:ves|ver[aá]s|vas\s+a\s+(?:ver|notar|sentir)|not[aá]s|notar[aá]s|sent[ií]s|sentir[aá]s)\s+(?:el\s+|la\s+|los\s+|las\s+|un\s+|una\s+|m[aá]s\s+)?(?:resultados?|cambios?|la\s+diferencia|diferencias?|efectos?|mejor[ií]as?|energ[ií]a|calma|alivio|beneficios?)|duerm\w*\s+mejor|dorm[ií]\w*\s+mejor)`, 'iu'),
   /\b(?:energ[ií]a|duerm\w*|dorm\w*|calma|ansiedad|resultados?|cambios?|efecto|relaja\w*|mejor)\b[^.!?\n]{0,40}?\bdesde\s+(?:el\s+primer\s+d[ií]a|la\s+primera\s+(?:noche|semana|vez)|el\s+primer\s+uso)/iu,
   /\b(?:cura|curan|curar|sana|sanan)\s+(?:la|el|tu|tus|los|las|de)\b/iu,
+  // SecureDog INT-138: safety assurances are a promise too ("es seguro en el embarazo", "no tiene efectos secundarios").
+  /\b(?:es|son)\s+(?:100\s*%\s+|totalmente\s+|completamente\s+|muy\s+)?segur[oa]s?\s+(?:en|durante|para)\s+(?:el\s+|la\s+|los\s+|las\s+)?(?:embarazo|embarazadas?|lactancia|ni[nñ]\p{L}*|menores|beb[eé]s?|ancian\p{L}*|adultos\s+mayores)/iu,
+  /\bno\s+(?:tiene|tienen|causa|causan|da|dan)\s+(?:ning[uú]n\s+|ningunos?\s+)?(?:efectos?\s+secundarios?|contraindicaci\p{L}+|riesgos?)/iu,
+  /\bpod[eé]s\s+usarl[oa]s?\s+(?:sin\s+problema\s+)?(?:en|durante)\s+(?:el\s+|la\s+)?(?:embarazo|lactancia)/iu,
   /\b(?:baj(?:ar|[áa]s|ar[áa]s)|perder|perd[ée]s|perder[áa]s)\s+(?:de\s+)?(?:peso|kilos|libras)\b|\badelgaz(?:ar|[áa]s|ar[áa]s)\b/iu,
 ]
 const RESULTS_NEGATION_RE = /\b(?:no|ni|sin|nunca|jam[áa]s)\b[^.!?\n]{0,30}$/iu

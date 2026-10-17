@@ -245,8 +245,9 @@ describe('B2 one retry when a full attempt fits', () => {
     assert.equal(retryFits(t0, SOFT_AI_FIRST_CALL_TIMEOUT_MS, t0 + SOFT_AI_FIRST_CALL_TIMEOUT_MS), false)
     assert.equal(retryFits(t0, 15_000, t0 + SOFT_AI_TURN_BUDGET_MS - 10_000), false)
     const runtime = read('src/lib/soft-ai/llm/runtime.ts')
-    assert.match(runtime, /if \(retried \|\| !isRetryableSoftAiError\(error\) \|\| !retryFits\(started, timeoutMs\)\) throw error/)
-    assert.match(runtime, /if \(!finalText && !retried && !escalate && retryFits\(started, SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS\)\)/)
+    // luna-10 D2: the budget starts before the "¿ya pagó?" check (budgetStarted), so retries fit in what is left.
+    assert.match(runtime, /if \(retried \|\| !isRetryableSoftAiError\(error\) \|\| !retryFits\(budgetStarted, timeoutMs\)\) throw error/)
+    assert.match(runtime, /if \(!finalText && !retried && !escalate && retryFits\(budgetStarted, SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS\)\)/)
     // Retried calls are metered like every other call (same tagged create).
     assert.match(runtime, /softAiResponsesCreate as rawSoftAiResponsesCreate/)
   })

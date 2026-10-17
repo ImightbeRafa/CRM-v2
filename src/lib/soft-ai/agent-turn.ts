@@ -1056,7 +1056,8 @@ export async function executeAgentLayerTurn(
       platform: payload.platform || 'whatsapp',
     },
   })
-  const llm = await runSoftAiLlmRuntime({ ...runtimeInput, budgetStartedAt: turnBudgetStartedAt })
+  runtimeInput.budgetStartedAt = turnBudgetStartedAt
+  const llm = await runSoftAiLlmRuntime(runtimeInput)
 
   const policy = applyFinalOutputPolicy({
     text: llm.text,
@@ -2118,7 +2119,8 @@ async function runAgentTestTurnInner(input: {
       },
     })
     runtimeInput.usageFeature = input.usageFeature ?? 'probar'
-    const llm = await runSoftAiLlmRuntime({ ...runtimeInput, budgetStartedAt: probarBudgetStartedAt })
+    runtimeInput.budgetStartedAt = probarBudgetStartedAt
+    const llm = await runSoftAiLlmRuntime(runtimeInput)
     llmTrace = llm.toolTrace
     escalateReason = llm.escalateReason ?? null
     validationReasons = llm.validationReasons ?? []

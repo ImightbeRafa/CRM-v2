@@ -1494,7 +1494,7 @@ async function finishDeliveryOrSuggestInner(input: {
     .findUnique({ where: { jobId_deliveryKey: { jobId: input.row.id, deliveryKey: input.row.deliveryKey } }, select: { id: true } })
     .then(Boolean)
   // A re-run of a job whose text was already attempted sends no new images (they belong to that first answer).
-  if (!textAlreadyClaimed && platform === 'whatsapp' && account.accountId && input.outputText && !input.escalate && !input.handoff && input.replyAssets?.size && !repeatAllDropped) {
+  if (!textAlreadyClaimed && ((platform === 'whatsapp' && account.accountId) || platform === 'instagram') && input.outputText && !input.escalate && !input.handoff && input.replyAssets?.size && !repeatAllDropped) {
     const pick = selectReplyImages({
       shortcutKey: input.replyShortcutKey,
       shortcuts: input.shortcuts ?? [],
@@ -1514,7 +1514,9 @@ async function finishDeliveryOrSuggestInner(input: {
             peerId: input.row.peerId,
             messageId: input.row.messageId,
           },
-          phoneNumberId: account.accountId,
+          platform: platform === 'instagram' ? 'instagram' : 'whatsapp',
+          phoneNumberId: account.accountId || '',
+          pageId: account.pageId || meta.pageId,
           accessToken,
           agent: { id: input.agent.id, version: input.agent.version, name: input.agent.name, emoji: input.agent.emoji },
           turnId: input.turnId,

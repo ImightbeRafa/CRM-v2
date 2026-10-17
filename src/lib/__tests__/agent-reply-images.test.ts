@@ -145,7 +145,8 @@ test('live WhatsApp images: before the text, exactly-once keys, never twice per 
   // agents2-format: the text goes out as up to 3 parts (one deliverOnce per part), after the images.
   const textAt = turn.indexOf('delivery = await deliverOnce({')
   assert.ok(imagesAt > 0 && imagesAt < textAt)
-  assert.match(turn, /!textAlreadyClaimed && platform === 'whatsapp' && account\.accountId && input\.outputText && !input\.escalate/)
+  // + Instagram (photos through the Page, same exactly-once / never-twice rules).
+  assert.match(turn, /!textAlreadyClaimed && \(\(platform === 'whatsapp' && account\.accountId\) \|\| platform === 'instagram'\) && input\.outputText && !input\.escalate/)
   assert.match(turn, /if \(!input\.outputText\.trim\(\)\) \{\s*return persistDecidedTurn\(\{[\s\S]{0,80}reason: 'empty_output'/)
   assert.match(turn, /alreadySent: await loadSentAgentImageShas\(input\.row\.tenantId, input\.row\.conversationId\)/)
   assert.match(turn, /replyShortcutKey: decision\.shortcutKey,/)

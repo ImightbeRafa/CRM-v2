@@ -68,7 +68,7 @@ import {
 } from '@/lib/soft-ai/agent-state'
 import { lineHealth, lineIsDown, summarizeLineCounts } from '@/lib/chat-line-filter'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
-import { WA_OUTBOUND_ACCEPT } from '@/lib/chat-outbound-media'
+import { IG_OUTBOUND_ACCEPT, WA_OUTBOUND_ACCEPT } from '@/lib/chat-outbound-media'
 import { WA_CAPTION_MAX, type ChatQuickReply, type QuickReplyChange, type QuickReplyMedia } from '@/lib/chat-quick-replies'
 import { hasOrderDraft } from '@/lib/order-draft'
 import { useSession } from 'next-auth/react'
@@ -1842,7 +1842,7 @@ export function SoftCopilotInboxV2() {
     assignment: { assignees, viewerUserId, onAssign: (id: string | null) => void assignTo(id), busy: assignBusy },
     attachments: outboundMedia
       ? {
-          accept: WA_OUTBOUND_ACCEPT,
+          accept: selectedConversation?.platform === 'instagram' ? IG_OUTBOUND_ACCEPT : WA_OUTBOUND_ACCEPT,
           onSendFile: handleSendFile,
           onSendRecent: handleSendRecent,
           onSendQuickReplyMedia: handleSendQuickReplyMedia,

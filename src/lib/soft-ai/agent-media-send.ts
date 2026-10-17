@@ -14,6 +14,7 @@ import { buildMediaCacheMetadataPatch } from '@/lib/chat-media'
 import { dualWriteChatMessage, isPersistedDualWrite } from '@/lib/chat-conversation-write'
 import { deliverOnce } from '@/lib/soft-ai/automation-delivery'
 import { readAgentAssetBytes, type AgentAsset } from '@/lib/soft-ai/agent-assets'
+import { INSTAGRAM_IMAGE_MAX_BYTES, INSTAGRAM_IMAGE_MIMES, sendInstagramImage, uploadInstagramImage } from '@/lib/instagram-media'
 
 const META_TIMEOUT_MS = 8_000
 /** Meta keeps uploaded media ~30 days: reuse an id for 25. */
@@ -47,32 +48,47 @@ export async function loadSentAgentImageShas(tenantId: string, conversationId: s
   return out
 }
 
-async function reusableMediaId(tenantId: string, socialAccountId: string, sha: string): Promise<string | null> {
+async function reusableMediaId(tenantId: string, socialAccountId: string, sha: string, platform: 'whatsapp' | 'instagram'): Promise<string | null> {
   const row = await prisma.chatMessage.findFirst({
     where: {
       tenantId,
       socialAccountId,
       direction: 'outbound',
       messageType: 'image',
-      providerMediaId: { not: null },
+      // WhatsApp: the uploaded media id; Instagram: the reusable attachment id kept in metadata.
+      ...(platform === 'whatsapp' ? { providerMediaId: { not: null } } : {}),
       sentAt: { gte: new Date(Date.now() - MEDIA_ID_REUSE_MS) },
       metadata: { path: ['agentAssetSha'], equals: sha },
     },
-    select: { providerMediaId: true },
+    select: { providerMediaId: true, metadata: true },
     orderBy: { sentAt: 'desc' },
   })
-  return row?.providerMediaId || null
+  if (!row) return null
+  if (platform === 'whatsapp') return row.providerMediaId || null
+  const id = (row.metadata as Record<string, unknown> | null)?.igAttachmentId
+  return typeof id === 'string' && id ? id : null
 }
 
-async function uploadToWhatsApp(phoneNumberId: string, accessToken: string, asset: AgentAsset, deadlineAt: number): Promise<string | null> {
+async function readAssetBytesBy(asset: AgentAsset, deadlineAt: number): Promise<Buffer | Uint8Array> {
   // A slow storage read never pushes the turn past its deadline.
   let timer: ReturnType<typeof setTimeout> | undefined
-  const bytes = await Promise.race([
+  return Promise.race([
     readAgentAssetBytes(asset),
     new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error('ASSET_READ_DEADLINE')), Math.max(1_000, deadlineAt - Date.now()))
     }),
   ]).finally(() => clearTimeout(timer))
+}
+
+async function uploadToInstagram(pageId: string | null, accessToken: string, asset: AgentAsset, deadlineAt: number): Promise<string | null> {
+  if (!INSTAGRAM_IMAGE_MIMES.has(asset.mimeType) || asset.sizeBytes > INSTAGRAM_IMAGE_MAX_BYTES) return null
+  const bytes = await readAssetBytesBy(asset, deadlineAt)
+  const up = await uploadInstagramImage({ pageId, accessToken, bytes: new Uint8Array(bytes), mime: asset.mimeType, timeoutMs: META_TIMEOUT_MS })
+  return up.ok ? up.attachmentId : null
+}
+
+async function uploadToWhatsApp(phoneNumberId: string, accessToken: string, asset: AgentAsset, deadlineAt: number): Promise<string | null> {
+  const bytes = await readAssetBytesBy(asset, deadlineAt)
   const form = new FormData()
   form.append('messaging_product', 'whatsapp')
   form.append('type', asset.mimeType)
@@ -90,7 +106,11 @@ async function uploadToWhatsApp(phoneNumberId: string, accessToken: string, asse
 
 export type AgentImageSend = {
   job: { id: string; deliveryKey: string; tenantId: string; socialAccountId: string; peerId: string; messageId: string | null }
+  /** Default 'whatsapp'. Instagram sends through the Page (pageId) with the same Page token. */
+  platform?: 'whatsapp' | 'instagram'
+  /** WhatsApp phone number id (unused on Instagram). */
   phoneNumberId: string
+  pageId?: string | null
   accessToken: string
   agent: { id: string; version: number; name: string; emoji?: string | null }
   turnId: string
@@ -99,15 +119,20 @@ export type AgentImageSend = {
   deadlineAt: number
 }
 
-/** Sends the images in order; returns how many reached WhatsApp. Never throws (the text must still go out). */
+/** Sends the images in order; returns how many reached the channel. Never throws (the text must still go out). */
 export async function sendAgentImagesOnce(ctx: AgentImageSend, assets: AgentAsset[]): Promise<number> {
+  const platform = ctx.platform ?? 'whatsapp'
   let sent = 0
   for (const asset of assets) {
     try {
       if (Date.now() >= ctx.deadlineAt) break
-      const cached = await reusableMediaId(ctx.job.tenantId, ctx.job.socialAccountId, asset.sha256)
+      const cached = await reusableMediaId(ctx.job.tenantId, ctx.job.socialAccountId, asset.sha256, platform)
       if (!cached && ctx.deadlineAt - Date.now() < UPLOAD_MIN_LEFT_MS) continue
-      const mediaId = cached || (await uploadToWhatsApp(ctx.phoneNumberId, ctx.accessToken, asset, ctx.deadlineAt))
+      const mediaId =
+        cached ||
+        (platform === 'instagram'
+          ? await uploadToInstagram(ctx.pageId ?? null, ctx.accessToken, asset, ctx.deadlineAt)
+          : await uploadToWhatsApp(ctx.phoneNumberId, ctx.accessToken, asset, ctx.deadlineAt))
       if (!mediaId) continue
       const delivery = await deliverOnce({
         jobId: ctx.job.id,
@@ -116,6 +141,11 @@ export async function sendAgentImagesOnce(ctx: AgentImageSend, assets: AgentAsse
         kind: 'image',
         contentHash: asset.sha256,
         send: async () => {
+          if (platform === 'instagram') {
+            const r = await sendInstagramImage({ pageId: ctx.pageId ?? null, accessToken: ctx.accessToken, recipient: ctx.job.peerId, attachmentId: mediaId, timeoutMs: META_TIMEOUT_MS })
+            if (!r.ok) throw new Error('META_IMAGE_SEND_FAILED')
+            return { providerMessageId: r.providerMessageId || undefined }
+          }
           const url = addAppSecretProofToUrl(buildMetaGraphUrl(`${ctx.phoneNumberId}/messages`), ctx.accessToken, { purpose: 'whatsapp' })
           const res = await fetch(url, {
             method: 'POST',
@@ -142,12 +172,12 @@ export async function sendAgentImagesOnce(ctx: AgentImageSend, assets: AgentAsse
         peerName: ctx.peerName,
         providerMessageId,
         messageType: 'image',
-        providerMediaId: mediaId,
+        providerMediaId: platform === 'whatsapp' ? mediaId : null,
         mediaMimeType: asset.mimeType,
         mediaFilename: asset.name,
         answersMessageId: ctx.job.messageId,
         deliveryStatus: 'sent',
-        platform: 'whatsapp',
+        platform,
         metadata: {
           softAi: true,
           agentId: ctx.agent.id,
@@ -158,7 +188,8 @@ export async function sendAgentImagesOnce(ctx: AgentImageSend, assets: AgentAsse
           agentAssetId: asset.id,
           agentAssetSha: asset.sha256,
           to: ctx.job.peerId,
-          platform: 'whatsapp',
+          platform,
+          ...(platform === 'instagram' ? { igAttachmentId: mediaId } : {}),
           providerMessageId,
           automationJobId: ctx.job.id,
         },

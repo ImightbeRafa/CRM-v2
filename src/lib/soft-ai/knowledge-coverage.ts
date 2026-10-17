@@ -76,7 +76,14 @@ export function knowledgeGaps(input: { knowledge: string; products: string[] }):
 }
 
 /** Fails a step when the agent says it does not have the answer, or passes the chat to a person. */
-const MUST_KNOW = { handoff: false, forbidRegex: [CANNOT_ANSWER_SOURCE, String.raw`(?<!\p{L})no\s+(?:te\s+)?(?:s[eé]|sabr[ií]a)(?!\p{L})`] }
+// luna-10 exam: "no se recomienda en embarazo" / "no se usa más de 8 horas" are answers, not "no sé".
+const MUST_KNOW = {
+  handoff: false,
+  forbidRegex: [
+    CANNOT_ANSWER_SOURCE,
+    String.raw`(?<!\p{L})no\s+(?:te\s+)?(?:s[eé]|sabr[ií]a)(?!\p{L})(?!\s+(?:recomienda|usa|debe|puede|aplica|reutiliza|garantiza|vende|hace|nota|siente))`,
+  ],
+}
 
 export type CoverageTest = { title: string; steps: ScenarioStep[] }
 

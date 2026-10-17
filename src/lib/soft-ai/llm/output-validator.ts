@@ -625,7 +625,7 @@ export function applyFinalOutputPolicy(input: {
   // must be a configured one (when shareable) or one the customer wrote.
   // The length rule is judged with each token as its one line (a configured payment block is not "too long").
   let styleText = text
-  const filled = fillPaymentToken(text, facts, input.paymentOptions)
+  const filled = fillPaymentToken(text, facts, { ...input.paymentOptions, customerText: input.customerText ?? undefined })
   text = filled.text
   if (filled.needsHuman) reasons.push('payment_info_not_shared')
   // Any other [[…]] left (an unknown / invented token) is never sent: stripped, and a person looks (Verifier #4).

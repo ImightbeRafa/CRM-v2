@@ -1,3 +1,9 @@
+## 2026-10-17 (night) — PR #100 burst fix + quick replies + confirmation false alarm, deployed 5820a6fc
+
+- PR #100 (one reply per burst, photo + text answered) fast-forwarded onto claudio/luna-10 (28f83c72). The "/" menu shows all quick replies (was 8 of 37), and quick-reply photos work on Instagram. A lone "confirmada" in a blocked reply is no longer a payment hand-off without payment context (live 467818).
+- First real Instagram photo send: agent ph_glp1 image to 467818 at 20:59:47Z, accepted by Meta (provider id stored).
+- Checks: tsc 0, lint clean, soft-ai 1011/1011, chat-harden 662/662, security 271/271, backups 21/21.
+
 ## 2026-10-17 (late night) — Burst = one reply + media with text (branch claudio/inbox-burst, NOT deployed)
 
 - Seen live on PatchHouse IG: a customer's 2–3 bubbles within seconds (ad share + "¡Hola! Quiero más información.",

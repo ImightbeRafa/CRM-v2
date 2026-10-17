@@ -17,9 +17,14 @@ const MEDIA_LABEL: Record<ChatMediaKind, string> = {
 export function chatMediaKind(msg: Pick<ChatInboxMessage, 'messageType' | 'mediaMimeType'>): ChatMediaKind {
   const mime = (msg.mediaMimeType || '').toLowerCase()
   const type = (msg.messageType || '').toLowerCase()
-  if (type === 'image' || type === 'sticker' || mime.startsWith('image/')) return 'image'
-  if (type === 'video' || mime.startsWith('video/')) return 'video'
-  if (type === 'audio' || type === 'voice' || mime.startsWith('audio/')) return 'audio'
+  // The channel's message type wins over the file's MIME: Instagram voice notes arrive as type 'audio' with
+  // 'video/mp4' (AAC in an MP4 box). An <audio> element plays it; a <video> showed a black box and glitched.
+  if (type === 'audio' || type === 'voice') return 'audio'
+  if (type === 'image' || type === 'sticker') return 'image'
+  if (type === 'video') return 'video'
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/')) return 'audio'
   return 'file'
 }
 

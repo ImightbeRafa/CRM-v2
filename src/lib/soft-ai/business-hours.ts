@@ -137,7 +137,7 @@ export type AfterHoursState = {
   note: string | null
   /**
    * Verifier F7: the agent's "¿Sos un bot?" setting is 'transparent' — only then do the texts / prompt line say
-   * "asistente automático". Discreet = neutral wording ("el equipo no está disponible"), never claims to be a person.
+   * "asistente virtual". Discreet = neutral wording ("el equipo no está disponible"), never claims to be a person.
    */
   transparent: boolean
 }
@@ -172,12 +172,15 @@ const sentenceEnd = (label: string) => (label.endsWith('.') ? label : `${label}.
 export function afterHoursPromptLine(state: AfterHoursState): string | null {
   if (!state.afterHours) return null
   const who = state.transparent
-    ? 'que te atiende el asistente automático y que el equipo responde'
+    ? 'que te atiende nuestro asistente virtual y que el equipo responde'
     : 'que a esta hora el equipo no está disponible y que responde'
   return (
     `Fuera de horario: si el cliente pregunta por alguien o algo que requiere al equipo, decí con claridad ${who} ` +
     `${sentenceEnd(state.label)} Nunca prometas revisar o confirmar ahora. ` +
-    `(Esto reemplaza "lo revisás y le confirmás". Precios, productos, envíos y métodos de pago los respondés normal.)`
+    `(Esto reemplaza "lo revisás y le confirmás". Precios, productos, envíos y métodos de pago los respondés normal.)` +
+    (state.transparent
+      ? ' Si todavía no te presentaste en este chat, presentate con tu nombre como asistente virtual del negocio (por ejemplo: "¡Hola! Soy <tu nombre>, asistente virtual de <negocio> 🌙").'
+      : '')
   )
 }
 
@@ -199,12 +202,12 @@ export function afterHoursHandoffLine(kind: 'payment' | 'order' | 'person', labe
   if (kind === 'order') return `¡Gracias! Recibí los datos de tu pedido. El equipo lo revisa ${label} y te escribe por aquí 😊`
   if (kind === 'payment') {
     return transparent
-      ? `¡Gracias! 🙌 Te atiende el asistente automático a esta hora. El equipo revisa tu pago ${label} y te escribe por aquí 😊`
+      ? `¡Gracias! 🙌 Te atiende nuestro asistente virtual a esta hora. El equipo revisa tu pago ${label} y te escribe por aquí 😊`
       : `¡Gracias! 🙌 A esta hora el equipo no está disponible. Revisan tu pago ${label} y te escriben por aquí 😊`
   }
   // Verifier F4: the chat goes to a person (opt-out included) — never "¿te ayudo con algo?" from the bot.
   return transparent
-    ? `A esta hora te atiende el asistente automático 🌙 El equipo te escribe ${label} 😊`
+    ? `A esta hora te atiende nuestro asistente virtual 🌙 El equipo te escribe ${label} 😊`
     : `A esta hora el equipo no está disponible; te escriben ${label} 😊`
 }
 
@@ -213,7 +216,7 @@ export const AFTER_HOURS_REVIEW_PREFIX = 'Gracias por escribir 😊 A esta hora'
 
 export function afterHoursReviewLine(label: string, transparent = false): string {
   return transparent
-    ? `${AFTER_HOURS_REVIEW_PREFIX} te atiende el asistente automático; el equipo te escribe ${sentenceEnd(label)}`
+    ? `${AFTER_HOURS_REVIEW_PREFIX} te atiende nuestro asistente virtual; el equipo te escribe ${sentenceEnd(label)}`
     : `${AFTER_HOURS_REVIEW_PREFIX} el equipo no está disponible; te escriben ${sentenceEnd(label)}`
 }
 

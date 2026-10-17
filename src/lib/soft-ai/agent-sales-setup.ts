@@ -24,6 +24,11 @@ export type SalesRules = {
   typingIndicator?: boolean
   /** agents2-hours: "Horario de atención" (business-hours.ts). Missing / invalid = off (24/7). */
   businessHours?: BusinessHours
+  /**
+   * luna-10 (Rafael 2026-10-17): outside the business hours the agent introduces itself as the virtual assistant
+   * ('transparent'), even when it is discreet in the day. 'same' (default) = the night follows aiDisclosure.
+   */
+  afterHoursDisclosure?: 'same' | 'transparent'
   closing: string | null
   upsells: string | null
   objections: string | null
@@ -101,6 +106,7 @@ export const EMPTY_SALES_RULES: SalesRules = {
   replyPace: DEFAULT_REPLY_PACE,
   typingIndicator: true,
   businessHours: DEFAULT_BUSINESS_HOURS,
+  afterHoursDisclosure: 'same',
   closing: null,
   upsells: null,
   objections: null,
@@ -128,6 +134,7 @@ export function parseSalesRules(raw: unknown): SalesRules {
     replyPace: parseReplyPace(r.replyPace),
     typingIndicator: r.typingIndicator !== false,
     businessHours: parseBusinessHours(r.businessHours),
+    afterHoursDisclosure: r.afterHoursDisclosure === 'transparent' ? 'transparent' : 'same',
     mustSay: list(r.mustSay, 10, 200),
     neverSay: list(r.neverSay, 10, 200),
     promo: parsePromo(r.promo),

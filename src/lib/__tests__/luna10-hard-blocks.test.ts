@@ -8,6 +8,8 @@ import { REPAIRABLE_REASONS, repairInstruction } from '../soft-ai/llm/runtime'
 import { decideWaitingAck, waitingAckKey, waitingAckText } from '../soft-ai/waiting-ack'
 import { customerAsksAgain, dropRepeatedParts, isNearRepeat } from '../soft-ai/repeat-guard'
 import { SHIPPING_DATA_LIST } from '../soft-ai/order-data-list'
+import { parseSalesRules } from '../soft-ai/agent-sales-setup'
+import { afterHoursHandoffLine, afterHoursPromptLine, afterHoursState } from '../soft-ai/business-hours'
 import { HANDOFF_REASON_LABELS } from '../workspace-notifications'
 
 describe('results_claim (no promised effects)', () => {
@@ -126,5 +128,23 @@ describe('repeat guard exemptions', () => {
     assert.equal(dropRepeatedParts({ text: data, previous: [data], customerText: 'Juan Pérez 8888-8888' }).dropped.length, 0)
     const sinpe = 'SINPE Móvil 6201-9914 a nombre de Rafael García'
     assert.equal(dropRepeatedParts({ text: sinpe, previous: [sinpe], customerText: 'a qué número?' }).dropped.length, 0)
+  })
+})
+
+describe('night disclosure (Rafael 2026-10-17: "Hola, soy Sofi, asistente virtual" at night)', () => {
+  it('afterHoursDisclosure is parsed, defaults to "same", survives a save round-trip', () => {
+    assert.equal(parseSalesRules({}).afterHoursDisclosure, 'same')
+    assert.equal(parseSalesRules({ afterHoursDisclosure: 'transparent' }).afterHoursDisclosure, 'transparent')
+    assert.equal(parseSalesRules({ afterHoursDisclosure: 'nope' }).afterHoursDisclosure, 'same')
+    assert.equal(parseSalesRules(parseSalesRules({ afterHoursDisclosure: 'transparent', aiDisclosure: 'discreet' })).afterHoursDisclosure, 'transparent')
+  })
+  it('transparent night: the prompt asks to introduce as the virtual assistant; texts say "asistente virtual"', () => {
+    const night = afterHoursState({ enabled: true, timezone: 'America/Costa_Rica', windows: [{ day: 1, open: '08:00', close: '20:00' }], afterHoursNote: null }, new Date('2026-10-20T04:00:00Z'), { aiDisclosure: 'transparent' })
+    assert.equal(night.afterHours, true)
+    assert.match(afterHoursPromptLine(night) || '', /presentate con tu nombre como asistente virtual/)
+    assert.match(afterHoursHandoffLine('person', night.label, true), /asistente virtual/)
+    assert.doesNotMatch(afterHoursHandoffLine('person', night.label, true), /autom[aá]tico/)
+    const discreet = afterHoursState({ enabled: true, timezone: 'America/Costa_Rica', windows: [{ day: 1, open: '08:00', close: '20:00' }], afterHoursNote: null }, new Date('2026-10-20T04:00:00Z'))
+    assert.doesNotMatch(afterHoursPromptLine(discreet) || '', /asistente virtual/)
   })
 })

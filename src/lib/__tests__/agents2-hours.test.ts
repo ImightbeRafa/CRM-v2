@@ -133,7 +133,7 @@ describe('agents2-hours: after-hours texts', () => {
     // Discreet (default): neutral, never "asistente automático".
     assert.match(afterHoursPromptLine(night) || '', /^Fuera de horario: .*a esta hora el equipo no está disponible y que responde mañana a las 8:00 a\. m\. Nunca prometas revisar o confirmar ahora\./)
     assert.doesNotMatch(afterHoursPromptLine(night) || '', /asistente autom/)
-    assert.match(afterHoursPromptLine(nightT) || '', /te atiende el asistente automático y que el equipo responde mañana a las 8:00 a\. m\./)
+    assert.match(afterHoursPromptLine(nightT) || '', /te atiende nuestro asistente virtual y que el equipo responde mañana a las 8:00 a\. m\./)
     assert.equal(afterHoursPromptLine(afterHoursState(WEEKDAYS, cr('2026-10-19T10:00:00'))), null)
     // Probar "Simular fuera de horario" with the schedule off still gets a label.
     assert.equal(afterHoursState(DEFAULT_BUSINESS_HOURS, new Date(), { simulate: true }).afterHours, true)

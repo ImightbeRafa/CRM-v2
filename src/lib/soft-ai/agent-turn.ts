@@ -1665,7 +1665,8 @@ async function humanRepliedSinceTrigger(conversationId: string, triggerSentAt: D
 async function loadHoursSetup(tenantId: string, agentId: string): Promise<{ hours: BusinessHours; aiDisclosure: 'transparent' | 'discreet' }> {
   try {
     const rules = (await loadSalesSetup(tenantId, agentId)).salesRules
-    return { hours: rules.businessHours ?? DEFAULT_BUSINESS_HOURS, aiDisclosure: rules.aiDisclosure }
+    // luna-10: the night may be transparent ('asistente virtual') while the day stays discreet.
+    return { hours: rules.businessHours ?? DEFAULT_BUSINESS_HOURS, aiDisclosure: rules.afterHoursDisclosure === 'transparent' ? 'transparent' : rules.aiDisclosure }
   } catch {
     return { hours: DEFAULT_BUSINESS_HOURS, aiDisclosure: 'discreet' }
   }

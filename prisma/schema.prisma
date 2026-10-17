@@ -1052,7 +1052,7 @@ model ChatAgent {
   description        String?
   systemInstructions String
   tonePreset         String   @default("warm_concise")
-  model              String   @default("grok-4.6")
+  model              String   @default("gpt-6-luna")
   operationMode      String   @default("ai_suggest")
   enabledTools       String[] @default([])
   introductionNames  String[] @default([])

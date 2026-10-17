@@ -38,6 +38,7 @@ export const FILES = {
   '051': '051_ai_budget.sql',
   '052': '052_agent_studio_sources.sql',
   '053': '053_agent_studio_sales_setup.sql',
+  '054': '054_luna_only_model.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';

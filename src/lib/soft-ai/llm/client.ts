@@ -1,23 +1,16 @@
 /**
- * Soft-only LLM client (Responses API). Provider follows the model id: gpt-* goes to OpenAI
- * (SOFT_AI_OPENAI_API_KEY), everything else to xAI (XAI_API_KEY, rollback path). Never imports the staff bot;
- * never reads WhatsApp env secrets.
+ * Soft-only LLM client (Responses API). luna-10: one provider — OpenAI (gpt-6-luna, SOFT_AI_OPENAI_API_KEY).
+ * Never imports the staff bot; never reads WhatsApp env secrets.
  */
 
 import 'server-only'
 
 import OpenAI from 'openai'
-import {
-  DEFAULT_CHAT_AGENT_MODEL,
-  isAllowedChatAgentModel,
-  softAiProviderFor,
-  type SoftAiProvider,
-} from '@/lib/soft-ai/agent-types'
+import { DEFAULT_CHAT_AGENT_MODEL, isAllowedChatAgentModel } from '@/lib/soft-ai/agent-types'
 import { aiErrorCode, recordAiUsage, type AiUsageFeature } from '@/lib/ai-usage/record'
 
-export const SOFT_AI_XAI_BASE_URL = 'https://api.x.ai/v1'
 export const SOFT_AI_OPENAI_BASE_URL = 'https://api.openai.com/v1'
-// Measured 2026-10-09: grok-4.7 answers after a tool call in >7 s (every follow-up timed out at 7 s → human
+// Measured 2026-10-09: an answer after a tool call can take >7 s (every follow-up timed out at 7 s → human
 // hand-off); 2026-10-09 a closing turn timed out at 12 s → 20 s. Every call is also capped by the 40 s turn budget.
 export const SOFT_AI_FIRST_CALL_TIMEOUT_MS = 20_000
 export const SOFT_AI_TOOL_FOLLOWUP_TIMEOUT_MS = 15_000
@@ -25,47 +18,32 @@ export const SOFT_AI_META_SEND_TIMEOUT_MS = 7_000
 /** Whole agent turn (all model calls): stays inside the 45 s automation job lease. */
 export const SOFT_AI_TURN_BUDGET_MS = 35_000
 
+/** The agent's model, or the default. No environment override (luna-10: one model; a leftover env can never switch it). */
 export function resolveSoftAiModel(override?: string | null): string {
-  const fromEnv =
-    typeof process.env.SOFT_AI_XAI_MODEL === 'string'
-      ? process.env.SOFT_AI_XAI_MODEL.trim()
-      : ''
-  const candidate = (override || fromEnv || DEFAULT_CHAT_AGENT_MODEL).trim()
+  const candidate = (override || DEFAULT_CHAT_AGENT_MODEL).trim()
   if (!isAllowedChatAgentModel(candidate)) {
     throw new Error('SOFT_AI_MODEL_NOT_ALLOWED')
   }
   return candidate
 }
 
-/** True when the key for this model's provider is present (never reveals the key). */
+/** True when the model key is present (never reveals the key). Only allowlisted models count. */
 export function isSoftAiProviderConfigured(model?: string | null): boolean {
-  const provider = softAiProviderFor(model || DEFAULT_CHAT_AGENT_MODEL)
-  const key = provider === 'openai' ? process.env.SOFT_AI_OPENAI_API_KEY : process.env.XAI_API_KEY
+  if (!isAllowedChatAgentModel((model || DEFAULT_CHAT_AGENT_MODEL).trim())) return false
+  const key = process.env.SOFT_AI_OPENAI_API_KEY
   return Boolean(key && key.trim())
 }
 
 export function createSoftAiClient(model: string, timeoutMs = SOFT_AI_FIRST_CALL_TIMEOUT_MS) {
-  const provider: SoftAiProvider = softAiProviderFor(model)
-  if (provider === 'openai') {
-    // Dedicated key: the staff bot's OPENAI_API_KEY (voice transcription) is never used for inbox agents.
-    const apiKey = process.env.SOFT_AI_OPENAI_API_KEY
-    if (!apiKey || !apiKey.trim()) throw new Error('LLM_NOT_CONFIGURED')
-    // Endpoint, org and project are pinned: ambient OPENAI_BASE_URL / OPENAI_ORG_ID / OPENAI_PROJECT_ID
-    // (set for other tools) must never redirect inbox customer conversations or this key.
-    return new OpenAI({
-      apiKey: apiKey.trim(),
-      baseURL: SOFT_AI_OPENAI_BASE_URL,
-      organization: null,
-      project: null,
-      timeout: timeoutMs,
-      maxRetries: 0,
-    })
-  }
-  const apiKey = process.env.XAI_API_KEY
-  if (!apiKey) throw new Error('XAI_NOT_CONFIGURED')
+  resolveSoftAiModel(model)
+  // Dedicated key: the staff bot's OPENAI_API_KEY (voice transcription) is never used for inbox agents.
+  const apiKey = process.env.SOFT_AI_OPENAI_API_KEY
+  if (!apiKey || !apiKey.trim()) throw new Error('LLM_NOT_CONFIGURED')
+  // Endpoint, org and project are pinned: ambient OPENAI_BASE_URL / OPENAI_ORG_ID / OPENAI_PROJECT_ID
+  // (set for other tools) must never redirect inbox customer conversations or this key.
   return new OpenAI({
-    apiKey,
-    baseURL: SOFT_AI_XAI_BASE_URL,
+    apiKey: apiKey.trim(),
+    baseURL: SOFT_AI_OPENAI_BASE_URL,
     organization: null,
     project: null,
     timeout: timeoutMs,
@@ -109,14 +87,13 @@ function openAiEffort(requested?: OpenAiEffort): OpenAiEffort {
 }
 
 /**
- * Build the request body for a provider. Exported for tests.
+ * Build the request body. Exported for tests.
  * OpenAI reasoning models reject `temperature` unless reasoning is `none`, spend part of
  * `max_output_tokens` on reasoning (so the cap is raised), and with `store:false` need the
  * encrypted reasoning items to replay a tool loop.
  */
 export function buildSoftAiResponsesBody(args: Omit<SoftAiResponsesCreateArgs, 'usage'>): Record<string, unknown> {
   const model = resolveSoftAiModel(args.model)
-  const provider = softAiProviderFor(model)
   const baseMax = args.maxOutputTokens ?? 700
   const body: Record<string, unknown> = {
     model,
@@ -124,19 +101,13 @@ export function buildSoftAiResponsesBody(args: Omit<SoftAiResponsesCreateArgs, '
     input: args.input,
     store: args.store === true ? true : false,
   }
-  if (provider === 'openai') {
-    const effort = openAiEffort(args.reasoningEffort)
-    body.reasoning = { effort }
-    // Reasoning tokens count against the cap, so leave room for them on top of the visible answer.
-    const headroom = effort === 'none' ? 0 : effort === 'low' ? 800 : effort === 'medium' ? 1_800 : 3_500
-    body.max_output_tokens = baseMax + headroom
-    if (effort === 'none') body.temperature = args.temperature ?? 0.1
-    else body.include = ['reasoning.encrypted_content']
-  } else {
-    body.temperature = args.temperature ?? 0.1
-    body.max_output_tokens = baseMax
-    body.reasoning = { effort: args.reasoningEffort === 'none' ? 'low' : args.reasoningEffort ?? 'low' }
-  }
+  const effort = openAiEffort(args.reasoningEffort)
+  body.reasoning = { effort }
+  // Reasoning tokens count against the cap, so leave room for them on top of the visible answer.
+  const headroom = effort === 'none' ? 0 : effort === 'low' ? 800 : effort === 'medium' ? 1_800 : 3_500
+  body.max_output_tokens = baseMax + headroom
+  if (effort === 'none') body.temperature = args.temperature ?? 0.1
+  else body.include = ['reasoning.encrypted_content']
   if (args.tools && args.tools.length > 0) {
     body.tools = args.tools
     if (args.toolChoice) body.tool_choice = args.toolChoice
@@ -161,7 +132,7 @@ export async function softAiResponsesCreate(args: SoftAiResponsesCreateArgs) {
   const client = createSoftAiClient(model, timeoutMs)
   const body = buildSoftAiResponsesBody({ ...args, model })
   const started = Date.now()
-  const keyLabel = softAiProviderFor(model) === 'openai' ? 'SOFT_AI_OPENAI_API_KEY' : 'XAI_API_KEY'
+  const keyLabel = 'SOFT_AI_OPENAI_API_KEY'
   try {
     const response = await client.responses.create(
       body as unknown as OpenAI.Responses.ResponseCreateParamsNonStreaming,
@@ -203,7 +174,7 @@ export const SOFT_AI_RETRY_MIN_LEFT_MS = 6_000
 export function isRetryableSoftAiError(error: unknown): boolean {
   if (!error) return false
   const message = error instanceof Error ? error.message : ''
-  if (message === 'XAI_NOT_CONFIGURED' || message === 'LLM_NOT_CONFIGURED' || message === 'SOFT_AI_MODEL_NOT_ALLOWED') {
+  if (message === 'LLM_NOT_CONFIGURED' || message === 'SOFT_AI_MODEL_NOT_ALLOWED') {
     return false
   }
   const status = (error as { status?: unknown }).status

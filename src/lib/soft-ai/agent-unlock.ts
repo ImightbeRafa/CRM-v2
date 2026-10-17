@@ -45,7 +45,7 @@ const REFUSAL_COPY: Record<AiFullUnlockRefusalCode, string> = {
   HASH_MISMATCH: 'La prueba no coincide con la versión vigente.',
   CANARY_FAILED: 'Una prueba de envío no pasó.',
   TEST_BUDGET_BLOCKED: 'Se alcanzó el tope de pruebas de hoy.',
-  XAI_NOT_CONFIGURED: 'El modelo de respuestas no está configurado.',
+  LLM_NOT_CONFIGURED: 'El modelo de respuestas no está configurado.',
   AI_TERMS_NOT_ACCEPTED: 'Primero aceptá el uso de IA en nombre de tu negocio (arriba, en Agentes).',
 }
 
@@ -109,7 +109,7 @@ export type AgentUnlockDeps = {
   findServing?: (tenantId: string, socialAccountId: string) => Promise<UnlockServing | null>
   listShortcuts?: (tenantId: string, agentId: string) => Promise<RuntimeShortcut[]>
   loadTestTokens?: (tenantId: string) => Promise<number>
-  xaiConfigured?: () => boolean
+  providerConfigured?: () => boolean
   canaryFixtures?: () => ReplayFixtureV2[]
   replay?: (input: { agent: UnlockAgent; shortcuts: RuntimeShortcut[] }) => ReturnType<typeof replayFixtures>
   runCanaryTurn?: (input: {
@@ -269,9 +269,9 @@ export async function approveAgentAiFullUnlock(
   let findAgentModel: string | undefined
   const listShortcuts = deps.listShortcuts ?? listRuntimeShortcuts
   const loadTestTokens = deps.loadTestTokens ?? loadDailyTestTokens
-  // Provider key for the model this agent runs on (OPENAI_API_KEY for gpt-*, XAI_API_KEY for Grok).
-  const xaiConfigured =
-    deps.xaiConfigured ?? (() => isSoftAiProviderConfigured(findAgentModel))
+  // The model key (SOFT_AI_OPENAI_API_KEY) for the model this agent runs on.
+  const providerConfigured =
+    deps.providerConfigured ?? (() => isSoftAiProviderConfigured(findAgentModel))
   const canaryFixtures = deps.canaryFixtures ?? (() => FORGE_WA_V2_FIXTURES.filter((row) => row.canary))
   const replay = deps.replay ?? defaultReplay
   const runCanaryTurn = deps.runCanaryTurn ?? defaultRunCanaryTurn
@@ -325,7 +325,7 @@ export async function approveAgentAiFullUnlock(
     if (used >= config.testDailyTokenCap) {
       throw new AgentUnlockRefusal('TEST_BUDGET_BLOCKED')
     }
-    if (!xaiConfigured()) throw new AgentUnlockRefusal('XAI_NOT_CONFIGURED')
+    if (!providerConfigured()) throw new AgentUnlockRefusal('LLM_NOT_CONFIGURED')
 
     const facts = parseBrandFactsSafe(agent.brandFacts)
     const sharePaymentFacts = canSharePaymentFacts(facts)

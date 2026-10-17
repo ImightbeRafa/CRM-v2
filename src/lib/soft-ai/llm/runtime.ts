@@ -543,23 +543,16 @@ export async function runSoftAiLlmRuntime(
       toolCtx: input.toolCtx,
       linkedOrderId: input.linkedOrderId,
     })
-    const openai = softAiProviderFor(input.model) === 'openai'
     logLlmFailure(input.model, error)
     const authFailure = isAuthFailure(error)
     const errorCode =
-      error instanceof Error && error.message === 'XAI_NOT_CONFIGURED'
-        ? 'XAI_NOT_CONFIGURED'
-        : error instanceof Error && error.message === 'LLM_NOT_CONFIGURED'
-          ? 'LLM_NOT_CONFIGURED'
-          : authFailure
-            ? 'LLM_AUTH'
-            : error instanceof Error && /timed? ?out|abort/i.test(error.message)
-            ? openai
-              ? 'LLM_TIMEOUT'
-              : 'XAI_TIMEOUT'
-            : openai
-              ? 'LLM_ERROR'
-              : 'XAI_ERROR'
+      error instanceof Error && error.message === 'LLM_NOT_CONFIGURED'
+        ? 'LLM_NOT_CONFIGURED'
+        : authFailure
+          ? 'LLM_AUTH'
+          : error instanceof Error && /timed? ?out|abort/i.test(error.message)
+            ? 'LLM_TIMEOUT'
+            : 'LLM_ERROR'
     const fbHandoff = escalate ? modelHandoff(escalateReason, input.inboundText) : fallbackHandoff(fb, input.inboundText)
     return {
       text: fb.text,

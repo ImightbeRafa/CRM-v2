@@ -115,7 +115,7 @@ export class TestRunBudgetError extends Error {
   }
 }
 
-/** Typical test-turn size when this agent has none recently (system prompt + knowledge + reply, Grok, 2026-10). */
+/** Typical test-turn size when this agent has none recently (system prompt + knowledge + reply, 2026-10). */
 export const TEST_TURN_TOKENS_FALLBACK = 9_000
 
 /**

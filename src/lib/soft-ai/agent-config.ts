@@ -197,9 +197,9 @@ export function aiFullUnlockStatus(
   if (ctx && record.model && record.model !== ctx.model) {
     return { unlocked: false, reason: 'model', versionWarning: false, record }
   }
-  // Records written before the model was stored were only ever qualified on Grok: they never carry
-  // over to an OpenAI model (its canaries have not run).
-  if (ctx && !record.model && softAiProviderFor(ctx.model) === 'openai') {
+  // Records written before the model was stored were only ever qualified on an older model: they never carry
+  // over to Luna (its canaries have not run).
+  if (ctx && !record.model) {
     return { unlocked: false, reason: 'model', versionWarning: false, record }
   }
   const versionMismatch = Boolean(

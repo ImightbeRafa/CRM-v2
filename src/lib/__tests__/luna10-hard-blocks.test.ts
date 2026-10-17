@@ -3,6 +3,7 @@
  */
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import * as fs from 'node:fs'
 import { resultsClaimIn, validateAgentOutput } from '../soft-ai/llm/output-validator'
 import { REPAIRABLE_REASONS, repairInstruction } from '../soft-ai/llm/runtime'
 import { decideWaitingAck, waitingAckKey, waitingAckText } from '../soft-ai/waiting-ack'
@@ -170,5 +171,17 @@ describe('night intro (code-owned "asistente virtual")', () => {
     const night = afterHoursState({ enabled: true, timezone: 'America/Costa_Rica', windows: [{ day: 6, open: '08:00', close: '20:00' }], afterHoursNote: null }, new Date('2026-10-17T07:30:00Z'), { aiDisclosure: 'transparent' })
     const text = applyAfterHoursText({ text: `¡Hola! Soy Sofi, asistente virtual de PatchHouse CR 🌿 El equipo te atiende ${night.label}`, handoff: { kind: 'handoff', reason: 'human_request' } }, night, { safeReview: 'Dame un momento y te confirmo 😊' })
     assert.equal(text.split(night.label.replace(/\.$/, '')).length - 1, 1, text)
+  })
+})
+
+describe('SQL 054 (luna-only model)', () => {
+  it('data + default only, never touches live agents, registered', () => {
+    const sql = fs.readFileSync('supabase/migrations/054_luna_only_model.sql', 'utf8')
+    const code = sql.replace(/--[^\n]*/g, '')
+    assert.match(code, /ALTER TABLE public\."ChatAgent" ALTER COLUMN "model" SET DEFAULT 'gpt-6-luna'/)
+    assert.match(code, /WHERE "model" <> 'gpt-6-luna' AND "status" <> 'live'/)
+    assert.doesNotMatch(code, /DROP |TRUNCATE|DELETE FROM|CREATE TABLE|ADD COLUMN/i)
+    assert.match(fs.readFileSync('scripts/lib/betsy-v2-additive-manifest.mjs', 'utf8'), /'054': '054_luna_only_model\.sql'/)
+    assert.match(fs.readFileSync('prisma/schema.prisma', 'utf8'), /model\s+String\s+@default\("gpt-6-luna"\)/)
   })
 })

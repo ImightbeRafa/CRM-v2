@@ -240,7 +240,7 @@ function VisionCheck() {
         Prueba si un modelo puede leer fotos (para fotos de productos). Usa una imagen de prueba, sin datos de clientes.
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
-        {['grok-4.7', 'gpt-6-luna'].map((m) => (
+        {['gpt-6-luna'].map((m) => (
           <button
             key={m}
             type="button"

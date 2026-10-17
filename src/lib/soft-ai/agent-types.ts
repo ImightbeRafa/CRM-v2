@@ -8,44 +8,35 @@ import type { AiTermsAcceptance } from '@/lib/soft-ai/ai-terms'
 export const CHAT_AGENT_LAYER_V1_FLAG = 'chat_agent_layer_v1' as const
 
 /**
- * Soft agent models. Default is 4.7; 4.6 stays so stored rows keep resolving
- * and a rollback is a one-line default flip. This file is the only soft-ai
- * source allowed to contain the previous model id.
+ * luna-10 (Rafael 2026-10-17): ONE model for the inbox agents and every AI feature of the site — OpenAI gpt-6-luna,
+ * direct, dedicated SOFT_AI_OPENAI_API_KEY (never the staff bot's OPENAI_API_KEY). No other id resolves: a stored row
+ * with an older id is skipped (model_not_allowed) until it is switched to Luna and activated again.
  */
-export const CHAT_AGENT_MODEL_ALLOWLIST = ['gpt-6-luna', 'grok-4.7', 'grok-4.6'] as const
+export const CHAT_AGENT_MODEL_ALLOWLIST = ['gpt-6-luna'] as const
 export type ChatAgentModel = (typeof CHAT_AGENT_MODEL_ALLOWLIST)[number]
 
-/**
- * The one model for inbox agents (OpenAI direct, dedicated SOFT_AI_OPENAI_API_KEY; never the staff bot's OPENAI_API_KEY).
- * luna-10 (Rafael 2026-10-17): default for every new agent and every AI feature. The two older ids above stay
- * resolvable for ONE deploy only, so live lines keep answering until each is switched (quick check + Activar on the
- * new model); the next deploy removes them.
- */
 export const LUNA_CHAT_AGENT_MODEL: ChatAgentModel = 'gpt-6-luna'
 export const DEFAULT_CHAT_AGENT_MODEL: ChatAgentModel = LUNA_CHAT_AGENT_MODEL
 
 /** Plain-language name for the business UI (the raw id stays in tooltips/logs). */
 export function modelLabel(model: string): string {
-  if (model === 'gpt-6-luna') return 'Luna (OpenAI, económico)'
-  if (model === 'grok-4.7') return 'Grok 4.7 (xAI, estándar)'
-  if (model === 'grok-4.6') return 'Grok 4.6 (xAI, anterior)'
-  return model
+  if (model === 'gpt-6-luna') return 'Luna (OpenAI)'
+  return 'Modelo anterior — cambiar a Luna'
 }
 
-export type SoftAiProvider = 'openai' | 'xai'
+export type SoftAiProvider = 'openai'
 
-export function softAiProviderFor(model: string): SoftAiProvider {
-  return model.startsWith('gpt-') ? 'openai' : 'xai'
+export function softAiProviderFor(_model: string): SoftAiProvider {
+  return 'openai'
 }
 
+/** History only: turns recorded before 2026-10-17 carry this rate card id. */
 export const XAI_PRICING_VERSION = 'xai-2026-09'
 export const OPENAI_PRICING_VERSION = 'openai-2026-10'
 
-/** Rate card id stored on every turn; follows the provider of the model that ran. */
-export function pricingVersionFor(model: string | null | undefined): string {
-  return softAiProviderFor(model || DEFAULT_CHAT_AGENT_MODEL) === 'openai'
-    ? OPENAI_PRICING_VERSION
-    : XAI_PRICING_VERSION
+/** Rate card id stored on every turn. */
+export function pricingVersionFor(_model: string | null | undefined): string {
+  return OPENAI_PRICING_VERSION
 }
 
 /** Bump when prompt-building code changes behavior; stored with every version snapshot. */
@@ -146,7 +137,7 @@ export const AI_FULL_UNLOCK_REFUSAL_CODES = [
   'HASH_MISMATCH',
   'CANARY_FAILED',
   'TEST_BUDGET_BLOCKED',
-  'XAI_NOT_CONFIGURED',
+  'LLM_NOT_CONFIGURED',
   'AI_TERMS_NOT_ACCEPTED',
 ] as const
 export type AiFullUnlockRefusalCode = (typeof AI_FULL_UNLOCK_REFUSAL_CODES)[number]

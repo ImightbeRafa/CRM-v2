@@ -39,31 +39,33 @@ afterEach(() => {
 })
 
 describe('soft-ai provider routing', () => {
-  it('routes gpt-* to OpenAI and grok-* to xAI', () => {
+  it('luna-10: one provider (OpenAI) and one rate card id for new turns', () => {
     assert.equal(softAiProviderFor(LUNA_CHAT_AGENT_MODEL), 'openai')
-    assert.equal(softAiProviderFor('grok-4.7'), 'xai')
     assert.equal(pricingVersionFor(LUNA_CHAT_AGENT_MODEL), OPENAI_PRICING_VERSION)
-    assert.equal(pricingVersionFor('grok-4.7'), XAI_PRICING_VERSION)
-    // luna-10: the default (no model) is Luna.
     assert.equal(pricingVersionFor(null), OPENAI_PRICING_VERSION)
+    // History only: rows recorded before luna-10 keep their own id.
+    assert.equal(XAI_PRICING_VERSION, 'xai-2026-09')
   })
 
-  it('reports provider configuration per model without revealing keys', () => {
+  it('reports configuration without revealing keys; the xAI key never counts', () => {
     delete process.env.SOFT_AI_OPENAI_API_KEY
     process.env.XAI_API_KEY = 'x'
     assert.equal(isSoftAiProviderConfigured('gpt-6-luna'), false)
-    assert.equal(isSoftAiProviderConfigured('grok-4.7'), true)
+    assert.equal(isSoftAiProviderConfigured('grok-4.7'), false)
     process.env.SOFT_AI_OPENAI_API_KEY = '  '
     assert.equal(isSoftAiProviderConfigured('gpt-6-luna'), false)
     process.env.SOFT_AI_OPENAI_API_KEY = 'k'
     assert.equal(isSoftAiProviderConfigured('gpt-6-luna'), true)
+    assert.equal(isSoftAiProviderConfigured('grok-4.7'), false)
   })
 
-  it('missing OpenAI key fails closed with LLM_NOT_CONFIGURED', () => {
+  it('missing OpenAI key fails closed with LLM_NOT_CONFIGURED; an older id never builds a client', () => {
     delete process.env.SOFT_AI_OPENAI_API_KEY
     assert.throws(() => createSoftAiClient('gpt-6-luna'), /LLM_NOT_CONFIGURED/)
-    delete process.env.XAI_API_KEY
-    assert.throws(() => createSoftAiClient('grok-4.7'), /XAI_NOT_CONFIGURED/)
+    process.env.SOFT_AI_OPENAI_API_KEY = 'k'
+    assert.throws(() => createSoftAiClient('grok-4.7'), /SOFT_AI_MODEL_NOT_ALLOWED/)
+    const src = readFileSync(join(process.cwd(), 'src/lib/soft-ai/llm/client.ts'), 'utf8')
+    assert.doesNotMatch(src, /api\.x\.ai|XAI_API_KEY|SOFT_AI_XAI_MODEL/)
   })
 })
 
@@ -95,12 +97,8 @@ describe('soft-ai request body', () => {
     assert.equal('include' in body, false)
   })
 
-  it('xAI body is unchanged (temperature, low reasoning, 700 cap)', () => {
-    const body = buildSoftAiResponsesBody({ ...base, model: 'grok-4.7' })
-    assert.equal(body.temperature, 0.1)
-    assert.deepEqual(body.reasoning, { effort: 'low' })
-    assert.equal(body.max_output_tokens, 700)
-    assert.equal('include' in body, false)
+  it('an older model id is refused before any request (luna-10)', () => {
+    assert.throws(() => buildSoftAiResponsesBody({ ...base, model: 'grok-4.7' }), /SOFT_AI_MODEL_NOT_ALLOWED/)
   })
 
   it('rejects models off the allowlist before any request', () => {

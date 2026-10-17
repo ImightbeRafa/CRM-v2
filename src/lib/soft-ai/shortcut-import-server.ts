@@ -309,7 +309,6 @@ export function shortcutImportErrorStatus(error: unknown): { status: number; cod
   if (code === 'TEST_BUDGET_BLOCKED') return { status: 429, code }
   if (code === 'SCHEMA_NOT_READY') return { status: 503, code }
   if (
-    code === 'XAI_NOT_CONFIGURED' ||
     code === 'LLM_NOT_CONFIGURED' ||
     code === 'SOFT_AI_MODEL_NOT_ALLOWED'
   ) {

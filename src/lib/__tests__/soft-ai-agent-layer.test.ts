@@ -153,34 +153,33 @@ describe('soft-ai output validator + history (1.7, gate 9)', () => {
 })
 
 describe('soft-ai model allowlist', () => {
-  it('allows gpt-6-luna (default) and, for one deploy, the two older ids; rejects others', () => {
-    assert.equal(assertAllowedModel('grok-4.7'), 'grok-4.7')
-    assert.equal(assertAllowedModel('grok-4.6'), 'grok-4.6')
+  it('luna-10: gpt-6-luna is the only model; every older id is refused', () => {
     assert.equal(assertAllowedModel('gpt-6-luna'), 'gpt-6-luna')
-    assert.deepEqual(CHAT_AGENT_MODEL_ALLOWLIST, ['gpt-6-luna', 'grok-4.7', 'grok-4.6'])
+    assert.deepEqual(CHAT_AGENT_MODEL_ALLOWLIST, ['gpt-6-luna'])
     assert.equal(DEFAULT_CHAT_AGENT_MODEL, 'gpt-6-luna')
-    assert.throws(() => assertAllowedModel('grok-4.5'), /SOFT_AI_MODEL_NOT_ALLOWED/)
-    assert.throws(() => assertAllowedModel('gpt-4o'), /SOFT_AI_MODEL_NOT_ALLOWED/)
+    for (const old of ['grok-4.7', 'grok-4.6', 'grok-4.5', 'gpt-4o']) {
+      assert.throws(() => assertAllowedModel(old), /SOFT_AI_MODEL_NOT_ALLOWED/, old)
+    }
   })
 
-  it('resolveSoftAiModel() with no override and no env returns gpt-6-luna', () => {
+  it('resolveSoftAiModel(): Luna by default, never an environment override, older ids refused', () => {
     const prev = process.env.SOFT_AI_XAI_MODEL
-    delete process.env.SOFT_AI_XAI_MODEL
+    process.env.SOFT_AI_XAI_MODEL = 'grok-4.7'
     try {
       assert.equal(resolveSoftAiModel(), 'gpt-6-luna')
       assert.equal(resolveSoftAiModel(null), 'gpt-6-luna')
       assert.equal(resolveSoftAiModel(''), 'gpt-6-luna')
-      assert.equal(resolveSoftAiModel('grok-4.6'), 'grok-4.6')
+      assert.throws(() => resolveSoftAiModel('grok-4.6'), /SOFT_AI_MODEL_NOT_ALLOWED/)
     } finally {
       if (prev === undefined) delete process.env.SOFT_AI_XAI_MODEL
       else process.env.SOFT_AI_XAI_MODEL = prev
     }
   })
 
-  it('stored grok-4.6 still passes the resolveChatAgent allowlist gate', () => {
-    assert.equal(isAllowedChatAgentModel('grok-4.6'), true)
-    assert.equal(isAllowedChatAgentModel('grok-4.7'), true)
-    assert.equal(isAllowedChatAgentModel('grok-4.5'), false)
+  it('a stored older id no longer passes the resolveChatAgent allowlist gate (switch + Activar on Luna)', () => {
+    assert.equal(isAllowedChatAgentModel('gpt-6-luna'), true)
+    assert.equal(isAllowedChatAgentModel('grok-4.6'), false)
+    assert.equal(isAllowedChatAgentModel('grok-4.7'), false)
   })
 
   it('prices both allowlisted models at the shared short-context rates', () => {

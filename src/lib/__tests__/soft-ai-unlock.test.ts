@@ -321,7 +321,7 @@ describe('approveAgentAiFullUnlock', () => {
       findServing: async () => serving(),
       listShortcuts: async () => [],
       loadTestTokens: async () => 0,
-      xaiConfigured: () => true,
+      providerConfigured: () => true,
       canaryFixtures: () => FORGE_WA_V2_FIXTURES.filter((row) => row.canary),
       replay: () => ({
         fixtureSetHash: HASH,
@@ -435,7 +435,7 @@ describe('approveAgentAiFullUnlock', () => {
         },
       ],
       ['TEST_BUDGET_BLOCKED', { loadTestTokens: async () => 1_000 }],
-      ['XAI_NOT_CONFIGURED', { xaiConfigured: () => false }],
+      ['LLM_NOT_CONFIGURED', { providerConfigured: () => false }],
       ['AI_TERMS_NOT_ACCEPTED', { readConfig: async () => config({ aiTerms: null }) }],
     ]
     assert.equal(cases.length, AI_FULL_UNLOCK_REFUSAL_CODES.length)
@@ -466,7 +466,7 @@ describe('approveAgentAiFullUnlock', () => {
     let canaries = 0
     const { deps, read } = harness({
       readConfig: async () => config({ unlockCanaries: false }),
-      xaiConfigured: () => {
+      providerConfigured: () => {
         xaiReads += 1
         return false
       },

@@ -8,7 +8,7 @@ import { FIXTURE_SOCIAL_ACCOUNT_ID } from '../soft-ai/__fixtures__/forge-wa-v2'
 import { FORGE_WA_V1_FIXTURE_SET_HASH } from '../soft-ai/__fixtures__/forge-wa-v1'
 import { validateAgentOutput } from '../soft-ai/llm/output-validator'
 import { selectHistoryWindow, buildAgentUserPrompt } from '../soft-ai/llm/prompt'
-import { assertAllowedModel, buildSoftAiPromptCacheKey } from '../soft-ai/llm/model-policy'
+import { assertAllowedModel, buildSoftAiPromptCacheKey, SOFT_AI_PROMPT_CACHE_KEY_MAX } from '../soft-ai/llm/model-policy'
 import { resolveSoftAiModel } from '../soft-ai/llm/client'
 import { estimateCostMicros } from '../soft-ai/llm/usage'
 import {
@@ -204,13 +204,29 @@ describe('soft-ai model allowlist', () => {
       socialAccountId: 's',
     }
     assert.equal(
-      buildSoftAiPromptCacheKey({ ...base, model: 'grok-4.7' }),
-      't:a:3:s:grok-4.7',
+      buildSoftAiPromptCacheKey({ ...base, model: 'gpt-6-luna' }),
+      buildSoftAiPromptCacheKey({ ...base, model: 'gpt-6-luna' }),
     )
     assert.notEqual(
-      buildSoftAiPromptCacheKey({ ...base, model: 'grok-4.7' }),
-      buildSoftAiPromptCacheKey({ ...base, model: 'grok-4.6' }),
+      buildSoftAiPromptCacheKey({ ...base, model: 'gpt-6-luna' }),
+      buildSoftAiPromptCacheKey({ ...base, model: 'gpt-5.6-luna' }),
     )
+    assert.notEqual(
+      buildSoftAiPromptCacheKey({ ...base, model: 'gpt-6-luna' }),
+      buildSoftAiPromptCacheKey({ ...base, agentVersion: 4, model: 'gpt-6-luna' }),
+    )
+  })
+
+  it('prompt cache key always fits OpenAI (≤ 64 chars) with real cuid ids', () => {
+    const key = buildSoftAiPromptCacheKey({
+      tenantId: 'cmhsibjue0004js04gie724nx',
+      agentId: 'cmv8mpajv0001vii8x9cey29a',
+      agentVersion: 12345,
+      socialAccountId: 'cmg4o0ce60001l504hz3cvh7k',
+      model: 'gpt-6-luna',
+    })
+    assert.ok(key.length <= SOFT_AI_PROMPT_CACHE_KEY_MAX, `key length ${key.length}`)
+    assert.match(key, /^sa1-[A-Za-z0-9_-]{39}$/)
   })
 
   it('fixture hash has a single source (G7)', () => {

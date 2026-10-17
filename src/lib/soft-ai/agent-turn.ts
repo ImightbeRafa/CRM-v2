@@ -1428,18 +1428,25 @@ async function finishDeliveryOrSuggestInner(input: {
       where: {
         tenantId: input.row.tenantId,
         conversationId: input.row.conversationId,
-        direction: 'outbound',
+        direction: { in: ['outbound', 'inbound'] },
         sentAt: { gte: new Date(Date.now() - REPEAT_WINDOW_MS) },
       },
-      select: { content: true, metadata: true },
+      select: { content: true, metadata: true, direction: true },
       orderBy: { sentAt: 'desc' },
-      take: 30,
+      take: 40,
     })
     const previous = recent
-      .filter((m) => (m.metadata as { automationJobId?: unknown } | null)?.automationJobId !== input.row.id)
+      .filter((m) => m.direction === 'outbound' && (m.metadata as { automationJobId?: unknown } | null)?.automationJobId !== input.row.id)
       .map((m) => m.content || '')
       .filter(Boolean)
-    const repeat = dropRepeatedParts({ text: input.outputText, previous, customerText: input.payload.content })
+    // Verifier round 3: everything the customer wrote since the store last answered ("y a Limón" … "cuánto sale?").
+    const sinceLastAnswer: string[] = []
+    for (const m of recent) {
+      if (m.direction === 'outbound' && (m.metadata as { automationJobId?: unknown } | null)?.automationJobId !== input.row.id) break
+      if (m.direction === 'inbound' && m.content) sinceLastAnswer.push(m.content)
+    }
+    const customerText = [...sinceLastAnswer.reverse(), input.payload.content || ''].join('\n')
+    const repeat = dropRepeatedParts({ text: input.outputText, previous, customerText })
     if (repeat.dropped.length && repeat.kept.length) {
       outgoingText = repeat.kept.join('\n\n')
     } else if (repeat.dropped.length) {

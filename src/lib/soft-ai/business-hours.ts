@@ -204,13 +204,19 @@ export function withNightIntro(
   const t = (text || '').trim()
   if (!t || /asistente virtual/iu.test(t)) return text
   // The first self-introduction in the first line (Unicode word edges: "\b" is ASCII-only — José / Ángela).
-  const firstLineEnd = t.indexOf('\n') === -1 ? t.length : t.indexOf('\n')
-  const self = new RegExp(`(?<![\\p{L}\\p{N}])soy\\s+${escapeRe(name)}(?![\\p{L}\\p{N}])`, 'iu').exec(t.slice(0, firstLineEnd))
+  // The first two non-empty lines ("¡Hola! 👋\nSoy Sofi de…").
+  const lines = t.split('\n')
+  let scanEnd = 0
+  for (let i = 0, seen = 0; i < lines.length && seen < 2; i++) {
+    scanEnd += lines[i].length + 1
+    if (lines[i].trim()) seen += 1
+  }
+  const self = new RegExp(`(?<![\\p{L}\\p{N}])(?:soy|te\\s+escribe|te\\s+habla|habla)\\s+${escapeRe(name)}(?![\\p{L}\\p{N}])`, 'iu').exec(t.slice(0, scanEnd))
   if (self) {
     const at = self.index + self[0].length
     const rest = t.slice(at)
     // " de PatchHouse CR" / punctuation / emoji / end → ", asistente virtual" + rest; " y sí tenemos…" → a comma closes it.
-    const joiner = /^(\s+de\s|[\s]*$|[,.;:!?)]|\s*[\p{Extended_Pictographic}])/u.test(rest) ? ', asistente virtual' : ', asistente virtual,'
+    const joiner = /^(\s+de\s|[ \t]*(\n|$)|[,.;:!?)]|\s*[\p{Extended_Pictographic}])/u.test(rest) ? ', asistente virtual' : ', asistente virtual,'
     return `${t.slice(0, at)}${joiner}${rest}`
   }
   if (who.introduced) return text

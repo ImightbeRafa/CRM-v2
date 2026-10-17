@@ -47,12 +47,22 @@
     supersede it. The claim now holds a job whose message already has a reply after it behind every newer pending
     or retry job, whatever the 10 s horizon. Harness: 11 scenarios.
   - Verifier round 4: PASS WITH NOTES. Its note is fixed: the collapse shrinks horizontal runs first, so it stays linear.
+- SecureDog round 2: all of this slice's fixes pass. Still FIX BEFORE PROD over F6, which is already live and worse
+  than we had documented.
+  - The problem: a job left `processing` by a dead worker, plus a newer job in the same chat, made every claim in
+    that chat fail on the single-flight index. From `$queryRaw` that failure arrives as P2010 / 23505, which the
+    catch did not recognise. So `claimBatch` threw, and the chat-automation cron returned 500 for every tenant on
+    every run.
+  - Fixed: each claim first releases leases that expired at least 15 s ago (`releaseDeadLeases`, sets `retry`, or
+    `failed` once out of attempts). The job then follows the normal rules. `isSingleFlightConflict` also recognises
+    P2010 / 23505, so that error defers the job and returns `[]` instead of throwing.
+  - Harness: 14 scenarios. The F2 timing test is tightened to 500 ms.
   - Known: F1 also keeps a bubble typed while a non-yielding turn was writing its reply (before, it was dropped
     unchecked). That bubble now gets its own reply after the newer one, up to a cron minute later.
 - Left open:
   - F4 (rare): a job older than 60 s with 100+ bubbles after its trigger uses the newest 100 and does not merge
     them with its window.
-  - F6: the expired-lease livelock above.
+  - (F6 fixed in SecureDog round 2, below.)
   - F5 (info): there is no durable opt-out flag. The 24 h bound only drops an opt-out that no job ever checked.
 
 ## 2026-10-17 (night) — PR #100 burst fix + quick replies + confirmation false alarm, deployed 5820a6fc

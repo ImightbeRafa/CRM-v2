@@ -229,6 +229,39 @@ async function deferJob(id: string, delayMs = 5_000) {
   })
 }
 
+/** A unique violation in the claim statement: only the single-flight index can raise it there. */
+export function isSingleFlightConflict(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false
+  if (error.code === 'P2002') return true
+  return error.code === 'P2010' && (error.meta as { code?: unknown } | undefined)?.code === '23505'
+}
+
+/** A dead worker's lease is released this long after it expired (a reclaim inside it keeps the old path). */
+export const DEAD_LEASE_GRACE_SECONDS = 15
+
+/**
+ * SecureDog F6: a job left `processing` by a dead worker (crash, the cron's maxDuration) keeps the chat's single-flight
+ * slot, and a newer job of the chat holds it back from reclaim → that chat never got another reply. Release it to
+ * `retry` (or `failed` once out of attempts) so the normal rules apply: superseded when its bubble is in the newer job's
+ * burst, kept and run afterwards when it already replied (its delivery key prevents a second send).
+ */
+async function releaseDeadLeases() {
+  await prisma.$executeRaw`
+    UPDATE "ChatAutomationJob"
+    SET "status" = CASE WHEN "attempts" >= ${MAX_ATTEMPTS} THEN 'failed' ELSE 'retry' END,
+        "failedAt" = CASE WHEN "attempts" >= ${MAX_ATTEMPTS} THEN CURRENT_TIMESTAMP ELSE "failedAt" END,
+        "payload" = CASE WHEN "attempts" >= ${MAX_ATTEMPTS} THEN NULL ELSE "payload" END,
+        "availableAt" = CURRENT_TIMESTAMP,
+        "leaseToken" = NULL,
+        "leaseExpiresAt" = NULL,
+        "lastErrorCode" = 'LEASE_EXPIRED',
+        "lastErrorAt" = CURRENT_TIMESTAMP,
+        "updatedAt" = CURRENT_TIMESTAMP
+    WHERE "status" = 'processing'
+      AND "leaseExpiresAt" <= CURRENT_TIMESTAMP - ${Prisma.raw(`INTERVAL '${DEAD_LEASE_GRACE_SECONDS} seconds'`)}
+  `
+}
+
 async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJob[]> {
   const leaseToken = randomUUID()
   const leaseExpiresAt = new Date(Date.now() + LEASE_MS)
@@ -241,6 +274,7 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
   // message is joined, never locked (FOR UPDATE OF current): ChatAutomationJob.messageId is a required FK (cascade).
   // Single-flight partial unique on status=processing defers concurrent claimants.
   try {
+    await releaseDeadLeases()
     const rows = await prisma.$queryRaw<
       Array<{
         id: string
@@ -326,11 +360,9 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
     }
     return rows
   } catch (error) {
-    // Partial unique ChatAutomationJob_conversation_single_flight_idx
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P2002'
-    ) {
+    // Partial unique ChatAutomationJob_conversation_single_flight_idx. From $queryRaw Prisma reports it as P2010 with
+    // the Postgres code 23505 (SecureDog F6: the old check missed it and every cron run 500'd for all tenants).
+    if (isSingleFlightConflict(error)) {
       if (id) await deferJob(id)
       return []
     }

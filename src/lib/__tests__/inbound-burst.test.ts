@@ -599,7 +599,7 @@ describe('burst hardening · SecureDog r1 (superseded = checked, per-turn CPU, b
     assert.equal(run({ content: 'hola', s: 2 }, [inbound(`STOP${'\n'.repeat(4000)}`, 0)]).optOut, true)
     const t0 = Date.now()
     run({ content: 'hola', s: 200 }, Array.from({ length: 100 }, (_, i) => inbound(`no me escriban${' '.repeat(4000)}x${i}`, i)))
-    assert.ok(Date.now() - t0 < 3_000, `100 adversarial bubbles took ${Date.now() - t0} ms`)
+    assert.ok(Date.now() - t0 < 500, `100 adversarial bubbles took ${Date.now() - t0} ms`)
     assert.match(read('src/lib/soft-ai/waiting-ack.ts'), /\(\\s\+por\\s\+favor\)\?\[\\s\.!\]\*\$\|/)
   })
 
@@ -618,5 +618,30 @@ describe('burst hardening · Verifier r3 (an answered late job never takes over 
       claim,
       /newer\."availableAt" <= CURRENT_TIMESTAMP \+ \$\{Prisma\.raw\(`INTERVAL '\$\{BURST_HOLD_SECONDS\} seconds'`\)\}[\s\S]{0,400}OR EXISTS \(\s+SELECT 1\s+FROM "ChatMessage" reply\s+WHERE reply\."conversationId" = current_msg\."conversationId"\s+AND reply\."tenantId" = current_msg\."tenantId"\s+AND reply\."direction" = 'outbound'\s+AND \(reply\."sentAt", reply\."id"\) > \(current_msg\."sentAt", current_msg\."id"\)/,
     )
+  })
+})
+
+describe('burst hardening · SecureDog F6 (a dead lease never blocks a chat or the cron)', () => {
+  it('the single-flight conflict from $queryRaw (P2010 / 23505) is recognised, as is P2002; nothing else', async () => {
+    const { Prisma } = await import('@prisma/client')
+    const { isSingleFlightConflict } = await import('@/lib/soft-ai/automation-queue')
+    const err = (code: string, meta?: Record<string, unknown>) =>
+      new Prisma.PrismaClientKnownRequestError('Key ("conversationId")=(c1) already exists.', { code, clientVersion: 'test', meta })
+    assert.equal(isSingleFlightConflict(err('P2010', { code: '23505' })), true)
+    assert.equal(isSingleFlightConflict(err('P2002')), true)
+    assert.equal(isSingleFlightConflict(err('P2010', { code: '40001' })), false)
+    assert.equal(isSingleFlightConflict(err('P2010')), false)
+    assert.equal(isSingleFlightConflict(new Error('unique')), false)
+  })
+
+  it('every claim first releases leases dead for 15 s (retry, or failed once out of attempts); a conflict defers, never throws', () => {
+    const queue = read('src/lib/soft-ai/automation-queue.ts')
+    const release = queue.slice(queue.indexOf('async function releaseDeadLeases'), queue.indexOf('async function claimRows'))
+    assert.match(release, /SET "status" = CASE WHEN "attempts" >= \$\{MAX_ATTEMPTS\} THEN 'failed' ELSE 'retry' END/)
+    assert.match(release, /"leaseToken" = NULL,\s+"leaseExpiresAt" = NULL,/)
+    assert.match(release, /WHERE "status" = 'processing'\s+AND "leaseExpiresAt" <= CURRENT_TIMESTAMP - \$\{Prisma\.raw\(`INTERVAL '\$\{DEAD_LEASE_GRACE_SECONDS\} seconds'`\)\}/)
+    const claim = queue.slice(queue.indexOf('async function claimRows'), queue.indexOf('export function claimBatch'))
+    assert.match(claim, /try \{\s+await releaseDeadLeases\(\)\s+const rows = await prisma\.\$queryRaw/)
+    assert.match(claim, /if \(isSingleFlightConflict\(error\)\) \{\s+if \(id\) await deferJob\(id\)\s+return \[\]/)
   })
 })

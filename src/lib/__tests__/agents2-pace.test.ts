@@ -257,7 +257,8 @@ describe('agents2-pace F1: the next message of the same chat is not left for the
   it('after complete / fail, the newest waiting job of the same conversation (tenant-scoped) is kicked once', () => {
     assert.match(proc, /export async function kickNextConversationJob\(/)
     assert.match(proc, /where: \{\s*tenantId: row\.tenantId,\s*conversationId: row\.conversationId,\s*id: \{ not: row\.id \},\s*status: \{ in: \['pending', 'retry'\] \},\s*availableAt: \{ lte: new Date\(\) \},/)
-    assert.match(proc, /orderBy: \[\{ createdAt: 'desc' \}, \{ id: 'desc' \}\]/)
+    // Burst hardening: the job the claim would pick (newest customer message first).
+    assert.match(proc, /orderBy: NEWEST_BURST_JOB_ORDER,/)
     // One kick, no chain: the kicked job runs with kick: false — except a job that yielded to a newer burst bubble
     // (burst = one reply, 2026-10-17), which always hands over (bounded: it yields only while a newer job is queued).
     assert.match(proc, /if \(next\) void processJobById\(next\.id, \{ kick: false \}\)\.catch\(\(\) => undefined\)/)

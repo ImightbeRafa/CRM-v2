@@ -75,19 +75,44 @@ export function shouldYieldToNewerBurst(input: { newerPending: boolean; triggerS
 }
 
 /**
- * The customer's other unanswered bubbles, oldest first: every inbound after the store's LAST reply (wherever it sits,
- * also after the trigger: what it answered is not answered again). No time window (SecureDog INT): the newest job
- * answers for every bubble whose job it superseded, however long the customer kept typing. History never holds the
- * trigger; the loaded history window (24 rows) is the only bound.
+ * A bubble sent more than this before the trigger is not part of its burst (burst hardening, 2026-10-17). Same horizon
+ * as the waiting sweep (waiting-sweep DAY_MS: only a customer message inside the 24 h reply window is still owed an
+ * answer). A days-old unanswered "STOP" or receipt photo must not turn a new "hola" into an opt-out or receipt reply.
  */
-export function unansweredBurst(history: BurstMessage[], _trigger?: Pick<BurstTrigger, 'sentAt'>): BurstMessage[] {
+export const BURST_MAX_AGE_MS = 24 * 60 * 60_000
+/**
+ * At most this many unanswered bubbles are judged when the burst is longer than the loaded history window (a WhatsApp
+ * multi-forward): the newest ones (closest to the trigger) are kept. The model still reads its 24-row window.
+ */
+export const BURST_LOAD_MAX = 100
+
+/**
+ * The customer's other unanswered bubbles, oldest first: every inbound after the store's LAST reply (wherever it sits,
+ * also after the trigger: what it answered is not answered again), sent at most BURST_MAX_AGE_MS before the trigger.
+ * The newest job answers for every bubble whose job it superseded (SecureDog INT), however long the customer kept
+ * typing that day. History never holds the trigger. When the loaded window is all unanswered (burstOutgrowsWindow),
+ * the caller loads the burst on its own (agent-turn loadUnansweredInbound, up to BURST_LOAD_MAX) and passes it here.
+ */
+export function unansweredBurst(history: BurstMessage[], trigger?: Pick<BurstTrigger, 'sentAt'>): BurstMessage[] {
+  const triggerAt = trigger ? at(trigger.sentAt) : NaN
   const out: BurstMessage[] = []
   for (let i = history.length - 1; i >= 0; i--) {
     const m = history[i]
     if (m.direction === 'outbound') break
+    // History is in sent order: the first bubble too old ends the burst. A bad date never drops a bubble.
+    if (triggerAt - at(m.sentAt) > BURST_MAX_AGE_MS) break
     out.unshift(m)
   }
   return out
+}
+
+/**
+ * Was the history window full and every loaded row an unanswered bubble of this burst? Then the burst may go on past
+ * the window (24+ bubbles, a WhatsApp multi-forward) and its first bubbles would get no opt-out / receipt /
+ * payment-claim check: the caller loads the unanswered bubbles on their own (agent-turn loadUnansweredInbound).
+ */
+export function burstOutgrowsWindow(input: { loadedRows: number; windowMax: number; history: unknown[]; burst: unknown[] }): boolean {
+  return input.loadedRows >= input.windowMax && input.history.length > 0 && input.burst.length === input.history.length
 }
 
 /**
@@ -168,14 +193,32 @@ export function burstOtherTexts(
   plan: Pick<BurstInboundPlan, 'inboundText'>,
   trigger?: Pick<BurstTrigger, 'content' | 'messageType'>,
 ): Array<{ text: string; messageType: string }> {
-  const planned = plan.inboundText.trim()
+  const planned = collapseSpace(plan.inboundText)
   const bubbles = earlier
     .filter((m) => m.direction === 'inbound' && m.messageType !== 'sticker')
-    .map((m) => ({ text: realText(m.content), messageType: m.messageType || 'text' }))
+    .map((m) => ({ text: collapseSpace(realText(m.content)), messageType: m.messageType || 'text' }))
   if (trigger && isMedia(trigger.messageType) && trigger.messageType !== 'sticker') {
-    bubbles.push({ text: realText(trigger.content), messageType: trigger.messageType || 'image' })
+    bubbles.push({ text: collapseSpace(realText(trigger.content)), messageType: trigger.messageType || 'image' })
   }
-  return bubbles.filter((m) => m.text && m.text !== planned)
+  // Up to BURST_LOAD_MAX bubbles: the same text of the same type is decided once (SecureDog F2: per-turn CPU).
+  const seen = new Set<string>()
+  return bubbles.filter((m) => {
+    const key = `${m.messageType}\u0000${m.text}`
+    if (!m.text || m.text === planned || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+/**
+ * Whitespace runs shrunk to one character, for the per-bubble checks only (never the planned / model text): a 4 KB run
+ * of spaces or newlines makes the opt-out / payment patterns slow (SecureDog F2). A line break stays a line break —
+ * the payment classifier reads it as a sentence end (Verifier r3: "Quiero pagar con tarjeta\nle hice uno" must keep
+ * its payment hand-off).
+ */
+function collapseSpace(text: string | null | undefined): string {
+  // Horizontal runs first, then the line breaks: both passes stay linear on a 4 KB run (Verifier r4).
+  return (text || '').replace(/[^\S\n]+/g, ' ').replace(/ ?\n\s*/g, '\n').trim()
 }
 
 /**
@@ -242,7 +285,7 @@ export function burstReviewFor<T extends BurstDecisionLike>(input: {
 /** A "STOP" / "no me escriban más" in ANY bubble of the burst (trigger, other texts, captions): no later waiting ack. */
 export function burstOptOut(trigger: Pick<BurstTrigger, 'content'>, earlier: BurstMessage[]): boolean {
   return [trigger.content, ...earlier.filter((m) => m.direction === 'inbound').map((m) => m.content)].some((t) =>
-    isWaitingOptOutText(t),
+    isWaitingOptOutText(collapseSpace(t)),
   )
 }
 

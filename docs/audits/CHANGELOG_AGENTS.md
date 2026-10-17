@@ -44,6 +44,75 @@ Two safety gaps SecureDog found while reviewing PR #100. Both predate it.
   - test:soft-ai 1016/1. The one failure is agent-studio's PDF worker test, which fails the same on the untouched base
     (this worktree has no own node_modules).
   - tsc and lint are clean.
+## 2026-10-17 (late night) — Burst hardening: long bursts, 24 h bound, newest message answers (branch claudio/inbox-burst-harden on luna-10 @ 933288b4, NOT deployed)
+
+- Long bursts (Low residual from the PR #100 reviews): the safety checks only saw the 24 loaded history rows, so in a
+  burst of 24+ bubbles (a WhatsApp multi-forward) the first bubbles got no opt-out / receipt / payment-claim check.
+  When the history window is full and every row in it is an unanswered bubble (`burstOutgrowsWindow`), the live turn
+  now loads the unanswered bubbles on their own (`loadUnansweredInbound`). It reads only text, type and send time,
+  scoped to the tenant and chat, after the store's last reply in the history's own (sentAt, id) order, newest 100
+  (`BURST_LOAD_MAX`). Every bubble gets the opt-out / payment-claim / hand-off check. The receipt check is weaker:
+  whether a photo is "awaiting a receipt" still reads the 24-row window, which in this case holds no store message.
+  A receipt photo early in a long burst therefore gets the photo review (`text_with_media`), not the receipt path.
+  The model still reads its 24-row window. In the normal case nothing extra is loaded.
+- 24 h bound (`BURST_MAX_AGE_MS`): a bubble sent more than a day before the trigger is no longer part of its burst.
+  Before, an unanswered "STOP" or receipt photo from days ago turned a new "hola" into an opt-out hand-off or the
+  receipt path. 24 h is the waiting sweep's horizon (`DAY_MS`): only a message inside the reply window is still owed
+  an answer, and the customer writing again is a new conversation. The trade-off is that a job superseded after more
+  than a day in the queue (outage, AI switched off) has its bubble shown in the inbox but not judged. A bad date never
+  drops a bubble. The shadow replay (`shadow.ts`) passes the real message time (`replaySentAt`, never settable from
+  the Probar API), so a replayed burst is bounded like live.
+- Newest message answers: the claim SQL ordered and held jobs by the job's `createdAt`. A bubble Meta delivered late
+  (sent earlier, job created later) could become the answering job, with the newest bubble only a secondary one.
+  The claim now orders and holds by the customer message's `sentAt`, then `createdAt` / `id` (joined, never locked:
+  `FOR UPDATE OF current`). `kickNextConversationJob` uses the same order (`NEWEST_BURST_JOB_ORDER`). Single-flight,
+  the partial unique index and `supersedeOlderJobs` are unchanged. This was proven on a throwaway Docker Postgres
+  (8 scenarios, including late delivery, same-second WhatsApp timestamps, the settle hold, single-flight and two
+  concurrent claimants), and the message row was checked to stay unlocked during a claim.
+- Tests: `inbound-burst.test.ts` +7.
+- Verifier round 1: PASS WITH NOTES. Fixed: shadow parity of the 24 h bound, the same-second tie at the last reply,
+  a realistic stale-receipt test. Softened: the receipt wording above. Left open, with a separate follow-up: a job
+  stuck in `processing` with an expired lease plus a newer pending job can block that chat's claim. It also makes a
+  cron batch return nothing (single-flight P2002). This is already in the base branch, not caused by this slice.
+- SecureDog round 1: FIX BEFORE PROD, over one Medium (F1). Fixed:
+  - F1: with the sentAt order, a message that Meta delivered late, and that was sent before the store's last reply,
+    was superseded but never checked. That message is outside the claimed job's burst. Now `supersedeOlderJobs`
+    never supersedes a job whose message already has a store reply after it, matched by tenant and chat. That job
+    stays queued and runs on its own afterwards, as live does today for that arrival order, so its opt-out, request
+    for a person or receipt is still checked.
+  - F2 (per-turn CPU on 100 adversarial 4 KB bubbles): the per-bubble checks collapse whitespace runs and decide
+    each repeated bubble once. The waiting ack's opt-out regex tail no longer backtracks. The planned and model text
+    are unchanged.
+  - F3: the last-reply lookup of the long-burst load is bounded by the day.
+- Docker harness: 10 scenarios, including both F1 interleavings. Tests: `inbound-burst.test.ts` +3.
+- Verifier round 3: FAIL, then fixed:
+  - (Medium, mine) The F2 collapse also turned line breaks into spaces. The payment classifier reads a line break as
+    a sentence end, so "Quiero pagar con tarjeta\nle hice uno" lost its payment hand-off in a burst. Now a line
+    break stays a line break and only runs shrink. Test: that bubble plus "hola?" keeps the hand-off it gets alone.
+  - (Low-medium) A job kept by F1 could become claimable while the newer answering job waited on a long retry, then
+    supersede it. The claim now holds a job whose message already has a reply after it behind every newer pending
+    or retry job, whatever the 10 s horizon. Harness: 11 scenarios.
+  - Verifier round 4: PASS WITH NOTES. Its note is fixed: the collapse shrinks horizontal runs first, so it stays linear.
+- SecureDog round 2: all of this slice's fixes pass. Still FIX BEFORE PROD over F6, which is already live and worse
+  than we had documented.
+  - The problem: a job left `processing` by a dead worker, plus a newer job in the same chat, made every claim in
+    that chat fail on the single-flight index. From `$queryRaw` that failure arrives as P2010 / 23505, which the
+    catch did not recognise. So `claimBatch` threw, and the chat-automation cron returned 500 for every tenant on
+    every run.
+  - Fixed: each claim first releases leases that expired at least 15 s ago (`releaseDeadLeases`, sets `retry`, or
+    `failed` once out of attempts). The job then follows the normal rules. `isSingleFlightConflict` also recognises
+    P2010 / 23505, so that error defers the job and returns `[]` instead of throwing.
+  - Harness: 14 scenarios. The F2 timing test is tightened to 500 ms.
+- Verifier round 5: PASS WITH NOTES. Its note is fixed: inside the 15 s grace, one dead lease still emptied the cron batch for one run. The in-flight check now counts any `processing` sibling, so it blocks only its own chat. Harness: 15 scenarios.
+- SecureDog round 3: OK (nothing blocking). Applied two of its Low notes: a failed `releaseDeadLeases` is logged and never blocks the claim, and the catch-all `single_flight|unique` regex fallback is removed. Still open, both pre-existing: the lease uses the app clock while the DB compares with its own, and the cron leases 2 rows up front and runs them one after the other.
+- Final: Verifier PASS WITH NOTES (round 5), SecureDog OK to ship (on c31cc09a). Draft PR #102 → claudio/inbox-burst, intended base local luna-10 @ 933288b4. NOT deployed, needs Rafael's GO.
+  - Known: F1 also keeps a bubble typed while a non-yielding turn was writing its reply (before, it was dropped
+    unchecked). That bubble now gets its own reply after the newer one, up to a cron minute later.
+- Left open:
+  - F4 (rare): a job older than 60 s with 100+ bubbles after its trigger uses the newest 100 and does not merge
+    them with its window.
+  - (F6 fixed in SecureDog round 2, below.)
+  - F5 (info): there is no durable opt-out flag. The 24 h bound only drops an opt-out that no job ever checked.
 
 ## 2026-10-17 (night) — PR #100 burst fix + quick replies + confirmation false alarm, deployed 5820a6fc
 

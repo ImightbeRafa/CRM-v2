@@ -36,7 +36,7 @@ export type WaitingAckDecision = { ack: boolean; realert: boolean; reason: strin
  * customer should get the ack.
  */
 const STOP_CONTACT_RE =
-  /^\s*stop\b|\bunsubscribe\b|darme\s+de\s+baja|d[eé]jen?me\s+en\s+paz|\bdejen\s+de\s+(escribir|mandar|contactar|molestar)|\b(ya\s+)?no\s+me\s+(escriban|escribas|escriba|manden|mandes|mande|contacten|contactes|contacte|molesten|molestes|vuelvan\s+a\s+(escribir|contactar))(\s+(m[aá]s|nada|nunca|ya))*(\s+por\s+favor)?\s*[.!]*\s*$|\bno\s+me\s+(escriban|escribas|manden|mandes|contacten|molesten)\s+(m[aá]s|nada|nunca)\b|\b(ya\s+)?no\s+(m[aá]s\s+mensajes|quiero\s+(recibir\s+)?(m[aá]s\s+)?mensajes|quiero\s+que\s+me\s+(escriban|contacten))\b/iu
+  /^\s*stop\b|\bunsubscribe\b|darme\s+de\s+baja|d[eé]jen?me\s+en\s+paz|\bdejen\s+de\s+(escribir|mandar|contactar|molestar)|\b(ya\s+)?no\s+me\s+(escriban|escribas|escriba|manden|mandes|mande|contacten|contactes|contacte|molesten|molestes|vuelvan\s+a\s+(escribir|contactar))(\s+(m[aá]s|nada|nunca|ya))*(\s+por\s+favor)?[\s.!]*$|\bno\s+me\s+(escriban|escribas|manden|mandes|contacten|molesten)\s+(m[aá]s|nada|nunca)\b|\b(ya\s+)?no\s+(m[aá]s\s+mensajes|quiero\s+(recibir\s+)?(m[aá]s\s+)?mensajes|quiero\s+que\s+me\s+(escriban|contacten))\b/iu
 const BASTA_RE = /\bbasta\b/iu
 const PLEASE = String.raw`(?:por\s*favor|porfa|x\s*favor|plis|pls)`
 /** The whole message is just "basta" (+ "ya" / "por favor" / punctuation / emoji): "¡Basta!", "ya basta porfa", "basta 😡". */

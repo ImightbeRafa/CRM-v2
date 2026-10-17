@@ -170,6 +170,17 @@ function tokenMethod(token: string): TokenPaymentMethod | 'all' {
  * not be shared (sharing off, method not offered, data missing) is dropped and the reply needs a person.
  * `methods`: what was filled ('all' = [[DATOS_PAGO]]) — e.g. a filled contra-entrega token is an order ready for a person.
  */
+const METHOD_WORDS: Array<[string, RegExp]> = [
+  ['sinpe', /sinpe/iu],
+  ['transferencia', /transfer|iban|cuenta\s+banc|dep[oó]sit/iu],
+  ['tarjeta', /tarjeta|link|enlace/iu],
+  ['contra_entrega', /contra\s*entrega|al\s+recibir|efectivo/iu],
+]
+/** The customer's text names a payment method other than the chosen one ("¿y si pago por sinpe…?"). */
+function namesAnotherMethod(text: string, chosen: string): boolean {
+  return METHOD_WORDS.some(([m, re]) => m !== chosen && re.test(text))
+}
+
 export function fillPaymentToken(
   text: string,
   facts: BrandFacts,
@@ -193,8 +204,12 @@ export function fillPaymentToken(
     }
     // Verifier round 5: [[DATOS_PAGO]] after the customer chose a method → only that method's block (no SINPE + IBAN
     // dump when they said "contra entrega"); a chosen method we can't fill falls back to the full list.
+    // Verifier round 6: never narrowed to contra entrega / efectivo (an order hand-off belongs to the explicit
+    // [[PAGO_CONTRA_ENTREGA]] token once the order data is complete), and not when the customer now names another method.
     const chosen =
-      method === 'all' && opts.chosenMethod && opts.chosenMethod in PAYMENT_METHOD_TOKENS
+      method === 'all' &&
+      (opts.chosenMethod === 'sinpe' || opts.chosenMethod === 'transferencia' || opts.chosenMethod === 'tarjeta') &&
+      !namesAnotherMethod(opts.customerText ?? '', opts.chosenMethod)
         ? (opts.chosenMethod as TokenPaymentMethod)
         : null
     const chosenBlock = chosen ? paymentMethodBlock(facts, chosen, opts) : ''

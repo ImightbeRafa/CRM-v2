@@ -1,0 +1,50 @@
+/**
+ * luna-10 #4 (2026-10-17, live PatchHouse): after the agent handed a chat to a person, the customer wrote "???" and
+ * "¿Me podría atender un asesor?" — both turns were skipped (human_before_send) and the customer got silence for
+ * 3 h 20 min. Now, when the customer writes again while a hand-off is still waiting on a person:
+ *  - the customer gets ONE code-written line per hand-off ("Ya le avisé al equipo…", after hours: when they write);
+ *  - the team is alerted again ('customer_waiting'), once per customer message.
+ * Never when a person already wrote after the hand-off, never when a person took the chat by hand (no agent
+ * hand-off turn), never when the line is off. Never changes aiMode. Pure (decision + texts); the send lives in
+ * agent-turn.ts.
+ */
+import type { AfterHoursState } from '@/lib/soft-ai/business-hours'
+
+export const WAITING_ACK_KEY_PREFIX = 'waiting_ack:'
+/** A hand-off older than this is no longer "waiting" (the 24 h reply window has closed anyway). */
+export const WAITING_ACK_MAX_AGE_MS = 24 * 3_600_000
+
+export const WAITING_ACK_TEXT = 'Ya le avisé al equipo 🙌 En un momento te escriben por aquí 😊'
+
+export function waitingAckKey(handoffTurnId: string): string {
+  return `${WAITING_ACK_KEY_PREFIX}${handoffTurnId}`
+}
+
+export function waitingAckText(hours: Pick<AfterHoursState, 'afterHours' | 'label'>): string {
+  if (!hours.afterHours) return WAITING_ACK_TEXT
+  return `Ya le avisé al equipo 🙌 Te escriben ${hours.label} 😊`
+}
+
+export type WaitingAckDecision = { ack: boolean; realert: boolean; reason: string }
+
+export function decideWaitingAck(input: {
+  /** The latest delivered agent turn of the chat (waiting acks excluded). */
+  lastTurn: { id: string; handoffKind: string | null; completedAt: Date | null } | null
+  /** A person (not the AI) wrote in the chat after that turn. */
+  humanWroteSince: boolean
+  /** The line is on: ai_full + activated + kill switch off. */
+  lineOn: boolean
+  /** This hand-off already got its one ack. */
+  alreadyAcked: boolean
+  now: Date
+}): WaitingAckDecision {
+  const no = (reason: string): WaitingAckDecision => ({ ack: false, realert: false, reason })
+  if (!input.lineOn) return no('line_off')
+  if (!input.lastTurn) return no('no_agent_turn')
+  if (input.lastTurn.handoffKind !== 'handoff') return no('not_an_agent_handoff')
+  const at = input.lastTurn.completedAt?.getTime() ?? 0
+  if (!at || input.now.getTime() - at > WAITING_ACK_MAX_AGE_MS) return no('handoff_too_old')
+  if (input.humanWroteSince) return no('person_already_answered')
+  if (input.alreadyAcked) return { ack: false, realert: true, reason: 'already_acked' }
+  return { ack: true, realert: true, reason: 'customer_waiting' }
+}

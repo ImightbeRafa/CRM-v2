@@ -82,6 +82,8 @@ import {
   type TurnHandoff,
 } from '@/lib/soft-ai/agent-turn-outcome'
 import { notifyHandoff } from '@/lib/soft-ai/handoff-notify'
+import { decideWaitingAck, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS } from '@/lib/soft-ai/waiting-ack'
+import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt } from '@/lib/soft-ai/sales-state'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
@@ -349,6 +351,157 @@ async function persistSkippedTurn(input: {
 }
 
 /**
+ * luna-10 #4 (waiting-ack.ts): the chat is with a person after the agent's hand-off and the customer wrote again.
+ * One code line per hand-off + a fresh team alert per customer message. Silent when a person already wrote, when a
+ * person took the chat by hand, or when the line is off. Never changes aiMode; never throws (a failure only logs).
+ */
+async function ackWaitingCustomer(input: {
+  row: ClaimedChatAutomationJob
+  payload: JobPayload
+  conversation: { peerName: string | null }
+  agent: ResolvedChatAgent
+  bindingId: string | null
+}): Promise<void> {
+  const { row } = input
+  try {
+    const lastTurn = await prisma.chatAgentTurn.findFirst({
+      where: {
+        tenantId: row.tenantId,
+        conversationId: row.conversationId,
+        status: 'delivered',
+        testSessionId: null,
+        createdAt: { gte: new Date(Date.now() - WAITING_ACK_MAX_AGE_MS) },
+        NOT: { automationDeliveryKey: { startsWith: WAITING_ACK_KEY_PREFIX } },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, decisionTrace: true, completedAt: true, triggerMessageId: true },
+    })
+    const handoffKind = lastTurn ? readOutcomeMarkers(lastTurn.decisionTrace)?.handoffKind ?? null : null
+    const since = lastTurn?.completedAt ?? new Date()
+    const outboundSince = lastTurn
+      ? await prisma.chatMessage.findMany({
+          where: { tenantId: row.tenantId, conversationId: row.conversationId, direction: 'outbound', sentAt: { gt: since } },
+          select: { metadata: true },
+          take: 50,
+        })
+      : []
+    const probe = await resolveChatAgent({ tenantId: row.tenantId, socialAccountId: row.socialAccountId, conversationAiMode: 'ai_active' })
+    const gates = probe.kind === 'resolved' ? await runPreModelGates({ tenantId: row.tenantId, socialAccountId: row.socialAccountId, agentId: probe.agent.id }) : null
+    const lineOn = probe.kind === 'resolved' && probe.agent.operationMode === 'ai_full' && probe.unlockedForSend && Boolean(gates?.ok)
+    const key = lastTurn ? waitingAckKey(lastTurn.id) : ''
+    const alreadyAcked = lastTurn ? Boolean(await prisma.chatAgentTurn.findUnique({ where: { automationDeliveryKey: key }, select: { id: true } })) : false
+    const decision = decideWaitingAck({
+      lastTurn: lastTurn ? { id: lastTurn.id, handoffKind, completedAt: lastTurn.completedAt } : null,
+      humanWroteSince: outboundSince.some((m) => !isSoftAiOutboundMetadata(m.metadata)),
+      lineOn,
+      alreadyAcked,
+      now: new Date(),
+    })
+    if (!decision.realert || !lastTurn) return
+
+    const hoursSetup = await loadHoursSetup(row.tenantId, input.agent.id)
+    const hours = afterHoursState(hoursSetup.hours, new Date(), { aiDisclosure: hoursSetup.aiDisclosure })
+    await notifyHandoff({
+      tenantId: row.tenantId,
+      conversationId: row.conversationId,
+      socialAccountId: row.socialAccountId,
+      kind: 'handoff',
+      reason: 'customer_waiting',
+      quietUntil: hours.afterHours ? hours.opensAt : null,
+    })
+    if (!decision.ack) return
+
+    const text = waitingAckText(hours)
+    // The unique delivery key is the lock: a second job for the same hand-off never sends a second ack.
+    let ackTurnId: string
+    try {
+      const created = await prisma.chatAgentTurn.create({
+        data: {
+          tenantId: row.tenantId,
+          conversationId: row.conversationId,
+          socialAccountId: row.socialAccountId,
+          agentId: input.agent.id,
+          bindingId: input.bindingId,
+          triggerMessageId: null,
+          automationDeliveryKey: key,
+          mode: input.agent.operationMode,
+          model: input.agent.model,
+          agentVersion: input.agent.version,
+          status: 'generated',
+          intent: 'waiting_ack',
+          outputText: text,
+          outputHash: hashSoftAiDeliveryContent(text),
+        },
+        select: { id: true },
+      })
+      ackTurnId = created.id
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return
+      throw error
+    }
+
+    const account = await prisma.socialAccount.findFirst({
+      where: { id: row.socialAccountId, tenantId: row.tenantId },
+      select: { accessToken: true, refreshToken: true, accountId: true, pageId: true },
+    })
+    const accessToken = account?.accessToken ? decryptSocialAccessToken(account.accessToken) : null
+    if (!account || !accessToken) {
+      await prisma.chatAgentTurn.update({ where: { id: ackTurnId }, data: { status: 'failed', errorCode: 'token_unhealthy', completedAt: new Date() } })
+      return
+    }
+    const meta = parseSocialRefreshToken(account.refreshToken)
+    const platform = input.payload.platform || 'whatsapp'
+    const ackDelivery = await deliverOnce({
+      jobId: row.id,
+      deliveryKey: `${row.deliveryKey}:waiting_ack`,
+      kind: 'text',
+      contentHash: hashSoftAiDeliveryContent(text),
+      send: async () => {
+        const result = await sendMetaText({ platform, accessToken, phoneNumberId: account.accountId, pageId: account.pageId || meta.pageId, recipient: row.peerId, text })
+        if (!result.ok) throw new Error('META_SEND_FAILED')
+        return result
+      },
+      providerDeliveryId: (result) => result.providerMessageId,
+    })
+    const providerMessageId = ackDelivery.providerDeliveryId || (!ackDelivery.skipped ? ackDelivery.result?.providerMessageId : undefined)
+    await dualWriteChatMessage({
+      tenantId: row.tenantId,
+      socialAccountId: row.socialAccountId,
+      direction: 'outbound',
+      content: text,
+      sentAt: new Date(),
+      peerId: row.peerId,
+      peerName: input.payload.senderName || input.conversation.peerName || null,
+      providerMessageId: providerMessageId || null,
+      messageType: 'text',
+      // Answers only up to the hand-off's own customer message: the new messages stay "waiting for the team".
+      answersMessageId: lastTurn.triggerMessageId,
+      deliveryStatus: 'sent',
+      platform,
+      metadata: {
+        softAi: true,
+        agentId: input.agent.id,
+        agentVersion: input.agent.version,
+        agentName: input.agent.name,
+        agentEmoji: input.agent.emoji,
+        turnId: ackTurnId,
+        to: row.peerId,
+        platform,
+        providerMessageId,
+        automationJobId: row.id,
+        deliverySkipped: ackDelivery.skipped,
+        replyBy: 'code',
+        waitingAck: true,
+      },
+      suppressSoftAi: true,
+    })
+    await prisma.chatAgentTurn.update({ where: { id: ackTurnId }, data: { status: 'delivered', completedAt: new Date() } })
+  } catch (error) {
+    console.error('[soft-ai waiting-ack]', { code: error instanceof Error ? error.message.slice(0, 60) : 'error' })
+  }
+}
+
+/**
  * Daily token caps sum turns by createdAt (agent-claim-gates loadDailyBilledTokens). A swept / resumed message re-runs
  * on the row first written when it was skipped (same delivery key), so the answering run re-stamps the row: today's
  * date and the agent that actually answers (Verifier 2026-10-15 F1).
@@ -468,6 +621,10 @@ export async function executeAgentLayerTurn(
       deliveryKey: row.deliveryKey,
       skipReason: resolved.skipReason,
     })
+    // luna-10 #4: the customer writes again while the agent's hand-off still waits on a person.
+    if (resolved.skipReason === 'human_before_send' && resolved.agent) {
+      await ackWaitingCustomer({ row, payload, conversation, agent: resolved.agent, bindingId: resolved.binding?.id ?? null })
+    }
     return { status: 'skipped', reason: resolved.skipReason }
   }
 

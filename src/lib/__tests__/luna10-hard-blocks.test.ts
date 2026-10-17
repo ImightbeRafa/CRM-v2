@@ -5,6 +5,8 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { resultsClaimIn, validateAgentOutput } from '../soft-ai/llm/output-validator'
 import { REPAIRABLE_REASONS, repairInstruction } from '../soft-ai/llm/runtime'
+import { decideWaitingAck, waitingAckKey, waitingAckText } from '../soft-ai/waiting-ack'
+import { HANDOFF_REASON_LABELS } from '../workspace-notifications'
 
 describe('results_claim (no promised effects)', () => {
   const promises = [
@@ -48,5 +50,38 @@ describe('results_claim (no promised effects)', () => {
   it('is repairable and the rewrite request says why (never customer text)', () => {
     assert.ok(REPAIRABLE_REASONS.has('results_claim'))
     assert.match(repairInstruction(['results_claim']), /prometiste un resultado/)
+  })
+})
+
+describe('waiting ack (customer writes again while a hand-off waits on a person)', () => {
+  const now = new Date('2026-10-17T18:00:00Z')
+  const handoff = { id: 'turn_handoff_1', handoffKind: 'handoff', completedAt: new Date('2026-10-17T17:50:00Z') }
+  const base = { lastTurn: handoff, humanWroteSince: false, lineOn: true, alreadyAcked: false, now }
+
+  it('first message after an agent hand-off: one ack + team alert', () => {
+    assert.deepEqual(decideWaitingAck(base), { ack: true, realert: true, reason: 'customer_waiting' })
+  })
+  it('later messages: no second ack, but the team is alerted again', () => {
+    assert.deepEqual(decideWaitingAck({ ...base, alreadyAcked: true }), { ack: false, realert: true, reason: 'already_acked' })
+  })
+  it('a person already wrote after the hand-off: silent', () => {
+    assert.equal(decideWaitingAck({ ...base, humanWroteSince: true }).realert, false)
+  })
+  it('a person took the chat by hand (last agent turn was not a hand-off): silent', () => {
+    assert.equal(decideWaitingAck({ ...base, lastTurn: { ...handoff, handoffKind: 'review' } }).realert, false)
+    assert.equal(decideWaitingAck({ ...base, lastTurn: { ...handoff, handoffKind: null } }).realert, false)
+    assert.equal(decideWaitingAck({ ...base, lastTurn: null }).realert, false)
+  })
+  it('line off or hand-off older than 24 h: silent', () => {
+    assert.equal(decideWaitingAck({ ...base, lineOn: false }).realert, false)
+    assert.equal(decideWaitingAck({ ...base, lastTurn: { ...handoff, completedAt: new Date('2026-10-16T17:00:00Z') } }).realert, false)
+  })
+  it('texts: in hours vs after hours (never promises an immediate answer at night)', () => {
+    assert.equal(waitingAckText({ afterHours: false, label: '' }), 'Ya le avisé al equipo 🙌 En un momento te escriben por aquí 😊')
+    assert.equal(waitingAckText({ afterHours: true, label: 'mañana a las 8:00 a. m.' }), 'Ya le avisé al equipo 🙌 Te escriben mañana a las 8:00 a. m. 😊')
+    assert.equal(waitingAckKey('t1'), 'waiting_ack:t1')
+  })
+  it('the alert has its own label', () => {
+    assert.equal(HANDOFF_REASON_LABELS.customer_waiting, 'El cliente sigue esperando — nadie le respondió')
   })
 })

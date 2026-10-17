@@ -54,6 +54,8 @@ export const HANDOFF_REASON_LABELS: Record<string, string> = {
   escalate: 'Necesita a una persona',
   // Rafael 2026-10-16: the agent did not have the answer (e.g. an ingredient) — a person answers.
   unknown_answer: 'La IA no tenía la respuesta — contestale vos',
+  // luna-10 #4: the customer wrote again after the hand-off and nobody has answered yet.
+  customer_waiting: 'El cliente sigue esperando — nadie le respondió',
   review: 'Revisar respuesta de la IA',
 }
 

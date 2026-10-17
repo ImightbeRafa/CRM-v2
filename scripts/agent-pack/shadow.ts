@@ -100,10 +100,11 @@ async function main() {
         if (m.direction !== 'inbound' || m.sentAt < since) continue
         const next = msgs[i + 1]
         if (next && next.direction === 'inbound' && next.sentAt.getTime() - m.sentAt.getTime() <= BURST_MS) continue
-        const history = msgs.slice(Math.max(0, i - 24), i).map((h) => ({ direction: (h.direction === 'inbound' ? 'inbound' : 'outbound') as 'inbound' | 'outbound', content: h.content || `[${h.messageType}]`, sentAt: h.sentAt.toISOString() }))
+        // SecureDog L2: the replay itself is redacted (names, phones, addresses) and the customer is just "Cliente".
+        const history = msgs.slice(Math.max(0, i - 24), i).map((h) => ({ direction: (h.direction === 'inbound' ? 'inbound' : 'outbound') as 'inbound' | 'outbound', content: redactCustomerText(h.content || `[${h.messageType}]`, c.peerName), sentAt: h.sentAt.toISOString() }))
         const night = Boolean(schedule.enabled) && !isWithinBusinessHours(schedule, m.sentAt)
-        const text = m.messageType === 'text' ? m.content || '' : `[${m.messageType}] ${m.content || ''}`.trim()
-        const r = await runAgentTestTurn({ tenantId, agentId: agent.id, inboundText: text, socialAccountId: account, actorUserId: user.id, testSessionId: randomUUID(), history, customerName: c.peerName || 'Cliente', modelOverride: LUNA_CHAT_AGENT_MODEL, usageFeature: 'agent_test', simulateAfterHours: night, messageType: (m.messageType as 'text' | 'image' | 'audio' | 'document' | 'video') || 'text' })
+        const text = redactCustomerText(m.messageType === 'text' ? m.content || '' : `[${m.messageType}] ${m.content || ''}`.trim(), c.peerName)
+        const r = await runAgentTestTurn({ tenantId, agentId: agent.id, inboundText: text, socialAccountId: account, actorUserId: user.id, testSessionId: randomUUID(), history, customerName: 'Cliente', modelOverride: LUNA_CHAT_AGENT_MODEL, usageFeature: 'agent_test', simulateAfterHours: night, messageType: (m.messageType as 'text' | 'image' | 'audio' | 'document' | 'video') || 'text' })
         cost += r.estimatedCostUsd || 0
         // What the team really answered: the first person-written message after this customer message.
         const team = msgs.slice(i + 1).find((x) => x.direction === 'outbound' && !isSoftAiOutboundMetadata(x.metadata))
@@ -114,7 +115,7 @@ async function main() {
           at: m.sentAt.toISOString(),
           night,
           customer: redactCustomerText(text, c.peerName),
-          agent: r.text,
+          agent: redactCustomerText(r.text, c.peerName),
           handoff: r.handoff ? `${r.handoff.kind}:${r.handoff.reason}` : null,
           team: team?.content ? redactCustomerText(team.content, c.peerName) : null,
           teamMinutes: team ? Math.round((team.sentAt.getTime() - m.sentAt.getTime()) / 60_000) : null,

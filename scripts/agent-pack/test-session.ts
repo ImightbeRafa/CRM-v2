@@ -22,6 +22,7 @@ export async function withExamSession<T>(
   fn: (actor: ExamActor) => Promise<T>,
 ): Promise<T> {
   const { tenantId } = input
+  if (!Number.isFinite(input.cap) || input.cap <= 0 || input.cap > 20_000_000) throw new Error('--cap debe ser un número entre 1 y 20 000 000')
   if (!(await isAiTermsAcceptedNow(tenantId))) throw new Error('El negocio no aceptó los términos de IA: no se usan sus chats con la IA.')
   if ((await readAgentKillState(tenantId)).armed) throw new Error('El freno de emergencia de la IA está activo en este negocio.')
   if (await isPlatformAiPaused()) throw new Error('La IA de la plataforma está en pausa.')
@@ -50,7 +51,8 @@ export async function withExamSession<T>(
   const restore = async (why: string) => {
     if (restored) return
     restored = true
-    await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: before }))
+    // Only our own raise is undone: an admin's change during the run is kept.
+    await mutateChatAgentLayerConfig(tenantId, (c) => (c.testDailyTokenCap === input.cap ? { ...c, testDailyTokenCap: before } : c))
     await audit(input.cap, before, why)
     console.log(`Tope de pruebas restaurado: ${before.toLocaleString('es-CR')}`)
   }

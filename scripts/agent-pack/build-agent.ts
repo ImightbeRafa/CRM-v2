@@ -95,7 +95,7 @@ async function main() {
     const payNow = JSON.stringify(stable((existing.brandFacts as { payment?: unknown } | null)?.payment ?? null))
     const payPack = JSON.stringify(stable((pack.brandFacts as { payment?: unknown } | null)?.payment ?? null))
     if (payNow !== payPack) {
-      const mask = (j: string) => j.replace(/\d(?=\d{4})/g, '•')
+      const mask = (j: string) => j.replace(/\d[\d\s.-]{3,}\d/g, (m) => '••••' + m.replace(/\D/g, '').slice(-4))
       log(`  CAMBIAN LOS DATOS DE PAGO:\n    antes: ${mask(payNow)}\n    pack:  ${mask(payPack)}`)
       if (!flag('confirm-payment')) blockers.push('Modo activo: los datos de pago cambian — revisalos arriba y agregá --confirm-payment')
     }

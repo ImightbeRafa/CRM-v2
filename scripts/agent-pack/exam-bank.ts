@@ -29,7 +29,7 @@ export type ExamItem = {
 export type ExamBank = { builtAt: string; pack: string; items: ExamItem[] }
 
 const SYNTHETIC_DATA = 'María Pérez Solís\n8888-0000\nCartago, Oreamuno, San Rafael\n200 m norte de la iglesia, casa blanca'
-const ADDRESS_WORDS = /\b(calle|avenida|ave\.?|casa|frente|metros|esquina|barrio|residencial|condominio|apartamento|apto|del\s+(?:palo|super|parque|iglesia)|\d{2,3}\s?m(?:ts)?\b)/giu
+const ADDRESS_WORDS = /\b(calle|avenida|ave\.?|casa|frente|metros|esquina|barrio|residencial|condominio|apartamento|apto|del\s+(?:palo|super|parque|iglesia)|\d{2,3}\s?m(?:ts)?\b|norte|sur|este|oeste|varas|port[oó]n|contiguo|diagonal|costado)/giu
 
 /** Removes customer data. A message that is mostly an address/data block becomes one synthetic data block. */
 /** Unicode-aware word edges ("\b" is ASCII-only: "José" / "Ángela" slipped through — SecureDog). */

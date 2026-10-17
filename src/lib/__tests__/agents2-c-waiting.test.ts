@@ -208,11 +208,12 @@ describe('C · sweep queries are tenant-scoped, bounded, newest first', () => {
 
 describe('C · re-queue is conditional and never resends', () => {
   const queue = read('src/lib/soft-ai/automation-queue.ts')
-  it('rearmFinishedJob only touches finished jobs of this tenant with zero deliveries', () => {
+  it('rearmFinishedJob only touches finished jobs of this tenant with zero deliveries (the waiting ack is not an answer)', () => {
     const fn = queue.slice(queue.indexOf('export async function rearmFinishedJob'), queue.indexOf('async function supersedeOlderJobs'))
     assert.match(fn, /tenantId: input\.tenantId,/)
     assert.match(fn, /status: \{ in: \['completed', 'failed'\] \}/)
-    assert.match(fn, /deliveries: \{ none: \{\} \}/)
+    // luna-10 (verifier round 2): only the ":waiting_ack" delivery is ignored; any real reply still blocks a re-arm.
+    assert.match(fn, /deliveries: \{ none: \{ NOT: \{ deliveryKey: \{ endsWith: ':waiting_ack' \} \} \} \}/)
     assert.match(fn, /status: 'pending'/)
     assert.doesNotMatch(fn, /ambiguous|processing/)
   })

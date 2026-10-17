@@ -31,7 +31,8 @@ export function waitingAckText(hours: Pick<AfterHoursState, 'afterHours' | 'labe
 export type WaitingAckDecision = { ack: boolean; realert: boolean; reason: string }
 
 /** "STOP", "no quiero bot", "no me escriban más": the customer asked for no automatic messages. */
-const OPT_OUT_RE = /^\s*stop\b|\bno\s+(quiero|me\s+(escriban|manden|contesten))\b[^.?!]{0,20}\b(bot|robot|ia|m[aá]quina|autom[aá]tic|mensajes|m[aá]s)|\bbasta\b|\bunsubscribe\b|\bdejen\s+de\s+(escribir|mandar)/iu
+const OPT_OUT_RE =
+  /^\s*stop\b|\bbasta\b|\bunsubscribe\b|darme\s+de\s+baja|\bdejen\s+de\s+(escribir|mandar|contactar|molestar)|\b(ya\s+)?no\s+me\s+(escriban|escriba|manden|mande|contacten|contacte|molesten|contesten)\b|\bno\s+m[aá]s\s+mensajes\b|\bno\s+quiero\s+(m[aá]s\s+mensajes|que\s+me\s+(escriban|contacten))|\bno\s+quiero\s+(hablar\s+con\s+|que\s+me\s+(atienda|responda)\s+)?(un\s+|una\s+)?(bot|robot|ia|inteligencia\s+artificial|asistente\s+virtual|m[aá]quina)\b/iu
 
 export function isOptOutText(text: string | null | undefined): boolean {
   return OPT_OUT_RE.test(text || '')
@@ -51,12 +52,13 @@ export function decideWaitingAck(input: {
   now: Date
 }): WaitingAckDecision {
   const no = (reason: string): WaitingAckDecision => ({ ack: false, realert: false, reason })
-  if (!input.lineOn) return no('line_off')
   if (!input.lastTurn) return no('no_agent_turn')
   if (input.lastTurn.handoffKind !== 'handoff') return no('not_an_agent_handoff')
   const at = input.lastTurn.completedAt?.getTime() ?? 0
   if (!at || input.now.getTime() - at > WAITING_ACK_MAX_AGE_MS) return no('handoff_too_old')
   if (input.humanWroteSince) return no('person_already_answered')
+  // Verifier round 2 #6: line off / kill switch → the team still hears the customer is waiting; nothing automatic.
+  if (!input.lineOn) return { ack: false, realert: true, reason: 'line_off' }
   if (input.alreadyAcked) return { ack: false, realert: true, reason: 'already_acked' }
   if (input.optOut) return { ack: false, realert: true, reason: 'opt_out' }
   return { ack: true, realert: true, reason: 'customer_waiting' }

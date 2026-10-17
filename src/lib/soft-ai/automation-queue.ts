@@ -120,7 +120,8 @@ export async function rearmFinishedJob(input: {
       id: input.id,
       tenantId: input.tenantId,
       status: { in: ['completed', 'failed'] },
-      deliveries: { none: {} },
+      // luna-10: the waiting ack ("Ya le avisé al equipo…") is not an answer to this message.
+      deliveries: { none: { NOT: { deliveryKey: { endsWith: ':waiting_ack' } } } },
     },
     data: {
       status: 'pending',

@@ -422,7 +422,8 @@ async function ackWaitingCustomer(input: {
       humanWroteSince: outboundSince.some((m) => !isSoftAiOutboundMetadata(m.metadata)),
       lineOn,
       alreadyAcked,
-      optOut: isOptOutText(handoffTrigger?.content),
+      // Verifier round 2 #4: the opt-out can be the hand-off message OR this new one ("no me escriban más").
+      optOut: isOptOutText(handoffTrigger?.content) || isOptOutText(input.payload.content),
       now: new Date(),
     })
     if (!decision.realert) return

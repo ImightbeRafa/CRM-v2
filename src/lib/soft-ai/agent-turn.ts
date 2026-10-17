@@ -415,7 +415,8 @@ async function loadTriggerMessage(messageId: string, tenantId: string, conversat
   })
 }
 
-async function sendMetaText(opts: {
+/** Exported for follow-up sends (follow-up.ts): same Meta call, same 24 h RESPONSE rules. */
+export async function sendMetaText(opts: {
   platform: string
   accessToken: string
   phoneNumberId?: string | null
@@ -2009,7 +2010,7 @@ async function humanRepliedSinceTrigger(conversationId: string, triggerSentAt: D
  * agents2-hours: this agent's "Horario de atención" (salesRules.businessHours) and its "¿Sos un bot?" setting (the
  * after-hours wording follows it). Never throws; default off (24/7), discreet.
  */
-async function loadHoursSetup(tenantId: string, agentId: string): Promise<{ hours: BusinessHours; aiDisclosure: 'transparent' | 'discreet' }> {
+export async function loadHoursSetup(tenantId: string, agentId: string): Promise<{ hours: BusinessHours; aiDisclosure: 'transparent' | 'discreet' }> {
   try {
     const rules = (await loadSalesSetup(tenantId, agentId)).salesRules
     // luna-10: the night may be transparent ('asistente virtual') while the day stays discreet.

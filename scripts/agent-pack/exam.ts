@@ -24,7 +24,7 @@ import { readChatAgentLayerConfig } from '@/lib/feature-flags'
 import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { softAiResponsesCreate, parseSoftAiResponseText } from '@/lib/soft-ai/llm/client'
 import { LUNA_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
-import { arg, flag, loadPack } from './pack'
+import { arg, flag, loadPack, type AgentPack } from './pack'
 import type { ExamBank, ExamItem } from './exam-bank'
 
 type Finding = { cls: string; serious: boolean; why: string }
@@ -106,7 +106,19 @@ const GRADER_RULES = [
   'Respondé solo el JSON. reason: una frase corta en español.',
 ].join('\n')
 
-async function grade(input: { tenantId: string; knowledge: string; history: string; customer: string; reply: string; night: boolean }) {
+/** The reviewer judges against everything the agent may use: knowledge, brand facts, combos / selling script, hours. */
+export function reviewerKnowledge(pack: AgentPack): string {
+  const rules = pack.salesRules as { bundles?: Array<{ name: string; price: number; shippingIncluded?: boolean }>; businessHours?: { enabled?: boolean; windows?: Array<{ open: string; close: string }> } }
+  return [
+    ...pack.knowledge.map((k) => `## ${k.name}\n${k.body}`),
+    `## Datos de la marca\n${JSON.stringify(pack.brandFacts)}`,
+    `## Combos (precio fijo, válidos)\n${(rules.bundles ?? []).map((b) => `- ${b.name}: ₡${b.price}${b.shippingIncluded ? ' (envío incluido)' : ' (más envío)'}`).join('\n') || '(ninguno)'}`,
+    `## Horario del equipo\n${rules.businessHours?.enabled ? `${rules.businessHours.windows?.[0]?.open}–${rules.businessHours.windows?.[0]?.close} todos los días; de noche decir "el equipo te escribe hoy/mañana a las 8:00 a. m." es CORRECTO` : '24/7'}`,
+    '## Frases permitidas (son las del sitio, NO son promesas)\n"apoya la concentración / la relajación / el equilibrio emocional / el control del apetito", "ayuda a reducir antojos", "acompaña el ánimo y el bienestar", "energía sostenida", "cada organismo responde diferente".',
+  ].join('\n\n').slice(0, 16_000)
+}
+
+export async function grade(input: { tenantId: string; knowledge: string; history: string; customer: string; reply: string; night: boolean }) {
   try {
     const response = await softAiResponsesCreate({
       model: LUNA_CHAT_AGENT_MODEL,
@@ -166,15 +178,7 @@ async function main() {
   const bank = JSON.parse(readFileSync(join(dir, 'exam-bank.json'), 'utf8')) as ExamBank
   const items = bank.items.filter((i) => (!only || i.title.toLowerCase().includes(only)) && (!sources.length || sources.includes(i.source)))
   const forbid = ((pack as unknown as { exam?: { forbid?: Array<{ re: string; why: string }> } }).exam?.forbid) ?? []
-  // The reviewer judges against everything the agent may use: knowledge, brand facts, combos / selling script, hours.
-  const rules = pack.salesRules as { bundles?: Array<{ name: string; price: number; shippingIncluded?: boolean }>; businessHours?: { enabled?: boolean; windows?: Array<{ open: string; close: string }> } }
-  const knowledge = [
-    ...pack.knowledge.map((k) => `## ${k.name}\n${k.body}`),
-    `## Datos de la marca\n${JSON.stringify(pack.brandFacts)}`,
-    `## Combos (precio fijo, válidos)\n${(rules.bundles ?? []).map((b) => `- ${b.name}: ₡${b.price}${b.shippingIncluded ? ' (envío incluido)' : ' (más envío)'}`).join('\n') || '(ninguno)'}`,
-    `## Horario del equipo\n${rules.businessHours?.enabled ? `${rules.businessHours.windows?.[0]?.open}–${rules.businessHours.windows?.[0]?.close} todos los días; de noche decir "el equipo te escribe hoy/mañana a las 8:00 a. m." es CORRECTO` : '24/7'}`,
-    '## Frases permitidas (son las del sitio, NO son promesas)\n"apoya la concentración / la relajación / el equilibrio emocional / el control del apetito", "ayuda a reducir antojos", "acompaña el ánimo y el bienestar", "energía sostenida", "cada organismo responde diferente".',
-  ].join('\n\n').slice(0, 16_000)
+  const knowledge = reviewerKnowledge(pack)
 
   const agent = await prisma.chatAgent.findFirst({ where: { tenantId, name: pack.agent.name, status: { not: 'archived' } }, select: { id: true, version: true } })
   if (!agent) throw new Error('El agente no existe')
@@ -184,6 +188,8 @@ async function main() {
 
   // Raise the TEST cap for this run only; always restore the value that was there.
   const before = parseChatAgentLayerConfig((await readChatAgentLayerConfig(tenantId)).config).testDailyTokenCap
+  // Another exam / shopper run is going (its raised cap is still there): never stack, or the cap could stay raised.
+  if (before >= examCap) throw new Error(`El tope de pruebas ya está en ${before.toLocaleString('es-CR')}: otra prueba está corriendo. Esperá a que termine.`)
   await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: Math.max(c.testDailyTokenCap, examCap) }))
   console.log(`Tope de pruebas: ${before.toLocaleString('es-CR')} → ${examCap.toLocaleString('es-CR')} (se restaura al final)`)
   const rows: Row[] = []

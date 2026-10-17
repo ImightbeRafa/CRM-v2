@@ -27,6 +27,10 @@ import { MAX_REPLY_PARTS, splitReplyParts } from '@/lib/soft-ai/reply-parts'
 const PAYMENT_STATUS_REPLY_RE =
   /(acredit|se\s+aplic|aplicad[oa]|reflej|(nos|me|les)\s+(lleg|entr|cay)[oó]|ya\s+(nos\s+|me\s+|les\s+)?(lleg|entr|cay)[oó]|recibimos|recibido|lo\s+vimos|la\s+vimos|lo\s+tenemos|todo\s+en\s+orden|est[aá]\s+en\s+orden|es\s+correct[oa]|est[aá]\s+confirmad[oa]|qued[oó]\s+(pagad|confirmad)|lleg[oó]\s+bien|todo\s+(bien|listo|sali[oó])|ya\s+est[aá](?![\p{L}])|ya\s+se\s+hizo|(ning[uú]n|sin)\s+problema|list[oa]\s+(tu|el|su)\s+pago|(?<![\p{L}])(?:est[aá]|qued[oó]|sali[oó]|todo)\s+(?:ok|okay|okey|oki)(?![\p{L}])|(?:tu|el|su)\s+pago\s+(?:\p{L}+\s+)?(?:ok|okay|okey)(?![\p{L}])|(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)\s+(?:\p{L}+\s+){0,2}(?:entr[oó]|cay[oó]|lleg[oó]|est[aá]\s+(?:bien|correct|list)|qued[oó]\s+list|fue\s+recibid)|(?:ya\s+(?:lo\s+|la\s+)?(?:vimos|revisamos|verificamos|confirmamos)|(?<![\p{L}])vimos)\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|est[aá]\s+correct[oa])/iu
 
+/** Never said by the agent in any chat: it cannot see the bank ("acreditado", "recibimos tu sinpe", "pago verificado"). */
+const ALWAYS_PAYMENT_STATUS_REPLY_RE =
+  /(?<![\p{L}])(?:acredit\p{L}*|(?:recibimos|ya\s+recibimos|verificamos|confirmamos|ya\s+vimos|vimos)\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|(?:pago|sinpe|dep[oó]sito|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|acreditad[oa]|aprobad[oa])|(?:tu|su)\s+pago\s+(?:ya\s+)?(?:est[aá]|qued[oó]|fue)\s+(?:recibid|confirmad|verificad|acreditad|aprobad)\p{L}*)(?![\p{L}])/iu
+
 export type OutputValidationResult = {
   ok: boolean
   needsHuman: boolean
@@ -437,7 +441,10 @@ export function validateAgentOutput(input: {
   ) {
     reasons.push('results_claim')
   }
-  if ((input.paymentContext || (input.customerText && hasPaymentWord(input.customerText))) && PAYMENT_STATUS_REPLY_RE.test(text)) {
+  // Advisor (luna-10): the unmistakable "payment received" wordings are held on EVERY reply, payment words or not.
+  if (ALWAYS_PAYMENT_STATUS_REPLY_RE.test(text)) {
+    reasons.push('payment_status_claim')
+  } else if ((input.paymentContext || (input.customerText && hasPaymentWord(input.customerText))) && PAYMENT_STATUS_REPLY_RE.test(text)) {
     reasons.push('payment_status_claim')
   }
 

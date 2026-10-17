@@ -390,6 +390,9 @@ export async function enqueueSoftAiAfterInbound(
     if (!args.conversationId || !args.messageId) {
       return { skippedReason: 'missing_conversation_or_message' }
     }
+    // No text and no attachment (e.g. an unsupported Instagram event): the job could only fail (SOFT_AI_PAYLOAD_INVALID),
+    // and as the newest job of a burst it would hold back / supersede the real question (burst = one reply).
+    if (!(args.content || '').trim()) return { skippedReason: 'empty_content' }
     const enabled = await shouldUseSoftTenantAiV1(args.tenantId)
     if (!enabled) return { skippedReason: 'flag_off' }
 

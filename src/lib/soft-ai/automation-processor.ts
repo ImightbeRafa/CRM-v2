@@ -178,9 +178,12 @@ export async function processClaimedJob(row: ClaimedChatAutomationJob, opts?: { 
   const kick = opts?.kick !== false
   const work = dispatch(row)
   try {
-    await withProcessingTimeout(work)
+    const result = await withProcessingTimeout(work)
     await completeJob(row)
-    if (kick) void kickNextConversationJob(row)
+    // Burst = one reply: a job that yielded to a newer bubble always hands over to it (also a kicked job), so the
+    // newer job never waits for the cron. Bounded: a job only yields while a newer one is queued.
+    const superseded = result?.status === 'skipped' && 'reason' in result && result.reason === 'superseded'
+    if (kick || superseded) void kickNextConversationJob(row)
     return { id: row.id, status: 'completed' as const }
   } catch (error) {
     const terminal = await failJob(row, error)

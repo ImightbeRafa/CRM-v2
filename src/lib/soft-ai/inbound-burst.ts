@@ -10,19 +10,21 @@
  * - a receipt-looking photo / file anywhere in the burst keeps the receipt path (a person checks it);
  * - media + customer text → the text is answered normally, and a person is still asked to look at the media (review);
  * - media alone keeps today's behaviour ("¿Me contás por escrito…?" + review; a sticker needs nobody).
+ * pickBurstDecision keeps a TRUE hand-off of any other text bubble (opt-out, payment, hand-off keyword reply).
  * Pure: no DB, no clock except the `now` argument.
  */
 
 import { isOptOutText, mediaInboundPlan } from '@/lib/soft-ai/llm/safety-router'
-import { HANDOFF_REASON, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
+import type { TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
 
 /** A running job yields to a newer burst job only while its trigger is this young (no starvation on a long chat). */
 export const BURST_YIELD_MAX_AGE_MS = 60_000
-/** Earlier customer bubbles count as the same burst when sent this close before the trigger (and still unanswered). */
+/** Other customer bubbles count as the same burst when sent this close to the trigger (and still unanswered). */
 export const BURST_WINDOW_MS = 2 * 60_000
 
 const MEDIA_TYPES = new Set(['image', 'document', 'audio', 'video', 'voice', 'sticker'])
-const PLACEHOLDER_RE = /^\s*\[(image|video|audio|voice|document|sticker|imagen|archivo)\]\s*$/i
+/** A bubble that is only a bracket token ("[image]", "[share]", "[reaction]", "[location]") is not customer text. */
+const PLACEHOLDER_RE = /^\s*\[[\p{L}\d_:-]+\]\s*$/u
 
 export type BurstMessage = {
   direction: 'inbound' | 'outbound'
@@ -41,7 +43,7 @@ export type BurstInboundPlan = {
   /** What decideInbound / the model answer this turn. */
   inboundText: string
   messageType: string
-  /** A photo / file / audio in the burst still needs a person to look (review hand-off after the reply). */
+  /** A photo / file / audio in the burst still needs a person to look (review alert after the reply). */
   mediaReview: boolean
   /** Trace: why this shape was chosen. */
   reason: 'single' | 'media_with_text' | 'text_with_media' | 'burst_receipt'
@@ -68,18 +70,17 @@ export function shouldYieldToNewerBurst(input: { newerPending: boolean; triggerS
 }
 
 /**
- * The customer's earlier bubbles of this burst, oldest first: inbound, after the store last wrote, sent no later than
- * the trigger and at most BURST_WINDOW_MS before it. (History never holds the trigger itself.)
+ * The customer's other bubbles of this burst, oldest first: inbound, after the store's LAST reply (wherever it sits,
+ * also after the trigger: what it answered is not answered again), within BURST_WINDOW_MS of the trigger on either
+ * side (jobs are created in arrival order, which can differ from send order). History never holds the trigger.
  */
 export function unansweredBurst(history: BurstMessage[], trigger: Pick<BurstTrigger, 'sentAt'>): BurstMessage[] {
   const triggerAt = at(trigger.sentAt)
   const out: BurstMessage[] = []
   for (let i = history.length - 1; i >= 0; i--) {
     const m = history[i]
-    const sent = at(m.sentAt)
-    if (sent > triggerAt) continue
     if (m.direction === 'outbound') break
-    if (triggerAt - sent > BURST_WINDOW_MS) break
+    if (Math.abs(triggerAt - at(m.sentAt)) > BURST_WINDOW_MS) continue
     out.unshift(m)
   }
   return out
@@ -101,10 +102,10 @@ export function planBurstInbound(input: {
     mediaReview: false,
     reason: 'single',
   }
-  const earlierInbound = input.earlier.filter((m) => m.direction === 'inbound')
-  const earlierMedia = earlierInbound.filter((m) => isMedia(m.messageType))
-  const earlierTexts = earlierInbound.filter((m) => !isMedia(m.messageType) && realText(m.content))
-  if (!earlierInbound.length) return single
+  const others = input.earlier.filter((m) => m.direction === 'inbound')
+  const otherMedia = others.filter((m) => isMedia(m.messageType))
+  const otherTexts = others.filter((m) => !isMedia(m.messageType) && realText(m.content))
+  if (!others.length) return single
 
   // MEDIA-14: a caption opt-out ("quiero hablar con una persona") keeps its own path.
   if (isMedia(triggerType) && isOptOutText(input.trigger.content || '')) return single
@@ -118,26 +119,27 @@ export function planBurstInbound(input: {
       awaitingReceipt: input.awaitingReceipt(m.messageType || ''),
     }) === 'receipt'
   if (isMedia(triggerType) && receiptOf(input.trigger)) return single
-  const earlierReceipt = [...earlierMedia].reverse().find(receiptOf)
-  if (earlierReceipt) {
+  const otherReceipt = [...otherMedia].reverse().find(receiptOf)
+  if (otherReceipt) {
     return {
-      inboundText: earlierReceipt.content || '',
-      messageType: earlierReceipt.messageType || 'image',
+      inboundText: otherReceipt.content || '',
+      messageType: otherReceipt.messageType || 'image',
       mediaReview: false,
       reason: 'burst_receipt',
     }
   }
 
-  const reviewMedia = [...earlierMedia, ...(isMedia(triggerType) ? [input.trigger] : [])].some(
+  const reviewMedia = [...otherMedia, ...(isMedia(triggerType) ? [input.trigger] : [])].some(
     (m) => m.messageType !== 'sticker',
   )
 
   if (isMedia(triggerType)) {
-    // "Que costo tiene" + photo: answer the text, a person still looks at the photo.
-    const lastText = earlierTexts[earlierTexts.length - 1]
+    // "Que costo tiene" + photo: answer the text (and the photo's own caption), a person still looks at the photo.
+    const lastText = otherTexts[otherTexts.length - 1]
     if (!lastText) return single
+    const caption = realText(input.trigger.content)
     return {
-      inboundText: realText(lastText.content),
+      inboundText: [realText(lastText.content), caption].filter(Boolean).join('\n'),
       messageType: 'text',
       mediaReview: reviewMedia,
       reason: 'media_with_text',
@@ -145,17 +147,33 @@ export function planBurstInbound(input: {
   }
 
   // Photo + "¿cuánto cuesta?": the text is answered as usual, a person still looks at the photo.
-  if (earlierMedia.length) {
+  if (otherMedia.length) {
     return { ...single, mediaReview: reviewMedia, reason: 'text_with_media' }
   }
   return single
 }
 
+/** The burst's other real text bubbles not already in the planned text: each is checked for a TRUE hand-off. */
+export function burstOtherTexts(earlier: BurstMessage[], plan: Pick<BurstInboundPlan, 'inboundText'>): string[] {
+  const planned = new Set(plan.inboundText.split('\n').map((t) => t.trim()))
+  return earlier
+    .filter((m) => m.direction === 'inbound' && !isMedia(m.messageType))
+    .map((m) => realText(m.content))
+    .filter((t) => t && !planned.has(t))
+}
+
 /**
- * The reply's hand-off once the burst's media is counted: a planned hand-off (payment, review, …) stays as it is;
- * otherwise media in the burst asks a person to look (review: the chat stays on IA, the text is unchanged).
+ * The burst's decision: the planned text's own, unless it is not a TRUE hand-off and another text bubble of the
+ * burst is one ("Quiero hablar con una persona" + "por favor"): that one wins, as when it had its own job.
  */
-export function withBurstMediaReview(handoff: TurnHandoff | null, mediaReview: boolean): TurnHandoff | null {
-  if (handoff || !mediaReview) return handoff
-  return { kind: 'review', reason: HANDOFF_REASON.review }
+export function pickBurstDecision<T extends { handled: boolean; handoff: TurnHandoff | null }>(main: T, others: T[]): T {
+  if (main.handled && main.handoff?.kind === 'handoff') return main
+  return others.find((d) => d.handled && d.handoff?.kind === 'handoff') ?? main
+}
+
+/** Did the turn's decision trace plan a burst photo review (lease reclaim settles it too)? */
+export function burstMediaReviewIn(trace: unknown): boolean {
+  if (!trace || typeof trace !== 'object') return false
+  const steps = (trace as { steps?: unknown }).steps
+  return Array.isArray(steps) && steps.some((s) => s && typeof s === 'object' && (s as Record<string, unknown>).step === 'burst' && (s as Record<string, unknown>).reason === 'media_review')
 }

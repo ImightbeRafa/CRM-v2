@@ -28,10 +28,12 @@ import {
 } from '@/lib/soft-ai/automation-delivery'
 import { newerBurstJobPending, type ClaimedChatAutomationJob } from '@/lib/soft-ai/automation-queue'
 import {
+  burstMediaReviewIn,
+  burstOtherTexts,
+  pickBurstDecision,
   planBurstInbound,
   shouldYieldToNewerBurst,
   unansweredBurst,
-  withBurstMediaReview,
 } from '@/lib/soft-ai/inbound-burst'
 import {
   collectDryRunBlockers,
@@ -261,8 +263,15 @@ async function loadHistory(
 /**
  * Burst = one reply: a newer customer bubble of this chat is queued and this trigger is still fresh → this job stops
  * (superseded) and the newer job answers the whole burst. Checked before the model and right before the send.
+ * Never for a planned TRUE hand-off (opt-out, payment, …: it goes out and the chat goes to a person) and never on a
+ * reclaimed job (attempts > 1: its turn row may already hold a delivery).
  */
-async function yieldsToNewerBurst(row: ClaimedChatAutomationJob, triggerSentAt: Date): Promise<boolean> {
+async function yieldsToNewerBurst(
+  row: ClaimedChatAutomationJob,
+  triggerSentAt: Date,
+  plannedHandoff: TurnHandoff | null = null,
+): Promise<boolean> {
+  if (plannedHandoff?.kind === 'handoff' || row.attempts > 1) return false
   return shouldYieldToNewerBurst({ newerPending: await newerBurstJobPending(row), triggerSentAt })
 }
 
@@ -828,6 +837,8 @@ export async function executeAgentLayerTurn(
       plannedReply: planned,
       codeDecided: reclaimedCodeDecided,
       handoff: reclaimedHandoff,
+      // Burst = one reply: the photo review planned on the first attempt is settled on reclaim too.
+      burstMediaReview: burstMediaReviewIn(existing.decisionTrace),
       persistedMode,
       row,
       payload,
@@ -904,18 +915,28 @@ export async function executeAgentLayerTurn(
     earlier: burstEarlier,
     awaitingReceipt: (type) => mediaAwaitingReceipt(type, history, mediaSalesContext),
   })
-  const decision = decideInbound({
-    inboundText: burst.inboundText,
-    messageType: burst.messageType,
+  const decisionBase = {
     brandFacts: resolved.agent.brandFacts,
     replyStyle: resolved.agent.replyStyle,
     shortcuts,
     // A keyword reply WITH images whose image can't go out now ("Te paso la guía 👇" with nothing) → model answers.
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !liveImageReplyIds.has(id))),
-    awaitingReceipt: mediaAwaitingReceipt(burst.messageType, history, mediaSalesContext),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
-    earlierCustomerTexts: earlierCustomerTexts(history),
-  })
+  }
+  // Burst = one reply: a TRUE hand-off in any other text bubble of the burst ("Quiero hablar con una persona" +
+  // "por favor", a hand-off keyword reply, a payment message) still goes to a person — as when it had its own job.
+  const decision = pickBurstDecision(
+    decideInbound({
+      ...decisionBase,
+      inboundText: burst.inboundText,
+      messageType: burst.messageType,
+      awaitingReceipt: mediaAwaitingReceipt(burst.messageType, history, mediaSalesContext),
+      earlierCustomerTexts: earlierCustomerTexts(history),
+    }),
+    burstOtherTexts(burstEarlier, burst).map((text) =>
+      decideInbound({ ...decisionBase, inboundText: text, messageType: 'text', awaitingReceipt: false, earlierCustomerTexts: [] }),
+    ),
+  )
   decision.decisionTrace.historyCount = history.length
   if (burst.reason !== 'single' || burst.mediaReview) {
     decision.decisionTrace.steps.unshift({ step: 'burst', outcome: burst.reason, ...(burst.mediaReview ? { reason: 'media_review' } : {}) })
@@ -928,11 +949,10 @@ export async function executeAgentLayerTurn(
       await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
     )
     const handledText = withNightIntro(finalizePlannedText(plan, payload, trigger.sentAt, hours), hours, nightIntroWho(resolved.agent, history))
-    const handledHandoff = withBurstMediaReview(plan.handoff, burst.mediaReview)
     const outputHash = hashSoftAiOutput(handledText)
     const handledMarkers: OutcomeMarkers = plannedMarkers(
       { needsHuman: decision.needsHuman, fallbackUsed: false, escalate: decision.escalate },
-      handledHandoff,
+      plan.handoff,
     )
     const trace = redactAgentTrace(
       withOutcomeMarkers(decision.decisionTrace, handledMarkers),
@@ -987,13 +1007,14 @@ export async function executeAgentLayerTurn(
       },
     })
     // Burst = one reply: the customer's next bubble arrived meanwhile → the newer job answers everything.
-    if (await yieldsToNewerBurst(row, trigger.sentAt)) return markTurnSuperseded(turn.id)
+    if (await yieldsToNewerBurst(row, trigger.sentAt, plan.handoff)) return markTurnSuperseded(turn.id)
     // B1: no flip here. The hand-off text goes out first through every gate (pre-flip mode); finishDeliveryOrSuggest
     // then moves the chat to a person and notifies (also when the send is blocked).
     return finishDeliveryOrSuggest({
       plannedReply: true,
       codeDecided: true,
-      handoff: handledHandoff,
+      handoff: plan.handoff,
+      burstMediaReview: burst.mediaReview,
       suppressSend: plan.suppressSend,
       persistedMode,
       row,
@@ -1103,10 +1124,9 @@ export async function executeAgentLayerTurn(
     await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
   )
   const finalText = withNightIntro(finalizePlannedText(modelPlan, payload, trigger.sentAt, hours), hours, nightIntroWho(resolved.agent, history))
-  const modelHandoffPlanned = withBurstMediaReview(modelPlan.handoff, burst.mediaReview)
   const modelMarkers: OutcomeMarkers = plannedMarkers(
     { needsHuman, fallbackUsed: llm.fallbackUsed, escalate: llm.escalate },
-    modelHandoffPlanned,
+    modelPlan.handoff,
   )
   const modelTrace = redactAgentTrace(
     withOutcomeMarkers(
@@ -1186,11 +1206,12 @@ export async function executeAgentLayerTurn(
   })
 
   // Burst = one reply: a bubble arrived while the model wrote → the newer job answers the whole burst instead.
-  if (await yieldsToNewerBurst(row, trigger.sentAt)) return markTurnSuperseded(turn.id)
+  if (await yieldsToNewerBurst(row, trigger.sentAt, modelPlan.handoff)) return markTurnSuperseded(turn.id)
   // B1: no flip before the send (the old flip made the pre-send re-read skip → silent draft). See finishDeliveryOrSuggest.
   return finishDeliveryOrSuggest({
     plannedReply: true,
-    handoff: modelHandoffPlanned,
+    handoff: modelPlan.handoff,
+    burstMediaReview: burst.mediaReview,
     suppressSend: modelPlan.suppressSend,
     persistedMode,
     row,
@@ -1296,14 +1317,19 @@ async function finishDeliveryOrSuggest(
   } finally {
     // Also when the send threw or was blocked (window / token / kill switch): the person must still get the chat.
     if (input.handoff) await settleHandoff(input.row, input.handoff, input.afterHours)
+    // Burst = one reply: a photo / audio sent with the answered text still needs a person to look (review, the chat
+    // stays on IA). Kept apart from `handoff` so the normal reply keeps its images and the repeat guard.
+    else if (input.burstMediaReview) {
+      await settleHandoff(input.row, { kind: 'review', reason: HANDOFF_REASON.review }, input.afterHours)
+    }
   }
   // F2: part of the reply did not go out (ambiguous send / kill switch / chat taken): a person is asked to look
   // (review alert, the chat stays as it is). Only the parts actually sent were written as messages.
-  if (!input.handoff && result.status === 'delivered' && result.partialDelivery) {
+  if (!input.handoff && !input.burstMediaReview && result.status === 'delivered' && result.partialDelivery) {
     await settleHandoff(input.row, { kind: 'review', reason: HANDOFF_REASON.review }, input.afterHours)
   }
   // notifyHandoff already told the team: no second "La IA no respondió" alert.
-  if (!input.handoff && (result.status === 'suggested' || result.status === 'skipped')) {
+  if (!input.handoff && !input.burstMediaReview && (result.status === 'suggested' || result.status === 'skipped')) {
     const turn = await prisma.chatAgentTurn.findUnique({ where: { id: input.turnId }, select: { skipReason: true } })
     void notifyAiNoReply({ tenantId: input.row.tenantId, conversationId: input.row.conversationId, reason: turn?.skipReason })
   }
@@ -1329,6 +1355,8 @@ async function finishDeliveryOrSuggestInner(input: {
   effectiveBehavior: EffectiveAgentBehavior
   unlockedForSend: boolean
   turnId: string
+  /** Burst = one reply: a photo / audio in the answered burst → review alert after the send (inbound-burst.ts). */
+  burstMediaReview?: boolean
   outputText: string
   outputHash: string
   outputValidationOk: boolean

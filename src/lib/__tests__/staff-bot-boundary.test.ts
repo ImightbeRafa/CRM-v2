@@ -3,6 +3,10 @@
  * with ONE approved exception — AI usage recording (recordAiUsage calls, the withAiUsageContext wrap at its two
  * queue entry points, and their imports). Everything else must be byte-identical to df0f6f5 (CRLF-normalized).
  * If this test fails, a staff bot change slipped in: revert it or get Rafael's explicit GO.
+ *
+ * Re-pinned 2026-10-17 (luna-10) with Rafael's explicit GO: "Yes, move the staff bot (Telegram/WhatsApp) to Luna too,
+ * test it separately, and remove XAI completely." xAI client -> OpenAI gpt-6-luna (OPENAI_API_KEY), xai-responses.ts ->
+ * ai-responses.ts, grok-first-order.test.ts -> staff-bot-first-order.test.ts, health check key.
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
@@ -13,15 +17,16 @@ import { join } from 'node:path'
 const PINNED: Record<string, string> = {
   "src/app/api/bot/access-code/route.ts": "d0e8e39f7e77f215",
   "src/app/api/bot/telegram/connect/route.ts": "82b6f7f998281d2a",
-  "src/app/api/bot/telegram/health/route.ts": "07c9ae0840597aa9",
+  "src/app/api/bot/telegram/health/route.ts": "ffc5d97ddbf3c369",
   "src/app/api/bot/telegram/sessions/route.ts": "cc33b184c1f495c0",
   "src/app/api/bot/telegram/set-webhook/route.ts": "795faa678db4cea7",
   "src/app/api/bot/telegram/test-webhook/route.ts": "2fbf267c0c839bd5",
   "src/app/api/bot/telegram/webhook/route.ts": "343318a03d8f967b",
   "src/app/api/bot/whatsapp/webhook/route.ts": "93e5381a110fd2c7",
-  "src/lib/bot/__tests__/grok-first-order.test.ts": "6df27484ec9428f8",
+  "src/lib/bot/__tests__/staff-bot-first-order.test.ts": "3f04af55215d0af0",
   "src/lib/bot/access-code.ts": "ebbb7114e348470e",
-  "src/lib/bot/ai-agent.ts": "99a716e0ec6ebdf8",
+  "src/lib/bot/ai-agent.ts": "6b231a8200ceb8ac",
+  "src/lib/bot/ai-responses.ts": "7dc10a635b35efcf",
   "src/lib/bot/ai-tools.ts": "ce6b140fdd176f2a",
   "src/lib/bot/bot-session.ts": "c6c0a852d2407fd9",
   "src/lib/bot/conversation-memory.ts": "6cc9b9178fe08be1",
@@ -29,8 +34,7 @@ const PINNED: Record<string, string> = {
   "src/lib/bot/inbox.ts": "912cccbfde217894",
   "src/lib/bot/processor-registry.ts": "0491f5317ade2834",
   "src/lib/bot/telegram.ts": "8f9213d7979d1325",
-  "src/lib/bot/whatsapp.ts": "89548513903c0d0e",
-  "src/lib/bot/xai-responses.ts": "4650f7967d16d615"
+  "src/lib/bot/whatsapp.ts": "89548513903c0d0e"
 }
 
 // Whole-line shapes only: an approved import, a single-line recordAiUsage({...}) call, or the processor re-registration.

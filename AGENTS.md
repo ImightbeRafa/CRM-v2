@@ -81,7 +81,7 @@ cover non-obvious setup/run gotchas.
 
 ### Scripts
 - Viable scripts: `dev`, `build`, `start`, `lint`, `db:*`, `backup:*`, `test:backups`,
-  `test:backup-roundtrip`, `test:bot-grok`, `audit:dead`.
+  `test:backup-roundtrip`, `test:staff-bot`, `audit:dead`.
 - Stale scripts that pointed at missing `scripts/*.js` files were removed in the
   Phase 0 kickoff (see `docs/audits/PHASE0_DEAD_CODE.md`).
 - `DOCUMENTATION.md` may still reference missing files (e.g. `env-template-local.txt`);

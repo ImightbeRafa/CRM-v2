@@ -1,9 +1,9 @@
 /**
- * xAI Responses API helpers for the Betsy bot.
+ * OpenAI Responses API helpers for the Betsy staff bot (gpt-6-luna, luna-10).
  *
  * Chat Completions is legacy. Local conversation-memory stays the source of
  * truth (pending confirmations, sanitized history). Every request uses
- * store:false so xAI does not retain WhatsApp/Telegram PII for 30 days.
+ * store:false so the provider does not retain WhatsApp/Telegram PII.
  * Tool follow-ups replay in-memory output items plus function_call_output;
  * we never send previous_response_id (that requires store:true).
  */
@@ -11,7 +11,7 @@
 import { createHmac } from 'crypto';
 import type OpenAI from 'openai';
 
-export type XaiReasoningEffort = 'low' | 'medium' | 'high';
+export type StaffBotReasoningEffort = 'none' | 'low' | 'medium' | 'high';
 
 export type NormalizedFunctionCall = {
   id: string;
@@ -28,7 +28,7 @@ export type ResponsesFunctionTool = {
 };
 
 function promptCacheSecret(): string {
-  return process.env.NEXTAUTH_SECRET || process.env.XAI_API_KEY || 'betsy-xai-cache';
+  return process.env.NEXTAUTH_SECRET || 'betsy-ai-cache';
 }
 
 export function buildPromptCacheKey(parts: {
@@ -112,12 +112,12 @@ export function buildToolFollowUpInput(
   return [...priorOutput, ...toolOutputs];
 }
 
-export type XaiResponseBody = {
+export type StaffBotResponseBody = {
   model: string;
   input: OpenAI.Responses.ResponseInput;
   max_output_tokens: number;
-  temperature: number;
-  reasoning: { effort: XaiReasoningEffort };
+  temperature?: number;
+  reasoning: { effort: StaffBotReasoningEffort };
   prompt_cache_key: string;
   store: false;
   include?: Array<'reasoning.encrypted_content'>;
@@ -134,13 +134,13 @@ export type XaiResponseBody = {
   };
 };
 
-export function buildXaiResponseBody(args: {
+export function buildStaffBotResponseBody(args: {
   model: string;
   input: OpenAI.Responses.ResponseInput;
   promptCacheKey: string;
   maxOutputTokens: number;
   temperature: number;
-  reasoningEffort: XaiReasoningEffort;
+  reasoningEffort: StaffBotReasoningEffort;
   includeEncryptedReasoning?: boolean;
   instructions?: string;
   tools?: ResponsesFunctionTool[];
@@ -150,18 +150,23 @@ export function buildXaiResponseBody(args: {
     schema: Record<string, unknown>;
     strict?: boolean;
   };
-}): XaiResponseBody {
-  const body: XaiResponseBody = {
+}): StaffBotResponseBody {
+  // OpenAI reasoning models (gpt-6-luna): temperature only with reasoning 'none'; otherwise the reasoning tokens
+  // count against max_output_tokens (room is added) and, with store:false, a tool follow-up must replay the
+  // encrypted reasoning items — so they are always requested.
+  const reasoningOn = args.reasoningEffort !== 'none';
+  const headroom = !reasoningOn ? 0 : args.reasoningEffort === 'low' ? 800 : args.reasoningEffort === 'medium' ? 1_800 : 3_500;
+  const body: StaffBotResponseBody = {
     model: args.model,
     input: args.input,
-    max_output_tokens: args.maxOutputTokens,
-    temperature: args.temperature,
+    max_output_tokens: args.maxOutputTokens + headroom,
     reasoning: { effort: args.reasoningEffort },
     prompt_cache_key: args.promptCacheKey,
     store: false,
   };
+  if (!reasoningOn) body.temperature = args.temperature;
 
-  if (args.includeEncryptedReasoning) {
+  if (reasoningOn || args.includeEncryptedReasoning) {
     body.include = ['reasoning.encrypted_content'];
   }
   if (args.instructions) body.instructions = args.instructions;

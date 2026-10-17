@@ -2,11 +2,11 @@
  * Versioned AI price card for the usage meter (estimated list price, not an invoice).
  * USD per 1M tokens unless noted. Re-check the provider pages whenever a rate changes, then bump
  * AI_PRICING_VERSION so old rows keep the price they were recorded with.
- *  - xAI Grok 4.x: $2 input / $6 output; cached input billed at the input rate (xAI card 2026-09-22).
+ *  - History only (rows before luna-10, 2026-10-17): grok-* at $2 input / $6 output, cached at the input rate.
  *  - OpenAI gpt-6-luna: $0.10 input / $0.50 output / $0.01 cached input (OpenAI page 2026-10-02).
  *  - OpenAI whisper-1 (audio): $0.006 per minute.
  *  - Meta WhatsApp templates are billed by Meta per conversation; recorded with units, cost 0 here (F7 sets it).
- * Unknown models are priced like Grok so a stray row never reads as free.
+ * luna-10: every AI call of the site is OpenAI gpt-6-luna; an unknown model is priced like Luna (never free).
  * Must not import from the staff bot or the inbox agent: both import this.
  */
 
@@ -22,16 +22,18 @@ const WHISPER: MinuteRates = { kind: 'audio_minutes', usdPerMinute: 0.006 }
 
 export function aiProviderFor(model: string): 'openai' | 'xai' | 'meta' {
   const m = model.toLowerCase()
-  if (m.startsWith('gpt-') || m.startsWith('whisper')) return 'openai'
   if (m.startsWith('meta-')) return 'meta'
-  return 'xai'
+  // History only: rows recorded before luna-10.
+  if (m.startsWith('grok')) return 'xai'
+  return 'openai'
 }
 
 export function aiRatesFor(model: string): Rates {
   const m = (model || '').toLowerCase()
   if (m.startsWith('whisper') || m.includes('transcribe')) return WHISPER
-  if (m.startsWith('gpt-6-luna')) return LUNA
-  return GROK
+  // History only: rows recorded before luna-10 keep the price they ran at.
+  if (m.startsWith('grok')) return GROK
+  return LUNA
 }
 
 export function estimateAiCostMicros(input: {

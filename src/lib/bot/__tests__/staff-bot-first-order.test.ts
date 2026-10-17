@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import * as xaiResponses from '../xai-responses';
+import * as aiResponses from '../ai-responses';
 
-process.env.XAI_API_KEY ||= 'test-key';
+process.env.OPENAI_API_KEY ||= 'test-key';
 
-const { __grokFirstOrderTestInternals: bot } = await import('../ai-agent');
+const { __firstOrderTestInternals: bot } = await import('../ai-agent');
 
 const customFieldsConfig = {
   productFields: [
@@ -139,7 +139,7 @@ function testRafaOrderSanitizationShape() {
   assert.deepEqual(args.products, [{ name: 'sleeping patches', quantity: 1 }]);
 }
 
-function testCorrectionsMergeThroughGrokSemantics() {
+function testCorrectionsMergeThroughAiSemantics() {
   const existing = {
     customerName: 'Carolina Zuniga Zamora',
     products: [{ name: 'sleeping patches', quantity: 1 }],
@@ -253,7 +253,7 @@ function testLocationCaptureNormalization() {
   assert.match(rawInvalid._locationReviewWarning, /Ubicacion guardada/);
 }
 
-function testLocalCorrectionParserHandlesLocationWithoutGrok() {
+function testLocalCorrectionParserHandlesLocationWithoutAi() {
   const existing = {
     orderType: 'EA',
     customerName: 'Ana Yancy Solis Picado',
@@ -422,7 +422,7 @@ function testGapFillAfterMergeDoesNotClobberPendingAddress() {
     total: 12900,
   };
 
-  // Simulate sparse Grok correction (district only) + chatty user text with street cues.
+  // Simulate sparse AI correction (district only) + chatty user text with street cues.
   const sparse = bot.sanitizeAIExtractedArgs({
     intent: 'order_correction',
     correctionAction: 'replace_location',
@@ -708,10 +708,10 @@ testSanitizeMessyOrder();
 testPhoneAndMoneyNormalization();
 testOrderDetectionWithoutCreateKeyword();
 testRafaOrderSanitizationShape();
-testCorrectionsMergeThroughGrokSemantics();
+testCorrectionsMergeThroughAiSemantics();
 testFreshOrderWhilePendingDetection();
 testLocationCaptureNormalization();
-testLocalCorrectionParserHandlesLocationWithoutGrok();
+testLocalCorrectionParserHandlesLocationWithoutAi();
 testLocalFullOrderFallbackParsesAnaOrder();
 testAbigailUnlabeledSlashOrderLocalFallback();
 testGapFillEmptyFieldsDoesNotOverwriteAi();
@@ -730,20 +730,20 @@ testExpandMashedProductEntries();
 testInventoryMatchPickPreservesSiblingProducts();
 testGapFillUpgradesPartialMultiProductUnderCapture();
 testMashedPendingPickFlowKeepsFourLines();
-testXaiResponsesHelpers();
+testResponsesHelpers();
 
-console.log('Grok-first bot helper tests passed.');
+console.log('Staff bot helper tests passed (gpt-6-luna).');
 
-function testXaiResponsesHelpers() {
+function testResponsesHelpers() {
   const {
     buildPromptCacheKey,
     parseResponseFunctionCalls,
     parseResponseText,
     toFunctionCallOutputs,
     toResponsesInputMessages,
-    buildXaiResponseBody,
+    buildStaffBotResponseBody,
     buildToolFollowUpInput,
-  } = xaiResponses;
+  } = aiResponses;
 
   const cacheKey = buildPromptCacheKey({ tenantId: 't1', platform: 'whatsapp', platformId: '5068888' });
   assert.equal(cacheKey.startsWith('betsy:'), true);
@@ -817,8 +817,8 @@ function testXaiResponsesHelpers() {
   assert.equal((followUpInput[1] as any).type, 'function_call_output');
   assert.equal((followUpInput[1] as any).call_id, 'call_1');
 
-  const body = buildXaiResponseBody({
-    model: 'grok-4.6',
+  const body = buildStaffBotResponseBody({
+    model: 'gpt-6-luna',
     input: [{ role: 'user', content: 'hola' }],
     promptCacheKey: cacheKey,
     maxOutputTokens: 2000,
@@ -834,8 +834,16 @@ function testXaiResponsesHelpers() {
     }],
     toolChoice: 'auto',
   });
-  assert.equal(body.model, 'grok-4.6');
+  assert.equal(body.model, 'gpt-6-luna');
   assert.equal(body.store, false);
+  // luna-10: OpenAI reasoning model — no temperature with reasoning on, room for reasoning tokens.
+  assert.equal('temperature' in body, false);
+  assert.equal(body.max_output_tokens, 2000 + 800);
+  const noReasoning = buildStaffBotResponseBody({ model: 'gpt-6-luna', input: [{ role: 'user', content: 'x' }], promptCacheKey: cacheKey, maxOutputTokens: 700, temperature: 0, reasoningEffort: 'none' });
+  assert.equal(noReasoning.temperature, 0);
+  assert.equal(noReasoning.max_output_tokens, 700);
+  assert.equal(noReasoning.include, undefined);
+  assert.equal(cacheKey.length <= 64, true);
   assert.equal(body.prompt_cache_key, cacheKey);
   assert.equal(body.prompt_cache_key.includes('5068888'), false);
   assert.equal(body.reasoning.effort, 'low');

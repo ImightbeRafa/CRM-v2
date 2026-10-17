@@ -130,7 +130,36 @@ export function labelledCustomerFields(customerTexts: string[]): PrefillCustomer
     const run = locationFromLines(lines)
     if (run.province) Object.assign(out, run)
   }
+  // Unlabelled details block (one message: 3+ lines with a phone alone on its line) — how most customers answer
+  // "pasame tus datos": a short name-only line is the name, a line with street words is the address.
+  if (!out.name || !out.address) {
+    const block = customerTexts.map((t) => t.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)).reverse().find(isDetailsBlock)
+    if (block) {
+      if (!out.name) out.name = block.find(isNameLine) ?? ''
+      if (!out.address) out.address = (block.find((l) => STREET_RE.test(fold(l)) && !PHONE_LINE_RE.test(l)) ?? '').slice(0, 300)
+    }
+  }
   return out
+}
+
+/** Words that mark a Costa Rica address line ("calle 23 esquina", "200 m norte de la iglesia", "casa azul"). */
+const STREET_RE = /\b(calle|avenida|ave|av|esquina|metros|mts|norte|sur|este|oeste|frente|contiguo|detras|costado|casa|apartamento|apto|condominio|residencial|urbanizacion|barrio|iglesia|escuela|plaza|edificio|local|km|kilometro)\b/
+/** Greetings / answers that are never a name. */
+const NOT_A_NAME = /^(hola|buenas|buenos|gracias|si|no|ok|listo|perfecto|dale|claro|saludos|buen|buena|muchas)\b/
+
+function isDetailsBlock(lines: string[]): boolean {
+  return lines.length >= 3 && lines.length <= 12 && lines.some((l) => PHONE_LINE_RE.test(l))
+}
+
+/** 2–5 words, letters only (accents ok), not a greeting, not a place name. */
+function isNameLine(line: string): boolean {
+  const t = line.trim()
+  if (t.length < 5 || t.length > 60 || /\d|@|[?¿!¡:]/.test(t)) return false
+  const words = t.split(/\s+/)
+  if (words.length < 2 || words.length > 5 || !words.every((w) => /^[\p{L}'.-]+$/u.test(w))) return false
+  const f = fold(t)
+  if (NOT_A_NAME.test(f) || STREET_RE.test(f)) return false
+  return !normalizeLocation({ province: t }).province && !normalizeLocation({ canton: t }).province
 }
 
 /** "San José / Moravia / San Vicente" on consecutive lines (or "Moravia, San José"): only names that really exist. */

@@ -56,7 +56,8 @@ describe('chat → order prefill: customer data (verifier round 1)', () => {
     assert.equal(f.phone, '60517646')
     assert.equal(f.address, 'De la iglesia Católica de puente Salas, 125 Norte')
     const g = labelledCustomerFields(['Esteban García Román\n84475680\nEsteban.g1988@icloud.com\nSan José\nMoravia\nSan Vicente\nUniversidad católica'])
-    assert.deepEqual([g.name, g.phone, g.email], ['', '84475680', 'Esteban.g1988@icloud.com'])
+    // A details block (phone alone on a line): its name-only line is the name (Rafa test chat rule).
+    assert.deepEqual([g.name, g.phone, g.email], ['Esteban García Román', '84475680', 'Esteban.g1988@icloud.com'])
     assert.deepEqual([g.province, g.canton, g.district], ['San José', 'Moravia', 'San Vicente'])
   })
 
@@ -99,6 +100,23 @@ describe('chat → order prefill: products and choices (verifier round 1)', () =
     assert.deepEqual(detectOrderChoices(['Contra entrega']), { orderType: 'EA', paymentChoice: 'contra_entrega' })
     assert.deepEqual(detectOrderChoices(['con envío porfa']), { orderType: 'EA', paymentChoice: null })
     assert.deepEqual(detectOrderChoices(['hola']), { orderType: null, paymentChoice: null })
+  })
+})
+
+describe('chat → order prefill: unlabelled details block (Rafa test chat, 2026-10-17)', () => {
+  it('a details block gives the name and the address; free chat never does', () => {
+    const f = labelledCustomerFields([
+      'perfecto lo voy a comprar',
+      ['Rafael garcia test', '70339763', 'cARTAGO', 'Cartago', 'oreamuno, calle 23 esquina derecha.', '', 'Esta es mi info ya'].join('\n'),
+    ])
+    assert.equal(f.name, 'Rafael garcia test')
+    assert.equal(f.address, 'oreamuno, calle 23 esquina derecha.')
+    assert.equal(f.phone, '70339763')
+    assert.deepEqual([f.province, f.canton], ['Cartago', 'Cartago'])
+    // Without a phone line it is not a details block.
+    assert.equal(labelledCustomerFields([['Buenas tardes', 'Quiero el GLP', 'Casa en Heredia'].join('\n')]).name, '')
+    // Greetings and places are never a name.
+    assert.equal(labelledCustomerFields([['Hola buenas', '88887777', 'San José', 'Moravia'].join('\n')]).name, '')
   })
 })
 

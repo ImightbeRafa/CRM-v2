@@ -3,12 +3,19 @@
  * (validation, version bump, audit). Dry run by default: prints the pre-checks and what would change.
  *
  *   node --env-file=.env.local --import tsx --import ./scripts/shim-server-only.mjs \
- *     scripts/agent-pack/build-agent.ts --pack=<carpeta del pack> [--apply] [--replace-binding]
+ *     scripts/agent-pack/build-agent.ts --pack=<carpeta del pack> [--apply] [--replace-binding] [--allow-live=<agentId>]
  *
  * SAFETY: it never activates anything (status stays draft, no flags / allowlist / unlock / caps), never writes
  * InventoryItem or ShippingMethod (shared with /ventas), never runs SQL. It refuses to touch a live agent, a channel
  * served by another agent (unless --replace-binding), a channel with an AI unlock, or knowledge another agent uses.
  * Writes go to the database DATABASE_URL points to (production for this repo's .env.local).
+ *
+ * --allow-live=<agentId> (2026-10-17, Rafael: the corrected PatchHouse facts never reached the live agent because of
+ * the refusal above): updates a LIVE agent in place — instructions, brand facts, saved replies, knowledge, products and
+ * selling script only. The id must be exactly the live agent's. It never writes the model, a channel binding, status,
+ * operation mode, unlock or saved tests (any of those = BLOCKS), so the line stays on. Pausing instead would leave
+ * the messages that arrive meanwhile unanswered for good (INT-98). The dry run prints every change first; the replaced
+ * knowledge ids are printed for rollback (bind them again).
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -35,6 +42,8 @@ import { agentsServingUnboundChannels } from '@/lib/soft-ai/agent-settings'
 import { arg, flag, loadPack } from './pack'
 
 const APPLY = flag('apply')
+/** --allow-live=<agentId>: the only way to touch a live agent (exact id). */
+const ALLOW_LIVE_ID = (arg('allow-live') || '').trim()
 const blockers: string[] = []
 const warnings: string[] = []
 const log = (s: string) => console.log(s)
@@ -68,8 +77,19 @@ async function main() {
   // ---- Existing agent
   const existing = await prisma.chatAgent.findFirst({ where: { tenantId, name: pack.agent.name.trim() } })
   if (existing?.status === 'archived') blockers.push(`"${existing.name}" está archivado: restauralo o cambiá el nombre en el pack`)
-  if (existing?.status === 'live') blockers.push(`"${existing.name}" está activo: este script no modifica agentes activos`)
-  log(existing ? `Agente existente ${existing.id} (v${existing.version}, ${existing.status})` : 'Agente nuevo')
+  const liveMode = existing?.status === 'live' && ALLOW_LIVE_ID === existing.id
+  if (existing?.status === 'live' && !liveMode) {
+    blockers.push(
+      ALLOW_LIVE_ID
+        ? `--allow-live=${ALLOW_LIVE_ID} no es el id de "${existing.name}" (${existing.id})`
+        : `"${existing.name}" está activo: este script no modifica agentes activos (usá --allow-live=${existing.id})`,
+    )
+  }
+  if (ALLOW_LIVE_ID && !liveMode && existing?.status !== 'live') blockers.push('--allow-live solo sirve para un agente activo')
+  if (liveMode && pack.agent.model && pack.agent.model !== existing!.model) {
+    blockers.push(`Modo activo: el pack cambia el modelo (${existing!.model} → ${pack.agent.model}); eso apaga la línea hasta Activar. Cambialo desde la app.`)
+  }
+  log(existing ? `Agente existente ${existing.id} (v${existing.version}, ${existing.status}${liveMode ? ', MODO ACTIVO' : ''})` : 'Agente nuevo')
 
   // ---- Brand facts + sales rules validate locally first
   let brandFacts: ReturnType<typeof parseBrandFacts> | null = null
@@ -118,11 +138,14 @@ async function main() {
       blockers.push(`Canal ${accountId} no es de este negocio`)
       continue
     }
-    if (layer.aiFullUnlock[accountId]) blockers.push(`El canal ${acc.displayName} tiene la IA activada: no se toca`)
     const current = await prisma.chatAgentBinding.findFirst({
       where: { tenantId, socialAccountId: accountId, scope: 'social_account', isActive: true },
       select: { agentId: true },
     })
+    // Live mode: this agent's own activated channel is expected (it is what stays on); any other channel still blocks.
+    const ownLiveChannel = liveMode && current?.agentId === existing?.id
+    if (layer.aiFullUnlock[accountId] && !ownLiveChannel) blockers.push(`El canal ${acc.displayName} tiene la IA activada: no se toca`)
+    if (liveMode && !ownLiveChannel) blockers.push(`Modo activo: el canal ${acc.displayName} no está atado a este agente; atar canales se hace desde la app`)
     if (current && current.agentId !== existing?.id) {
       if (flag('replace-binding')) warnings.push(`El canal ${acc.displayName} deja de usar el agente ${current.agentId}`)
       else blockers.push(`El canal ${acc.displayName} ya está atado a otro agente (${current.agentId}); usa --replace-binding si es a propósito`)
@@ -147,6 +170,39 @@ async function main() {
   const used = await loadDailyTestTokens(tenantId).catch(() => 0)
   log(`  pruebas hoy: ${used.toLocaleString('es-CR')} de ${layer.testDailyTokenCap.toLocaleString('es-CR')} tokens`)
 
+  // ---- Live mode: print exactly what would change (read only), before any write
+  if (liveMode && existing && brandFacts) {
+    const storedNow: Record<string, unknown> = { ...existing, brandFacts: parseBrandFactsSafe(existing.brandFacts), replyStyle: parseReplyStyleSafe(existing.replyStyle) }
+    const wantedNow: Record<string, unknown> = {
+      emoji: pack.agent.emoji,
+      description: pack.agent.description ?? null,
+      systemInstructions: pack.agent.systemInstructions.trim(),
+      tonePreset: pack.agent.tonePreset,
+      introductionNames: pack.agent.introductionNames ?? [],
+      brandFacts,
+      replyStyle: pack.agent.replyStyle ? ReplyStyleSchema.parse(pack.agent.replyStyle) : undefined,
+    }
+    const fields = Object.entries(wantedNow).filter(([k, v]) => v !== undefined && !same(storedNow[k], v)).map(([k]) => k)
+    log(`  CAMBIA en el agente: ${fields.length ? fields.join(', ') : '(nada)'}`)
+    const boundNow = new Set((await prisma.chatAgentKnowledgeSource.findMany({ where: { tenantId, agentId: existing.id }, select: { sourceId: true } })).map((r) => r.sourceId))
+    for (const k of pack.knowledge) {
+      const cur = await prisma.chatKnowledgeSource.findMany({ where: { tenantId, kind: k.kind, name: k.name, status: 'approved' }, select: { id: true, contentHash: true } })
+      if (cur.some((c) => c.contentHash === hashKnowledgeBody(k.body.trim()) && boundNow.has(c.id))) continue
+      const old = cur.filter((c) => boundNow.has(c.id)).map((c) => c.id)
+      log(`  CAMBIA conocimiento "${k.name}" (reemplaza: ${old.length ? old.join(', ') : 'ninguno'})`)
+    }
+    const shortcutsNow = new Map((await listShortcuts(tenantId, existing.id)).shortcuts.map((s) => [s.key, s]))
+    const newKeys = pack.shortcuts.filter((s) => !shortcutsNow.has(s.key)).map((s) => s.key)
+    const changedKeys = pack.shortcuts
+      .filter((s) => {
+        const row = shortcutsNow.get(s.key)
+        return row && !same([row.title, row.intents, row.keywords, row.body, row.deliveryMode, row.isActive], [s.title, s.intents ?? [], s.keywords ?? [], s.body, s.deliveryMode ?? 'guide', true])
+      })
+      .map((s) => s.key)
+    log(`  respuestas guardadas: ${newKeys.length} nuevas${newKeys.length ? ` (${newKeys.join(', ')})` : ''}, ${changedKeys.length} cambiadas${changedKeys.length ? ` (${changedKeys.join(', ')})` : ''}`)
+    log('  NO toca: modelo, canal, estado, modo, activación, pruebas guardadas')
+  }
+
   for (const w of warnings) log(`AVISO: ${w}`)
   if (blockers.length) {
     for (const b of blockers) log(`BLOQUEA: ${b}`)
@@ -165,7 +221,8 @@ async function main() {
     systemInstructions: pack.agent.systemInstructions.trim(),
     tonePreset: pack.agent.tonePreset,
     introductionNames: pack.agent.introductionNames ?? [],
-    model: pack.agent.model,
+    // Live mode never writes the model (the unlock is per agent + model: a change silences the line).
+    model: liveMode ? undefined : pack.agent.model,
     brandFacts,
     replyStyle: pack.agent.replyStyle ? ReplyStyleSchema.parse(pack.agent.replyStyle) : undefined,
   }
@@ -252,8 +309,9 @@ async function main() {
     const created = await createKnowledgeSource({ tenantId, ...actor, kind: k.kind, name: k.name, body: k.body, metadata: { agentPack: true } })
     await approveKnowledgeSource({ tenantId, sourceId: created.id, ...actor })
     await bindKnowledgeToAgent({ tenantId, agentId, sourceId: created.id, ...actor })
-    for (const old of current) if (bound.has(old.id)) await unbindKnowledgeFromAgent({ tenantId, agentId, sourceId: old.id, ...actor })
-    log(`✔ conocimiento "${k.name}"`)
+    const replaced = current.filter((old) => bound.has(old.id)).map((old) => old.id)
+    for (const id of replaced) await unbindKnowledgeFromAgent({ tenantId, agentId, sourceId: id, ...actor })
+    log(`✔ conocimiento "${k.name}"${replaced.length ? ` (antes: ${replaced.join(', ')} — volver a atarlos para deshacer)` : ''}`)
   }
 
   // Products the agent may sell (exactly the pack's list)
@@ -282,8 +340,9 @@ async function main() {
     log(`✔ atado al canal ${accountId}`)
   }
 
-  // Saved tests (the test chat keeps plain-phrase checks; the full checks run in probar.ts)
-  const cases = await listTestCases(tenantId, agentId)
+  // Saved tests (the test chat keeps plain-phrase checks; the full checks run in probar.ts). Live mode leaves them:
+  // they are the activation suite of a line that is on.
+  const cases = liveMode ? null : await listTestCases(tenantId, agentId)
   if (cases?.available) {
     const titles = new Set(cases.cases.map((c) => c.title))
     let added = 0

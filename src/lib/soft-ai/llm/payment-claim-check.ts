@@ -86,7 +86,7 @@ export async function runPaymentClaimCheck(
       reasoningEffort: 'none',
       reasoningLocked: true,
       timeoutMs: PAYMENT_CHECK_TIMEOUT_MS,
-      promptCacheKey: 'payment-check-v1',
+      promptCacheKey: 'payment-check-v2',
       store: false,
       textFormat: { name: 'payment_check', schema: SCHEMA as unknown as Record<string, unknown>, strict: true },
       usage: { tenantId: input.tenantId, feature: 'payment_check', agentId: input.agentId ?? null, conversationId: input.conversationId ?? null },

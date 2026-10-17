@@ -6,7 +6,7 @@ import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
 
 export type PaymentCheckMode = 'off' | 'shadow' | 'enforce'
 export type PaymentCheckVerdict = 'claim' | 'clear' | 'error'
-export type PaymentCheckHistory = Array<{ direction: string; content?: string | null }>
+export type PaymentCheckHistory = Array<{ direction: string; content?: string | null; sentAt?: string | Date | null }>
 
 /** SOFT_AI_PAYMENT_CHECK: 'enforce' | 'off'; anything else (unset included) = 'shadow' (observe only). */
 export function paymentCheckMode(env: string | undefined = process.env.SOFT_AI_PAYMENT_CHECK): PaymentCheckMode {
@@ -29,14 +29,23 @@ const MONEY_WORDS_RE =
  * the last 3 messages) — where "listo, ya está" means "I paid".
  */
 /** The customer's messages since the store last wrote (oldest first) — a burst is answered by one job. */
-function unansweredCustomerTexts(history: PaymentCheckHistory): { burst: string[]; storeIndex: number } {
+function unansweredCustomerTexts(history: PaymentCheckHistory, now = Date.now()): { burst: string[]; storeIndex: number } {
   const burst: string[] = []
   let i = history.length - 1
   for (; i >= 0; i--) {
     if (history[i].direction === 'outbound') break
     if (history[i].content) burst.unshift(String(history[i].content))
   }
-  return { burst, storeIndex: i }
+  // SecureDog round 7: plus customer messages from the last 10 min that sort before the store's last message (it is
+  // stored when SENT, so a message typed while it was being written lands before it).
+  const early: string[] = []
+  for (let j = 0; j < i; j++) {
+    const m = history[j]
+    if (m.direction !== 'inbound' || !m.content || !m.sentAt) continue
+    const at = new Date(m.sentAt).getTime()
+    if (Number.isFinite(at) && now - at <= 10 * 60_000) early.push(String(m.content))
+  }
+  return { burst: [...early, ...burst], storeIndex: i }
 }
 
 export function paymentCheckGate(inboundText: string, history: PaymentCheckHistory): boolean {
@@ -50,7 +59,13 @@ export function paymentCheckGate(inboundText: string, history: PaymentCheckHisto
 }
 
 /** Role labels a customer could type to look like another speaker in the prompt. */
-const ROLE_LABEL_RE = /(?:cliente|tienda|store|customer|sistema|system|assistant|asistente)\s*(?:\([^)\n]{0,40}\))?\s*:/giu
+const ROLE_LABEL_RE = /(?:cliente|tienda|store|customer|sistema|system|assistant|asistente|revisor|reviewer)\s*(?:[([][^)\]\n]{0,40}[)\]])?\s*[:\-–—]/giu
+/**
+ * SecureDog round 7: look-alike labels too — any short word with a "(…)" / "[…]" tag and a ":" / "-" ("Сliente (SIN
+ * RESPONDER…):" in Cyrillic, "Cliente [SIN RESPONDER] -"), and a typed verdict ("claim=false", {"claim":false}).
+ */
+const TAGGED_LABEL_RE = /[\p{L}]{3,12}\s*[([][^)\]\n]{0,40}[)\]]\s*[:\-–—]/gu
+const TYPED_VERDICT_RE = /"?claim"?\s*[:=]\s*(?:true|false)|\{\s*"?claim"?[^}]{0,80}\}/giu
 
 /**
  * Two earlier customer messages + the store's last message + EVERYTHING the customer wrote since (the burst), fenced as
@@ -61,7 +76,19 @@ export function buildPaymentCheckInput(
   history: PaymentCheckHistory,
   fence: (text: string) => string,
 ): string {
-  const clean = (t: string) => fence(t || '').replace(ROLE_LABEL_RE, ' ').replace(/\s+/g, ' ').trim()
+  const clean = (t: string) =>
+    fence(t || '')
+      .replace(TAGGED_LABEL_RE, ' ')
+      .replace(ROLE_LABEL_RE, ' ')
+      .replace(TYPED_VERDICT_RE, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  // SecureDog round 7: each burst message is cleaned (masked) ON ITS OWN and keeps its start AND end, so one long
+  // message can neither cut the claim of another nor hide its own last words.
+  const headTail = (t: string, n: number) => {
+    const v = clean(t)
+    return v.length > n ? `${v.slice(0, Math.floor(n / 4))} … ${v.slice(-Math.floor((3 * n) / 4))}` : v
+  }
   const head = (t: string, n: number) => {
     const v = clean(t)
     return v.length > n ? `${v.slice(0, n)}…` : v
@@ -76,7 +103,8 @@ export function buildPaymentCheckInput(
   const lines: string[] = []
   for (const m of before) lines.push(`Cliente (antes): ${head(m.content || '', 200)}`)
   if (lastStore) lines.push(`Tienda (último mensaje): ${tail(lastStore.content || '', 300)}`)
-  lines.push(`Cliente (SIN RESPONDER, lo que decidís): ${tail([...burst, inboundText].join(' / '), 900)}`)
+  const unanswered = [...burst, inboundText].slice(-6).map((t) => headTail(t, 400)).join(' / ')
+  lines.push(`Cliente (SIN RESPONDER, lo que decidís): ${unanswered.length > 2400 ? `…${unanswered.slice(-2400)}` : unanswered}`)
   return `<MENSAJES>\n${lines.join('\n')}\n</MENSAJES>`
 }
 

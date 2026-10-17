@@ -34,6 +34,27 @@ export type PaymentFillOptions = {
    * ready for a person when the customer chose that method; otherwise it is just information (Verifier 2026-10-16).
    */
   chosenMethod?: string | null
+  /**
+   * luna-10 exam (Rafael's rule, 2026-10-16): [[DATOS_PAGO]] = every method's DETAILS only when the customer asked for
+   * the details ("pasame los datos / el número / la cuenta"). "¿Cómo puedo pagar?" / "¿se puede con tarjeta?" get the
+   * method names and the question "¿Cuál preferís?" instead (Luna wrote [[DATOS_PAGO]] for those). Undefined = old
+   * behaviour (callers without the customer text).
+   */
+  customerText?: string | null
+}
+
+/** The customer explicitly asked for the payment details (numbers / account / all the data). */
+const ASKS_PAYMENT_DETAILS_RE =
+  /(?<![\p{L}])(datos|n[uú]mero|cuenta|iban|a\s+nombre\s+de|a\s+d[oó]nde\s+(te\s+|les\s+)?(pago|deposito|transfiero|mando)|todos\s+los\s+(m[eé]todos|datos))(?![\p{L}])/iu
+
+export function customerAskedPaymentDetails(text: string | null | undefined): boolean {
+  return ASKS_PAYMENT_DETAILS_RE.test(text || '')
+}
+
+/** "Tenemos SINPE Móvil, tarjeta y contra entrega (GAM). ¿Cuál preferís?" — names only, from configuration. */
+export function paymentMethodsQuestion(facts: BrandFacts): string {
+  const labels = paymentMethodLabels(paymentMethodsOf(facts), paymentLabelOptions(facts))
+  return labels.length ? `Tenemos ${joinEs(labels)}. ¿Cuál preferís?` : ''
 }
 
 /** Owner text as one clean line (no blank lines can ever split a payment block into two messages). */
@@ -163,6 +184,12 @@ export function fillPaymentToken(
     // The same token twice (a saved reply with the SINPE number AND its holder) → one block only.
     if (filledOnce.has(method)) return ''
     filledOnce.add(method)
+    // [[DATOS_PAGO]] without a request for the details → the method names + "¿Cuál preferís?" (no numbers).
+    const namesOnly = method === 'all' && opts.customerText !== undefined && !customerAskedPaymentDetails(opts.customerText)
+    if (namesOnly && canSharePaymentFacts(facts)) {
+      const question = paymentMethodsQuestion(facts)
+      if (question) return question
+    }
     const block = method === 'all' ? paymentDetailsText(facts) : paymentMethodBlock(facts, method, opts)
     if (!block) {
       needsHuman = true

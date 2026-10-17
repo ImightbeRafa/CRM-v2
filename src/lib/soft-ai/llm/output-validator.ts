@@ -377,7 +377,8 @@ const NEGATED_BEFORE_RE = /(?<![\p{L}])(?:no(?!\s+(?:solo|s[oó]lo|[uú]nicament
 const INDIRECT_BEFORE_RE = /(?<![\p{L}])(?:si|sobre\s+si|saber\s+si)\s+(?:\p{L}+\s+){0,2}$/iu
 // SecureDog round 7: only "puede (ser) que…" and "podés estar tomando / estar con…" are a possibility — never "puede ser
 // usado", "podés estar usándolo".
-const POSSIBILITY_AFTER_RE = /^\s+(?:(?:ser\s+)?que|estar\s+(?:tomando|con|en\s+tratamiento|bajo))(?![\p{L}])/iu
+// Verifier round 12: "podría / puede causar enrojecimiento" is a disclosure of a possible effect, not a reassurance.
+const POSSIBILITY_AFTER_RE = /^\s+(?:(?:ser\s+)?que|estar\s+(?:tomando|con|en\s+tratamiento|bajo)|(?:causar|provocar|irritar|generar|producir|dar)\p{L}*)(?![\p{L}])/iu
 const WEAK_ASSURANCE_RE = /^(?:pod[eé]s|puede[ns]?|pued[eé]s|se\s+puede|podr[ií]as?)$/iu
 
 /** Harm words: with a "no" in front they ARE the assurance ("no es peligroso", "no afecta", "no interactúa"). */
@@ -436,7 +437,8 @@ export function healthContextAssurance(reply: string, customerText: string): str
   // the safety words of a later one ("¿Le hace daño a mi gastritis?") off.
   const safetyWords = c
     .split('\n')
-    .some((line) => /(?<![\p{L}])(?:segur\p{L}*|riesgo\p{L}*|da[nñ]o|peligro\p{L}*|efectos?\s+secundarios?|mal)(?![\p{L}])/iu.test(line) && !MONEY_OR_SHIPPING_RE.test(line))
+    // Verifier round 12: "mal" only as "hace / cae mal" ("Duermo muy mal, ¿el de dormir sirve?" is not a safety question).
+    .some((line) => /(?<![\p{L}])(?:segur\p{L}*|riesgo\p{L}*|da[nñ]o|peligro\p{L}*|efectos?\s+secundarios?|(?:hace|hacen|cae|caen)\s+mal)(?![\p{L}])/iu.test(line) && !MONEY_OR_SHIPPING_RE.test(line))
   if (!HEALTH_GROUP_RE.test(c) && !safetyWords) return null
   const t = (reply || '').normalize('NFKC')
   const referral = HEALTH_REFERRAL_RE.test(t)
@@ -449,9 +451,10 @@ export function healthContextAssurance(reply: string, customerText: string): str
   }
   // SecureDog round 7: a bare answer is the promise itself — "No, para nada" / "No, ninguno" to a harm question, "¡Sí,
   // claro!" to "¿lo puedo usar / tomar…?" — unless the reply sends them to their doctor.
-  const harmQuestion = /(?<![\p{L}])(?:da[nñ]o|segur\p{L}*|riesgo\p{L}*|peligro\p{L}*|efectos?\s+secundarios?|contraindicaci\p{L}*|afecta\p{L}*)(?![\p{L}])/iu.test(c)
+  const harmQuestion = /(?<![\p{L}])(?:da[nñ]o|segur\p{L}*|riesgo\p{L}*|peligro\p{L}*|efectos?\s+secundarios?|contraindicaci\p{L}*|afecta\p{L}*|(?:hace|hacen|cae|caen)\s+mal)(?![\p{L}])/iu.test(c)
   // SecureDog round 8: also "¿es seguro / es apto / sirve / se puede … en el embarazo?" (a bare "¡Sí!" answers those too).
-  const canIQuestion = /(?<![\p{L}])(?:(?:lo|la|los|las)\s+)?(?:puedo|pueden|podr[ií]a|puede)\s+(?:usar|tomar|poner|aplicar|combinar)|(?:usar|tomar)l[oa]s?\b|(?<![\p{L}])(?:es|son)\s+(?:segur\p{L}*|apt[oa]s?|bueno|buena)|(?<![\p{L}])(?:se\s+puede|sirve|hace\s+(?:da[nñ]o|mal))(?![\p{L}])/iu.test(c)
+  const canIQuestion = /(?<![\p{L}])(?:(?:lo|la|los|las)\s+)?(?:puedo|pueden|podr[ií]a|puede)\s+(?:usar|tomar|poner|aplicar|combinar)|(?:usar|tomar)l[oa]s?\b|(?<![\p{L}])(?:es|son)\s+(?:segur\p{L}*|apt[oa]s?|bueno|buena)|(?<![\p{L}])(?:se\s+puede|sirve)(?![\p{L}])/iu.test(c)
+  // (A "Sí" to a harm question — "¿tiene efectos secundarios?", "¿hace daño?" — is a disclosure, never a promise.)
   const opening = t.trim().split(/[.!?\n]/u)[0] || ''
   if (!referral && harmQuestion && /^\s*¡?\s*(?:no|para\s+nada|ninguno|ninguna|nada|cero)(?![\p{L}])/iu.test(opening)) return opening.trim()
   if (!referral && canIQuestion && /^\s*¡?\s*(?:s[ií]|claro|dale|obvio|por\s+supuesto)(?![\p{L}])/iu.test(opening)) return opening.trim()

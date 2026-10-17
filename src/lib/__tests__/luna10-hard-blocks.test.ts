@@ -777,3 +777,16 @@ describe("verifier round 12 gate (luna-10): the paying-act guard needs a person 
     assert.deepEqual(bad, [])
   })
 })
+
+describe("SecureDog round 8 live-equivalence gate (luna-10): nothing rides a payment ask that live hands off", () => {
+  it("rider claims go to a person; the closed asks still reach the agent", async () => {
+    const { classifyPaymentText } = await import("../soft-ai/payment-classifier")
+    const person = ['Te pago ahorita, mi esposo acaba de pagar lo suyo', 'Te pago ahorita, Juan acaba de pagar lo suyo', 'Te pago ahorita, Juan se encargo del pago', 'Les pago hoy, Juan me ayudo a pagar', 'Voy a pagar mañana, se les deposito por sinpe', 'Te pago ahorita, puse una parte por sinpe', 'Les pago hoy, acabo de mandarles lo mío', 'les pago hoy, juan les deposito una parte', 'te pago ahorita, maria les cancelo por sinpe', 'Les pago hoy, mi esposo recien pago lo suyo', 'Les pago hoy, mi esposo tambien pago lo suyo', 'Te pago ahorita, mi esposo temprano les deposito', 'Les pago hoy, la empresa les deposito lo suyo', 'Voy a pagar mañana, mi compañero de trabajo les pago lo suyo']
+    const agent = ['Les pago hoy', 'Te pago por sinpe', 'Te pago ahorita por sinpe, ¿me pasás el número?', 'Ya lo tengo listo para pagar, ¿cuál es el sinpe?', '¿Me lo tienen listo para el sábado? pago en efectivo', 'Sí, pago contra entrega', 'Hola, pago contra entrega', 'Quiero envio a Heredia, ¿aceptan sinpe?', '¿En la página pago con tarjeta?', '¿Cómo pago?', '¿Aceptan tarjeta?', 'Quiero pagar con tarjeta']
+    const bad: string[] = []
+    for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
+    for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    
+    assert.deepEqual(bad, [])
+  })
+})

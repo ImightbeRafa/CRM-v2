@@ -307,7 +307,10 @@ const RESULTS_CLAIM_RES: RegExp[] = [
   /\b(?:energ[ií]a|duerm\w*|dorm\w*|calma|ansiedad|resultados?|cambios?|efecto|relaja\w*|mejor)\b[^.!?\n]{0,40}?\bdesde\s+(?:el\s+primer\s+d[ií]a|la\s+primera\s+(?:noche|semana|vez)|el\s+primer\s+uso)/iu,
   /\b(?:cura|curan|curar|sana|sanan)\s+(?:la|el|tu|tus|los|las|de)\b/iu,
   // SecureDog INT-138: safety assurances are a promise too ("es seguro en el embarazo", "no tiene efectos secundarios").
-  /\b(?:es|son)\s+(?:100\s*%\s+|totalmente\s+|completamente\s+|muy\s+)?segur[oa]s?\s+(?:en|durante|para)\s+(?:el\s+|la\s+|los\s+|las\s+)?(?:embarazo|embarazadas?|lactancia|ni[nñ]\p{L}*|menores|beb[eé]s?|ancian\p{L}*|adultos\s+mayores)/iu,
+  /\b(?:es|son)\s+(?:100\s*%\s+|totalmente\s+|completamente\s+|muy\s+)?(?:segur[oa]s?|apt[oa]s?)\s+(?:(?:usar|tomar|poner|aplicar)l\p{L}*\s+)?(?:en|durante|para|con)\s+(?:el\s+|la\s+|los\s+|las\s+|tu\s+|tus\s+|su\s+|sus\s+)?(?:embarazo|embarazadas?|lactancia|ni[nñ]\p{L}*|menores|beb[eé]s?|ancian\p{L}*|adultos\s+mayores|medicamentos?|medicinas?|pastillas|tratamientos?)/iu,
+  // SecureDog r4: "lo podés usar en el embarazo", "podés tomarlo con tus medicamentos", a bare "Sin efectos secundarios".
+  /\b(?:(?:lo|la|los|las)\s+)?pod[eé]s\s+(?:usar|tomar|poner|aplicar)(?:l[oa]s?)?\s+(?:sin\s+problema\s+)?(?:en|durante|con)\s+(?:el\s+|la\s+|los\s+|las\s+|tu\s+|tus\s+|su\s+|sus\s+)?(?:embarazo|embarazadas?|lactancia|ni[nñ]\p{L}*|menores|beb[eé]s?|ancian\p{L}*|adultos\s+mayores|medicamentos?|medicinas?|pastillas|tratamientos?)/iu,
+  /\bsin\s+(?:ning[uú]n\s+)?(?:efectos?\s+secundarios?|contraindicaci\p{L}+)/iu,
   /\bno\s+(?:tiene|tienen|causa|causan|da|dan)\s+(?:ning[uú]n\s+|ningunos?\s+)?(?:efectos?\s+secundarios?|contraindicaci\p{L}+)/iu,
   // Verifier round 5: "riesgo" only in its health shapes ("no causa ningún riesgo", "sin riesgo para el embarazo") —
   // "el pago con tarjeta no tiene ningún riesgo" is not a health promise.
@@ -318,7 +321,7 @@ const RESULTS_CLAIM_RES: RegExp[] = [
 ]
 const RESULTS_NEGATION_RE = /\b(?:no|ni|sin|nunca|jam[áa]s)\b[^.!?\n]{0,30}$/iu
 /** Reassurances that contain "no / sin" but do not deny the claim that follows. */
-const NOT_A_NEGATION_RE = /\b(?:sin\s+duda|sin\s+problema|no\s+te\s+preocupes|no\s+se\s+preocupe|no\s+hay\s+problema|no\s+hay\s+duda)\b/giu
+const NOT_A_NEGATION_RE = /\b(?:sin\s+dudas?|sin\s+problemas?|no\s+te\s+preocup[eé]s|no\s+se\s+preocupen?|no\s+hay\s+problemas?|no\s+hay\s+dudas?)\b/giu
 
 /** First results/health promise in the text (null = none). Shared with the pack lint (build-agent). */
 export function resultsClaimIn(text: string): string | null {

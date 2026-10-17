@@ -52,6 +52,11 @@ const CLAIM_CUE_RE = new RegExp(
     [
       near(String.raw`(hice|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|acabo\s+de\s+(pagar|hacer|mandar|enviar|pasar|transferir|depositar|cancelar))`, PAY_NOUN),
       String.raw`pagu[eé]|deposit[eé]|transfer[ií]|^\s*¿?\s*pagad[oa]\s*[?!.✅👍]*\s*$`,
+      // SecureDog INT-140: "we / they paid" — third-person past always; the -amos forms (also present tense: "¿cómo
+      // pagamos?") only after "ya" or with a past marker ("lo pagamos ayer").
+      String.raw`pagaron|depositaron|transfirieron|cancelaron|sinpearon|(hicimos|hicieron|mandamos|mandaron|enviamos|enviaron)\s+(el|la|un|una)\s+(sinpe|pago|dep[oó]sito|transferencia)`,
+      String.raw`ya\s+(?:se\s+)?(?:lo\s+|la\s+|le\s+|les\s+|te\s+)?(pagamos|depositamos|transferimos|cancelamos|sinpeamos|pag[oó]|deposit[oó]|transfiri[oó]|cancel[oó])`,
+      String.raw`(?:lo\s+|la\s+|le\s+|les\s+|te\s+)(pagamos|depositamos|transferimos|cancelamos)\s+(ayer|hoy|anoche|esta\s+ma[nñ]ana|hace)`,
       // Costa Rica: "cancelar" = to pay ("ya cancelé", "está cancelado"). "Quiero cancelar el pedido" also reaches
       // a person — a safe failure (INT-82).
       String.raw`cancel[eé]|acabo\s+de\s+cancelar|(ya\s+)?(est[aá]|qued[oó])\s+cancelad[oa]|(pedido|monto|saldo|pago)\s+(ya\s+)?(est[aá]\s+|qued[oó]\s+)?cancelad[oa]|ya\s+cancelad[oa]`,
@@ -80,7 +85,7 @@ const CLAIM_CUE_RE = new RegExp(
 const PAYMENT_QUESTION_RE = new RegExp(
   String.raw`(?<![\p{L}])(` +
     String.raw`(puedo|se\s+puede|pued[eo]n|aceptan|hay\s+que|tengo\s+que|debo)(\s+\p{L}+){0,2}\s+(pagar|pago|pagarles|pagarte)` +
-    String.raw`|(c[oó]mo|cu[aá]ndo|d[oó]nde|qu[eé]\s+formas?\s+de)(\s+\p{L}+){0,2}\s+(pago|pagar|se\s+paga|pagos)` +
+    String.raw`|(c[oó]mo|cu[aá]ndo|d[oó]nde|qu[eé]\s+formas?\s+de)(\s+\p{L}+){0,2}\s+(pago|pagar|se\s+paga|pagos|pagamos)` +
     String.raw`|(reciben|tienen|aceptan|usan|trabajan\s+con)\s+(sinpe|transferencias?|tarjetas?|efectivo)` +
     String.raw`)(?![\p{L}])`,
   'iu',
@@ -106,20 +111,54 @@ const NOT_A_PLAIN_QUESTION_RE =
 const LINK_NOT_PLAIN_RE =
   /(?<![\p{L}])(ya(?!\s+(?:tengo|tenemos|quiero|queremos|estoy|estamos|decid\p{L}*|eleg\p{L}*))|hab[ií]a|acabo\s+de|realic[eé]|us[eé]|complet[eé]|envi[eé]|mand[eé]|hice|pagu[eé]|transfer[ií]|deposit[eé]|(?:pag|us|complet|mand|envi|transfer|deposit|realiz)amos|hicimos|transferimos|vuelta|devol\p{L}*|devuelv\p{L}*|sobr\p{L}*|diferencia|rebot\p{L}*|funciona|fall\p{L}*|error)(?![\p{L}])/iu
 
+/** Nothing but spaces, question / exclamation marks, dots, commas and the friendly emojis. */
+const EMPTY_TAIL_RE = /^[\s?!¡.,…😊🙏🙌🥰❤️]*$/u
+
+/**
+ * SecureDog round 4 (INT-136): what follows the "?" that closes the question. A claim hides there in any language or
+ * spelling ("? hecho", "? Mamá lo canceló", "? already sent", "? ia esta"), so the tail must be empty — or, for the
+ * link only, one more plain question. `null` = the question was never closed with "?".
+ */
+function tailAfterQuestion(value: string, re: RegExp): string | null {
+  const m = re.exec(value)
+  if (!m) return null
+  const after = value.slice(m.index + m[0].length)
+  const q = after.indexOf('?')
+  return q < 0 ? null : after.slice(q + 1)
+}
+
+/** Any claim / completion / status / dispute word anywhere ("listo", "✅", "ya está", "revisá", "duplicado"). */
+function hasAnyClaimWord(text: string): boolean {
+  return PAYMENT_COMPLETION_RE.test(text) || hasChoiceClaimOrStatusWord(text) || PAYMENT_STATUS_CUE_RE.test(text)
+}
+
 export function isPlainFutureSinpeQuestion(value: string): boolean {
   if (!FUTURE_SINPE_QUESTION_RE.test(value)) return false
+  // A closed question with NOTHING after it ("…mandar un flash a recogerlos?"); "¿…sinpe? hecho" → a person.
+  const tail = tailAfterQuestion(value, FUTURE_SINPE_QUESTION_RE)
+  if (tail === null || !EMPTY_TAIL_RE.test(tail)) return false
   // "¿Ya puedo hacerles el sinpe?" is still a question: drop that leading "ya" before the claim words check.
   const rest = value.replace(/^\s*¿?\s*ya\s+(?=puedo|se\s+puede|podr)/iu, '')
-  return !NOT_A_PLAIN_QUESTION_RE.test(rest) && !PAYMENT_STATUS_CUE_RE.test(rest)
+  return !NOT_A_PLAIN_QUESTION_RE.test(rest) && !hasAnyClaimWord(rest)
 }
 
 export function isPlainPaymentLinkQuestion(value: string): boolean {
   if (!PAYMENT_LINK_QUESTION_RE.test(value)) return false
   // The claim words are judged outside the question itself ("¿me pasás el link…?" — that "me" is the question).
   const rest = value.replace(PAYMENT_LINK_QUESTION_RE, ' ')
+  // After the closing "?" only nothing or one more question ("¿tienes link de pago? ¿cuál me recomendás?");
+  // "…? el otro no me sirvió", "…? me rechazó la tarjeta" → a person. No "?" at all = the request was the whole
+  // message's end ("Me envías el link de pago"): nothing may follow the link words then.
+  const tail = tailAfterQuestion(value, PAYMENT_LINK_QUESTION_RE)
+  if (tail === null) {
+    const m = PAYMENT_LINK_QUESTION_RE.exec(value)
+    if (!m || !EMPTY_TAIL_RE.test(value.slice(m.index + m[0].length))) return false
+  } else if (!EMPTY_TAIL_RE.test(tail) && !/\?[\s!.😊🙏🙌]*$/u.test(tail)) {
+    return false
+  }
   // "me / mi" only signal a refund in the sinpe shape ("¿me pueden hacer un sinpe…?"); here they are ordinary
   // ("¿tienes link de pago? ¿cuál me recomendás?").
-  return !LINK_NOT_PLAIN_RE.test(rest) && !PAYMENT_STATUS_CUE_RE.test(rest)
+  return !LINK_NOT_PLAIN_RE.test(rest) && !hasAnyClaimWord(rest)
 }
 
 /** Refund wording (INT-81): goes to a person unless it is a plain return-policy question. */
@@ -146,7 +185,9 @@ export function hasPaymentClaimCue(text: string): boolean {
 
 /** Legacy broad net. Ambiguous hits default to human. */
 const PAYMENT_RE =
-  /\b(sinpe|transferencia|pago|pagar|comprobante|ib[aá]n|cuenta\s*banc|dep[oó]sit[oa]|efectivo\s*contra)(?![\p{L}])/iu
+  // SecureDog r4: the end stays ASCII-only like the old \b ("pagaré", "pagaría" still count); INT-140 adds "we / they
+  // paid" so the status checks and the photo-as-receipt rule see them.
+  /\b(sinpe|transferencia|pago|pagar|comprobante|ib[aá]n|cuenta\s*banc|dep[oó]sit[oa]|efectivo\s*contra|pagamos|pagaron|depositamos|depositaron|transferimos|transfirieron|cancelamos|cancelaron)(?![A-Za-z0-9_])/iu
 
 export function hasPaymentProofCue(text: string): boolean {
   return PROOF_CUE_RE.test(text || '')
@@ -209,6 +250,9 @@ export function classifyPaymentText(
     return 'non_payment'
   }
   if (isPlainPaymentLinkQuestion(value)) return 'payment_info_safe'
+  // SecureDog r4: a link question that is NOT plain ("¿tienes link de pago? me rechazó la tarjeta") goes to a person,
+  // never down to the generic "tarjeta / transferencia" info cue.
+  if (PAYMENT_LINK_QUESTION_RE.test(value)) return 'payment_proof_or_risk'
   if (INFO_CUE_RE.test(value)) {
     return 'payment_info_safe'
   }

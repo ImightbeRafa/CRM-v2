@@ -57,11 +57,13 @@ function numbersIn(text: string): string {
 }
 
 /** True when `part` says (nearly) the same as one of the earlier messages. */
-export function isNearRepeat(part: string, previous: string[]): boolean {
+export function isNearRepeat(part: string, previous: string[], customerText?: string | null): boolean {
   const n = normalizeForRepeat(part)
   if (n.length < MIN_REPEAT_CHARS) return false
   const nw = words(n)
   const nNumbers = numbersIn(part)
+  // Verifier round 2: words of this message that the customer just wrote (a place, a product).
+  const asked = contentWords(normalizeForRepeat(customerText || ''))
   for (const prevMessage of previous) {
     for (const prevPart of splitReplyParts(prevMessage, 50)) {
       const p = normalizeForRepeat(prevPart)
@@ -70,6 +72,9 @@ export function isNearRepeat(part: string, previous: string[]): boolean {
       if (numbersIn(prevPart) !== nNumbers) continue
       if (p === n) return true
       if (n.length >= 25 && p.includes(n)) return true
+      // "El envío a Limón…" after "El envío a San José…" when the customer asked about Limón: a new answer.
+      const pc0 = contentWords(p)
+      if ([...contentWords(n)].some((w) => asked.has(w) && !pc0.has(w))) continue
       const pw = words(p)
       if (nw.size >= MIN_WORDS_FOR_JACCARD && pw.size >= MIN_WORDS_FOR_JACCARD && jaccard(nw, pw) >= JACCARD_MIN) return true
       const nc = contentWords(n)
@@ -101,7 +106,7 @@ export function dropRepeatedParts(input: { text: string; previous: string[]; cus
   const dropped: string[] = []
   for (const part of parts) {
     // A message repeating an earlier message of this same reply is dropped too.
-    if (!mayAlwaysRepeat(part) && (isNearRepeat(part, input.previous) || isNearRepeat(part, kept))) dropped.push(part)
+    if (!mayAlwaysRepeat(part) && (isNearRepeat(part, input.previous, input.customerText) || isNearRepeat(part, kept))) dropped.push(part)
     else kept.push(part)
   }
   return { kept, dropped }

@@ -77,8 +77,8 @@ describe('waiting ack (customer writes again while a hand-off waits on a person)
     assert.equal(decideWaitingAck({ ...base, lastTurn: { ...handoff, handoffKind: null } }).realert, false)
     assert.equal(decideWaitingAck({ ...base, lastTurn: null }).realert, false)
   })
-  it('line off or hand-off older than 24 h: silent', () => {
-    assert.equal(decideWaitingAck({ ...base, lineOn: false }).realert, false)
+  it('line off / kill switch: the team is still alerted, the customer gets nothing; hand-off older than 24 h: silent', () => {
+    assert.deepEqual(decideWaitingAck({ ...base, lineOn: false }), { ack: false, realert: true, reason: 'line_off' })
     assert.equal(decideWaitingAck({ ...base, lastTurn: { ...handoff, completedAt: new Date('2026-10-16T17:00:00Z') } }).realert, false)
   })
   it('texts: in hours vs after hours (never promises an immediate answer at night)', () => {
@@ -154,8 +154,8 @@ describe('night intro (code-owned "asistente virtual")', () => {
   const N = { afterHours: true, transparent: true }
   const who = { name: 'Sofi', store: 'PatchHouse CR', introduced: false }
   it('rewrites the model self-introduction in place', () => {
-    assert.equal(withNightIntro('¡Hola! Soy Sofi de PatchHouse CR 🌿\n\n🧠 Focus trae melena de león.', N, who), '¡Hola! Soy Sofi, asistente virtual de PatchHouse CR 🌙\n\n🧠 Focus trae melena de león.')
-    assert.equal(withNightIntro('Hola, soy Sofi de PatchHouse CR 🌿 Para ansiedad...', N, who), '¡Hola! Soy Sofi, asistente virtual de PatchHouse CR 🌙\n\nPara ansiedad...')
+    assert.equal(withNightIntro('¡Hola! Soy Sofi de PatchHouse CR 🌿\n\n🧠 Focus trae melena de león.', N, who), '¡Hola! Soy Sofi, asistente virtual de PatchHouse CR 🌿\n\n🧠 Focus trae melena de león.')
+    assert.equal(withNightIntro('Hola, soy Sofi de PatchHouse CR 🌿 Para ansiedad...', N, who), 'Hola, soy Sofi, asistente virtual de PatchHouse CR 🌿 Para ansiedad...')
   })
   it('first message with no greeting: intro first; chat already started: unchanged', () => {
     assert.equal(withNightIntro('🌿 GLP-1 Patch: apoya el control del apetito.', N, who), '¡Hola! Soy Sofi, asistente virtual de PatchHouse CR 🌙\n\n🌿 GLP-1 Patch: apoya el control del apetito.')
@@ -189,10 +189,13 @@ describe('SQL 054 (luna-only model)', () => {
 describe('verifier round 1 (luna-10)', () => {
   const N = { afterHours: true, transparent: true }
   const who = { name: 'Sofi', store: 'PatchHouse CR', introduced: false }
-  it('F1: the night intro never cuts a reply that is more than an intro', () => {
-    assert.equal(withNightIntro('Hola, soy Sofi y el Stress Down cuesta ₡12.000 😊', N, who), 'Hola, soy Sofi y el Stress Down cuesta ₡12.000 😊')
-    assert.equal(withNightIntro('¡Hola! Soy Sofi de PatchHouse CR, ¿te ayudo con algo?', N, who), '¡Hola! Soy Sofi de PatchHouse CR, ¿te ayudo con algo?')
-    assert.equal(withNightIntro('¡Hola! Soy Sofi de PatchHouse CR 🌿 El Focus cuesta ₡9 900.', N, who), '¡Hola! Soy Sofi, asistente virtual de PatchHouse CR 🌙\n\nEl Focus cuesta ₡9 900.')
+  it('F1 (rounds 1+2): the night intro never cuts or replaces a word — it only inserts ", asistente virtual"', () => {
+    assert.equal(withNightIntro('Hola, soy Sofi y el Stress Down cuesta ₡12.000 😊', N, who), 'Hola, soy Sofi, asistente virtual, y el Stress Down cuesta ₡12.000 😊')
+    assert.equal(withNightIntro('¡Hola! Soy Sofi de PatchHouse CR, ¿te ayudo con algo?', N, who), '¡Hola! Soy Sofi, asistente virtual de PatchHouse CR, ¿te ayudo con algo?')
+    assert.equal(withNightIntro('Hola, soy Sofi y sí tenemos envíos a todo el país 🚚', N, who), 'Hola, soy Sofi, asistente virtual, y sí tenemos envíos a todo el país 🚚')
+    assert.equal(withNightIntro('Hola, soy Sofi y no tenemos el Focus en este momento.', N, who), 'Hola, soy Sofi, asistente virtual, y no tenemos el Focus en este momento.')
+    assert.equal(withNightIntro('Hola 👋 Soy Sofi. ¿En qué te ayudo?', N, who), 'Hola 👋 Soy Sofi, asistente virtual. ¿En qué te ayudo?')
+    assert.equal(withNightIntro('¡Hola! Soy José de PatchHouse S.A. ¿En qué te ayudo?', N, { name: 'José', store: 'PatchHouse S.A.', introduced: false }), '¡Hola! Soy José, asistente virtual de PatchHouse S.A. ¿En qué te ayudo?')
   })
   it('F2: a different price / place / amount is never a repeat; a long list does not swallow a new answer', () => {
     assert.equal(isNearRepeat('El envío a San José cuesta ₡2.500 y llega en 2 días hábiles', ['El envío a Alajuela cuesta ₡3.500 y llega en 3 días hábiles']), false)
@@ -219,5 +222,71 @@ describe('verifier round 1 (luna-10)', () => {
     assert.match(turn, /if \(outgoingText !== input\.outputText\) \{\s*await prisma\.chatAgentTurn\.update\(\{\s*where: \{ id: input\.turnId \},\s*data: \{ outputText: outgoingText, outputHash: hashSoftAiOutput\(outgoingText\) \}/)
     assert.match(turn, /input\.replyAssets\?\.size && !repeatAllDropped\)/)
     assert.match(fs.readFileSync('src/lib/soft-ai/waiting-sweep.ts', 'utf8'), /\.find\(\(r\) => \(r\.metadata as \{ waitingAck\?: unknown \} \| null\)\?\.waitingAck !== true\)/)
+  })
+})
+
+describe('SecureDog round 1 (luna-10)', () => {
+  it('waiting ack: line health + kill re-check right before the send; one "sigue esperando" alert per 15 min', () => {
+    const turn = fs.readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
+    const ack = turn.slice(turn.indexOf('async function ackWaitingCustomer'), turn.indexOf('Daily token caps sum turns'))
+    assert.match(ack, /account\.isActive !== false && !account\.disconnectedAt && tokenStatus !== 'revoked' && tokenStatus !== 'expired'/)
+    assert.ok(ack.indexOf('(await readAgentKillState(row.tenantId)).armed || (await isPlatformAiPaused())') < ack.indexOf('const ackDelivery = await deliverOnce('))
+    assert.match(ack, /createdAt: \{ gte: new Date\(Date\.now\(\) - WAITING_ALERT_THROTTLE_MS\) \}/)
+  })
+  it('Pegar cliente stops on the platform AI pause', () => {
+    assert.match(fs.readFileSync('src/app/api/ventas/customer-paste/enhance/route.ts', 'utf8'), /if \(await isPlatformAiPaused\(\)\) return NextResponse\.json/)
+  })
+  it('exam / shoppers / shadow only run through the safe test session (terms, kill, actor, audited cap, signals)', () => {
+    const session = fs.readFileSync('scripts/agent-pack/test-session.ts', 'utf8')
+    for (const re of [/isAiTermsAcceptedNow\(tenantId\)/, /readAgentKillState\(tenantId\)\)\.armed/, /isPlatformAiPaused\(\)/, /\['OWNER', 'ADMIN'\]/, /logAudit\(/, /process\.once\('SIGINT'/, /process\.once\('SIGTERM'/]) assert.match(session, re)
+    for (const f of ['exam', 'shoppers', 'shadow']) {
+      const src = fs.readFileSync(`scripts/agent-pack/${f}.ts`, 'utf8')
+      assert.match(src, /withExamSession\(/, f)
+      assert.doesNotMatch(src, /mutateChatAgentLayerConfig/, f)
+    }
+  })
+  it('the bank / reviewer redaction removes accented names, dotted numbers, @handles and keeps prices', async () => {
+    const { redactCustomerText } = await import('../../../scripts/agent-pack/exam-bank')
+    assert.equal(redactCustomerText('Hola soy José Ramírez, quiero info', 'José Ramírez'), 'Hola soy [nombre] [nombre], quiero info')
+    assert.equal(redactCustomerText('me llamo maria fernanda rodriguez'), 'me llamo [nombre] ')
+    assert.equal(redactCustomerText('cédula 1.1234.0567 y cel 8888.8888'), 'cédula [número] y cel [número]')
+    assert.equal(redactCustomerText('búscame en @ana.perez_cr'), 'búscame en [usuario]')
+    assert.equal(redactCustomerText('El Focus cuesta ₡9 900'), 'El Focus cuesta ₡9 900')
+    assert.equal(redactCustomerText('soy de Cartago'), 'soy de Cartago')
+  })
+  it('accented introduction names never get a second greeting', () => {
+    const N = { afterHours: true, transparent: true }
+    assert.equal(withNightIntro('¡Hola! Soy José de La Tienda 🌿 El Focus cuesta ₡9 900.', N, { name: 'José', store: 'La Tienda', introduced: false }), '¡Hola! Soy José, asistente virtual de La Tienda 🌿 El Focus cuesta ₡9 900.')
+    assert.equal(withNightIntro('¡Hola! Soy Ángela de La Tienda, ¿en qué te ayudo?', N, { name: 'Ángela', store: 'La Tienda', introduced: false }), '¡Hola! Soy Ángela, asistente virtual de La Tienda, ¿en qué te ayudo?')
+  })
+})
+
+describe('verifier + SecureDog round 2 (luna-10)', () => {
+  it('#3: guarantees in any word order and time-to-effect promises are caught; store sentences pass', () => {
+    for (const t of ['Resultado garantizado', 'Efecto garantizado 💯', 'Te garantizo resultados', 'Funciona garantizado', 'Garantizado: vas a dormir mejor', 'Resultados garantizados', 'vas a sentir más energía desde el primer día', 'te va a quitar la ansiedad', 'en una semana ves resultados', 'Te quita el estrés', 'Te ayuda a dormir mejor desde la primera noche']) assert.ok(resultsClaimIn(t), t)
+    for (const t of ['Muchas personas dicen que es el mejor precio del país', 'Muchas clientas notan que el envío es rápido y el precio es mejor', 'Pago seguro garantizado', 'El Energy da energía sostenida hasta por 8 horas', 'Se usa uno al día desde el primer día que lo recibís']) assert.equal(resultsClaimIn(t), null, t)
+  })
+  it('#4: every "don\'t contact me" is an opt-out, asking for a person is not', () => {
+    for (const t of ['STOP', 'no me escriban más', 'NO MÁS MENSAJES', 'ya no me manden nada', 'quiero darme de baja', 'no me contacten más', 'No quiero un asistente virtual', 'No quiero que me atienda una inteligencia artificial', 'No me escriban']) assert.ok(isOptOutText(t), t)
+    for (const t of ['Me podría atender un asesor', 'quiero hablar con una persona', 'no quiero el combo', 'no me llegó el pedido']) assert.equal(isOptOutText(t), false, t)
+    assert.match(fs.readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8'), /optOut: isOptOutText\(handoffTrigger\?\.content\) \|\| isOptOutText\(input\.payload\.content\)/)
+  })
+  it('#5: a new place / product the customer asked about is a new answer; the same answer twice is still dropped', () => {
+    assert.equal(isNearRepeat('El envío a Limón cuesta ₡2.500 y llega en 2 días hábiles', ['El envío a San José cuesta ₡2.500 y llega en 2 días hábiles'], 'y a limón?'), false)
+    assert.equal(isNearRepeat('Sí, el Focus está disponible y lo enviamos hoy mismo', ['Sí, el Stress Down está disponible y lo enviamos hoy mismo'], 'y el focus?'), false)
+    assert.equal(isNearRepeat('El envío a San José cuesta ₡2.500 y llega en 2 días hábiles', ['El envío a San José cuesta ₡2.500 y llega en 2 días hábiles'], 'cuanto el envio?'), true)
+  })
+  it('#1: the waiting ack never counts as an answer for the sweep or the re-arm (Devolver a IA answers the message)', () => {
+    assert.match(fs.readFileSync('src/lib/soft-ai/waiting-sweep.ts', 'utf8'), /_count: \{ select: \{ deliveries: \{ where: \{ NOT: \{ deliveryKey: \{ endsWith: ':waiting_ack' \} \} \} \} \} \}/)
+    assert.match(fs.readFileSync('src/lib/soft-ai/automation-queue.ts', 'utf8'), /deliveries: \{ none: \{ NOT: \{ deliveryKey: \{ endsWith: ':waiting_ack' \} \} \} \}/)
+    assert.match(fs.readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8'), /deliveryKey: `\$\{row\.deliveryKey\}:waiting_ack`/)
+  })
+  it('SecureDog L2/L4: shadow replays redacted text as "Cliente"; the test cap is bounded and only our own raise is undone', () => {
+    const shadow = fs.readFileSync('scripts/agent-pack/shadow.ts', 'utf8')
+    assert.match(shadow, /customerName: 'Cliente',/)
+    assert.match(shadow, /agent: redactCustomerText\(r\.text, c\.peerName\)/)
+    const session = fs.readFileSync('scripts/agent-pack/test-session.ts', 'utf8')
+    assert.match(session, /input\.cap > 20_000_000/)
+    assert.match(session, /c\.testDailyTokenCap === input\.cap \? \{ \.\.\.c, testDailyTokenCap: before \} : c/)
   })
 })

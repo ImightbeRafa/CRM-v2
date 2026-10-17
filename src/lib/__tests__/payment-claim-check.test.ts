@@ -120,6 +120,8 @@ describe('payment check — forced decision + wiring', () => {
     assert.match(helper, /input\.messageType !== 'text'/)
     assert.match(helper, /if \(mode === 'shadow'\)/)
     assert.match(helper, /forcePaymentRisk: true/)
+    // A forced hand-off keeps the burst step (opt-out / review) the waiting ack reads.
+    assert.match(helper, /forced\.decisionTrace\.steps\.unshift\(\.\.\.decision\.decisionTrace\.steps\.filter\(\(s\) => s\.step === 'burst'\)\)/)
     // Only `decideInbound(...)` results flow on — nothing from the model's verdict is sent to the customer.
     assert.doesNotMatch(helper, /result\.(?:text|raw)/)
   })
@@ -145,7 +147,10 @@ describe('payment check — verifier round 9', () => {
     assert.ok(turn.includes('runtimeInput.budgetStartedAt = probarBudgetStartedAt'))
     // Safety order: the check (a provider call) runs only after the AI-terms / kill / budget gates and the activation exit.
     const check = turn.indexOf('const decision = await withPaymentClaimCheck(')
-    assert.ok(turn.indexOf('runPreModelGates({') > 0 && turn.indexOf('runPreModelGates({') < check)
+    // Verifier: measure inside the live turn (the first runPreModelGates is in the waiting-ack helper).
+    const liveStart = turn.indexOf('export async function executeAgentLayerTurn')
+    const gates = turn.indexOf('runPreModelGates({', liveStart)
+    assert.ok(liveStart > 0 && gates > liveStart && gates < check)
     assert.ok(turn.indexOf("if (resolved.agent.operationMode !== 'ai_full' || !resolved.unlockedForSend) {") < check)
     const client = fs.readFileSync('src/lib/soft-ai/llm/client.ts', 'utf8')
     assert.ok(client.includes("const effort = args.reasoningLocked ? (args.reasoningEffort ?? 'none') : openAiEffort(args.reasoningEffort)"))

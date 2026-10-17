@@ -269,6 +269,8 @@ async function withPaymentClaimCheck(
     return decision
   }
   const forced = decideInbound({ ...input, forcePaymentRisk: true })
+  // D2 verifier: keep the burst step (opt-out + owed review) on a forced hand-off — the waiting ack reads it.
+  forced.decisionTrace.steps.unshift(...decision.decisionTrace.steps.filter((s) => s.step === 'burst'))
   step(forced, result.verdict)
   return forced
 }

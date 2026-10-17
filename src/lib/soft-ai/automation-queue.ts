@@ -156,6 +156,8 @@ export async function rearmFinishedJob(input: {
  */
 export async function newerBurstJobPending(
   row: Pick<ClaimedChatAutomationJob, 'id' | 'tenantId' | 'conversationId'>,
+  /** SecureDog R1: only a message SENT no earlier than this trigger counts (not an old one Meta delivered late). */
+  triggerSentAt?: Date,
 ): Promise<boolean> {
   const self = await prisma.chatAutomationJob.findFirst({
     where: { id: row.id, tenantId: row.tenantId },
@@ -170,6 +172,7 @@ export async function newerBurstJobPending(
       kind: SOFT_AI_JOB_KIND,
       status: { in: ['pending', 'retry'] },
       createdAt: { gt: self.createdAt },
+      ...(triggerSentAt ? { message: { sentAt: { gte: triggerSentAt } } } : {}),
     },
     select: { id: true },
   })

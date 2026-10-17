@@ -11,8 +11,15 @@
 - Media + text (User 722630: "Que costo tiene" + photo got "¿Me contás por escrito…?"): `inbound-burst.ts` plans the
   burst. With customer text, the text is decided / answered normally and a person is still asked to look at the photo
   or audio (review hand-off, the chat stays on IA). A receipt-looking photo anywhere in the burst keeps the receipt
-  path. Photo / audio alone, stickers and caption opt-outs keep today's behaviour. Probar is unchanged (one message
-  per run).
+  path. Photo / audio alone, stickers and caption opt-outs keep today's behaviour. Probar now plans bursts the same
+  way (shared `decideBurstTurn`, `burst-decision.ts`).
+- Every unanswered bubble is judged as if it still had its own job:
+  - A TRUE hand-off in any bubble or caption wins (opt-out, payment claim, hand-off keyword reply, "agente").
+  - A question that needs the model is never dropped because the newest bubble got a code reply. The model answers
+    the whole burst, unless the other bubbles are only greetings.
+  - A review another bubble would have raised (payment data sent by hand) is settled after the reply.
+  - A "STOP" anywhere in the burst keeps the later waiting ack silent.
+- Legacy Soft path (agent layer off): no settle, immediate dispatch as before.
 - Verifier round 1 FAIL, then fixed:
   - (High) A TRUE hand-off in any text bubble of the burst wins ("Quiero hablar con una persona" + "por favor"). A
     planned hand-off never yields, and neither does a reclaimed job.
@@ -24,9 +31,25 @@
   - The first round's "tsc clean" was wrong: the new test had type errors. Now exit 0.
 - Verifier round 2 PASS WITH NOTES; its Medium (opt-out in an earlier photo caption) fixed, and a burst photo review
   no longer hides the "La IA no respondió" alert.
-- Tests: `inbound-burst.test.ts` (23). Source-text asserts updated in chat-automation-job, luna10-hard-blocks,
-  agents2-b-sales and agents2-pace (same intent, new names). test:soft-ai 1004/1004, test:chat-harden 645/645,
-  tsc + lint clean.
+- Verifier round 3 FAIL (High: the earlier question was dropped when the newest bubble got a code reply) and
+  SecureDog round 1 "fix before prod" (two Medium regressions). All fixed in 051587ed:
+  - STOP in any bubble; each bubble and caption decided alone.
+  - Strict placeholder list; file-name captions are not text.
+  - The daily cap counts every live model run (a pre-existing gap with duplicate_reply / safe_line_repeat).
+  - At most one written-then-dropped reply per burst.
+  - The supersede write is scoped by tenant.
+  - No burst time window.
+  - In Probar, the burst review is shown and the sandbox history keeps replies to earlier queued messages.
+- Verifier round 4 PASS WITH NOTES and SecureDog round 2 PASS (production). Their notes are fixed too:
+  - Two different code replies in one burst ("¿Cómo pago?" + an owner's "precio" reply) → the model answers both.
+  - A "lo quiero" in an earlier bubble keeps the buy cue for the sales stage.
+  - The greeting list is wider ("Buen día", "Bueno", "Claro", "Hola, ¿cómo estás?"), and `[fallback]` is a placeholder.
+  - A running job yields only to a newer job whose message was sent after its own (an old message Meta delivered late
+    never takes the burst).
+  - The waiting ack reads every customer message since the hand-off for an opt-out.
+- Tests: `inbound-burst.test.ts` (30, they run the real `decideBurstTurn`). Source-text asserts updated in
+  chat-automation-job, luna10-hard-blocks, agents2-b-sales, agents2-pace and probar-scenarios (same intent, new
+  names). test:soft-ai 1011/1011, test:chat-harden 645/645, test:security 271/271, tsc + lint clean.
 
 ## 2026-10-17 (night) — PatchHouse Instagram + WhatsApp LIVE on gpt-6-luna
 

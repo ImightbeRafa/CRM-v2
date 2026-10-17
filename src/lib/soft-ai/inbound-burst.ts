@@ -25,7 +25,7 @@ const MEDIA_TYPES = new Set(['image', 'document', 'audio', 'video', 'voice', 'st
  * text. Lowercase and listed on purpose: "[STOP]" or "[urgente]" typed by a customer stays text (SecureDog MEDIA).
  */
 const PLACEHOLDER_RE =
-  /^\s*\[(image|imagen|video|audio|voice|document|archivo|file|attachment|sticker|location|contact|contacts|share|story_mention|ig_reel|reel|ig_post|ig_story|reaction|unsupported|button|interactive|order|system|template|request_welcome|unknown)\]\s*$/
+  /^\s*\[(image|imagen|video|audio|voice|document|archivo|file|attachment|sticker|location|contact|contacts|share|story_mention|ig_reel|reel|ig_post|ig_story|reaction|unsupported|button|interactive|order|system|template|fallback|request_welcome|unknown)\]\s*$/
 /** A WhatsApp document's caption falls back to its file name ("IMG-2026.pdf"): that is not something the customer said. */
 const FILE_NAME_RE = /^[\p{L}\d _.()-]{1,120}\.(pdf|jpe?g|png|gif|webp|heic|docx?|xlsx?|pptx?|txt|csv|mp4|mov|mp3|ogg|opus|m4a|zip)$/iu
 
@@ -193,15 +193,23 @@ export function resolveBurstDecision<T extends BurstDecisionLike>(
   if (main.handled && main.handoff?.kind === 'handoff') return { decision: main, carriedReview: null }
   const otherHandoff = others.find((o) => o.decision.handled && o.decision.handoff?.kind === 'handoff')
   if (otherHandoff) return { decision: otherHandoff.decision, carriedReview: null }
-  // A greeting / thanks bubble ("Hola" + "¿Cómo pago?") asks nothing: the code reply stays.
-  if (main.handled && others.some((o) => !o.decision.handled && !isCourtesyOnly(o.text))) {
+  // A greeting / thanks bubble ("Hola" + "¿Cómo pago?") asks nothing: the code reply stays. Another bubble that needs
+  // the model — or got a DIFFERENT code reply of its own ("¿Cómo pago?" + an owner's "precio" saved reply, Verifier
+  // r4 #1) — would be dropped by one code reply: the model answers the whole burst instead.
+  const unansweredByMain = (o: { text: string; decision: T }) =>
+    !isCourtesyOnly(o.text) &&
+    (!o.decision.handled ||
+      (o.decision.handoff?.kind !== 'handoff' &&
+        o.decision.shortcutKey !== main.shortcutKey &&
+        o.decision.shortcutKey !== 'sys_media_ask'))
+  if (main.handled && others.some(unansweredByMain)) {
     const carried = main.handoff?.kind === 'review' && main.shortcutKey !== 'sys_media_ask' ? main.handoff : null
     return { decision: toModel(main), carriedReview: carried }
   }
   return { decision: main, carriedReview: null }
 }
 
-const COURTESY_WORD = String.raw`(?:hol+a+|holis?|buenas|buen[oa]s?\s+(?:d[ií]as?|tardes|noches)|hey|saludos|pura\s+vida|upe|(?:muchas\s+)?gracias|ok|okay|okey|dale|perfecto|genial|listo|s[ií]|por\s+favor|porfa)`
+const COURTESY_WORD = String.raw`(?:hol+a+|holis?|buenas|buen[oa]?s?\s+(?:d[ií]as?|tardes|noches)|hey|saludos|pura\s+vida|upe|diay|(?:muchas\s+|mil\s+)?gracias|ok|okay|okey|ah\s+ok|ah\s+bueno|bueno|claro|dale|perfecto|genial|excelente|listo|s[ií]|por\s+favor|porfa|ja(?:ja)+|je(?:je)+|(?:c[oó]mo|qu[eé])\s+(?:est[aá]s?|est[aá]n|tal)|todo\s+bien)`
 const COURTESY_RE = new RegExp(String.raw`^(?:[\s,.!¡¿?\p{Extended_Pictographic}️]|${COURTESY_WORD}(?![\p{L}\d]))+$`, 'iu')
 
 /** "Hola", "¡Buenas tardes!", "gracias 🙏", "ok": a bubble that asks nothing. */

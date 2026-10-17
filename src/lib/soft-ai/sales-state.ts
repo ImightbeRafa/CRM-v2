@@ -326,7 +326,13 @@ export function deriveSalesState(input: {
     howToBuy: HOW_TO_BUY_RE.test(oursText),
   }
   const last = input.inboundText || ''
-  const buyCue = BUY_RE.test(last) && !NEGATED_BUY_RE.test(last)
+  // Burst = one reply (Verifier r4 #2): "Lo quiero" + "¿Hacen envíos a Limón?" answered by ONE turn — a buy cue in any
+  // customer message since the store last wrote counts, as when that message had its own turn.
+  const unanswered: string[] = []
+  for (let i = input.history.length - 1; i >= 0 && input.history[i].direction !== 'outbound'; i--) {
+    unanswered.push(input.history[i].content || '')
+  }
+  const buyCue = [last, ...unanswered].some((t) => BUY_RE.test(t) && !NEGATED_BUY_RE.test(t))
   const receiptCue = (RECEIPT_RE.test(last) || hasPaymentClaimCue(last))
   // agents2-format: the store asked HOW to pay and gave no payment details after that question.
   const askedMethod = methodQuestionPending(ours)

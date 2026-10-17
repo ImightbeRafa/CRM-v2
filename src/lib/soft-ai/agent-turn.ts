@@ -275,7 +275,7 @@ async function yieldsToNewerBurst(
   stage: 'pre_model' | 'pre_send' = 'pre_model',
 ): Promise<boolean> {
   if (plannedHandoff?.kind === 'handoff' || row.attempts > 1) return false
-  if (!shouldYieldToNewerBurst({ newerPending: await newerBurstJobPending(row), triggerSentAt })) return false
+  if (!shouldYieldToNewerBurst({ newerPending: await newerBurstJobPending(row, triggerSentAt), triggerSentAt })) return false
   // SecureDog INT (cost): at most one written-then-dropped reply per burst. When a reply of this chat was already
   // dropped for a newer bubble in the last minute, this one goes out (a customer typing every few seconds still
   // gets answers, and the model is not run again and again for nothing).
@@ -491,6 +491,13 @@ async function ackWaitingCustomer(input: {
     const handoffTrigger = lastTurn.triggerMessageId
       ? await prisma.chatMessage.findFirst({ where: { id: lastTurn.triggerMessageId, tenantId: row.tenantId }, select: { content: true } })
       : null
+    // SecureDog R3 (burst): "STOP" + "hola" while the chat waits on a person — the STOP bubble's job was superseded, so
+    // every customer message since the hand-off is read, not only this one.
+    const inboundSince = await prisma.chatMessage.findMany({
+      where: { tenantId: row.tenantId, conversationId: row.conversationId, direction: 'inbound', sentAt: { gt: since } },
+      select: { content: true },
+      take: 50,
+    })
     const key = waitingAckKey(lastTurn.id)
     const alreadyAcked = Boolean(await prisma.chatAgentTurn.findUnique({ where: { automationDeliveryKey: key }, select: { id: true } }))
     const decision = decideWaitingAck({
@@ -500,7 +507,11 @@ async function ackWaitingCustomer(input: {
       alreadyAcked,
       // Verifier round 2 #4: the opt-out can be the hand-off message OR this new one ("no me escriban más").
       // SecureDog (burst): the hand-off may come from another bubble of its burst ("STOP" + "por favor").
-      optOut: isOptOutText(handoffTrigger?.content) || isOptOutText(input.payload.content) || burstOptOutIn(lastTurn.decisionTrace),
+      optOut:
+        isOptOutText(handoffTrigger?.content) ||
+        isOptOutText(input.payload.content) ||
+        burstOptOutIn(lastTurn.decisionTrace) ||
+        inboundSince.some((m) => isOptOutText(m.content)),
       now: new Date(),
     })
     if (!decision.realert) return

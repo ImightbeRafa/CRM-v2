@@ -28,6 +28,7 @@ import { decideInbound } from '@/lib/soft-ai/inbound-decision'
 import type { TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
 import { parseBrandFacts, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import { RESERVED_SHORTCUT_SEEDS, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
+import { deriveSalesState, type SalesContext } from '@/lib/soft-ai/sales-state'
 
 const read = (p: string) => readFileSync(p, 'utf8')
 const shortcuts: RuntimeShortcut[] = RESERVED_SHORTCUT_SEEDS.map((row, index) => ({
@@ -57,7 +58,7 @@ const outbound = (content: string, s: number): Msg => ({ id: `m${++seq}`, direct
 const PAYMENT_DETAILS_SENT = () => outbound('Perfecto 🙌 Hacé el SINPE al 6201-9914 y me mandás el comprobante por aquí', -120)
 
 /** Live / Probar: plan the burst, then decideBurstTurn (no DB). */
-function run(trigger: { content: string; messageType?: string; s: number }, history: Msg[], brandFacts: BrandFacts = facts) {
+function run(trigger: { content: string; messageType?: string; s: number }, history: Msg[], brandFacts: BrandFacts = facts, extra: RuntimeShortcut[] = []) {
   const t = { content: trigger.content, messageType: trigger.messageType || 'text', sentAt: at(trigger.s) }
   const burstEarlier = unansweredBurst(history, t)
   const burst = planBurstInbound({ trigger: t, earlier: burstEarlier, awaitingReceipt: () => false })
@@ -68,9 +69,23 @@ function run(trigger: { content: string; messageType?: string; s: number }, hist
     history,
     mediaSalesContext: null,
     earlierCustomerTexts: [],
-    decisionBase: { brandFacts, shortcuts, awaitingPaymentMethod: false },
+    decisionBase: { brandFacts, shortcuts: [...shortcuts, ...extra], awaitingPaymentMethod: false },
   })
   return { burst, ...out }
+}
+
+/** An owner's saved reply sent as written ("precio" → the price list). */
+const PRICE_REPLY: RuntimeShortcut = {
+  id: 'owner-precio',
+  key: 'owner_precio',
+  title: 'Precios',
+  kind: 'playbook',
+  intents: ['other'] as RuntimeShortcut['intents'],
+  keywords: ['precio'],
+  body: 'Los parches cuestan ₡12.000 cada caja 😊',
+  deliveryMode: 'verbatim',
+  isActive: true,
+  sortOrder: 999,
 }
 
 /** Receipt variant: the burst plan's receipt check reads the history like live (mediaAwaitingReceipt). */
@@ -194,7 +209,10 @@ describe('burst = one reply · which bubbles', () => {
   })
 
   it('courtesy-only bubbles ask nothing', () => {
-    for (const t of ['Hola', '¡Buenas tardes!', 'gracias 🙏', 'ok', 'Pura vida', 'hola, buenas']) assert.equal(isCourtesyOnly(t), true, t)
+    for (const t of ['Hola', '¡Buenas tardes!', 'gracias 🙏', 'ok', 'Pura vida', 'hola, buenas', 'Buen día', 'Bueno', 'Claro', 'Mil gracias', 'Ah ok', 'jaja', 'Hola, ¿cómo estás?']) {
+      assert.equal(isCourtesyOnly(t), true, t)
+    }
+    assert.deepEqual(burstOtherTexts([inbound('[fallback]', 0)], { inboundText: 'x' }), [])
     for (const t of ['Hola, ¿tienen envíos?', 'Quiero 2', '¿precio?', '']) assert.equal(isCourtesyOnly(t), false, t)
   })
 })
@@ -212,7 +230,12 @@ describe('burst = one reply · hand-offs and questions in any bubble', () => {
     assert.equal(optOut, true)
     assert.equal(burstOptOutIn(decision.decisionTrace), true)
     const turn = read('src/lib/soft-ai/agent-turn.ts')
-    assert.match(turn, /optOut: isOptOutText\(handoffTrigger\?\.content\) \|\| isOptOutText\(input\.payload\.content\) \|\| burstOptOutIn\(lastTurn\.decisionTrace\),/)
+    assert.match(turn, /isOptOutText\(input\.payload\.content\) \|\|\s+burstOptOutIn\(lastTurn\.decisionTrace\) \|\|\s+inboundSince\.some\(\(m\) => isOptOutText\(m\.content\)\),/)
+    // SecureDog R3: every customer message since the hand-off is read (the STOP bubble's job may have been superseded).
+    assert.match(turn, /direction: 'inbound', sentAt: \{ gt: since \} \},\s+select: \{ content: true \},\s+take: 50,/)
+    // SecureDog R1: only a message sent no earlier than this trigger can take the burst.
+    assert.match(read('src/lib/soft-ai/automation-queue.ts'), /\.\.\.\(triggerSentAt \? \{ message: \{ sentAt: \{ gte: triggerSentAt \} \} \} : \{\}\)/)
+    assert.match(turn, /newerPending: await newerBurstJobPending\(row, triggerSentAt\)/)
     // No opt-out anywhere → nothing recorded.
     assert.equal(run({ content: '¿precio?', s: 2 }, [inbound('hola', 0)]).optOut, false)
   })
@@ -248,6 +271,39 @@ describe('burst = one reply · hand-offs and questions in any bubble', () => {
     assert.equal(hello.decision.shortcutKey, 'sys_payment_info')
     // Alone it is still the code reply.
     assert.equal(run({ content: '¿Cómo pago?', s: 0 }, [], SHARED).decision.shortcutKey, 'sys_payment_info')
+  })
+
+  it('Verifier r4 #1: two different code replies in one burst ("¿Cómo pago?" + "¿Precio?") → the model answers both', () => {
+    const payFirst = run({ content: '¿Precio?', s: 3 }, [inbound('¿Cómo pago?', 0)], SHARED, [PRICE_REPLY])
+    assert.equal(payFirst.decision.handled, false)
+    const priceFirst = run({ content: '¿Cómo pago?', s: 3 }, [inbound('¿Precio?', 0)], SHARED, [PRICE_REPLY])
+    assert.equal(priceFirst.decision.handled, false)
+    // The same code reply twice ("¿Precio?" + "precio por favor") is one answer: the code reply stays.
+    const same = run({ content: 'precio por favor', s: 3 }, [inbound('¿Precio?', 0)], SHARED, [PRICE_REPLY])
+    assert.equal(same.decision.shortcutKey, 'owner_precio')
+    // Alone, the owner's reply goes out as written.
+    assert.equal(run({ content: '¿Precio?', s: 0 }, [], SHARED, [PRICE_REPLY]).decision.shortcutKey, 'owner_precio')
+  })
+
+  it('Verifier r4 #2: "Lo quiero" + "¿Hacen envíos a Limón?" keeps the buy cue for the one turn', () => {
+    const ctx = {
+      catalog: [{ name: 'GLP-1', price: 15900, stockLabel: 'disponible' }],
+      shippingMethods: [{ name: 'Correos', price: 5000, coverage: 'todo el país', cod: 'no' }],
+      orderFields: ['Nombre', 'Teléfono'],
+      salesScript: '',
+      aiDisclosure: 'discreet',
+      paymentShareable: true,
+      paymentDigits: ['62019914'],
+      promo: null,
+      bundles: [],
+      paymentMethods: ['sinpe'],
+      cardOnWeb: false,
+    } as unknown as SalesContext
+    const history = [outbound('El GLP-1 cuesta ₡15.900 😊', -60), inbound('Lo quiero', 0)]
+    assert.equal(deriveSalesState({ history, inboundText: '¿Hacen envíos a Limón?', ctx }).buyCue, true)
+    // Once the store answered, an old "lo quiero" does not count again.
+    const answered = [...history, outbound('¡Genial! ¿A qué zona?', 30)]
+    assert.equal(deriveSalesState({ history: answered, inboundText: '¿Hacen envíos a Limón?', ctx }).buyCue, false)
   })
 
   it('payment data sent by hand: the model answers both questions and the payment_details review is kept (either order)', () => {

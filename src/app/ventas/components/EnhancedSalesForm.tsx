@@ -32,6 +32,16 @@ export interface OrderFormPrefill {
   name?: string;
   phone?: string;
   username?: string;
+  /** From the chat (chat-order-prefill): applied only to empty fields; a person reviews before submitting. */
+  email?: string;
+  province?: string;
+  canton?: string;
+  district?: string;
+  address?: string;
+  orderType?: 'EA' | 'RA';
+  paymentChoice?: 'contra_entrega';
+  /** Products the customer named, from the business's inventory (only when the form has none yet). */
+  products?: Array<{ id: string; name: string; type: string; baseCost: number; cantidad: number }>;
 }
 
 interface EnhancedSalesFormProps {
@@ -323,15 +333,48 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     prefillAppliedRef.current = true;
     const initial = prefillRef.current;
     if (!initial) return;
-    setOrderInfo(prev => ({
-      ...prev,
-      customerInfo: {
-        ...prev.customerInfo,
-        name: prev.customerInfo.name || initial.name || '',
-        phone: prev.customerInfo.phone || initial.phone || '',
-        username: prev.customerInfo.username || initial.username || '',
-      },
-    }));
+    setOrderInfo(prev => {
+      // An address only comes in whole (province → canton → district) and only into an empty address.
+      const takeAddress = !prev.customerInfo.province && Boolean(initial.province);
+      const products =
+        prev.products.length === 0 && initial.products?.length
+          ? initial.products.map((p, i) => ({
+              id: `product_${Date.now()}_${i}`,
+              type: p.type,
+              color: '',
+              packaging: '',
+              comments: '',
+              cantidad: p.cantidad,
+              productCost: p.baseCost,
+              shippingCost: 0,
+              iva: 0,
+              total: p.baseCost * p.cantidad,
+              vendedor: user?.username || '',
+              mensajeria: '',
+              tamano: '',
+              personalizado: '',
+              optionDeltas: 0,
+            }))
+          : prev.products;
+      const takePayment = initial.paymentChoice === 'contra_entrega' && (prev.paymentChoice || 'pendiente_pago') === 'pendiente_pago';
+      return {
+        ...prev,
+        products,
+        ...(takePayment ? { paymentChoice: 'contra_entrega' as const, contraEntrega: true } : {}),
+        customerInfo: {
+          ...prev.customerInfo,
+          name: prev.customerInfo.name || initial.name || '',
+          phone: prev.customerInfo.phone || initial.phone || '',
+          username: prev.customerInfo.username || initial.username || '',
+          email: prev.customerInfo.email || initial.email || '',
+          address: prev.customerInfo.address || initial.address || '',
+          ...(takeAddress
+            ? { province: initial.province || '', canton: initial.canton || '', district: initial.district || '' }
+            : {}),
+          ...(initial.orderType && !prev.customerInfo.address && !prev.customerInfo.province ? { orderType: initial.orderType } : {}),
+        },
+      };
+    });
   }, [isClient]);
 
   // Mark as unsaved when data changes

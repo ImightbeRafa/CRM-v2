@@ -89,7 +89,7 @@ import { ChatClientPanel } from '@/components/chats/ChatClientPanel'
 import { AuroraMobileNav } from '@/components/aurora/AuroraMobileNav'
 import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import dynamic from 'next/dynamic'
-import type { CreatedOrderRef } from '@/app/ventas/components/EnhancedSalesForm'
+import type { CreatedOrderRef, OrderFormPrefill } from '@/app/ventas/components/EnhancedSalesForm'
 import { useToast } from '@/app/hooks/use-toast'
 
 const RAIL_TAB_KEY = 'betsy.chat.railTab.v2'
@@ -108,6 +108,11 @@ const CrearPedidoDrawer = dynamic(
 export function SoftCopilotInboxV2() {
   const { toast } = useToast()
   const [createOrderOpen, setCreateOrderOpen] = useState(false)
+  /** Order data read from the chat (name, address, products…) for the "Crear pedido" form; null = not loaded. */
+  const [chatOrderPrefill, setChatOrderPrefill] = useState<OrderFormPrefill | null>(null)
+  const [orderPrefillLoading, setOrderPrefillLoading] = useState(false)
+  /** "Confirmado" on "Pedido por confirmar": the alert clears once that order is created from the form. */
+  const [resolveTagOnOrder, setResolveTagOnOrder] = useState<SoftTag | null>(null)
   const [accounts, setAccounts] = useState<SoftSocialAccount[]>([])
   const [dtoMap, setDtoMap] = useState<Map<string, ChatConversationListItemDto>>(new Map())
   // Mirror for the notification chime (compares a refreshed row with what is on screen).
@@ -1186,6 +1191,11 @@ export function SoftCopilotInboxV2() {
   const [reviewBusy, setReviewBusy] = useState(false)
   async function resolveReviewTag(tag: SoftTag) {
     if (!selectedConversation || reviewBusy || !selectedConversation.tags.includes(tag)) return
+    // "Pedido por confirmar" → Confirmado: open "Crear pedido" filled from the chat; the alert clears when it is created.
+    if (tag === ORDER_REVIEW_TAG && !selectedConversation.orderId) {
+      void openCreateOrderFromChat(tag)
+      return
+    }
     setReviewBusy(true)
     try {
       const paidStage = tag === PAYMENT_REVIEW_TAG ? activeChatStages.find((s) => s.key === 'pagado') : undefined
@@ -1724,6 +1734,35 @@ export function SoftCopilotInboxV2() {
 
   // Order created from this chat: link it (ChatMessage.orderId) and refresh the thread.
   // The order is never rolled back if linking fails.
+  /** Open "Crear pedido" already filled from what the customer wrote (a person reviews and submits). */
+  async function openCreateOrderFromChat(resolveTag: SoftTag | null = null) {
+    if (!selectedConversationId || orderPrefillLoading) return
+    setOrderPrefillLoading(true)
+    toast({ title: 'Preparando el pedido con los datos del chat…' })
+    setResolveTagOnOrder(resolveTag)
+    let prefill: OrderFormPrefill | null = null
+    try {
+      const res = await fetch(`/api/chat/conversations/${encodeURIComponent(selectedConversationId)}/order-prefill`, {
+        credentials: 'same-origin',
+      })
+      const data = res.ok ? await res.json() : null
+      if (data?.customer) {
+        prefill = {
+          ...Object.fromEntries(Object.entries(data.customer).filter(([, v]) => typeof v === 'string' && v.trim())),
+          ...(data.orderType ? { orderType: data.orderType } : {}),
+          ...(data.paymentChoice ? { paymentChoice: data.paymentChoice } : {}),
+          ...(Array.isArray(data.products) && data.products.length ? { products: data.products } : {}),
+        } as OrderFormPrefill
+      }
+    } catch {
+      // The form still opens with the chat's name / phone.
+    } finally {
+      setOrderPrefillLoading(false)
+    }
+    setChatOrderPrefill(prefill)
+    setCreateOrderOpen(true)
+  }
+
   const handleOrderCreated = async (order: CreatedOrderRef) => {
     const conv = selectedConversation
     const conversationId = selectedConversationId
@@ -1742,6 +1781,11 @@ export function SoftCopilotInboxV2() {
       })
       if (!res.ok) throw new Error(String(res.status))
       toast({ variant: 'success' as any, title: `Pedido ${label} creado y vinculado al chat` })
+      // Confirmado on "Pedido por confirmar": the order now exists, so the alert clears (audited server-side).
+      if (resolveTagOnOrder && conv.tags.includes(resolveTagOnOrder)) {
+        await patchConversation({ removeTag: resolveTagOnOrder }).catch(() => false)
+      }
+      setResolveTagOnOrder(null)
       setClientPanelRev((n) => n + 1)
       await fetchThreadMessages(conversationId)
     } catch {
@@ -1763,7 +1807,7 @@ export function SoftCopilotInboxV2() {
         conversationId={selectedConversationId}
         platform={selectedConversation.platform === 'instagram' ? 'instagram' : 'whatsapp'}
         revision={clientPanelRev}
-        onCreateOrder={() => setCreateOrderOpen(true)}
+        onCreateOrder={() => void openCreateOrderFromChat()}
         onGuiaSent={() => {
           if (selectedConversationId) void fetchThreadMessages(selectedConversationId)
           void fetchChanges()
@@ -1837,7 +1881,7 @@ export function SoftCopilotInboxV2() {
     onTakeOver: () => void setAgentControl('take_over'),
     onPauseAi: () => void setAgentControl('pause'),
     onResumeAi: () => void setAgentControl('resume'),
-    onCreateOrder: () => setCreateOrderOpen(true),
+    onCreateOrder: () => void openCreateOrderFromChat(),
     orderDraftPending,
     assignment: { assignees, viewerUserId, onAssign: (id: string | null) => void assignTo(id), busy: assignBusy },
     attachments: outboundMedia
@@ -2059,8 +2103,10 @@ export function SoftCopilotInboxV2() {
           onOpenChange={setCreateOrderOpen}
           subtitle={`Desde el chat con ${selectedConversation.recipientName || selectedConversation.recipientId}`}
           prefill={{
-            name: selectedConversation.recipientName || undefined,
-            phone: selectedConversation.platform === 'whatsapp' ? selectedConversation.recipientId : undefined,
+            ...chatOrderPrefill,
+            // The customer's own data first; the chat's name / WhatsApp number when they did not write one.
+            name: chatOrderPrefill?.name || selectedConversation.recipientName || undefined,
+            phone: chatOrderPrefill?.phone || (selectedConversation.platform === 'whatsapp' ? selectedConversation.recipientId : undefined),
             username: selectedConversation.platform === 'instagram' ? selectedConversation.recipientName || undefined : undefined,
           }}
           onCreated={handleOrderCreated}

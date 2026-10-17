@@ -497,15 +497,20 @@ export async function runSoftAiLlmRuntime(
     // luna-10 live (2026-10-17): a lone "confirmad[oa]" ("No tengo información confirmada sobre…" on a side-effects
     // question) is still never sent, but it is only a PAYMENT hand-off ("Pago por verificar") when payment or an order
     // is in play: the reply or the customer's message has a payment word, or the reply talks about the order.
+    // SecureDog r9 F2: the customer side is the whole recent burst (not only the planned text), and the store's last
+    // message counts ("listo" right after the SINPE details is payment talk).
+    const customerSide = burstCustomerText(input.history, input.inboundText || '')
+    const lastStoreText = [...input.history].reverse().find((m) => m.direction === 'outbound')?.content || ''
     const confirmationIsPayment =
       validation.reasons.includes('confirmation_wording') &&
       (hasPaymentWord(finalText) ||
-        hasPaymentWord(input.inboundText || '') ||
+        hasPaymentWord(customerSide) ||
+        hasPaymentWord(lastStoreText) ||
         /(?<![\p{L}])(pedido|orden|compra)(?![\p{L}])/iu.test(finalText))
     const paymentRisk =
       confirmationIsPayment ||
       validation.reasons.includes('payment_status_claim') ||
-      (structured.needsHuman && hasPaymentWord(input.inboundText || ''))
+      (structured.needsHuman && (hasPaymentWord(customerSide) || hasPaymentWord(lastStoreText)))
     if (paymentRisk) {
       escalate = true
       escalateReason = 'payment_claim'

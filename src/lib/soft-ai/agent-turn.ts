@@ -249,7 +249,9 @@ async function withPaymentClaimCheck(
 ): Promise<InboundDecision> {
   const mode = paymentCheckMode()
   if (mode === 'off' || decision.escalate || decision.handoff) return decision
-  if (input.messageType && input.messageType !== 'text') return decision
+  // SecureDog r9 F1: only real media skips (it has its own receipt path). A reaction / share / location / story
+  // mention that took the burst over still gets the check: the claim text is in the unanswered history it reads.
+  if (input.messageType && isMediaLikeMessageType(input.messageType)) return decision
   if (!paymentCheckGate(input.inboundText, ctx.history)) return decision
   const result = await runPaymentClaimCheck({
     inboundText: input.inboundText,

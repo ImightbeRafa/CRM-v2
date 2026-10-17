@@ -56,7 +56,9 @@ describe('INT-93: payment claims never reach a confirming reply', () => {
     const runtime = read('src/lib/soft-ai/llm/runtime.ts')
     assert.match(runtime, /validation\.reasons\.includes\('confirmation_wording'\)/)
     assert.match(runtime, /validation\.reasons\.includes\('payment_status_claim'\)/)
-    assert.match(runtime, /structured\.needsHuman && hasPaymentWord\(input\.inboundText/)
+    // SecureDog r9 F2: the customer side is the whole recent burst + the store's last message.
+    assert.match(runtime, /structured\.needsHuman && \(hasPaymentWord\(customerSide\) \|\| hasPaymentWord\(lastStoreText\)\)/)
+    assert.match(runtime, /const customerSide = burstCustomerText\(input\.history, input\.inboundText \|\| ''\)/)
     // SecureDog round 6 (luna-10): the reply check reads the whole burst since the store last wrote.
     assert.match(runtime, /customerText: burstCustomerText\(input\.history, input\.inboundText\)/)
   })

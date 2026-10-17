@@ -167,7 +167,8 @@ describe('luna-10 live · confirmation wording', () => {
   it('a lone "confirmada" is blocked but only a payment hand-off when payment / an order is in play', () => {
     const rt = readFileSync('src/lib/soft-ai/llm/runtime.ts', 'utf8')
     assert.match(rt, /const confirmationIsPayment =\s+validation\.reasons\.includes\('confirmation_wording'\) &&/)
-    assert.match(rt, /hasPaymentWord\(finalText\) \|\|\s+hasPaymentWord\(input\.inboundText \|\| ''\)/)
+    // SecureDog r9 F2: payment context = the reply, the whole recent burst, or the store's last message.
+    assert.match(rt, /hasPaymentWord\(finalText\) \|\|\s+hasPaymentWord\(customerSide\) \|\|\s+hasPaymentWord\(lastStoreText\)/)
     assert.match(rt, /const paymentRisk =\s+confirmationIsPayment \|\|\s+validation\.reasons\.includes\('payment_status_claim'\)/)
     // The reply itself is still never sent: confirmation_wording keeps needsHuman (safe line + review).
     assert.match(readFileSync('src/lib/soft-ai/llm/output-validator.ts', 'utf8'), /if \(hasConfirmationWording\(text\)\) reasons\.push\('confirmation_wording'\)/)

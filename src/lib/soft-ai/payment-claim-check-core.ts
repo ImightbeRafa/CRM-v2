@@ -106,10 +106,13 @@ export function buildPaymentCheckInput(
   const lines: string[] = []
   for (const m of before) lines.push(`Cliente (antes): ${head(m.content || '', 200)}`)
   if (lastStore) lines.push(`Tienda (último mensaje): ${tail(lastStore.content || '', 300)}`)
-  const recent = [...burst, inboundText].slice(-6)
-  const per = Math.max(400, Math.floor(900 / recent.length) - 3)
+  // SecureDog r9 F3: the whole burst (up to 12 bubbles), the planned text once (photo + text repeats the last bubble).
+  const all = burst.length && clean(burst[burst.length - 1]) === clean(inboundText) ? [...burst] : [...burst, inboundText]
+  const recent = all.slice(-12)
+  // A lone message keeps 900 chars (verifier r11); a long burst shares the budget, at least 200 each.
+  const per = Math.min(900, Math.max(200, Math.floor(2400 / recent.length) - 3))
   const unanswered = recent.map((t) => headTail(t, per)).join(' / ')
-  lines.push(`Cliente (SIN RESPONDER, lo que decidís): ${unanswered.length > 2400 ? `…${unanswered.slice(-2400)}` : unanswered}`)
+  lines.push(`Cliente (SIN RESPONDER, lo que decidís): ${unanswered.length > 3600 ? `…${unanswered.slice(-3600)}` : unanswered}`)
   return `<MENSAJES>\n${lines.join('\n')}\n</MENSAJES>`
 }
 

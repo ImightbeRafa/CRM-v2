@@ -112,8 +112,9 @@ describe('payment check — forced decision + wiring', () => {
   it('live and Probar both run withPaymentClaimCheck right after decideInbound; it never runs on a hand-off or media', () => {
     const src = fs.readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
     assert.equal(src.split('await withPaymentClaimCheck(').length - 1, 2)
-    assert.match(src, /const decision = await withPaymentClaimCheck\(decisionInput, decideInbound\(decisionInput\)/)
-    assert.match(src, /const decision = await withPaymentClaimCheck\(probarDecisionInput, decideInbound\(probarDecisionInput\)/)
+    // D2 merge: the check runs on the burst's decision with the burst's own input (decideInbound inside decideBurstTurn).
+    assert.match(src, /const decision = await withPaymentClaimCheck\(\s*\{\s*\.\.\.decisionBase,\s*inboundText: burst\.inboundText,\s*messageType: burst\.messageType,[\s\S]{0,240}?\},\s*burstTurn\.decision,/)
+    assert.match(src, /const decision = await withPaymentClaimCheck\(\s*\{\s*\.\.\.probarDecisionBase,\s*inboundText: probarBurst\.inboundText,\s*messageType: probarBurst\.messageType,[\s\S]{0,260}?\},\s*probarBurstTurn\.decision,/)
     const helper = src.slice(src.indexOf('async function withPaymentClaimCheck('), src.indexOf('async function loadHistory('))
     assert.match(helper, /if \(mode === 'off' \|\| decision\.escalate \|\| decision\.handoff\) return decision/)
     assert.match(helper, /input\.messageType !== 'text'/)
@@ -139,11 +140,11 @@ describe('payment check — verifier round 9', () => {
     assert.match(worker, /"SOFT_AI_PAYMENT_CHECK",/)
     assert.match(worker, /SOFT_AI_PAYMENT_CHECK\?: string;/)
     const turn = fs.readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
-    assert.ok(turn.indexOf('const turnBudgetStartedAt = Date.now()') < turn.indexOf('await withPaymentClaimCheck(decisionInput'))
+    assert.ok(turn.indexOf('const turnBudgetStartedAt = Date.now()') < turn.indexOf('const decision = await withPaymentClaimCheck('))
     assert.match(turn, /runtimeInput\.budgetStartedAt = turnBudgetStartedAt\r?\n\s*const llm = await runSoftAiLlmRuntime\(runtimeInput\)/)
     assert.ok(turn.includes('runtimeInput.budgetStartedAt = probarBudgetStartedAt'))
     // Safety order: the check (a provider call) runs only after the AI-terms / kill / budget gates and the activation exit.
-    const check = turn.indexOf('await withPaymentClaimCheck(decisionInput')
+    const check = turn.indexOf('const decision = await withPaymentClaimCheck(')
     assert.ok(turn.indexOf('runPreModelGates({') > 0 && turn.indexOf('runPreModelGates({') < check)
     assert.ok(turn.indexOf("if (resolved.agent.operationMode !== 'ai_full' || !resolved.unlockedForSend) {") < check)
     const client = fs.readFileSync('src/lib/soft-ai/llm/client.ts', 'utf8')

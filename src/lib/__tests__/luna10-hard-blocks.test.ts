@@ -619,7 +619,8 @@ describe("SecureDog round 6 (luna-10): bursts, comma claims, third person, perfe
   })
   it("live and Probar pass the whole burst to the decision and the reply checks", () => {
     const src = fs.readFileSync("src/lib/soft-ai/agent-turn.ts", "utf8")
-    assert.equal(src.split("earlierCustomerTexts: earlierCustomerTexts(history),").length - 1, 2)
+    // D2 merge: live + Probar each pass it to decideBurstTurn and to the "¿ya pagó?" check (same burst input).
+    assert.equal(src.split("earlierCustomerTexts: earlierCustomerTexts(history),").length - 1, 4)
     // Burst = one reply (2026-10-17): live checks the planned burst text (the customer text when the trigger is a photo).
     assert.ok(src.includes("customerText: burstCustomerText(history, burst.inboundText),"))
     // Probar plans the burst like live (2026-10-17).

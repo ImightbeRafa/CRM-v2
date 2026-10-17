@@ -572,7 +572,9 @@ describe("SecureDog round 6 (luna-10): bursts, comma claims, third person, perfe
     const person = ['Pagado, ¿cómo pago el envío?', 'Mi esposo ha pagado la mitad, ¿cómo pago el resto?', 'Mi esposo ha pagado la mitad, ¿puedo pagar el resto mañana?', 'Mi esposo ha pagado la mitad, ¿el resto lo puedo pagar contra entrega?', '¿Como pago el resto si mi esposo pago la mitad?', 'Quiero pagar el resto, mi esposo deposito la mitad', 'Mi esposo te deposito la mitad, ¿cuál es la cuenta para el resto?', 'Ahorita les cae el sinpe, ¿cuál es el número de pedido?',
      'Le mande. ¿Cómo pago el envío?', 'Mi esposo se encargo. ¿Cómo pago el envío?', 'Mi mamá se lo dio al mensajero. ¿Cómo pago el envío?', 'Le pase 20.000. ¿Cómo pago el envío?', 'Mi esposo les mando todo. ¿Cómo pago el envío?', 'Mi esposo lo Resolvió. ¿Cómo pago el envío?',
      'Te mandé 20.000', 'Le pasé 15.000', 'Ya les pasamos 15.000', 'ya le pasé los 25.500', 'Mi esposo le paso 20 mil', 'Ya he pagado', 'He transferido', 'Hemos transferido todo', 'Me sale rechazada la tarjeta, ¿aceptan sinpe?', 'Me rechazo la tarjeta, ¿aceptan sinpe?']
-    const agent = ['¿Cómo pago el envío?', 'Contra entrega. Gracias', 'Vivo en Heredia. ¿Hacen contra entrega?', 'Ana Rojas\nHeredia, San Pablo\n8888-1234\nContra entrega', 'Tengo una duda. ¿Aceptan tarjeta?', '¿Cuándo me llega si pago hoy?', '¿Pago la mitad ahora y la mitad al recibir?', '¿Aceptan transferencia?', 'Hola, ¿puedo pagar con tarjeta?']
+    const agent = ['¿Cómo pago el envío?', 'Contra entrega. Gracias', 'Vivo en Heredia. ¿Hacen contra entrega?', 'Ana Rojas\nHeredia, San Pablo\n8888-1234\nContra entrega', 'Tengo una duda. ¿Aceptan tarjeta?', '¿Aceptan transferencia?', 'Hola, ¿puedo pagar con tarjeta?']
+    // SecureDog round 7: "¿Cuándo me llega si pago hoy?" / "¿Pago la mitad ahora…?" go to a person again (as on live):
+    // the shapes that answered them let half-payment claims through.
     const bad: string[] = []
     for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
     for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
@@ -617,9 +619,25 @@ describe("SecureDog round 6 (luna-10): bursts, comma claims, third person, perfe
   it("live and Probar pass the whole burst to the decision and the reply checks", () => {
     const src = fs.readFileSync("src/lib/soft-ai/agent-turn.ts", "utf8")
     assert.equal(src.split("earlierCustomerTexts: earlierCustomerTexts(history),").length - 1, 2)
-    assert.ok(src.includes("customerText: customerTextSinceLastAnswer(history, payload.content),"))
-    assert.ok(src.includes("customerText: customerTextSinceLastAnswer(input.history ?? [], input.inboundText),"))
+    assert.ok(src.includes("customerText: burstCustomerText(history, payload.content || ''),"))
+    assert.ok(src.includes("customerText: burstCustomerText(input.history ?? [], input.inboundText),"))
     assert.ok(fs.readFileSync("src/lib/soft-ai/llm/runtime.ts", "utf8").includes("customerText: burstCustomerText(input.history, input.inboundText),"))
+  })
+  it("SecureDog round 7: a claim typed while the store's reply was being written still counts (time window, not order)", async () => {
+    const { recentCustomerTexts, burstCustomerText } = await import("../soft-ai/llm/runtime")
+    const now = Date.now()
+    const at = (minAgo: number) => new Date(now - minAgo * 60_000).toISOString()
+    const history = [
+      { direction: "inbound", content: "Hola, ¿cuánto cuesta el de dormir?", sentAt: at(3) },
+      { direction: "inbound", content: "Ya les pagué la mitad", sentAt: at(2) },
+      { direction: "outbound", content: "El de dormir cuesta ₡12.000", sentAt: at(1) },
+    ]
+    assert.ok(recentCustomerTexts(history, 10 * 60_000, 6, now).includes("Ya les pagué la mitad"))
+    // An old message (an hour ago) is not part of this turn.
+    const old = [{ direction: "inbound", content: "Ya les pagué la mitad", sentAt: at(60) }, { direction: "outbound", content: "Gracias", sentAt: at(59) }]
+    assert.deepEqual(recentCustomerTexts(old, 10 * 60_000, 6, now), [])
+    // Health context: "Estoy embarazada" before the store's last message still frames "¿Puedo usar el de dormir?".
+    assert.match(burstCustomerText([{ direction: "inbound", content: "Estoy embarazada", sentAt: at(5) }, { direction: "outbound", content: "¡Hola! ¿En qué te ayudo?", sentAt: at(4) }], "¿Puedo usar el de dormir?"), /embarazada/)
   })
 })
 
@@ -665,5 +683,58 @@ describe("verifier round 10 (luna-10): the clause before ¿ is checked for claim
     for (const [r, c] of [['¡Sí! Es seguro: somos tienda en Heredia y el pago va por la web 😊', '¿Es seguro comprar por aquí?'], ['Va con seguro de envío y número de guía 📦', 'Hay riesgo de que se pierda el paquete?'], ['El envío a Cartago es ₡3.000. ¡Perfecto! ¿A qué provincia?', 'Tomo pastillas para la presión\nbueno, ¿cuánto es el envío?'], ['Si querés, podés preguntarle a tu médico y nos contás 😊', '¿Lo puedo usar si tomo pastillas?']] as const) if (v(r, c)) bad.push('FALSE+ (ctx) ' + r)
     
     assert.deepEqual(bad, [])
+  })
+})
+
+describe("SecureDog round 7 (luna-10): half-payment claims, any third person, health bare answers / words, wider backstop, lint pero-halves", () => {
+  it("classifier repros", async () => {
+    const { classifyPaymentText } = await import("../soft-ai/payment-classifier")
+    const person = ['¿Pago la mitad hoy si mi cuñado cancelo la otra?', 'Pago la mitad hoy, la otra la cancelo mi cuñado', '¿Cuándo me llega si pago hoy? Mi señora deposito la mitad?', '¿Pago la mitad hoy porque le hice el simpe?', '¿Pago la mitad hoy y le acabo de enviar ₡20.000?', '¿Pago la mitad hoy, todo pagado?', 'Quiero pagar el resto, mi cuñado deposito la mitad', 'Les pago hoy, mi cuñado cancelo la mitad',
+     'Les acabo de pasar los 20.000', 'Le acabo de enviar ₡20.000', 'Le hice el simpe', 'Ya les tiré la plata', 'Ya fue pagado', 'Todo pagado', 'I already paid', 'Mi cuñado cancelo la mitad', 'Mi abuela les mando la plata']
+    const agent = ['¿Cómo pago?', '¿Aceptan tarjeta?', 'Mi señora va a pagar, ¿aceptan sinpe?', 'Quiero pagar con tarjeta', 'Te pago por sinpe', 'Mi esposo paga, ¿aceptan tarjeta?', 'Mi hija lo usa, ¿cuál me recomendás?', 'Juan pregunta, ¿aceptan sinpe?']
+    const bad: string[] = []
+    for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
+    for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    
+    assert.deepEqual(bad, [])
+  })
+  it("health + backstop + lint repros", () => {
+    const v = (text: string, customerText: string) => (validateAgentOutput({ text, citedToolNames: [], customerText } as any).reasons || []).includes('results_claim')
+    const held = ['Puede ser usado durante el embarazo', 'Podés estar usándolo durante la lactancia', 'Pueden ser usados por niños']
+    const ctxHeld: Array<[string, string]> = [
+      ['Sí, puede ser usado durante el embarazo, pero te recomendamos consultar con tu médico.', '¿Lo puedo usar si estoy embarazada?'],
+      ['¡Sí! No solo es seguro, también te ayuda', 'Estoy embarazada, ¿lo puedo usar?'],
+      ['Sí, lo pueden usar sin problema', '¿Lo pueden usar mis hijos?'],
+      ['No, para nada', '¿Le hace daño al bebé?'],
+      ['No, ninguno 😊', '¿Tiene efectos secundarios?'],
+      ['¡Sí, claro!', '¿Lo puedo usar si estoy embarazada?'],
+      ['¡Sí! No hay ningún problema', '¿Lo puedo usar si estoy embarazada?'],
+      ['¡Claro! Podés usarlo sin problema', 'Tomo sertralina, ¿lo puedo usar?'],
+      ['¡Sí! Podés usarlo tranquila', 'Estoy dando pecho, ¿lo puedo usar?'],
+      ['Sí, sin problema', 'Me operaron hace un mes, ¿lo puedo usar?'],
+    ]
+    const ok = ['Durante el embarazo, consultá con tu médico antes de usarlo', 'Te recomiendo consultarlo con tu médico, ya que podés estar tomando medicamentos', 'Puede que te pique un poco al quitarlo; es normal']
+    const ctxOk: Array<[string, string]> = [
+      ['Durante el embarazo, consultá con tu médico antes de usarlo 💚', '¿Lo puedo usar si estoy embarazada?'],
+      ['No, el envío no tiene costo extra 😊', '¿El envío tiene algún riesgo de cobro extra?'],
+      ['¡Sí, claro! Te lo enviamos mañana', '¿Me lo pueden enviar a Heredia?'],
+      ['Sí, se los podés regalar a tus hijos para que te acompañen 😊', 'Quiero regalarle uno a mis hijos'],
+      ['No, ninguno; consultá con tu médico si tenés dudas', '¿Tiene efectos secundarios?'],
+    ]
+    const bad: string[] = []
+    for (const t of held) if (!resultsClaimIn(t)) bad.push('MISSED ' + t)
+    for (const [r, c] of ctxHeld) if (!v(r, c)) bad.push('MISSED (ctx) ' + r + ' ⇐ ' + c)
+    for (const t of ok) if (resultsClaimIn(t)) bad.push('FALSE+ ' + t)
+    for (const [r, c] of ctxOk) if (v(r, c)) bad.push('FALSE+ (ctx) ' + r + ' ⇐ ' + c)
+    const vp = (text: string, customerText = 'hola') => (validateAgentOutput({ text, citedToolNames: [], customerText } as any).reasons || []).includes('payment_status_claim')
+    const bad3: string[] = []
+    for (const t of ['Ya vi tu comprobante', 'Vi el sinpe, gracias', 'Tu pago fue procesado', 'Tu sinpe quedó registrado', 'Ya nos llegó 💚', 'Ya nos llegó, muchas gracias']) if (!vp(t)) bad3.push('MISSED ' + t)
+    for (const t of ['Ya nos llegó el Focus de nuevo 🙌', 'Vi el mensaje, ¿te ayudo con algo más?']) if (vp(t)) bad3.push('FALSE+ ' + t)
+    if (!resultsClaimIn('No prometemos milagros, pero es totalmente seguro en el embarazo.', { instructions: true })) bad3.push('lint: pero-half missed')
+    if (!resultsClaimIn('Nunca prometas resultados, pero en una semana vas a notar cambios.', { instructions: true })) bad3.push('lint: pero-half results missed')
+    if (resultsClaimIn('Los parches son suplementos de bienestar: nunca prometas curar, tratar o bajar de peso.', { instructions: true })) bad3.push('lint: instruction flagged')
+    
+    assert.deepEqual(bad, [])
+    assert.deepEqual(bad3, [])
   })
 })

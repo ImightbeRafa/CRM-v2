@@ -41,7 +41,7 @@ import {
   type AgentResolveResult,
   type ResolvedChatAgent,
 } from '@/lib/soft-ai/agent-resolver'
-import { runSoftAiLlmRuntime } from '@/lib/soft-ai/llm/runtime'
+import { burstCustomerText, recentCustomerTexts, runSoftAiLlmRuntime } from '@/lib/soft-ai/llm/runtime'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import {
   CHAT_AGENT_LAYER_V1_FLAG,
@@ -177,14 +177,12 @@ function customerTextSinceLastAnswer(history: Array<{ direction: string; content
   return [...since, current || ''].join('\n')
 }
 
-/** The customer's earlier messages since the store last wrote (not this one), oldest first. */
-function earlierCustomerTexts(history: Array<{ direction: string; content?: string | null }>): string[] {
-  const out: string[] = []
-  for (let i = history.length - 1; i >= 0; i--) {
-    if (history[i].direction === 'outbound') break
-    if (history[i].content) out.unshift(String(history[i].content))
-  }
-  return out
+/**
+ * The customer's earlier messages for the burst claim check: since the store last wrote, plus any from the last 10 min
+ * (SecureDog round 7: a message typed while the store's reply was being written sorts before that reply).
+ */
+function earlierCustomerTexts(history: Array<{ direction: string; content?: string | null; sentAt?: string | Date | null }>): string[] {
+  return recentCustomerTexts(history, 10 * 60_000, 6)
 }
 
 /** luna-10 night intro: the agent's first name, the store, and whether anyone already wrote to this customer. */
@@ -1018,7 +1016,7 @@ export async function executeAgentLayerTurn(
     quoteAmounts: runtimeInput.salesAllowedAmounts,
     skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
     // SecureDog round 6: the whole burst since the store last wrote ("Estoy embarazada" + "¿Lo puedo usar?").
-    customerText: customerTextSinceLastAnswer(history, payload.content),
+    customerText: burstCustomerText(history, payload.content || ''),
     allowedDeals: runtimeInput.salesAllowedDeals,
     freeShipping: runtimeInput.salesFreeShipping,
     freeShippingRule: runtimeInput.salesFreeShippingRule,
@@ -2075,7 +2073,7 @@ async function runAgentTestTurnInner(input: {
       inventoryPrices: llm.inventoryPrices,
       quoteAmounts: runtimeInput.salesAllowedAmounts,
       skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
-      customerText: customerTextSinceLastAnswer(input.history ?? [], input.inboundText),
+      customerText: burstCustomerText(input.history ?? [], input.inboundText),
       allowedDeals: runtimeInput.salesAllowedDeals,
       freeShipping: runtimeInput.salesFreeShipping,
       freeShippingRule: runtimeInput.salesFreeShippingRule,

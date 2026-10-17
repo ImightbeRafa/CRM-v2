@@ -177,9 +177,50 @@ export function pickBurstDecision<T extends { handled: boolean; handoff: TurnHan
   return others.find((d) => d.handled && d.handoff?.kind === 'handoff') ?? main
 }
 
-/** Did the turn's decision trace plan a burst photo review (lease reclaim settles it too)? */
-export function burstMediaReviewIn(trace: unknown): boolean {
-  if (!trace || typeof trace !== 'object') return false
+/**
+ * The review a person still owes the burst after the reply (the chat stays on IA), when the turn plans no hand-off of
+ * its own: a review another bubble would have raised on its own job ("¿Cómo pago?" in a store that sends the payment
+ * data by hand → payment_details), else the burst's photo / audio (review). "¿Me contás por escrito…?" of a photo
+ * is the media review itself.
+ */
+export function burstReviewFor<T extends { handled: boolean; handoff: TurnHandoff | null; shortcutKey: string | null }>(input: {
+  decision: T
+  others: T[]
+  mediaReview: boolean
+}): TurnHandoff | null {
+  if (input.decision.handoff) return null
+  const other = input.others.find(
+    (d) => d !== input.decision && d.handled && d.handoff?.kind === 'review' && d.shortcutKey !== 'sys_media_ask',
+  )
+  if (other?.handoff) return { kind: 'review', reason: other.handoff.reason }
+  return input.mediaReview ? { kind: 'review', reason: 'review' } : null
+}
+
+const BURST_REVIEW_PREFIX = 'review:'
+
+/** The decision-trace step that records the burst plan (and its owed review, so a lease reclaim settles it too). */
+export function burstTraceStep(plan: Pick<BurstInboundPlan, 'reason'>, review: TurnHandoff | null) {
+  return { step: 'burst', outcome: plan.reason, ...(review ? { reason: `${BURST_REVIEW_PREFIX}${review.reason}` } : {}) }
+}
+
+/** The burst review a turn's decision trace planned (lease reclaim), or null. */
+export function burstReviewIn(trace: unknown): TurnHandoff | null {
+  if (!trace || typeof trace !== 'object') return null
   const steps = (trace as { steps?: unknown }).steps
-  return Array.isArray(steps) && steps.some((s) => s && typeof s === 'object' && (s as Record<string, unknown>).step === 'burst' && (s as Record<string, unknown>).reason === 'media_review')
+  if (!Array.isArray(steps)) return null
+  for (const s of steps) {
+    if (!s || typeof s !== 'object') continue
+    const step = s as Record<string, unknown>
+    if (step.step === 'burst' && typeof step.reason === 'string' && step.reason.startsWith(BURST_REVIEW_PREFIX)) {
+      const reason = step.reason.slice(BURST_REVIEW_PREFIX.length)
+      return reason ? { kind: 'review', reason } : null
+    }
+  }
+  return null
+}
+
+/** A bubble of the burst was sent after this job's trigger (its own job may still be queued to answer the burst). */
+export function burstHasLaterBubble(earlier: BurstMessage[], trigger: Pick<BurstTrigger, 'sentAt'>): boolean {
+  const triggerAt = at(trigger.sentAt)
+  return earlier.some((m) => m.direction === 'inbound' && at(m.sentAt) > triggerAt)
 }

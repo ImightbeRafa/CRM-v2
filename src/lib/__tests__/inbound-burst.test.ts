@@ -9,7 +9,10 @@ import { readFileSync } from 'node:fs'
 import {
   BURST_WINDOW_MS,
   BURST_YIELD_MAX_AGE_MS,
-  burstMediaReviewIn,
+  burstHasLaterBubble,
+  burstReviewFor,
+  burstReviewIn,
+  burstTraceStep,
   burstOtherTexts,
   pickBurstDecision,
   planBurstInbound,
@@ -285,18 +288,61 @@ describe('burst = one reply · media + text', () => {
     assert.equal(decision.shortcutKey, 'sys_handoff_optout')
   })
 
-  it('the photo review rides apart from the hand-off (images + repeat guard kept) and survives a lease reclaim', () => {
-    assert.equal(burstMediaReviewIn({ steps: [{ step: 'burst', outcome: 'media_with_text', reason: 'media_review' }] }), true)
-    assert.equal(burstMediaReviewIn({ steps: [{ step: 'burst', outcome: 'media_with_text' }] }), false)
-    assert.equal(burstMediaReviewIn(null), false)
+  it('the burst review rides apart from the hand-off (images + repeat guard kept) and survives a lease reclaim', () => {
+    const step = burstTraceStep({ reason: 'media_with_text' }, { kind: 'review', reason: 'review' })
+    assert.deepEqual(step, { step: 'burst', outcome: 'media_with_text', reason: 'review:review' })
+    assert.deepEqual(burstReviewIn({ steps: [step] }), { kind: 'review', reason: 'review' })
+    assert.deepEqual(burstReviewIn({ steps: [burstTraceStep({ reason: 'single' }, { kind: 'review', reason: 'payment_details' })] }), { kind: 'review', reason: 'payment_details' })
+    assert.equal(burstReviewIn({ steps: [burstTraceStep({ reason: 'media_with_text' }, null)] }), null)
+    assert.equal(burstReviewIn(null), null)
     const turn = read('src/lib/soft-ai/agent-turn.ts')
     const live = turn.slice(turn.indexOf('export async function executeAgentLayerTurn'), turn.indexOf('function persistedTurnStatus'))
-    assert.equal((live.match(/burstMediaReview: burst\.mediaReview,/g) || []).length, 2)
-    assert.match(live, /burstMediaReview: burstMediaReviewIn\(existing\.decisionTrace\),/)
-    assert.match(live, /handoff: plan\.handoff,\s+burstMediaReview/)
-    assert.match(live, /handoff: modelPlan\.handoff,\s+burstMediaReview/)
+    assert.match(live, /const burstReview = burstReviewFor\(\{ decision, others: otherDecisions, mediaReview: burst\.mediaReview \}\)/)
+    assert.match(live, /burstReview: burstReviewIn\(existing\.decisionTrace\),/)
+    assert.match(live, /handoff: plan\.handoff,\s+burstReview,/)
+    assert.match(live, /handoff: modelPlan\.handoff,\s+burstReview,/)
     const finish = turn.slice(turn.indexOf('async function finishDeliveryOrSuggest('), turn.indexOf('async function finishDeliveryOrSuggestInner'))
-    assert.match(finish, /else if \(input\.burstMediaReview\) \{\s+await settleHandoff\(input\.row, \{ kind: 'review', reason: HANDOFF_REASON\.review \}/)
+    assert.match(finish, /else if \(input\.burstReview\) \{\s+await settleHandoff\(input\.row, input\.burstReview, input\.afterHours\)/)
+    // The "La IA no respondió" alert is not hidden by a burst review.
+    assert.match(finish, /if \(!input\.handoff && \(result\.status === 'suggested' \|\| result\.status === 'skipped'\)\)/)
+  })
+
+  it('Verifier r2 #3: a review another bubble owes is kept ("¿Cómo pago?" + "¿y hacen envíos?", data sent by hand)', () => {
+    type D = { handled: boolean; handoff: TurnHandoff | null; shortcutKey: string | null }
+    const model: D = { handled: false, handoff: null, shortcutKey: null }
+    const paymentSoon: D = { handled: true, handoff: { kind: 'review', reason: 'payment_details' }, shortcutKey: 'sys_payment_soon' }
+    const mediaAsk: D = { handled: true, handoff: { kind: 'review', reason: 'review' }, shortcutKey: 'sys_media_ask' }
+    assert.deepEqual(burstReviewFor({ decision: model, others: [paymentSoon], mediaReview: false }), { kind: 'review', reason: 'payment_details' })
+    assert.deepEqual(burstReviewFor({ decision: model, others: [paymentSoon], mediaReview: true }), { kind: 'review', reason: 'payment_details' })
+    assert.deepEqual(burstReviewFor({ decision: model, others: [mediaAsk], mediaReview: true }), { kind: 'review', reason: 'review' })
+    assert.equal(burstReviewFor({ decision: model, others: [mediaAsk], mediaReview: false }), null)
+    // A planned hand-off / review of the turn settles itself: no second alert.
+    assert.equal(burstReviewFor({ decision: paymentSoon, others: [paymentSoon], mediaReview: true }), null)
+    // Real decision: a store with no payment data in chat.
+    const { decision } = decideBurst({ content: '¿y hacen envíos?', messageType: 'text', s: 2 }, [inbound('¿Cómo pago?', 0)])
+    const other = decideInbound({ brandFacts: facts, shortcuts, inboundText: '¿Cómo pago?', messageType: 'text', awaitingReceipt: false, earlierCustomerTexts: [] })
+    assert.equal(other.shortcutKey, 'sys_payment_soon')
+    assert.deepEqual(burstReviewFor({ decision, others: [other], mediaReview: false }), { kind: 'review', reason: 'payment_details' })
+  })
+
+  it('Verifier r2 #2: a later bubble whose job is queued takes the burst (live yields after loading the history)', () => {
+    assert.equal(burstHasLaterBubble([inbound('ya te pagué', 3)], { sentAt: at(1) }), true)
+    assert.equal(burstHasLaterBubble([inbound('hola', 0)], { sentAt: at(1) }), false)
+    const turn = read('src/lib/soft-ai/agent-turn.ts')
+    const live = turn.slice(turn.indexOf('export async function executeAgentLayerTurn'), turn.indexOf('function persistedTurnStatus'))
+    const yieldAt = live.indexOf('if (burstHasLaterBubble(burstEarlier, trigger) && (await yieldsToNewerBurst(row, trigger.sentAt))) {')
+    assert.ok(yieldAt > live.indexOf('const burstEarlier = unansweredBurst(') && yieldAt < live.indexOf('const burst = planBurstInbound('))
+  })
+
+  it('Probar plans the burst like live (decision, model input, reply checks)', () => {
+    const turn = read('src/lib/soft-ai/agent-turn.ts')
+    const probar = turn.slice(turn.indexOf('async function runAgentTestTurnInner'))
+    assert.match(probar, /const probarBurst = planBurstInbound\(\{/)
+    assert.match(probar, /const decision = pickBurstDecision\(/)
+    assert.match(probar, /inboundText: probarBurst\.inboundText,\s+messageType: probarBurst\.messageType,/)
+    assert.match(probar, /history,\s+inboundText: probarBurst\.inboundText,\s+clientName/)
+    assert.match(probar, /customerText: burstCustomerText\(input\.history \?\? \[\], probarBurst\.inboundText\)/)
+    assert.match(probar, /customerText: customerTextSinceLastAnswer\(input\.history \?\? \[\], probarBurst\.inboundText\)/)
   })
 
   it('the live turn decides and answers the planned burst text (decision, model input and reply checks)', () => {

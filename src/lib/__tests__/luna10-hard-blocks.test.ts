@@ -609,7 +609,8 @@ describe("SecureDog round 6 (luna-10): bursts, comma claims, third person, perfe
     assert.equal(src.split("earlierCustomerTexts: earlierCustomerTexts(history),").length - 1, 2)
     // Burst = one reply (2026-10-17): live checks the planned burst text (the customer text when the trigger is a photo).
     assert.ok(src.includes("customerText: burstCustomerText(history, burst.inboundText),"))
-    assert.ok(src.includes("customerText: burstCustomerText(input.history ?? [], input.inboundText),"))
+    // Probar plans the burst like live (2026-10-17).
+    assert.ok(src.includes("customerText: burstCustomerText(input.history ?? [], probarBurst.inboundText),"))
     assert.ok(fs.readFileSync("src/lib/soft-ai/llm/runtime.ts", "utf8").includes("customerText: burstCustomerText(input.history, input.inboundText),"))
   })
   it("SecureDog round 7: a claim typed while the store's reply was being written still counts (time window, not order)", async () => {

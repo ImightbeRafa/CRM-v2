@@ -28,7 +28,10 @@ import {
 } from '@/lib/soft-ai/automation-delivery'
 import { newerBurstJobPending, type ClaimedChatAutomationJob } from '@/lib/soft-ai/automation-queue'
 import {
-  burstMediaReviewIn,
+  burstHasLaterBubble,
+  burstReviewFor,
+  burstReviewIn,
+  burstTraceStep,
   burstOtherTexts,
   pickBurstDecision,
   planBurstInbound,
@@ -838,7 +841,7 @@ export async function executeAgentLayerTurn(
       codeDecided: reclaimedCodeDecided,
       handoff: reclaimedHandoff,
       // Burst = one reply: the photo review planned on the first attempt is settled on reclaim too.
-      burstMediaReview: burstMediaReviewIn(existing.decisionTrace),
+      burstReview: burstReviewIn(existing.decisionTrace),
       persistedMode,
       row,
       payload,
@@ -892,6 +895,21 @@ export async function executeAgentLayerTurn(
     history.map((m) => ({ ...m, messageType: messageTypeOf.get(m.id) ?? null })),
     trigger,
   )
+  // Burst = one reply (Verifier r2 #2): a bubble sent after this trigger landed since the first check and its job is
+  // queued → that job answers the whole burst (and takes any hand-off in it), never this one and then that one too.
+  if (burstHasLaterBubble(burstEarlier, trigger) && (await yieldsToNewerBurst(row, trigger.sentAt))) {
+    await persistSkippedTurn({
+      tenantId: row.tenantId,
+      conversationId: row.conversationId,
+      socialAccountId: row.socialAccountId,
+      agent: resolved.agent,
+      bindingId: resolved.binding.id,
+      triggerMessageId: row.messageId,
+      deliveryKey: row.deliveryKey,
+      skipReason: 'superseded',
+    })
+    return { status: 'skipped', reason: 'superseded' }
+  }
   // B6: only a photo / file / audio (here or earlier in the burst) needs the sale's state before the decision.
   const mediaSalesContext =
     isMediaLikeMessageType(trigger.messageType) || burstEarlier.some((m) => isMediaLikeMessageType(m.messageType))
@@ -925,6 +943,9 @@ export async function executeAgentLayerTurn(
   }
   // Burst = one reply: a TRUE hand-off in any other text bubble of the burst ("Quiero hablar con una persona" +
   // "por favor", a hand-off keyword reply, a payment message) still goes to a person — as when it had its own job.
+  const otherDecisions = burstOtherTexts(burstEarlier, burst).map((other) =>
+    decideInbound({ ...decisionBase, inboundText: other.text, messageType: other.messageType, awaitingReceipt: false, earlierCustomerTexts: [] }),
+  )
   const decision = pickBurstDecision(
     decideInbound({
       ...decisionBase,
@@ -933,13 +954,13 @@ export async function executeAgentLayerTurn(
       awaitingReceipt: mediaAwaitingReceipt(burst.messageType, history, mediaSalesContext),
       earlierCustomerTexts: earlierCustomerTexts(history),
     }),
-    burstOtherTexts(burstEarlier, burst).map((other) =>
-      decideInbound({ ...decisionBase, inboundText: other.text, messageType: other.messageType, awaitingReceipt: false, earlierCustomerTexts: [] }),
-    ),
+    otherDecisions,
   )
+  // A review another bubble (or the burst's photo / audio) still owes after the reply — kept apart from `handoff`.
+  const burstReview = burstReviewFor({ decision, others: otherDecisions, mediaReview: burst.mediaReview })
   decision.decisionTrace.historyCount = history.length
-  if (burst.reason !== 'single' || burst.mediaReview) {
-    decision.decisionTrace.steps.unshift({ step: 'burst', outcome: burst.reason, ...(burst.mediaReview ? { reason: 'media_review' } : {}) })
+  if (burst.reason !== 'single' || burstReview) {
+    decision.decisionTrace.steps.unshift(burstTraceStep(burst, burstReview))
   }
 
   if (decision.handled) {
@@ -1014,7 +1035,7 @@ export async function executeAgentLayerTurn(
       plannedReply: true,
       codeDecided: true,
       handoff: plan.handoff,
-      burstMediaReview: burst.mediaReview,
+      burstReview,
       suppressSend: plan.suppressSend,
       persistedMode,
       row,
@@ -1211,7 +1232,7 @@ export async function executeAgentLayerTurn(
   return finishDeliveryOrSuggest({
     plannedReply: true,
     handoff: modelPlan.handoff,
-    burstMediaReview: burst.mediaReview,
+    burstReview,
     suppressSend: modelPlan.suppressSend,
     persistedMode,
     row,
@@ -1317,15 +1338,16 @@ async function finishDeliveryOrSuggest(
   } finally {
     // Also when the send threw or was blocked (window / token / kill switch): the person must still get the chat.
     if (input.handoff) await settleHandoff(input.row, input.handoff, input.afterHours)
-    // Burst = one reply: a photo / audio sent with the answered text still needs a person to look (review, the chat
-    // stays on IA). Kept apart from `handoff` so the normal reply keeps its images and the repeat guard.
-    else if (input.burstMediaReview) {
-      await settleHandoff(input.row, { kind: 'review', reason: HANDOFF_REASON.review }, input.afterHours)
+    // Burst = one reply: a photo / audio, or another bubble's review ("¿Cómo pago?" → payment_details), still needs a
+    // person after the answered text (review, the chat stays on IA). Kept apart from `handoff` so the normal reply
+    // keeps its images and the repeat guard.
+    else if (input.burstReview) {
+      await settleHandoff(input.row, input.burstReview, input.afterHours)
     }
   }
   // F2: part of the reply did not go out (ambiguous send / kill switch / chat taken): a person is asked to look
   // (review alert, the chat stays as it is). Only the parts actually sent were written as messages.
-  if (!input.handoff && !input.burstMediaReview && result.status === 'delivered' && result.partialDelivery) {
+  if (!input.handoff && !input.burstReview && result.status === 'delivered' && result.partialDelivery) {
     await settleHandoff(input.row, { kind: 'review', reason: HANDOFF_REASON.review }, input.afterHours)
   }
   // notifyHandoff already told the team: no second "La IA no respondió" alert.
@@ -1356,8 +1378,8 @@ async function finishDeliveryOrSuggestInner(input: {
   effectiveBehavior: EffectiveAgentBehavior
   unlockedForSend: boolean
   turnId: string
-  /** Burst = one reply: a photo / audio in the answered burst → review alert after the send (inbound-burst.ts). */
-  burstMediaReview?: boolean
+  /** Burst = one reply: a review the answered burst still owes → settled after the send (inbound-burst.ts). */
+  burstReview?: TurnHandoff | null
   outputText: string
   outputHash: string
   outputValidationOk: boolean
@@ -2070,17 +2092,38 @@ async function runAgentTestTurnInner(input: {
     : null
   const probarImageReplyIds =
     (account.platform || 'whatsapp') === 'whatsapp' ? sendableImageReplyIds(replyAssets, input.sentImageIds) : new Set<string>()
-  const decision = decideInbound({
-    inboundText: input.inboundText,
-    messageType: input.messageType || 'text',
+  // Burst = one reply: the same burst planning as live (Probar history has text bubbles only; sent "now").
+  const probarTrigger = { content: input.inboundText, messageType: input.messageType || 'text', sentAt: new Date() }
+  const probarBurstEarlier = unansweredBurst(history, probarTrigger)
+  const probarBurst = planBurstInbound({
+    trigger: probarTrigger,
+    earlier: probarBurstEarlier,
+    awaitingReceipt: (type) => mediaAwaitingReceipt(type, history, probarMediaSalesContext),
+  })
+  const probarDecisionBase = {
     brandFacts: runtimeAgent.brandFacts,
     replyStyle: runtimeAgent.replyStyle,
     shortcuts,
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !probarImageReplyIds.has(id))),
-    awaitingReceipt: mediaAwaitingReceipt(input.messageType || 'text', history, probarMediaSalesContext),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
-    earlierCustomerTexts: earlierCustomerTexts(history),
-  })
+  }
+  const probarOtherDecisions = burstOtherTexts(probarBurstEarlier, probarBurst).map((other) =>
+    decideInbound({ ...probarDecisionBase, inboundText: other.text, messageType: other.messageType, awaitingReceipt: false, earlierCustomerTexts: [] }),
+  )
+  const decision = pickBurstDecision(
+    decideInbound({
+      ...probarDecisionBase,
+      inboundText: probarBurst.inboundText,
+      messageType: probarBurst.messageType,
+      awaitingReceipt: mediaAwaitingReceipt(probarBurst.messageType, history, probarMediaSalesContext),
+      earlierCustomerTexts: earlierCustomerTexts(history),
+    }),
+    probarOtherDecisions,
+  )
+  const probarBurstReview = burstReviewFor({ decision, others: probarOtherDecisions, mediaReview: probarBurst.mediaReview })
+  if (probarBurst.reason !== 'single' || probarBurstReview) {
+    decision.decisionTrace.steps.unshift(burstTraceStep(probarBurst, probarBurstReview))
+  }
   decision.decisionTrace.historyCount = history.length
   decision.decisionTrace.blockedBy = blockedBy
 
@@ -2124,7 +2167,7 @@ async function runAgentTestTurnInner(input: {
       agent: runtimeAgent,
       account: canal,
       history,
-      inboundText: input.inboundText,
+      inboundText: probarBurst.inboundText,
       clientName: input.customerName ?? null,
       shortcuts,
       replyImageShortcutIds: probarImageReplyIds,
@@ -2164,7 +2207,7 @@ async function runAgentTestTurnInner(input: {
       inventoryPrices: llm.inventoryPrices,
       quoteAmounts: runtimeInput.salesAllowedAmounts,
       skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
-      customerText: burstCustomerText(input.history ?? [], input.inboundText),
+      customerText: burstCustomerText(input.history ?? [], probarBurst.inboundText),
       allowedDeals: runtimeInput.salesAllowedDeals,
       freeShipping: runtimeInput.salesFreeShipping,
       freeShippingRule: runtimeInput.salesFreeShippingRule,
@@ -2173,7 +2216,7 @@ async function runAgentTestTurnInner(input: {
       shortcuts,
       shortenLongReply: true,
       linkAllowlist: runtimeInput.linkAllowlist,
-      paymentOptions: { ...runtimeInput.salesPaymentOptions, customerText: customerTextSinceLastAnswer(input.history ?? [], input.inboundText) },
+      paymentOptions: { ...runtimeInput.salesPaymentOptions, customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText) },
     })
     // Same plan as the live turn (B1): checked model reply, safe line, or hand-off text.
     const plan = planModelTurnDelivery({

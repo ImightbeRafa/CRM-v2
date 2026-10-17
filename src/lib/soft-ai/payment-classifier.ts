@@ -404,9 +404,10 @@ function closedPaymentMessage(value: string): boolean {
  * sentence a greeting / "quiero comprar…", a closed intent, a closed payment question or choice, or a product question with
  * no payment word — so nothing ("…, Juan les deposito una parte") can ride along.
  */
+const DEBT_RE = /(?<![\p{L}])(?:deb[oeí]\p{L}*|debiendo|falta\p{L}*|pendiente)(?![\p{L}])/iu
 function agentExit(value: string, cls: PaymentClassification): PaymentClassification {
   if (liveWouldAnswer(value)) return isPlainAskMessage(value) ? cls : 'payment_proof_or_risk'
-  return closedPaymentMessage(value) ? cls : 'payment_proof_or_risk'
+  return closedPaymentMessage(value) && !hasFreePayAct(value) && !PARTIAL_STATE_RE.test(value) && !DEBT_RE.test(value) ? cls : 'payment_proof_or_risk'
 }
 /* ---- end live-equivalence gate ---- */
 

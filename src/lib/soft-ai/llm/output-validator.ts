@@ -335,9 +335,9 @@ const NOT_A_NEGATION_RE = /\b(?:sin\s+dudas?|sin\s+problemas?|no\s+te\s+preocup[
 const HEALTH_GROUP_RE =
   // Verifier round 8: no bare "corazón" (a Costa Rican endearment); SecureDog round 6: "del corazón", hipertensión,
   // anticoagulantes, gestación, adultos mayores.
-  /(?<![\p{L}])(?:embaraz\p{L}*|lactan\p{L}*|amamant\p{L}*|de\s+mamar|gestaci[oó]n|gestante|encinta|beb[eé]s?|ni[nñ][oa]s?|hij[oa]s?|menores|adultos?\s+mayores|ancian\p{L}*|tercera\s+edad|(?:problemas?|enfermedad\p{L}*|condici[oó]n)\s+(?:del?\s+)?coraz[oó]n|del\s+coraz[oó]n|cardiopat\p{L}*|hipertens\p{L}*|anticoagul\p{L}*|presi[oó]n\s+alta|medicament\p{L}*|medicinas?|pastillas?|presi[oó]n|diab[eé]t\p{L}*|anticonceptiv\p{L}*|tiroides|marcapasos|card[ií]ac\p{L}*|epilep\p{L}*|c[aá]ncer|quimio\p{L}*)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:embaraz\p{L}*|lactan\p{L}*|amamant\p{L}*|de\s+mamar|gestaci[oó]n|gestante|encinta|beb[eé]s?|ni[nñ][oa]s?|hij[oa]s?\s+(?:de\s+)?\d+\s+a[nñ]os|menores|adultos?\s+mayores|todas\s+las\s+edades|arritmi\p{L}*|ancian\p{L}*|tercera\s+edad|(?:problemas?|enfermedad\p{L}*|condici[oó]n)\s+(?:del?\s+)?coraz[oó]n|del\s+coraz[oó]n|cardiopat\p{L}*|hipertens\p{L}*|anticoagul\p{L}*|presi[oó]n\s+alta|medicament\p{L}*|medicinas?|pastillas?|presi[oó]n|diab[eé]t\p{L}*|anticonceptiv\p{L}*|tiroides|marcapasos|card[ií]ac\p{L}*|epilep\p{L}*|c[aá]ncer|quimio\p{L}*)(?![\p{L}])/iu
 /** The strong assurances; "podés / puede / se puede" alone are weak (next to a doctor referral they are fine). */
-const STRONG_HEALTH_ASSURANCE = String.raw`segur\p{L}*|apt[oa]s?|sin\s+(?:ning[uú]n\s+)?problemas?|no\s+hay\s+problemas?|no\s+pasa\s+nada|tranquil\p{L}*|recomendad\p{L}*|ideal(?:es)?|perfect[oa]s?|efectos?\s+secundarios?|contraindicaci\p{L}*|riesgos?|peligros\p{L}*|da[nñ]in\p{L}*|hace\s+da[nñ]o|hacen\s+da[nñ]o|afecta\p{L}*|interact\p{L}*|interfier\p{L}*|compatible\p{L}*|inofensiv\p{L}*|inocu\p{L}*|sin\s+miedo`
+const STRONG_HEALTH_ASSURANCE = String.raw`segur\p{L}*|apt[oa]s?|(?:ning[uú]n|sin)\s+inconvenientes?|no\s+hay\s+(?:ning[uú]n\s+)?inconvenientes?|sin\s+(?:ning[uú]n\s+)?problemas?|no\s+hay\s+problemas?|no\s+pasa\s+nada|tranquil\p{L}*|recomendad\p{L}*|ideal(?:es)?|perfect[oa]s?|efectos?\s+secundarios?|contraindicaci\p{L}*|riesgos?|peligros\p{L}*|da[nñ]in\p{L}*|hace\s+da[nñ]o|hacen\s+da[nñ]o|afecta\p{L}*|interact\p{L}*|interfier\p{L}*|compatible\p{L}*|inofensiv\p{L}*|inocu\p{L}*|sin\s+miedo`
 const STRONG_HEALTH_ASSURANCE_RE = new RegExp(String.raw`(?<![\p{L}])(?:${STRONG_HEALTH_ASSURANCE})(?![\p{L}])`, 'iu')
 const HEALTH_ASSURANCE_RE = new RegExp(String.raw`(?<![\p{L}])(?:${STRONG_HEALTH_ASSURANCE}|pod[eé]s|puede[ns]?|pued[eé]s|se\s+puede)(?![\p{L}])`, 'iu')
 /** Names that only look like a sensitive group ("el Día del Niño"). */
@@ -353,7 +353,7 @@ const NO_SIDE_EFFECTS_RE =
   /(?<![\p{L}])(?:no\s+(?:hay|tiene|tienen|produce|producen|presenta|presentan|causa|causan|da|dan|genera|generan)|libres?\s+de|cero|sin)\s+(?:ning[uú]n\s+|ningunos?\s+|ninguna\s+)?(?:efectos?\s+(?:secundarios?|adversos?|negativos?)|contraindicaci\p{L}*|reacci[oó]n(?:es)?\s+adversas?)/iu
 /** A bare "no tiene / no hay ningún riesgo / peligro" — health unless the sentence is about paying or shipping. */
 const NO_RISK_RE =
-  /(?<![\p{L}])(?:(?:no\s+(?:tiene|tienen|hay|causa|causan|representa|representan)|cero|sin|libres?\s+de)\s+(?:ning[uú]n\s+|ni\s+un\s+)?(?:riesgos?|peligros?)(?:\s+alguno)?|no\s+(?:te\s+|le\s+|les\s+)?(?:hace|hacen)\s+(?:ning[uú]n\s+)?da[nñ]o|inofensiv\p{L}*|inocu[oa]s?)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:(?:no\s+(?:tiene|tienen|hay|causa|causan|representa|representan)|cero|sin|libres?\s+de)\s+(?:ning[uú]n\s+|ni\s+un\s+)?(?:riesgos?|peligros?)(?:\s+alguno)?|no\s+(?:te\s+|le\s+|les\s+)?(?:hace|hacen|va\s+a\s+hacer|van\s+a\s+hacer)\s+(?:ning[uú]n\s+)?da[nñ]o|no\s+(?:genera|crea|causa|da)\s+(?:dependencia|adicci\p{L}*)|inofensiv\p{L}*|inocu[oa]s?)(?![\p{L}])/iu
 // Verifier round 8: shipping / guarantee sentences ("el paquete va asegurado, cero riesgo", "comprá sin riesgo: si no te
 // gusta lo cambiamos", "no hay peligro, el mensajero te llama") are not health.
 const MONEY_OR_SHIPPING_RE =

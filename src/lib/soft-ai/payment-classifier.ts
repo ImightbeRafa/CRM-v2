@@ -66,6 +66,13 @@ const CLAIM_CUE_RE = new RegExp(
       // mando todo", "te deposito la mitad"); the perfect tense ("ha pagado", "hemos transferido"); "ahorita les cae el
       // sinpe"; a declined card in the present ("me sale rechazada", "me rechazo la tarjeta").
       String.raw`(?:esposo|esposa|marido|mam[aá]|mami|pap[aá]|papi|herman[oa]|novi[oa]|hij[oa]|amig[oa]|suegr[oa]|t[ií][oa]|prim[oa]|jefe|jefa)\s+(?:ya\s+)?(?:se\s+)?(?:le\s+|les\s+|te\s+|lo\s+|la\s+|me\s+)?(?:pag|deposit|transfiri|transfer|abon|cancel|mand|pas|envi|sinpe|sinpi|encarg|hiz|realiz)[oó]`,
+      // SecureDog round 7: ANY third person ("mi cuñado", "mi señora", "Juan") + a paying verb in "-o": the present would
+      // be "paga / cancela", so "-o" after a third-person subject is the past ("mi cuñado cancelo la mitad").
+      String.raw`(?<![\p{L}])(?:mi|mis|su|sus|tu)\s+(?!forma|m[eé]todo|pago|tarjeta|cuenta|pedido)\p{L}{3,}\s+(?:ya\s+)?(?:se\s+)?(?:le\s+|les\s+|te\s+|lo\s+|la\s+|me\s+)?(?:pag|deposit|transfiri|abon|cancel|sinpe|sinpi|mand|pas|envi)[oó](?![\p{L}])`,
+      // Object first: "la otra la cancelo mi cuñado", "lo pago mi esposo".
+      String.raw`(?:lo|la|los|las)\s+(?:pag|deposit|transfiri|abon|cancel|sinpe|sinpi)[oó]\s+(?:mi|su|el|la|tu)\s+\p{L}{3,}`,
+      // "les acabo de pasar los 20.000", "le acabo de enviar ₡20.000", "le hice el simpe", "ya fue pagado", "todo pagado".
+      String.raw`acabo\s+de\s+(?:pasar|enviar|mandar|depositar|transferir|sinpear|tirar)|(?:le|les|te)\s+hice\s+(?:el|un)\s+(?:sinpe|simpe|pago|dep[oó]sito)|(?:ya\s+fue|todo|est[aá])\s+pagad[oa]|i\s+already\s+paid|already\s+paid|ya\s+les\s+tir[eé]`,
       String.raw`(?:he|ha|has|hemos|han)\s+(?:ya\s+)?(?:pagado|transferido|depositado|cancelado|abonado|enviado|mandado|pasado|sinpeado|sinpiado|hecho\s+(?:el|la|un|una)\s+(?:pago|sinpe|transferencia|dep[oó]sito))`,
       String.raw`(?:les?|te)\s+(?:cae|caer[aá]|va\s+a\s+caer)\s+(?:el\s+|la\s+)?(?:sinpe|pago|dep[oó]sito|plata|transferencia)`,
       // Verifier round 10: not a hypothetical ("¿Y si la tarjeta sale rechazada?", "¿qué pasa si me sale rechazada?").
@@ -105,8 +112,8 @@ const PAYMENT_QUESTION_RE = new RegExp(
     String.raw`(puedo|se\s+puede|pued[eo]n|aceptan|hay\s+que|tengo\s+que|debo)(\s+\p{L}+){0,2}\s+(pagar|pago|pagarles|pagarte)` +
     String.raw`|(c[oó]mo|cu[aá]ndo|d[oó]nde|qu[eé]\s+formas?\s+de)(\s+\p{L}+){0,2}\s+(pago|pagar|se\s+paga|pagos|pagamos)` +
     String.raw`|(reciben|tienen|aceptan|usan|trabajan\s+con)\s+(sinpe|transferencias?|tarjetas?|efectivo)` +
-    // "¿Cuándo me llega si pago hoy?", "¿Pago la mitad ahora y la mitad al recibir?" (still behind isPlainAskMessage).
-    String.raw`|(si|cuando)\s+(les?\s+|te\s+)?pago|^\s*¿?\s*(y\s+)?(les?\s+|te\s+)?pago\s+(la\s+mitad|todo|ahora|antes|despu[eé]s|hoy|ma[nñ]ana)` +
+    // SecureDog round 7: the "si pago hoy" / "¿pago la mitad…?" shapes were removed again — they let half-payment claims
+    // ("¿Pago la mitad hoy si mi cuñado cancelo la otra?") reach the model; those questions go to a person, as on live.
     String.raw`)(?![\p{L}])`,
   'iu',
 )

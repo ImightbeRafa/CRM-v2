@@ -615,14 +615,35 @@ export function escalateKindOf(handoff: TurnHandoff | null): 'technical' | 'hand
  * MEDIA-15: the payment-status backstop also applies when the conversation (not only this message) is about a
  * payment: a payment word or a photo / file / audio in the last 3 customer messages, or the store talked about paying.
  */
-/** The customer's messages since the store last wrote, oldest first, plus this one. */
-export function burstCustomerText(history: Array<{ direction: string; content?: string | null }>, inboundText: string): string {
-  const since: string[] = []
+type TimedMessage = { direction: string; content?: string | null; sentAt?: string | Date | null }
+
+/**
+ * SecureDog round 7: the customer's earlier messages that belong to this turn — every one since the store last wrote,
+ * PLUS any sent in the last `windowMs` (the store's reply is stored when it is SENT, so a message the customer typed
+ * while it was being written sorts before it). Oldest first, without the current message, at most `max`.
+ */
+export function recentCustomerTexts(history: TimedMessage[], windowMs: number, max: number, now = Date.now()): string[] {
+  const keep = new Set<number>()
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i].direction === 'outbound') break
-    if (history[i].content) since.unshift(String(history[i].content))
+    keep.add(i)
   }
-  return [...since, inboundText || ''].join('\n')
+  history.forEach((m, i) => {
+    if (m.direction !== 'inbound' || !m.sentAt) return
+    const at = new Date(m.sentAt).getTime()
+    if (Number.isFinite(at) && now - at <= windowMs) keep.add(i)
+  })
+  return [...keep]
+    .sort((a, b) => a - b)
+    .map((i) => history[i])
+    .filter((m) => m.direction === 'inbound' && m.content)
+    .map((m) => String(m.content))
+    .slice(-max)
+}
+
+/** The customer text the reply checks read: the recent customer messages (30 min, last 3) plus this one. */
+export function burstCustomerText(history: TimedMessage[], inboundText: string): string {
+  return [...recentCustomerTexts(history, 30 * 60_000, 3), inboundText || ''].join('\n')
 }
 
 export function conversationPaymentContext(history: Array<{ direction: string; content?: string | null }>, inboundText: string): boolean {

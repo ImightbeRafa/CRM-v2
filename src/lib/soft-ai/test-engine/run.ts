@@ -10,7 +10,7 @@ import { prisma } from '@/lib/db'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
 import { isMissingRelation } from '@/lib/db-missing-relation'
 import { agentHasInventoryMap, loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
-import { canSharePaymentFacts, parseBrandFactsSafe } from '@/lib/soft-ai/brand-facts'
+import { canSharePaymentFacts, parseBrandFactsSafe, paymentMethodsOf } from '@/lib/soft-ai/brand-facts'
 import { loadAgentSalesContext } from '@/lib/soft-ai/agent-sales-context'
 import { salesAllowedAmounts } from '@/lib/soft-ai/sales-state'
 import { runAgentTestTurn } from '@/lib/soft-ai/agent-turn'
@@ -239,6 +239,15 @@ export async function buildSuite(tenantId: string, agent: { id: string; name: st
           shipping: salesCtx.shippingMethods.map((s) => ({ name: s.name, price: s.price })),
           bundles: (salesCtx.bundles ?? []).map((b) => ({ name: b.name, price: b.price, shippingIncluded: b.shippingIncluded })),
           allowedAmounts: salesAllowedAmounts(salesCtx),
+          // luna-10 go-live: the store's own pickup / delivery wording ("Retiro con cita en …") — without it the judge
+          // called a correct "retiro con cita" invented.
+          storeNotes: [
+            facts.shipping?.ra?.enabled && facts.shipping.ra.text ? `Retiro: ${facts.shipping.ra.text}` : '',
+            facts.shipping?.ea?.etaText ? `Envío a domicilio: ${facts.shipping.ea.etaText}` : '',
+            // The payment methods and each delivery's coverage / contra-entrega rule the agent is told (same data).
+            canSharePaymentFacts(facts) && paymentMethodsOf(facts).length ? `Formas de pago: ${paymentMethodsOf(facts).join(', ')}` : '',
+            ...salesCtx.shippingMethods.map((s) => [s.coverage ? `${s.name}: ${s.coverage}` : '', s.cod ? `${s.name}: ${s.cod}` : ''].filter(Boolean).join('; ')),
+          ].filter(Boolean),
         }
       : null,
   })

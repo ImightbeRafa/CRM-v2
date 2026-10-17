@@ -59,6 +59,7 @@
   - Harness: 14 scenarios. The F2 timing test is tightened to 500 ms.
 - Verifier round 5: PASS WITH NOTES. Its note is fixed: inside the 15 s grace, one dead lease still emptied the cron batch for one run. The in-flight check now counts any `processing` sibling, so it blocks only its own chat. Harness: 15 scenarios.
 - SecureDog round 3: OK (nothing blocking). Applied two of its Low notes: a failed `releaseDeadLeases` is logged and never blocks the claim, and the catch-all `single_flight|unique` regex fallback is removed. Still open, both pre-existing: the lease uses the app clock while the DB compares with its own, and the cron leases 2 rows up front and runs them one after the other.
+- Final: Verifier PASS WITH NOTES (round 5), SecureDog OK to ship (on c31cc09a). Draft PR #102 → claudio/inbox-burst, intended base local luna-10 @ 933288b4. NOT deployed, needs Rafael's GO.
   - Known: F1 also keeps a bubble typed while a non-yielding turn was writing its reply (before, it was dropped
     unchecked). That bubble now gets its own reply after the newer one, up to a cron minute later.
 - Left open:

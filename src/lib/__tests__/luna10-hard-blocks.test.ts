@@ -309,3 +309,33 @@ describe('verifier round 3 (luna-10): probes', () => {
     assert.deepEqual(bad, [])
   })
 })
+
+describe('exam round 1 fixes (luna-10)', () => {
+  it('payment questions reach the agent; every receipt / claim still goes to a person', async () => {
+    const { classifyPaymentText } = await import('../soft-ai/payment-classifier')
+    assert.equal(classifyPaymentText('Hola, necesito comprar unos parches de glp-1, puedo hacerles un sinpe y mandar un flash a recogerlos?'), 'non_payment')
+    assert.equal(classifyPaymentText('Muchas gracias \nTienes link de pago? Para la ansiedad cuáles me \nRecomiendas?'), 'payment_info_safe')
+    for (const t of ['te mandé el comprobante', 'ya pagué', '¿Ya les llegó mi sinpe?', '¿Ya les hice el sinpe?', 'les mandé el sinpe ahora', 'puedo mandarles el comprobante?', 'Ya te puedo mandar el sinpe, ¿me confirmás?', 'te envié la transferencia, ¿podés revisar?', 'hice un sinpe de 15 mil']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+  it('[[DATOS_PAGO]]: method names + "¿Cuál preferís?" unless the customer asked for the details', async () => {
+    const { fillPaymentToken } = await import('../soft-ai/payment-guard')
+    const facts: any = { schemaVersion: 1, payment: { shareWithCustomers: true, methods: ['sinpe', 'transferencia', 'tarjeta', 'contra_entrega'], sinpe: { number: '62019914', holderName: 'Rafael García' }, transfer: { bank: 'BAC', iban: 'CR12010200009506464063', holderName: 'Rafael Alberto García Montoya' } } }
+    for (const c of ['Se puede pagar con tarjeta?', '¿Cómo puedo pagar?']) {
+      const r = fillPaymentToken('Claro 😊 [[DATOS_PAGO]]', facts, { customerText: c })
+      assert.equal(r.text, 'Claro 😊 Tenemos SINPE Móvil, transferencia, tarjeta y contra entrega. ¿Cuál preferís?', c)
+      assert.doesNotMatch(r.text, /6201|CR12/)
+    }
+    for (const c of ['Pasame los datos de pago por favor', '¿A qué número hago el sinpe?', 'me das la cuenta?']) {
+      assert.match(fillPaymentToken('[[DATOS_PAGO]]', facts, { customerText: c }).text, /6201 9914/, c)
+    }
+  })
+  it('health questions are answered (doctor) without a hand-off; coverage "no sé" check ignores "no se recomienda"', async () => {
+    assert.match(fs.readFileSync('src/lib/soft-ai/llm/tool-definitions.ts', 'utf8'), /Salud \(embarazo, lactancia, una condición, medicamentos\): respondé con tus datos y que consulte a su médico, sin escalar/)
+    const { coverageScenarios } = await import('../soft-ai/knowledge-coverage')
+    const re = new RegExp(coverageScenarios(['Focus'])[0].steps[0].expect!.forbidRegex![1], 'iu')
+    assert.equal(re.test('Por precaución, no se recomienda usarlo durante el embarazo'), false)
+    assert.equal(re.test('Uy, no sé cuántos trae'), true)
+  })
+})

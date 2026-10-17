@@ -319,12 +319,12 @@ describe('exam round 1 fixes (luna-10)', () => {
       assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
     }
   })
-  it('[[DATOS_PAGO]]: method names + "¿Cuál preferís?" unless the customer asked for the details', async () => {
+  it('[[DATOS_PAGO]]: method names + "¿Cómo preferís pagar?" unless the customer asked for the details', async () => {
     const { fillPaymentToken } = await import('../soft-ai/payment-guard')
     const facts: any = { schemaVersion: 1, payment: { shareWithCustomers: true, methods: ['sinpe', 'transferencia', 'tarjeta', 'contra_entrega'], sinpe: { number: '62019914', holderName: 'Rafael García' }, transfer: { bank: 'BAC', iban: 'CR12010200009506464063', holderName: 'Rafael Alberto García Montoya' } } }
     for (const c of ['Se puede pagar con tarjeta?', '¿Cómo puedo pagar?']) {
       const r = fillPaymentToken('Claro 😊 [[DATOS_PAGO]]', facts, { customerText: c })
-      assert.equal(r.text, 'Claro 😊 Tenemos SINPE Móvil, transferencia, tarjeta y contra entrega. ¿Cuál preferís?', c)
+      assert.equal(r.text, 'Claro 😊 Tenemos SINPE Móvil, transferencia, tarjeta y contra entrega. ¿Cómo preferís pagar?', c)
       assert.doesNotMatch(r.text, /6201|CR12/)
     }
     for (const c of ['Pasame los datos de pago por favor', '¿A qué número hago el sinpe?', 'me das la cuenta?']) {
@@ -337,5 +337,26 @@ describe('exam round 1 fixes (luna-10)', () => {
     const re = new RegExp(coverageScenarios(['Focus'])[0].steps[0].expect!.forbidRegex![1], 'iu')
     assert.equal(re.test('Por precaución, no se recomienda usarlo durante el embarazo'), false)
     assert.equal(re.test('Uy, no sé cuántos trae'), true)
+  })
+})
+
+describe('verifier round 4 (luna-10): payment chain probes', () => {
+  it('names reply is the method question; choices, details, receipts and promises behave', async () => {
+    const { fillPaymentToken } = await import('../soft-ai/payment-guard')
+    const { classifyPaymentText } = await import('../soft-ai/payment-classifier')
+    const { PAYMENT_METHOD_ASKED_RE } = await import('../soft-ai/sales-state')
+    const facts: any = { schemaVersion: 1, payment: { shareWithCustomers: true, methods: ['sinpe', 'transferencia', 'tarjeta', 'contra_entrega'], sinpe: { number: '62019914', holderName: 'Rafael García' }, transfer: { bank: 'BAC', iban: 'CR12010200009506464063', holderName: 'X' } } }
+    const bad: string[] = []
+    const q = fillPaymentToken('[[DATOS_PAGO]]', facts, { customerText: '¿Cómo puedo pagar?' }).text
+    if (!PAYMENT_METHOD_ASKED_RE.test(q)) bad.push('names reply not a method question: ' + q)
+    for (const a of ['SINPE', 'Por sinpe', 'Por SINPE está bien']) { const c = classifyPaymentText(a, { awaitingPaymentMethod: true }); if (c !== 'non_payment') bad.push(`choice "${a}" → ${c}`) }
+    for (const c of ['Me pasás el SINPE?', 'Pasame el SINPE', '¿Cuál es el sinpe?', '¿Dónde les deposito?', 'Dame la info para pagar', 'pasame los datos\ngracias']) if (!/6201/.test(fillPaymentToken('[[DATOS_PAGO]]', facts, { customerText: c }).text)) bad.push('details not given: ' + c)
+    if (!/6201/.test(fillPaymentToken('[[DATOS_PAGO]]', facts, { customerText: 'ok', chosenMethod: 'sinpe' }).text)) bad.push('chosen method ignored')
+    for (const t of ['¿Les puedo mandar el sinpe por acá?', 'ya les puedo enviar el sinpe?', 'puedo mandarles el sinpe de la otra vez?', 'Ya usé el link de pago', 'Me rebotó el link de pago', 'El link de pago no me funciona']) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`must stay person: "${t}" → ${c}`) }
+    for (const t of ['Hola, necesito comprar unos parches, puedo hacerles un sinpe y mandar un flash?', '¿Tienes link de pago?', '¿Me pasás el link de pago?']) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`question went to person: "${t}"`) }
+    for (const t of ['No es medicamento pero vas a sentir más energía', 'no tiene químicos y vas a sentir más energía']) if (!resultsClaimIn(t)) bad.push('MISSED ' + t)
+    if (resultsClaimIn('te vas a sentir mejor atendida con nosotros')) bad.push('FALSE+ atendida')
+    console.log(bad.length ? bad.join('\n') : 'ALL OK')
+    assert.deepEqual(bad, [])
   })
 })

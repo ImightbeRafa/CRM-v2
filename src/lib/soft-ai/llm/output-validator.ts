@@ -300,7 +300,7 @@ const RESULTS_CLAIM_RES: RegExp[] = [
   // "te va a quitar la ansiedad", "te quita el estrés".
   /\b(?:te\s+)?(?:va\s+a\s+)?quit(?:a|ar|an)\s+(?:la|el|tu|tus|los|las)\s+(?:ansiedad|estr[eé]s|antojos?|insomnio|dolor(?:es)?|hambre|cansancio|fatiga)\b/iu,
   // "vas a sentir más energía", "vas a tener más concentración".
-  /\b(?:vas\s+a|va\s+a|te\s+vas\s+a|te\s+va\s+a\s+(?:dar|hacer))\s+(?:sentir|notar|dormir|rendir)\s+(?:m[aá]s\s+|mucha\s+|much[oa]\s+)?(?:energ|calma|concentra|enfoque|[aá]nimo|relaja|mejor\b|tranquil)/iu,
+  /\b(?:vas\s+a|va\s+a|te\s+vas\s+a|te\s+va\s+a\s+(?:dar|hacer))\s+(?:sentir|notar|dormir|rendir)\s+(?:m[aá]s\s+|mucha\s+|much[oa]\s+)?(?:energ|calma|concentra|enfoque|[aá]nimo|relaja|mejor\b(?!\s+(?:atendid|servid|precio|opci))|tranquil)/iu,
   /\b(?:vas\s+a|va\s+a|te\s+va\s+a\s+dar)\s+tener\s+(?:m[aá]s\s+|mucha\s+|much[oa]\s+)(?:energ|calma|concentra|enfoque|[aá]nimo)/iu,
   // Time to an effect: "en una semana ves resultados", "desde la primera noche / el primer día".
   new RegExp(String.raw`\b(?:en|desde|a\s+(?:la|los|las|el))\s+(?:(?:una|un|\d+|pocos|pocas|la\s+primera|el\s+primer|primera|primer)\s+)?(?:semanas?|d[ií]as?|noches?|mes(?:es)?|uso)\b[^.!?\n]{0,25}?\b(?:(?:ves|ver[aá]s|vas\s+a\s+(?:ver|notar|sentir)|not[aá]s|notar[aá]s|sent[ií]s|sentir[aá]s)\s+(?:el\s+|la\s+|los\s+|las\s+|un\s+|una\s+|m[aá]s\s+)?(?:resultados?|cambios?|la\s+diferencia|diferencias?|efectos?|mejor[ií]as?|energ[ií]a|calma|alivio|beneficios?)|duerm\w*\s+mejor|dorm[ií]\w*\s+mejor)`, 'iu'),
@@ -318,7 +318,7 @@ export function resultsClaimIn(text: string): string | null {
   for (const re of RESULTS_CLAIM_RES) {
     for (const m of t.matchAll(new RegExp(re.source, `${re.flags.replace('g', '')}g`))) {
       // Only the same clause counts ("No te preocupes, resultado garantizado" is a promise) and reassurances are not a "no".
-      const before = (t.slice(Math.max(0, (m.index ?? 0) - 40), m.index ?? 0).split(/[,:;¡!]/).pop() || '').replace(NOT_A_NEGATION_RE, ' ')
+      const before = (t.slice(Math.max(0, (m.index ?? 0) - 40), m.index ?? 0).split(/[,:;¡!]|\s(?:pero|y|aunque)\s/i).pop() || '').replace(NOT_A_NEGATION_RE, ' ')
       if (RESULTS_NEGATION_RE.test(before)) continue
       return m[0]
     }
@@ -625,7 +625,7 @@ export function applyFinalOutputPolicy(input: {
   // must be a configured one (when shareable) or one the customer wrote.
   // The length rule is judged with each token as its one line (a configured payment block is not "too long").
   let styleText = text
-  const filled = fillPaymentToken(text, facts, { ...input.paymentOptions, customerText: input.customerText ?? undefined })
+  const filled = fillPaymentToken(text, facts, { ...input.paymentOptions, customerText: input.paymentOptions?.customerText ?? input.customerText ?? undefined })
   text = filled.text
   if (filled.needsHuman) reasons.push('payment_info_not_shared')
   // Any other [[…]] left (an unknown / invented token) is never sent: stripped, and a person looks (Verifier #4).

@@ -12,6 +12,20 @@ export const LEASE_MS = 45_000
 // Must cover the whole agent turn (SOFT_AI_TURN_BUDGET_MS 35 s) + the Meta send (7 s), and stay under the 45 s lease.
 export const PROCESSING_TIMEOUT_MS = 42_000
 export const MAX_ATTEMPTS = 5
+/**
+ * Burst = one reply (2026-10-17, PatchHouse IG): a customer often sends 2–3 messages within seconds (an ad share +
+ * "¡Hola! Quiero más información."). Each inbound job waits this long before it may be claimed, so the newest job of
+ * the burst answers all of it and the older ones are superseded at claim (no double greeting).
+ */
+export const BURST_SETTLE_MS = 3_500
+/** A newer job of the same chat that becomes claimable within this horizon holds the older ones back (claim SQL). */
+export const BURST_HOLD_SECONDS = 10
+/** Newest first as the claim SQL sees it: by the customer message's sentAt, then createdAt / id. */
+export const NEWEST_BURST_JOB_ORDER = [
+  { message: { sentAt: 'desc' } },
+  { createdAt: 'desc' },
+  { id: 'desc' },
+] satisfies Prisma.ChatAutomationJobOrderByWithRelationInput[]
 
 export type SoftAiJobStatus =
   | 'pending'
@@ -65,6 +79,8 @@ export async function persistJob(input: {
   kind?: typeof SOFT_AI_JOB_KIND
   deliveryKey?: string
   payload?: Record<string, unknown>
+  /** Not claimable before this time (inbound bursts: now + BURST_SETTLE_MS). Default: now. */
+  availableAt?: Date
 }) {
   const deliveryKey = input.deliveryKey || softAiInboundDeliveryKey(input.messageId)
   const payload = {
@@ -85,6 +101,7 @@ export async function persistJob(input: {
         kind: input.kind || SOFT_AI_JOB_KIND,
         deliveryKey,
         payload: payload as Prisma.InputJsonValue,
+        ...(input.availableAt ? { availableAt: input.availableAt } : {}),
       },
       select: { id: true, status: true, deliveryKey: true },
     })
@@ -138,22 +155,66 @@ export async function rearmFinishedJob(input: {
   return res.count === 1
 }
 
-async function supersedeOlderJobs(conversationId: string, keepId: string) {
-  await prisma.chatAutomationJob.updateMany({
-    where: {
-      conversationId,
-      id: { not: keepId },
-      status: { in: ['pending', 'retry'] },
-    },
-    data: {
-      status: 'completed',
-      lastErrorCode: 'SUPERSEDED',
-      processedAt: new Date(),
-      payload: Prisma.DbNull,
-      leaseToken: null,
-      leaseExpiresAt: null,
-    },
+/**
+ * Burst = one reply: is there a newer customer-message job in this chat that will answer the whole burst? Only a
+ * pending / retry job created after this one (same tenant and chat). Checked before the model runs and again right
+ * before the send: this job then stops as superseded and the newer one answers everything.
+ */
+export async function newerBurstJobPending(
+  row: Pick<ClaimedChatAutomationJob, 'id' | 'tenantId' | 'conversationId'>,
+  /** SecureDog R1: only a message SENT no earlier than this trigger counts (not an old one Meta delivered late). */
+  triggerSentAt?: Date,
+): Promise<boolean> {
+  const self = await prisma.chatAutomationJob.findFirst({
+    where: { id: row.id, tenantId: row.tenantId },
+    select: { createdAt: true },
   })
+  if (!self) return false
+  const newer = await prisma.chatAutomationJob.findFirst({
+    where: {
+      tenantId: row.tenantId,
+      conversationId: row.conversationId,
+      id: { not: row.id },
+      kind: SOFT_AI_JOB_KIND,
+      status: { in: ['pending', 'retry'] },
+      createdAt: { gt: self.createdAt },
+      ...(triggerSentAt ? { message: { sentAt: { gte: triggerSentAt } } } : {}),
+    },
+    select: { id: true },
+  })
+  return Boolean(newer)
+}
+
+/**
+ * The claimed job answers the burst, so its siblings are done. Except a job whose customer message already has a store
+ * reply after it (Meta delivered it late, after the reply went out): that message is not in the claimed job's burst
+ * (the burst starts after the last reply), so the job stays queued and runs on its own afterwards — its opt-out /
+ * "hablar con una persona" / receipt is still checked (SecureDog F1: superseded = checked).
+ */
+async function supersedeOlderJobs(conversationId: string, keepId: string) {
+  await prisma.$executeRaw`
+    UPDATE "ChatAutomationJob" job
+    SET "status" = 'completed',
+        "lastErrorCode" = 'SUPERSEDED',
+        "processedAt" = CURRENT_TIMESTAMP,
+        "payload" = NULL,
+        "leaseToken" = NULL,
+        "leaseExpiresAt" = NULL,
+        "updatedAt" = CURRENT_TIMESTAMP
+    WHERE job."conversationId" = ${conversationId}
+      AND job."id" <> ${keepId}
+      AND job."status" IN ('pending', 'retry')
+      AND NOT EXISTS (
+        SELECT 1
+        FROM "ChatMessage" msg
+        JOIN "ChatMessage" reply
+          ON reply."conversationId" = msg."conversationId"
+         AND reply."tenantId" = msg."tenantId"
+         AND reply."direction" = 'outbound'
+         AND (reply."sentAt", reply."id") > (msg."sentAt", msg."id")
+        WHERE msg."id" = job."messageId"
+      )
+  `
 }
 
 async function deferJob(id: string, delayMs = 5_000) {
@@ -168,12 +229,54 @@ async function deferJob(id: string, delayMs = 5_000) {
   })
 }
 
+/** A unique violation in the claim statement: only the single-flight index can raise it there. */
+export function isSingleFlightConflict(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false
+  if (error.code === 'P2002') return true
+  return error.code === 'P2010' && (error.meta as { code?: unknown } | undefined)?.code === '23505'
+}
+
+/** A dead worker's lease is released this long after it expired (a reclaim inside it keeps the old path). */
+export const DEAD_LEASE_GRACE_SECONDS = 15
+
+/**
+ * SecureDog F6: a job left `processing` by a dead worker (crash, the cron's maxDuration) keeps the chat's single-flight
+ * slot, and a newer job of the chat holds it back from reclaim → that chat never got another reply. Release it to
+ * `retry` (or `failed` once out of attempts) so the normal rules apply: superseded when its bubble is in the newer job's
+ * burst, kept and run afterwards when it already replied (its delivery key prevents a second send).
+ */
+async function releaseDeadLeases() {
+  await prisma.$executeRaw`
+    UPDATE "ChatAutomationJob"
+    SET "status" = CASE WHEN "attempts" >= ${MAX_ATTEMPTS} THEN 'failed' ELSE 'retry' END,
+        "failedAt" = CASE WHEN "attempts" >= ${MAX_ATTEMPTS} THEN CURRENT_TIMESTAMP ELSE "failedAt" END,
+        "payload" = CASE WHEN "attempts" >= ${MAX_ATTEMPTS} THEN NULL ELSE "payload" END,
+        "availableAt" = CURRENT_TIMESTAMP,
+        "leaseToken" = NULL,
+        "leaseExpiresAt" = NULL,
+        "lastErrorCode" = 'LEASE_EXPIRED',
+        "lastErrorAt" = CURRENT_TIMESTAMP,
+        "updatedAt" = CURRENT_TIMESTAMP
+    WHERE "status" = 'processing'
+      AND "leaseExpiresAt" <= CURRENT_TIMESTAMP - ${Prisma.raw(`INTERVAL '${DEAD_LEASE_GRACE_SECONDS} seconds'`)}
+  `
+}
+
 async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJob[]> {
   const leaseToken = randomUUID()
   const leaseExpiresAt = new Date(Date.now() + LEASE_MS)
   // Prefer the newest pending job per conversation; older siblings are
   // SUPERSEDED after a successful claim (A1 single-flight / burst coalesce).
+  // Burst = one reply: a newer job still settling (claimable within BURST_HOLD_SECONDS) also holds the older ones
+  // back, so the first bubble of a burst is not answered alone while the next one is seconds away.
+  // "Newer" is by the customer message's sentAt, then createdAt / id (burst hardening): a bubble Meta delivers late
+  // (sent earlier, job created later) never becomes the answering job; it is one of the burst's other bubbles. The
+  // message is joined, never locked (FOR UPDATE OF current): ChatAutomationJob.messageId is a required FK (cascade).
   // Single-flight partial unique on status=processing defers concurrent claimants.
+  // Housekeeping: a failure here never blocks the claim (SecureDog r3).
+  await releaseDeadLeases().catch((error) => {
+    console.warn('[chat-automation] releaseDeadLeases failed', safeErrorCode(error))
+  })
   try {
     const rows = await prisma.$queryRaw<
       Array<{
@@ -193,6 +296,7 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
       WITH candidate AS (
         SELECT current."id", current."conversationId"
         FROM "ChatAutomationJob" current
+        JOIN "ChatMessage" current_msg ON current_msg."id" = current."messageId"
         WHERE (${id || null}::text IS NULL OR current."id" = ${id || null})
           AND current."availableAt" <= CURRENT_TIMESTAMP
           AND EXISTS (
@@ -210,21 +314,36 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
           AND NOT EXISTS (
             SELECT 1
             FROM "ChatAutomationJob" newer
+            JOIN "ChatMessage" newer_msg ON newer_msg."id" = newer."messageId"
             WHERE newer."conversationId" = current."conversationId"
-              AND (newer."createdAt", newer."id") > (current."createdAt", current."id")
+              AND (newer_msg."sentAt", newer."createdAt", newer."id") > (current_msg."sentAt", current."createdAt", current."id")
               AND newer."status" IN ('pending', 'retry')
-              AND newer."availableAt" <= CURRENT_TIMESTAMP
+              AND (
+                newer."availableAt" <= CURRENT_TIMESTAMP + ${Prisma.raw(`INTERVAL '${BURST_HOLD_SECONDS} seconds'`)}
+                -- A job kept by supersedeOlderJobs (its message already has a store reply after it) waits for every
+                -- newer job, also one on a long retry, so it never supersedes the burst's answering job (Verifier r3).
+                OR EXISTS (
+                  SELECT 1
+                  FROM "ChatMessage" reply
+                  WHERE reply."conversationId" = current_msg."conversationId"
+                    AND reply."tenantId" = current_msg."tenantId"
+                    AND reply."direction" = 'outbound'
+                    AND (reply."sentAt", reply."id") > (current_msg."sentAt", current_msg."id")
+                )
+              )
           )
           AND NOT EXISTS (
             SELECT 1
             FROM "ChatAutomationJob" inflight
             WHERE inflight."conversationId" = current."conversationId"
+              -- Any processing sibling blocks, also one whose lease expired: it still holds the single-flight slot
+              -- until it reclaims itself or releaseDeadLeases frees it (Verifier r5: one dead lease inside the grace
+              -- emptied the whole cron batch).
               AND inflight."status" = 'processing'
-              AND inflight."leaseExpiresAt" > CURRENT_TIMESTAMP
               AND inflight."id" <> current."id"
           )
-        ORDER BY current."createdAt" DESC, current."id" DESC
-        FOR UPDATE SKIP LOCKED
+        ORDER BY current_msg."sentAt" DESC, current."createdAt" DESC, current."id" DESC
+        FOR UPDATE OF current SKIP LOCKED
         LIMIT ${limit}
       )
       UPDATE "ChatAutomationJob" job
@@ -246,16 +365,9 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
     }
     return rows
   } catch (error) {
-    // Partial unique ChatAutomationJob_conversation_single_flight_idx
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P2002'
-    ) {
-      if (id) await deferJob(id)
-      return []
-    }
-    const message = error instanceof Error ? error.message : String(error)
-    if (/ChatAutomationJob_conversation_single_flight|unique/i.test(message)) {
+    // Partial unique ChatAutomationJob_conversation_single_flight_idx. From $queryRaw Prisma reports it as P2010 with
+    // the Postgres code 23505 (SecureDog F6: the old check missed it and every cron run 500'd for all tenants).
+    if (isSingleFlightConflict(error)) {
       if (id) await deferJob(id)
       return []
     }

@@ -168,7 +168,7 @@ interface SoftThreadPaneProps {
    * agents2-notify: "Pago verificado" / "Confirmado" in the review banner (removes the built-in tag).
    * The banner shows whenever the chat has the tag; without this prop it has no resolve button.
    */
-  reviewTags?: { onResolve: (tag: SoftTag) => void; busy?: boolean }
+  reviewTags?: { onResolve: (tag: SoftTag) => void; onDismiss?: (tag: SoftTag) => void; busy?: boolean }
   /** Chat owner picker (Asignarme / teammates / Sin asignar). Hidden when absent. */
   assignment?: {
     assignees: ChatAssignee[]
@@ -202,6 +202,8 @@ const REVIEW_BANNERS: Array<{
   title: string
   detail: string
   resolveLabel: string
+  /** False alarm: clears the alert without marking it paid / confirmed (audited as dismissed). */
+  dismissLabel: string
   className: string
   buttonClass: string
   testId: string
@@ -211,6 +213,7 @@ const REVIEW_BANNERS: Array<{
     title: '💳 Pago por verificar',
     detail: 'el cliente mandó el comprobante',
     resolveLabel: 'Pago verificado',
+    dismissLabel: 'No es pago',
     className: 'border-rose-200 bg-rose-50 text-rose-900',
     buttonClass: 'bg-rose-600 hover:bg-rose-700',
     testId: 'chat-review-banner-payment',
@@ -220,6 +223,7 @@ const REVIEW_BANNERS: Array<{
     title: '📦 Pedido por confirmar',
     detail: 'pidió contra entrega, confirmá los datos',
     resolveLabel: 'Confirmado',
+    dismissLabel: 'Descartar',
     className: 'border-orange-200 bg-orange-50 text-orange-950',
     buttonClass: 'bg-orange-600 hover:bg-orange-700',
     testId: 'chat-review-banner-order',
@@ -417,7 +421,8 @@ export function SoftThreadPane({
     if (next.media.length) {
       const filesAllowed =
         Boolean(attachments?.onSendQuickReplyMedia) &&
-        conversation?.platform === 'whatsapp' &&
+        // Instagram too: photos go out, anything else is refused per file by the server (photos only there).
+        (conversation?.platform === 'whatsapp' || conversation?.platform === 'instagram') &&
         isSoftHumanComposerEnabled(agentMode)
       if (filesAllowed) {
         setPendingFile(null)
@@ -425,8 +430,8 @@ export function SoftThreadPane({
         setPendingQuickMedia(next.media)
       } else {
         setDropError(
-          conversation?.platform !== 'whatsapp'
-            ? 'Los archivos de esta respuesta solo se envían por WhatsApp: se insertó el texto.'
+          conversation?.platform !== 'whatsapp' && conversation?.platform !== 'instagram'
+            ? 'Esta línea no permite enviar archivos: se insertó el texto.'
             : 'El envío de archivos no está disponible: se insertó el texto.',
         )
       }
@@ -528,7 +533,9 @@ export function SoftThreadPane({
   // F37-03: unlock composer whenever paused / human takeover (incl. DEMO).
   const composerEnabled = isSoftHumanComposerEnabled(agentMode)
   const aiBlocked = agentMode === 'ai_active' && aiTermsAccepted === false
-  const canAttach = Boolean(attachments) && conversation.platform === 'whatsapp' && composerEnabled && !sending
+  // Instagram sends photos only (JPG / PNG, 8 MB; the server re-checks); WhatsApp any supported file.
+  const mediaLine = conversation.platform === 'whatsapp' || conversation.platform === 'instagram'
+  const canAttach = Boolean(attachments) && mediaLine && composerEnabled && !sending
 
   /** Stage a dropped / pasted file like the paperclip does (preview + optional caption). */
   function stageFile(file: File) {
@@ -595,9 +602,13 @@ export function SoftThreadPane({
         >
           <Paperclip className="h-8 w-8" aria-hidden />
           <p className="text-[14px] font-semibold">
-            {canAttach ? 'Soltá la imagen para adjuntarla' : conversation.platform !== 'whatsapp' ? 'Por ahora solo se envían archivos por WhatsApp' : 'Tomá control del chat para enviar archivos'}
+            {canAttach ? 'Soltá la imagen para adjuntarla' : !mediaLine ? 'Esta línea no permite enviar archivos' : 'Tomá control del chat para enviar archivos'}
           </p>
-          {canAttach ? <p className="text-[12px] opacity-80">Foto, video, audio o documento · máx. 9 MB</p> : null}
+          {canAttach ? (
+            <p className="text-[12px] opacity-80">
+              {conversation.platform === 'instagram' ? 'Por Instagram: solo fotos JPG o PNG · máx. 5 MB' : 'Foto, video, audio o documento · máx. 9 MB'}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {channelDownMessage ? <ChannelDownBanner message={channelDownMessage} /> : null}
@@ -819,6 +830,19 @@ export function SoftThreadPane({
                   >
                     <ShoppingBag className="h-3.5 w-3.5" aria-hidden />
                     {orderDraftPending ? 'Continuar pedido' : 'Crear pedido'}
+                  </button>
+                ) : null}
+                {reviewTags?.onDismiss ? (
+                  <button
+                    type="button"
+                    disabled={reviewTags.busy}
+                    onClick={() => reviewTags.onDismiss?.(b.tag)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-60"
+                    data-testid={`${b.testId}-dismiss`}
+                    title="No era real: quita el aviso sin marcarlo como pagado ni confirmado"
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden />
+                    {b.dismissLabel}
                   </button>
                 ) : null}
                 {reviewTags ? (
@@ -1496,7 +1520,7 @@ export function SoftThreadPane({
                   <Zap className="h-[18px] w-[18px]" aria-hidden />
                 </button>
               ) : null}
-              {attachments && conversation.platform === 'whatsapp' ? (
+              {attachments && mediaLine ? (
                 <>
                   <input
                     ref={fileInputRef}
@@ -1524,7 +1548,7 @@ export function SoftThreadPane({
                     disabled={sending || !composerEnabled}
                     aria-label="Adjuntar archivo"
                     aria-expanded={attachMenuOpen}
-                    title="Adjuntar foto, video, audio o documento"
+                    title={conversation.platform === 'instagram' ? 'Adjuntar foto (JPG o PNG)' : 'Adjuntar foto, video, audio o documento'}
                     className={`flex items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C5CFF] disabled:opacity-40 ${
                       compact ? 'h-10 w-9' : 'h-9 w-9'
                     } ${attachMenuOpen ? 'bg-slate-100 text-au-ink-5b6cff' : ''}`}

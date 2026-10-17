@@ -16,7 +16,7 @@ import { getPageIdFromMetaChatMetadata, partnerRemovedWhatsAppWhere } from '@/li
 import { resolveWebhookSocialAccount } from '@/lib/chat-webhook-account'
 import { chatWebhookInvalidSignatureRateLimit } from '@/lib/rate-limit'
 import { enqueueSoftAiAfterInbound } from '@/lib/soft-ai/inbound-hook'
-import { processJobById } from '@/lib/soft-ai/automation-processor'
+import { processJobAfterSettle } from '@/lib/soft-ai/automation-processor'
 import {
   applyDeliveryStatusUpdate,
   applyPeerReadWatermark,
@@ -373,6 +373,7 @@ export async function POST(request: NextRequest) {
     const stored = results.filter((result) => result.stored).length
 
     const softAiJobIds: string[] = []
+    const softAiSettleMs = new Map<string, number>()
     for (const result of results) {
       if (!result.stored || !('tenantId' in result) || !result.tenantId) continue
       if ('suppressSoftAi' in result && result.suppressSoftAi) continue
@@ -388,7 +389,10 @@ export async function POST(request: NextRequest) {
         conversationId: result.conversationId,
         messageId: result.messageId,
       })
-      if (enqueued && 'jobId' in enqueued) softAiJobIds.push(enqueued.jobId)
+      if (enqueued && 'jobId' in enqueued) {
+        softAiJobIds.push(enqueued.jobId)
+        softAiSettleMs.set(enqueued.jobId, enqueued.settleMs)
+      }
     }
 
     const durationMs = Date.now() - startedAt
@@ -411,9 +415,9 @@ export async function POST(request: NextRequest) {
       },
     )
 
-    // Best-effort immediate dispatch after persist; cron is the safety net.
+    // Best-effort dispatch after persist, once the burst settle time is over; cron is the safety net.
     for (const jobId of softAiJobIds) {
-      void processJobById(jobId)
+      processJobAfterSettle(jobId, softAiSettleMs.get(jobId) ?? 0)
     }
 
     return NextResponse.json({

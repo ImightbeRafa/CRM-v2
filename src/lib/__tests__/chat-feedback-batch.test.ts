@@ -260,7 +260,9 @@ describe('drag & drop / paste images into a chat', () => {
   test('the thread pane is a drop zone gated like the paperclip', () => {
     const pane = read('src/components/chats/SoftThreadPane.tsx')
     assert.match(pane, /data-testid="soft-thread-drop-zone"/)
-    assert.match(pane, /const canAttach = Boolean\(attachments\) && conversation\.platform === 'whatsapp' && composerEnabled && !sending/)
+    // Instagram too (photos only: IG_OUTBOUND_ACCEPT + the server check).
+    assert.match(pane, /const mediaLine = conversation\.platform === 'whatsapp' \|\| conversation\.platform === 'instagram'/)
+    assert.match(pane, /const canAttach = Boolean\(attachments\) && mediaLine && composerEnabled && !sending/)
     assert.match(pane, /onPaste=/)
   })
 })

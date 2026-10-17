@@ -21,6 +21,15 @@ import {
   readMediaBlobRefFromMessage,
 } from '@/lib/chat-media'
 import { buildWhatsAppMediaMessage, classifyOutboundMedia, outboundMediaContent } from '@/lib/chat-outbound-media'
+import { parseSocialRefreshToken } from '@/lib/social-account-meta'
+import {
+  INSTAGRAM_IMAGE_MAX_BYTES,
+  INSTAGRAM_IMAGE_MIMES,
+  INSTAGRAM_MEDIA_ONLY_PHOTOS,
+  sendInstagramImage,
+  sendInstagramText,
+  uploadInstagramImage,
+} from '@/lib/instagram-media'
 
 const META_TIMEOUT_MS = 30_000
 
@@ -102,55 +111,82 @@ export async function sendWhatsAppMediaBytes(opts: {
 
   const found = await db.socialAccount.findFirst({ where: { id: socialAccountId, tenantId } })
   if (!found) return { ok: false, error: 'Línea no encontrada', status: 404 }
-  if (found.platform !== 'whatsapp') {
-    return { ok: false, error: 'Por ahora solo se pueden enviar archivos por WhatsApp.', status: 400 }
+  const platform: 'whatsapp' | 'instagram' | null =
+    found.platform === 'whatsapp' ? 'whatsapp' : found.platform === 'instagram' ? 'instagram' : null
+  if (!platform) return { ok: false, error: 'Esta línea no permite enviar archivos.', status: 400 }
+  // Instagram: photos only (JPG / PNG, 8 MB), refused before any token use or upload.
+  if (platform === 'instagram' && (media.kind !== 'image' || !INSTAGRAM_IMAGE_MIMES.has(media.mime) || media.size > INSTAGRAM_IMAGE_MAX_BYTES)) {
+    return { ok: false, error: INSTAGRAM_MEDIA_ONLY_PHOTOS, status: 400 }
   }
   const tokenStatus = String(found.tokenStatus || '').toLowerCase()
   if (found.isActive === false || found.disconnectedAt || tokenStatus === 'revoked' || tokenStatus === 'expired') {
     return { ok: false, error: socialTokenSendBlockMessage(found), status: 400 }
   }
   const accessToken = decryptSocialAccessToken(found.accessToken)
-  if (!accessToken) return { ok: false, error: 'Falta el token de WhatsApp. Reconectá la línea en Canales.', status: 400 }
-
-  // 1) Upload the file to Meta → media id.
-  const upload = new FormData()
-  upload.append('messaging_product', 'whatsapp')
-  upload.append('type', media.mime)
-  upload.append('file', new Blob([bytes], { type: media.mime }), media.filename) // single copy of the bytes
-  const uploadUrl = addAppSecretProofToUrl(buildMetaGraphUrl(`${found.accountId}/media`), accessToken, {
-    purpose: 'whatsapp',
-  })
-  const upRes = await fetch(uploadUrl, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: upload,
-    signal: AbortSignal.timeout(META_TIMEOUT_MS),
-  })
-  const upData = await readJson(upRes)
-  const mediaId = typeof upData?.id === 'string' ? upData.id : null
-  if (!upRes.ok || !mediaId) {
-    console.error('[chat/send-media] upload failed', { status: upRes.status, error: upData?.error?.message })
-    return { ok: false, error: upData?.error?.message || 'WhatsApp no aceptó el archivo.', status: 502 }
+  if (!accessToken) {
+    return { ok: false, error: `Falta el token de ${platform === 'instagram' ? 'Instagram' : 'WhatsApp'}. Reconectá la línea en Canales.`, status: 400 }
   }
 
-  // 2) Send the message by media id.
-  const sendUrl = addAppSecretProofToUrl(buildMetaGraphUrl(`${found.accountId}/messages`), accessToken, {
-    purpose: 'whatsapp',
-  })
-  const sendRes = await fetch(sendUrl, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(
-      buildWhatsAppMediaMessage({ to: recipient, kind: media.kind, mediaId, caption, filename: media.filename }),
-    ),
-    signal: AbortSignal.timeout(META_TIMEOUT_MS),
-  })
-  const sendData = await readJson(sendRes)
-  if (!sendRes.ok) {
-    console.error('[chat/send-media] send failed', { status: sendRes.status, error: sendData?.error?.message })
-    return { ok: false, error: sendData?.error?.message || 'Falló el envío por WhatsApp', status: 502 }
+  let mediaId: string | null = null
+  let providerMessageId: string | undefined
+  let sendData: any
+  if (platform === 'instagram') {
+    // 1–2) Upload the photo to the Page (Meta gets the bytes, never a link), then send it; the caption follows as text.
+    const pageId = found.pageId || parseSocialRefreshToken(found.refreshToken).pageId
+    const up = await uploadInstagramImage({ pageId, accessToken, bytes, mime: media.mime, timeoutMs: META_TIMEOUT_MS })
+    if (!up.ok) {
+      console.error('[chat/send-media] instagram upload failed', { error: up.error })
+      return { ok: false, error: up.error, status: 502 }
+    }
+    const sentImg = await sendInstagramImage({ pageId, accessToken, recipient, attachmentId: up.attachmentId, timeoutMs: META_TIMEOUT_MS })
+    if (!sentImg.ok) {
+      console.error('[chat/send-media] instagram send failed', { error: sentImg.error })
+      return { ok: false, error: sentImg.error, status: 502 }
+    }
+    providerMessageId = sentImg.providerMessageId || undefined
+    sendData = sentImg.data
+    // The caption goes out as its own text AFTER the photo row is saved (below), never stored unsent.
+  } else {
+    // 1) Upload the file to Meta → media id.
+    const upload = new FormData()
+    upload.append('messaging_product', 'whatsapp')
+    upload.append('type', media.mime)
+    upload.append('file', new Blob([bytes], { type: media.mime }), media.filename) // single copy of the bytes
+    const uploadUrl = addAppSecretProofToUrl(buildMetaGraphUrl(`${found.accountId}/media`), accessToken, {
+      purpose: 'whatsapp',
+    })
+    const upRes = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: upload,
+      signal: AbortSignal.timeout(META_TIMEOUT_MS),
+    })
+    const upData = await readJson(upRes)
+    mediaId = typeof upData?.id === 'string' ? upData.id : null
+    if (!upRes.ok || !mediaId) {
+      console.error('[chat/send-media] upload failed', { status: upRes.status, error: upData?.error?.message })
+      return { ok: false, error: upData?.error?.message || 'WhatsApp no aceptó el archivo.', status: 502 }
+    }
+
+    // 2) Send the message by media id.
+    const sendUrl = addAppSecretProofToUrl(buildMetaGraphUrl(`${found.accountId}/messages`), accessToken, {
+      purpose: 'whatsapp',
+    })
+    const sendRes = await fetch(sendUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(
+        buildWhatsAppMediaMessage({ to: recipient, kind: media.kind, mediaId, caption, filename: media.filename }),
+      ),
+      signal: AbortSignal.timeout(META_TIMEOUT_MS),
+    })
+    sendData = await readJson(sendRes)
+    if (!sendRes.ok) {
+      console.error('[chat/send-media] send failed', { status: sendRes.status, error: sendData?.error?.message })
+      return { ok: false, error: sendData?.error?.message || 'Falló el envío por WhatsApp', status: 502 }
+    }
+    providerMessageId = sendData?.messages?.[0]?.id
   }
-  const providerMessageId: string | undefined = sendData?.messages?.[0]?.id
 
   // 3) Persist like a human text send (attribution, conversation, delivery).
   const senderUser = await db.user.findUnique({
@@ -168,23 +204,25 @@ export async function sendWhatsAppMediaBytes(opts: {
     tenantId,
     socialAccountId: found.id,
     direction: 'outbound',
-    content: outboundMediaContent(media.kind, caption),
+    // Instagram: the photo row is just the photo; its caption is a separate text row (only once it is sent).
+    content: outboundMediaContent(media.kind, platform === 'instagram' ? '' : caption),
     sentAt: new Date(),
     receivedAt: null,
     peerId: recipient,
     providerMessageId: providerMessageId || null,
     messageType: media.kind,
     deliveryStatus: 'pending',
-    platform: 'whatsapp',
+    platform,
     senderUserId: userId,
-    providerMediaId: mediaId,
+    // Instagram has no downloadable media id: the thread shows our private copy (step 4).
+    providerMediaId: platform === 'whatsapp' ? mediaId : null,
     mediaMimeType: media.mime,
     mediaFilename: media.filename,
     metadata: mergeHumanSenderMetadata(
       {
         to: recipient,
-        provider: 'whatsapp',
-        platform: 'whatsapp',
+        provider: platform,
+        platform,
         messageType: media.kind,
         ...(opts.metadata ?? {}),
         ...(clientRequestId ? { clientRequestId } : {}),
@@ -249,6 +287,34 @@ export async function sendWhatsAppMediaBytes(opts: {
       quickReplyShortcut: opts.quickReplyShortcut,
       media: true,
     })
+  }
+
+  // Instagram caption: sent after the photo is saved, stored as its own text row only when Meta accepted it.
+  if (platform === 'instagram' && providerMessageId && caption.trim()) {
+    const pageId = found.pageId || parseSocialRefreshToken(found.refreshToken).pageId
+    const text = caption.trim()
+    const sentText = await sendInstagramText({ pageId, accessToken, recipient, text, timeoutMs: META_TIMEOUT_MS }).catch(() => null)
+    if (sentText?.ok) {
+      const captionWrite = await dualWriteChatMessage({
+        tenantId,
+        socialAccountId: found.id,
+        direction: 'outbound',
+        content: text,
+        sentAt: new Date(),
+        receivedAt: null,
+        peerId: recipient,
+        providerMessageId: sentText.providerMessageId,
+        messageType: 'text',
+        deliveryStatus: sentText.providerMessageId ? 'sent' : 'pending',
+        platform,
+        senderUserId: userId,
+        metadata: mergeHumanSenderMetadata({ to: recipient, provider: platform, platform, captionOfMessageId: write.messageId }, snapshot),
+        suppressSoftAi: true,
+      })
+      if (!isPersistedDualWrite(captionWrite)) console.warn('[chat/send-media] instagram caption sent but not stored')
+    } else {
+      console.warn('[chat/send-media] instagram caption not sent')
+    }
   }
 
   const saved = await db.chatMessage.findFirst({ where: { id: write.messageId, tenantId } })

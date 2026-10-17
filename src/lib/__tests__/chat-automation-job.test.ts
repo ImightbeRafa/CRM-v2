@@ -69,7 +69,8 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
 
   it('claim uses FOR UPDATE SKIP LOCKED, 45s lease, and per-conversation single-flight', () => {
     const queue = read('src/lib/soft-ai/automation-queue.ts')
-    assert.match(queue, /FOR UPDATE SKIP LOCKED/)
+    // Burst hardening: only the job row is locked (the joined ChatMessage never is).
+    assert.match(queue, /FOR UPDATE OF current SKIP LOCKED/)
     assert.match(queue, /LEASE_MS = 45_000/)
     assert.equal(LEASE_MS, 45_000)
     assert.match(queue, /newer\."conversationId" = current\."conversationId"/)
@@ -80,7 +81,8 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
     assert.equal(MAX_ATTEMPTS, 5)
     assert.match(queue, /status: ambiguous \? 'ambiguous' : terminal \? 'failed' : 'retry'/)
     assert.match(queue, /SUPERSEDED/)
-    assert.match(queue, /ORDER BY current\."createdAt" DESC/)
+    // Burst hardening: newest customer message first (sentAt), then createdAt / id.
+    assert.match(queue, /ORDER BY current_msg\."sentAt" DESC, current\."createdAt" DESC, current\."id" DESC/)
     // Expired processing lease is reclaimable (retry after kill mid-run)
     assert.match(
       queue,
@@ -92,7 +94,8 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
     const queue = read('src/lib/soft-ai/automation-queue.ts')
     // Candidate CTE + SKIP LOCKED is the concurrency contract
     assert.match(queue, /WITH candidate AS/)
-    assert.match(queue, /FOR UPDATE SKIP LOCKED/)
+    // Burst hardening: only the job row is locked (the joined ChatMessage never is).
+    assert.match(queue, /FOR UPDATE OF current SKIP LOCKED/)
     assert.match(queue, /LIMIT \$\{limit\}/)
     // Prefer newest pending; inflate older siblings SUPERSEDED; block if another processing
     assert.match(queue, /inflight\."status" = 'processing'/)
@@ -152,7 +155,7 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
     }
   })
 
-  it('webhook persists job before 200 and voids processJobById; cron is separate safety net', () => {
+  it('webhook persists job before 200 and dispatches it after the burst settle; cron is separate safety net', () => {
     const webhook = read('src/app/api/chat/webhook/route.ts')
     const cron = read('src/app/api/cron/chat-automation/route.ts')
     // Production runs on Cloudflare: the */1 safety-net cron lives in wrangler.jsonc and the Worker
@@ -160,10 +163,11 @@ describe('ChatAutomationJob durable Soft AI queue', () => {
     const wrangler = read('wrangler.jsonc')
     const worker = read('src/cf-container-worker.ts')
     assert.match(webhook, /enqueueSoftAiAfterInbound/)
-    assert.match(webhook, /processJobById/)
+    assert.match(webhook, /processJobAfterSettle/)
     const enqueueAt = webhook.indexOf('enqueueSoftAiAfterInbound')
     const returnAt = webhook.lastIndexOf('return NextResponse.json')
-    const voidAt = webhook.indexOf('void processJobById')
+    // Burst = one reply (2026-10-17): the immediate dispatch waits BURST_SETTLE_MS (processJobAfterSettle).
+    const voidAt = webhook.indexOf('processJobAfterSettle(jobId')
     assert.ok(enqueueAt > 0 && returnAt > enqueueAt)
     assert.ok(voidAt > enqueueAt)
     assert.match(cron, /CRON_SECRET/)

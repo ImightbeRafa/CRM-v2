@@ -146,8 +146,16 @@ export function redactIdNumbers(text: string): string {
  * Phones and emails are NOT masked here (the conversation itself is addressed to them).
  */
 export function redactSensitiveForProvider(text: string): string {
-  const masked = redactIdNumbers(redactIbanForProvider(redactCardNumbers(text)))
+  const masked = maskSensitiveForProvider(text)
   return masked.length > PROVIDER_REDACT_MAX_CHARS ? masked.slice(0, PROVIDER_REDACT_MAX_CHARS) : masked
+}
+
+/**
+ * The same masking with NO length cut — for a caller that keeps the END of the text itself (the "¿ya pagó?" check: a
+ * claim usually closes a long burst; verifier round 10).
+ */
+export function maskSensitiveForProvider(text: string): string {
+  return redactIdNumbers(redactIbanForProvider(redactCardNumbers(text)))
 }
 
 export function redactPiiText(text: string): string {

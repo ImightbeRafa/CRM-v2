@@ -624,6 +624,8 @@ function foldChoice(text: string): string {
     .normalize('NFC')
     .toLowerCase()
     .replace(/\s+/g, ' ')
+    // Live 467818: customers write SINPE as "simpe" / "sinpi" — the same method (a choice, never a claim by itself).
+    .replace(/(?<![\p{L}])(?:simpe|sinpi|simpi)(?![\p{L}])/gu, 'sinpe')
     .trim()
 }
 

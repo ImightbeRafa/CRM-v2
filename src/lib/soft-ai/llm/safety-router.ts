@@ -9,6 +9,7 @@ import {
   type PaymentClassification,
 } from '@/lib/soft-ai/payment-classifier'
 import { reservedShortcutBody } from '@/lib/soft-ai/shortcuts'
+import { isStopContactText } from '@/lib/soft-ai/waiting-ack'
 
 export const MEDIA_MESSAGE_TYPES = ['image', 'document', 'audio', 'video'] as const
 export type MediaMessageType = (typeof MEDIA_MESSAGE_TYPES)[number]
@@ -46,8 +47,12 @@ export function isMediaMessageType(value: string | null | undefined): value is M
 // The suggested customer notice says «escriba agente»: a bare word must reach a person deterministically.
 const BARE_HANDOFF_RE = /^\s*["'«]?\s*(agente|humano|persona|asesor|agent|human|person)\s*["'».!]*\s*$/i
 
+/**
+ * A person request or an opt-out: both hand off. At least as wide as the waiting ack's "stop writing to me" list
+ * (basta, no me escriban más, darme de baja…) so those never reach the model (SecureDog, PR #100).
+ */
 export function isOptOutText(text: string): boolean {
-  return OPT_OUT_RE.test(text || '') || BARE_HANDOFF_RE.test(text || '')
+  return OPT_OUT_RE.test(text || '') || BARE_HANDOFF_RE.test(text || '') || isStopContactText(text)
 }
 
 /**
@@ -91,7 +96,7 @@ export function routeInboundSafety(input: {
 }
 
 /** Webhook placeholders for media without a caption ("[image]", "[sticker]"): not customer words. */
-const MEDIA_PLACEHOLDER_RE = /^\s*\[(image|video|audio|voice|document|sticker|imagen|archivo)\]\s*$/i
+const MEDIA_PLACEHOLDER_RE = /^\s*\[(image|video|audio|voice|document|file|sticker|imagen|archivo)\]\s*$/i
 
 /**
  * Agentes IA 2.0 (B6). Media never reaches the model (no OCR). It is a receipt — a person checks it, the chat goes to

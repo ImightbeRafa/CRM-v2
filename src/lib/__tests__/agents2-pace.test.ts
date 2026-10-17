@@ -247,7 +247,8 @@ describe('agents2-pace: quick check "why" + technical retry', () => {
       assert.match(read(f), /\{!r\.pass && r\.why \? <p[^>]*data-testid="case-why">Por qué: \{r\.why\}/)
     }
     assert.match(read('src/lib/soft-ai/agent-status-server.ts'), /why: typeof x\.why === 'string' \? x\.why\.slice\(0, 300\) : null/)
-    assert.match(read('src/lib/soft-ai/agent-turn.ts'), /codes: probarOutcomeCodes\(\{ validationReasons, policyReasons, errorCode: llmErrorCode, escalate, escalateReason, handoff \}\)/)
+    // Burst = one reply (2026-10-17): Probar also shows the review live would raise after the reply.
+    assert.match(read('src/lib/soft-ai/agent-turn.ts'), /codes: probarOutcomeCodes\(\{ validationReasons, policyReasons, errorCode: llmErrorCode, escalate, escalateReason, handoff: handoff \?\? probarBurstReview \}\)/)
   })
 })
 
@@ -256,10 +257,12 @@ describe('agents2-pace F1: the next message of the same chat is not left for the
   it('after complete / fail, the newest waiting job of the same conversation (tenant-scoped) is kicked once', () => {
     assert.match(proc, /export async function kickNextConversationJob\(/)
     assert.match(proc, /where: \{\s*tenantId: row\.tenantId,\s*conversationId: row\.conversationId,\s*id: \{ not: row\.id \},\s*status: \{ in: \['pending', 'retry'\] \},\s*availableAt: \{ lte: new Date\(\) \},/)
-    assert.match(proc, /orderBy: \[\{ createdAt: 'desc' \}, \{ id: 'desc' \}\]/)
-    // One kick, no chain: the kicked job runs with kick: false.
+    // Burst hardening: the job the claim would pick (newest customer message first).
+    assert.match(proc, /orderBy: NEWEST_BURST_JOB_ORDER,/)
+    // One kick, no chain: the kicked job runs with kick: false — except a job that yielded to a newer burst bubble
+    // (burst = one reply, 2026-10-17), which always hands over (bounded: it yields only while a newer job is queued).
     assert.match(proc, /if \(next\) void processJobById\(next\.id, \{ kick: false \}\)\.catch\(\(\) => undefined\)/)
-    assert.match(proc, /await completeJob\(row\)\s*if \(kick\) void kickNextConversationJob\(row\)/)
+    assert.match(proc, /await completeJob\(row\)[\s\S]{0,400}const superseded = result\?\.status === 'skipped' && 'reason' in result && result\.reason === 'superseded'\s*if \(kick \|\| superseded\) void kickNextConversationJob\(row\)/)
     // Not after a timeout (that turn may still be sending in the background).
     assert.match(proc, /if \(kick && !timedOut\) void kickNextConversationJob\(row\)/)
     // Best effort: never throws.

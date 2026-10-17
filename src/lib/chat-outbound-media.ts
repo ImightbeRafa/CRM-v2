@@ -30,6 +30,9 @@ export const WA_OUTBOUND_LIMITS: Record<OutboundMediaKind, number> = {
 }
 
 /** Accept list for the file picker (UI hint only; the server re-validates). */
+/** Instagram takes photos only (JPG / PNG); see instagram-media.ts. */
+export const IG_OUTBOUND_ACCEPT = 'image/jpeg,image/png,.jpg,.jpeg,.png'
+
 export const WA_OUTBOUND_ACCEPT =
   '.jpg,.jpeg,.png,.mp4,.3gp,.aac,.mp3,.m4a,.amr,.ogg,.opus,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt'
 

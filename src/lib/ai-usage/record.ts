@@ -19,6 +19,7 @@ export type AiUsageFeature =
   | 'vision'
   | 'transcription'
   | 'customer_paste'
+  | 'payment_check'
   | 'staff_bot'
   | 'staff_bot_voice'
   | 'template'

@@ -7,6 +7,7 @@ import { processClaimedJob } from '@/lib/soft-ai/automation-processor'
 import { drainStaleAgentTestRuns } from '@/lib/soft-ai/test-engine/run'
 import { drainStaleProfileDrafts } from '@/lib/agent-studio/extract'
 import { sweepWaitingChatsPeriodic } from '@/lib/soft-ai/waiting-sweep'
+import { runFollowUpCampaigns } from '@/lib/soft-ai/follow-up'
 import { cronsDisabled } from '@/lib/cron-kill-switch'
 
 export const dynamic = 'force-dynamic'
@@ -50,6 +51,8 @@ export async function GET(request: NextRequest) {
       Date.now() - startedAt < 20_000
         ? await sweepWaitingChatsPeriodic({ deadlineMs: 8_000 }).catch(() => null)
         : null
+    // Follow-up A/B (agent_follow_up_v1): a few per run, business hours + 24 h window only; skipped on a slow run.
+    const followUps = Date.now() - startedAt < 25_000 ? await runFollowUpCampaigns({ deadlineMs: 10_000 }).catch(() => 0) : 0
     const counts = results.reduce<Record<string, number>>((summary, result) => {
       summary[result.status] = (summary[result.status] || 0) + 1
       return summary
@@ -62,6 +65,7 @@ export async function GET(request: NextRequest) {
       purged: purged.count,
       resumedTestRuns,
       waitingQueued: waiting?.queued ?? 0,
+      followUps,
       durationMs: Date.now() - startedAt,
     })
   } catch (error) {

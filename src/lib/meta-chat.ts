@@ -374,6 +374,16 @@ function getInstagramContent(message: any): string {
 }
 
 /**
+ * Instagram's attachment type as the stored messageType. A 'file' attachment (a PDF receipt) is a 'document', the
+ * media type the receipt path (mediaInboundPlan), sales-state and the burst planner know (SecureDog, PR #100).
+ */
+export function instagramMessageType(message: any): string {
+  const type = message?.attachments?.[0]?.type
+  if (type === 'file') return 'document'
+  return type || (message?.text ? 'text' : 'unknown')
+}
+
+/**
  * Instagram Business Account ids from Meta commonly start with 178414.
  * Page webhooks use Facebook Page ids on entry.id; recipient.id may be the IG id.
  */
@@ -491,7 +501,7 @@ function parseInstagramMessaging(
 
       const recipientId = event?.recipient?.id ? String(event.recipient.id) : ''
       const accountId = resolveInstagramAccountId({ source, entryId, recipientId })
-      const messageType = message.attachments?.[0]?.type || (message.text ? 'text' : 'unknown')
+      const messageType = instagramMessageType(message)
       const isEcho = Boolean(message.is_echo)
       const referral = isEcho ? undefined : parseInstagramReferral(message) ?? undefined
 

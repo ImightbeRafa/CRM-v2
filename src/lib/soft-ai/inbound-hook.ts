@@ -8,7 +8,7 @@
  */
 
 import { prisma } from '@/lib/db'
-import { shouldUseSoftTenantAiV1, readSoftTenantAiConfig } from '@/lib/feature-flags'
+import { shouldUseChatAgentLayerV1, shouldUseSoftTenantAiV1, readSoftTenantAiConfig } from '@/lib/feature-flags'
 import { parseSoftAiConfig } from '@/lib/soft-ai/config'
 import { runSoftAiTurn } from '@/lib/soft-ai/worker'
 import { buildSoftAiServerDeps } from '@/lib/soft-ai/server-deps'
@@ -23,7 +23,7 @@ import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { softAiCanalContextLine } from '@/lib/soft-ai/channel-context'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
-import { persistJob } from '@/lib/soft-ai/automation-queue'
+import { BURST_SETTLE_MS, persistJob } from '@/lib/soft-ai/automation-queue'
 
 type InboundHookArgs = {
   tenantId: string
@@ -385,13 +385,19 @@ export async function executeSoftAiInboundTurn(
  */
 export async function enqueueSoftAiAfterInbound(
   args: InboundHookArgs,
-): Promise<{ jobId: string; duplicate: boolean } | { skippedReason: string } | null> {
+): Promise<{ jobId: string; duplicate: boolean; settleMs: number } | { skippedReason: string } | null> {
   try {
     if (!args.conversationId || !args.messageId) {
       return { skippedReason: 'missing_conversation_or_message' }
     }
+    // No text and no attachment (e.g. an unsupported Instagram event): the job could only fail (SOFT_AI_PAYLOAD_INVALID),
+    // and as the newest job of a burst it would hold back / supersede the real question (burst = one reply).
+    if (!(args.content || '').trim()) return { skippedReason: 'empty_content' }
     const enabled = await shouldUseSoftTenantAiV1(args.tenantId)
     if (!enabled) return { skippedReason: 'flag_off' }
+    // Burst = one reply needs the agent layer's burst planning; the legacy Soft turn answers one message at a time,
+    // so it keeps its immediate dispatch (SecureDog INT: no settle there, older bubbles keep their own turns).
+    const settleMs = (await shouldUseChatAgentLayerV1(args.tenantId)) ? BURST_SETTLE_MS : 0
 
     const row = await persistJob({
       tenantId: args.tenantId,
@@ -402,8 +408,10 @@ export async function enqueueSoftAiAfterInbound(
       platform: args.platform,
       content: args.content,
       senderName: args.senderName,
+      // Burst = one reply: the job waits a few seconds so the customer's next bubble joins it (BURST_SETTLE_MS).
+      ...(settleMs ? { availableAt: new Date(Date.now() + settleMs) } : {}),
     })
-    return { jobId: row.id, duplicate: row.duplicate }
+    return { jobId: row.id, duplicate: row.duplicate, settleMs }
   } catch (error) {
     console.error('[soft-ai/inbound-hook] enqueue failed', error)
     return null

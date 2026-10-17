@@ -1,3 +1,204 @@
+## 2026-10-17 (night) — Deploy 2 LIVE: CF 816cd5c9 (claudio/luna-10-d2 @ 67381146)
+
+- SQL 054 applied (prod, guarded script): all non-live agents → gpt-6-luna, default Luna. 5 live test-business agents stay on Grok and now go quiet (model_not_allowed); no real business affected.
+- In the deploy: Grok out of inbox AI; Luna "¿ya pagó?" check in SHADOW; PR #101 (opt-out phrases, strict basta, IG file = document); PR #102 (burst hardening, dead-lease cron fix); SecureDog r9/r10 fixes (INT-149..152); chat → order prefill (Crear pedido / Confirmado open a filled form; no AI; SecureDog H1/H2 fixed and verified: INT-156, DATA-63, INT-157, AUTH-48, DATA-64).
+- Verified after deploy: health ok; prefill route 401 without session; live replies on Luna delivered, burst supersede working, 0 failed sends. Order form not yet clicked by a person.
+
+## 2026-10-17 (night) — Opt-out parity + Instagram PDF receipts (branch claudio/inbox-safety-gaps, NOT deployed)
+
+Two safety gaps SecureDog found while reviewing PR #100. Both predate it.
+- Opt-out: some "stop writing to me" phrases did not hand off. "basta", "no me escriban más", "darme de baja", "no me
+  manden nada" and others were on the waiting-ack list but not in the safety router, so the model kept answering.
+  - `waiting-ack.ts` now exports `isStopContactText` (that list without the bot refusals).
+  - The safety router's `isOptOutText` adds it, so it covers at least the waiting-ack list.
+  - Unchanged:
+    - "quiero hablar con una persona" still hands off in the router. It is still no opt-out for the waiting ack, so
+      that customer still gets the ack.
+    - "No quiero una máquina tan grande" is still a product question.
+  - The router ends the AI sale on a match, so it is stricter about "basta". It skips the "is enough" forms in
+    the same clause: "me basta con uno", "un parche no basta", "¿con un parche basta?", "basta con el pequeño".
+    "Ya basta! ¿Cuántas veces…?" and "basta con los mensajes" still hand off. The waiting ack still counts any "basta".
+  - In the router only, an order detail is no stop: "no me manden más de 3", "no me mandes nada al correo". The
+    waiting-ack list is unchanged from base.
+  - Verifier rounds 1–4 FAIL, then fixed:
+    - A blanket "?" exclusion missed real opt-outs, and "me basta con uno" ended the sale.
+    - A lookahead in the shared list then missed "no me escriban más por aquí" and similar phrases in both lists.
+    - "ya basta" / "basta con eso" then caught questions ("¿Basta con eso?", "Con uno ya basta").
+    - Then "Ya basta ¿no entienden?" was missed.
+  - Then tightened (Rafael via the coordinator: Sofi sells, and a false hand-off on a product or courtesy line loses the
+    sale). In the router, "basta" hands off only:
+    - when it stands alone, with "ya" / "por favor" / punctuation allowed ("¡Basta!", "ya basta", "basta por favor");
+    - when it is about the messages ("basta de mensajes", "basta con los mensajes / las promociones");
+    - when it comes with a stop cue ("Basta, ¿pueden dejar de escribirme?", "…que no me escriban?").
+  - Every other "basta" stays with the model: "Basta un parche al día", "¿Basta con uno?", "Basta, gracias", "me basta
+    con uno", "Ya basta ¿no entienden?". The waiting ack's list is unchanged.
+  - Verifier round 7 FAIL, then fixed:
+    - "¿Basta con escribir mi dirección?" and "Basta con uno, no me manden el kit" handed off.
+    - "basta 😡" and "basta porfa" were missed.
+    - Fix: after "con", only a noun counts. The stop cue dropped "no me manden". Emoji and "porfa" / "x favor" now
+      count as bare. Round 8 PASS.
+    - Every phrase the verifier reported is pinned as a test.
+- Instagram files: an IG `file` attachment (a PDF receipt) was stored as messageType `file`. That is no media type, so
+  it got no receipt path and no review. Now `instagramMessageType` (meta-chat.ts) stores it as `document`.
+  - The content stays `[file]`, and the inbox still shows it as a file.
+  - `[file]` is a media placeholder in `mediaInboundPlan`.
+  - The receipt path, sales-state and the burst planner now treat it as media.
+- Tests: a new block in `luna10-hard-blocks.test.ts` pins both lists, the decideInbound routing, the IG parser, the
+  receipt / review path and the burst planner.
+- Proof:
+  - test:chat-harden 645/0 and test:security 271/0.
+  - test:soft-ai 1016/1. The one failure is agent-studio's PDF worker test, which fails the same on the untouched base
+    (this worktree has no own node_modules).
+  - tsc and lint are clean.
+## 2026-10-17 (late night) — Burst hardening: long bursts, 24 h bound, newest message answers (branch claudio/inbox-burst-harden on luna-10 @ 933288b4, NOT deployed)
+
+- Long bursts (Low residual from the PR #100 reviews): the safety checks only saw the 24 loaded history rows, so in a
+  burst of 24+ bubbles (a WhatsApp multi-forward) the first bubbles got no opt-out / receipt / payment-claim check.
+  When the history window is full and every row in it is an unanswered bubble (`burstOutgrowsWindow`), the live turn
+  now loads the unanswered bubbles on their own (`loadUnansweredInbound`). It reads only text, type and send time,
+  scoped to the tenant and chat, after the store's last reply in the history's own (sentAt, id) order, newest 100
+  (`BURST_LOAD_MAX`). Every bubble gets the opt-out / payment-claim / hand-off check. The receipt check is weaker:
+  whether a photo is "awaiting a receipt" still reads the 24-row window, which in this case holds no store message.
+  A receipt photo early in a long burst therefore gets the photo review (`text_with_media`), not the receipt path.
+  The model still reads its 24-row window. In the normal case nothing extra is loaded.
+- 24 h bound (`BURST_MAX_AGE_MS`): a bubble sent more than a day before the trigger is no longer part of its burst.
+  Before, an unanswered "STOP" or receipt photo from days ago turned a new "hola" into an opt-out hand-off or the
+  receipt path. 24 h is the waiting sweep's horizon (`DAY_MS`): only a message inside the reply window is still owed
+  an answer, and the customer writing again is a new conversation. The trade-off is that a job superseded after more
+  than a day in the queue (outage, AI switched off) has its bubble shown in the inbox but not judged. A bad date never
+  drops a bubble. The shadow replay (`shadow.ts`) passes the real message time (`replaySentAt`, never settable from
+  the Probar API), so a replayed burst is bounded like live.
+- Newest message answers: the claim SQL ordered and held jobs by the job's `createdAt`. A bubble Meta delivered late
+  (sent earlier, job created later) could become the answering job, with the newest bubble only a secondary one.
+  The claim now orders and holds by the customer message's `sentAt`, then `createdAt` / `id` (joined, never locked:
+  `FOR UPDATE OF current`). `kickNextConversationJob` uses the same order (`NEWEST_BURST_JOB_ORDER`). Single-flight,
+  the partial unique index and `supersedeOlderJobs` are unchanged. This was proven on a throwaway Docker Postgres
+  (8 scenarios, including late delivery, same-second WhatsApp timestamps, the settle hold, single-flight and two
+  concurrent claimants), and the message row was checked to stay unlocked during a claim.
+- Tests: `inbound-burst.test.ts` +7.
+- Verifier round 1: PASS WITH NOTES. Fixed: shadow parity of the 24 h bound, the same-second tie at the last reply,
+  a realistic stale-receipt test. Softened: the receipt wording above. Left open, with a separate follow-up: a job
+  stuck in `processing` with an expired lease plus a newer pending job can block that chat's claim. It also makes a
+  cron batch return nothing (single-flight P2002). This is already in the base branch, not caused by this slice.
+- SecureDog round 1: FIX BEFORE PROD, over one Medium (F1). Fixed:
+  - F1: with the sentAt order, a message that Meta delivered late, and that was sent before the store's last reply,
+    was superseded but never checked. That message is outside the claimed job's burst. Now `supersedeOlderJobs`
+    never supersedes a job whose message already has a store reply after it, matched by tenant and chat. That job
+    stays queued and runs on its own afterwards, as live does today for that arrival order, so its opt-out, request
+    for a person or receipt is still checked.
+  - F2 (per-turn CPU on 100 adversarial 4 KB bubbles): the per-bubble checks collapse whitespace runs and decide
+    each repeated bubble once. The waiting ack's opt-out regex tail no longer backtracks. The planned and model text
+    are unchanged.
+  - F3: the last-reply lookup of the long-burst load is bounded by the day.
+- Docker harness: 10 scenarios, including both F1 interleavings. Tests: `inbound-burst.test.ts` +3.
+- Verifier round 3: FAIL, then fixed:
+  - (Medium, mine) The F2 collapse also turned line breaks into spaces. The payment classifier reads a line break as
+    a sentence end, so "Quiero pagar con tarjeta\nle hice uno" lost its payment hand-off in a burst. Now a line
+    break stays a line break and only runs shrink. Test: that bubble plus "hola?" keeps the hand-off it gets alone.
+  - (Low-medium) A job kept by F1 could become claimable while the newer answering job waited on a long retry, then
+    supersede it. The claim now holds a job whose message already has a reply after it behind every newer pending
+    or retry job, whatever the 10 s horizon. Harness: 11 scenarios.
+  - Verifier round 4: PASS WITH NOTES. Its note is fixed: the collapse shrinks horizontal runs first, so it stays linear.
+- SecureDog round 2: all of this slice's fixes pass. Still FIX BEFORE PROD over F6, which is already live and worse
+  than we had documented.
+  - The problem: a job left `processing` by a dead worker, plus a newer job in the same chat, made every claim in
+    that chat fail on the single-flight index. From `$queryRaw` that failure arrives as P2010 / 23505, which the
+    catch did not recognise. So `claimBatch` threw, and the chat-automation cron returned 500 for every tenant on
+    every run.
+  - Fixed: each claim first releases leases that expired at least 15 s ago (`releaseDeadLeases`, sets `retry`, or
+    `failed` once out of attempts). The job then follows the normal rules. `isSingleFlightConflict` also recognises
+    P2010 / 23505, so that error defers the job and returns `[]` instead of throwing.
+  - Harness: 14 scenarios. The F2 timing test is tightened to 500 ms.
+- Verifier round 5: PASS WITH NOTES. Its note is fixed: inside the 15 s grace, one dead lease still emptied the cron batch for one run. The in-flight check now counts any `processing` sibling, so it blocks only its own chat. Harness: 15 scenarios.
+- SecureDog round 3: OK (nothing blocking). Applied two of its Low notes: a failed `releaseDeadLeases` is logged and never blocks the claim, and the catch-all `single_flight|unique` regex fallback is removed. Still open, both pre-existing: the lease uses the app clock while the DB compares with its own, and the cron leases 2 rows up front and runs them one after the other.
+- Final: Verifier PASS WITH NOTES (round 5), SecureDog OK to ship (on c31cc09a). Draft PR #102 → claudio/inbox-burst, intended base local luna-10 @ 933288b4. NOT deployed, needs Rafael's GO.
+  - Known: F1 also keeps a bubble typed while a non-yielding turn was writing its reply (before, it was dropped
+    unchecked). That bubble now gets its own reply after the newer one, up to a cron minute later.
+- Left open:
+  - F4 (rare): a job older than 60 s with 100+ bubbles after its trigger uses the newest 100 and does not merge
+    them with its window.
+  - (F6 fixed in SecureDog round 2, below.)
+  - F5 (info): there is no durable opt-out flag. The 24 h bound only drops an opt-out that no job ever checked.
+
+## 2026-10-17 (night) — PR #100 burst fix + quick replies + confirmation false alarm, deployed 5820a6fc
+
+- PR #100 (one reply per burst, photo + text answered) fast-forwarded onto claudio/luna-10 (28f83c72). The "/" menu shows all quick replies (was 8 of 37), and quick-reply photos work on Instagram. A lone "confirmada" in a blocked reply is no longer a payment hand-off without payment context (live 467818).
+- First real Instagram photo send: agent ph_glp1 image to 467818 at 20:59:47Z, accepted by Meta (provider id stored).
+- Checks: tsc 0, lint clean, soft-ai 1011/1011, chat-harden 662/662, security 271/271, backups 21/21.
+
+## 2026-10-17 (late night) — Burst = one reply + media with text (branch claudio/inbox-burst, NOT deployed)
+
+- Seen live on PatchHouse IG: a customer's 2–3 bubbles within seconds (ad share + "¡Hola! Quiero más información.",
+  "Top" + "GLP1") got one turn each: two greetings, or "¿Cuál te interesa?" right before the real answer.
+- Fix: each inbound job waits `BURST_SETTLE_MS` (3.5 s) before it can be claimed, and the webhook dispatches it after
+  that (`processJobAfterSettle`). At claim time, a newer job of the same chat that becomes claimable within 10 s holds
+  the older ones back, and the newest job then supersedes them as before. A job that is already running checks for a
+  newer queued bubble (`newerBurstJobPending`) after the claim gates and again right before each send. If one is
+  there and the trigger is under 60 s old, the job stops as `superseded` (the generated row keeps its tokens) and the
+  newer job answers the whole burst. Delivery keys and per-chat single-flight are unchanged.
+- Media + text (User 722630: "Que costo tiene" + photo got "¿Me contás por escrito…?"): `inbound-burst.ts` plans the
+  burst. With customer text, the text is decided / answered normally and a person is still asked to look at the photo
+  or audio (review hand-off, the chat stays on IA). A receipt-looking photo anywhere in the burst keeps the receipt
+  path. Photo / audio alone, stickers and caption opt-outs keep today's behaviour. Probar now plans bursts the same
+  way (shared `decideBurstTurn`, `burst-decision.ts`).
+- Every unanswered bubble is judged as if it still had its own job:
+  - A TRUE hand-off in any bubble or caption wins (opt-out, payment claim, hand-off keyword reply, "agente").
+  - A question that needs the model is never dropped because the newest bubble got a code reply. The model answers
+    the whole burst, unless the other bubbles are only greetings.
+  - A review another bubble would have raised (payment data sent by hand) is settled after the reply.
+  - A "STOP" anywhere in the burst keeps the later waiting ack silent.
+- Legacy Soft path (agent layer off): no settle, immediate dispatch as before.
+- Verifier round 1 FAIL, then fixed:
+  - (High) A TRUE hand-off in any text bubble of the burst wins ("Quiero hablar con una persona" + "por favor"). A
+    planned hand-off never yields, and neither does a reclaimed job.
+  - No job for an inbound with no content.
+  - The burst stops at the store's last reply wherever it sits, in send order.
+  - The photo caption joins the answered text.
+  - The photo review is a separate flag, so the reply keeps its images and the repeat guard, and it survives a reclaim.
+  - Superseded tokens count toward the daily cap, and a superseded job always kicks the newer one.
+  - The first round's "tsc clean" was wrong: the new test had type errors. Now exit 0.
+- Verifier round 2 PASS WITH NOTES; its Medium (opt-out in an earlier photo caption) fixed, and a burst photo review
+  no longer hides the "La IA no respondió" alert.
+- Verifier round 3 FAIL (High: the earlier question was dropped when the newest bubble got a code reply) and
+  SecureDog round 1 "fix before prod" (two Medium regressions). All fixed in 051587ed:
+  - STOP in any bubble; each bubble and caption decided alone.
+  - Strict placeholder list; file-name captions are not text.
+  - The daily cap counts every live model run (a pre-existing gap with duplicate_reply / safe_line_repeat).
+  - At most one written-then-dropped reply per burst.
+  - The supersede write is scoped by tenant.
+  - No burst time window.
+  - In Probar, the burst review is shown and the sandbox history keeps replies to earlier queued messages.
+- Verifier round 4 PASS WITH NOTES and SecureDog round 2 PASS (production). Their notes are fixed too:
+  - Two different code replies in one burst ("¿Cómo pago?" + an owner's "precio" reply) → the model answers both.
+  - A "lo quiero" in an earlier bubble keeps the buy cue for the sales stage.
+  - The greeting list is wider ("Buen día", "Bueno", "Claro", "Hola, ¿cómo estás?"), and `[fallback]` is a placeholder.
+  - A running job yields only to a newer job whose message was sent after its own (an old message Meta delivered late
+    never takes the burst).
+  - The waiting ack reads every customer message since the hand-off for an opt-out.
+  - Verifier round 5 + 6 (merge) PASS WITH NOTES: a later "mejor no" cancels an earlier "lo quiero" ("ya no tengo
+    dudas" does not); Probar loads the sale state for an earlier photo like live; the photo-receipt check
+    keeps reading the newest message only.
+- Tests: `inbound-burst.test.ts` (30, they run the real `decideBurstTurn`). Source-text asserts updated in
+  chat-automation-job, luna10-hard-blocks, agents2-b-sales, agents2-pace and probar-scenarios (same intent, new
+  names). test:soft-ai 1011/1011, test:chat-harden 645/645, test:security 271/271, tsc + lint clean.
+
+## 2026-10-17 (late) — Instagram photos (staff + agent), deployed 6a80d638
+
+- Instagram sends were text-only. Photos (JPG/PNG, 5 MB) now upload to the Page (/{page}/message_attachments, platform=instagram) and go out by attachment_id. No public link to our files. The type is `image` first, then `MEDIA_SHARE` only after a clean 4xx. A staff caption is its own text row, sent after the photo is saved. Agent saved-reply images work on Instagram (live, planning and Probar share imageChannel()).
+- Verifier round 1: FAIL on parity (fixed); F2–F5 fixed. SecureDog: OK, 2 Lows fixed (INT-148, DATA-62). Tests: soft-ai 981/981, chat-harden 659/659, security 271/271.
+- NOT verified against live Meta (field names, the image vs MEDIA_SHARE type, attachment id lifetime). First real send is the test.
+
+## 2026-10-17 (night) — PatchHouse Instagram + WhatsApp LIVE on gpt-6-luna
+
+- Deploy D1 (8ce27b4e), then D1b: the quick-check judge gets the store facts (pickup, shipping, payment methods), plus a
+  **"No es pago" / "Descartar"** button on the review banner. It clears a false payment/order alert without marking it
+  paid or moving the stage, and is audited as dismissed (`reviewOutcome`). test:soft-ai 981/981, tsc + lint clean.
+- PatchHouse ventas: Luna v51. A new rule says never repeat the customer's name, phone or address and never make an order recap
+  (Luna wrote one on her own). Instagram + WhatsApp re-activated; quick check 6/6.
+- dailyTokenCap 250k → 2M (scripts/agent-pack/daily-cap.ts, audited). The old cap blocked every reply.
+- ~80 waiting Instagram chats answered. Lesson: never process jobs from a laptop. Local kicks cannot decrypt the
+  IG token and burn retry attempts (one job, 732710, hit MAX_ATTEMPTS). Use a sweep that exits before kicking, or the server cron.
+
 ## 2026-10-17 (evening) — luna-10 release gate PASSED (NOT deployed)
 
 - Payment classifier now has a **live-equivalence gate** (SecureDog r8). Where live e2b9fd2c would answer too, the agent

@@ -270,7 +270,9 @@ describe('SecureDog INT-26..29 fixes (static)', () => {
     assert.match(turn, /releaseProbarSlot\(input\.tenantId\)/)
     // budget spent: early return before the model call and before any row is written
     const inner = turn.slice(turn.indexOf('async function runAgentTestTurnInner'))
-    assert.ok(inner.indexOf("blockedBy.push('test_budget_blocked')") < inner.indexOf('decideInbound('))
+    // Burst = one reply (2026-10-17): the decision runs inside decideBurstTurn (burst-decision.ts).
+    assert.ok(inner.indexOf("blockedBy.push('test_budget_blocked')") > 0)
+    assert.ok(inner.indexOf("blockedBy.push('test_budget_blocked')") < inner.indexOf('decideBurstTurn('))
     assert.match(inner, /turnId: ''/)
   })
 

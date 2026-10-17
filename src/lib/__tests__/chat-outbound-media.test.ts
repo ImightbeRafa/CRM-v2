@@ -75,7 +75,10 @@ test('route: flag-gated, update_sales, tenant-scoped line lookup, WhatsApp only,
   assert.match(src, /authenticateAPIWithPermission\(request, 'update_sales'\)/)
   assert.match(src, /isTenantFeatureNotDisabled\(tenantId, CHAT_OUTBOUND_MEDIA_FLAG\)/)
   assert.match(src, /socialAccount\.findFirst\(\{ where: \{ id: socialAccountId, tenantId \} \}\)/)
-  assert.match(src, /found\.platform !== 'whatsapp'/)
+  // WhatsApp any supported file; Instagram photos only, refused before the token is used (instagram-media.ts).
+  assert.match(src, /found\.platform === 'whatsapp' \? 'whatsapp' : found\.platform === 'instagram' \? 'instagram' : null/)
+  assert.match(src, /platform === 'instagram' && \(media\.kind !== 'image' \|\| !INSTAGRAM_IMAGE_MIMES\.has\(media\.mime\) \|\| media\.size > INSTAGRAM_IMAGE_MAX_BYTES\)/)
+  assert.ok(src.indexOf('INSTAGRAM_MEDIA_ONLY_PHOTOS, status: 400') < src.indexOf('decryptSocialAccessToken(found.accessToken)'))
   assert.match(src, /classifyOutboundMedia\(\{ filename: opts\.filename, bytes \}\)/)
   assert.doesNotMatch(src, /file\.type/)
   const rbac = readFileSync('src/lib/rbac.ts', 'utf8')

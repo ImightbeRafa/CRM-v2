@@ -149,15 +149,22 @@ export function decideInbound(input: {
    * "¿Cómo pago el resto?") is answered by ONE job for the newest message; a claim in any of them is a payment hand-off.
    */
   earlierCustomerTexts?: string[]
+  /**
+   * luna-10 D2: the "¿ya pagó?" model check said claim (or failed) in enforce mode — the message is treated exactly like
+   * a regex payment claim (same hand-off, same notification). Can only force toward a person.
+   */
+  forcePaymentRisk?: true
 }): InboundDecision {
   const latestClass = classifyPaymentText(input.inboundText, {
     awaitingPaymentMethod: input.awaitingPaymentMethod === true && (!input.messageType || input.messageType === 'text'),
   })
   // Verifier round 10: only a real claim in an earlier bubble counts ("Sinpe" + "gracias" is an answer).
   const burstClaim = (input.earlierCustomerTexts || []).some((t) => hasHardPaymentClaim(t))
-  const paymentClass: PaymentClassification = burstClaim ? 'payment_proof_or_risk' : latestClass
+  const forced = input.forcePaymentRisk === true
+  const paymentClass: PaymentClassification = burstClaim || forced ? 'payment_proof_or_risk' : latestClass
+  const why = forced ? `payment_llm_check (regex: ${latestClass})` : burstClaim ? `earlier_message (latest: ${latestClass})` : null
   const steps: DecisionStep[] = [
-    { step: 'payment_class', outcome: paymentClass, ...(burstClaim ? { reason: `earlier_message (latest: ${latestClass})` } : {}) },
+    { step: 'payment_class', outcome: paymentClass, ...(why ? { reason: why } : {}) },
   ]
   const safety = routeInboundSafety({
     inboundText: input.inboundText,
@@ -435,6 +442,17 @@ export function decideInbound(input: {
 /** Methods this store offers (configured + contra entrega from its shipping facts). */
 function offeredMethods(facts: BrandFacts): string[] {
   return paymentMethodsOf(facts)
+}
+
+/**
+ * Burst = one reply (Verifier r3 #1): the newest bubble got a code reply ("¿Cómo pago?" → the method list) but an
+ * earlier bubble of the burst needs the model ("Quiero 2 del kit grande con envío a Limón"). The model answers the
+ * whole burst instead, so no question is left without an answer (same precedent: link_plus_product_question).
+ */
+export function continueBurstToModel(decision: InboundDecision, reason: string): InboundDecision {
+  // The code step that would have answered stays in the trace; the model step is added after it.
+  const steps: DecisionStep[] = [...decision.decisionTrace.steps, { step: 'burst_model', outcome: 'continue', reason }]
+  return continueToModel(decision.paymentClass, steps)
 }
 
 function continueToModel(paymentClass: PaymentClassification, steps: DecisionStep[]): InboundDecision {

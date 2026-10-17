@@ -62,6 +62,8 @@ export type SoftAiResponsesCreateArgs = {
   maxOutputTokens?: number
   temperature?: number
   reasoningEffort?: 'none' | 'low' | 'medium' | 'high'
+  /** The requested effort wins over SOFT_AI_OPENAI_REASONING (a tiny fixed-latency check, e.g. the payment check). */
+  reasoningLocked?: boolean
   timeoutMs?: number
   store?: boolean
   /** Structured output (JSON schema) — used by graders/extractors, never by the customer-facing turn. */
@@ -101,7 +103,7 @@ export function buildSoftAiResponsesBody(args: Omit<SoftAiResponsesCreateArgs, '
     input: args.input,
     store: args.store === true ? true : false,
   }
-  const effort = openAiEffort(args.reasoningEffort)
+  const effort = args.reasoningLocked ? (args.reasoningEffort ?? 'none') : openAiEffort(args.reasoningEffort)
   body.reasoning = { effort }
   // Reasoning tokens count against the cap, so leave room for them on top of the visible answer.
   const headroom = effort === 'none' ? 0 : effort === 'low' ? 800 : effort === 'medium' ? 1_800 : 3_500

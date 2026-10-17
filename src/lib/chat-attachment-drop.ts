@@ -29,8 +29,8 @@ export function acceptsAttachment(
     return {
       ok: false,
       error: isImage
-        ? 'WhatsApp solo acepta fotos JPG o PNG.'
-        : 'Ese tipo de archivo no se puede enviar por WhatsApp.',
+        ? 'Solo se pueden enviar fotos JPG o PNG.'
+        : 'Ese tipo de archivo no se puede enviar por esta línea.',
     }
   }
   if (file.size > DROP_MAX_BYTES) return { ok: false, error: 'El archivo supera el máximo de 9 MB.' }

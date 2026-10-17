@@ -273,8 +273,11 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
   // (sent earlier, job created later) never becomes the answering job; it is one of the burst's other bubbles. The
   // message is joined, never locked (FOR UPDATE OF current): ChatAutomationJob.messageId is a required FK (cascade).
   // Single-flight partial unique on status=processing defers concurrent claimants.
+  // Housekeeping: a failure here never blocks the claim (SecureDog r3).
+  await releaseDeadLeases().catch((error) => {
+    console.warn('[chat-automation] releaseDeadLeases failed', safeErrorCode(error))
+  })
   try {
-    await releaseDeadLeases()
     const rows = await prisma.$queryRaw<
       Array<{
         id: string
@@ -365,11 +368,6 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
     // Partial unique ChatAutomationJob_conversation_single_flight_idx. From $queryRaw Prisma reports it as P2010 with
     // the Postgres code 23505 (SecureDog F6: the old check missed it and every cron run 500'd for all tenants).
     if (isSingleFlightConflict(error)) {
-      if (id) await deferJob(id)
-      return []
-    }
-    const message = error instanceof Error ? error.message : String(error)
-    if (/ChatAutomationJob_conversation_single_flight|unique/i.test(message)) {
       if (id) await deferJob(id)
       return []
     }

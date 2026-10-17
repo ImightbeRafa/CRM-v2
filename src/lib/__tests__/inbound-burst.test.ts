@@ -641,7 +641,9 @@ describe('burst hardening · SecureDog F6 (a dead lease never blocks a chat or t
     assert.match(release, /"leaseToken" = NULL,\s+"leaseExpiresAt" = NULL,/)
     assert.match(release, /WHERE "status" = 'processing'\s+AND "leaseExpiresAt" <= CURRENT_TIMESTAMP - \$\{Prisma\.raw\(`INTERVAL '\$\{DEAD_LEASE_GRACE_SECONDS\} seconds'`\)\}/)
     const claim = queue.slice(queue.indexOf('async function claimRows'), queue.indexOf('export function claimBatch'))
-    assert.match(claim, /try \{\s+await releaseDeadLeases\(\)\s+const rows = await prisma\.\$queryRaw/)
+    // A failed release never blocks the claim; no catch-all regex hides unrelated errors (SecureDog r3).
+    assert.match(claim, /await releaseDeadLeases\(\)\.catch\(\(error\) => \{[\s\S]{0,120}\}\)\s+try \{\s+const rows = await prisma\.\$queryRaw/)
+    assert.doesNotMatch(claim, /single_flight\|unique/)
     assert.match(claim, /if \(isSingleFlightConflict\(error\)\) \{\s+if \(id\) await deferJob\(id\)\s+return \[\]/)
     // Verifier r5: any processing sibling blocks the chat (a dead one inside the grace never empties the batch).
     const inflight = claim.slice(claim.indexOf('FROM "ChatAutomationJob" inflight'), claim.indexOf('ORDER BY current_msg'))

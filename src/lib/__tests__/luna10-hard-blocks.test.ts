@@ -183,6 +183,9 @@ describe('SQL 054 (luna-only model)', () => {
     assert.doesNotMatch(code, /DROP |TRUNCATE|DELETE FROM|CREATE TABLE|ADD COLUMN/i)
     assert.match(fs.readFileSync('scripts/lib/betsy-v2-additive-manifest.mjs', 'utf8'), /'054': '054_luna_only_model\.sql'/)
     assert.match(fs.readFileSync('prisma/schema.prisma', 'utf8'), /model\s+String\s+@default\("gpt-6-luna"\)/)
+  })
+})
+
 describe('verifier round 1 (luna-10)', () => {
   const N = { afterHours: true, transparent: true }
   const who = { name: 'Sofi', store: 'PatchHouse CR', introduced: false }

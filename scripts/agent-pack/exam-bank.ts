@@ -63,12 +63,16 @@ export function redactCustomerText(text: string, peerName?: string | null): stri
 const ASKS_PERSON = /\b(asesor|asesora|persona|humano|alguien que me atienda|hablar con alguien|agente)\b/iu
 const PAYMENT_WORDS = /\b(pagu[eé]|pag[oó]|comprobante|sinpe|transferencia|transfer[ií]|deposit)/iu
 const COMPLAINT_WORDS = /\b(reclamo|devoluci|reembolso|no me lleg[oó]|estafa|queja|mal estado|roto)\b/iu
+// luna-10 exam round 2: alarm symptoms, partnership / event proposals and reseller pricing are rightly handed off.
+const HANDOFF_OK_WORDS =
+  /(?<![\p{L}])(?:palpitaci\p{L}*|dolor\s+de\s+pecho|desmay\p{L}*|falta\s+de\s+aire|convulsi\p{L}*|alergi\p{L}*|cofundador\p{L}*|fundador\p{L}*|colaboraci\p{L}*|alianza|propuesta|patrocin\p{L}*|evento|vendedor\p{L}*|revend\p{L}*|mayoreo|al\s+por\s+mayor|distribu\p{L}*)(?![\p{L}])/iu
 const QUESTION_HINT = /\?|^(qu[eé]|c[oó]mo|cu[aá]nto|cu[aá]l|d[oó]nde|tienen|hacen|puedo|se puede|sirve|info|precio|me regala)/iu
 
 /** What a real customer message must produce (only what is certain; the rest is judged by the grader). */
 export function expectForRealMessage(text: string): ScenarioStep['expect'] {
   if (ASKS_PERSON.test(text)) return { handoff: true }
   if (PAYMENT_WORDS.test(text) || COMPLAINT_WORDS.test(text) || text === SYNTHETIC_DATA) return {}
+  if (HANDOFF_OK_WORDS.test(text)) return {}
   if (QUESTION_HINT.test(text.trim())) return { handoff: false }
   return {}
 }

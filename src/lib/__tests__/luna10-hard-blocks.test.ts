@@ -290,3 +290,22 @@ describe('verifier + SecureDog round 2 (luna-10)', () => {
     assert.match(session, /c\.testDailyTokenCap === input\.cap \? \{ \.\.\.c, testDailyTokenCap: before \} : c/)
   })
 })
+
+describe('verifier round 3 (luna-10): probes', () => {
+  it('all reviewer probes hold (sales text passes, promises caught, opt-outs, repeat, night intro)', async () => {
+    const bad: string[] = []
+    const fp = ['Llevando 3 vas a tener mejor precio', 'Con el combo vas a tener mejor precio por unidad', 'En 3 días hábiles lo vas a ver en tu casa', 'En una semana vas a ver el paquete', 'Muchas personas dicen que es el mejor precio del país', 'Envío garantizado a todo el país', 'Llega en 2 a 5 días hábiles', 'Se usa uno al día desde el primer día que lo recibís', 'El GLP-1 apoya el control del apetito y ayuda a reducir antojos', 'No es un medicamento y no promete bajar de peso', 'En 2 días lo tenés en tu casa']
+    const tp = ['a la semana notás el cambio', 'en 7 días ves resultados', 'a los pocos días notás la diferencia', 'Sin duda vas a sentir más calma', 'No te preocupes, te va a quitar la ansiedad', '¡Claro! No te preocupes, resultado garantizado', 'Resultado garantizado', 'Te garantizo resultados', 'vas a sentir más energía desde el primer día', 'te vas a sentir más tranquila', 'Muchas personas notan cambios en los primeros días', 'en una semana ves resultados', 'te ayuda a dormir mejor desde la primera noche', 'Con el GLP-1 vas a bajar de peso']
+    for (const t of fp) if (resultsClaimIn(t)) bad.push('FALSE+ ' + t)
+    for (const t of tp) if (!resultsClaimIn(t)) bad.push('MISSED ' + t)
+    for (const t of ['No me escribas más', 'no me vuelvan a escribir', 'Ya no quiero mensajes', 'no quiero recibir más mensajes', 'déjenme en paz', 'STOP', 'no me escriban más', 'No me escriban', 'no me escriban por favor', 'No quiero un asistente virtual', 'quiero darme de baja']) if (!isOptOutText(t)) bad.push('OPTOUT MISSED ' + t)
+    for (const t of ['No me manden el catálogo todavía', 'no me contesten así', 'no me escriba al otro número', 'quiero hablar con una persona', 'no me llegó el pedido']) if (isOptOutText(t)) bad.push('OPTOUT FALSE+ ' + t)
+    if (isNearRepeat('El envío a Limón cuesta ₡2.500 y llega en 2 días hábiles', ['El envío a San José cuesta ₡2.500 y llega en 2 días hábiles'], 'y a Limón\ncuánto sale?')) bad.push('REPEAT limón 2 msgs dropped')
+    if (isNearRepeat('El envío a Osa cuesta ₡2.500 y llega en 2 días hábiles', ['El envío a San José cuesta ₡2.500 y llega en 2 días hábiles'], 'y a Osa?')) bad.push('REPEAT osa dropped')
+    if (!isNearRepeat('El envío a San José cuesta ₡2.500 y llega en 2 días hábiles', ['El envío a San José cuesta ₡2.500 y llega en 2 días hábiles'], 'cuanto sale?')) bad.push('REPEAT same not dropped')
+    const N = { afterHours: true, transparent: true }, w = { name: 'Sofi', store: 'PatchHouse CR', introduced: false }
+    const ni = [['¡Hola! Soy Sofi\n\nEl Focus cuesta ₡9 900.', '¡Hola! Soy Sofi, asistente virtual\n\nEl Focus cuesta ₡9 900.'], ['¡Hola! 👋\nSoy Sofi de PatchHouse CR. ¿Qué buscás?', '¡Hola! 👋\nSoy Sofi, asistente virtual de PatchHouse CR. ¿Qué buscás?'], ['Hola, te escribe Sofi de PatchHouse CR 😊', 'Hola, te escribe Sofi, asistente virtual de PatchHouse CR 😊'], ['Hola, soy Sofi y sí tenemos envíos 🚚', 'Hola, soy Sofi, asistente virtual, y sí tenemos envíos 🚚']]
+    for (const [i, o] of ni) { const r = withNightIntro(i, N, w); if (r !== o) bad.push('INTRO ' + JSON.stringify(r)) }
+    assert.deepEqual(bad, [])
+  })
+})

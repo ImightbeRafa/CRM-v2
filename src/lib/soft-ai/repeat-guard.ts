@@ -35,6 +35,11 @@ function contentWords(n: string): Set<string> {
   return new Set(n.split(' ').filter((w) => w.length > 3))
 }
 
+const ASK_STOPWORDS = new Set(['que', 'qué', 'los', 'las', 'del', 'por', 'con', 'una', 'uno', 'hay', 'mas', 'cuanto', 'cuánto', 'sale', 'cuesta', 'precio', 'envio', 'para', 'como', 'tienen', 'tiene', 'quiero', 'hola', 'gracias', 'favor', 'pero', 'esta', 'este', 'eso', 'son'])
+function askedWords(customerText: string | null | undefined): Set<string> {
+  return new Set(normalizeForRepeat(customerText || '').split(' ').filter((w) => w.length >= 3 && !ASK_STOPWORDS.has(w)))
+}
+
 function jaccard(a: Set<string>, b: Set<string>): number {
   if (!a.size || !b.size) return 0
   let inter = 0
@@ -62,8 +67,8 @@ export function isNearRepeat(part: string, previous: string[], customerText?: st
   if (n.length < MIN_REPEAT_CHARS) return false
   const nw = words(n)
   const nNumbers = numbersIn(part)
-  // Verifier round 2: words of this message that the customer just wrote (a place, a product).
-  const asked = contentWords(normalizeForRepeat(customerText || ''))
+  // Verifier rounds 2–3: words the customer wrote since the agent last answered (a place, a product), 3+ letters.
+  const asked = askedWords(customerText)
   for (const prevMessage of previous) {
     for (const prevPart of splitReplyParts(prevMessage, 50)) {
       const p = normalizeForRepeat(prevPart)
@@ -73,8 +78,8 @@ export function isNearRepeat(part: string, previous: string[], customerText?: st
       if (p === n) return true
       if (n.length >= 25 && p.includes(n)) return true
       // "El envío a Limón…" after "El envío a San José…" when the customer asked about Limón: a new answer.
-      const pc0 = contentWords(p)
-      if ([...contentWords(n)].some((w) => asked.has(w) && !pc0.has(w))) continue
+      const pw0 = words(p)
+      if ([...words(n)].some((w) => asked.has(w) && !pw0.has(w))) continue
       const pw = words(p)
       if (nw.size >= MIN_WORDS_FOR_JACCARD && pw.size >= MIN_WORDS_FOR_JACCARD && jaccard(nw, pw) >= JACCARD_MIN) return true
       const nc = contentWords(n)

@@ -1,3 +1,56 @@
+## 2026-10-17 (night) — Opt-out parity + Instagram PDF receipts (branch claudio/inbox-safety-gaps, NOT deployed)
+
+Two safety gaps SecureDog found while reviewing PR #100. Both predate it.
+- Opt-out: some "stop writing to me" phrases did not hand off. "basta", "no me escriban más", "darme de baja", "no me
+  manden nada" and others were on the waiting-ack list but not in the safety router, so the model kept answering.
+  - `waiting-ack.ts` now exports `isStopContactText` (that list without the bot refusals).
+  - The safety router's `isOptOutText` adds it, so it covers at least the waiting-ack list.
+  - Unchanged:
+    - "quiero hablar con una persona" still hands off in the router. It is still no opt-out for the waiting ack, so
+      that customer still gets the ack.
+    - "No quiero una máquina tan grande" is still a product question.
+  - The router ends the AI sale on a match, so it is stricter about "basta". It skips the "is enough" forms in
+    the same clause: "me basta con uno", "un parche no basta", "¿con un parche basta?", "basta con el pequeño".
+    "Ya basta! ¿Cuántas veces…?" and "basta con los mensajes" still hand off. The waiting ack still counts any "basta".
+  - In the router only, an order detail is no stop: "no me manden más de 3", "no me mandes nada al correo". The
+    waiting-ack list is unchanged from base.
+  - Verifier rounds 1–4 FAIL, then fixed:
+    - A blanket "?" exclusion missed real opt-outs, and "me basta con uno" ended the sale.
+    - A lookahead in the shared list then missed "no me escriban más por aquí" and similar phrases in both lists.
+    - "ya basta" / "basta con eso" then caught questions ("¿Basta con eso?", "Con uno ya basta").
+    - Then "Ya basta ¿no entienden?" was missed.
+  - Then tightened (Rafael via the coordinator: Sofi sells, and a false hand-off on a product or courtesy line loses the
+    sale). In the router, "basta" hands off only:
+    - when it stands alone, with "ya" / "por favor" / punctuation allowed ("¡Basta!", "ya basta", "basta por favor");
+    - when it is about the messages ("basta de mensajes", "basta con los mensajes / las promociones");
+    - when it comes with a stop cue ("Basta, ¿pueden dejar de escribirme?", "…que no me escriban?").
+  - Every other "basta" stays with the model: "Basta un parche al día", "¿Basta con uno?", "Basta, gracias", "me basta
+    con uno", "Ya basta ¿no entienden?". The waiting ack's list is unchanged.
+  - Verifier round 7 FAIL, then fixed:
+    - "¿Basta con escribir mi dirección?" and "Basta con uno, no me manden el kit" handed off.
+    - "basta 😡" and "basta porfa" were missed.
+    - Fix: after "con", only a noun counts. The stop cue dropped "no me manden". Emoji and "porfa" / "x favor" now
+      count as bare. Round 8 PASS.
+    - Every phrase the verifier reported is pinned as a test.
+- Instagram files: an IG `file` attachment (a PDF receipt) was stored as messageType `file`. That is no media type, so
+  it got no receipt path and no review. Now `instagramMessageType` (meta-chat.ts) stores it as `document`.
+  - The content stays `[file]`, and the inbox still shows it as a file.
+  - `[file]` is a media placeholder in `mediaInboundPlan`.
+  - The receipt path, sales-state and the burst planner now treat it as media.
+- Tests: a new block in `luna10-hard-blocks.test.ts` pins both lists, the decideInbound routing, the IG parser, the
+  receipt / review path and the burst planner.
+- Proof:
+  - test:chat-harden 645/0 and test:security 271/0.
+  - test:soft-ai 1016/1. The one failure is agent-studio's PDF worker test, which fails the same on the untouched base
+    (this worktree has no own node_modules).
+  - tsc and lint are clean.
+
+## 2026-10-17 (night) — PR #100 burst fix + quick replies + confirmation false alarm, deployed 5820a6fc
+
+- PR #100 (one reply per burst, photo + text answered) fast-forwarded onto claudio/luna-10 (28f83c72). The "/" menu shows all quick replies (was 8 of 37), and quick-reply photos work on Instagram. A lone "confirmada" in a blocked reply is no longer a payment hand-off without payment context (live 467818).
+- First real Instagram photo send: agent ph_glp1 image to 467818 at 20:59:47Z, accepted by Meta (provider id stored).
+- Checks: tsc 0, lint clean, soft-ai 1011/1011, chat-harden 662/662, security 271/271, backups 21/21.
+
 ## 2026-10-17 (late night) — Burst = one reply + media with text (branch claudio/inbox-burst, NOT deployed)
 
 - Seen live on PatchHouse IG: a customer's 2–3 bubbles within seconds (ad share + "¡Hola! Quiero más información.",

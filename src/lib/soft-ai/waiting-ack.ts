@@ -35,11 +35,66 @@ export type WaitingAckDecision = { ack: boolean; realert: boolean; reason: strin
  * safety router's opt-out (llm/safety-router.ts): that one also covers "quiero hablar con una persona", and THAT
  * customer should get the ack.
  */
-const OPT_OUT_RE =
-  /^\s*stop\b|\bbasta\b|\bunsubscribe\b|darme\s+de\s+baja|d[eé]jen?me\s+en\s+paz|\bdejen\s+de\s+(escribir|mandar|contactar|molestar)|\b(ya\s+)?no\s+me\s+(escriban|escribas|escriba|manden|mandes|mande|contacten|contactes|contacte|molesten|molestes|vuelvan\s+a\s+(escribir|contactar))(\s+(m[aá]s|nada|nunca|ya))*(\s+por\s+favor)?\s*[.!]*\s*$|\bno\s+me\s+(escriban|escribas|manden|mandes|contacten|molesten)\s+(m[aá]s|nada|nunca)\b|\b(ya\s+)?no\s+(m[aá]s\s+mensajes|quiero\s+(recibir\s+)?(m[aá]s\s+)?mensajes|quiero\s+que\s+me\s+(escriban|contacten))\b|\bno\s+quiero\s+(hablar\s+con\s+|que\s+me\s+(atienda|responda)\s+)?(un\s+|una\s+)?(bot|robot|ia|inteligencia\s+artificial|asistente\s+virtual|m[aá]quina)\b/iu
+const STOP_CONTACT_RE =
+  /^\s*stop\b|\bunsubscribe\b|darme\s+de\s+baja|d[eé]jen?me\s+en\s+paz|\bdejen\s+de\s+(escribir|mandar|contactar|molestar)|\b(ya\s+)?no\s+me\s+(escriban|escribas|escriba|manden|mandes|mande|contacten|contactes|contacte|molesten|molestes|vuelvan\s+a\s+(escribir|contactar))(\s+(m[aá]s|nada|nunca|ya))*(\s+por\s+favor)?\s*[.!]*\s*$|\bno\s+me\s+(escriban|escribas|manden|mandes|contacten|molesten)\s+(m[aá]s|nada|nunca)\b|\b(ya\s+)?no\s+(m[aá]s\s+mensajes|quiero\s+(recibir\s+)?(m[aá]s\s+)?mensajes|quiero\s+que\s+me\s+(escriban|contacten))\b/iu
+const BASTA_RE = /\bbasta\b/iu
+const PLEASE = String.raw`(?:por\s*favor|porfa|x\s*favor|plis|pls)`
+/** The whole message is just "basta" (+ "ya" / "por favor" / punctuation / emoji): "¡Basta!", "ya basta porfa", "basta 😡". */
+const BASTA_ALONE_RE = new RegExp(String.raw`^(${PLEASE}\s+)?(ya\s+)?basta(\s+ya)?(\s+${PLEASE})?(\s+ya)?$`, 'iu')
+/**
+ * "basta" that asks to stop the messages: "basta de mensajes / de escribirme / de llamarme", "basta con el spam". After
+ * "con" only a noun: "¿Basta con escribir mi dirección?" is a checkout question.
+ */
+const BASTA_MESSAGES_RE = new RegExp(
+  String.raw`\bbasta\s+(ya\s+)?(de\s+((estar|seguir)\s+)?(mensaj\w*|escrib\w*|mand\w*|envi\w*|llam\w*|contact\w*|molest\w*|insist\w*|spam|promociones|publicidad|notificaciones)|con\s+((los|las|el|la|sus|tus|su|tu|tant[oa]s?)\s+)?(mensaj\w*|spam|promociones|publicidad|notificaciones))\b`,
+  'iu',
+)
+/**
+ * With a "basta", these ask to stop the messages too: "Basta, ¿pueden dejar de escribirme?", "…que no me escriban?".
+ * Not "no me manden": "Basta con uno, no me manden el kit" is an order detail.
+ */
+const STOP_MESSAGES_CUE_RE =
+  /\bdej(ar|en)\s+de\s+(escribir|mandar|contactar|molestar)|\bno\s+me\s+(escriban|escribas|contacten|molesten)\s*([¿?.!,;]|$|m[aá]s\b|nunca\b|nada\b)/iu
+
+/**
+ * Router "basta" (Rafael 2026-10-17: Sofi sells; a false hand-off on a product or courtesy line loses the sale): only a
+ * bare "basta" or a "basta" about the messages. "Basta un parche al día", "¿Basta con uno?", "Basta, gracias", "me basta
+ * con uno" stay with the model. "basta, no me escriban" hands off through STOP_CONTACT_RE.
+ */
+function isRouterBastaStop(text: string): boolean {
+  const bare = text
+    .replace(/[\s¡!¿?.,…;:]+|\p{Extended_Pictographic}|\p{Emoji_Modifier}|\u200d|\ufe0f/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return (
+    BASTA_ALONE_RE.test(bare) ||
+    BASTA_MESSAGES_RE.test(text) ||
+    (BASTA_RE.test(text) && STOP_MESSAGES_CUE_RE.test(text))
+  )
+}
+// Router only: a quantity or another channel is an order detail, not a stop ("no me manden más de 3", "nada al correo").
+const STOP_DETAIL_RE = /\b(m[aá]s\s+de\s+(\d+|un[oa]?|dos|tres|cuatro|cinco)|nada\s+al\s+(correo|mail|email))\b/giu
+const BOT_REFUSAL_RE =
+  /\bno\s+quiero\s+(hablar\s+con\s+|que\s+me\s+(atienda|responda)\s+)?(un\s+|una\s+)?(bot|robot|ia|inteligencia\s+artificial|asistente\s+virtual|m[aá]quina)\b/iu
+
+/**
+ * "Stop writing to me" (STOP, basta, no me escriban más, darme de baja…) without the bot refusals. Shared with the
+ * safety router's opt-out (llm/safety-router.ts) so the hand-off is at least as wide as this list (SecureDog, PR #100).
+ * The router ends the AI sale on a match, so there "basta" counts only bare or about the messages (isRouterBastaStop)
+ * and an order detail (STOP_DETAIL_RE) is no stop. The waiting ack keeps the base list (a false match there only skips one ack).
+ */
+export function isStopContactText(text: string | null | undefined): boolean {
+  const t = text || ''
+  return (
+    // A stand-in word, not a space: "no me manden ⟨detail⟩" must not end the message for the anchored form.
+    STOP_CONTACT_RE.test(t.replace(STOP_DETAIL_RE, ' detalle ')) ||
+    isRouterBastaStop(t)
+  )
+}
 
 export function isOptOutText(text: string | null | undefined): boolean {
-  return OPT_OUT_RE.test(text || '')
+  const t = text || ''
+  return STOP_CONTACT_RE.test(t) || BASTA_RE.test(t) || BOT_REFUSAL_RE.test(t)
 }
 
 export function decideWaitingAck(input: {

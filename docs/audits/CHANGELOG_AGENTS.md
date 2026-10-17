@@ -1,3 +1,9 @@
+## 2026-10-17 (night) — Deploy 2 LIVE: CF 816cd5c9 (claudio/luna-10-d2 @ 67381146)
+
+- SQL 054 applied (prod, guarded script): all non-live agents → gpt-6-luna, default Luna. 5 live test-business agents stay on Grok and now go quiet (model_not_allowed); no real business affected.
+- In the deploy: Grok out of inbox AI; Luna "¿ya pagó?" check in SHADOW; PR #101 (opt-out phrases, strict basta, IG file = document); PR #102 (burst hardening, dead-lease cron fix); SecureDog r9/r10 fixes (INT-149..152); chat → order prefill (Crear pedido / Confirmado open a filled form; no AI; SecureDog H1/H2 fixed and verified: INT-156, DATA-63, INT-157, AUTH-48, DATA-64).
+- Verified after deploy: health ok; prefill route 401 without session; live replies on Luna delivered, burst supersede working, 0 failed sends. Order form not yet clicked by a person.
+
 ## 2026-10-17 (night) — Opt-out parity + Instagram PDF receipts (branch claudio/inbox-safety-gaps, NOT deployed)
 
 Two safety gaps SecureDog found while reviewing PR #100. Both predate it.

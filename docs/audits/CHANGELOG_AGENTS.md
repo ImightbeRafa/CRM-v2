@@ -19,8 +19,18 @@ Two safety gaps SecureDog found while reviewing PR #100. Both predate it.
     - A lookahead in the shared list then missed "no me escriban más por aquí" and similar phrases in both lists.
     - "ya basta" / "basta con eso" then caught questions ("¿Basta con eso?", "Con uno ya basta").
     - Then "Ya basta ¿no entienden?" was missed.
-    - The router now checks "basta" per clause (split on , . ; : ! ¡ ¿). It skips the "is enough" forms, plus
-      "basta un/una/con eso…" in a question clause. "basta ya" always counts.
+  - Then tightened (Rafael via the coordinator: Sofi sells, and a false hand-off on a product or courtesy line loses the
+    sale). In the router, "basta" hands off only:
+    - when it stands alone, with "ya" / "por favor" / punctuation allowed ("¡Basta!", "ya basta", "basta por favor");
+    - when it is about the messages ("basta de mensajes", "basta con los mensajes / las promociones");
+    - when it comes with a stop cue ("Basta, ¿pueden dejar de escribirme?", "…que no me escriban?").
+  - Every other "basta" stays with the model: "Basta un parche al día", "¿Basta con uno?", "Basta, gracias", "me basta
+    con uno", "Ya basta ¿no entienden?". The waiting ack's list is unchanged.
+  - Verifier round 7 FAIL, then fixed:
+    - "¿Basta con escribir mi dirección?" and "Basta con uno, no me manden el kit" handed off.
+    - "basta 😡" and "basta porfa" were missed.
+    - Fix: after "con", only a noun counts. The stop cue dropped "no me manden". Emoji and "porfa" / "x favor" now
+      count as bare. Round 8 PASS.
     - Every phrase the verifier reported is pinned as a test.
 - Instagram files: an IG `file` attachment (a PDF receipt) was stored as messageType `file`. That is no media type, so
   it got no receipt path and no review. Now `instagramMessageType` (meta-chat.ts) stores it as `document`.

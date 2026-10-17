@@ -836,17 +836,18 @@ describe('SecureDog PR #100 follow-ups: opt-out parity + Instagram PDF receipts'
     'quiero darme de baja', 'darme de baja por favor', 'no me manden nada', 'ya no me manden nada', 'no me contacten más',
     'NO MÁS MENSAJES', 'Ya no quiero mensajes', 'no quiero recibir más mensajes', 'déjenme en paz', 'dejen de escribirme',
     'unsubscribe', 'No me escriban', 'no me escriban por favor', 'No quiero un asistente virtual',
-    'No quiero que me atienda una inteligencia artificial', 'no quiero hablar con un bot', 'Ya basta! ¿Cuántas veces les digo?',
-    'Basta, ¿pueden dejar de escribirme?', '¡¿Basta ya?!', 'Basta ya?', 'Estoy harta con ustedes, basta de mensajes', 'Con todo respeto, basta',
-    'basta con los mensajes', 'No, basta', 'no me escriban más por favor, gracias',
+    'No quiero que me atienda una inteligencia artificial', 'no quiero hablar con un bot',
+    'no me escriban más por favor, gracias',
     'No me escriban más por aquí', 'no me escriban más por este medio', 'No me contacten más por WhatsApp',
     'no me escriban más en este número', 'No me manden más a este número', 'no me escriban más que no me interesa',
     'No me molesten más en todo el día', 'no me escriban más del tema', 'no me manden nada hasta nuevo aviso',
-    'Les dije que basta', 'Basta que no me interesa', 'Basta con esto!', 'Ya basta con eso', 'Basta con las promociones',
-    'Con todo respeto basta ya', 'Basta ¿cuántas veces les digo?', 'Basta cuantas veces les digo?', 'Ya basta ¿no entienden?',
-    'Basta ya ¿no entienden?', 'Basta ya no entienden?', 'Basta de mensajes ¿ok?', 'Les dije que basta ¿no?', 'Ya basta ¿sí?',
-    '¿Pueden parar ya? basta', 'Ya basta ¿cuántas veces les digo que no me escriban?', 'basta por favor ¿si?', '¡Basta!',
-    'basta...', 'Basta, no me interesa?',
+    // Rafael 2026-10-17: "basta" hands off only bare (+ ya / por favor / punctuation) or about the messages.
+    'Basta', '¡Basta!', 'BASTA!!!', 'basta...', 'basta ya', 'ya basta', 'Ya basta!', '¡¿Basta ya?!', 'Basta ya?',
+    'basta por favor', 'Basta, por favor', 'ya basta por favor', 'basta de mensajes', 'Basta de mensajes ¿ok?',
+    'Estoy harta con ustedes, basta de mensajes', 'basta con los mensajes', 'Basta con las promociones',
+    'basta, no me escriban', 'Basta, ¿pueden dejar de escribirme?', 'Ya basta ¿cuántas veces les digo que no me escriban?',
+    'basta 😡', 'BASTA 🛑', 'Ya basta porfa', 'Basta porfavor', 'basta x favor', 'Basta de mandarme mensajes',
+    'Basta de llamarme', 'Basta de insistir', 'Basta con el spam', 'Basta de mensajitos', 'Basta de estar escribiendo',
   ]
   const normal = [
     'no me llegó el pedido', 'no quiero el combo', 'No me manden el catálogo todavía', 'no me contesten así',
@@ -870,7 +871,14 @@ describe('SecureDog PR #100 follow-ups: opt-out parity + Instagram PDF receipts'
     for (const t of ['¿Con un parche basta para todo el día?', 'con eso basta', '¿basta con uno?', 'Me basta con uno', 'Un parche no basta, quiero dos', 'No basta con lavarlo', 'basta con el pequeño', 'creo que me basta el de 30 días', 'Basta con que me lo manden el lunes', 'Me basta y me sobra', 'no me manden más de 3', 'No me mandes nada al correo, solo por aquí',
       '¿Con un parche ya basta?', 'Con eso ya basta, gracias', 'Con uno ya basta', '¿Ya basta con uno?',
       '¿Basta con esta crema o necesito algo más?', '¿Basta con eso?', 'basta con esa talla?', '¿Basta con esto para todo el mes?',
-      '¿Basta una aplicación al día?', '¿Basta un parche?', 'Basta una vez al día?', '¿Basta para dos personas?', 'no basta?']) {
+      '¿Basta una aplicación al día?', '¿Basta un parche?', 'Basta una vez al día?', '¿Basta para dos personas?', 'no basta?',
+      // Rafael 2026-10-17: product / courtesy lines and any other "basta" stay with the model (a false hand-off loses the sale).
+      'Basta un parche al día', '¿Basta con uno?', 'Basta, gracias', 'me basta con uno', 'No, basta',
+      'Con todo respeto, basta', 'Les dije que basta', 'Basta con esto!', 'Ya basta con eso', 'Ya basta ¿no entienden?',
+      'Basta ¿cuántas veces les digo?', '¿Basta con escribir mi dirección?', '¿Basta con escribir la dirección o necesitan pin de ubicación?',
+      '¿Basta con escribirles por aquí para pedir?', 'Basta con escribirme el número de cuenta', 'Basta con uno, no me manden el kit',
+      '¿Basta con uno? No me mandes el grande', 'Me basta con uno, no me manden dos', '¿Basta con mandarles un mensaje?',
+      '¿Basta con un mensaje para reservar?']) {
       assert.equal(isRouterOptOutText(t), false, `router ${t}`)
       assert.ok(isOptOutText(t), `waiting-ack ${t}`)
     }

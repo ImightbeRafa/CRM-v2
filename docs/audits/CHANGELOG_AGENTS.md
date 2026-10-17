@@ -1,3 +1,35 @@
+## 2026-10-17 (later) — luna-10 review rounds 3–8, payment allowlist, health rule, "¿ya pagó?" check (NOT deployed)
+
+- Payment classifier (deploy 1): the regex claim lists stayed the first gate, and every agent-side exit (info, contra
+  entrega, how-to-pay, intent, link, SINPE question) now needs `isPlainAskMessage`. That means every sentence is a
+  greeting / thanks / request / question / plain context with no payment noun, and nothing reads like something that
+  already happened (past tense, "ya", hecho / listo / ✅ outside a question). Plural / third-person claims added: "ya
+  pagamos", "Mamá lo canceló", "les pasamos la plata", "abonamos", "sinpeé", "ya les cayó", "la plata ya está".
+  Probes pinned in luna10-hard-blocks.test.ts (≈200 claim / ≈100 real-question strings).
+- INT-142 (High, never deployed): a "ok ok" greeting alternative caused exponential regex backtracking (12 s on 130
+  chars); removed, perf test added (worst 16 ms on 300 chars).
+- Health promises (INT-138): one sentence rule replaces the phrase list (`healthAssuranceIn`). A sensitive group plus
+  an assurance in one sentence is held. "Sin / no hay / cero efectos secundarios" and a bare "no tiene ningún riesgo"
+  are held unless the sentence is about paying or shipping. A doctor referral with a weak "podés" passes, and to a
+  pregnancy / medication question a "sí, podés" with no doctor referral is held. Pack lint: "nunca prometas…"
+  instructions are not promises.
+- Reply backstop: "recibimos tu sinpe / pago verificado / acreditado" are held on every reply (no payment words
+  needed).
+- Payment-info reply: a saved reply built on `{{brand.payment.summary}}` (PatchHouse pasted every account and
+  "contra_entrega") is replaced by the method list + "¿Cómo preferís pagar?". One method named gets only that
+  method, a negated method gets the list, and a link ask gets the card. Live PatchHouse agent → v49 with the default
+  body.
+- Deploy 2: Luna "¿ya pagó?" check (`llm/payment-claim-check.ts`), right after `decideInbound` on the live and Probar
+  paths. It can only add the regex payment hand-off, and error / timeout fails closed. `SOFT_AI_PAYMENT_CHECK`
+  defaults to shadow (records `payment_llm_check` in the trace); enforce after 2–3 days with Rafael's GO. Eval vs
+  real Luna: 50/50 claims, 0/36 asks, p50 0.9 s, p95 1.3 s. Usage feature `payment_check`.
+- Exam: round 2 on older code had 24 serious problems (payment dump, misread hand-offs); fixed, and the bank
+  expectations were corrected (alarm symptoms, partnership proposals, reseller prices and voice notes may go to a
+  person). Round 3 re-running with a 20M test cap.
+- Rafael: Instagram launches with deploy 1; never activate / bind any channel (he does that).
+- Register: INT-136 / 137 / 139 / DATA-61 Verified; INT-138 / 140 / 141 / 142 Fixed pending verification; INT-143
+  design note.
+
 ## 2026-10-17 — luna-10: PatchHouse 10/10 + gpt-6-luna as the one model (claudio/luna-10 = deploy 1; claudio/luna-10-d2 = deploy 2; NOT deployed)
 
 - Rafael: Instagram approved by Meta; PatchHouse must be 10/10 on WhatsApp + Instagram; Grok out of the whole site,

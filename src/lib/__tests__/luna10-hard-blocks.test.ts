@@ -556,6 +556,9 @@ describe("verifier round 8 (luna-10): no backtracking blow-up, everyday payment 
     for (const t of ["No uso SINPE, ¿qué otras formas de pago tienen?", "Sin tarjeta, ¿cómo pago?", "¿Aceptan algo que no sea tarjeta?"]) {
       const d = decideInbound({ inboundText: t, brandFacts: facts, shortcuts })
       assert.doesNotMatch(d.text, /6201 ?9914|tienda.example.cr/, t + " → " + d.text)
+      // Verifier round 10: and it is ANSWERED with the list — a hand-off also has no numbers, so check that too.
+      assert.notEqual(d.paymentClass, "payment_proof_or_risk", t)
+      assert.match(d.text, /SINPE M[oó]vil/, t + " → " + d.text)
     }
   })
 })
@@ -633,6 +636,33 @@ describe("verifier round 9 (luna-10): done-verbs outside a question, hijos is no
     if (resultsClaimIn('Lo podés regalar a tu mamá, a tu pareja o a tus hijos')) bad.push('FALSE+ hijos')
     if (!v('¡Sí! Podés usarlo sin problema 😊', 'Tengo problemas del corazón, ¿lo puedo usar?')) bad.push('MISSED corazón')
     for (const t of ['Es 100% natural, no te va a hacer daño', 'Durante la lactancia no hay ningún inconveniente', 'Es seguro para todas las edades', 'No genera dependencia', 'Lo puede usar su hijo de 10 años']) if (!resultsClaimIn(t)) bad.push('MISSED ' + t)
+    
+    assert.deepEqual(bad, [])
+  })
+})
+
+describe("verifier round 10 (luna-10): the clause before ¿ is checked for claims only, bursts count real claims, health referrals pass", () => {
+  it("repros hold", async () => {
+    const { classifyPaymentText } = await import("../soft-ai/payment-classifier")
+    const { decideInbound } = await import("../soft-ai/inbound-decision")
+    const { RESERVED_SHORTCUT_SEEDS } = await import("../soft-ai/shortcuts")
+    const { parseBrandFacts } = await import("../soft-ai/brand-facts")
+    const agent = ['No tengo tarjeta, ¿cómo puedo pagar?', 'No uso SINPE, ¿qué otras formas de pago tienen?', 'Sin tarjeta, ¿cómo pago?', 'No tengo sinpe, ¿aceptan tarjeta?', 'Con tarjeta, ¿se puede?', 'Mi esposo va a pagar, ¿aceptan tarjeta?', 'Hola, para el pago, ¿aceptan sinpe?', 'Sí, por sinpe, ¿me pasás el número?', 'Bueno, sinpe entonces, ¿a qué número?', 'Perfecto, por transferencia, ¿a qué cuenta?', 'La entrega es en Heredia, ¿cómo pago?', 'Ah ok, entonces el pago es contra entrega, ¿verdad?',
+     'Quiero que me lo mande a Heredia, ¿cómo pago?', 'Pago contra entrega, quiero que me lo mande el lunes', 'Contra entrega por favor, me lo mande a la casa', '¿Y si la tarjeta sale rechazada?', '¿Qué pasa si la tarjeta me sale rechazada?']
+    const person = ['Pagado, ¿cómo pago el envío?', 'Ya les pagué la mitad, ¿cómo pago el resto?', 'La tarjeta no funciona, ¿aceptan sinpe?', 'Mi esposo ha pagado la mitad, ¿cómo pago el resto?', 'Le pase 20.000. ¿Cómo pago el envío?', 'Me sale rechazada la tarjeta, ¿aceptan sinpe?', 'Mamá lo canceló, ¿hacen contra entrega?']
+    const bad: string[] = []
+    for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
+    const facts = parseBrandFacts({ schemaVersion: 1, payment: { shareWithCustomers: true, methods: ['sinpe', 'tarjeta'], sinpe: { number: '62019914', holderName: 'R G' }, cardPaymentUrl: 'https://tienda.example.cr' } })
+    const shortcuts = RESERVED_SHORTCUT_SEEDS.map((x, i) => ({ ...x, isActive: true, sortOrder: i }))
+    for (const t of ['No uso SINPE, ¿qué otras formas de pago tienen?', 'Sin tarjeta, ¿cómo pago?']) { const d = decideInbound({ inboundText: t, brandFacts: facts, shortcuts }); if (d.paymentClass === 'payment_proof_or_risk' || !/SINPE M[oó]vil/.test(d.text) || !/Tarjeta/i.test(d.text)) bad.push('negated method not answered with the list: ' + t + ' → ' + d.text) }
+    // Bursts after "¿Cómo preferís pagar?": answers, not hand-offs; a real claim earlier still hands off.
+    for (const [earlier, latest] of [['Sinpe', 'gracias'], ['Sinpe', '¿a qué número?'], ['No tengo sinpe', '¿aceptan tarjeta?'], ['El pago', '¿es por adelantado?'], ['Mañana les pago', '¿me lo apartan?']]) { const d = decideInbound({ inboundText: latest, earlierCustomerTexts: [earlier], brandFacts: facts, shortcuts, awaitingPaymentMethod: true }); if (d.paymentClass === 'payment_proof_or_risk' && /earlier_message/.test(String(d.decisionTrace.steps[0].reason))) bad.push(`burst handed off: "${earlier}" + "${latest}"`) }
+    for (const [earlier, latest] of [['Ya les pagué la mitad', '¿Cómo pago el resto?'], ['Mamá lo canceló', 'gracias'], ['Le pase 20.000', '¿cómo pago el envío?']]) { const d = decideInbound({ inboundText: latest, earlierCustomerTexts: [earlier], brandFacts: facts, shortcuts }); if (d.paymentClass !== 'payment_proof_or_risk') bad.push(`burst claim missed: "${earlier}" + "${latest}"`) }
+    // Health: referral answers pass; non-health safety questions pass.
+    const v = (text: string, customerText: string) => (validateAgentOutput({ text, citedToolNames: [], customerText } as any).reasons || []).includes('results_claim')
+    for (const t of ['Tu médico te puede decir si lo podés usar durante el embarazo 💚', 'Si estás embarazada, consultalo con tu médico; él te puede orientar 💚', 'No te puedo asegurar que no tenga riesgos en el embarazo: consultá con tu médico', 'Con diabetes, su médico es quien le puede decir si es adecuado 💚']) if (resultsClaimIn(t)) bad.push('FALSE+ ' + t)
+    for (const [r, c] of [['¡Sí! Es seguro: somos tienda en Heredia y el pago va por la web 😊', '¿Es seguro comprar por aquí?'], ['Va con seguro de envío y número de guía 📦', 'Hay riesgo de que se pierda el paquete?'], ['El envío a Cartago es ₡3.000. ¡Perfecto! ¿A qué provincia?', 'Tomo pastillas para la presión\nbueno, ¿cuánto es el envío?'], ['Si querés, podés preguntarle a tu médico y nos contás 😊', '¿Lo puedo usar si tomo pastillas?']] as const) if (v(r, c)) bad.push('FALSE+ (ctx) ' + r)
     
     assert.deepEqual(bad, [])
   })

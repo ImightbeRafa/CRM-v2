@@ -18,7 +18,7 @@ const PROOF_CUE_RE =
  * (SecureDog INT-93, 2026-10-15 — restored to the INT-70/76 behaviour).
  */
 const CONFIRM_CUE_RE =
-  /(?:^|[^\p{L}\p{N}_])((?:me\s+)?confirm[aáeé]\p{L}*|ya\s+(?:les\s+)?lleg[oó]\p{L}*|revisen)/iu
+  /(?:^|[^\p{L}\p{N}_])((?:me\s+)?confirm[aáeé]\p{L}*|ya\s+(?:les\s+|le\s+|te\s+|nos\s+)?(?:lleg|cay|entr)[oó]\p{L}*|revisen)/iu
 
 const RISK_CUE_RE =
   /\b(reembolso|devoluci[oó]n\s+del\s+dinero|me\s+cobraron|doble\s+cobro|reclamo|disputa|fraude)\b/i
@@ -55,9 +55,14 @@ const CLAIM_CUE_RE = new RegExp(
       // SecureDog INT-140: "we / they paid" — third-person past always; the -amos forms (also present tense: "¿cómo
       // pagamos?") only after "ya" or with a past marker ("lo pagamos ayer").
       // Verifier round 6: "abonar" (a part payment) and a declined / rejected card or transfer are claims too.
-      String.raw`abon[eé]|abon[oó]|abonaron|ya\s+(?:se\s+)?(?:lo\s+|la\s+|le\s+|les\s+|te\s+)?abonamos|abonamos\s+(?:la\s+mitad|el\s+adelanto|una\s+parte|\d+)`,
-      String.raw`(?:me\s+(?:la\s+|lo\s+)?)?(?:rechaz|declin)(?:aron|[oó]|ada|ado)`,
-      String.raw`pagaron|depositaron|transfirieron|cancelaron|sinpearon|sinpeamos|(hicimos|hicieron|mandamos|mandaron|enviamos|enviaron)\s+(el|la|un|una)\s+(sinpe|pago|dep[oó]sito|transferencia)`,
+      String.raw`abon[eé]|abonó|abonaron|ya\s+(?:se\s+)?(?:lo\s+|la\s+|le\s+|les\s+|te\s+)?abonamos|abonamos\s+(?:la\s+mitad|el\s+adelanto|una\s+parte|\d+)`,
+      String.raw`(?:rechaz|declin)(?:aron|ó)|(?:fue|sali[oó]|me\s+(?:la\s+|lo\s+)?(?:sali[oó]|dio|dieron))\s+(?:rechazad|declinad)[oa]`,
+      // SecureDog round 5 (INT-140): "les pasamos / mandaron la plata", "ya les enviamos los 15 mil", and "canceló /
+      // transfirió / abonamos" on their own (Costa Rica: cancelar = pagar).
+      String.raw`(?:pasamos|mandamos|enviamos|depositamos|pasaron|mandaron|enviaron|depositaron|pas[oó]|mand[oó]|envi[oó])\s+(?:la\s+|el\s+|los\s+|las\s+)?(?:plata|dinero|platica|₡\s?\d[\d.,\s]*|\d+(?:[.,\s]\d{3})*\s*(?:mil|k|colones|rojos)(?![\p{L}])|\d{4,})`,
+      // Accented "canceló" only: "¿Cómo cancelo?" / "¿Si cancelo hoy…?" are questions about paying.
+      String.raw`cancelamos\s+(?:la\s+mitad|el\s+resto|todo|ayer|anoche)|canceló|transfiri[oó]|abonamos|(?:mam[aá]|pap[aá]|esposo|esposa|hermano|hermana|novio|novia|hij[oa])\s+(?:ya\s+)?(?:lo\s+|la\s+|les?\s+)?cancel[oó]`,
+      String.raw`pagaron|depositaron|transfirieron|cancelaron|sinpearon|sinpeamos|sinpiaron|sinpiamos|sinpe[eé]|sinpi[eé]|sinpe[oó]|sinpi[oó]|(hicimos|hicieron|mandamos|mandaron|enviamos|enviaron)\s+(el|la|un|una)\s+(sinpe|pago|dep[oó]sito|transferencia)`,
       String.raw`ya\s+(?:se\s+)?(?:lo\s+|la\s+|le\s+|les\s+|te\s+)?(pagamos|depositamos|transferimos|cancelamos|sinpeamos|pag[oó]|deposit[oó]|transfiri[oó]|cancel[oó])`,
       String.raw`(?:lo\s+|la\s+|le\s+|les\s+|te\s+)(pagamos|depositamos|transferimos|cancelamos)\s+(ayer|hoy|anoche|esta\s+ma[nñ]ana|hace)`,
       // Costa Rica: "cancelar" = to pay ("ya cancelé", "está cancelado"). "Quiero cancelar el pedido" also reaches
@@ -107,19 +112,22 @@ const FUTURE_SINPE_QUESTION_RE =
   /(?<![\p{L}])(?:puedo|se\s+puede|podr[ií]a)\s+hacer(?:les|te|le)\s+(?:un|una|el|la)\s+(?:sinpe|transferencia|dep[oó]sito)(?![\p{L}])/iu
 /** What may sit between the SINPE question and its "?": nothing, or the pickup add-on from the real exam chat. */
 const SINPE_INNER_OK_RE =
-  /^\s*(?:,?\s*(?:y|para)\s+(?:mandar|enviar)\s+(?:un|a\s+un|el)?\s*(?:flash|mensajero|motorizado|uber|taxi|amig[oa]|familiar)(?:\s+(?:a\s+)?(?:recoger|retirar|traer)\p{L}*)?)?\s*(?:,?\s*(?:por\s+favor|porfa))?\s*$/iu
+  /^\s*(?:\s*(?:hoy|ma[nñ]ana|ahora|ahorita|m[aá]s\s+tarde|en\s+la\s+(?:noche|tarde|ma[nñ]ana)|hoy\s+en\s+la\s+(?:noche|tarde)|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)))?(?:,?\s*(?:y|para)\s+(?:mandar|enviar)\s+(?:un|a\s+un|el)?\s*(?:flash|mensajero|motorizado|uber|taxi|amig[oa]|familiar)(?:\s+(?:a\s+)?(?:recoger|retirar|traer)\p{L}*)?)?\s*(?:,?\s*(?:por\s+favor|porfa))?\s*$/iu
 // Every common way to ASK for the link ("Me envías el link de pago", "pasame el link", "¿me podés pasar…?").
 const PAYMENT_LINK_ASK_RE =
-  /(?<![\p{L}])(?:tienen|ten[eé]s|tienes|hay|quiero|quisiera|necesito|me\s+(?:pas[aá]s|pasa|pasan|mand[aá]s|manda|mandan|env[ií]as|env[ií]a|env[ií]an|das|da|dan|regal[aá]s|regala|compart[ií]s|comparte|comparten|pod[eé]s\s+(?:pasar|enviar|mandar|compartir)|puede\s+(?:pasar|enviar|mandar|compartir)|pueden\s+(?:pasar|enviar|mandar|compartir))|p[aá]same|p[aá]seme|m[aá]ndame|m[aá]ndeme|env[ií]ame|env[ií]eme|comp[aá]rteme)\s+(?:un\s+|el\s+)?(?:link|enlace)\s+(?:de|para)\s+(?:pago|pagar)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:(?:ustedes\s+)?tienen|no\s+tienen|ten[eé]s|tienes|hay|quiero|quisiera|necesito|cu[aá]l\s+es|me\s+(?:podr[ií]as?\s+(?:pasar|enviar|mandar|compartir)|regalan|regal[aá]s|env[ií]an|pas[aá]s|pasa|pasan|mand[aá]s|manda|mandan|env[ií]as|env[ií]a|env[ií]an|das|da|dan|regal[aá]s|regala|compart[ií]s|comparte|comparten|pod[eé]s\s+(?:pasar|enviar|mandar|compartir)|puede\s+(?:pasar|enviar|mandar|compartir)|pueden\s+(?:pasar|enviar|mandar|compartir))|p[aá]same|p[aá]seme|m[aá]ndame|m[aá]ndeme|env[ií]ame|env[ií]eme|comp[aá]rteme)\s+(?:un\s+|el\s+)?(?:link|enlace)\s+(?:de|para)\s+(?:pago|pagar)(?![\p{L}])/iu
 /** A bare "¿link de pago?" — the WHOLE message ("El link de pago venció?" is not this). */
 const BARE_LINK_QUESTION_RE = /^\s*¿?\s*(?:y\s+)?(?:el\s+)?(?:link|enlace)\s+(?:de|para)\s+(?:pago|pagar)\s*[?!.]*\s*$/iu
 /** Any mention of a payment link: a link message that is not a plain ask goes to a person (never the info cue). */
 const PAYMENT_LINK_WORDS_RE = /(?<![\p{L}])(?:link|enlace|links|enlaces)(?![\p{L}])/iu
 
-const FRIENDLY_RE = /[😊🙏🙌🥰❤️👋🏻🏼🏽🏾🏿️]/gu
-const GREETING = String.raw`hola|holi|holis|buenas|buen\s+d[ií]a|buenos\s+d[ií]as|buenas\s+(?:tardes|noches)|hey|saludos|disculpe|disculp[aá]|una\s+consulta|consulta|(?:muchas\s+)?gracias|ok|okay|okey|perfecto|genial|excelente|s[uú]per|dale|claro|s[ií]|por\s+favor|porfa`
+const PAY_LINK_PHRASE_RE = /(?<![\p{L}])(?:link|enlace)s?\s+(?:de|para|del)\s+(?:pago|pagar|cobro)(?![\p{L}])/iu
+const LINK_FAILURE_RE =
+  /(?<![\p{L}])(?:venc\p{L}*|expir\p{L}*|caduc\p{L}*|sirv\p{L}*|sirve|funcion\p{L}*|abr[eií]\p{L}*|abre|ca[ií]d[oa]|rechaz\p{L}*|declin\p{L}*|fall\p{L}*|error|us[eéoó]|otro|otra\s+vez|de\s+nuevo|carg[oó]|cobr[oó])(?![\p{L}])/iu
+const FRIENDLY_RE = /[😊🙏🙌🥰❤️👋🏻🏼🏽🏾🏿️😁☺😄😃🤗✨💕💚🌸]/gu
+const GREETING = String.raw`hol+a+|holi|holis|pura\s+vida|upe|diay|mae|bueno|va|ah\s+ok|ah\s+bueno|ok\s+ok|buenas|buen\s+d[ií]a|buenos\s+d[ií]as|buenas\s+(?:tardes|noches)|hey|saludos|disculpe|disculp[aá]|una\s+consulta|consulta|(?:muchas\s+)?gracias|ok|okay|okey|perfecto|genial|excelente|s[uú]per|dale|claro|s[ií]|por\s+favor|porfa`
 const PRODUCT_WORD = String.raw`(?:los|las|el|la|unos|unas|un|una|de|del|y|para|\d+|dos|tres|cuatro|cinco|seis|ambos|todo|parches?|paquetes?|cajas?|combos?|kits?|productos?|unidades?|eso|esos|esto|estos|esta|estas|ese|esa|esas|glp-?1|glp|sue[nñ]o|dormir|energ[ií]a|ansiedad|calma|focus|enfoque|hambre|antojos?)`
-const BUY = String.raw`(?:quiero|queremos|necesito|quisiera|me\s+gustar[ií]a|voy\s+a|vamos\s+a)\s+(?:comprar|pedir|encargar|llevar|ordenar)(?:\s+${PRODUCT_WORD}){0,8}`
+const BUY = String.raw`(?:(?:quiero|queremos|necesito|quisiera|me\s+gustar[ií]a|voy\s+a|vamos\s+a)\s+(?:comprar|pedir|encargar|llevar|ordenar)|quiero|queremos|me\s+interesan?|me\s+(?:(?:lo|la|los|las)\s+)?llevo)(?:\s+${PRODUCT_WORD}){0,8}`
 /** Only greetings / thanks / "quiero comprar los 2 parches", separated by punctuation, may come before the question. */
 const OK_PREFIX_RE = new RegExp(String.raw`^(?:[\s,.!¡¿]*(?:${GREETING}|${BUY})(?![\p{L}\d]))*[\s,.!¡¿]*(?:ya\s+)?$`, 'iu')
 /** The one follow-up the link may carry: "¿Para la ansiedad cuáles me recomendás?" (a real PatchHouse chat). */
@@ -154,14 +162,66 @@ export function isPlainPaymentLinkQuestion(value: string): boolean {
   if (EMPTY_TAIL_RE.test(after) || /^\s*,?\s*(?:por\s+favor|porfa|gracias)[\s?!.,]*$/iu.test(after)) return true
   // "…link de pago? <one recommendation question>" — nothing else.
   const q = after.indexOf('?')
-  return q >= 0 && /^\s*(?:,?\s*(?:por\s+favor|porfa))?\s*$/iu.test(after.slice(0, q)) && RECOMMEND_FOLLOWUP_RE.test(after.slice(q + 1))
+  return q >= 0 && /^\s*(?:,?\s*(?:por\s+favor|porfa))?\s*$/iu.test(after.slice(0, q)) && (RECOMMEND_FOLLOWUP_RE.test(after.slice(q + 1)) || /^\s*,?\s*(?:muchas\s+)?(?:gracias|por\s+favor|porfa)[\s?!.,]*$/iu.test(after.slice(q + 1)))
+}
+
+
+/**
+ * SecureDog round 5 (INT-141): the info / contra-entrega / "how do I pay" exits answer ONLY a message made of asks.
+ * Every sentence must be a greeting / thanks / "quiero comprar…", or a question ("…?") or a closing request ("quiero
+ * pagar con tarjeta", "me pasás el número") — and nothing may read like something that already happened: a past-tense
+ * verb ("canceló", "realicé", "pagaron", "hicimos"), a completion word ("hecho", "listo", ✅) or "ya". A statement
+ * ("Mamá lo canceló", "La transferencia ya está") → a person.
+ */
+const ASK_START_RE =
+  /^(?:y\s+)?(?:(?:te\s+|le\s+|les\s+)?pago|me\s+(?:lo|la|los|las)\s+llevo|quiero|quisiera|queremos|necesito|me\s+gustar[ií]a|voy\s+a|vamos\s+a|prefiero|mejor|me\s+pas\p{L}*|p[aá]same|p[aá]seme|dame|d[eé]me|m[aá]ndame|env[ií]ame|me\s+(?:da|das|dan|manda|mand[aá]s|env[ií]a|env[ií]as)|c[oó]mo|cu[aá]l\p{L}*|cu[aá]ndo|cu[aá]nto\p{L}*|d[oó]nde|qu[eé]|puedo|podemos|se\s+puede|pueden|aceptan|reciben|tienen|ten[eé]s|tienes|hacen|hay|trabajan|es\s+posible|ser[ií]a)(?![\p{L}])/iu
+/** Accented endings that are not a past tense: question words, "está", "más", "mamá", futures ("llegará"). */
+const ACCENT_OK = new Set(['qué', 'está', 'están', 'más', 'sí', 'así', 'aquí', 'ahí', 'allí', 'acá', 'allá', 'mí', 'tú', 'él', 'sé', 'también', 'después', 'además', 'café', 'bebé', 'mamá', 'papá', 'jamás', 'quizá', 'según', 'menú', 'maní', 'podés', 'tenés', 'querés', 'sabés', 'hacés', 'mandás', 'pasás', 'enviás', 'recomendás', 'preferís', 'decís', 'aceptás', 'usás'])
+const PAST_OR_DONE_RE =
+  /(?<![\p{L}])(?:\p{L}+(?:aron|eron|aba|aban)|(?:pag|us|complet|mand|envi|transfer|deposit|realiz|cancel|abon|sinpe|pas)amos|hicimos|transferimos|transfirio|ya(?!\s+(?:lo\s+|la\s+|los\s+|las\s+)?(?:puedo|podemos|quiero|queremos|tengo|tenemos|estoy|estamos|decid\p{L}*|eleg\p{L}*)))(?![\p{L}])/iu
+const PAGAMOS_QUESTION_RE = /^(?:y\s+)?(?:c[oó]mo|cu[aá]ndo|d[oó]nde|por\s+d[oó]nde)\s+(?:les?\s+|lo\s+)?pagamos(?:\s+(?:el\s+resto|eso|todo))?\s*\?[\s?!.]*$/iu
+
+function hasPastOrDoneWord(segment: string, question: boolean): boolean {
+  const s = PAGAMOS_QUESTION_RE.test(segment) ? segment.replace(/pagamos/iu, 'pagar') : segment
+  if (PAST_OR_DONE_RE.test(s)) return true
+  // "¿Cuándo está listo?", "¿Son hechos a mano?", "¿cuánto tarda en ser enviado?": inside a QUESTION a completion word
+  // is about the order; outside one ("…? hecho", "listo, ya la pasé") it is a claim. ✅ ✔ ☑ are never a question.
+  if (PAYMENT_COMPLETION_RE.test(s) && (!question || /[✅✔☑]/u.test(s))) return true
+  for (const w of s.match(/\p{L}+/gu) ?? []) {
+    const lw = w.toLowerCase()
+    if (/[éíó]$/u.test(lw) && !ACCENT_OK.has(lw) && !/(?:ar|er|ir)[éá]$/u.test(lw)) return true
+  }
+  return false
+}
+
+export function isPlainAskMessage(value: string): boolean {
+  // A strict whole-message method choice ("Por SINPE está bien", "Te pago por sinpe") is an answer, not a claim.
+  if (paymentChoiceGrammar(value)) return true
+  // A leading "Listo, / Ok listo," before more text is an acknowledgement ("Listo, ¿cómo pago?").
+  const v = clean(value).replace(/^\s*(?:(?:ok|okay|dale|bueno|perfecto)[\s,.!]+)?list[oa][\s,.!]+(?=\S)/iu, '')
+  if (!v.trim() || v.length > 300) return false
+  const segments = v.match(/[^.!?\n]+[.!?\n]*/gu) ?? []
+  if (!segments.length) return false
+  return segments.every((raw, i) => {
+    const seg = raw.replace(/^[\s¿¡,]+/u, '').trim()
+    if (!seg || EMPTY_TAIL_RE.test(seg) || OK_PREFIX_RE.test(seg)) return true
+    const question = /\?[\s?!.]*$/u.test(seg)
+    if (hasPastOrDoneWord(seg, question)) return false
+    const body = seg.replace(/^(?:(?:hola|buenas|buenos\s+d[ií]as|buenas\s+(?:tardes|noches)|disculpe|una\s+consulta|consulta|gracias|ok|perfecto|dale)[\s,]+)+/iu, '')
+    return question || (i === segments.length - 1 && ASK_START_RE.test(body))
+  })
+}
+
+/** An agent-side exit only for a plain ask; anything else with payment words → a person. */
+function plainOr(value: string, cls: PaymentClassification): PaymentClassification {
+  return isPlainAskMessage(value) ? cls : 'payment_proof_or_risk'
 }
 
 /** Refund wording (INT-81): goes to a person unless it is a plain return-policy question. */
 const REFUND_RE = /(?<![\p{L}])(devol\p{L}*|devuelv\p{L}*|regres(en|e|ar|ame|enme)\s+(la\s+plata|el\s+dinero|mi\s+plata|mi\s+dinero|lo\s+que\s+(di|pagu[eé])))/iu
 // A greeting may come first ("Hola, ¿puedo devolverlo si no me queda?"); only the FIRST sentence is the question.
 const RETURN_POLICY_QUESTION_RE =
-  /^\s*((hola|buenas|buenos\s+d[ií]as|buenas\s+(tardes|noches)|disculpe|una\s+consulta|consulta)[\s,.!]*)?¿?\s*(puedo|se\s+puede|pueden|c[oó]mo|hacen|aceptan|tienen|hay)(?![\p{L}])[^.!?\n]*(devol\p{L}*|devuelv\p{L}*|cambi\p{L}*)/iu
+  /^\s*((hola|buenas|buenos\s+d[ií]as|buenas\s+(tardes|noches)|disculpe|una\s+consulta|consulta)[\s,.!]*)?¿?\s*(puedo|se\s+puede|pueden|c[oó]mo|hacen|aceptan|tienen|hay|cu[aá]l\s+es|qu[eé])(?![\p{L}])[^.!?\n]*(devol\p{L}*|devuelv\p{L}*|cambi\p{L}*)/iu
 const MONEY_WORD_RE = /plata|dinero|pago|sinpe|reembols|₡|lo\s+que\s+(di|pagu[eé])/iu
 /** Returning something TO the customer = money back: never a return-policy question. */
 const REFUND_TO_ME_RE = /(?<![\p{L}])(devolverme|devu[eé]lvanme|devu[eé]lvame|me\s+devuelv\p{L}*|me\s+lo\s+devuelv\p{L}*)/iu
@@ -225,7 +285,7 @@ export function classifyPaymentText(
     return 'payment_proof_or_risk'
   }
   if (COD_QUESTION_RE.test(value)) {
-    return 'non_payment'
+    return plainOr(value, 'non_payment')
   }
   // The store asked "¿Cómo preferís pagar?": an exact choice ("SINPE", "Por SINPE está bien") or a choice + a
   // logistics phrase ("Por sinpe y retiro en tienda") is a sales answer — only after every claim check above.
@@ -235,7 +295,13 @@ export function classifyPaymentText(
   // Follow-up: future / intent phrasing ("Listo, quiero pagar por sinpe", "¿El pago tiene que estar hecho antes del
   // envío?") and a bare method question after an "ok" ("Lista, ¿por sinpe?") are not claims — the agent answers.
   // (A plain "¿cómo puedo pagar?" keeps the info path below: the method list.)
-  if (isPaymentIntentText(value) && !INFO_CUE_RE.test(value)) return 'non_payment'
+  // Verifier round 7: a payment-link message that is not a plain ask goes to a person — checked before the intent path
+  // ("Quiero pagar con el link, el otro venció"). Only "link de pago" or a link next to a failure / used word; "¿tienen
+  // link para comprar?" and "vi el link en la bio" are ordinary.
+  if (isPlainPaymentLinkQuestion(value)) return 'payment_info_safe'
+  if (PAYMENT_LINK_WORDS_RE.test(value) && (PAY_LINK_PHRASE_RE.test(value) || LINK_FAILURE_RE.test(value))) return 'payment_proof_or_risk'
+  // SecureDog round 5: the intent path too answers only a plain ask (a leading "listo," is an acknowledgement).
+  if (isPaymentIntentText(value) && !INFO_CUE_RE.test(value)) return plainOr(value.replace(LEADING_LISTO_RE, ''), 'non_payment')
   // Only after an "ok / listo" and with "por / con" ("Lista, ¿por sinpe?"); a bare "sinpe?" stays ambiguous (a person).
   if (
     /[?¿]/.test(value) &&
@@ -248,21 +314,20 @@ export function classifyPaymentText(
   if (isPlainPaymentLinkQuestion(value)) return 'payment_info_safe'
   // SecureDog r4: a link question that is NOT plain ("¿tienes link de pago? me rechazó la tarjeta") goes to a person,
   // never down to the generic "tarjeta / transferencia" info cue.
-  if (PAYMENT_LINK_WORDS_RE.test(value) && /pag|cobr|compr|tarjeta|sinpe|transfer/iu.test(value)) return 'payment_proof_or_risk'
   if (INFO_CUE_RE.test(value)) {
-    return 'payment_info_safe'
+    return plainOr(value, 'payment_info_safe')
   }
   if (isPlainFutureSinpeQuestion(value)) return 'non_payment'
   // An explicit "how / can I pay" question ("¿puedo pagar en efectivo?", "¿cuándo se paga?") is answered by the agent
   // under the fixed payment rules; everything else with payment words stays with a person (fail closed).
   if (PAYMENT_RE.test(value) && PAYMENT_QUESTION_RE.test(value)) {
-    return 'non_payment'
+    return plainOr(value, 'non_payment')
   }
   // B5 (Agentes IA 2.0), narrowed after SecureDog INT-93: ONLY an explicit list of info questions reaches the agent
   // ("¿el pago es por adelantado?", "¿con qué banco es el sinpe?", "¿aceptan tarjeta?") and never one that asks about
   // the state of a payment ("¿se acreditó el pago?", "¿mi sinpe es válido?"). Everything else stays with a person.
   if (PAYMENT_RE.test(value) && isPaymentInfoQuestion(value)) {
-    return 'non_payment'
+    return plainOr(value, 'non_payment')
   }
   if (PAYMENT_RE.test(value)) {
     return 'payment_proof_or_risk'

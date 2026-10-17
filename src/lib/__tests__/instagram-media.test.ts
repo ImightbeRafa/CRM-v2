@@ -162,3 +162,14 @@ describe('quick replies · "/" menu and Instagram photos', () => {
     assert.match(pane, /\(conversation\?\.platform === 'whatsapp' \|\| conversation\?\.platform === 'instagram'\) &&\s+isSoftHumanComposerEnabled\(agentMode\)/)
   })
 })
+
+describe('luna-10 live · confirmation wording', () => {
+  it('a lone "confirmada" is blocked but only a payment hand-off when payment / an order is in play', () => {
+    const rt = readFileSync('src/lib/soft-ai/llm/runtime.ts', 'utf8')
+    assert.match(rt, /const confirmationIsPayment =\s+validation\.reasons\.includes\('confirmation_wording'\) &&/)
+    assert.match(rt, /hasPaymentWord\(finalText\) \|\|\s+hasPaymentWord\(input\.inboundText \|\| ''\)/)
+    assert.match(rt, /const paymentRisk =\s+confirmationIsPayment \|\|\s+validation\.reasons\.includes\('payment_status_claim'\)/)
+    // The reply itself is still never sent: confirmation_wording keeps needsHuman (safe line + review).
+    assert.match(readFileSync('src/lib/soft-ai/llm/output-validator.ts', 'utf8'), /if \(hasConfirmationWording\(text\)\) reasons\.push\('confirmation_wording'\)/)
+  })
+})

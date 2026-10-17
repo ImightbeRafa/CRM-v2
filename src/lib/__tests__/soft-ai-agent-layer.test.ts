@@ -153,23 +153,23 @@ describe('soft-ai output validator + history (1.7, gate 9)', () => {
 })
 
 describe('soft-ai model allowlist', () => {
-  it('allows gpt-6-luna, grok-4.7 and grok-4.6, rejects others', () => {
+  it('allows gpt-6-luna (default) and, for one deploy, the two older ids; rejects others', () => {
     assert.equal(assertAllowedModel('grok-4.7'), 'grok-4.7')
     assert.equal(assertAllowedModel('grok-4.6'), 'grok-4.6')
     assert.equal(assertAllowedModel('gpt-6-luna'), 'gpt-6-luna')
     assert.deepEqual(CHAT_AGENT_MODEL_ALLOWLIST, ['gpt-6-luna', 'grok-4.7', 'grok-4.6'])
-    assert.equal(DEFAULT_CHAT_AGENT_MODEL, 'grok-4.7')
+    assert.equal(DEFAULT_CHAT_AGENT_MODEL, 'gpt-6-luna')
     assert.throws(() => assertAllowedModel('grok-4.5'), /SOFT_AI_MODEL_NOT_ALLOWED/)
     assert.throws(() => assertAllowedModel('gpt-4o'), /SOFT_AI_MODEL_NOT_ALLOWED/)
   })
 
-  it('resolveSoftAiModel() with no override and no env returns grok-4.7', () => {
+  it('resolveSoftAiModel() with no override and no env returns gpt-6-luna', () => {
     const prev = process.env.SOFT_AI_XAI_MODEL
     delete process.env.SOFT_AI_XAI_MODEL
     try {
-      assert.equal(resolveSoftAiModel(), 'grok-4.7')
-      assert.equal(resolveSoftAiModel(null), 'grok-4.7')
-      assert.equal(resolveSoftAiModel(''), 'grok-4.7')
+      assert.equal(resolveSoftAiModel(), 'gpt-6-luna')
+      assert.equal(resolveSoftAiModel(null), 'gpt-6-luna')
+      assert.equal(resolveSoftAiModel(''), 'gpt-6-luna')
       assert.equal(resolveSoftAiModel('grok-4.6'), 'grok-4.6')
     } finally {
       if (prev === undefined) delete process.env.SOFT_AI_XAI_MODEL
@@ -184,7 +184,7 @@ describe('soft-ai model allowlist', () => {
   })
 
   it('prices both allowlisted models at the shared short-context rates', () => {
-    assert.equal(DEFAULT_PRICING_VERSION, 'xai-2026-09')
+    assert.equal(DEFAULT_PRICING_VERSION, 'openai-2026-10')
     const sample = {
       inputTokens: 1_000_000,
       cachedInputTokens: 0,

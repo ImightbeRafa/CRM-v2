@@ -1268,7 +1268,7 @@ export default function AgentesConfigPage() {
                     <AgentQualityCard key={selected.id} agentId={selected.id} canEdit={canEdit} />
                     {canEdit ? (
                       <div className="mt-3 flex flex-wrap items-center gap-2">
-                        {[LUNA_CHAT_AGENT_MODEL, DEFAULT_CHAT_AGENT_MODEL]
+                        {[LUNA_CHAT_AGENT_MODEL]
                           .filter((m) => m !== selected.model)
                           .map((m) => {
                             const ready = !configuredModels || configuredModels.includes(m)

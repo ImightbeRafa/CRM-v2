@@ -16,12 +16,13 @@ export const CHAT_AGENT_MODEL_ALLOWLIST = ['gpt-6-luna', 'grok-4.7', 'grok-4.6']
 export type ChatAgentModel = (typeof CHAT_AGENT_MODEL_ALLOWLIST)[number]
 
 /**
- * Target live model for Soft agents (OpenAI direct, dedicated SOFT_AI_OPENAI_API_KEY; never the staff bot's OPENAI_API_KEY). Agents move to it one at a
- * time from Avanzado once the key is set and the unlock canaries pass again; the default below
- * flips to it in a later one-line change. The Grok ids stay resolvable as the rollback path.
+ * The one model for inbox agents (OpenAI direct, dedicated SOFT_AI_OPENAI_API_KEY; never the staff bot's OPENAI_API_KEY).
+ * luna-10 (Rafael 2026-10-17): default for every new agent and every AI feature. The two older ids above stay
+ * resolvable for ONE deploy only, so live lines keep answering until each is switched (quick check + Activar on the
+ * new model); the next deploy removes them.
  */
 export const LUNA_CHAT_AGENT_MODEL: ChatAgentModel = 'gpt-6-luna'
-export const DEFAULT_CHAT_AGENT_MODEL: ChatAgentModel = 'grok-4.7'
+export const DEFAULT_CHAT_AGENT_MODEL: ChatAgentModel = LUNA_CHAT_AGENT_MODEL
 
 /** Plain-language name for the business UI (the raw id stays in tooltips/logs). */
 export function modelLabel(model: string): string {
@@ -51,7 +52,7 @@ export function pricingVersionFor(model: string | null | undefined): string {
 export const SOFT_AI_PROMPT_CODE_VERSION = 'prompt-2026-10-02'
 
 export const DEFAULT_DAILY_TOKEN_CAP = 250_000
-export const DEFAULT_PRICING_VERSION = XAI_PRICING_VERSION
+export const DEFAULT_PRICING_VERSION = OPENAI_PRICING_VERSION
 export const AGENT_INSTRUCTIONS_MAX = 1_200
 export const AGENT_NAME_MAX = 40
 export const INTRODUCTION_NAMES_MAX = 3

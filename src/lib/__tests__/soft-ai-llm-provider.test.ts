@@ -44,7 +44,8 @@ describe('soft-ai provider routing', () => {
     assert.equal(softAiProviderFor('grok-4.7'), 'xai')
     assert.equal(pricingVersionFor(LUNA_CHAT_AGENT_MODEL), OPENAI_PRICING_VERSION)
     assert.equal(pricingVersionFor('grok-4.7'), XAI_PRICING_VERSION)
-    assert.equal(pricingVersionFor(null), XAI_PRICING_VERSION)
+    // luna-10: the default (no model) is Luna.
+    assert.equal(pricingVersionFor(null), OPENAI_PRICING_VERSION)
   })
 
   it('reports provider configuration per model without revealing keys', () => {

@@ -6,10 +6,10 @@
 import 'server-only'
 
 import { softAiResponsesCreate, parseSoftAiResponseText } from '@/lib/soft-ai/llm/client'
-import { DEFAULT_CHAT_AGENT_MODEL, LUNA_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
+import { LUNA_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
 
-/** Order of preference. Both are on the agent model allowlist (provider keys already configured). */
-export const VISION_MODEL_CANDIDATES = [DEFAULT_CHAT_AGENT_MODEL, LUNA_CHAT_AGENT_MODEL] as const
+/** luna-10: one model for the whole site. */
+export const VISION_MODEL_CANDIDATES = [LUNA_CHAT_AGENT_MODEL] as const
 
 export type VisionImage = { mime: 'image/jpeg' | 'image/png'; base64: string }
 

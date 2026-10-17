@@ -191,15 +191,23 @@ export function fillPaymentToken(
       const question = paymentMethodsQuestion(facts)
       if (question) return question
     }
-    const block = method === 'all' ? paymentDetailsText(facts) : paymentMethodBlock(facts, method, opts)
+    // Verifier round 5: [[DATOS_PAGO]] after the customer chose a method → only that method's block (no SINPE + IBAN
+    // dump when they said "contra entrega"); a chosen method we can't fill falls back to the full list.
+    const chosen =
+      method === 'all' && opts.chosenMethod && opts.chosenMethod in PAYMENT_METHOD_TOKENS
+        ? (opts.chosenMethod as TokenPaymentMethod)
+        : null
+    const chosenBlock = chosen ? paymentMethodBlock(facts, chosen, opts) : ''
+    const filled: TokenPaymentMethod | 'all' = chosenBlock && chosen ? chosen : method
+    const block = chosenBlock || (method === 'all' ? paymentDetailsText(facts) : paymentMethodBlock(facts, method, opts))
     if (!block) {
       needsHuman = true
       return ''
     }
     // contra entrega / efectivo count as an order for a person only when the customer CHOSE that method; otherwise
     // the same block is just information (no order_ready hand-off).
-    const orderMethod = method === 'contra_entrega' || method === 'efectivo'
-    if (!methods.includes(method) && (!orderMethod || opts.chosenMethod === method)) methods.push(method)
+    const orderMethod = filled === 'contra_entrega' || filled === 'efectivo'
+    if (!methods.includes(filled) && (!orderMethod || opts.chosenMethod === filled)) methods.push(filled)
     // The block always sits on its own lines ("Perfecto 🙌 [[PAGO_SINPE]]" → "Perfecto 🙌\nSINPE Móvil: …").
     const before = whole.slice(0, offset)
     const lineBefore = before.slice(before.lastIndexOf('\n') + 1)

@@ -421,3 +421,31 @@ describe('SecureDog round 4 (luna-10): INT-136 tails, INT-140 "ya pagamos", INT-
     assert.deepEqual(bad, [])
   })
 })
+
+describe("verifier round 6 (luna-10): allowlist question shapes, no COD narrowing, riesgo wording, abonar / rechazo", () => {
+  it("every round-6 repro holds; the real questions still reach the agent", async () => {
+    const { classifyPaymentText } = await import("../soft-ai/payment-classifier")
+    const { fillPaymentToken } = await import("../soft-ai/payment-guard")
+    const person = ['El link de pago venció, ¿me mandás otro?', 'El link de pago lo usó mi esposo, ¿me lo mandás de nuevo?', 'El link de pago no sirve?', 'El link de pago expiró?', 'El enlace de pago está caído?', 'Link de pago caducado?', 'El link de pago venció. ¿Puedo hacerles el sinpe?',
+     'Mi mamá lo canceló, mandame el link de pago', 'El otro link no sirvió, pasame el link de pago', 'Abonamos la mitad el lunes, pasame el link de pago', 'Le sinpeamos 10 mil para el adelanto, mandame el link de pago', 'Mi esposo canceló la mitad por sinpe. ¿Me pasás el link de pago?', 'Mamá lo canceló. ¿Puedo hacerles el sinpe del resto?', 'Abonaron la mitad. ¿Puedo hacerles el sinpe del resto?', 'El link no sirvió. ¿Puedo hacerles un sinpe?',
+     '¿Me pasás el link de pago? Mi mamá lo canceló?', 'Tienes link de pago? mi esposo lo abonó?', 'Tienes link de pago? el otro no me sirvió?', '¿Me pasás el link de pago? ¿el que me mandaste venció?', '¿Me pasás el link de pago? el otro link expiró?',
+     '¿Puedo hacerles la transferencia otra vez? la anterior me la rechazaron', 'Me rechazaron la tarjeta. ¿Puedo hacerles el sinpe?', 'El link de pago me declinó la tarjeta, ¿qué hago?', 'Ya les abonamos la mitad. ¿Cómo pagamos el resto?', 'Ya aboné la mitad, ¿cómo pago el resto?',
+     'Link de pago vencido', 'Me pasás el link de pago? lo cancelamos por sinpe', 'pasame el link de pago, le sinpeamos la mitad',
+     '¿Puedo hacerles un sinpe? hecho', '¿Puedo hacerles un sinpe? Mamá lo canceló', '¿Puedo hacerles un sinpe? already sent', 'Ya pagamos', 'Ya pagaron', 'Tienes link de pago? ya lo usé', 'Me rebotó el link de pago', 'Tienes link de pago? me rechazó la tarjeta', '¿tienen link de pago? Compramos en familia', 'Ya tengo todo listo, mandame el link de pago']
+    const agent = ['Hola, necesito comprar unos parches de glp-1, puedo hacerles un sinpe y mandar un flash a recogerlos?', '¿Tienes link de pago?', '¿Me pasás el link de pago?', 'Quiero comprar los 2 . Me envías el link de pago', 'pasame el link de pago', 'Link de pago?', '¿Ya puedo hacerles el sinpe?', 'me podés pasar el link de pago?', 'quiero el link de pago', 'Muchas gracias \nTienes link de pago? Para la ansiedad cuáles me \nRecomiendas?', '¿Cómo pagamos?', '¿Cómo puedo pagar?', '¿Puedo hacerles una transferencia?', 'Hola buenas 😊 ¿puedo hacerles un sinpe?', 'Hola! Me pasás el link de pago porfa 🙏', '¿Hacen contra entrega en Cartago?']
+    const bad: string[] = []
+    for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
+    for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    for (const t of ['Es natural, no tiene ningún riesgo en el embarazo', 'No tienen riesgos para la salud', 'Tranquila, no tiene ningún riesgo para vos', 'Sin riesgo para tu bebé', 'No hay riesgo para tu bebé', 'Es seguro usarlo durante el embarazo', 'Sin efectos secundarios']) if (!resultsClaimIn(t)) bad.push('MISSED ' + t)
+    for (const t of ['El pago con tarjeta no tiene ningún riesgo', 'Es seguro pagar con tarjeta en la web', 'Durante el embarazo, consultá con tu médico antes de usarlo']) if (resultsClaimIn(t)) bad.push('FALSE+ ' + t)
+    const facts: any = { schemaVersion: 1, payment: { shareWithCustomers: true, methods: ['sinpe', 'transferencia', 'tarjeta', 'contra_entrega'], sinpe: { number: '62019914', holderName: 'R G' }, transfer: { bank: 'BAC', iban: 'CR12010200009506464063', holderName: 'X' } } }
+    const cod = fillPaymentToken('Claro 🙌 [[DATOS_PAGO]]', facts, { customerText: '¿me pasás los datos para pagar?', chosenMethod: 'contra_entrega' })
+    if (cod.methods.includes('contra_entrega' as any)) bad.push('COD narrowed: ' + JSON.stringify(cod))
+    const other = fillPaymentToken('[[DATOS_PAGO]]', facts, { customerText: '¿y si pago por sinpe, a qué número sería?', chosenMethod: 'transferencia' })
+    if (!/6201/.test(other.text)) bad.push('other method not given: ' + other.text)
+    const sinpe = fillPaymentToken('[[DATOS_PAGO]]', facts, { customerText: 'por sinpe', chosenMethod: 'sinpe' })
+    if (!/6201/.test(sinpe.text) || /CR12/.test(sinpe.text)) bad.push('chosen sinpe wrong: ' + sinpe.text)
+    
+    assert.deepEqual(bad, [])
+  })
+})

@@ -315,7 +315,8 @@ const RESULTS_CLAIM_RES: RegExp[] = [
   // Verifier round 5: "riesgo" only in its health shapes ("no causa ningún riesgo", "sin riesgo para el embarazo") —
   // "el pago con tarjeta no tiene ningún riesgo" is not a health promise.
   /\bno\s+(?:causa|causan|representa|representan)\s+(?:ning[uú]n\s+)?riesgos?/iu,
-  /\b(?:sin|ning[uú]n|no\s+hay)\s+riesgos?\s+(?:para|en|durante)\s+(?:la\s+salud|el\s+embarazo|la\s+lactancia|ni[nñ]\p{L}*|beb[eé]s?|el\s+coraz[oó]n|su\s+salud|tu\s+salud)/iu,
+  // Verifier round 6: the whole "no tiene / no hay ningún riesgo para…" (else the leading "no" reads as a negation).
+  /\b(?:no\s+(?:tiene|tienen|hay|representa|representan)\s+|sin\s+)(?:ning[uú]n\s+)?riesgos?\s+(?:para|en|durante|con)\s+(?:(?:el|la|los|las|tu|su|tus|sus)\s+)?(?:salud|embarazo|embarazadas?|lactancia|ni[nñ]\p{L}*|beb[eé]s?|coraz[oó]n|vos|usted|ti|medicamentos?|presi[oó]n)/iu,
   /\bpod[eé]s\s+usarl[oa]s?\s+(?:sin\s+problema\s+)?(?:en|durante)\s+(?:el\s+|la\s+)?(?:embarazo|lactancia)/iu,
   /\b(?:baj(?:ar|[áa]s|ar[áa]s)|perder|perd[ée]s|perder[áa]s)\s+(?:de\s+)?(?:peso|kilos|libras)\b|\badelgaz(?:ar|[áa]s|ar[áa]s)\b/iu,
 ]

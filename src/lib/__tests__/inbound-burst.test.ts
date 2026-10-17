@@ -301,6 +301,13 @@ describe('burst = one reply · hand-offs and questions in any bubble', () => {
     } as unknown as SalesContext
     const history = [outbound('El GLP-1 cuesta ₡15.900 😊', -60), inbound('Lo quiero', 0)]
     assert.equal(deriveSalesState({ history, inboundText: '¿Hacen envíos a Limón?', ctx }).buyCue, true)
+    // Verifier r5 #1: a later retraction cancels it; a single message keeps today's rule.
+    assert.equal(deriveSalesState({ history, inboundText: 'Ah no, mejor no', ctx }).buyCue, false)
+    assert.equal(deriveSalesState({ history: history.slice(0, 1), inboundText: 'Lo quiero, ya no tengo dudas', ctx }).buyCue, true)
+    assert.equal(deriveSalesState({ history: history.slice(0, 1), inboundText: 'no lo quiero', ctx }).buyCue, false)
+    // Verifier r5 #2: the receipt check reads the newest message only.
+    assert.equal(deriveSalesState({ history, inboundText: '', ctx, burstBuyCue: false }).buyCue, false)
+    assert.match(read('src/lib/soft-ai/sales-state.ts'), /deriveSalesState\(\{ history, inboundText: '', ctx, burstBuyCue: false \}\)/)
     // Once the store answered, an old "lo quiero" does not count again.
     const answered = [...history, outbound('¡Genial! ¿A qué zona?', 30)]
     assert.equal(deriveSalesState({ history: answered, inboundText: '¿Hacen envíos a Limón?', ctx }).buyCue, false)

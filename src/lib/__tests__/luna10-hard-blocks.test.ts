@@ -6,7 +6,7 @@ import { describe, it } from 'node:test'
 import * as fs from 'node:fs'
 import { resultsClaimIn, validateAgentOutput } from '../soft-ai/llm/output-validator'
 import { REPAIRABLE_REASONS, repairInstruction } from '../soft-ai/llm/runtime'
-import { decideWaitingAck, waitingAckKey, waitingAckText } from '../soft-ai/waiting-ack'
+import { decideWaitingAck, isOptOutText, waitingAckKey, waitingAckText } from '../soft-ai/waiting-ack'
 import { customerAsksAgain, dropRepeatedParts, isNearRepeat } from '../soft-ai/repeat-guard'
 import { SHIPPING_DATA_LIST } from '../soft-ai/order-data-list'
 import { parseSalesRules } from '../soft-ai/agent-sales-setup'
@@ -183,5 +183,38 @@ describe('SQL 054 (luna-only model)', () => {
     assert.doesNotMatch(code, /DROP |TRUNCATE|DELETE FROM|CREATE TABLE|ADD COLUMN/i)
     assert.match(fs.readFileSync('scripts/lib/betsy-v2-additive-manifest.mjs', 'utf8'), /'054': '054_luna_only_model\.sql'/)
     assert.match(fs.readFileSync('prisma/schema.prisma', 'utf8'), /model\s+String\s+@default\("gpt-6-luna"\)/)
+describe('verifier round 1 (luna-10)', () => {
+  const N = { afterHours: true, transparent: true }
+  const who = { name: 'Sofi', store: 'PatchHouse CR', introduced: false }
+  it('F1: the night intro never cuts a reply that is more than an intro', () => {
+    assert.equal(withNightIntro('Hola, soy Sofi y el Stress Down cuesta ₡12.000 😊', N, who), 'Hola, soy Sofi y el Stress Down cuesta ₡12.000 😊')
+    assert.equal(withNightIntro('¡Hola! Soy Sofi de PatchHouse CR, ¿te ayudo con algo?', N, who), '¡Hola! Soy Sofi de PatchHouse CR, ¿te ayudo con algo?')
+    assert.equal(withNightIntro('¡Hola! Soy Sofi de PatchHouse CR 🌿 El Focus cuesta ₡9 900.', N, who), '¡Hola! Soy Sofi, asistente virtual de PatchHouse CR 🌙\n\nEl Focus cuesta ₡9 900.')
+  })
+  it('F2: a different price / place / amount is never a repeat; a long list does not swallow a new answer', () => {
+    assert.equal(isNearRepeat('El envío a San José cuesta ₡2.500 y llega en 2 días hábiles', ['El envío a Alajuela cuesta ₡3.500 y llega en 3 días hábiles']), false)
+    assert.equal(isNearRepeat('El combo de 3 cuesta ₡30.000 más envío', ['El combo de 2 cuesta ₡22.000 más envío']), false)
+    assert.equal(isNearRepeat('El Sleep Well apoya el descanso y viene con 30 parches', ['Tenemos Focus, Energy, Stress Relief, Dopamine, GLP-1 y Sleep Well: el Sleep Well apoya el descanso, el Focus la concentración y el Energy la energía']), false)
+  })
+  it('F5: order / price sentences are not results promises; real promises still are', () => {
+    for (const t of ['Con el combo vas a ver la diferencia en el precio', 'Muchas clientas notan que les llega rápido el pedido', 'Podés ver el resultado del pedido en la página', 'Envío garantizado a todo el país']) assert.equal(resultsClaimIn(t), null, t)
+    for (const t of ['Muchas personas nos cuentan que duermen mejor', 'Te garantizo que funciona', 'Garantizamos resultados']) assert.ok(resultsClaimIn(t), t)
+  })
+  it('F7: after an opt-out the team is alerted but the customer gets no automatic text', () => {
+    const base = { lastTurn: { id: 't', handoffKind: 'handoff', completedAt: new Date('2026-10-17T17:50:00Z') }, humanWroteSince: false, lineOn: true, alreadyAcked: false, now: new Date('2026-10-17T18:00:00Z') }
+    assert.deepEqual(decideWaitingAck({ ...base, optOut: true }), { ack: false, realert: true, reason: 'opt_out' })
+    for (const t of ['STOP', 'no quiero hablar con un bot', 'no me escriban más', 'basta ya']) assert.ok(isOptOutText(t), t)
+    for (const t of ['Me podría atender un asesor', 'quiero hablar con una persona', 'no quiero el combo']) assert.equal(isOptOutText(t), false, t)
+  })
+  it('F3 / F4 / F6 / F8 / F9 (source): kill switch, platform pause and AI terms gate the ack; the turn row holds the sent text; the sweep skips the ack; images only stop when everything was dropped; early exit', () => {
+    const turn = fs.readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
+    const ack = turn.slice(turn.indexOf('async function ackWaitingCustomer'), turn.indexOf('Daily token caps sum turns'))
+    assert.match(ack, /!\(await readAgentKillState\(row\.tenantId\)\)\.armed/)
+    assert.match(ack, /!\(await isPlatformAiPaused\(\)\)/)
+    assert.match(ack, /await isAiTermsAcceptedNow\(row\.tenantId\)/)
+    assert.ok(ack.indexOf("if (!lastTurn || handoffKind !== 'handoff') return") < ack.indexOf('resolveChatAgent('))
+    assert.match(turn, /if \(outgoingText !== input\.outputText\) \{\s*await prisma\.chatAgentTurn\.update\(\{\s*where: \{ id: input\.turnId \},\s*data: \{ outputText: outgoingText, outputHash: hashSoftAiOutput\(outgoingText\) \}/)
+    assert.match(turn, /input\.replyAssets\?\.size && !repeatAllDropped\)/)
+    assert.match(fs.readFileSync('src/lib/soft-ai/waiting-sweep.ts', 'utf8'), /\.find\(\(r\) => \(r\.metadata as \{ waitingAck\?: unknown \} \| null\)\?\.waitingAck !== true\)/)
   })
 })

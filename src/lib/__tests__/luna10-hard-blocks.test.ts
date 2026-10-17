@@ -757,3 +757,21 @@ describe("verifier round 11 gate (luna-10): delivery / contact messages are not 
     assert.deepEqual(bad, [])
   })
 })
+
+describe("SecureDog round 8 release gate (luna-10): someone else's paying act / a balance word never rides an ask; refund status; health bare yes", () => {
+  it("B1 / B2 / B3 repros go to a person; everyday asks still reach the agent; health gaps held", async () => {
+    const { classifyPaymentText } = await import("../soft-ai/payment-classifier")
+    const person = ['Quiero pagar el resto, Juan pago la mitad', 'Les pago hoy, Juan pago la mitad', 'Te pago el resto ahorita, Juan deposito la mitad', 'Voy a pagar el resto mañana, Juan pago la mitad', 'Quiero pagar el resto, mi esposo puso la mitad', 'Les pago el resto mañana, ella puso la mitad', 'Quiero pagar el resto, el muchacho pago la mitad', 'Quiero pagar el resto, mi ex pago la mitad', 'Quiero pagar el resto, Juan dio la mitad', 'Quiero pagar el resto, la señora cancelo la mitad', 'Quiero pagar el resto, la otra mitad la pago Juan', 'Prefiero pagar el resto por sinpe, María adelanto la mitad', 'Quiero pagar el resto porque Juan pago la mitad', 'Les pago hoy Juan pago la mitad', '¿Me pasás el número para pagar el resto, que Juan pago la mitad?', 'Quiero pagar el resto, la mitad la tienen', 'Quiero pagar el resto, la mitad se pago',
+     '¿Qué pasó con mi devolución?', '¿Qué día me hacen la devolución?', '¿Cuál es el estado de mi devolución?', '¿Qué pasó con la devolución de los 15 mil?', '¿Qué día cae la devolución?', '¿Cuál es el número de la devolución que me hicieron?', 'Qué pasa con mi devolución, ya van 2 semanas',
+     'Quiero pagar el resto, mi cuñado paso su parte', 'Les pago hoy lo mío, mi cuñado mando lo de él', 'Te pago el resto ahorita, mi pareja mando lo que le tocaba', 'Quiero pagar el resto, le acabo de pasar lo de mi parte', 'Voy a pagar el resto mañana, mi cuñado mando lo del adelanto', 'Quiero pagar el resto, mi cuñado mando']
+    const agent = ['¿Cuál es la política de cambios y devoluciones?', '¿Cómo pago?', 'Quiero pagar con tarjeta', 'Te pago por sinpe', 'Le acabo de enviar mi dirección', 'Te acabo de mandar la ubicación', '¿Aceptan sinpe?', '¿Cómo les pago?', 'Hola, ¿cómo puedo pagar el pedido?']
+    const bad: string[] = []
+    for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
+    for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    const v = (text: string, customerText: string) => (validateAgentOutput({ text, citedToolNames: [], customerText } as any).reasons || []).includes('results_claim')
+    for (const [r, c] of [['¡Sí! 😊', '¿Es seguro en el embarazo?'], ['¡Sí! Lo puede usar sin problema', '¿Lo puede usar mi sobrino de 12 años?'], ['¡Sí! Podés usarlo sin problema', 'Quiero comprar 2\n¿Le hace daño a mi gastritis?'], ['Sí, podés usarlo', 'Mi mamá de 70 años, ¿lo puede usar?']] as const) if (!v(r, c)) bad.push('MISSED (ctx) ' + r + ' ⇐ ' + c)
+    for (const t of ['Podés usarlo con toda confianza en el embarazo', 'Lo puede usar sin pena durante la lactancia', 'No le va a hacer nada al bebé', 'Va bien en el embarazo', 'Sí, lo podrías usar en el embarazo']) if (!resultsClaimIn(t)) bad.push('MISSED ' + t)
+    
+    assert.deepEqual(bad, [])
+  })
+})

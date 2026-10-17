@@ -619,3 +619,21 @@ describe("SecureDog round 6 (luna-10): bursts, comma claims, third person, perfe
     assert.ok(fs.readFileSync("src/lib/soft-ai/llm/runtime.ts", "utf8").includes("customerText: burstCustomerText(input.history, input.inboundText),"))
   })
 })
+
+describe("verifier round 9 (luna-10): done-verbs outside a question, hijos is not a health group, more health wordings", () => {
+  it("repros hold", async () => {
+    const { classifyPaymentText } = await import("../soft-ai/payment-classifier")
+    const person = ['¿Aceptan sinpe? Le hice uno', '¿Cómo pago el envío? Lo hice en la mañana', '¿Cómo pago? Lo hice desde la app del banco', '¿Me pasás el número de sinpe? Te lo pase en la mañana', '¿Aceptan sinpe? Le tiré hace un toque', 'Contra entrega se lo di al mensajero', '¿Hacen contra entrega? Le di al mensajero', '¿Cómo pago el resto? Le di 10 mil al mensajero']
+    const agent = ['¿Cómo pago el envío?', 'Contra entrega. Gracias', 'Pago contra entrega. Estoy en Cartago', 'Quiero pagar con tarjeta. Gracias']
+    const bad: string[] = []
+    for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
+    for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    const v = (text: string, customerText: string) => (validateAgentOutput({ text, citedToolNames: [], customerText } as any).reasons || []).includes('results_claim')
+    for (const [r, c] of [['¡Claro! Podés pedirlo con envío a Heredia', 'Es para mi hija, ¿hacen envíos a Heredia?'], ['Se pega en la piel limpia. Podés usarlo de día', 'Mis hijos me lo regalaron, ¿cómo se usa?']] as const) if (v(r, c)) bad.push('FALSE+ (ctx) ' + r)
+    if (resultsClaimIn('Lo podés regalar a tu mamá, a tu pareja o a tus hijos')) bad.push('FALSE+ hijos')
+    if (!v('¡Sí! Podés usarlo sin problema 😊', 'Tengo problemas del corazón, ¿lo puedo usar?')) bad.push('MISSED corazón')
+    for (const t of ['Es 100% natural, no te va a hacer daño', 'Durante la lactancia no hay ningún inconveniente', 'Es seguro para todas las edades', 'No genera dependencia', 'Lo puede usar su hijo de 10 años']) if (!resultsClaimIn(t)) bad.push('MISSED ' + t)
+    
+    assert.deepEqual(bad, [])
+  })
+})

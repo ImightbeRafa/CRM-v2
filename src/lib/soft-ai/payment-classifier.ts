@@ -194,11 +194,14 @@ const PAST_OR_DONE_RE =
 const PAGAMOS_QUESTION_RE = /^(?:y\s+)?(?:c[oó]mo|cu[aá]ndo|d[oó]nde|por\s+d[oó]nde)\s+(?:les?\s+|lo\s+)?pagamos(?:\s+(?:el\s+resto|eso|todo))?\s*\?[\s?!.]*$/iu
 
 /** Past-tense "-ré" words that are not futures ("compré", "entré"); every other "-ré / -rá" is a future ("podré"). */
-const PAST_RE_WORDS = new Set(['compré', 'entré', 'mostré', 'encontré', 'pregunté', 'registré', 'cobré'])
+const PAST_RE_WORDS = new Set(['tiré', 'giré', 'compré', 'entré', 'mostré', 'encontré', 'pregunté', 'registré', 'cobré'])
 
 function hasPastOrDoneWord(segment: string, question: boolean): boolean {
   const s = PAGAMOS_QUESTION_RE.test(segment) ? segment.replace(/pagamos/iu, 'pagar') : segment
   if (PAST_OR_DONE_RE.test(s)) return true
+  // Verifier round 9: outside a question, a done-verb is a claim even with no payment noun ("¿Aceptan sinpe? Le hice
+  // uno", "Le tiré hace un toque", "Contra entrega se lo di al mensajero", "Te lo pase en la mañana").
+  if (!question && /(?<![\p{L}])(?:hice|hizo|hicimos|hicieron|di|d[ií]|dimos|dieron|tir[eé]|gir[eé]|mand[eé]|envi[eé]|pas[eé]|realic[eé]|deposit[eé]|transfer[ií])(?![\p{L}])/iu.test(s)) return true
   // "¿Cuándo está listo?", "¿Son hechos a mano?", "¿cuánto tarda en ser enviado?": inside a QUESTION a completion word
   // is about the order; outside one ("…? hecho", "listo, ya la pasé") it is a claim. ✅ ✔ ☑ are never a question.
   // "listo para pagar" = ready to pay (not done).

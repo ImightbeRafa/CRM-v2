@@ -8,8 +8,11 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
+  BURST_LOAD_MAX,
+  BURST_MAX_AGE_MS,
   BURST_YIELD_MAX_AGE_MS,
   burstHasLaterBubble,
+  burstOutgrowsWindow,
   burstOptOutIn,
   burstOtherTexts,
   burstReviewFor,
@@ -23,7 +26,8 @@ import {
   type BurstMessage,
 } from '@/lib/soft-ai/inbound-burst'
 import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
-import { BURST_HOLD_SECONDS, BURST_SETTLE_MS } from '@/lib/soft-ai/automation-queue'
+import { BURST_HOLD_SECONDS, BURST_SETTLE_MS, NEWEST_BURST_JOB_ORDER } from '@/lib/soft-ai/automation-queue'
+import { HISTORY_WINDOW_MAX } from '@/lib/soft-ai/agent-types'
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
 import type { TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
 import { parseBrandFacts, type BrandFacts } from '@/lib/soft-ai/brand-facts'
@@ -55,7 +59,7 @@ let seq = 0
 type Msg = BurstMessage & { id: string; content: string; sentAt: string }
 const inbound = (content: string, s: number, messageType = 'text'): Msg => ({ id: `m${++seq}`, direction: 'inbound', content, messageType, sentAt: at(s) })
 const outbound = (content: string, s: number): Msg => ({ id: `m${++seq}`, direction: 'outbound', content, messageType: 'text', sentAt: at(s) })
-const PAYMENT_DETAILS_SENT = () => outbound('Perfecto 🙌 Hacé el SINPE al 6201-9914 y me mandás el comprobante por aquí', -120)
+const PAYMENT_DETAILS_SENT = (s = -120) => outbound('Perfecto 🙌 Hacé el SINPE al 6201-9914 y me mandás el comprobante por aquí', s)
 
 /** Live / Probar: plan the burst, then decideBurstTurn (no DB). */
 function run(trigger: { content: string; messageType?: string; s: number }, history: Msg[], brandFacts: BrandFacts = facts, extra: RuntimeShortcut[] = []) {
@@ -89,8 +93,8 @@ const PRICE_REPLY: RuntimeShortcut = {
 }
 
 /** Receipt variant: the burst plan's receipt check reads the history like live (mediaAwaitingReceipt). */
-function runAwaitingReceipt(trigger: { content: string; messageType?: string; s: number }, burstBubbles: Msg[]) {
-  const history = [PAYMENT_DETAILS_SENT(), ...burstBubbles]
+function runAwaitingReceipt(trigger: { content: string; messageType?: string; s: number }, burstBubbles: Msg[], paymentSentS = -120) {
+  const history = [PAYMENT_DETAILS_SENT(paymentSentS), ...burstBubbles]
   const t = { content: trigger.content, messageType: trigger.messageType || 'text', sentAt: at(trigger.s) }
   const burstEarlier = unansweredBurst(history, t)
   const burst = planBurstInbound({ trigger: t, earlier: burstEarlier, awaitingReceipt: (type) => type === 'image' || type === 'document' })
@@ -180,7 +184,7 @@ describe('burst = one reply · queue coalescing (source)', () => {
 })
 
 describe('burst = one reply · which bubbles', () => {
-  it('stops at the store\'s last reply wherever it sits; no time window; includes bubbles sent after the trigger', () => {
+  it('stops at the store\'s last reply wherever it sits; includes bubbles sent after the trigger', () => {
     const history = [inbound('antes', -300), outbound('respuesta', -200), inbound('viejo', -190), inbound('uno', -5), inbound('después', 5)]
     assert.deepEqual(unansweredBurst(history).map((m) => m.content), ['viejo', 'uno', 'después'])
     // Verifier r1 #3: the store answered after this trigger was sent → that question is not answered again.
@@ -443,5 +447,207 @@ describe('burst = one reply · wiring (source)', () => {
 
   it('decideInbound alone is unchanged for a single message', () => {
     assert.equal(decideInbound({ inboundText: '[image]', messageType: 'image', brandFacts: facts, shortcuts }).shortcutKey, 'sys_media_ask')
+  })
+})
+
+describe('burst hardening · every bubble checked, a day at most, newest message answers', () => {
+  const DAY_S = BURST_MAX_AGE_MS / 1000
+
+  it('an unanswered STOP from days ago is not part of a new "hola" burst; inside the day it is', () => {
+    const old = [inbound('STOP', -3 * DAY_S)]
+    assert.deepEqual(unansweredBurst(old, { sentAt: at(0) }), [])
+    const hola = run({ content: 'hola', s: 0 }, old)
+    assert.equal(hola.optOut, false)
+    assert.notEqual(hola.decision.handoff?.kind, 'handoff')
+    // Same day: still a burst bubble → opt-out hand-off, the waiting ack stays silent.
+    const sameDay = run({ content: 'hola', s: 0 }, [inbound('STOP', -(DAY_S - 60))])
+    assert.equal(sameDay.optOut, true)
+    assert.equal(sameDay.decision.handoff?.kind, 'handoff')
+    // The bound ends the run at the first too-old bubble (history is in sent order).
+    const mixed = [inbound('ya pagué', -2 * DAY_S), inbound('¿precio?', -30), inbound('después', 5)]
+    assert.deepEqual(unansweredBurst(mixed, { sentAt: at(0) }).map((m) => m.content), ['¿precio?', 'después'])
+    // A bad date never drops a bubble (Probar / legacy rows); no trigger → no bound.
+    assert.equal(unansweredBurst([inbound('STOP', 0)], { sentAt: 'no-date' }).length, 1)
+    assert.equal(unansweredBurst([{ ...inbound('STOP', 0), sentAt: 'x' }], { sentAt: at(0) }).length, 1)
+    assert.equal(unansweredBurst(old).length, 1)
+  })
+
+  it('an unanswered receipt photo from days ago does not turn a new "hola" into the receipt path', () => {
+    // Real order: payment data 3 days ago, the photo 2 days ago, "hola" now.
+    const stale = runAwaitingReceipt({ content: 'hola', s: 0 }, [inbound('[image]', -2 * DAY_S, 'image')], -3 * DAY_S)
+    assert.equal(stale.burst.reason, 'single')
+    const fresh = runAwaitingReceipt({ content: 'hola', s: 0 }, [inbound('[image]', -60, 'image')])
+    assert.equal(fresh.burst.reason, 'burst_receipt')
+  })
+
+  it('the shadow replay measures the 24 h bound from the real message time (Probar API cannot set it)', () => {
+    const turn = read('src/lib/soft-ai/agent-turn.ts')
+    assert.match(turn, /const probarTrigger = \{ content: input\.inboundText, messageType: input\.messageType \|\| 'text', sentAt: input\.replaySentAt \?\? new Date\(\) \}/)
+    assert.match(read('scripts/agent-pack/shadow.ts'), /replaySentAt: m\.sentAt,/)
+    assert.doesNotMatch(read('src/lib/soft-ai/agent-admin.ts'), /replaySentAt/)
+  })
+
+  it('the bound matches the waiting sweep\'s 24 h reply window', () => {
+    assert.equal(BURST_MAX_AGE_MS, 24 * 60 * 60_000)
+    assert.match(read('src/lib/soft-ai/waiting-sweep.ts'), /const DAY_MS = 24 \* 60 \* 60_000/)
+  })
+
+  it('a burst longer than the 24-row window (WhatsApp multi-forward) is loaded on its own: its first STOP still counts', () => {
+    const bubbles = [
+      outbound('¡Hola! Soy Sofi', -600),
+      inbound('STOP', -100),
+      ...Array.from({ length: 29 }, (_, i) => inbound(`reenviado ${i}`, -90 + i)),
+    ]
+    const window = bubbles.slice(-HISTORY_WINDOW_MAX)
+    const windowBurst = unansweredBurst(window, { sentAt: at(0) })
+    assert.equal(burstOutgrowsWindow({ loadedRows: window.length, windowMax: HISTORY_WINDOW_MAX, history: window, burst: windowBurst }), true)
+    // The 24-row window alone misses the STOP …
+    assert.equal(run({ content: 'hola', s: 0 }, window).optOut, false)
+    // … the separate load (every unanswered inbound) catches it.
+    const full = run({ content: 'hola', s: 0 }, bubbles)
+    assert.equal(full.optOut, true)
+    assert.equal(full.decision.handoff?.kind, 'handoff')
+    // Not needed when the window is not full, holds the store's reply, or the day bound already ended the run.
+    const short = bubbles.slice(-5)
+    assert.equal(burstOutgrowsWindow({ loadedRows: 5, windowMax: HISTORY_WINDOW_MAX, history: short, burst: unansweredBurst(short) }), false)
+    const withReply = [outbound('ok', -95), ...bubbles.slice(-23)]
+    assert.equal(burstOutgrowsWindow({ loadedRows: 24, windowMax: HISTORY_WINDOW_MAX, history: withReply, burst: unansweredBurst(withReply) }), false)
+    const aged = [inbound('viejo', -2 * DAY_S), ...bubbles.slice(-23)]
+    assert.equal(
+      burstOutgrowsWindow({ loadedRows: 24, windowMax: HISTORY_WINDOW_MAX, history: aged, burst: unansweredBurst(aged, { sentAt: at(0) }) }),
+      false,
+    )
+    assert.equal(burstOutgrowsWindow({ loadedRows: 24, windowMax: HISTORY_WINDOW_MAX, history: [], burst: [] }), false)
+  })
+
+  it('live loads a long burst tenant- and chat-scoped, after the last reply, inside the day, newest 100, text/type/time only', () => {
+    assert.equal(BURST_LOAD_MAX, 100)
+    const turn = read('src/lib/soft-ai/agent-turn.ts')
+    const fn = turn.slice(turn.indexOf('async function loadUnansweredInbound'), turn.indexOf('async function yieldsToNewerBurst'))
+    assert.match(fn, /tenantId: input\.tenantId,\s+conversationId: input\.conversationId,\s+direction: 'inbound',\s+id: \{ not: input\.triggerMessageId \},/)
+    // After the last reply in (sentAt, id) order, like the history window (same-second tie kept).
+    assert.match(fn, /select: \{ id: true, sentAt: true \}/)
+    assert.match(
+      fn,
+      /lastReply && lastReply\.sentAt >= since\s+\? \{ OR: \[\{ sentAt: \{ gt: lastReply\.sentAt \} \}, \{ sentAt: lastReply\.sentAt, id: \{ gt: lastReply\.id \} \}\] \}\s+: \{ sentAt: \{ gte: since \} \}/,
+    )
+    assert.match(fn, /take: BURST_LOAD_MAX,\s+select: \{ content: true, messageType: true, sentAt: true \},/)
+    const live = turn.slice(turn.indexOf('export async function executeAgentLayerTurn'), turn.indexOf('function persistedTurnStatus'))
+    assert.match(
+      live,
+      /const burstEarlier = burstOutgrowsWindow\(\{ loadedRows, windowMax: HISTORY_WINDOW_MAX, history, burst: windowBurst \}\)\s+\? unansweredBurst\(\s+await loadUnansweredInbound\(\{\s+tenantId: row\.tenantId,\s+conversationId: row\.conversationId,/,
+    )
+    // The model keeps its 24-row window.
+    assert.match(turn, /take: HISTORY_WINDOW_MAX,/)
+  })
+
+  it('the claim answers with the newest SENT message: a late-delivered bubble never takes the burst; single-flight kept', () => {
+    const queue = read('src/lib/soft-ai/automation-queue.ts')
+    const claim = queue.slice(queue.indexOf('async function claimRows'), queue.indexOf('export function claimBatch'))
+    assert.match(claim, /JOIN "ChatMessage" current_msg ON current_msg\."id" = current\."messageId"/)
+    assert.match(claim, /JOIN "ChatMessage" newer_msg ON newer_msg\."id" = newer\."messageId"/)
+    assert.match(claim, /\(newer_msg\."sentAt", newer\."createdAt", newer\."id"\) > \(current_msg\."sentAt", current\."createdAt", current\."id"\)/)
+    assert.match(claim, /ORDER BY current_msg\."sentAt" DESC, current\."createdAt" DESC, current\."id" DESC\s+FOR UPDATE OF current SKIP LOCKED/)
+    assert.match(claim, /inflight\."status" = 'processing'/)
+    assert.match(claim, /ChatAutomationJob_conversation_single_flight/)
+    assert.deepEqual(NEWEST_BURST_JOB_ORDER, [{ message: { sentAt: 'desc' } }, { createdAt: 'desc' }, { id: 'desc' }])
+    const proc = read('src/lib/soft-ai/automation-processor.ts')
+    const kick = proc.slice(proc.indexOf('export async function kickNextConversationJob'), proc.indexOf('export async function processClaimedJob'))
+    assert.match(kick, /orderBy: NEWEST_BURST_JOB_ORDER,/)
+  })
+})
+
+describe('burst hardening · SecureDog r1 (superseded = checked, per-turn CPU, bounded reply lookup)', () => {
+  it('F1: a job whose message already has a store reply after it is never superseded — it runs on its own afterwards', () => {
+    const queue = read('src/lib/soft-ai/automation-queue.ts')
+    const fn = queue.slice(queue.indexOf('async function supersedeOlderJobs'), queue.indexOf('async function deferJob'))
+    assert.match(fn, /WHERE job\."conversationId" = \$\{conversationId\}\s+AND job\."id" <> \$\{keepId\}\s+AND job\."status" IN \('pending', 'retry'\)/)
+    assert.match(fn, /AND NOT EXISTS \(\s+SELECT 1\s+FROM "ChatMessage" msg\s+JOIN "ChatMessage" reply/)
+    assert.match(fn, /reply\."conversationId" = msg\."conversationId"\s+AND reply\."tenantId" = msg\."tenantId"\s+AND reply\."direction" = 'outbound'\s+AND \(reply\."sentAt", reply\."id"\) > \(msg\."sentAt", msg\."id"\)/)
+    assert.match(fn, /WHERE msg\."id" = job\."messageId"/)
+    assert.match(fn, /"lastErrorCode" = 'SUPERSEDED'/)
+    assert.match(fn, /"payload" = NULL/)
+    // A tagged template: every value is a bound parameter.
+    assert.match(fn, /await prisma\.\$executeRaw`/)
+    assert.doesNotMatch(fn, /executeRawUnsafe|Prisma\.raw/)
+  })
+
+  it('F2: whitespace runs collapse and repeated bubbles are decided once (per-bubble checks only)', () => {
+    const spam = Array.from({ length: 100 }, (_, i) => inbound(`a${' '.repeat(4000)}x`, -100 + i))
+    const others = burstOtherTexts(spam, { inboundText: 'hola' })
+    assert.deepEqual(others, [{ text: 'a x', messageType: 'text' }])
+    assert.deepEqual(
+      burstOtherTexts([inbound('¿Cómo   pago?', 0), inbound('¿Cómo pago?', 1), inbound('¿Cómo pago?', 2, 'image')], { inboundText: 'hola' }),
+      [
+        { text: '¿Cómo pago?', messageType: 'text' },
+        { text: '¿Cómo pago?', messageType: 'image' },
+      ],
+    )
+    // The planned text itself (with its own spacing) is not checked twice.
+    assert.deepEqual(burstOtherTexts([inbound('Quiero  2 \n\n  cajas', 0)], { inboundText: 'Quiero 2\ncajas' }), [])
+    // Verifier r3: a line break stays a line break (the payment classifier reads it as a sentence end).
+    assert.deepEqual(burstOtherTexts([inbound(`Quiero pagar con tarjeta${'\n'.repeat(4000)}le hice uno`, 0)], { inboundText: 'hola?' }), [
+      { text: 'Quiero pagar con tarjeta\nle hice uno', messageType: 'text' },
+    ])
+    const alone = decideInbound({ inboundText: 'Quiero pagar con tarjeta\nle hice uno\nfunciona?', messageType: 'text', brandFacts: facts, shortcuts })
+    assert.equal(alone.handoff?.kind, 'handoff')
+    const burstPay = run({ content: 'hola?', s: 2 }, [inbound('Quiero pagar con tarjeta\nle hice uno\nfunciona?', 0)])
+    assert.equal(burstPay.decision.handoff?.kind, 'handoff')
+    assert.equal(burstPay.decision.handoff?.reason, alone.handoff?.reason)
+    // A STOP followed by a long run of spaces / newlines is still a STOP.
+    assert.equal(run({ content: 'hola', s: 2 }, [inbound(`no me escriban más${' '.repeat(4000)}`, 0)]).optOut, true)
+    assert.equal(run({ content: 'hola', s: 2 }, [inbound(`STOP${'\n'.repeat(4000)}`, 0)]).optOut, true)
+    const t0 = Date.now()
+    run({ content: 'hola', s: 200 }, Array.from({ length: 100 }, (_, i) => inbound(`no me escriban${' '.repeat(4000)}x${i}`, i)))
+    assert.ok(Date.now() - t0 < 500, `100 adversarial bubbles took ${Date.now() - t0} ms`)
+    assert.match(read('src/lib/soft-ai/waiting-ack.ts'), /\(\\s\+por\\s\+favor\)\?\[\\s\.!\]\*\$\|/)
+  })
+
+  it('F3: the last-reply lookup is bounded by the day', () => {
+    const turn = read('src/lib/soft-ai/agent-turn.ts')
+    const fn = turn.slice(turn.indexOf('async function loadUnansweredInbound'), turn.indexOf('async function yieldsToNewerBurst'))
+    assert.match(fn, /where: \{ tenantId: input\.tenantId, conversationId: input\.conversationId, direction: 'outbound', sentAt: \{ gte: since \} \}/)
+  })
+})
+
+describe('burst hardening · Verifier r3 (an answered late job never takes over a newer job on retry)', () => {
+  it('a job whose message already has a store reply after it waits for every newer job, also one on a long retry', () => {
+    const queue = read('src/lib/soft-ai/automation-queue.ts')
+    const claim = queue.slice(queue.indexOf('async function claimRows'), queue.indexOf('export function claimBatch'))
+    assert.match(
+      claim,
+      /newer\."availableAt" <= CURRENT_TIMESTAMP \+ \$\{Prisma\.raw\(`INTERVAL '\$\{BURST_HOLD_SECONDS\} seconds'`\)\}[\s\S]{0,400}OR EXISTS \(\s+SELECT 1\s+FROM "ChatMessage" reply\s+WHERE reply\."conversationId" = current_msg\."conversationId"\s+AND reply\."tenantId" = current_msg\."tenantId"\s+AND reply\."direction" = 'outbound'\s+AND \(reply\."sentAt", reply\."id"\) > \(current_msg\."sentAt", current_msg\."id"\)/,
+    )
+  })
+})
+
+describe('burst hardening · SecureDog F6 (a dead lease never blocks a chat or the cron)', () => {
+  it('the single-flight conflict from $queryRaw (P2010 / 23505) is recognised, as is P2002; nothing else', async () => {
+    const { Prisma } = await import('@prisma/client')
+    const { isSingleFlightConflict } = await import('@/lib/soft-ai/automation-queue')
+    const err = (code: string, meta?: Record<string, unknown>) =>
+      new Prisma.PrismaClientKnownRequestError('Key ("conversationId")=(c1) already exists.', { code, clientVersion: 'test', meta })
+    assert.equal(isSingleFlightConflict(err('P2010', { code: '23505' })), true)
+    assert.equal(isSingleFlightConflict(err('P2002')), true)
+    assert.equal(isSingleFlightConflict(err('P2010', { code: '40001' })), false)
+    assert.equal(isSingleFlightConflict(err('P2010')), false)
+    assert.equal(isSingleFlightConflict(new Error('unique')), false)
+  })
+
+  it('every claim first releases leases dead for 15 s (retry, or failed once out of attempts); a conflict defers, never throws', () => {
+    const queue = read('src/lib/soft-ai/automation-queue.ts')
+    const release = queue.slice(queue.indexOf('async function releaseDeadLeases'), queue.indexOf('async function claimRows'))
+    assert.match(release, /SET "status" = CASE WHEN "attempts" >= \$\{MAX_ATTEMPTS\} THEN 'failed' ELSE 'retry' END/)
+    assert.match(release, /"leaseToken" = NULL,\s+"leaseExpiresAt" = NULL,/)
+    assert.match(release, /WHERE "status" = 'processing'\s+AND "leaseExpiresAt" <= CURRENT_TIMESTAMP - \$\{Prisma\.raw\(`INTERVAL '\$\{DEAD_LEASE_GRACE_SECONDS\} seconds'`\)\}/)
+    const claim = queue.slice(queue.indexOf('async function claimRows'), queue.indexOf('export function claimBatch'))
+    // A failed release never blocks the claim; no catch-all regex hides unrelated errors (SecureDog r3).
+    assert.match(claim, /await releaseDeadLeases\(\)\.catch\(\(error\) => \{[\s\S]{0,120}\}\)\s+try \{\s+const rows = await prisma\.\$queryRaw/)
+    assert.doesNotMatch(claim, /single_flight\|unique/)
+    assert.match(claim, /if \(isSingleFlightConflict\(error\)\) \{\s+if \(id\) await deferJob\(id\)\s+return \[\]/)
+    // Verifier r5: any processing sibling blocks the chat (a dead one inside the grace never empties the batch).
+    const inflight = claim.slice(claim.indexOf('FROM "ChatAutomationJob" inflight'), claim.indexOf('ORDER BY current_msg'))
+    assert.match(inflight, /AND inflight\."status" = 'processing'\s+AND inflight\."id" <> current\."id"/)
+    assert.doesNotMatch(inflight, /leaseExpiresAt/)
   })
 })

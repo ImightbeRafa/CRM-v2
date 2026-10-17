@@ -333,8 +333,10 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
             SELECT 1
             FROM "ChatAutomationJob" inflight
             WHERE inflight."conversationId" = current."conversationId"
+              -- Any processing sibling blocks, also one whose lease expired: it still holds the single-flight slot
+              -- until it reclaims itself or releaseDeadLeases frees it (Verifier r5: one dead lease inside the grace
+              -- emptied the whole cron batch).
               AND inflight."status" = 'processing'
-              AND inflight."leaseExpiresAt" > CURRENT_TIMESTAMP
               AND inflight."id" <> current."id"
           )
         ORDER BY current_msg."sentAt" DESC, current."createdAt" DESC, current."id" DESC

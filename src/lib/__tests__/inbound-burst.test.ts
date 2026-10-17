@@ -643,5 +643,9 @@ describe('burst hardening · SecureDog F6 (a dead lease never blocks a chat or t
     const claim = queue.slice(queue.indexOf('async function claimRows'), queue.indexOf('export function claimBatch'))
     assert.match(claim, /try \{\s+await releaseDeadLeases\(\)\s+const rows = await prisma\.\$queryRaw/)
     assert.match(claim, /if \(isSingleFlightConflict\(error\)\) \{\s+if \(id\) await deferJob\(id\)\s+return \[\]/)
+    // Verifier r5: any processing sibling blocks the chat (a dead one inside the grace never empties the batch).
+    const inflight = claim.slice(claim.indexOf('FROM "ChatAutomationJob" inflight'), claim.indexOf('ORDER BY current_msg'))
+    assert.match(inflight, /AND inflight\."status" = 'processing'\s+AND inflight\."id" <> current\."id"/)
+    assert.doesNotMatch(inflight, /leaseExpiresAt/)
   })
 })

@@ -57,6 +57,7 @@
     `failed` once out of attempts). The job then follows the normal rules. `isSingleFlightConflict` also recognises
     P2010 / 23505, so that error defers the job and returns `[]` instead of throwing.
   - Harness: 14 scenarios. The F2 timing test is tightened to 500 ms.
+- Verifier round 5: PASS WITH NOTES. Its note is fixed: inside the 15 s grace, one dead lease still emptied the cron batch for one run. The in-flight check now counts any `processing` sibling, so it blocks only its own chat. Harness: 15 scenarios.
   - Known: F1 also keeps a bubble typed while a non-yielding turn was writing its reply (before, it was dropped
     unchecked). That bubble now gets its own reply after the newer one, up to a cron minute later.
 - Left open:

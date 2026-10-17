@@ -184,6 +184,34 @@ export function afterHoursPromptLine(state: AfterHoursState): string | null {
   )
 }
 
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * luna-10 (Rafael 2026-10-17): at night a transparent agent ALWAYS introduces itself as the virtual assistant —
+ * code-owned (the model followed the prompt line in 2 of 4 night replies). The model's own self-introduction
+ * ("¡Hola! Soy Sofi de PatchHouse CR 🌿") is rewritten in place; with none, the intro goes first only when nobody has
+ * written to the customer yet in this chat. Day, discreet, no name, or already says "asistente virtual": unchanged.
+ */
+export function withNightIntro(
+  text: string,
+  state: Pick<AfterHoursState, 'afterHours' | 'transparent'>,
+  who: { name: string | null | undefined; store: string | null | undefined; introduced: boolean },
+): string {
+  const name = (who.name || '').trim()
+  if (!state.afterHours || !state.transparent || !name) return text
+  const t = (text || '').trim()
+  if (!t || /asistente virtual/iu.test(t)) return text
+  const store = (who.store || '').trim()
+  const intro = `¡Hola! Soy ${name}, asistente virtual${store ? ` de ${store}` : ''} 🌙`
+  const selfIntro = new RegExp(`^(?:¡?\\s*(?:hola|buenas(?:\\s+noches)?)\\s*[!,.]?\\s*)?soy\\s+${escapeRe(name)}\\b[^.!?\\n\\p{Extended_Pictographic}]*[.!]?[ \\t]*(?:[\\p{Extended_Pictographic}\\uFE0F][ \\t]*)*`, 'iu')
+  if (selfIntro.test(t)) {
+    const rest = t.replace(selfIntro, '').trim()
+    return rest ? `${intro}\n\n${rest}` : intro
+  }
+  if (who.introduced) return text
+  return `${intro}\n\n${t}`
+}
+
 /** Hand-off reasons whose customer text gets the after-hours variant (owner_reply keeps the owner's own text). */
 const PAYMENT_REASONS = new Set(['payment'])
 const ORDER_REASONS = new Set(['order_ready', 'order_ready_cash'])
@@ -262,7 +290,8 @@ export function applyAfterHoursText(
     if (!kind) return plan.text
     // A "no lo tengo" answer (unknown_answer) keeps what the agent did know, then says when the team writes.
     if (kind === 'person' && (plan.handoff.reason === 'human_request' || plan.handoff.reason === 'unknown_answer') && text && text !== opts.safeReview.trim()) {
-      body = `${text}\n${afterHoursTeamLine(state.label)}`
+      // luna-10: the model already said when the team writes ("…hoy a las 8:00 a. m.") → never a second line.
+      body = text.includes(state.label.replace(/\.$/, '')) ? text : `${text}\n${afterHoursTeamLine(state.label)}`
     } else {
       const line = afterHoursHandoffLine(kind, state.label, state.transparent)
       const keep = kind === 'order' && text && text !== opts.safeReview.trim()

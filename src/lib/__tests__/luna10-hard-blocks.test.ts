@@ -9,7 +9,7 @@ import { decideWaitingAck, waitingAckKey, waitingAckText } from '../soft-ai/wait
 import { customerAsksAgain, dropRepeatedParts, isNearRepeat } from '../soft-ai/repeat-guard'
 import { SHIPPING_DATA_LIST } from '../soft-ai/order-data-list'
 import { parseSalesRules } from '../soft-ai/agent-sales-setup'
-import { afterHoursHandoffLine, afterHoursPromptLine, afterHoursState } from '../soft-ai/business-hours'
+import { afterHoursHandoffLine, afterHoursPromptLine, afterHoursState, applyAfterHoursText, withNightIntro } from '../soft-ai/business-hours'
 import { HANDOFF_REASON_LABELS } from '../workspace-notifications'
 
 describe('results_claim (no promised effects)', () => {
@@ -146,5 +146,29 @@ describe('night disclosure (Rafael 2026-10-17: "Hola, soy Sofi, asistente virtua
     assert.doesNotMatch(afterHoursHandoffLine('person', night.label, true), /autom[aá]tico/)
     const discreet = afterHoursState({ enabled: true, timezone: 'America/Costa_Rica', windows: [{ day: 1, open: '08:00', close: '20:00' }], afterHoursNote: null }, new Date('2026-10-20T04:00:00Z'))
     assert.doesNotMatch(afterHoursPromptLine(discreet) || '', /asistente virtual/)
+  })
+})
+
+describe('night intro (code-owned "asistente virtual")', () => {
+  const N = { afterHours: true, transparent: true }
+  const who = { name: 'Sofi', store: 'PatchHouse CR', introduced: false }
+  it('rewrites the model self-introduction in place', () => {
+    assert.equal(withNightIntro('¡Hola! Soy Sofi de PatchHouse CR 🌿\n\n🧠 Focus trae melena de león.', N, who), '¡Hola! Soy Sofi, asistente virtual de PatchHouse CR 🌙\n\n🧠 Focus trae melena de león.')
+    assert.equal(withNightIntro('Hola, soy Sofi de PatchHouse CR 🌿 Para ansiedad...', N, who), '¡Hola! Soy Sofi, asistente virtual de PatchHouse CR 🌙\n\nPara ansiedad...')
+  })
+  it('first message with no greeting: intro first; chat already started: unchanged', () => {
+    assert.equal(withNightIntro('🌿 GLP-1 Patch: apoya el control del apetito.', N, who), '¡Hola! Soy Sofi, asistente virtual de PatchHouse CR 🌙\n\n🌿 GLP-1 Patch: apoya el control del apetito.')
+    assert.equal(withNightIntro('🌿 GLP-1 Patch.', N, { ...who, introduced: true }), '🌿 GLP-1 Patch.')
+  })
+  it('day, discreet, no name or already says it: unchanged', () => {
+    assert.equal(withNightIntro('¡Hola! Soy Sofi de PatchHouse CR 🌿', { afterHours: false, transparent: true }, who), '¡Hola! Soy Sofi de PatchHouse CR 🌿')
+    assert.equal(withNightIntro('¡Hola! Soy Sofi de PatchHouse CR 🌿', { afterHours: true, transparent: false }, who), '¡Hola! Soy Sofi de PatchHouse CR 🌿')
+    assert.equal(withNightIntro('x', N, { ...who, name: '' }), 'x')
+    assert.equal(withNightIntro('¡Hola! Soy Sofi, asistente virtual de PatchHouse CR 🌿 Hola', N, who), '¡Hola! Soy Sofi, asistente virtual de PatchHouse CR 🌿 Hola')
+  })
+  it('a person hand-off at night never says when the team writes twice', () => {
+    const night = afterHoursState({ enabled: true, timezone: 'America/Costa_Rica', windows: [{ day: 6, open: '08:00', close: '20:00' }], afterHoursNote: null }, new Date('2026-10-17T07:30:00Z'), { aiDisclosure: 'transparent' })
+    const text = applyAfterHoursText({ text: `¡Hola! Soy Sofi, asistente virtual de PatchHouse CR 🌿 El equipo te atiende ${night.label}`, handoff: { kind: 'handoff', reason: 'human_request' } }, night, { safeReview: 'Dame un momento y te confirmo 😊' })
+    assert.equal(text.split(night.label.replace(/\.$/, '')).length - 1, 1, text)
   })
 })

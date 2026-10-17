@@ -49,7 +49,7 @@ export function pricingVersionFor(model: string | null | undefined): string {
 }
 
 /** Bump when prompt-building code changes behavior; stored with every version snapshot. */
-export const SOFT_AI_PROMPT_CODE_VERSION = 'prompt-2026-10-02'
+export const SOFT_AI_PROMPT_CODE_VERSION = 'prompt-2026-10-17'
 
 export const DEFAULT_DAILY_TOKEN_CAP = 250_000
 export const DEFAULT_PRICING_VERSION = OPENAI_PRICING_VERSION

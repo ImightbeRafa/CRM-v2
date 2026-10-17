@@ -11,6 +11,7 @@ import {
   AFTER_HOURS_REVIEW_PREFIX,
   afterHoursPromptLine,
   afterHoursReviewLine,
+  withNightIntro,
   afterHoursState,
   applyAfterHoursText,
   DEFAULT_BUSINESS_HOURS,
@@ -164,6 +165,18 @@ function finalizePlannedText(plan: TurnDeliveryPlan, payload: JobPayload, trigge
   const text = applyAfterHoursText(plan, hours, AFTER_HOURS_TEXT_OPTS)
   if (plan.handoff?.kind === 'handoff') return text
   return withDelayApology(text, { sweep: Boolean(payload.sweep), messageAgeMs: Date.now() - triggerSentAt.getTime() })
+}
+
+/** luna-10 night intro: the agent's first name, the store, and whether anyone already wrote to this customer. */
+function nightIntroWho(
+  agent: { introductionNames?: string[] | null; brandFacts?: { storeName?: string | null } | null },
+  history: Array<{ direction: string }>,
+): { name: string | null; store: string | null; introduced: boolean } {
+  return {
+    name: (agent.introductionNames || []).find((n) => typeof n === 'string' && n.trim()) ?? null,
+    store: agent.brandFacts?.storeName ?? null,
+    introduced: history.some((h) => h.direction === 'outbound'),
+  }
 }
 
 /** B1 loop cap: did this chat already get the safe line in the last 30 min (another job)? */
@@ -809,7 +822,7 @@ export async function executeAgentLayerTurn(
       planDecisionDelivery({ text: decision.text, textOk: decision.textOk, handoff: decision.handoff }),
       await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
     )
-    const handledText = finalizePlannedText(plan, payload, trigger.sentAt, hours)
+    const handledText = withNightIntro(finalizePlannedText(plan, payload, trigger.sentAt, hours), hours, nightIntroWho(resolved.agent, history))
     const outputHash = hashSoftAiOutput(handledText)
     const handledMarkers: OutcomeMarkers = plannedMarkers(
       { needsHuman: decision.needsHuman, fallbackUsed: false, escalate: decision.escalate },
@@ -979,7 +992,7 @@ export async function executeAgentLayerTurn(
     }),
     await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
   )
-  const finalText = finalizePlannedText(modelPlan, payload, trigger.sentAt, hours)
+  const finalText = withNightIntro(finalizePlannedText(modelPlan, payload, trigger.sentAt, hours), hours, nightIntroWho(resolved.agent, history))
   const modelMarkers: OutcomeMarkers = plannedMarkers(
     { needsHuman, fallbackUsed: llm.fallbackUsed, escalate: llm.escalate },
     modelPlan.handoff,
@@ -2014,7 +2027,7 @@ async function runAgentTestTurnInner(input: {
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
     })
-    text = applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS)
+    text = withNightIntro(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), probarHours, nightIntroWho(runtimeAgent, input.history ?? []))
     handoff = plan.handoff
     intent = policy.intent
     shortcutKey = plan.text !== policy.text ? null : policy.purchaseSummaryAppended ? 'sys_purchase_summary' : llm.shortcutKey || null
@@ -2030,7 +2043,7 @@ async function runAgentTestTurnInner(input: {
     ]
   } else {
     const plan = planDecisionDelivery({ text: decision.text, textOk: decision.textOk, handoff: decision.handoff })
-    text = applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS)
+    text = withNightIntro(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), probarHours, nightIntroWho(runtimeAgent, input.history ?? []))
     handoff = plan.handoff
     needsHuman = decision.needsHuman
     escalate = decision.escalate

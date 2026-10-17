@@ -286,7 +286,7 @@ describe('agents2-hours: turn wiring (source)', () => {
   })
   it('Probar: in hours unless "Simular fuera de horario"; the quick check never simulates', () => {
     assert.match(turn, /const probarHours = input\.simulateAfterHours === true\s*\? await loadHoursSetup\(input\.tenantId, runtimeAgent\.id\)\.then\(\(h\) => afterHoursState\(h\.hours, new Date\(\), \{ simulate: true, aiDisclosure: h\.aiDisclosure \}\)\)\s*: IN_HOURS/)
-    assert.equal((turn.match(/text = applyAfterHoursText\(plan, probarHours, AFTER_HOURS_TEXT_OPTS\)/g) || []).length, 2)
+    assert.equal((turn.match(/text = withNightIntro\(applyAfterHoursText\(plan, probarHours, AFTER_HOURS_TEXT_OPTS\), probarHours, nightIntroWho\(runtimeAgent, input\.history \?\? \[\]\)\)/g) || []).length, 2)
     assert.doesNotMatch(read('src/lib/soft-ai/test-engine/run.ts'), /simulateAfterHours/)
     assert.match(read('src/lib/soft-ai/agent-test-schema.ts'), /simulateAfterHours: z\.boolean\(\)\.optional\(\)/)
     assert.match(read('src/app/config/agentes/AgentTestSandbox.tsx'), /Simular fuera de horario/)

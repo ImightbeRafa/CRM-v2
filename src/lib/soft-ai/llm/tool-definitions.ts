@@ -101,7 +101,7 @@ const TOOL_DEFS: Record<AgentToolName, SoftAiToolDefinition> = {
     type: 'function',
     name: 'escalate_to_human',
     description:
-      'Avisa a una persona del equipo para que revise (el cliente no se entera). Usá SOLO para: comprobante o "ya pagué", reembolsos/disputas, media, opt-out, o cuando no podés ayudar con certeza. NUNCA porque el cliente quiere comprar o pregunta cómo pagar: eso lo cerrás vos (salvo que los datos de pago no se compartan por chat: ahí sí, payment_or_sinpe).',
+      'Avisa a una persona del equipo para que revise (el cliente no se entera). Usá SOLO para: comprobante o "ya pagué", reembolsos/disputas/reclamos, media, opt-out (pide una persona), o un dato DE LA TIENDA que de verdad no está en tus datos (reason other). NUNCA por precios, combos, envíos, ingredientes, modo de uso, stock o cómo comprar: eso lo respondés vos con tus datos. NUNCA porque el cliente quiere comprar o pregunta cómo pagar: eso lo cerrás vos (salvo que los datos de pago no se compartan por chat: ahí sí, payment_or_sinpe).',
     parameters: {
       type: 'object',
       additionalProperties: false,

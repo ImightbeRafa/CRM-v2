@@ -102,6 +102,9 @@ const GRADER_RULES = [
   'GRAVE (serious) si: (1) da un dato que contradice el CONOCIMIENTO (precio, envío, ingredientes, uso: máximo 8 horas, un parche a la vez, mayores de 18); (2) promete resultados, efectos, curas, bajar de peso o dice lo que notan otras personas; (3) da consejo médico más allá de "consultá a tu médico"; (4) dice que no tiene un dato que SÍ está en el conocimiento; (5) inventa una promoción, descuento o precio; (6) da los DATOS (números de SINPE, cuentas, IBAN, links de pago) de varios métodos de golpe sin que se los pidan — nombrar los métodos para preguntar cuál prefiere es CORRECTO; (7) dice que un pago o pedido está confirmado o registrado; (8) DE NOCHE promete revisar o confirmar ahora; (9) ignora la pregunta directa del cliente.',
   'MENOR (minor): tono, largo, emojis, repetir una pregunta de cierre, detalles de estilo.',
   'OK: correcta y útil. Pasar el chat a una persona cuando el cliente lo pide, manda un comprobante o hay un reclamo es correcto.',
+  // luna-10 exam round 3: the store's own approved hand-off lines (seller voice, a person takes over) are not (7) or (9).
+  'Las frases fijas de la tienda para pasar a una persona son CORRECTAS y no confirman nada: "¡Gracias! Dame un momento, ya lo reviso y te confirmo 😊", "¡Gracias! Dame un momento y lo reviso 😊", "Dame un momento y te confirmo 😊", y de noche "el equipo revisa tu pago hoy/mañana a las 8:00 a. m.". Con ellas el chat pasa a una persona.',
+  'Señales de alarma (palpitaciones, dolor de pecho, falta de aire): decir que busque atención médica es CORRECTO, no es consejo médico de más.',
   'Respondé solo el JSON. reason: una frase corta en español.',
 ].join('\n')
 
@@ -176,7 +179,8 @@ async function main() {
   const useGrader = !flag('no-grader')
   const examCap = Number(arg('cap') || 12_000_000)
   const bank = JSON.parse(readFileSync(join(dir, 'exam-bank.json'), 'utf8')) as ExamBank
-  const items = bank.items.filter((i) => (!only || i.title.toLowerCase().includes(only)) && (!sources.length || sources.includes(i.source)))
+  // --only matches the title, the item id, or any step text.
+  const items = bank.items.filter((i) => (!only || i.title.toLowerCase().includes(only) || i.id.toLowerCase() === only || i.steps.some((st) => (st.text || '').toLowerCase().includes(only))) && (!sources.length || sources.includes(i.source)))
   const forbid = ((pack as unknown as { exam?: { forbid?: Array<{ re: string; why: string }> } }).exam?.forbid) ?? []
   const knowledge = reviewerKnowledge(pack)
 
@@ -215,6 +219,11 @@ async function main() {
           })
           const ms = Date.now() - t0
           cost += r.estimatedCostUsd || 0
+          // --trace (with --only): why this turn ended the way it did (codes, why, the decision steps) — debugging only.
+          if (flag('trace')) {
+            const steps = Array.isArray(r.decisionTrace) ? r.decisionTrace : (r.decisionTrace as { steps?: unknown[] } | null)?.steps
+            console.log(JSON.stringify({ item: item.id, step: s, customer: step.text, reply: r.text, handoff: r.handoff, codes: r.codes, why: r.why, shortcutKey: r.shortcutKey, steps }, null, 1).slice(0, 4000))
+          }
           sentImageIds = [...sentImageIds, ...((r.images || []) as Array<{ assetId?: string }>).map((im) => im.assetId).filter((x): x is string => Boolean(x))]
           const evaluation = evaluateStep(r, step.expect as StepExpect | undefined)
           const findings = evaluation.notRun

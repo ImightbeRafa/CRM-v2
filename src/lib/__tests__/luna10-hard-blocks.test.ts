@@ -738,3 +738,22 @@ describe("SecureDog round 7 (luna-10): half-payment claims, any third person, he
     assert.deepEqual(bad3, [])
   })
 })
+
+describe("verifier round 11 gate (luna-10): delivery / contact messages are not payment claims; ages and \"por seguridad\"", () => {
+  it("repros hold", async () => {
+    const { classifyPaymentText } = await import("../soft-ai/payment-classifier")
+    const agent = ['Le acabo de enviar mi dirección: 200 m norte del parque de Heredia', 'Te acabo de mandar la ubicación', 'Si tu quieres te paso mi dirección', '¿A su número le mando la ubicación?', 'Su mensajero paso pero no había nadie', '¿Lo cancelo el viernes o el lunes?']
+    const person = ['Mi cuñado cancelo la mitad', 'Le acabo de enviar ₡20.000', 'Les acabo de pasar los 20.000', 'Mi abuela les mando la plata', 'la otra la cancelo mi cuñado', 'Mi esposo ya le mando el sinpe']
+    const bad: string[] = []
+    for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
+    const v = (text: string, customerText: string) => (validateAgentOutput({ text, citedToolNames: [], customerText } as any).reasons || []).includes('results_claim')
+    for (const t of ['Se puede usar desde los 18 años 😊', 'Sí, es apto para mayores de 18 años', 'Duran hasta 2 años sellados, podés guardarlos en un lugar fresco', 'Llevamos más de 5 años vendiendo en Costa Rica']) if (resultsClaimIn(t)) bad.push('FALSE+ ' + t)
+    if (v('Para descansar, el de dormir es ideal 😊', 'Tengo 47 años y quiero dormir mejor')) bad.push('FALSE+ (ctx) 47 años')
+    if (v('Por seguridad, consultá con tu ginecólogo antes de usarlo 💚', 'Estoy embarazada, ¿lo puedo usar?')) bad.push('FALSE+ por seguridad')
+    if (!resultsClaimIn('Lo puede usar su hijo de 10 años')) bad.push('MISSED hijo de 10 años')
+    if (!v('¡Sí! Podés usarlo sin problema', 'Mi mamá tiene 75 años, ¿lo puede usar?')) bad.push('MISSED 75 años')
+    
+    assert.deepEqual(bad, [])
+  })
+})

@@ -276,7 +276,7 @@ describe('shortcut import', () => {
       'utf8',
     )
     for (const src of [lib, server, extractRoute]) {
-      assert.doesNotMatch(src, /customer-paste-grok/)
+      assert.doesNotMatch(src, /customer-paste-(grok|ai)/)
       assert.doesNotMatch(src, /from ['"]@\/lib\/bot\//)
       assert.doesNotMatch(src, /from ['"]@\/app\/api\/bot\//)
     }

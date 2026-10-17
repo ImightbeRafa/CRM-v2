@@ -66,7 +66,7 @@ describe('AI usage meter (SQL 048)', () => {
     assert.match(read('src/lib/soft-ai/agent-unlock.ts'), /usageFeature: 'agent_test'/)
     assert.match(read('src/lib/soft-ai/agent-turn.ts'), /runtimeInput\.usageFeature = input\.usageFeature \?\? 'probar'/)
     assert.match(read('src/lib/soft-ai/shortcut-import-server.ts'), /feature: 'shortcut_import'/)
-    assert.match(read('src/lib/customer-paste-grok.ts'), /feature: 'customer_paste'/)
+    assert.match(read('src/lib/customer-paste-ai.ts'), /feature: 'customer_paste'/)
   })
 
   it('every AI call site in the app records usage (5 known sites)', () => {

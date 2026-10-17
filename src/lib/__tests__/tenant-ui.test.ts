@@ -59,13 +59,17 @@ describe('Betsy v2 tenant UI', () => {
   });
 
   it('keeps AI enhancement off the order form and non-writing if the API is called', () => {
-    const server = source('src/lib/customer-paste-grok.ts');
+    // luna-10: gpt-6-luna through the inbox AI client (Grok removed from the whole site).
+    const server = source('src/lib/customer-paste-ai.ts');
     const route = source('src/app/api/ventas/customer-paste/enhance/route.ts');
     const form = source('src/app/ventas/components/EnhancedSalesForm.tsx');
     const customerForm = source('src/app/ventas/components/customerForm.tsx');
-    assert.match(server, /buildXaiResponseBody/);
-    assert.match(source('src/lib/bot/xai-responses.ts'), /store:\s*false/);
-    assert.match(server, /maxRetries:\s*0/);
+    assert.match(server, /softAiResponsesCreate/);
+    assert.match(server, /model: LUNA_CHAT_AGENT_MODEL/);
+    assert.match(server, /store: false/);
+    assert.match(source('src/lib/soft-ai/llm/client.ts'), /maxRetries: 0/);
+    assert.doesNotMatch(server + route, /from ['"]@\/lib\/bot\//);
+    assert.doesNotMatch(server + route, /XAI_|x\.ai|grok/i);
     assert.doesNotMatch(server + route, /from ['"][^'"]*(order-lifecycle|\/db|prisma|inventory|invoice)/i);
     assert.match(route, /createIdentifierRateLimit/);
     assert.match(route, /readTenantUiReadiness/);

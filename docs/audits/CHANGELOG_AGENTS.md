@@ -22,8 +22,10 @@
   - The photo review is a separate flag, so the reply keeps its images and the repeat guard, and it survives a reclaim.
   - Superseded tokens count toward the daily cap, and a superseded job always kicks the newer one.
   - The first round's "tsc clean" was wrong: the new test had type errors. Now exit 0.
-- Tests: `inbound-burst.test.ts` (22). Source-text asserts updated in chat-automation-job, luna10-hard-blocks,
-  agents2-b-sales and agents2-pace (same intent, new names). test:soft-ai 1003/1003, test:chat-harden 645/645,
+- Verifier round 2 PASS WITH NOTES; its Medium (opt-out in an earlier photo caption) fixed, and a burst photo review
+  no longer hides the "La IA no respondió" alert.
+- Tests: `inbound-burst.test.ts` (23). Source-text asserts updated in chat-automation-job, luna10-hard-blocks,
+  agents2-b-sales and agents2-pace (same intent, new names). test:soft-ai 1004/1004, test:chat-harden 645/645,
   tsc + lint clean.
 
 ## 2026-10-17 (night) — PatchHouse Instagram + WhatsApp LIVE on gpt-6-luna

@@ -199,8 +199,7 @@ describe('B1 wiring (source asserts)', () => {
     assert.match(settle, /OR: \[\{ aiMode: null \}, \{ aiMode: \{ not: 'paused' \} \}\]/)
     assert.match(settle, /await notifyHandoff\(\{/)
     assert.match(settle, /finally \{\s*\/\/[^\n]*\n\s*if \(input\.handoff\) await settleHandoff\(input\.row, input\.handoff, input\.afterHours\)/)
-    // Burst = one reply (2026-10-17): a burst photo review already alerted the team too.
-    assert.match(settle, /if \(!input\.handoff && !input\.burstMediaReview && \(result\.status === 'suggested' \|\| result\.status === 'skipped'\)\)/)
+    assert.match(settle, /if \(!input\.handoff && \(result\.status === 'suggested' \|\| result\.status === 'skipped'\)\)/)
     assert.match(turn, /import \{ notifyHandoff \} from '@\/lib\/soft-ai\/handoff-notify'/)
   })
   it('planned text is what is stored and hashed; the held model reply only in the redacted trace', () => {

@@ -153,13 +153,19 @@ export function planBurstInbound(input: {
   return single
 }
 
-/** The burst's other real text bubbles not already in the planned text: each is checked for a TRUE hand-off. */
-export function burstOtherTexts(earlier: BurstMessage[], plan: Pick<BurstInboundPlan, 'inboundText'>): string[] {
+/**
+ * The burst's other real text bubbles and photo / audio captions not already in the planned text, each with its own
+ * message type: each is checked for a TRUE hand-off (a caption "Quiero hablar con una persona" too — MEDIA-14).
+ */
+export function burstOtherTexts(
+  earlier: BurstMessage[],
+  plan: Pick<BurstInboundPlan, 'inboundText'>,
+): Array<{ text: string; messageType: string }> {
   const planned = new Set(plan.inboundText.split('\n').map((t) => t.trim()))
   return earlier
-    .filter((m) => m.direction === 'inbound' && !isMedia(m.messageType))
-    .map((m) => realText(m.content))
-    .filter((t) => t && !planned.has(t))
+    .filter((m) => m.direction === 'inbound' && m.messageType !== 'sticker')
+    .map((m) => ({ text: realText(m.content), messageType: m.messageType || 'text' }))
+    .filter((m) => m.text && !planned.has(m.text))
 }
 
 /**

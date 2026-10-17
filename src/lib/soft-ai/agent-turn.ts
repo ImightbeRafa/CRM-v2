@@ -933,8 +933,8 @@ export async function executeAgentLayerTurn(
       awaitingReceipt: mediaAwaitingReceipt(burst.messageType, history, mediaSalesContext),
       earlierCustomerTexts: earlierCustomerTexts(history),
     }),
-    burstOtherTexts(burstEarlier, burst).map((text) =>
-      decideInbound({ ...decisionBase, inboundText: text, messageType: 'text', awaitingReceipt: false, earlierCustomerTexts: [] }),
+    burstOtherTexts(burstEarlier, burst).map((other) =>
+      decideInbound({ ...decisionBase, inboundText: other.text, messageType: other.messageType, awaitingReceipt: false, earlierCustomerTexts: [] }),
     ),
   )
   decision.decisionTrace.historyCount = history.length
@@ -1329,7 +1329,8 @@ async function finishDeliveryOrSuggest(
     await settleHandoff(input.row, { kind: 'review', reason: HANDOFF_REASON.review }, input.afterHours)
   }
   // notifyHandoff already told the team: no second "La IA no respondió" alert.
-  if (!input.handoff && !input.burstMediaReview && (result.status === 'suggested' || result.status === 'skipped')) {
+  // A burst photo review alone does not say the customer got no reply: that alert still goes out.
+  if (!input.handoff && (result.status === 'suggested' || result.status === 'skipped')) {
     const turn = await prisma.chatAgentTurn.findUnique({ where: { id: input.turnId }, select: { skipReason: true } })
     void notifyAiNoReply({ tenantId: input.row.tenantId, conversationId: input.row.conversationId, reason: turn?.skipReason })
   }

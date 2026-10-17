@@ -48,7 +48,7 @@ function decideBurst(trigger: { content: string; messageType: string; s: number 
   const base = { brandFacts: facts, shortcuts }
   const decision = pickBurstDecision(
     decideInbound({ ...base, inboundText: plan.inboundText, messageType: plan.messageType, awaitingReceipt: awaitingReceipt(plan.messageType) }),
-    burstOtherTexts(earlier, plan).map((text) => decideInbound({ ...base, inboundText: text, messageType: 'text', awaitingReceipt: false, earlierCustomerTexts: [] })),
+    burstOtherTexts(earlier, plan).map((o) => decideInbound({ ...base, inboundText: o.text, messageType: o.messageType, awaitingReceipt: false, earlierCustomerTexts: [] })),
   )
   return { plan, decision }
 }
@@ -191,9 +191,20 @@ describe('burst = one reply · hand-offs in any bubble', () => {
   })
 
   it('the planned text is not checked twice; placeholders are not customer text', () => {
-    const earlier = [inbound('Que costo tiene', 0), inbound('[share]', 1), inbound('[image]', 2, 'image')]
+    const earlier = [inbound('Que costo tiene', 0), inbound('[share]', 1), inbound('[image]', 2, 'image'), inbound('hola', 3, 'sticker')]
     assert.deepEqual(burstOtherTexts(earlier, { inboundText: 'Que costo tiene' }), [])
-    assert.deepEqual(burstOtherTexts(earlier, { inboundText: 'otra cosa' }), ['Que costo tiene'])
+    assert.deepEqual(burstOtherTexts(earlier, { inboundText: 'otra cosa' }), [{ text: 'Que costo tiene', messageType: 'text' }])
+  })
+
+  it('Verifier r2 #1: a photo captioned "Quiero hablar con una persona" + "hola?" still goes to a person (MEDIA-14)', () => {
+    const { plan, decision } = decideBurst({ content: 'hola?', messageType: 'text', s: 2 }, [inbound('Quiero hablar con una persona', 0, 'image')])
+    assert.equal(plan.reason, 'text_with_media')
+    assert.equal(decision.shortcutKey, 'sys_handoff_optout')
+    assert.deepEqual(decision.handoff, { kind: 'handoff', reason: 'human_request' })
+    // A plain caption is no hand-off: the text is answered, the photo goes to review.
+    const plain = decideBurst({ content: 'hola?', messageType: 'text', s: 2 }, [inbound('mirá este', 0, 'image')])
+    assert.equal(plain.decision.handled, false)
+    assert.equal(plain.plan.mediaReview, true)
   })
 })
 

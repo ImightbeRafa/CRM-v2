@@ -348,3 +348,23 @@ describe('verifier round 4 (luna-10): payment chain probes', () => {
     assert.deepEqual(bad, [])
   })
 })
+
+describe('SecureDog round 3 (luna-10): INT-136..139', () => {
+  it('payment questions vs claims / refunds / link status (31 probes)', async () => {
+    const { classifyPaymentText } = await import('../soft-ai/payment-classifier')
+    const person = ['¿Puedo hacerles un sinpe? Ya lo envié', '¿Puedo hacerles un sinpe? ya se lo mandé', 'puedo hacerle un sinpe? ya está hecho', '¿Se puede hacer un sinpe? ya lo realicé', '¿Puedo hacerte un sinpe? lo mandamos hoy', '¿Podría hacerle un sinpe? lo envié desde la cuenta de mi mamá', '¿Pueden hacer un sinpe a mi cuenta? el producto llegó dañado', '¿Me pueden hacer un sinpe con lo que sobró?', '¿Se puede hacer un sinpe de vuelta? no me quedó la talla', 'Ya usé el link de pago', 'Ya completé el link de pago', 'El link de pago ya lo usé', 'Tienes link de pago? ya lo usé', 'Me rebotó el link de pago', 'El link de pago no me funciona', 'contra entrega? el sinpe salió ayer', 'El depósito ya está', '¿Les puedo mandar el sinpe por acá?', 'ya les puedo enviar el sinpe?', 'te mandé el comprobante', 'ya pagué', '¿Ya les llegó mi sinpe?', 'hice un sinpe de 15 mil']
+    const agent = ['Hola, necesito comprar unos parches de glp-1, puedo hacerles un sinpe y mandar un flash a recogerlos?', '¿Tienes link de pago?', '¿Me pasás el link de pago?', '¿Puedo hacerles una transferencia?', '¿Cómo puedo pagar?', 'Se puede pagar con tarjeta?', '¿Hacen contra entrega en Cartago?', 'Puedo pagar contra entrega?']
+    const bad: string[] = []
+    for (const t of person) { const c = classifyPaymentText(t); if (c !== 'payment_proof_or_risk') bad.push(`PERSON expected: "${t}" → ${c}`) }
+    for (const t of agent) { const c = classifyPaymentText(t); if (c === 'payment_proof_or_risk') bad.push(`AGENT expected: "${t}" → ${c}`) }
+    console.log(bad.length ? bad.join('\n') : `ALL OK (${person.length} person, ${agent.length} agent)`)
+    assert.deepEqual(bad, [])
+  })
+  it('INT-138: safety assurances are held; doctor advice passes', () => {
+    const bad: string[] = []
+    for (const t of ['Es seguro en el embarazo 😊', 'Son 100% seguros para niños', 'No tiene efectos secundarios', 'no causa ningún riesgo', 'Podés usarlo durante la lactancia sin problema']) if (!resultsClaimIn(t)) bad.push('MISSED ' + t)
+    for (const t of ['Durante el embarazo, consultá con tu médico antes de usarlo', 'Con piel sensible puede haber enrojecimiento; si pasa, retiralo', 'Es un suplemento de bienestar, no un medicamento.', 'El pago es seguro con tarjeta', 'El envío es seguro y llega en 2 a 5 días']) if (resultsClaimIn(t)) bad.push('FALSE+ ' + t)
+    assert.deepEqual(bad, [])
+    assert.match(fs.readFileSync('src/lib/soft-ai/llm/tool-definitions.ts', 'utf8'), /por ejemplo: dolor de pecho/)
+  })
+})

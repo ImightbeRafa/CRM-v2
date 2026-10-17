@@ -692,7 +692,7 @@ const REPAIR_REASON_TEXT: Record<string, string> = {
   style_too_long: 'quedó muy largo',
   foreign_link: 'pusiste un enlace que no es del sitio del negocio (no pongas enlaces)',
   results_claim:
-    'prometiste un resultado o efecto (cambios, en cuántos días, lo que notan otras personas, curar o bajar de peso); decí solo los ingredientes y el modo de uso de los datos del negocio, y que cada organismo responde diferente',
+    'prometiste un resultado o efecto (cambios, en cuántos días, lo que notan otras personas, curar o bajar de peso) o aseguraste que es seguro / sin efectos secundarios; decí solo los ingredientes y el modo de uso de los datos del negocio, que cada organismo responde diferente y que ante embarazo, lactancia, una condición o medicamentos consulte a su médico',
 }
 
 /** Rewrite request (B7): only reason names from code, never customer text. */

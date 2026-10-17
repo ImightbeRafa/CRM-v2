@@ -366,6 +366,50 @@ export function hasHardPaymentClaim(text: string): boolean {
   )
 }
 
+/* ---- SecureDog round 8 release gate: live-equivalence (D1 can never answer a payment message live hands off, unless it is a closed shape) ---- */
+/** Live e2b9fd2c exits, verbatim: when one of these matches, live answers too and plainOr (stricter) is enough. */
+const LIVE_COD_RE = /(?<![\p{L}])(contra\s?entrega|pag(o|ar)\s+(al\s+recibir|cuando\s+(lo\s+|la\s+|me\s+)?(recib|lleg))|pago\s+en\s+efectivo\s+al)/iu
+const LIVE_PAYMENT_RE = /\b(sinpe|transferencia|pago|pagar|comprobante|ib[aá]n|cuenta\s*banc|deposit[oa]|efectivo\s*contra)\b/i
+const LIVE_PAYMENT_QUESTION_RE = /(?<![\p{L}])((puedo|se\s+puede|pued[eo]n|aceptan|hay\s+que|tengo\s+que|debo)(\s+\p{L}+){0,2}\s+(pagar|pago|pagarles|pagarte)|(c[oó]mo|cu[aá]ndo|d[oó]nde|qu[eé]\s+formas?\s+de)(\s+\p{L}+){0,2}\s+(pago|pagar|se\s+paga|pagos)|(reciben|tienen|aceptan|usan|trabajan\s+con)\s+(sinpe|transferencias?|tarjetas?|efectivo))(?![\p{L}])/iu
+const LIVE_INFO_Q_RE = /(adelantad|anticipad|con\s+qu[eé]\s+banco|qu[eé]\s+bancos?|a\s+qu[eé]\s+(n[uú]mero|cuenta)|aceptan\s+(tarjetas?|sinpe|transferencias?|efectivo)|se\s+puede\s+pagar\s+con|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|cu[aá]ndo\s+(se\s+)?paga|pago\s+al\s+recibir|pagar\s+al\s+recibir)/iu
+function liveWouldAnswer(v: string): boolean {
+  if (LIVE_COD_RE.test(v) || INFO_CUE_RE.test(v)) return true
+  if (!LIVE_PAYMENT_RE.test(v)) return true
+  if (LIVE_PAYMENT_QUESTION_RE.test(v)) return true
+  return /[?¿]/.test(v) && LIVE_INFO_Q_RE.test(v) && !PAYMENT_STATUS_CUE_RE.test(v)
+}
+const C_METHOD = String.raw`(?:sinpe(?:\s+m[oó]vil)?|transferencia|tarjeta(?:\s+de\s+(?:cr[eé]dito|d[eé]bito))?|efectivo|link(?:\s+de\s+pago)?|contra\s*entrega)`
+const C_WHEN = String.raw`(?:hoy|ma[nñ]ana|ahorita|ahora|m[aá]s\s+tarde|luego|en\s+un\s+rato|en\s+la\s+(?:ma[nñ]ana|tarde|noche)|hoy\s+en\s+la\s+(?:ma[nñ]ana|tarde|noche)|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)|al\s+recibir(?:lo|la)?|cuando\s+(?:me\s+)?(?:llegue|lo\s+reciba|la\s+reciba))`
+const C_WHAT = String.raw`(?:el\s+pedido|el\s+env[ií]o|todo|eso|el\s+combo|los\s+parches|el\s+parche|(?:los|las)\s+(?:dos|tres|\d))`
+const C_HEAD = String.raw`(?:(?:te|le|les)\s+pago|pago|(?:quiero|quisiera|voy\s+a|vamos\s+a|prefiero|puedo|necesito|me\s+gustar[ií]a|tengo\s+que|hay\s+que)\s+pagar(?:te|le|les)?|(?:te|le|les)\s+pagar[ií]a|(?:ya\s+)?(?:lo\s+|la\s+)?(?:tengo|estoy)\s+list[oa]\s+para\s+pagar|dame\s+la\s+info(?:rmaci[oó]n)?\s+para\s+pagar)`
+const C_INTENT_RE = new RegExp(String.raw`^(?:y\s+)?` + C_HEAD + String.raw`(?:\s+` + C_WHAT + String.raw`)?(?:\s+(?:por|con|en)\s+` + C_METHOD + String.raw`)?(?:\s+` + C_WHEN + String.raw`)?(?:\s+(?:por|con|en)\s+` + C_METHOD + String.raw`)?(?:\s*,?\s*(?:porfa|por\s+favor|gracias))?$`, 'iu')
+const C_QUESTION_RE = /^(?:y\s+)?(?:(?:me\s+(?:pas[aá]s|pasa|pasan|das|da|dan|envi[aá]s|mand[aá]s|pod[eé]s\s+pasar))\s+(?:el\s+n[uú]mero|los\s+datos|la\s+cuenta|la\s+info(?:rmaci[oó]n)?)|cu[aá]l\s+es\s+(?:el\s+|la\s+)?(?:n[uú]mero|sinpe|cuenta|iban)|a\s+qu[eé]\s+(?:n[uú]mero|cuenta)|(?:c[oó]mo|cu[aá]ndo|d[oó]nde|por\s+d[oó]nde)\s+(?:les\s+|te\s+|le\s+|lo\s+)?(?:pago|pagamos|se\s+paga)|el\s+pago\s+tiene\s+que\s+estar\s+hecho\s+antes\s+del\s+env[ií]o|el\s+pedido\s+es\s+enviado\s+despu[eé]s\s+del\s+pago)(?:\s+(?:de|del|para)\s+(?:sinpe|pagar|el\s+pago|la\s+transferencia|el\s+env[ií]o|el\s+pedido))?(?:\s*,?\s*(?:porfa|por\s+favor))?$/iu
+/** Every sentence is a greeting / thanks / "quiero comprar…", a closed intent, a closed payment question, a closed choice,
+ *  or a product / order question with no payment word at all ("¿Me lo tienen listo para el sábado?"). */
+function closedPaymentMessage(value: string): boolean {
+  const v = clean(value).replace(LEADING_LISTO_RE, '')
+  if (!v.trim() || v.length > 200) return false
+  const raw = v.replace(/¿/gu, '\u0001¿').match(/[^.!?\n\u0001]+[.!?\n\u0001]*/gu) ?? []
+  const segs = raw.map((x) => ({ q: /\?/u.test(x), t: x.replace(/^[\s¿¡,]+/u, '').replace(/[\s?!.,\u0001]+$/u, '').trim() })).filter((x) => x.t)
+  return segs.length > 0 && segs.every(({ q, t }) => {
+    const body = t.replace(LEADING_GREETING_RE, '')
+    if (OK_PREFIX_RE.test(t) || C_INTENT_RE.test(body) || C_QUESTION_RE.test(body) || Boolean(paymentChoiceGrammar(body))) return true
+    if (isPlainFutureSinpeQuestion(t + '?') || isPlainPaymentLinkQuestion(t + '?')) return true
+    return q && !PAY_STATEMENT_RE.test(t) && !hasPastOrDoneWord(t, true)
+  })
+}
+/**
+ * The agent-side exit (live-equivalence gate). Where live e2b9fd2c answers too, D1 answers a plain ask (isPlainAskMessage,
+ * as before the round-8 guard) — never worse than live. Where live hands off, D1 answers only a closed message: every
+ * sentence a greeting / "quiero comprar…", a closed intent, a closed payment question or choice, or a product question with
+ * no payment word — so nothing ("…, Juan les deposito una parte") can ride along.
+ */
+function agentExit(value: string, cls: PaymentClassification): PaymentClassification {
+  if (liveWouldAnswer(value)) return isPlainAskMessage(value) ? cls : 'payment_proof_or_risk'
+  return closedPaymentMessage(value) ? cls : 'payment_proof_or_risk'
+}
+/* ---- end live-equivalence gate ---- */
+
 export function classifyPaymentText(
   text: string,
   /** The store's method question is pending (sales-state): an exact method choice is then a sales answer. */
@@ -394,7 +438,7 @@ export function classifyPaymentText(
     return 'payment_proof_or_risk'
   }
   if (COD_QUESTION_RE.test(value)) {
-    return plainOr(value, 'non_payment')
+    return agentExit(value, 'non_payment')
   }
   // The store asked "¿Cómo preferís pagar?": an exact choice ("SINPE", "Por SINPE está bien") or a choice + a
   // logistics phrase ("Por sinpe y retiro en tienda") is a sales answer — only after every claim check above.
@@ -411,7 +455,7 @@ export function classifyPaymentText(
   // Verifier round 8: "¿Puedo pagar con link de pago?" is a plain ask; only a failure word or a non-plain message hands off.
   if (PAYMENT_LINK_WORDS_RE.test(value) && (LINK_FAILURE_RE.test(value) || (PAY_LINK_PHRASE_RE.test(value) && !isPlainAskMessage(value)))) return 'payment_proof_or_risk'
   // SecureDog round 5: the intent path too answers only a plain ask (a leading "listo," is an acknowledgement).
-  if (isPaymentIntentText(value) && !INFO_CUE_RE.test(value)) return plainOr(value.replace(LEADING_LISTO_RE, ''), 'non_payment')
+  if (isPaymentIntentText(value) && !INFO_CUE_RE.test(value)) return agentExit(value.replace(LEADING_LISTO_RE, ''), 'non_payment')
   // Only after an "ok / listo" and with "por / con" ("Lista, ¿por sinpe?"); a bare "sinpe?" stays ambiguous (a person).
   if (
     /[?¿]/.test(value) &&
@@ -425,19 +469,19 @@ export function classifyPaymentText(
   // SecureDog r4: a link question that is NOT plain ("¿tienes link de pago? me rechazó la tarjeta") goes to a person,
   // never down to the generic "tarjeta / transferencia" info cue.
   if (INFO_CUE_RE.test(value)) {
-    return plainOr(value, 'payment_info_safe')
+    return agentExit(value, 'payment_info_safe')
   }
   if (isPlainFutureSinpeQuestion(value)) return 'non_payment'
   // An explicit "how / can I pay" question ("¿puedo pagar en efectivo?", "¿cuándo se paga?") is answered by the agent
   // under the fixed payment rules; everything else with payment words stays with a person (fail closed).
   if (PAYMENT_RE.test(value) && PAYMENT_QUESTION_RE.test(value)) {
-    return plainOr(value, 'non_payment')
+    return agentExit(value, 'non_payment')
   }
   // B5 (Agentes IA 2.0), narrowed after SecureDog INT-93: ONLY an explicit list of info questions reaches the agent
   // ("¿el pago es por adelantado?", "¿con qué banco es el sinpe?", "¿aceptan tarjeta?") and never one that asks about
   // the state of a payment ("¿se acreditó el pago?", "¿mi sinpe es válido?"). Everything else stays with a person.
   if (PAYMENT_RE.test(value) && isPaymentInfoQuestion(value)) {
-    return plainOr(value, 'non_payment')
+    return agentExit(value, 'non_payment')
   }
   if (PAYMENT_RE.test(value)) {
     return 'payment_proof_or_risk'

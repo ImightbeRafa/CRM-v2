@@ -386,6 +386,10 @@ function liveAssurances(s: string, referral: boolean): string[] {
     if (!HARM_WORD_RE.test(m[0]) && NEGATED_BEFORE_RE.test(clause)) continue
     if (referral && INDIRECT_BEFORE_RE.test(clause)) continue
     if (WEAK_ASSURANCE_RE.test(m[0]) && POSSIBILITY_AFTER_RE.test(s.slice(idx + m[0].length))) continue
+    if (WEAK_ASSURANCE_RE.test(m[0]) && referral && /(?<![\p{L}])(?:m[eé]dic[oa]|doctor\p{L}*|ginec\p{L}*|pediatra|farmac[eé]utic\p{L}*|[eé]l|ella)\s+(?:\p{L}+\s+){0,3}$/iu.test(clause)) continue
+    // "¡Perfecto! ¿A qué provincia?": the interjection is not "perfect for you".
+    if (/^perfect/iu.test(m[0]) && (!clause.trim() || /^\s*[!,.]/u.test(s.slice(idx + m[0].length)))) continue
+    if (/(?<![\p{L}])no\s+(?:te\s+|le\s+|les\s+)?(?:puedo|podemos|sabr[ií]a|sabemos|conocemos)\s+(?:asegurar|garantizar|confirmar|decir)?/iu.test(s.slice(0, idx))) continue
     out.push(m[0])
   }
   return out
@@ -415,11 +419,14 @@ export function healthAssuranceIn(text: string, opts: { instructions?: boolean }
 /** To a health question (pregnancy, medication, condition) any non-exempt "sí / podés / sin problema" is a promise. */
 export function healthContextAssurance(reply: string, customerText: string): string | null {
   const c = (customerText || '').normalize('NFKC').replace(NOT_A_GROUP_RE, ' ')
-  if (!HEALTH_GROUP_RE.test(c) && !/(?<![\p{L}])(?:segur\p{L}*|riesgo\p{L}*|da[nñ]o|peligro\p{L}*|efectos?\s+secundarios?)(?![\p{L}])/iu.test(c)) return null
+  // Verifier round 10: "¿Es seguro comprar por aquí?" / "¿hay riesgo de que se pierda el paquete?" are about paying or
+  // shipping — the bare safety words count only when the customer is not asking about money or delivery.
+  const safetyWords = /(?<![\p{L}])(?:segur\p{L}*|riesgo\p{L}*|da[nñ]o|peligro\p{L}*|efectos?\s+secundarios?)(?![\p{L}])/iu.test(c) && !MONEY_OR_SHIPPING_RE.test(c)
+  if (!HEALTH_GROUP_RE.test(c) && !safetyWords) return null
   const t = (reply || '').normalize('NFKC')
   const referral = HEALTH_REFERRAL_RE.test(t)
   // "¡Claro! Podés usarlo sin problema": the "sí / claro" may sit in its own sentence.
-  const affirmative = /(?<![\p{L}])(?:s[ií]|claro|dale|obvio|por\s+supuesto)(?![\p{L}])/iu.test(t)
+  const affirmative = /(?<![\p{L}])(?:sí|si(?=\s*[,.!😊🙌💚]|\s*$)|claro|dale|obvio|por\s+supuesto)(?![\p{L}])/iu.test(t)
   for (const s of t.split(/(?<=[.!?\n;])\s*/u).filter((x) => x.trim())) {
     if (NO_RISK_RE.test(s)) return s.trim()
     const hits = liveAssurances(s, referral)

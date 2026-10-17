@@ -68,7 +68,8 @@ const CLAIM_CUE_RE = new RegExp(
       String.raw`(?:esposo|esposa|marido|mam[aá]|mami|pap[aá]|papi|herman[oa]|novi[oa]|hij[oa]|amig[oa]|suegr[oa]|t[ií][oa]|prim[oa]|jefe|jefa)\s+(?:ya\s+)?(?:se\s+)?(?:le\s+|les\s+|te\s+|lo\s+|la\s+|me\s+)?(?:pag|deposit|transfiri|transfer|abon|cancel|mand|pas|envi|sinpe|sinpi|encarg|hiz|realiz)[oó]`,
       String.raw`(?:he|ha|has|hemos|han)\s+(?:ya\s+)?(?:pagado|transferido|depositado|cancelado|abonado|enviado|mandado|pasado|sinpeado|sinpiado|hecho\s+(?:el|la|un|una)\s+(?:pago|sinpe|transferencia|dep[oó]sito))`,
       String.raw`(?:les?|te)\s+(?:cae|caer[aá]|va\s+a\s+caer)\s+(?:el\s+|la\s+)?(?:sinpe|pago|dep[oó]sito|plata|transferencia)`,
-      String.raw`(?:me\s+)?(?:sale|salen|aparece)\s+(?:como\s+)?(?:rechazad[oa]|declinad[oa])|me\s+(?:la\s+|lo\s+)?(?:rechaz|declin)[oó]`,
+      // Verifier round 10: not a hypothetical ("¿Y si la tarjeta sale rechazada?", "¿qué pasa si me sale rechazada?").
+      String.raw`(?<!(?:si|cuando)\s(?:\p{L}+\s){0,3})(?:me\s+)?(?:sale|salen|aparece)\s+(?:como\s+)?(?:rechazad[oa]|declinad[oa])|me\s+(?:la\s+|lo\s+)?(?:rechaz|declin)[oó]`,
       // Verifier round 8: "la plata ya está", "le di la plata al mensajero".
       String.raw`(?:plata|platica|dinero|pago|sinpe|transferencia|dep[oó]sito|adelanto)\s+ya\s+est[aá]|(?:le|les|te)?\s*di\s+(?:la\s+plata|el\s+dinero|el\s+pago|la\s+platica)`,
       String.raw`pagaron|depositaron|transfirieron|cancelaron|sinpearon|sinpeamos|sinpiaron|sinpiamos|sinpe[eé]|sinpi[eé]|sinpe[oó]|sinpi[oó]|(hicimos|hicieron|mandamos|mandaron|enviamos|enviaron)\s+(el|la|un|una)\s+(sinpe|pago|dep[oó]sito|transferencia)`,
@@ -201,7 +202,7 @@ function hasPastOrDoneWord(segment: string, question: boolean): boolean {
   if (PAST_OR_DONE_RE.test(s)) return true
   // Verifier round 9: outside a question, a done-verb is a claim even with no payment noun ("¿Aceptan sinpe? Le hice
   // uno", "Le tiré hace un toque", "Contra entrega se lo di al mensajero", "Te lo pase en la mañana").
-  if (!question && /(?<![\p{L}])(?:hice|hizo|hicimos|hicieron|di|d[ií]|dimos|dieron|tir[eé]|gir[eé]|mand[eé]|envi[eé]|pas[eé]|realic[eé]|deposit[eé]|transfer[ií])(?![\p{L}])/iu.test(s)) return true
+  if (!question && /(?<![\p{L}])(?:hice|hizo|hicimos|hicieron|di|d[ií]|dimos|dieron|tir[eé]|gir[eé]|mand[eé]|envi[eé]|pas[eé]|realic[eé]|deposit[eé]|transfer[ií])(?![\p{L}])/iu.test(s.replace(/(?<![\p{L}])(?:que\s+)?(?:me|nos)\s+(?:l[oa]s?\s+)?(?:mande|envie|pase)(?![\p{L}])|(?<![\p{L}])que\s+(?:se\s+)?(?:l[oa]s?\s+)?(?:mande|envie|pase)(?![\p{L}])/giu, ' '))) return true
   // "¿Cuándo está listo?", "¿Son hechos a mano?", "¿cuánto tarda en ser enviado?": inside a QUESTION a completion word
   // is about the order; outside one ("…? hecho", "listo, ya la pasé") it is a claim. ✅ ✔ ☑ are never a question.
   // "listo para pagar" = ready to pay (not done).
@@ -233,15 +234,18 @@ export function isPlainAskMessage(value: string): boolean {
   const v = clean(value).replace(/^\s*(?:(?:ok|okay|dale|bueno|perfecto)[\s,.!]+)?list[oa][\s,.!]+(?=\S)/iu, '')
   if (!v.trim() || v.length > 300) return false
   // SecureDog round 6: "¿" opens a new sentence too ("Pagado, ¿cómo pago el envío?" = "Pagado." + "¿cómo pago…?").
-  const segments = (v.replace(/¿/gu, '\n¿').match(/[^.!?\n]+[.!?\n]*/gu) ?? []).map((raw) => raw.replace(/^[\s¿¡,]+/u, '').trim())
+  const segments = (v.replace(/¿/gu, '\u0001¿').match(/[^.!?\n\u0001]+[.!?\n\u0001]*/gu) ?? []).map((raw) => raw.replace(/^[\s¿¡,]+/u, '').trim())
   if (!segments.length) return false
   // Verifier round 8: every sentence is checked for a claim, then must be a greeting / thanks, a question, a request
   // ("quiero pagar con tarjeta", "pago contra entrega", wherever it sits) or plain context with no payment word
   // ("Tengo una duda.", "Vivo en Heredia.", "Ana Rojas") — a thanks after the ask no longer hides it.
-  return segments.every((seg) => {
+  return segments.every((seg0) => {
+    const lead = /\u0001$/u.test(seg0)
+    const seg = seg0.replace(/[\s,\u0001]+$/u, '')
     if (!seg || EMPTY_TAIL_RE.test(seg) || OK_PREFIX_RE.test(seg)) return true
     const question = /\?[\s?!.]*$/u.test(seg)
     if (hasPastOrDoneWord(seg, question)) return false
+    if (lead && !/(?<![\d-])\d{1,3}(?:[.,]\d{3})+(?![\d-])|\d+\s*(?:mil|k|rojos|colones)(?![\p{L}])|₡/iu.test(seg) && !/(?<![\p{L}])(?:no\s+(?:me\s+)?(?:pasa|pas[oó]|funciona\p{L}*|sirv\p{L}*|sirve|carga|abre|entra|deja|acept\p{L}*)|rechaz\p{L}*|declin\p{L}*|error|fall\p{L}*|cargo\p{L}*|cobr\p{L}*|recibo|comprobante\p{L}*|voucher|abon\p{L}*|di[oó]|dieron|dimos|aparec\p{L}*|sale|sali[oó]|resolv\p{L}*|arregl\p{L}*|encarg\p{L}*|mand[oó]|envi[oó]|pas[oó]|hiz[oó]|lleg[oó]|cay[oó]|entr[oó]|ya|mitad|resto|adelanto|saldo)(?![\p{L}])/iu.test(seg)) return true
     if (question) return true
     const body = seg.replace(LEADING_GREETING_RE, '')
     return ASK_START_RE.test(body) || !PAY_STATEMENT_RE.test(body)
@@ -293,6 +297,26 @@ export function hasPaymentRiskCue(text: string): boolean {
 const SENT_AMOUNT_CLAIM_RE =
   // SecureDog round 6: plural / third person and dotted thousands ("Ya les pasamos 15.000", "Te mandé 20.000").
   /(?<![\p{L}])(envi[eé]|mand[eé]|pas[eé]|deposit[eé]|transfer[ií]|pagu[eé]|hice|pasamos|mandamos|enviamos|depositamos|pasaron|mandaron|enviaron|depositaron|pas[oó]|mand[oó]|envi[oó]|deposit[oó]|transfiri[oó])(?:\s+\p{L}+){0,2}?\s+(?:₡\s?\d|\d{1,3}(?:[.,\s]\d{3})+|\d+(?:[.,\s]\d{3})*\s*(?:mil|k|colones|rojos)(?![\p{L}])|\d{4,})/iu
+
+/**
+ * Verifier round 10: an EARLIER message of a burst counts only for a real claim (a receipt, "ya pagué", a status, a
+ * completion, a done-verb about money) — never the "payment word and no question" fallback, so "Sinpe" + "gracias"
+ * after "¿Cómo preferís pagar?" or "No tengo sinpe" + "¿aceptan tarjeta?" stay answers.
+ */
+export function hasHardPaymentClaim(text: string): boolean {
+  const value = stripFormatChars((text || '').normalize('NFKC'))
+  return (
+    SENT_AMOUNT_CLAIM_RE.test(value) ||
+    PROOF_CUE_RE.test(value) ||
+    hasPaymentClaimCue(value) ||
+    CONFIRM_CUE_RE.test(value) ||
+    CONFIRM_PAYMENT_RE.test(value) ||
+    RISK_CUE_RE.test(value) ||
+    hasPaymentStatusClaim(value) ||
+    isPaymentCompletionClaim(value) ||
+    (!/\?/.test(value) && PAY_STATEMENT_RE.test(value) && hasPastOrDoneWord(value, false))
+  )
+}
 
 export function classifyPaymentText(
   text: string,

@@ -12,6 +12,7 @@ import {
 import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
 import {
   classifyPaymentText,
+  hasHardPaymentClaim,
   isCueFreePaymentChoiceText,
   isPlainPaymentLinkQuestion,
   paymentHandoffReason,
@@ -157,7 +158,8 @@ export function decideInbound(input: {
   const latestClass = classifyPaymentText(input.inboundText, {
     awaitingPaymentMethod: input.awaitingPaymentMethod === true && (!input.messageType || input.messageType === 'text'),
   })
-  const burstClaim = (input.earlierCustomerTexts || []).some((t) => classifyPaymentText(t) === 'payment_proof_or_risk')
+  // Verifier round 10: only a real claim in an earlier bubble counts ("Sinpe" + "gracias" is an answer).
+  const burstClaim = (input.earlierCustomerTexts || []).some((t) => hasHardPaymentClaim(t))
   const forced = input.forcePaymentRisk === true
   const paymentClass: PaymentClassification = burstClaim || forced ? 'payment_proof_or_risk' : latestClass
   const why = forced ? `payment_llm_check (regex: ${latestClass})` : burstClaim ? `earlier_message (latest: ${latestClass})` : null

@@ -546,6 +546,29 @@ export function isHowPayShipQuestion(text: string): boolean {
   return v.length > 0 && v.length <= 80 && HOW_PAY_SHIP_RE.test(v)
 }
 
+/**
+ * Prototipo shoppers (2026-10-18): closed pre-purchase questions that name a method — "¿Cómo hago para pedirlo y pagar
+ * por SINPE?", "Me sirve SINPE, pero ¿cuánto sería con envío?". The WHOLE message (after a greeting) must be one of these
+ * shapes; checked only after every claim check. Pure.
+ */
+const PRE_METHOD = String.raw`(?:sinpe(?:\s+m[oó]vil)?|simpe|transferencia|tarjeta|efectivo|contra\s?entrega)`
+const PRE_PURCHASE_RE = new RegExp(
+  String.raw`^(?:` +
+    String.raw`c[oó]mo\s+(?:hago|le\s+hago|puedo\s+hacer)\s+para\s+(?:pedir|comprar|ordenar|encargar)(?:lo|la|los|las)?\s+y\s+pagar(?:lo|la)?\s+(?:por|con|en)\s+${PRE_METHOD}` +
+    String.raw`|(?:me\s+sirve|prefiero|mejor|puedo\s+pagar\s+(?:por|con))\s+(?:por\s+|con\s+)?${PRE_METHOD}\s*,?\s*(?:pero\s+|y\s+)?cu[aá]nto\s+(?:ser[ií]a|es|queda|sale|saldr[ií]a|quedar[ií]a)\s+(?:con|el|con\s+el)\s+env[ií]o` +
+    String.raw`)\s*[?!.]*$`,
+  'iu',
+)
+export function isPrePurchaseMethodQuestion(text: string): boolean {
+  const v = clean(stripFormatChars(text || ''))
+    .replace(/[¿¡]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(LEADING_GREETING_RE, '')
+    .trim()
+  return v.length > 0 && v.length <= 100 && PRE_PURCHASE_RE.test(v)
+}
+
 // Only bare ("¿Les llegó?", "¿Lo recibieron?") or with a payment noun — "¿Les llegó mercadería nueva?" is stock.
 // Verifier r7 #1: never "nos" ("Nos llegó, gracias" = the customer got the order); "le" and "recibió" only as a question.
 const PAY_NOUN_AFTER = String.raw`\s+(?:el|la|mi|lo)\s+(?:pago|sinpe|simpe|plata|dinero|platica|transferencia|dep[oó]sito|comprobante)`
@@ -641,6 +664,8 @@ export function classifyPaymentText(
   // Pura Sonrisa exam P4: "¿cómo sería el envío y el pago?" / "y el pago como sería" — the WHOLE message (after a
   // greeting) is this closed how-does-it-work question: the agent answers with the method list.
   if (isHowPayShipQuestion(value)) return 'payment_info_safe'
+  // Prototipo shoppers: closed pre-purchase questions naming a method (how to order / how much with shipping).
+  if (isPrePurchaseMethodQuestion(value)) return 'payment_info_safe'
   if (PAYMENT_RE.test(value)) {
     return 'payment_proof_or_risk'
   }

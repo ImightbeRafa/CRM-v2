@@ -111,3 +111,15 @@ describe('SecureDog b3 r1 INT-187: cash-on-delivery claims next to "ya llegó el
     for (const t of ['Para no pagar envío lo retiro', 'quería retirar para no pagar envío']) assert.equal(classifyPaymentText(t), 'non_payment', t)
   })
 })
+
+describe('Prototipo shoppers: pre-purchase questions that name SINPE are not payment claims', () => {
+  it('answered by the agent; claims stay hand-offs', () => {
+    for (const t of ['¿Cómo hago para pedirlo y pagar por SINPE?', 'Me sirve SINPE, pero ¿cuánto sería con envío?', 'Hola, ¿cómo hago para pedirlo y pagar con transferencia?']) {
+      assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
+      assert.notEqual(classifyPaymentText(t, { noPaymentYet: true }), 'payment_proof_or_risk', t)
+    }
+    for (const t of ['ya hice el sinpe', '¿Cómo hago para pedirlo? ya les hice el SINPE', 'Me sirve SINPE, ya pagué, ¿cuánto sería con envío?']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+})

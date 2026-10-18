@@ -1,3 +1,20 @@
+## 2026-10-18 — Payment choice inside the order data, round 3 (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
+
+- Verifier r3 (Fable) FAIL on round 2: security fixes held, but the new rules were too strict (20/65 realistic CR order
+  messages fell back to a hand-off) and the one-line bound on "a nombre de" reopened two-line typed details. Fixed:
+  - F1: "a nombre de" ↔ digits allowed across lines, bounded to 120 chars.
+  - F2: name cap 8 words, other values 40; "número" allowed in addresses ("casa número 25"); "puesto" only in a done frame
+    ("ya / está / quedó puesto"); "gire a la derecha" allowed by the reject list (still a hand-off via the live
+    hasPastOrDoneWord list — additive by design).
+  - F3: store "elsewhere" words are word-bounded and no longer include correo / datos; receipt-photo asks only (foto del
+    pago, "mandame la foto cuando…", a payment word + foto/captura/print); 2-2-2-2 numbers need a lead ("al", "sinpe",
+    "número"); store rows may be up to 4 000 chars.
+  - F4: a done / paid word split in 2–3 chunks inside a free value ("lis to", "pa gué") is rejected.
+  - F5: an earlier customer row with VT/FF/NEL/U+2028-9 fails closed.
+- Note for Rafael: lowercase accented names / places ("nombre: josé mora", "frente al palí") fall back to a hand-off,
+  because the live claim check reads them as past-tense verbs. That is the INT-A additive rule.
+- Tests: pay-choice-in-data 28/28 (5 new); test:soft-ai 1330/1330; test:security 289/289; tsc and eslint clean.
+
 ## 2026-10-18 — Payment choice inside the order data, round 2 (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
 
 - Reviews r2 on Fable: Verifier FAIL (F1 HIGH "Nombre completo" list + another bubble still handed off; F2 "?" in the

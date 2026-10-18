@@ -896,17 +896,23 @@ export function pendingMethodMention(text: string): PaymentChoiceMethod | null {
  * "revisen / verifiquen", errors. Checked on the WHOLE message (raw, folded and with stretched letters collapsed).
  */
 const DATA_CHOICE_REJECT_RE =
-  /[#₡¢$€✅✔✓☑👍👌💸🧾📸📷]|(?<!\d)\d{5,7}(?!\d)|\d{1,3}[.,]\d{3}(?!\d)|\d{1,2}:\d{2}|\d{1,2}\/\d{1,2}|(?<![\p{L}])(?:ref\p{L}*|c[oó]digo|monto|total|mil|k|colones|rojos|comprobante\p{L}*|recibo|captura|pantallazo|screenshot|voucher|constancia|foto|lleg\p{L}*|vieron|vio|cay[oó]|entr[oó]|entra|pagu[eé]|hice|hicimos|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|cancel[eé]|pagamos|mandamos|enviamos|pasamos|ya|yast[aá]|listo|lista|hecho|hecha|sinpead\p{L}*|saldad\p{L}*|abon\p{L}*|chequ\p{L}*|f[ií]j\p{L}*|valid\p{L}*|revis\p{L}*|verific\p{L}*|confirm\p{L}*|av[ií]s\p{L}*|hace|antier|anteayer|ayer|anoche|hoy|reci[eé]n|ahorita|horita|ahora|temprano|rato|ratito|toque|minutos?|min|segundos?|horas?|fue|todo|efectu\p{L}*|realic\p{L}*|realiz\p{L}*|tir[eéó]|acab\p{L}*|di|dimos|error|doble|mitad|resto|adelanto|debo|debe|falta\p{L}*|pendiente|deja|problema|pus[eo]|pusimos|puest[oa]s?|dej[eé]|dejamos|met[ií]|metimos|gir[eé]|giramos|pagao|cancelao)(?![\p{L}])|(?<!\d)\d{1,3}\s\d{3}(?!\d)/iu
-/** SecureDog r2 INT-B: money / receipt nouns a name or address never needs (bank names stay: "200 m sur del BCR"). */
+  /[#₡¢$€✅✔✓☑👍👌💸🧾📸📷]|(?<!\d)\d{5,7}(?!\d)|\d{1,3}[.,]\d{3}(?!\d)|\d{1,2}:\d{2}|\d{1,2}\/\d{1,2}|(?<![\p{L}])(?:ref\p{L}*|c[oó]digo|monto|total|mil|k|colones|rojos|comprobante\p{L}*|recibo|captura|pantallazo|screenshot|voucher|constancia|foto|lleg\p{L}*|vieron|vio|cay[oó]|entr[oó]|entra|pagu[eé]|hice|hicimos|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|cancel[eé]|pagamos|mandamos|enviamos|pasamos|ya|yast[aá]|listo|lista|hecho|hecha|sinpead\p{L}*|saldad\p{L}*|abon\p{L}*|chequ\p{L}*|f[ií]j\p{L}*|valid\p{L}*|revis\p{L}*|verific\p{L}*|confirm\p{L}*|av[ií]s\p{L}*|hace|antier|anteayer|ayer|anoche|hoy|reci[eé]n|ahorita|horita|ahora|temprano|rato|ratito|toque|minutos?|min|segundos?|horas?|fue|todo|efectu\p{L}*|realic\p{L}*|realiz\p{L}*|tir[eéó]|acab\p{L}*|di|dimos|error|doble|mitad|resto|adelanto|debo|debe|falta\p{L}*|pendiente|deja|problema|pus[eo]|pusimos|dej[eé]|dejamos|met[ií]|metimos|gir[eé](?!\s+(?:a\s+)?(?:la\s+)?(?:derecha|izquierda))|giramos|pagao|cancelao)(?![\p{L}])|(?<![\p{L}])(?:est[aá]|qued[oó]|ya)\s+puest[oa]s?(?![\p{L}])|(?<!\d)\d{1,3}\s\d{3}(?!\d)/iu
+/**
+ * SecureDog r2 INT-B: money / receipt nouns a name or address never needs. Bank names stay ("200 m sur del BCR") and so
+ * does "número" (Verifier r3: "casa número 25"; "al número" / "número de la bio" are rejected elsewhere).
+ */
 const DATA_VALUE_MONEY_RE =
-  /(?<![\p{L}])(?:plata|platica|dinero|harina|billetes?|cuenta|print|imagen|sms|mensaje|cel|celular|n[uú]mero|bio)(?![\p{L}])/iu
-/** Free-value word caps: a name is a few words, an address a sentence (SecureDog r2 INT-B). */
-const DATA_NAME_MAX_WORDS = 5
-const DATA_VALUE_MAX_WORDS = 15
+  /(?<![\p{L}])(?:plata|platica|dinero|harina|billetes?|cuenta|print|imagen|sms|mensaje|cel|celular|bio)(?![\p{L}])/iu
+/** Free-value word caps (SecureDog r2 INT-B; Verifier r3: CR "dirección exacta con señas" runs 20–30 words). */
+const DATA_NAME_MAX_WORDS = 8
+const DATA_VALUE_MAX_WORDS = 40
+/** Verifier r3 F4: a done / paid word split in two or three chunks ("lis to", "li s to", "pa gué"). */
+const DATA_SPLIT_CLAIM_RE =
+  /^(?:ya|yasta|listo|lista|hecho|hecha|pague|pagado|pagada|pago|sinpe\p{L}*|cancel\p{L}*|deposit\p{L}*|transfer\p{L}*|envie|mande|pase|hice|abon\p{L}*|confirm\p{L}*)$/u
 /** SecureDog r2 INT-D: Latin-script look-alikes (IPA, phonetic small caps, Latin Extended-D / -E). */
 const DATA_LATIN_LOOKALIKE_RE = /[\u0250-\u02AF\u1D00-\u1DBF\uA720-\uA7FF\uAB30-\uAB6F]/u
 /** SecureDog r2 INT-D: line breaks other than \n / \r that stripFormatChars deletes (and so glues words together). */
-const DATA_ODD_BREAK_RE = /[\u000B\u000C\u0085\u2028\u2029]/u
+export const DATA_ODD_BREAK_RE = /[\u000B\u000C\u0085\u2028\u2029]/u
 /** "l i s t o": three or more single letters in a row. */
 const DATA_SPACED_LETTERS_RE = /(?<![\p{L}])\p{L}(?:[\s.\-_]+\p{L}(?![\p{L}])){2,}/u
 /** A data message that carries a choice: short enough to read whole (a delivery-data block, not an essay). */
@@ -951,8 +957,13 @@ function isOrderDataPart(raw: string): boolean {
   if (/^(?:correo|e-?mail)/u.test(label)) return DATA_EMAIL_RE.test(v)
   if (label === 'cantidad') return /^\d{1,2}$/u.test(v)
   if (DATA_VALUE_MONEY_RE.test(v)) return false
-  const words = v.split(/\s+/u).filter(Boolean).length
-  if (words > (/^(?:nombre|apellido)/u.test(label) ? DATA_NAME_MAX_WORDS : DATA_VALUE_MAX_WORDS)) return false
+  const words = v.split(/\s+/u).filter(Boolean)
+  if (words.length > (/^(?:nombre|apellido)/u.test(label) ? DATA_NAME_MAX_WORDS : DATA_VALUE_MAX_WORDS)) return false
+  const tokens = foldChoice(v).split(/[^a-z]+/u).filter(Boolean)
+  for (let i = 0; i < tokens.length; i++) {
+    if (DATA_SPLIT_CLAIM_RE.test(tokens.slice(i, i + 2).join('')) && i + 1 < tokens.length) return false
+    if (i + 2 < tokens.length && DATA_SPLIT_CLAIM_RE.test(tokens.slice(i, i + 3).join(''))) return false
+  }
   return DATA_FREE_VALUE_RE.test(v)
 }
 

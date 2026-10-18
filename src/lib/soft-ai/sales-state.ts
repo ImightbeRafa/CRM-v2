@@ -6,6 +6,7 @@
 import {
   hasPaymentClaimCue,
   classifyPaymentText,
+  DATA_ODD_BREAK_RE,
   embeddedPaymentChoice,
   hasHardPaymentClaim,
   hasPaymentStatusHint,
@@ -933,11 +934,12 @@ export function noPaymentYet(history: ReadonlyArray<{ direction: string; content
 const STORE_RECEIPT_TALK_RE =
   /(?<![\p{L}])(?:comprobante\p{L}*|recibo|captura|pantallazo|screenshot|voucher|constancia|foto\s+del\s+(?:pago|sinpe)|valid\p{L}*|verific\p{L}*|confirm\p{L}*\s+(?:el|tu|su)\s+pago)(?![\p{L}])|\[\[\s*PAGO/iu
 /**
- * Payment details a person types by hand: "a nombre de" next to digits (same line — SecureDog r2 INT-E: no O(n²) scan
- * over a long digit row), an IBAN, a SINPE number split 2-2-2-2 ("62 01 99 14").
+ * Payment details a person types by hand: "a nombre de" near digits (also on the next line — Verifier r3; bounded, so
+ * no O(n²) scan over a long digit row — SecureDog r2 INT-E), an IBAN, a SINPE number split 2-2-2-2 after a lead
+ * ("Al 62 01 99 14"; not "tallas 36 38 40 42").
  */
 const STORE_HAND_DETAILS_RE =
-  /a\s+nombre\s+de[^\n]{0,80}\d|\d[^\n]{0,80}a\s+nombre\s+de|CR\s?\d{2}[\s-]?\d{4}|(?<!\d)\d{2}[\s.-]\d{2}[\s.-]\d{2}[\s.-]\d{2}(?!\d)/iu
+  /a\s+nombre\s+de[\s\S]{0,120}\d|\d[\s\S]{0,120}a\s+nombre\s+de|CR\s?\d{2}[\s-]?\d{4}|(?<![\p{L}])(?:al|sinpe|simpe|n[uú]mero)\s*:?\s*\d{2}[\s.-]\d{2}[\s.-]\d{2}[\s.-]\d{2}(?!\d)/iu
 /**
  * SecureDog r2 INT-C: the store already thanked for a payment, pointed to its number elsewhere ("al número de la bio",
  * "el SINPE está en la bio", "te paso el SINPE por privado") or asked for the receipt photo ("mandame la foto").
@@ -945,16 +947,24 @@ const STORE_HAND_DETAILS_RE =
 const STORE_PAID_OR_ELSEWHERE_RE = new RegExp(
   [
     String.raw`gracias\s+por\s+(?:tu|su|el|la)\s+(?:pago|sinpe|simpe|transferencia|dep[oó]sito|compra)`,
-    String.raw`(?:n[uú]mero|sinpe|simpe|cuenta|datos)[^\n]{0,40}(?:bio|perfil|historia|story|privado|correo|dm|inbox)`,
-    String.raw`(?:bio|perfil|historia|story|privado|correo|dm|inbox)[^\n]{0,40}(?:n[uú]mero|sinpe|simpe|cuenta|datos)`,
-    String.raw`(?:m[aá]ndame|p[aá]same|env[ií]ame|me\s+mand[aá]s|me\s+pas[aá]s|me\s+envi[aá]s)\s+(?:la\s+|una\s+|el\s+)?(?:foto|imagen|captura|print)`,
+    // Word-bounded (Verifier r3: "cambio" ≠ bio, "admin" ≠ dm); no "correo" / "datos" (ordinary data collection).
+    String.raw`(?<![\p{L}])(?:n[uú]mero|sinpe|simpe|cuenta)(?![\p{L}])[^\n]{0,40}(?<![\p{L}])(?:bio|perfil|historia|story|privado|dm|inbox)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:bio|perfil|historia|story|privado|dm|inbox)(?![\p{L}])[^\n]{0,40}(?<![\p{L}])(?:n[uú]mero|sinpe|simpe|cuenta)(?![\p{L}])`,
+    // A receipt photo, not a product photo (Verifier r3: "pasame la foto del modelo" is sales talk).
+    String.raw`(?<![\p{L}])(?:foto|imagen)\s+del?\s+(?:pago|sinpe|simpe|comprobante|dep[oó]sito|transferencia)(?![\p{L}])`,
+    String.raw`(?:m[aá]ndame|p[aá]same|env[ií]ame|me\s+mand[aá]s|me\s+pas[aá]s|me\s+envi[aá]s)\s+(?:la\s+|una\s+|el\s+)?(?:foto|imagen|captura|print)\s+cuando`,
+    String.raw`(?<![\p{L}])(?:sinpe|simpe|pag\p{L}*|transfer\p{L}*|dep[oó]sit\p{L}*)(?![\p{L}])[^\n]{0,60}(?<![\p{L}])(?:foto|imagen|captura|print)(?![\p{L}])`,
   ]
     .map((p) => `(?:${p})`)
     .join('|'),
   'iu',
 )
-/** SecureDog r2 INT-E: a history row longer than this (after collapsing whitespace) fails closed. */
+/**
+ * SecureDog r2 INT-E: a customer row longer than this (after collapsing whitespace) fails closed. Store rows may be as
+ * long as a model reply (Verifier r3: a long welcome / FAQ reply must not turn the feature off).
+ */
 const PAID_ROW_MAX_CHARS = 1200
+const PAID_STORE_ROW_MAX_CHARS = 4000
 /** Any bubble that is only a bracketed placeholder ("[imagen]", "[share]", "[ig_story]", "[attachment]"). */
 const ANY_PLACEHOLDER_RE = /^\s*\[[^\]\n]{1,40}\]\s*$/u
 
@@ -974,7 +984,9 @@ export function nothingPaidYet(rows: ReadonlyArray<PaidRow>, opts: { windowFull?
   for (const m of rows) {
     const raw = (m.content || '').normalize('NFKC')
     const text = stripFormatChars(raw).replace(/[ \t]+/gu, ' ').replace(/\n\s*\n+/gu, '\n')
-    if (text.length > PAID_ROW_MAX_CHARS) return false
+    if (text.length > (m.direction === 'outbound' ? PAID_STORE_ROW_MAX_CHARS : PAID_ROW_MAX_CHARS)) return false
+    // Verifier r3 F5: odd line breaks would be deleted below and glue a claim ("ya␤pagué" → "yapagué"): fail closed.
+    if (m.direction !== 'outbound' && DATA_ODD_BREAK_RE.test(raw)) return false
     if ((m.messageType && m.messageType !== 'text') || MEDIA_PLACEHOLDER_RE.test(text) || ANY_PLACEHOLDER_RE.test(text)) return false
     // Verifier r2 F3: the store's own payment number, from either side (a customer echoing it is paying / has paid).
     if (payDigits.length && payDigits.some((d) => text.replace(/\D/g, '').includes(d))) return false

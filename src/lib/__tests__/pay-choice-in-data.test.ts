@@ -359,3 +359,55 @@ describe('round 2 (Verifier r2 + SecureDog r2)', () => {
     assert.equal(decisionOrderDataChoice(d), 'efectivo')
   })
 })
+
+describe('round 3 (Verifier r3)', () => {
+  const N = 'Nombre: Ana Mora\n'
+  it('F2: typical CR order data still routes as a choice', () => {
+    for (const t of [
+      `${N}Dirección: Heredia, San Rafael, de la iglesia 200 m norte y 50 m este, casa color verde con portón negro, mano derecha\nPago por SINPE`,
+      `Nombre completo: Ana Mora\nTeléfono: 8888 8888\nDirección exacta con señas: de la escuela de Mercedes Norte 300 m este y 100 m sur, casa esquinera color verde, portón negro, mano derecha\nPago por SINPE`,
+      'Nombre: María de los Ángeles Rodríguez Castro\nPago por SINPE',
+      'Nombre: José Francisco Rodríguez de la Cruz\nPago por SINPE',
+      `${N}Dirección: Residencial Los Arcos, casa número 25\nPago por SINPE`,
+      `${N}Dirección: Heredia, casa número 10\nEnvío a domicilio\nPago por SINPE`,
+      `${N}Dirección: Grecia, 200 m norte del puesto de salud\nPago por SINPE`,
+      `${N}Dirección: contiguo al puesto de la Fuerza Pública\nPago por SINPE`,
+      `${N}Dirección: Urbanización La Puesta del Sol, casa 12\nPago por SINPE`,
+    ]) {
+      assert.equal(embeddedPaymentChoice(t), 'sinpe', t)
+      assert.equal(orderDataChoice(rows(SALES_HISTORY, t)), 'sinpe', t)
+    }
+  })
+  it('F1: hand-typed details with the holder on the next line close the gate', () => {
+    for (const out of ['Podés hacerlo al 7012-3456\nA nombre de Rafael García', 'Al 7012-3456\nA nombre de Rafael García', 'A nombre de Rafael García\n7012-3456']) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('outbound', out)], SHOPPER), { paymentDigits: ['62019914'] }), false, out)
+    }
+  })
+  it('F3: ordinary store sales talk keeps the gate open', () => {
+    for (const out of [
+      'Si querés un cambio de talla, pasame tus datos',
+      'Hacemos cambios 😊 pasame tu número de pedido',
+      'El admin te confirma el número de guía',
+      'Para el retiro pasame tu nombre completo, número de teléfono y correo 😊',
+      'Pasame tu número y correo para coordinar',
+      '¿Me mandás una foto de lo que viste en la historia?',
+      'Pasame la foto del modelo que te gustó',
+      'Mandame una foto de la referencia 😊',
+      'Me pasás el print de la talla que usás?',
+      'Tenemos tallas 36 38 40 42',
+      'Disponible en 34-36-38-40',
+      `¡Hola! Bienvenida a la tienda. ${'Tenemos envíos a todo el país y retiro en tienda. '.repeat(25)}`,
+    ]) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('outbound', out)], SHOPPER)), true, out)
+    }
+  })
+  it('F4: a done word split in two or three chunks is not order data', () => {
+    for (const t of [`${N}Dirección: Heredia, lis to\nPago por SINPE`, `${N}Dirección: Heredia, li sto\nPago por SINPE`, `${N}Dirección: Heredia, li s to\nPago por SINPE`, `${N}Señas: pa gué\nPago por SINPE`]) {
+      assert.equal(embeddedPaymentChoice(t), null, t)
+    }
+  })
+  it('F5: an earlier customer row with odd line breaks ends "nothing paid yet"', () => {
+    const glued = [...SALES_HISTORY, msg('inbound', 'ya\u0085pagué'), msg('outbound', 'Perfecto 👌')]
+    assert.equal(nothingPaidYet(rows(glued, SHOPPER)), false)
+  })
+})

@@ -10,10 +10,27 @@ For the next session (local or cloud). Owner's open items: Notion "Agents — wa
 
 ## Committed, NOT deployed (needs Rafael's GO)
 - 29efe6ca on `claudio/luna-10-d2`: INT-158 claim check + per-store exam grader. Verifier PASS WITH NOTES (all folded in).
-  SecureDog review was still running at commit time: check its result before deploying.
+  SecureDog round 1: FIX BEFORE PROD. The diff only adds blocks (safe), and its one false positive ("Ya te envié los
+  datos de pago") is fixed in the next commit. But INT-158 is not closed: High bypasses H1–H4 below remain (they predate
+  the diff).
 
 ## Pending work
-1. INT-158: finish the SecureDog review, then deploy with Rafael's GO (`npx wrangler deploy --keep-vars` from the
+1. INT-158 round 2 (SecureDog H1–H4, each bypass input to be pinned as a test):
+   - H1: WhatsApp italics `_confirmado_` pass. The word edges in CONFIRMATION_WORDING_RE treat `_` as a letter; use
+     `(?<![\p{L}\p{N}])` / `(?![\p{L}\p{N}])` and map `[_*~\`]` to spaces in normalizeForConfirmationCheck.
+   - H2: RTL override (U+202E) + reversed letters display as "confirmado". Strip bidi controls (U+202A–202E,
+     U+2066–2069) from the OUTGOING model text, then check and send that same cleaned text.
+   - H3: look-alikes outside the map (ı, ɑ, small caps, Armenian, Cherokee, Greek accented, squared letters, i+U+0307).
+     For model output, hold the reply if after NFKC+NFC any letter is outside Latin-1 letters or a non-emoji combining
+     mark is left; keep the map for owner texts.
+   - H4: ALWAYS_PAYMENT_STATUS_REPLY_RE, PAYMENT_STATUS_REPLY_RE, CREATED_CLAIM_RE and ORDER_CLOSING_CLAIM_RE
+     (llm/output-validator.ts 28/32/196/202) still read raw text: run them on the normalised text too.
+   - M1/M2 phrasing gaps (validar family, "Pago ✅", "se envió", punctuation between words, English) and L1
+     (NEL/U+2028 as a space). SecureDog's scratch scripts, prototype and full report: ask the coordinator session
+     or re-run the bypass lists from the register entry.
+   - Advisor policy from luna-10: prefer structural rules (H1–H4) over adding claim words; new wordings go to the
+     Luna payment-check eval set.
+   Then Verifier + SecureDog again, then deploy with Rafael's GO (`npx wrangler deploy --keep-vars` from the
    live-line worktree; retry on next/font "reading '1'" or V8 fatal errors).
 2. New store agents (drafts, tenant cmhsibjue0004js04gie724nx, packs in D:\Coder\betsy-agent-packs\<brand>, each
    with STATUS.md):

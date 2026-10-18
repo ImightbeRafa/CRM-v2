@@ -76,6 +76,10 @@ describe('INT-158: payment / order done-claims', () => {
       'El equipo recibió tu comprobante y lo revisa.',
       'Dame un momento y te confirmo 😊',
       'Ñandú está aquí, pingüino, ¿acción?',
+      // SecureDog round 1: "ya envié / mandé" without an order object is not a claim.
+      'Ya te envié los datos de pago arriba 👆',
+      'Ya te mandé la info del combo',
+      'Ya te mandé el link del producto',
     ]) {
       assert.equal(hasOutboundConfirmationClaim(t), false, t)
     }

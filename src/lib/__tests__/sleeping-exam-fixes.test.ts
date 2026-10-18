@@ -1111,3 +1111,24 @@ describe('Verifier r6 + SecureDog r4 (2026-10-18): every reported input pinned',
     assert.match(readFileSync('scripts/agent-pack/test-cap.ts', 'utf8'), /const freed = held \? await forceReleaseTestLock\(lockDb, \{ tenantId, expectToken: held\.token \}\) : null/)
   })
 })
+
+describe('Verifier r7 (2026-10-18): notes pinned', () => {
+  it('#1: "the order arrived" thanks are not payment cues; the store-received questions still are', () => {
+    for (const t of ['Nos llegó, gracias 🙌', '¡Nos llegó! Están lindísimos', 'Le llegó.', '¿Les llegó mercadería nueva?', '¿Les llegó el de fresa?', '¿Te llegó mi mensaje?', 'Lo recibió mi mamá']) {
+      assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+    for (const t of ['Hola, ¿les llegó?', '¿Lo recibieron?', '¿Le llegó?', '¿Ya lo recibió?', '¿Te llegó el sinpe?']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+  it('#2: a direct ask to the customer counts as asking (no payment hold on the natural C2 reply)', () => {
+    for (const r of [
+      '¡Claro! Para confirmarlo pasame estos datos:\n- Nombre completo\n- Teléfono',
+      '¡Con gusto! 😊 Contame qué producto querés y te ayudo.',
+      'Claro 😊 Decime qué pedido querés confirmar.',
+    ]) {
+      const v = validateAgentOutput({ text: r, citedToolNames: [], customerText: 'Para confirmar el pedido!?' })
+      assert.ok(!v.reasons.includes('payment_status_claim'), `${r} → ${v.reasons}`)
+    }
+  })
+})

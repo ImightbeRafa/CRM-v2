@@ -520,8 +520,17 @@ export function isHowPayShipQuestion(text: string): boolean {
 }
 
 // Only bare ("¿Les llegó?", "¿Lo recibieron?") or with a payment noun — "¿Les llegó mercadería nueva?" is stock.
-const NARROW_STATUS_QUESTION_RE =
-  /(?<![\p{L}])(?:(?:ya\s+)?(?:les|le|te|nos)\s+(?:lleg|cay|entr)[oó]|(?:ya\s+)?(?:lo|la)\s+(?:recibieron|recibi[oó]))(?:\s*(?:[?¿!.,…]|$)|\s+(?:el|la|mi|lo)\s+(?:pago|sinpe|simpe|plata|dinero|platica|transferencia|dep[oó]sito|comprobante))/iu
+// Verifier r7 #1: never "nos" ("Nos llegó, gracias" = the customer got the order); "le" and "recibió" only as a question.
+const PAY_NOUN_AFTER = String.raw`\s+(?:el|la|mi|lo)\s+(?:pago|sinpe|simpe|plata|dinero|platica|transferencia|dep[oó]sito|comprobante)`
+const NARROW_STATUS_QUESTION_RE = new RegExp(
+  String.raw`(?<![\p{L}])(?:` +
+    String.raw`(?:ya\s+)?(?:les|te)\s+(?:lleg|cay|entr)[oó](?:\s*(?:[?¿!.,…]|$)|${PAY_NOUN_AFTER})` +
+    String.raw`|(?:ya\s+)?le\s+(?:lleg|cay|entr)[oó](?:${PAY_NOUN_AFTER})?\s*\?` +
+    String.raw`|(?:ya\s+)?(?:lo|la)\s+recibieron(?:\s*(?:[?¿!.,…]|$)|${PAY_NOUN_AFTER})` +
+    String.raw`|(?:ya\s+)?(?:lo|la)\s+recibi[oó](?:${PAY_NOUN_AFTER})?\s*\?` +
+    String.raw`)`,
+  'iu',
+)
 
 export function classifyPaymentText(
   text: string,

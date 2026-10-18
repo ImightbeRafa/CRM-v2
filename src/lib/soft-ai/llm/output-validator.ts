@@ -45,6 +45,9 @@ const PAYMENT_STATUS_REPLY_RE =
  */
 const CONFIRM_ASK_STATUS_REPLY_RE =
   /(?<![\p{L}])(?:(?:nos|me|les|ya)\s+(?:lleg|entr|cay)[oó]|lleg[oó]\s+(?:bien|perfecto)|(?:entr|cay)[oó]\s+(?:bien|perfecto)|recibid[oa]s?|recibimos|acredit\p{L}*|reflej\p{L}*|(?:lo|la)\s+vimos|(?:lo|la)\s+vi|ya\s+(?:lo|la)\s+tenemos|vimos\s+(?:tu|su|el)|todo\s+en\s+orden|est[aá]\s+en\s+orden|todo\s+(?:bien|listo|correcto)|qued[oó]\s+(?:pagad|confirmad|registrad)\p{L}*|est[aá]\s+confirmad[oa]|ya\s+se\s+hizo|ya\s+est[aá](?=\s*(?:[.!,🙌😊👍💚❤✨]|$))|(?:ya\s+)?(?:lo|la)\s+revisamos|registrad[oa]|te\s+confirmo|(?:ya\s+)?est[aá]\s+list[oa]|todo\s+perfecto)(?![\p{L}])|^\s*[¡!]*\s*s[ií]\s*[!.,🙌😊👍💚❤✨\s]*$/iu
+/** Verifier r7 #2: the agent asks the customer for something (an imperative ask, or the data list). */
+const DIRECT_ASK_RE =
+  /(?<![\p{L}])(?:contame|cont[aá]nos|decime|dec[ií]nos|pasame|p[aá]same|mandame|m[aá]ndame|escribime|indicame|ind[ií]came|regalame|reg[aá]lame|cu[eé]ntame|dime|env[ií]ame)(?![\p{L}])|nombre\s+completo/iu
 /** SecureDog r3 INT-169: a reply that is ONLY an affirmation ("¡Claro que sí!", "¡Hecho!", "Correcto 👍", "Sí, claro"). */
 const AFFIRM_ONLY_RE =
   /^[\s¡!.,]*(?:(?:s[ií]|claro|que|perfecto|list[oa]|hecho|por\s+supuesto|correct[oa]|ok|okay|dale|exacto|confirmad[oa]|todo|bien|genial|excelente|de\s+una)[\s¡!.,]*)+$/iu
@@ -828,7 +831,8 @@ export function validateAgentOutput(input: {
       AFFIRM_ONLY_RE.test(text.replace(/[\p{Extended_Pictographic}\uFE0F]/gu, ' ')) ||
       // SecureDog r4 #4: to a confirm ask the agent asks what to confirm or moves the sale on — a reply with no question
       // ("¡Así es!", "¡Sí, con gusto!", "¡Sí! Tu pedido sale hoy") is held.
-      (mentionsConfirmVerb(input.customerText) && !/[?¿]/.test(text)))
+      // Verifier r7 #2: a direct ask ("pasame estos datos", "contame qué producto", a data list) counts as asking.
+      (mentionsConfirmVerb(input.customerText) && !/[?¿]/.test(text) && !DIRECT_ASK_RE.test(text)))
   ) {
     // SecureDog r1 INT-159 / Verifier r3 #3: a reply to a confirm ask ("¿me confirmás?") may not say a payment arrived
     // ("¡Sí, nos llegó!", "¡Perfecto, ya está!", "todo en orden") — but "¡Claro, sin problema!" stays a sales answer.

@@ -282,14 +282,16 @@ describe('notify · inbox chips and thread banner', () => {
   it('inbox pins tagged chats, shows the chips, and the banner only clears on an explicit press', () => {
     const inbox = read('src/components/chats/SoftCopilotInboxV2.tsx')
     assert.match(inbox, /new URLSearchParams\(\{ tag, limit: '50' \}\)/)
-    assert.match(inbox, /reviewFilters=\{REVIEW_CHIP_DEFS\.map/)
+    // The review chips became the "Revisar pago" / "Pedido por confirmar" quick views (chat-inbox-views.ts).
+    assert.match(inbox, /inboxView=\{inboxView\}/)
     assert.match(inbox, /async function resolveReviewTag\(tag: SoftTag\)/)
     assert.match(inbox, /removeTag: tag,/)
     // The banner never sends a whole tags array.
     const resolve = inbox.slice(inbox.indexOf('async function resolveReviewTag'), inbox.indexOf('async function setAgentControl'))
     assert.doesNotMatch(resolve, /tags: /)
     const list = read('src/components/chats/SoftConversationList.tsx')
-    assert.match(list, /data-testid="chat-review-filters"/)
+    assert.match(list, /<InboxViewTabs /)
+    assert.match(read('src/components/chats/InboxViewTabs.tsx'), /data-testid="chat-view-tabs"/)
     const pane = read('src/components/chats/SoftThreadPane.tsx')
     assert.match(pane, /'💳 Pago por verificar'/)
     assert.match(pane, /'el cliente mandó el comprobante'/)

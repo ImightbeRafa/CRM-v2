@@ -3,6 +3,7 @@
 import { accountDisplayLabel, type SoftSocialAccount } from '@/lib/chat-soft-copilot'
 import { lineHealth } from '@/lib/chat-line-filter'
 import { ChannelDownBanner } from '@/components/aurora/states'
+import { LINE_DOWN_FIX_TEXT, formatSinceCr } from '@/lib/channel-silence-core'
 
 type Props = {
   accounts: SoftSocialAccount[]
@@ -29,7 +30,11 @@ export function SoftTokenHealthBanners({ accounts }: Props) {
       {visible.map(({ account, health }) => (
         <ChannelDownBanner
           key={account.id}
-          message={`${accountDisplayLabel(account)} · ${health.label.toLowerCase()}. Los mensajes de esta línea pueden no enviarse ni recibirse.`}
+          message={`${accountDisplayLabel(account)} · ${health.label.toLowerCase()}${account.silentSince ? ` desde ${formatSinceCr(new Date(account.silentSince))}` : ''}. ${
+            account.platform === 'instagram' && health.action === 'reconnect'
+              ? `${LINE_DOWN_FIX_TEXT} en Facebook.`
+              : 'Los mensajes de esta línea pueden no enviarse ni recibirse.'
+          }`}
           actionLabel={health.action === 'repair' ? 'Reparar' : 'Reconectar'}
         />
       ))}

@@ -72,7 +72,7 @@ export function ReconnectChannelModal({
   const copy = isRepair
     ? 'Betsy dejó de recibir avisos de esta línea. Reparamos la suscripción sin perder chats.'
     : platform === 'instagram'
-      ? 'Tu sesión de Instagram venció. Reconectá para seguir recibiendo mensajes.'
+      ? 'Instagram perdió la conexión. Reconectá para seguir recibiendo mensajes y, en Facebook, marcá todas tus páginas, no solo esta.'
       : 'La conexión con Meta de esta línea necesita renovarse. Reconectá para seguir recibiendo y enviando mensajes.'
 
   return (

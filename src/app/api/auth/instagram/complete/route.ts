@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { subscribePageToInstagramMessages } from '@/lib/meta-api'
-import { buildInstagramSuccessHtml } from '@/lib/instagram-connect'
+import { buildInstagramSuccessHtml, lostInstagramLinesHtml } from '@/lib/instagram-connect'
+import { recheckOtherInstagramLines } from '@/lib/instagram-sibling-recheck'
 import {
   clearInstagramPending,
   getInstagramPendingCookieName,
@@ -12,6 +13,7 @@ import {
   instagramAccountOwnedElsewhereHtml,
   upsertInstagramSocialAccount,
 } from '@/lib/instagram-social-account'
+import { instagramForeignOwnerResolver } from '@/lib/instagram-foreign-owner'
 import { debugMetaTokenExpiry } from '@/lib/social-account-token-health'
 import { getMetaWhatsAppAppId, getMetaWhatsAppAppSecret } from '@/lib/meta-api'
 
@@ -104,15 +106,23 @@ export async function POST(request: NextRequest) {
       igUsername: match.igUsername,
       isActive: subscribeOk,
       expiresAt,
+      resolveForeignOwner: instagramForeignOwnerResolver(loaded.record.userId),
     })
 
     await clearInstagramPending(loaded.cookie.pendingId)
+
+    // Dead-line alarm: the Facebook page picker may have dropped this business's other pages.
+    const lostLines = await recheckOtherInstagramLines({
+      tenantId: loaded.record.tenantId,
+      keepIgAccountId: match.igBusinessAccountId,
+    })
 
     if (!subscribeOk) {
       const response = new NextResponse(
         `<html><body>
           <h2>Instagram conectado sin webhooks</h2>
           <p>La cuenta se guardó pero la suscripción a mensajes falló.</p>
+          ${lostInstagramLinesHtml(match.igUsername ? `@${match.igUsername}` : match.pageName || 'esta cuenta', lostLines)}
           <p>Usá <strong>Re-suscribir</strong> en Configuración → Cuentas sociales.</p>
         </body></html>`,
         { status: 422, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
@@ -131,6 +141,7 @@ export async function POST(request: NextRequest) {
       buildInstagramSuccessHtml({
         pageName: match.pageName,
         igUsername: match.igUsername,
+        lostLines,
       }),
       { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
     )
@@ -145,7 +156,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof InstagramSocialAccountConflictError) {
       console.warn('[instagram/complete] Instagram account already connected on another tenant')
-      return new NextResponse(instagramAccountOwnedElsewhereHtml(), {
+      return new NextResponse(instagramAccountOwnedElsewhereHtml(error.workspaceName), {
         status: 409,
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       })

@@ -16,6 +16,50 @@
   (eac08ebb); r2 not re-reviewed. Known fallbacks to the old hand-off: unlabelled data lines ("Ana Mora\n8888…"),
   store "Revisá las fotos".
 
+## 2026-10-18 — Dead-line alarm: a silent / token-dead WhatsApp or Instagram line can't go unnoticed (claudio/dead-line-alarm, NOT deployed)
+
+- Trigger: 09:02 UTC Rafael connected @prototipo.cr via Facebook Login; 09:03 @patchhouse.cr stopped (page picker
+  dropped the unticked page), tokenStatus still "valid" until the daily probe, ~8 h of missed DMs.
+- `src/lib/channel-silence{,-core}.ts` + `/api/cron/channel-silence` (CF `*/5` slot, CRON_SECRET): a line with ≥ 30
+  inbound in 7 days is a suspect when it is silent for 4× its usual gap in CR business minutes (07–21, floor 75 min,
+  cap 6 h), or has ≥ 2 SOFT_AI_OUTBOUND_AMBIGUOUS jobs in 2 h. Only suspects get one Graph probe: revoked / expired /
+  error → tokenStatus; probe OK but silent → `lastErrorCode='silent_line'` (cleared once a webhook arrives later).
+  A reconnect / re-subscribe restarts the clock; busy = also ≥ 5 distinct chats; probe writes only if the stored
+  token is still the probed one. Webhook path untouched. The daily token probe keeps an open incident's start and the
+  silence marker (no nightly re-alert).
+- Alerts (one per incident, any path that flips a line down within 15 min): bell to the business's chat members
+  (kind `ai_no_reply`, key `line_down:<id>:<reason>:<minute>`, no SQL needed), ops email, red banner in /chats +
+  Canales ("No llegan mensajes desde 18/10 09:03 · Reconectá y marcá TODAS tus páginas en Facebook").
+  `/api/chat/accounts` exposes only `silentSince` (never the raw code).
+- IG connect (`callback` + `complete`): after saving, re-probe the tenant's OTHER IG lines; any that lost access are
+  marked and named on the result page ("Al conectar X se desconectó Y: volvé a conectar marcando todas las páginas"),
+  which then stays open. Connect card + reconnect modal: "marcá todas tus páginas, no solo la nueva".
+- Proof: tsc 0, lint clean, test:security 285/285 (new `channel-silence.test.ts` 14/14), channels-ui + neighbours green.
+- Reviews: Verifier r1 FAIL → 6 findings fixed (re-alert after recovery, nightly re-alert, re-flag after reconnect,
+  banner "since", sibling blame for already-dead lines, email dedupe). SecureDog OK (nothing above Low); L1–L5 fixed:
+  Meta 10/200 stay `error` (not `revoked`, sends not blocked), tenant text sanitized in the ops email, distinct-chat
+  gate, token-conditional writes, cron runs after ai-budget.
+## 2026-10-18 — /chats quick views + follow-ups keep list position (claudio/inbox-views, NOT deployed)
+
+- Draft PR into claudio/luna-10-d2; Rafael's GO to merge / deploy. No SQL, no new index.
+- Tabs with counts on desktop and mobile: Bandeja · 👤 Persona (aiMode human / paused / human_takeover, oldest
+  customer message first) · 💳 Revisar pago · 📦 Pedido (built-in tags) · ✦ IA (line AI on, nobody took it, no review
+  tag) · ↻ Seguimientos (newest message is our follow-up, `metadata.followUp`). They replace the two review chips.
+  Channel / line filter and search still apply; a bandeja tab (Míos / Sin asignar…) returns to Bandeja.
+- Counts: `GET /api/chat/conversations/view-counts` (update_sales, session tenant) = one grouped SQL by line;
+  the client refreshes at most every 20 s while the list changes. A tab loads its rows with `?view=` (one page, up to
+  100, no cursor; old cursors keep their scope hash). Rules shared in `src/lib/chat-inbox-views.ts`.
+- Follow-up / reactivation sends pass `keepListPosition`: preview, direction and lastOutboundAt update, lastMessageAt
+  does not, so a mass nudge no longer floods the top; the customer's reply moves the chat up as before.
+- Tab remembered per user in localStorage (`betsy.chats.view.v1:<userId>`).
+- Proof: tsc, lint, test:security, test:soft-ai, test:chat-harden (1 baseline fail, same on the base), new
+  chat-inbox-views.test.ts, verify-betsy `drive-inbox-views.mjs` PASS (desktop + 390 px).
+- Reviews: SecureDog PASS (2 Low fixed: counts cached 15 s per tenant + one shared query + client in-flight guard;
+  list route no longer echoes DB error text). Verifier PASS WITH NOTES (fixed: open view keeps its rows across the
+  2-min refresh, Persona puts chats still waiting first, view request follows line / channel, PATCH keeps the flag).
+- Open for Rafael: Persona / IA follow the aiMode column (as briefed), not the badge's "a person wrote in 24 h";
+  `scripts/chat-inbox-backfill.ts --apply` would reset nudged chats' lastMessageAt (verify script reports them).
+
 ## 2026-10-18 — Sleeping final report batch 2 (PR #106) + Pura Sonrisa batch 3 slim (PR #107) (NOT deployed)
 
 - Stacked: #107 → #106 → #104 → claudio/luna-10-d2. Draft PRs; Rafael's GO to merge / deploy.
@@ -73,6 +117,17 @@
   SecureDog r5 PASS (delta 220cfffd confirmed). Security Register (renumbered, the proposed INT IDs were taken):
   MEDIA-16, MEDIA-17, INT-170…179, INFRA-23, INFRA-24 Verified/Fixed; open: INT-180, INT-182, INT-183 (Low), INT-181
   (Medium, pre-existing on live: bare "¿Llegó?" / "¿Listo?" after payment details — schedule soon).
+## 2026-10-18 — Instagram reconnect: move the asset from a workspace you administer (claude/sharp-hawking-wgee33, NOT deployed)
+
+- Symptom: reconnecting `@betsy_crm` (shown as "Desvinculada") always returned "Instagram ya está conectado en otro
+  espacio". `upsertInstagramSocialAccount` refused because another tenant still holds an active row for the same IG
+  business account (025 partial unique: one active tenant per asset), and the page didn't say which workspace.
+- Fix: callback + complete pass `resolveForeignOwner` (`src/lib/instagram-foreign-owner.ts`). If the connecting user is
+  an active OWNER/ADMIN (`update_config`) of the holding tenant, that row is soft-unlinked (`softUnlinkUpdateData`:
+  history kept, tokens cleared) and the asset reconnects here. Otherwise it is still a 409 and the original row is not
+  touched. The page names the workspace only to its members (escaped); non-members learn nothing.
+- Saving an inactive row (subscribe failed) never asks or moves anything.
+- Tests: 4 new cases in `instagram-social-account.test.ts` (move, member-not-admin, non-member, inactive save) + HTML escape.
 
 ## 2026-10-18 — Claude setup on the live line + cloud push guard (claudio/luna-10-d2)
 

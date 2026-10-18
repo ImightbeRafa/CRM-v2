@@ -48,7 +48,7 @@ describe('owner AI usage dashboard', () => {
     }
   })
   it('budget check runs every 5 minutes from the Worker cron and can pause one business', () => {
-    assert.match(read('src/cf-container-worker.ts'), /"\*\/5 \* \* \* \*": \[[^\]]*"\/api\/cron\/ai-budget"\]/)
+    assert.match(read('src/cf-container-worker.ts'), /"\*\/5 \* \* \* \*": \[[^\]]*"\/api\/cron\/ai-budget"[,\]]/)
     assert.match(read('src/app/api/cron/ai-budget/route.ts'), /requireCronBearer\(request\)/)
     const budgets = read('src/lib/ai-usage-admin/budgets.ts')
     assert.ok(budgets.includes('if (shouldPause({ scope: b.scope, autoPause: b.autoPause'))

@@ -12,7 +12,9 @@ import {
   findInstagramBusinessOnPages,
   listFacebookPages,
   logInstagramPageDiscovery,
+  lostInstagramLinesHtml,
 } from '@/lib/instagram-connect'
+import { recheckOtherInstagramLines } from '@/lib/instagram-sibling-recheck'
 import {
   getInstagramPendingCookieName,
   INSTAGRAM_PENDING_COOKIE_MAX_AGE,
@@ -23,6 +25,7 @@ import {
   instagramAccountOwnedElsewhereHtml,
   upsertInstagramSocialAccount,
 } from '@/lib/instagram-social-account'
+import { instagramForeignOwnerResolver } from '@/lib/instagram-foreign-owner'
 import { debugMetaTokenExpiry } from '@/lib/social-account-token-health'
 
 export const runtime = 'nodejs'
@@ -281,13 +284,19 @@ export async function GET(request: NextRequest) {
       igUsername: match.igUsername,
       isActive: subscribeOk,
       expiresAt,
+      resolveForeignOwner: instagramForeignOwnerResolver(userId),
     })
+
+    // Dead-line alarm: the Facebook page picker may have dropped this business's other pages.
+    const lostLines = await recheckOtherInstagramLines({ tenantId, keepIgAccountId: match.igBusinessAccountId })
+    const connectedLabel = match.igUsername ? `@${match.igUsername}` : match.pageName || 'esta cuenta'
 
     if (!subscribeOk) {
       return html(
         `<html><body>
           <h2>Instagram conectado sin webhooks</h2>
           <p>La cuenta se guardó pero la suscripción a mensajes falló.</p>
+          ${lostInstagramLinesHtml(connectedLabel, lostLines)}
           <p>Usá <strong>Re-suscribir</strong> en Configuración → Cuentas sociales.</p>
           <p><a href="/config/social">Volver</a></p>
         </body></html>`,
@@ -299,12 +308,13 @@ export async function GET(request: NextRequest) {
       buildInstagramSuccessHtml({
         pageName: match.pageName,
         igUsername: match.igUsername,
+        lostLines,
       }),
     )
   } catch (error) {
     if (error instanceof InstagramSocialAccountConflictError) {
       console.warn('[instagram/callback] Instagram account already connected on another tenant')
-      return html(instagramAccountOwnedElsewhereHtml(), 409)
+      return html(instagramAccountOwnedElsewhereHtml(error.workspaceName), 409)
     }
     console.error('[instagram/callback] Unexpected error', error)
     return html(

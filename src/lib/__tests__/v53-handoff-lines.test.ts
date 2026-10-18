@@ -181,6 +181,7 @@ describe('6 · reactions get no turn; a whole-message "me atiende alguien" reach
     'Disculpe, ¿me atiende alguien?',
     'Hola\n¿me atiende alguien?',
     'Quiero que me atienda alguien',
+    '¿Me atiende alguien? 🙏🏻', // skin-tone modifier (Verifier round 4)
   ]
   for (const t of person) {
     it(`person request: ${t}`, () => {

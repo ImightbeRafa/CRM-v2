@@ -57,7 +57,7 @@ const ATTEND_GREETING = String.raw`(?:hola|holi|buenas|buen[oa]s?[ \t]+(?:d[ií]
 // ever allows ONE optional space between tokens — no run of spaces can be split in many ways.
 const ATTEND_REQUEST = String.raw`(?:me (?:atiende|atienden|atienda|puede atender|pueden atender|podr[ií]a atender|podr[ií]an atender) (?:alguien|una persona|un humano|un asesor|una asesora|un agente)|(?:alguien|una persona|un humano|un asesor) (?:que )?me (?:atiende|atienda|puede atender|podr[ií]a atender)|quiero que (?:alguien|una persona|un asesor) me atienda|quiero que me atienda (?:alguien|una persona|un asesor|un humano))`
 const ATTEND_ME_RE = new RegExp(
-  String.raw`^(?:${ATTEND_GREETING} ?[,!.]? ?){0,2}¿? ?${ATTEND_REQUEST} ?(?:,? ?(?:por favor|porfa|x favor))? ?[?!.]*(?: ?[\p{Extended_Pictographic}\u{FE0F}\u{200D}])*$`,
+  String.raw`^(?:${ATTEND_GREETING} ?[,!.]? ?){0,2}¿? ?${ATTEND_REQUEST} ?(?:,? ?(?:por favor|porfa|x favor))? ?[?!.]*(?: ?[\p{Extended_Pictographic}\p{Emoji_Modifier}\u{FE0F}\u{200D}])*$`,
   'iu',
 )
 /** Longer than this is never a bare "¿me atiende alguien?" (and bounds every regex run). */

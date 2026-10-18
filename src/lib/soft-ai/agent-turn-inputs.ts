@@ -28,6 +28,8 @@ import {
   deriveSalesState,
   formatSalesTurnBlock,
   salesAllowedAmounts,
+  salesDataListFirst,
+  salesUnitRates,
   salesAllowedDeals,
   salesCloseWithoutPaymentData,
   salesFreeShippingRule,
@@ -252,6 +254,7 @@ export function assembleAgentRuntimeInputs(input: {
     salesAllowedDeals: sales ? salesAllowedDeals(sales) : [],
     salesFreeShipping: Boolean(sales?.promo?.freeShipping),
     salesFreeShippingRule: sales ? salesFreeShippingRule(sales) : null,
+    salesUnitRates: sales ? salesUnitRates(sales) : undefined,
     // INT-112: same allowlist for live and Probar — brand site, map link, and links the owner wrote in ACTIVE saved
     // replies and APPROVED bound knowledge (PatchHouse ↔ sleep.shopping cross-links pass this way).
     linkAllowlist: brandFactsLinkAllowlist(
@@ -264,7 +267,14 @@ export function assembleAgentRuntimeInputs(input: {
       }),
     ),
     // chosenMethod: a contra-entrega / efectivo block is an order for a person only when the customer chose it (#9).
-    salesPaymentOptions: sales ? { ...salesPaymentOptions(sales), chosenMethod: salesState?.chosenMethod ?? null } : undefined,
+    // Sleeping C6: at the close, the data list goes before the payment question (code orders the reply).
+    salesPaymentOptions: sales
+      ? {
+          ...salesPaymentOptions(sales),
+          chosenMethod: salesState?.chosenMethod ?? null,
+          dataListFirst: salesState ? salesDataListFirst(salesState, input.history, input.inboundText, sales) : null,
+        }
+      : undefined,
     salesTrace: salesState ? { stage: salesState.stage, said: salesState.said, chosenMethod: salesState.chosenMethod ?? null } : null,
     toolCtx: {
       ...input.toolCtxBase,

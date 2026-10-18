@@ -1,3 +1,61 @@
+## 2026-10-18 — Sleeping final report batch 2 (PR #106) + Pura Sonrisa batch 3 slim (PR #107) (NOT deployed)
+
+- Stacked: #107 → #106 → #104 → claudio/luna-10-d2. Draft PRs; Rafael's GO to merge / deploy.
+- #106 C9 (night silent trial): a reply made only of someone's personal data (name / phone / place / address /
+  email / location link, any case, labelled or not) gets a repairable `data_echo` hold; the store's own phone (brand
+  facts) is not an echo. C7: "ya te lo compartí / como te dije" → repairable `repeat_refusal`; cotizar says to repeat
+  price / shipping when asked again. C8: ", y" splits a clause only after a shipping-cost statement, brackets holding
+  only an included-combo price are no break; exception / other-product words judged on the whole sentence (INT-184).
+  C10 (exam tooling): impersonal "no se aceptan / envía" is not "no sé". C4: the lock row keeps the normal TEST cap
+  (recorded only by `test-cap --restore`); a run refuses while the cap differs.
+- #107: "retirar para no pagar envío" and a delivery person arriving ("El Uber ya llegó") are not payment messages
+  unless a payment noun is present; "Por SINPE (móvil), pasame el número" is a choice + details ask; the payment
+  question never shares the data list's message; a "₡0" shipping cost never opens the ", y" split.
+- Reviews: #106 Verifier r2 PASS WITH NOTES, SecureDog r2 PASS. #107: see the PR. Register: INT-184, INFRA-25 Verified;
+  INT-185 (Low), INT-186 (Medium, pre-existing: "₡0." / "lo trae incluido") Open.
+- Later (dropped to save usage): negated "no hay descuentos", night person-request wording, DATA-65 name redaction.
+
+## 2026-10-18 — Sleeping + Pura Sonrisa exam engine fixes C1–C6, P1/P2/P4 (claudio/sleeping-exam-fixes, NOT deployed)
+
+- From the Sleeping Patches exam (betsy-agent-packs sleeping/STATUS.md C1–C6) and the Pura Sonrisa exam (P1/P2/P4).
+  Draft PR against claudio/luna-10-d2; needs Rafael's GO to merge / deploy. Also affects live Sofi (PatchHouse).
+- C1 `sales-state.ts` isPaymentMethodQuestion: "¿Querés pagar por SINPE o tarjeta?", "¿SINPE o transferencia?",
+  "¿Pagás por SINPE?", "Tenemos SINPE y tarjeta, ¿cuál preferís?" count as the method question, so a bare "sinpe" is a
+  choice (the agent sends that method's details). Never when the store's message is about a payment already made /
+  seen (done words anywhere in it: pagaste, usaste, fue, comprobante, vi, aparece, registrar…).
+- C2 `payment-classifier.ts` isBareOrderConfirmAsk + `sales-state.ts` noPaymentYet — NARROW on purpose (SecureDog r2):
+  "Para confirmar el pedido!?" / "¿me confirmás?" is a sales message only in a short chat (< 20 messages) where EVERY
+  customer message is courtesy only ("Hola", "gracias") or the bare ask itself, the store wrote nothing or only its one
+  greeting / intro, every message is plain text, and no money word appears on either side (store prices included). A bare ask after a price quote, or next to any other
+  question, still goes to a person (INT-93). Ask verb forms only; character allowlist. Replies to a confirm ask (or to
+  "¿les llegó?") may not say a payment arrived ("¡Sí, nos llegó!", "¡Perfecto, ya está!", "¡Sí!").
+- C3 `output-validator.ts` unitDerivedAmount: "₡317 por noche" passes only as a store rate — a product / combo price
+  with the count in its own name ("Pack 3 bolsas (90 noches)", salesUnitRates), right before "por / cada / al" + the
+  same unit. Sleeping's single bag needs "(30 noches)" in its inventory name for "₡330 por noche".
+- C4 `scripts/agent-pack/test-lock.ts`: one test run per business — an atomic lock row (TenantFeatureFlag key
+  agent_test_session_lock, FOR UPDATE, 6 h expiry, audited), taken before the TEST cap is raised; `test-cap --unlock`
+  frees a dead run's lock; `--restore` refuses under a running test.
+- C5 `exam.ts` / `exam-bank.ts`: history replays with the real gaps (agoMin) or, by default, the answered history
+  outside the 10-min claim look-back; one built-in item ("sys-lookback") keeps that look-back covered every run.
+- `test-cap --unlock` only frees a lock whose process is gone on this machine (or with --force).
+- C6 sales-state salesDataListFirst + dataListBeforePaymentQuestion (applied in applyFinalOutputPolicy): before payment,
+  when the customer wants to buy and the store has not asked the data yet, the reply carries the fixed data list BEFORE
+  the payment question (the question in its own last message when it fits); pickup list for pickup cues / pickup-only
+  stores. The cierre prompt says the order too.
+- P4 "¿cómo sería el envío y el pago?" / "y el pago como sería" (whole message) → method list, not a hand-off.
+- P1 free-shipping "other product" names skip words every catalog item shares ("Pura Sonrisa …").
+- P2 the store's "envío gratis desde ₡X / desde N cajas" (brandFacts.shipping.ea.freeOver) may be said as that rule;
+  INT-84 kept: the threshold is never an allowed price, only valid at the spot the rule phrase states it.
+- Pre-existing gaps closed here too (SecureDog r2): INT-167 "¿Les llegó?" / "¿Lo recibieron?" now get the reply
+  backstop; INT-168 "15 000 colones" (space thousands) is read as money.
+- Reviews: Verifier r1–r4 FAIL, r5 PASS WITH NOTES (notes fixed); SecureDog r1 FAIL, r2 FAIL, r3 FIX BEFORE PROD
+  (INT-169, INT-166 / INT-167 / INT-164 residuals — fixed after r3). Earlier: SecureDog r1 (MEDIA-16, INT-159 High;
+  INT-160–164, INFRA-23), r2 (INT-159 / INT-161 reopened High; INT-166, MEDIA-17, INFRA-24 new) — all fixed and pinned in
+  `src/lib/__tests__/sleeping-exam-fixes.test.ts`. FINAL: Verifier r7 PASS WITH NOTES (notes fixed, 220cfffd);
+  SecureDog r5 PASS (delta 220cfffd confirmed). Security Register (renumbered, the proposed INT IDs were taken):
+  MEDIA-16, MEDIA-17, INT-170…179, INFRA-23, INFRA-24 Verified/Fixed; open: INT-180, INT-182, INT-183 (Low), INT-181
+  (Medium, pre-existing on live: bare "¿Llegó?" / "¿Listo?" after payment details — schedule soon).
+
 ## 2026-10-18 — Claude setup on the live line + cloud push guard (claudio/luna-10-d2)
 
 - Cherry-picked a7f137a (CLAUDE.md, .claude/agents, .claude/skills, .claude/settings.json + hooks/guard.mjs, AGENTS.md

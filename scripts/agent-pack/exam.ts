@@ -23,7 +23,7 @@ import { softAiResponsesCreate, parseSoftAiResponseText } from '@/lib/soft-ai/ll
 import { LUNA_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
 import { arg, flag, loadPack, type AgentPack } from './pack'
 import { withExamSession } from './test-session'
-import { redactCustomerText } from './exam-bank'
+import { examHistoryTimes, redactCustomerText } from './exam-bank'
 import type { ExamBank, ExamItem } from './exam-bank'
 
 type Finding = { cls: string; serious: boolean; why: string }
@@ -185,7 +185,19 @@ async function main() {
   // --only matches the title, the item id, or any step text; --ids=a,b,c (or --ids=@file.json, an array) re-runs a list.
   const idsArg = arg('ids') || ''
   const ids = new Set<string>(idsArg.startsWith('@') ? (JSON.parse(readFileSync(idsArg.slice(1), 'utf8')) as string[]) : idsArg.split(',').map((x) => x.trim()).filter(Boolean))
-  const items = bank.items.filter((i) => (!ids.size || ids.has(i.id)) && (!only || i.title.toLowerCase().includes(only) || i.id.toLowerCase() === only || i.steps.some((st) => (st.text || '').toLowerCase().includes(only))) && (!sources.length || sources.includes(i.source)))
+  // SecureDog r2 (C5): one built-in item per run keeps the 10-min claim look-back covered (a claim typed 4 min ago,
+  // while the store's reply was being written) — pack authors don't have to remember it.
+  const lookbackItem: ExamItem = {
+    id: 'sys-lookback',
+    source: 'coverage',
+    title: 'Sistema · reclamo de pago escrito mientras la tienda respondía',
+    history: [
+      { direction: 'inbound', content: 'Ya les hice el SINPE', agoMin: 4 },
+      { direction: 'outbound', content: '¡Gracias por escribirnos! 😊', agoMin: 3 },
+    ],
+    steps: [{ text: '¿Cuánto dura el envío?', expect: { handoff: true } }],
+  }
+  const items = [...bank.items, ...(bank.items.some((i) => i.id === lookbackItem.id) ? [] : [lookbackItem])].filter((i) => (!ids.size || ids.has(i.id)) && (!only || i.title.toLowerCase().includes(only) || i.id.toLowerCase() === only || i.steps.some((st) => (st.text || '').toLowerCase().includes(only))) && (!sources.length || sources.includes(i.source)))
   const forbid = ((pack as unknown as { exam?: { forbid?: Array<{ re: string; why: string }> } }).exam?.forbid) ?? []
   const knowledge = reviewerKnowledge(pack)
 
@@ -203,7 +215,10 @@ async function main() {
     for (let run = 1; run <= runs; run++) {
       for (const [n, item] of items.entries()) {
         const session = randomUUID()
-        const history = item.history.map((h, i) => ({ direction: h.direction, content: h.content, sentAt: new Date(started - (item.history.length - i) * 60_000).toISOString() }))
+        // C5: realistic gaps (real ones from the bank, else the answered history outside the 10-min look-back).
+        const stepAt = Date.now()
+        const times = examHistoryTimes(item.history, stepAt)
+        const history = item.history.map((h, i) => ({ direction: h.direction, content: h.content, sentAt: new Date(times[i]).toISOString() }))
         let sentImageIds: string[] = []
         for (const [s, step] of item.steps.entries()) {
           const t0 = Date.now()

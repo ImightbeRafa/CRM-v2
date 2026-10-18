@@ -134,5 +134,7 @@ export async function loadAgentSalesContext(input: {
     paymentMethods: paymentMethodsOf(input.brandFacts),
     cardOnWeb: paymentLabelOptions(input.brandFacts).cardOnWeb,
     codGamOnly: paymentLabelOptions(input.brandFacts).codGamOnly,
+    // Pura Sonrisa P2: the store's own "envío gratis desde ₡X" (only the validator uses it, for that exact rule).
+    freeShippingOver: input.brandFacts.shipping?.ea?.enabled !== false ? (input.brandFacts.shipping?.ea?.freeOver ?? null) : null,
   }
 }

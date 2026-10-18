@@ -23,10 +23,12 @@ import {
 } from '@/lib/soft-ai/shortcuts'
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
 import { fillPaymentToken, paymentNumberProblems, type PaymentFillOptions, type TokenPaymentMethod } from '@/lib/soft-ai/payment-guard'
-import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
+import { hasPaymentWord, mentionsConfirmVerb } from '@/lib/soft-ai/payment-classifier'
+import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import { buildLinkAllowlist, foreignLinks, type LinkAllowlist } from '@/lib/soft-ai/links'
 import { canonicalizeOrderDataList, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
 import { MAX_REPLY_PARTS, splitReplyParts } from '@/lib/soft-ai/reply-parts'
+import { dataListBeforePaymentQuestion } from '@/lib/soft-ai/sales-state'
 
 /**
  * Backstop for short payment confirmations the confirmation-wording check misses ("Sí, ya se acreditó", "Sí, lo
@@ -35,6 +37,23 @@ import { MAX_REPLY_PARTS, splitReplyParts } from '@/lib/soft-ai/reply-parts'
  */
 const PAYMENT_STATUS_REPLY_RE =
   /(acredit|se\s+aplic|aplicad[oa]|reflej|cay[oó]\s+(?:perfecto|bien)|entr[oó]\s+(?:perfecto|bien)|todo\s+correcto|(nos|me|les)\s+(lleg|entr|cay)[oó]|ya\s+(nos\s+|me\s+|les\s+)?(lleg|entr|cay)[oó]|recibimos|recibido|lo\s+vimos|la\s+vimos|lo\s+tenemos|todo\s+en\s+orden|est[aá]\s+en\s+orden|es\s+correct[oa]|est[aá]\s+confirmad[oa]|qued[oó]\s+(pagad|confirmad)|lleg[oó]\s+bien|todo\s+(bien|listo|sali[oó])|ya\s+est[aá](?![\p{L}])|ya\s+se\s+hizo|(ning[uú]n|sin)\s+problema|list[oa]\s+(tu|el|su)\s+pago|(?<![\p{L}])(?:est[aá]|qued[oó]|sali[oó]|todo)\s+(?:ok|okay|okey|oki)(?![\p{L}])|(?:tu|el|su)\s+pago\s+(?:\p{L}+\s+)?(?:ok|okay|okey)(?![\p{L}])|(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)\s+(?:\p{L}+\s+){0,2}(?:entr[oó]|cay[oó]|lleg[oó]|est[aá]\s+(?:bien|correct|list)|qued[oó]\s+list|fue\s+recibid)|(?:ya\s+(?:lo\s+|la\s+)?(?:vimos|revisamos|verificamos|confirmamos)|(?<![\p{L}])vimos)\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|est[aá]\s+correct[oa])/iu
+
+/**
+ * Verifier r3 #3: the "it arrived / it's done" subset, for replies to a bare confirm ask ("¿me confirmás?"): "¡Sí, nos
+ * llegó!", "¡Perfecto, ya está!", "todo en orden", "recibido", "lo vimos". Never "sin problema" / "lo tenemos" / "es
+ * correcto" (ordinary sales answers there). "ya está" only at the end of a sentence ("ya está disponible" is a stock fact).
+ */
+const CONFIRM_ASK_STATUS_REPLY_RE =
+  /(?<![\p{L}])(?:(?:nos|me|les|ya)\s+(?:lleg|entr|cay)[oó]|lleg[oó]\s+(?:bien|perfecto)|(?:entr|cay)[oó]\s+(?:bien|perfecto)|recibid[oa]s?|recibimos|acredit\p{L}*|reflej\p{L}*|(?:lo|la)\s+vimos|(?:lo|la)\s+vi|ya\s+(?:lo|la)\s+tenemos|vimos\s+(?:tu|su|el)|todo\s+en\s+orden|est[aá]\s+en\s+orden|todo\s+(?:bien|listo|correcto)|qued[oó]\s+(?:pagad|confirmad|registrad)\p{L}*|est[aá]\s+confirmad[oa]|ya\s+se\s+hizo|ya\s+est[aá](?=\s*(?:[.!,🙌😊👍💚❤✨]|$))|(?:ya\s+)?(?:lo|la)\s+revisamos|registrad[oa]|te\s+confirmo|(?:ya\s+)?est[aá]\s+list[oa]|todo\s+perfecto)(?![\p{L}])|^\s*[¡!]*\s*s[ií]\s*[!.,🙌😊👍💚❤✨\s]*$/iu
+/** Verifier r7 #2: the agent asks the customer for something (an imperative ask, or the data list). */
+const DIRECT_ASK_RE =
+  /(?<![\p{L}])(?:contame|cont[aá]nos|decime|dec[ií]nos|pasame|p[aá]same|mandame|m[aá]ndame|escribime|indicame|ind[ií]came|regalame|reg[aá]lame|cu[eé]ntame|dime|env[ií]ame)(?![\p{L}])|nombre\s+completo/iu
+/** SecureDog r3 INT-169: a reply that is ONLY an affirmation ("¡Claro que sí!", "¡Hecho!", "Correcto 👍", "Sí, claro"). */
+const AFFIRM_ONLY_RE =
+  /^[\s¡!.,]*(?:(?:s[ií]|claro|que|perfecto|list[oa]|hecho|por\s+supuesto|correct[oa]|ok|okay|dale|exacto|confirmad[oa]|todo|bien|genial|excelente|de\s+una)[\s¡!.,]*)+$/iu
+/** SecureDog r2 INT-167 (pre-existing): "¿Les llegó?", "¿Lo recibieron?", "¿Les cayó?" — a payment status question. */
+const STATUS_QUESTION_RE =
+  /(?<![\p{L}])(?:(?:les|le|te|nos)\s+(?:lleg|cay|entr)[oó]|(?:lo|la)\s+(?:recibieron|recibi[oó]|vieron|vio))(?![\p{L}])|^[\s¿¡]*(?:y\s+)?ya\s+est[aá]\s*[?!.]*\s*$/iu
 
 /** Never said by the agent in any chat: it cannot see the bank ("acreditado", "recibimos tu sinpe", "pago verificado"). */
 const ALWAYS_PAYMENT_STATUS_REPLY_RE =
@@ -124,7 +143,116 @@ const FREE_SHIPPING_EXCEPTION_RE =
  * Combos the owner marked as including shipping (exact prices), plus words that name other things the agent sells
  * (catalog items): a clause that names one of them is not only about the included combo (INT-91).
  */
-export type FreeShippingRule = { includedPrices: number[]; otherNames?: string[]; bundleWords?: string[]; nameNotes?: string[] }
+export type FreeShippingRule = {
+  includedPrices: number[]
+  otherNames?: string[]
+  bundleWords?: string[]
+  nameNotes?: string[]
+  /** Pura Sonrisa P2: the store's own "envío gratis desde ₡X" threshold, with the catalog unit prices. */
+  freeOver?: number
+  unitPrices?: number[]
+}
+
+/**
+ * Pura Sonrisa P2: the store's threshold rule said as a rule — "envío gratis desde ₡19 900", "a partir de 2 cajas",
+ * "en compras desde ₡20 000", "llevando 2 cajas o más". A count N is true only when N of the CHEAPEST item already
+ * reach the threshold. The clause may name no exception / personal wording ("tu pedido califica", "hoy", "a vos").
+ */
+const THRESHOLD_RE =
+  /(?<![\p{L}])(?:desde|a\s+partir\s+de|en\s+compras?\s+(?:de|desde|mayores\s+a|sobre|de\s+m[aá]s\s+de)|por\s+compras?\s+(?:de|desde|mayores\s+a|sobre|de\s+m[aá]s\s+de)|comprando|llevando)\s+(?:(?:[₡¢]\s?(\d{1,3}(?:[.,\s ]\d{3})+|\d{4,7}))|(\d{1,2}|dos|tres|cuatro|cinco|seis)\s+(?:cajas?|unidades|productos?|paquetes?|bolsas?|frascos?|art[ií]culos?|piezas?)(?:\s+o\s+m[aá]s)?)(?![\p{L}\d])/giu
+const COUNT_WORDS: Record<string, number> = { dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6 }
+
+/** Where each threshold amount the rule phrase captured starts and ends ("desde ₡25 000" → the "₡25 000" span). */
+function thresholdCaptures(text: string): Array<[number, number]> {
+  const out: Array<[number, number]> = []
+  for (const m of text.matchAll(THRESHOLD_RE)) {
+    if (!m[1]) continue
+    const at = (m.index ?? 0) + m[0].search(/[₡¢]/u)
+    out.push([at, (m.index ?? 0) + m[0].length])
+  }
+  return out
+}
+
+/**
+ * Verifier r3 #1 (INT-84): a clause that prices something ("Los 3 te quedan desde ₡25 000 con envío gratis", "Tenemos
+ * combos desde ₡25 000…", "Precio desde…") is never the threshold rule.
+ */
+const THRESHOLD_PRICE_WORD_RE =
+  /(?<![\p{L}])(?:quedan?|salen?|sale|cuestan?|cuesta|est[aá]n?|precios?|valen?|vale|cobr\p{L}*|combos?|kits?|packs?|paquetes?|tr[ií]os?|d[uú]os?|promo\p{L}*|llev[aá]s|te\s+(?:queda|quedan|sale|salen)|(?:los|las)\s+(?:\d+|dos|tres|cuatro|cinco|seis))(?![\p{L}])/iu
+
+function thresholdClauseOk(clause: string, rule: FreeShippingRule): boolean {
+  const over = rule.freeOver
+  if (!over || FREE_SHIPPING_EXCEPTION_RE.test(clause) || THRESHOLD_PRICE_WORD_RE.test(clause)) return false
+  // The rule phrase must sit right next to the free-shipping words ("envío gratis desde …", "desde … el envío es gratis").
+  const near = freeShippingWording(clause).some((w) =>
+    [...clause.matchAll(THRESHOLD_RE)].some((m) => {
+      const s = m.index ?? 0
+      const e = s + m[0].length
+      return (s >= w.end && s - w.end <= 25) || (w.index >= e && w.index - e <= 25)
+    }),
+  )
+  if (!near) return false
+  // Verifier r5 note 1 (INT-84): a rule phrase BEFORE the free-shipping words reads as a price ("Es / Tenemos / Hay /
+  // Va desde ₡25 000 con envío gratis") unless it is the explicit "compras / pedidos desde ₡X" shape, or only "el"
+  // stands between them ("Desde ₡25 000 el envío es gratis"). Before it: nothing but a greeting.
+  const firstWording = freeShippingWording(clause)[0]
+  for (const m of clause.matchAll(THRESHOLD_RE)) {
+    const s = m.index ?? 0
+    const e = s + m[0].length
+    if (!firstWording || firstWording.index < e) continue
+    const fold = (x: string) => x.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^\p{L}]+/u).filter(Boolean)
+    const before = fold(clause.slice(0, s))
+    const between = fold(clause.slice(e, firstWording.index))
+    const orderShape = /(?<![\p{L}])(?:compras?|pedidos?|[oó]rdenes)\s*$/iu.test(clause.slice(0, s).trim()) || /(?:compras?|pedidos?)\s+$/iu.test(clause.slice(0, s))
+    const greetingOnly = before.every((w) => THRESHOLD_GREETING.has(w))
+    if (!(orderShape || (greetingOnly && between.every((w) => w === 'el')))) return false
+  }
+  const cheapest = Math.min(...(rule.unitPrices ?? []).filter((p) => p > 0))
+  let any = false
+  for (const m of clause.matchAll(THRESHOLD_RE)) {
+    if (m[1]) {
+      if (Math.abs(Number(m[1].replace(/\D/g, '')) - over) > 1) return false
+    } else {
+      const n = COUNT_WORDS[m[2].toLowerCase()] ?? Number(m[2])
+      if (!Number.isFinite(cheapest) || !(n >= 1) || n * cheapest < over - 1) return false
+    }
+    any = true
+  }
+  if (!any) return false
+  // Verifier r2 #1 (INT-84 kept): no other amount at all in a threshold clause — only the captured threshold itself
+  // ("Envío gratis desde ₡25 000, los 3 te quedan en ₡25 000" is refused).
+  let rest = clause
+  for (const [s, e] of thresholdCaptures(clause)) rest = rest.slice(0, s) + ' '.repeat(e - s) + rest.slice(e)
+  if (!extractMoneyAmounts(rest).every((a) => Math.round(a) < 100) || [...rest.matchAll(BARE_AMOUNT_RE)].length > 0) return false
+  // Verifier r4 #1 (INT-84): an ALLOWLIST — once the free-shipping words and the rule phrase are removed, only filler
+  // may remain ("Tenemos … a todo el país", "Pedidos desde ₡X con envío gratis"). Never a product, a quantity or a verb
+  // ("Tres cajas desde…", "La Menta desde…", "Lo tenés desde…").
+  let words = clause
+  for (const m of [...clause.matchAll(THRESHOLD_RE)].reverse()) words = words.slice(0, m.index ?? 0) + ' ' + words.slice((m.index ?? 0) + m[0].length)
+  for (const w of freeShippingWording(words).reverse()) words = words.slice(0, w.index) + ' ' + words.slice(w.end)
+  const left = words
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .split(/[^\p{L}]+/u)
+    .filter(Boolean)
+  return left.every((w) => THRESHOLD_FILLER.has(w))
+}
+const THRESHOLD_ELIGIBILITY_RE =
+  /(?<![\p{L}])(?:calific\p{L}*|aplic\p{L}*|tuy[oa]s?|lleg[aá]s|llegaste|lleg[oó]|alcanz\p{L}*|pas[aá]s|pasaste|super[aá]s|superaste|al\s+monto|no\s+pag[aá]s|sin\s+costo|va\s+gratis|van\s+gratis|sale\s+gratis|a\s+vos|a\s+ti|te\s+(?:aplica|sale|queda|toca)|tu\s+(?:pedido|compra|env[ií]o|orden|carrito|total)|con\s+lo\s+que\s+llev[aá]s)(?![\p{L}])/iu
+/** Words that say an order is enough for free shipping, outside the rule clause (SecureDog r4 INT-166). */
+const THRESHOLD_ENOUGH_RE = /(?<![\p{L}])(?:gratis|sin\s+env[ií]o|sin\s+costo|cubiert[oa]s?|bast(?:a|an|ar[ií]a)|suficientes?|entra(?:n|r[ií]a)?)(?![\p{L}])/iu
+/** "2 cajas", "dos tubos", "3 Menta": a count of products (checked against the threshold). */
+const UNIT_MENTION_RE = /(?<![\p{L}\d.,₡])(\d{1,2}|dos|tres|cuatro|cinco|seis)\s+(?:cajas?|unidades|productos?|paquetes?|bolsas?|frascos?|tubos?|piezas?|\p{Lu}\p{L}+)(?![\p{L}])/gu
+/** Second person / "ya" / "con esto" — a sentence about THIS customer next to the threshold rule (INT-166). */
+const THRESHOLD_PERSONAL_RE =
+  /(?<![\p{L}])(?:vos|tu|tus|te|ti|tuy\p{L}*|ya|usted|con\s+(?:esto|eso|est[oa]s|es[oa]s)|\p{L}+[áéí]s|\p{L}+(?:aste|iste))(?![\p{L}])/iu
+/** Common words that end like a second-person verb but are not one. */
+const THRESHOLD_PERSONAL_OK_RE = /(?<![\p{L}])(?:m[aá]s|adem[aá]s|despu[eé]s|pa[ií]s|jam[aá]s|atr[aá]s|tambi[eé]n|cort[eé]s|ingl[eé]s|demás)(?![\p{L}])/giu
+const THRESHOLD_GREETING = new Set('hola buenas claro si gracias ok dale perfecto genial'.split(' '))
+const THRESHOLD_FILLER = new Set(
+  'tenemos hay el la es va en con y de del para a todo pais compras compra pedidos pedido ordenes hola claro si gracias ademas ofrecemos manejamos nuestro nuestros envio envios gratis domicilio'.split(' '),
+)
 
 const foldNote = (s: string) => s.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim()
 
@@ -145,10 +273,30 @@ const FREE_SHIPPING_SPREAD_RE = /(?<![\p{L}])(tambi[eé]n|igual(?:mente)?|lo\s+m
 const BARE_AMOUNT_RE = /\d{1,3}(?:[.,   ]\d{3})+|\d{4,7}/g
 
 /** Clause spans: sentence ends, parentheses, line breaks (a period inside ₡25.000 is not an end). */
-function clauseSpans(text: string): Array<[number, number]> {
+/**
+ * Sleeping C8: "con el pack de 2 bolsas (₡19 800) el envío va incluido" — brackets holding ONLY an included combo's
+ * price are not a clause break (the brackets become spaces, same length). Any other bracket keeps breaking (INT-126).
+ */
+function maskIncludedPriceParentheticals(text: string, includedPrices: ReadonlyArray<number>): string {
+  if (!includedPrices.length) return text
+  return text.replace(/\(\s*[₡¢]\s?(\d{1,3}(?:[.,\s ]\d{3})+|\d{4,7})\s*\)/gu, (m, amount: string) => {
+    const v = Number(amount.replace(/\D/g, ''))
+    return includedPrices.some((p) => Math.abs(p - v) <= 1) ? ` ${m.slice(1, -1)} ` : m
+  })
+}
+
+/** The clause before ", y" states a shipping cost ("Con 1 bolsa el envío cuesta ₡3 000", "son ₡3 000 de envío"). */
+// SecureDog r2 (INT-186 hardening): never "₡0" — a zero shipping cost is a free-shipping claim, not a cost statement.
+const SHIPPING_COST_TAIL_RE = /env[ií]o\s+(?:cuesta|sale|es|vale|queda)\s+(?:en\s+)?[₡¢]\s?[1-9][\d.,\s\u00a0]*$|[₡¢]\s?[1-9][\d.,\s\u00a0]*\s+de\s+env[ií]o\s*$/iu
+
+function clauseSpans(text: string, splitAtCommaY = true): Array<[number, number]> {
   const spans: Array<[number, number]> = []
   let start = 0
-  for (const m of text.matchAll(/(?:(?<!\d)\.|\.(?!\d)|[!?;()\n])+/g)) {
+  // Sleeping C8: ", y …" starts a new clause too ("Con 1 bolsa el envío cuesta ₡3 000, y el pack de 2 … con envío
+  // incluido" — the ₡3 000 belongs to the first clause, not to the combo fact).
+  for (const m of text.matchAll(/(?:(?<!\d)\.|\.(?!\d)|[!?;()\n]|,(?=\s+y\s))+/g)) {
+    // SecureDog r1 INT-184: ", y" ends a clause ONLY right after a shipping-cost statement ("el envío cuesta ₡3 000").
+    if (m[0] === ',' && (!splitAtCommaY || !SHIPPING_COST_TAIL_RE.test(text.slice(start, m.index ?? 0)))) continue
     spans.push([start, m.index ?? 0])
     start = (m.index ?? 0) + m[0].length
   }
@@ -163,23 +311,58 @@ function clauseSpans(text: string): Array<[number, number]> {
  */
 export function freeShippingRuleOk(rawText: string, rule: FreeShippingRule): boolean {
   const near = (a: number, b: number) => Math.abs(a - b) <= 1
-  const text = maskNameParentheticals(rawText, rule.nameNotes ?? [])
+  const text = maskIncludedPriceParentheticals(maskNameParentheticals(rawText, rule.nameNotes ?? []), rule.includedPrices)
   const extraWords = (rule.bundleWords ?? []).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).filter(Boolean)
   const bundleWordRe = new RegExp(`(?<![\\p{L}])(?:combos?|packs?|kits?${extraWords.length ? '|' + extraWords.map((w) => `${w}s?`).join('|') : ''})(?![\\p{L}])`, 'giu')
   const matches = freeShippingWording(text)
-  if (matches.length === 0 || rule.includedPrices.length === 0) return false
-  // One included combo per fact: nothing in the reply may stretch it to other items.
-  if (FREE_SHIPPING_SPREAD_RE.test(text)) return false
-  const others = (rule.otherNames ?? []).map((n) => n.trim().toLowerCase()).filter((n) => n.length >= 3)
+  if (matches.length === 0 || (rule.includedPrices.length === 0 && !rule.freeOver)) return false
   const spans = clauseSpans(text)
+  const sentenceSpans = clauseSpans(text, false)
+  const spanOf = (m: { index: number; end: number }) => spans.find(([s, e]) => m.index >= s && m.index < e)
+  // P2: clauses that state the store's own threshold rule are judged on their own (a rule for every order may say
+  // "todos"); the spread check below reads the rest of the reply.
+  const thresholdSpans = rule.freeOver
+    ? matches.map(spanOf).filter((sp): sp is [number, number] => Boolean(sp) && thresholdClauseOk(text.slice(sp![0], sp![1]), rule))
+    : []
+  // SecureDog r2 INT-166: with the threshold rule said, nothing in the reply may say THIS order reaches it ("tu pedido
+  // califica", "el tuyo va gratis", "ya llegaste al monto", "no pagás envío") — that is a multi-unit total (INT-94).
+  if (thresholdSpans.length > 0 && THRESHOLD_ELIGIBILITY_RE.test(text)) return false
+  // SecureDog r3 INT-166: outside the rule clause itself, nothing addressed to this customer ("Ya entraste", "Vos ya
+  // estás", "Con 2 lo cumplís", "Ese monto ya lo cubrís") — second person, "ya", "con esto / con dos".
+  if (thresholdSpans.length > 0) {
+    let others = text
+    for (const [s, e] of thresholdSpans) others = others.slice(0, s) + ' '.repeat(e - s) + others.slice(e)
+    // Verifier r6 #3: questions may address the customer ("¿Cuántas cajas te gustaría?"); eligibility words were
+    // checked on the whole reply above.
+    const statements = others.replace(/¿[^?¿]*\?/gu, ' ').replace(/(?:^|[.!\n])[^.!?\n]*\?/gu, ' ')
+    if (THRESHOLD_PERSONAL_RE.test(statements.replace(THRESHOLD_PERSONAL_OK_RE, ' '))) return false
+    // SecureDog r4 INT-166: "Con dos cajas queda gratis", "Dos cajas bastan", "Este pedido entra", "sale sin envío".
+    if (THRESHOLD_ENOUGH_RE.test(others)) return false
+    const cheapest = Math.min(...(rule.unitPrices ?? []).filter((p) => p > 0))
+    for (const m of others.matchAll(UNIT_MENTION_RE)) {
+      const n = COUNT_WORDS[m[1].toLowerCase()] ?? Number(m[1])
+      if (n >= 2 && (!Number.isFinite(cheapest) || n * cheapest < (rule.freeOver ?? 0) - 1)) return false
+    }
+  }
+  let rest = text
+  for (const [s, e] of thresholdSpans) rest = rest.slice(0, s) + ' '.repeat(e - s) + rest.slice(e)
+  // One included combo per fact: nothing in the reply may stretch it to other items.
+  if (FREE_SHIPPING_SPREAD_RE.test(rest)) return false
+  const others = (rule.otherNames ?? []).map((n) => n.trim().toLowerCase()).filter((n) => n.length >= 3)
   for (const m of matches) {
-    const span = spans.find(([s, e]) => m.index >= s && m.index < e)
+    const span = spanOf(m)
     if (!span || m.end > span[1]) return false
+    if (thresholdSpans.some(([s, e]) => s === span[0] && e === span[1])) continue
+    if (rule.includedPrices.length === 0) return false
     const clause = text.slice(span[0], span[1])
     // Exactly one combo / pack named in the clause (not "el Combo Trío y el Combo 2").
     if ((clause.match(bundleWordRe) || []).length !== 1) return false
-    if (FREE_SHIPPING_EXCEPTION_RE.test(clause)) return false
-    const lower = clause.toLowerCase()
+    // SecureDog r1 INT-184: exception / personal words and other products are judged on the WHOLE sentence (never
+    // escaping behind ", y"); only the amounts are judged on the clause.
+    const sentenceSpan = sentenceSpans.find(([s0, e0]) => span[0] >= s0 && span[0] < e0) ?? span
+    const sentence = text.slice(sentenceSpan[0], sentenceSpan[1])
+    if (FREE_SHIPPING_EXCEPTION_RE.test(sentence)) return false
+    const lower = sentence.toLowerCase()
     if (others.some((n) => new RegExp(`(?<![\\p{L}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, 'iu').test(lower))) return false
     const amounts = [
       ...extractMoneyAmounts(clause).map((a) => Math.round(a)),
@@ -191,6 +374,33 @@ export function freeShippingRuleOk(rawText: string, rule: FreeShippingRule): boo
   return true
 }
 
+
+/**
+ * Pura Sonrisa P2 with INT-84 kept: the threshold amount is NOT an allowed price. It passes only when every place it is
+ * written sits in a clause that states the store's threshold rule ("envío gratis desde ₡19 900") — never as a price
+ * ("los 3 en ₡19 900").
+ */
+export function thresholdAmountOk(amount: number, rawText: string, rule: FreeShippingRule | null | undefined): boolean {
+  if (!rule?.freeOver || Math.abs(Math.round(amount) - rule.freeOver) > 1) return false
+  const text = maskNameParentheticals(rawText, rule.nameNotes ?? [])
+  const spans = clauseSpans(text)
+  const captures = thresholdCaptures(text)
+  let seen = false
+  for (const m of text.matchAll(COLON_AMOUNT_RE)) {
+    if (Math.abs(Number(m[1].replace(/\D/g, '')) - rule.freeOver) > 1) continue
+    seen = true
+    const at = m.index ?? 0
+    // Verifier r2 #1: each written threshold amount must BE a captured one ("desde ₡25 000"), never a second copy.
+    if (!captures.some(([s]) => s === at)) return false
+    const span = spans.find(([s, e]) => at >= s && at < e)
+    if (!span) return false
+    const clause = text.slice(span[0], span[1])
+    if (freeShippingWording(clause).length === 0 || !thresholdClauseOk(clause, rule)) return false
+  }
+  // The amount in any other money form ("25 000 colones", "25 mil") is never the threshold rule.
+  const otherForms = extractMoneyAmounts(text.replace(COLON_AMOUNT_RE, ' ')).some((a) => Math.abs(Math.round(a) - rule.freeOver!) <= 1)
+  return seen && !otherForms
+}
 /** Deal check with the narrower included-combo rule on top of the promo kinds. */
 function dealProblemWithRule(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>, rule: FreeShippingRule | null | undefined): boolean {
   if (!dealProblem(text, allowed)) return false
@@ -210,6 +420,58 @@ const CREATED_CLAIM_RE =
 const ORDER_CLOSING_CLAIM_RE =
   /pedido\s+(?:ya\s+)?(?:qued[oó]\s+|est[aá]\s+)?(?:registrad|anotad|agendad|confirmad|list)[oa]|(?:orden|compra)\s+(?:ya\s+)?(?:qued[oó]\s+|est[aá]\s+)?(?:registrad|anotad|agendad|confirmad|list)[oa]|(?<![\p{L}])agend[eé](?![\p{L}])|anot[eé]\s+(?:tu|el|su)\s+pedido|sale\s+(?:hoy|ma[nñ]ana)|te\s+(?:lo|la|los|las)\s+mando\s+(?:hoy|ma[nñ]ana)|ma[nñ]ana\s+te\s+llega|(?:queda|qued[oó])\s+(?:programad|agendad)\p{L}*|te\s+(?:lo|la|los|las)\s+despachamos|va\s+en\s+camino|tu\s+entrega\s+(?:queda|est[aá])\s+(?:para|agendada)/iu
 const UNIT_COST_RE = /unitCost|costo\s+unitario|precio\s+de\s+costo/i
+
+/** Sleeping C7: "ya te lo compartí / dije / pasé / mencioné / indiqué" (refusing to repeat what the customer asks again). */
+const REPEAT_REFUSAL_RE =
+  /(?<![\p{L}])(?:ya\s+(?:te|se|le|les)\s+(?:(?:lo|la|los|las)\s+)?(?:hab[ií]a\s+)?(?:compart\p{L}*|dicho|dije|di|pas[eé]|pasado|mencion\p{L}*|indiqu[eé]|indicado|envi[eé]|enviado|mand[eé]|mandado)|como\s+(?:ya\s+)?(?:te|le)\s+(?:dije|coment[eé]|mencion[eé]|indiqu[eé]|hab[ií]a\s+dicho))(?![\p{L}])/iu
+
+/** One line of a personal-data block: a phone, an email, a "Provincia, Cantón, Distrito" place, an address or a name. */
+const DATA_LABEL_RE = /^(?:[-•*]\s*)?(?:nombre(?:\s+completo)?|tel[eé]fono|celular|cel|whatsapp|correo|e-?mail|provincia|cant[oó]n|distrito|direcci[oó]n(?:\s+exacta)?|se[nñ]as|c[eé]dula)\s*[:\-–]\s*/iu
+const DATA_PHONE_LINE_RE = /^[+()\d\s.-]*(?<!\d)\d{4}[\s.-]?\d{4}(?!\d)[\s\d.-]*$/u
+const DATA_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/u
+const DATA_PLACE_RE = /^\p{Lu}[\p{L}.\s]{1,40}(?:,\s*\p{Lu}[\p{L}.\s]{1,40}){1,3}\.?$/u
+const DATA_ADDRESS_RE = /(?<![\p{L}])(?:\d+\s*(?:m|mts|metros|km)\s+(?:al\s+)?(?:norte|sur|este|oeste)|de\s+la\s+(?:iglesia|escuela|plaza|pulper[ií]a|parada)|casa\s+(?:color|blanca|verde|azul|amarilla|n[uú]mero|#)|frente\s+a|contiguo\s+a|costado\s+(?:norte|sur|este|oeste)|apartamento|condominio|residencial|barrio)(?![\p{L}])/iu
+const DATA_NAME_RE = /^\p{Lu}\p{Ll}+(?:\s+(?:de\s+|del\s+|la\s+)?\p{Lu}\p{Ll}+){1,4}$/u
+
+/** Words a data value never is ("Te dejo nuestro WhatsApp", "¡Gracias!"): such a line is a sentence, not data. */
+const DATA_NOT_VALUE_RE =
+  /(?<![\p{L}])(?:te|le|les|nos|nuestro|nuestra|nuestros|escrib\p{L}*|llam\p{L}*|whatsapp|gracias|hola|aqu[ií]|ac[aá]|este|esta|es|son|est[aá]|tu|su|para|por|con|que|qu[eé]|cuando|si|pod[eé]s|puedes|quer[eé]s|pedido|precio|total|producto|bolsa|pack|env[ií]o|pago|horario|lunes|abierto)(?![\p{L}])/iu
+/** A location bubble / maps link the customer shared ("[ubicación]", "📍 https://maps.app.goo.gl/…"). */
+const DATA_LOCATION_RE = /^(?:\[(?:ubicaci[oó]n|location)[^\]]*\]|(?:https?:\/\/)?(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.)?google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|waze\.com)\S*)$/iu
+/** One short value: up to 5 words of letters only ("Cartago", "Llanos de Santa Lucía", "maría pérez"). */
+const DATA_WORDS_RE = /^[\p{L}][\p{L}'.,\s-]{0,60}$/u
+
+/**
+ * Sleeping exam C9 (night silent trial, 2026-10-03): after a location pin the model replied with nothing but a name /
+ * phone / address block copied from the chat. A reply of 2+ lines where EVERY line is personal data and at least one
+ * is a phone or an email is never sent (it is never an answer; it can leak one person's data). Verifier r1: a data
+ * line is also a labelled one ("Provincia: Cartago"), a lone place / name word (any case), a location placeholder or a
+ * maps link. A phone the store itself publishes (`ownText`: its brand facts) is not an echo. An order summary
+ * ("Producto: …", "Total …") or the data-request list ("- Nombre completo") has other lines and passes. Pure.
+ */
+export function isPersonalDataEcho(text: string, ownText?: string | null): boolean {
+  const lines = (text || '')
+    .split('\n')
+    .map((l) => l.replace(/[\p{Extended_Pictographic}️]/gu, ' ').trim())
+    .filter(Boolean)
+  if (lines.length < 2 || lines.length > 12) return false
+  const own = new Set(
+    [...(ownText || '').matchAll(/\d[\d\s.-]{6,}\d/g)].map((m) => m[0].replace(/\D/g, '')).filter((d) => d.length >= 8).map((d) => d.slice(-8)),
+  )
+  const isOwnPhone = (v: string) => own.size > 0 && own.has(v.replace(/\D/g, '').slice(-8))
+  const raw = lines.map((l) => l.replace(/^[-•*–]\s*/u, ''))
+  const labelled = raw.map((l) => DATA_LABEL_RE.test(l))
+  const values = raw.map((l) => l.replace(DATA_LABEL_RE, '').trim())
+  const contact = values.some((v) => (DATA_PHONE_LINE_RE.test(v) && !isOwnPhone(v)) || DATA_EMAIL_RE.test(v))
+  if (!contact) return false
+  return values.every((v, i) => {
+    if (DATA_PHONE_LINE_RE.test(v)) return !isOwnPhone(v)
+    if (labelled[i]) return true
+    if (!v) return false
+    if (DATA_EMAIL_RE.test(v) || DATA_LOCATION_RE.test(v) || DATA_PLACE_RE.test(v) || DATA_ADDRESS_RE.test(v) || DATA_NAME_RE.test(v)) return true
+    return DATA_WORDS_RE.test(v) && v.split(/[\s,]+/).filter(Boolean).length <= 6 && !DATA_NOT_VALUE_RE.test(v)
+  })
+}
 const SHIP_CUE_RE = /env[ií]o|retiro|domicilio|\bGAM\b|correos|mensajer/i
 const PAY_CUE_RE = /\b(pago|sinpe|transferencia|tarjeta|efectivo|contra\s*entrega)\b/i
 const PURCHASE_INTENTS = new Set<AgentIntent>(['price', 'how_to_buy'])
@@ -279,12 +541,69 @@ export function brandFactsLinkAllowlist(
   return buildLinkAllowlist({ website: facts?.website, catalogUrl: facts?.catalogUrl, mapsUrl: facts?.location?.mapsUrl, ownerTexts })
 }
 
+// SecureDog r2 INT-168 (pre-existing): "15 000 colones" (space / no-break-space thousands) is money too.
 const MONEY_AMOUNT_RE =
-  /[₡¢$]\s?(\d(?:[\d.\s]*\d)?)(\s*mil(?![\p{L}]))?|(?<![\d.,\p{L}])(\d[\d.,]*)(\s*mil)?\s*(?:colones|crc|usd)(?![\p{L}])/giu
+  /[₡¢$]\s?(\d(?:[\d.\s]*\d)?)(\s*mil(?![\p{L}]))?|(?<![\d.,\p{L}])(\d{1,3}(?:[   ]\d{3})+|\d[\d.,]*)(\s*mil)?\s*(?:colones|crc|usd)(?![\p{L}])/giu
 
 function amountAllowed(amount: number, allowed: number[]): boolean {
   const rounded = Math.round(amount)
   return allowed.some((candidate) => Math.abs(Math.round(candidate) - rounded) <= 1)
+}
+
+/**
+ * Sleeping exam C3 (2026-10-18): a per-night / per-patch amount ("₡317 por noche") is sourced only as a STORE rate:
+ * the price of a product / combo whose own name carries the count ("Pack 3 bolsas (90 noches)" ₡28 500 → ₡317 por
+ * noche; sales-state salesUnitRates). SecureDog r1 INT-162: never a count the customer or the model wrote, never a
+ * shipping amount. Every place the amount is written must be directly followed by "por / cada / x / / / al / a la" + the
+ * SAME unit (noche ↔ noches); written in any other money form ("317 colones", "317 mil") it is refused.
+ */
+/** name: the owner's product / combo name the rate comes from ("Pack 3 bolsas (90 noches)"). */
+export type UnitRate = { price: number; count: number; unit: string; name?: string }
+const UNIT_WORD = String.raw`(noches?|d[ií]as?|parches?|usos?|aplicaci[oó]n(?:es)?|dosis)`
+const PER_UNIT_AFTER_RE = new RegExp(String.raw`^\s*(?:colones\s*)?(?:por|cada|x|\/|al|a\s+la|la|el)\s*${UNIT_WORD}(?![\p{L}])`, 'iu')
+const COLON_AMOUNT_RE = /[₡¢]\s?(\d{1,3}(?:[.,\s ]\d{3})+|\d+)(?![\d])/gu
+
+export function unitFamily(word: string): string {
+  const w = word.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  return w.startsWith('noche') ? 'noche' : w.startsWith('dia') ? 'dia' : w.startsWith('parche') ? 'parche' : w.startsWith('uso') ? 'uso' : w.startsWith('aplicacion') ? 'aplicacion' : 'dosis'
+}
+
+const NUMBER_WORDS: Record<string, number> = { una: 1, un: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, doble: 2, triple: 3 }
+const SMALL_NUMBER_RE = /(?<![\d.,₡¢])(\d{1,4})(?![\d.,])|(?<![\p{L}])(una|un|uno|dos|tres|cuatro|cinco|seis|doble|triple)(?![\p{L}])/giu
+function nameNumbers(name: string): number[] {
+  return [...name.matchAll(SMALL_NUMBER_RE)].map((m) => (m[1] ? Number(m[1]) : NUMBER_WORDS[m[2].toLowerCase()]))
+}
+/** Plain numbers (not money) in the sentence around position `at` of the amount. */
+function sentenceNumbers(raw: string, at: number, len: number): number[] {
+  // A period between digits (₡28.500) is not a sentence end.
+  const text = raw.replace(/(?<=\d)\.(?=\d)/g, ',')
+  const start = Math.max(...['.', '!', '?', '\n'].map((c) => text.lastIndexOf(c, at - 1) + 1), 0)
+  const ends = ['.', '!', '?', '\n'].map((c) => text.indexOf(c, at + len)).filter((i) => i >= 0)
+  const sentence = text.slice(start, ends.length ? Math.min(...ends) : text.length).replace(COLON_AMOUNT_RE, ' ')
+  return [...sentence.matchAll(SMALL_NUMBER_RE)].map((m) => (m[1] ? Number(m[1]) : NUMBER_WORDS[m[2].toLowerCase()])).filter((n) => n > 1)
+}
+
+export function unitDerivedAmount(amount: number, text: string, rates: ReadonlyArray<UnitRate> | null | undefined): boolean {
+  const rounded = Math.round(amount)
+  const valid = (rates ?? []).filter((r) => r.price > 0 && r.count >= 2)
+  if (!valid.length) return false
+  let seen = false
+  for (const m of text.matchAll(COLON_AMOUNT_RE)) {
+    if (Number(m[1].replace(/\D/g, '')) !== rounded) continue
+    seen = true
+    const at = m.index ?? 0
+    const after = PER_UNIT_AFTER_RE.exec(text.slice(at + m[0].length, at + m[0].length + 30))
+    if (!after) return false
+    const family = unitFamily(after[1])
+    // Verifier r3 #4: the numbers the sentence names ("el pack de 2", "3 bolsas", "90 noches") must belong to the rate's
+    // own product — "El pack de 2 sale a ₡317 por noche" (the pack-of-3 rate) is refused.
+    const named = sentenceNumbers(text, at, m[0].length)
+    const fitsProduct = (r: UnitRate) => named.every((n) => n === r.count || nameNumbers(r.name || '').includes(n))
+    if (!valid.some((r) => unitFamily(r.unit) === family && Math.abs(Math.round(r.price / r.count) - rounded) <= 1 && fitsProduct(r))) return false
+  }
+  if (!seen) return false
+  // The same amount written without ₡ ("317 colones", "317 mil") is not a per-unit mention.
+  return !extractMoneyAmounts(text.replace(COLON_AMOUNT_RE, ' ')).some((a) => Math.round(a) === rounded)
 }
 
 /**
@@ -534,6 +853,10 @@ export function validateAgentOutput(input: {
   orderClosing?: boolean
   /** INT-158 H3: the text was written by the model — a letter outside Latin-1 / a stray combining mark is held. */
   modelText?: boolean
+  /** Sleeping C3: the store's own per-unit rates (sales-state salesUnitRates). */
+  unitRates?: UnitRate[] | null
+  /** Sleeping C9: the store's own published text (brand facts) — its phones are never a data echo. */
+  ownText?: string | null
 }): OutputValidationResult {
   const reasons: string[] = []
   const text = input.text || ''
@@ -546,6 +869,10 @@ export function validateAgentOutput(input: {
   // configuration needs no allowlist entry, and the allowlist never widens to a whole payment host (Verifier F2).
   if (input.linkAllowlist && foreignLinks(input.linkText ?? text, input.linkAllowlist).length > 0) reasons.push('foreign_link')
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
+  // Sleeping C9: a reply that is only a personal-data block (someone's name / phone / address copied from the chat).
+  if (isPersonalDataEcho(input.styleText ?? text, input.ownText)) reasons.push('data_echo')
+  // Sleeping C7: the customer asked again — "ya te lo compartí / ya te lo dije" refuses an answer it can give.
+  if (REPEAT_REFUSAL_RE.test(text)) reasons.push('repeat_refusal')
   // INT-158 H4: the sibling claim checks read every form the confirmation-wording check reads (raw, normalised —
   // invisible characters, look-alikes, WhatsApp markup, odd separators — without accents, and the look-alike
   // skeleton). These patterns have no word edges, so the accent-free and skeleton forms are matched from a word start
@@ -577,6 +904,22 @@ export function validateAgentOutput(input: {
     anyForm(PAYMENT_STATUS_REPLY_RE, claimForms)
   ) {
     reasons.push('payment_status_claim')
+  } else if (
+    input.customerText &&
+    (mentionsConfirmVerb(input.customerText) ||
+      STATUS_QUESTION_RE.test(stripFormatChars(input.customerText.normalize('NFKC')))) &&
+    (anyForm(CONFIRM_ASK_STATUS_REPLY_RE, claimForms) ||
+      // SecureDog r3 INT-169: a short whole-reply affirmation with no question ("¡Claro que sí!", "¡Hecho!", "Correcto 👍")
+      // to a confirm ask reads as "your payment is fine".
+      AFFIRM_ONLY_RE.test(text.replace(/[\p{Extended_Pictographic}\uFE0F]/gu, ' ')) ||
+      // SecureDog r4 #4: to a confirm ask the agent asks what to confirm or moves the sale on — a reply with no question
+      // ("¡Así es!", "¡Sí, con gusto!", "¡Sí! Tu pedido sale hoy") is held.
+      // Verifier r7 #2: a direct ask ("pasame estos datos", "contame qué producto", a data list) counts as asking.
+      (mentionsConfirmVerb(input.customerText) && !/[?¿]/.test(text) && !DIRECT_ASK_RE.test(text)))
+  ) {
+    // SecureDog r1 INT-159 / Verifier r3 #3: a reply to a confirm ask ("¿me confirmás?") may not say a payment arrived
+    // ("¡Sí, nos llegó!", "¡Perfecto, ya está!", "todo en orden") — but "¡Claro, sin problema!" stays a sales answer.
+    reasons.push('payment_status_claim')
   }
 
   const inventory =
@@ -594,6 +937,10 @@ export function validateAgentOutput(input: {
 
   for (const amount of amounts) {
     if (amountAllowed(amount, allowed)) continue
+    // Sleeping C3: a per-night / per-patch amount that is a known price ÷ a stated count.
+    if (unitDerivedAmount(amount, text, input.unitRates)) continue
+    // Pura Sonrisa P2 (INT-84 kept): the store's threshold amount only inside its own threshold-rule clause.
+    if (thresholdAmountOk(amount, text, input.freeShippingRule)) continue
     highlighted.push(Math.round(amount))
     if (!cited.has('search_inventory') && shipping.length === 0 && quote.length === 0) {
       reasons.push('unsourced_money')
@@ -788,6 +1135,8 @@ export function applyFinalOutputPolicy(input: {
   paymentOptions?: PaymentFillOptions
   /** INT-158 H3: the text was written by the model (live turn / Probar): letters outside Latin-1 are held. */
   modelText?: boolean
+  /** Sleeping C3: the store's own per-unit rates (sales-state salesUnitRates). */
+  unitRates?: UnitRate[] | null
 }): FinalOutputPolicy {
   const facts = input.brandFacts || { schemaVersion: 1 }
   const style = input.replyStyle || DEFAULT_REPLY_STYLE
@@ -831,6 +1180,25 @@ export function applyFinalOutputPolicy(input: {
   if (canonicalList !== text) {
     text = canonicalList
     reasons.push('data_list')
+  }
+  // Sleeping C6 (Rafael's rule): at the close the data list goes before the payment question, each in its own message.
+  // Before shortening (Verifier r1 #2): the reordered messages are then shortened like any reply.
+  if (input.paymentOptions?.dataListFirst) {
+    const fits = (message: string) => messageLineCount(message) <= style.maxLines + 2
+    const ordered = dataListBeforePaymentQuestion(text, input.paymentOptions.dataListFirst, fits)
+    // Verifier r2 #4: never turn a sendable reply into a too-long one — keep the original when the reorder cannot fit.
+    const shortened = input.shortenLongReply ? shortenToMaxLines(ordered, style.maxLines) : ordered
+    if (ordered !== text && splitReplyParts(shortened).every(fits)) {
+      // SecureDog r1 INT-163: the claim wording is also judged on the text as the model wrote it (line breaks and all).
+      if (hasOutboundConfirmationClaim(text)) reasons.push('confirmation_wording')
+      // SecureDog r2 INT-163: the written-claim and "payment received" checks too ("Tu pedido\nquedó anotado").
+      const preForms = confirmationCheckForms(text)
+      const inAnyForm = (re: RegExp) => preForms.some((form) => re.test(form))
+      if (inAnyForm(CREATED_CLAIM_RE)) reasons.push('write_claim')
+      if (inAnyForm(ALWAYS_PAYMENT_STATUS_REPLY_RE)) reasons.push('payment_status_claim')
+      text = ordered
+      reasons.push('data_list_first')
+    }
   }
   if (input.shortenLongReply) {
     const short = shortenToMaxLines(text, style.maxLines)
@@ -904,6 +1272,8 @@ export function applyFinalOutputPolicy(input: {
     styleText,
     linkText: styleText,
     modelText: input.modelText,
+    unitRates: input.unitRates,
+    ownText: JSON.stringify(facts),
     orderClosing:
       filled.methods.some((m) => m === 'contra_entrega' || m === 'efectivo') ||
       input.paymentOptions?.chosenMethod === 'contra_entrega' ||
@@ -911,7 +1281,7 @@ export function applyFinalOutputPolicy(input: {
   })
 
   const merged = [...new Set([...reasons, ...validated.reasons])]
-  const blocking = merged.filter((reason) => reason !== 'purchase_summary_appended' && reason !== 'shortened' && reason !== 'unjoined' && reason !== 'data_list')
+  const blocking = merged.filter((reason) => reason !== 'purchase_summary_appended' && reason !== 'shortened' && reason !== 'unjoined' && reason !== 'data_list' && reason !== 'data_list_first')
   return {
     text,
     ok: blocking.length === 0,

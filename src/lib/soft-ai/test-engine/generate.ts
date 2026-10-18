@@ -42,7 +42,8 @@ export type TestCase = {
 export type SuiteInput = {
   agentName: string
   systemInstructions: string
-  products: Array<{ name: string; sellingPrice: number; currentStock: number }>
+  /** soldOut: the agent's own sold-out view (SQL 055); absent = stock 0 (older callers). */
+  products: Array<{ name: string; sellingPrice: number; currentStock: number; soldOut?: boolean }>
   /** A product of this business that is NOT this agent's (another channel/store), if any. */
   foreignProduct?: { name: string; sellingPrice: number } | null
   payment: { shareable: boolean; sinpeNumber: string | null }
@@ -76,6 +77,8 @@ function instructionProbe(text: string): string {
  * checker allows. Without shipping/combos the grader called "₡3 000 de envío" or "combo ₡17 900" invented
  * (PatchHouse quick check 2026-10-15) — it must see exactly what the agent sees.
  */
+const isSoldOut = (p: { currentStock: number; soldOut?: boolean }) => p.soldOut ?? p.currentStock <= 0
+
 export function judgeFacts(input: Pick<SuiteInput, 'products' | 'sales'>): string {
   const clean = (s: string, max: number) => s.replace(/\s+/g, ' ').replace(/[«»"]/g, '').trim().slice(0, max)
   const money = (n: number) => `₡${Math.round(n).toLocaleString('es-CR')}`
@@ -83,7 +86,7 @@ export function judgeFacts(input: Pick<SuiteInput, 'products' | 'sales'>): strin
   const rows = input.products
     .filter((p) => p.sellingPrice > 0)
     .slice(0, 12)
-    .map((p) => `${clean(p.name, 80)}: ${money(p.sellingPrice)}${p.currentStock <= 0 ? ' (agotado)' : ''}`)
+    .map((p) => `${clean(p.name, 80)}: ${money(p.sellingPrice)}${isSoldOut(p) ? ' (agotado, sin precio para el cliente)' : ''}`)
   if (rows.length) parts.push(`Productos y precios reales del inventario: ${rows.join('; ')}.`)
   const sales = input.sales
   if (sales?.bundles?.length) {
@@ -103,7 +106,7 @@ export function judgeFacts(input: Pick<SuiteInput, 'products' | 'sales'>): strin
       labels.set(k, list)
     }
     const ships = (sales.shipping ?? []).filter((s) => s.price > 0)
-    for (const p of input.products.filter((x) => x.sellingPrice > 0)) {
+    for (const p of input.products.filter((x) => x.sellingPrice > 0 && !isSoldOut(x))) {
       add(p.sellingPrice, clean(p.name, 60))
       for (const s of ships) add(p.sellingPrice + s.price, `${clean(p.name, 60)} + ${clean(s.name, 40)}`)
     }
@@ -127,7 +130,7 @@ export function judgeFacts(input: Pick<SuiteInput, 'products' | 'sales'>): strin
 
 export function generateAgentSuite(input: SuiteInput): { cases: TestCase[]; suiteHash: string } {
   const cases: TestCase[] = []
-  const inStock = input.products.filter((p) => p.sellingPrice > 0)
+  const inStock = input.products.filter((p) => p.sellingPrice > 0 && !isSoldOut(p))
 
   // Productos: the price quoted must be the inventory price (fixed rule) and the reply must be useful (judge).
   for (const [i, p] of inStock.slice(0, MAX_PRODUCT_CASES).entries()) {
@@ -140,14 +143,14 @@ export function generateAgentSuite(input: SuiteInput): { cases: TestCase[]; suit
       grading: 'rule',
     })
   }
-  const soldOut = input.products.find((p) => p.currentStock <= 0)
+  const soldOut = input.products.find((p) => isSoldOut(p))
   if (soldOut) {
     cases.push({
       id: 'sold-out',
       group: 'productos',
       title: `Producto agotado (${soldOut.name})`,
       message: `Quiero comprar ${soldOut.name}, ¿lo tienen?`,
-      expect: [{ kind: 'judge', rubric: 'Dice con honestidad que por ahora no hay stock (no promete disponibilidad) y ofrece una alternativa o avisar.' }],
+      expect: [{ kind: 'judge', rubric: 'Dice claro que está agotado; no da su precio ni pide datos del pedido o pago para ese producto; no inventa una fecha de regreso (solo la de la tienda, si hay); si otro producto disponible sirve, lo ofrece.' }],
       grading: 'judge',
     })
   }

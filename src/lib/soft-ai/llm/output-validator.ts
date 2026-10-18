@@ -29,6 +29,7 @@ import { buildLinkAllowlist, foreignLinks, type LinkAllowlist } from '@/lib/soft
 import { canonicalizeOrderDataList, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
 import { MAX_REPLY_PARTS, splitReplyParts } from '@/lib/soft-ai/reply-parts'
 import { dataListBeforePaymentQuestion } from '@/lib/soft-ai/sales-state'
+import { stockProblems, type StockGuard } from '@/lib/soft-ai/product-availability-core'
 
 /**
  * Backstop for short payment confirmations the confirmation-wording check misses ("Sí, ya se acreditó", "Sí, lo
@@ -857,8 +858,11 @@ export function validateAgentOutput(input: {
   unitRates?: UnitRate[] | null
   /** Sleeping C9: the store's own published text (brand facts) — its phones are never a data echo. */
   ownText?: string | null
+  /** Out-of-stock switch (SQL 055): no close for a sold-out product, no invented "vuelve" date. */
+  stockGuard?: StockGuard | null
 }): OutputValidationResult {
-  const reasons: string[] = []
+  // Judged before payment tokens were filled (styleText): a [[PAGO_…]] token is a close.
+  const reasons: string[] = stockProblems(input.styleText ?? input.text ?? '', input.stockGuard)
   const text = input.text || ''
   // INT-158 r2 F4/F11: a model reply this long is never a real answer; held before any pattern runs on it.
   if (input.modelText && text.length > MODEL_TEXT_MAX_CHARS) return { ok: false, needsHuman: true, reasons: ['model_text_too_long'], highlightedAmounts: [] }
@@ -1137,6 +1141,8 @@ export function applyFinalOutputPolicy(input: {
   modelText?: boolean
   /** Sleeping C3: the store's own per-unit rates (sales-state salesUnitRates). */
   unitRates?: UnitRate[] | null
+  /** Out-of-stock switch (SQL 055): same stock checks as the runtime (live turn + Probar). */
+  stockGuard?: StockGuard | null
 }): FinalOutputPolicy {
   const facts = input.brandFacts || { schemaVersion: 1 }
   const style = input.replyStyle || DEFAULT_REPLY_STYLE
@@ -1274,6 +1280,7 @@ export function applyFinalOutputPolicy(input: {
     modelText: input.modelText,
     unitRates: input.unitRates,
     ownText: JSON.stringify(facts),
+    stockGuard: input.stockGuard,
     orderClosing:
       filled.methods.some((m) => m === 'contra_entrega' || m === 'efectivo') ||
       input.paymentOptions?.chosenMethod === 'contra_entrega' ||

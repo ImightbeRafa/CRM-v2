@@ -20,6 +20,7 @@ import {
   type PaymentChoiceMethod,
 } from '@/lib/soft-ai/payment-classifier'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
+import { soldOutFocus, type StockGuard } from '@/lib/soft-ai/product-availability-core'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import { PICKUP_DATA_LIST, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
 import { MONEY_WORDS_RE } from '@/lib/soft-ai/payment-claim-check-core'
@@ -31,7 +32,8 @@ import {
   type PaymentMethodKey,
 } from '@/lib/soft-ai/brand-facts'
 
-export type SalesCatalogItem = { name: string; price: number; stockLabel: string }
+/** soldOut (SQL 055 switch / stock 0): the line shows no price and the price is not quotable. */
+export type SalesCatalogItem = { name: string; price: number; stockLabel: string; soldOut?: boolean }
 export type SalesShippingMethod = { name: string; price: number; coverage: string; cod: string }
 /** Owner's combo at a fixed total; shippingIncluded = the owner says this combo's price includes shipping. */
 export type SalesBundle = { name: string; price: number; shippingIncluded: boolean }
@@ -68,6 +70,8 @@ export type SalesContext = {
    * pass that exact threshold rule; it is never applied to prices. Undefined = none.
    */
   freeShippingOver?: number | null
+  /** Out-of-stock switch (SQL 055): this agent's sold-out products (with the owner's "vuelve aprox.") and names on sale. */
+  stock?: Omit<StockGuard, 'focus'>
 }
 
 export type SalesStage =
@@ -94,6 +98,8 @@ export type SalesState = {
   askedMethod?: boolean
   /** agents2-format: the method the customer picked in this message (resolvePaymentChoice). */
   chosenMethod?: ChosenPaymentMethod | null
+  /** Out-of-stock switch: the customer is asking for this sold-out product (newest message naming a product). */
+  soldOutFocus?: string | null
 }
 
 /** A method the customer can pick (efectivo is its own method when configured; otherwise it means contra entrega). */
@@ -367,6 +373,10 @@ const NEXT_STEP: Record<SalesStage, string> = {
     'El cliente dice que ya pagó o mandó comprobante: agradecé y decí que lo revisás y le confirmás. Nunca confirmés el pago vos.',
 }
 
+/** The customer wants a product that is AGOTADO: no close for it (no total, data or payment question). */
+const SOLD_OUT_STEP =
+  'Lo que pide está AGOTADO: decilo claro y corto, con el "vuelve aprox." de la lista si lo tiene (si no, decí que todavía no hay fecha; nunca des una fecha). Ofrecé UN producto disponible de la lista si le sirve para lo mismo. No cierres ese producto: no des total, no pidas datos del pedido ni preguntes cómo pagar hasta que elija uno disponible.'
+
 export function deriveSalesState(input: {
   history: SoftAiHistoryMessage[]
   inboundText: string
@@ -377,7 +387,7 @@ export function deriveSalesState(input: {
   const ours = input.history.filter((m) => m.direction === 'outbound').map((m) => m.content || '')
   const oursText = ours.join('\n')
   const oursAmounts = new Set(ours.flatMap((m) => amountsIn(m)))
-  const catalogPrices = [...(input.ctx.catalog ?? []), ...(input.ctx.bundles ?? [])].map((c) => Math.round(c.price))
+  const catalogPrices = [...(input.ctx.catalog ?? []).filter((c) => !c.soldOut), ...(input.ctx.bundles ?? [])].map((c) => Math.round(c.price))
   const shipPrices = input.ctx.shippingMethods.map((s) => Math.round(s.price)).filter((p) => p > 0)
 
   const said = {
@@ -443,8 +453,22 @@ export function deriveSalesState(input: {
     last,
   ]
   const quantities = [...new Set(recentInbound.flatMap((t) => requestedQuantities(t)))].sort((a, b) => a - b)
-  const nextStep = stage === 'metodo_pago' && chosenMethod ? chosenMethodStep(input.ctx, chosenMethod) : NEXT_STEP[stage]
+  // Out-of-stock switch (advisor): "la quiero" on a sold-out product must not turn into the close (data / payment).
+  const focus = input.ctx.stock
+    ? soldOutFocus(
+        [{ direction: 'inbound' as const, content: last }, ...input.history.map((m) => ({ direction: m.direction, content: m.content || '' })).reverse()],
+        input.ctx.stock,
+      )
+    : null
+  const closing = stage === 'cierre' || stage === 'metodo_pago'
+  const nextStep =
+    focus && closing
+      ? SOLD_OUT_STEP
+      : stage === 'metodo_pago' && chosenMethod
+        ? chosenMethodStep(input.ctx, chosenMethod)
+        : NEXT_STEP[stage]
   return {
+    soldOutFocus: focus,
     stage,
     said,
     buyCue,
@@ -529,7 +553,22 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
   const lines: string[] = ['<BETSY_DATOS>']
   if (ctx.catalog?.length) {
     lines.push('Productos que vendés (precio y stock en vivo; son tus ÚNICOS precios válidos):')
-    for (const c of ctx.catalog) lines.push(`- ${oneLine(c.name, 120)}: ${money(c.price)} · ${c.stockLabel}`)
+    // SecureDog L1: product names (and the sold-out label with the owner's note) are data — no Betsy look-alike markers.
+    for (const c of ctx.catalog) {
+      const name = oneLine(stripBetsyLookalikes(c.name), 120)
+      const label = oneLine(stripBetsyLookalikes(c.stockLabel), 160)
+      lines.push(c.soldOut ? `- ${name}: ${label}` : `- ${name}: ${money(c.price)} · ${label}`)
+    }
+  }
+  // Sold-out products beyond the inline list (search_inventory stores): named here so the agent never offers them.
+  const inlineSold = new Set((ctx.catalog ?? []).filter((c) => c.soldOut).map((c) => c.name))
+  const extraSold = (ctx.stock?.soldOut ?? []).filter((s) => !inlineSold.has(s.name)).slice(0, 20)
+  if (!ctx.catalog?.length && extraSold.length) {
+    lines.push('Productos AGOTADOS ahora (no los ofrezcas ni tomes el pedido; sin precio):')
+    for (const s of extraSold) lines.push(`- ${oneLine(stripBetsyLookalikes(s.name), 120)}: ${s.back ? oneLine(stripBetsyLookalikes(s.back), 90) : 'sin fecha de regreso: no des fecha'}`)
+  }
+  if (state.soldOutFocus) {
+    lines.push(`Lo que pide ahora («${oneLine(stripBetsyLookalikes(state.soldOutFocus), 120)}») está AGOTADO.`)
   }
   if (ctx.bundles?.length) {
     lines.push('Combos (dato del dueño; precio total del combo; únicos precios de combo válidos, no calcules otros ni hables de ahorro):')
@@ -560,10 +599,10 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
     `Etapa: ${state.stage}. Siguiente paso: ${state.nextStep}`,
   )
   // agents2-format: the method question is built by code from the configured methods (never a dump of every number).
-  if (ctx.paymentShareable && (state.stage === 'cierre' || (state.stage === 'metodo_pago' && !state.chosenMethod))) {
+  if (ctx.paymentShareable && !state.soldOutFocus && (state.stage === 'cierre' || (state.stage === 'metodo_pago' && !state.chosenMethod))) {
     lines.push(`Pregunta de pago (usala tal cual, en su propio mensaje): «${salesMethodQuestion(ctx)}»`)
   }
-  if ((state.stage === 'cierre' || state.stage === 'metodo_pago' || state.stage === 'esperando_comprobante') && !ctx.paymentShareable) {
+  if (closingFor(state) && !ctx.paymentShareable) {
     // Payment data not shareable by chat: never promise data nobody will send — notify the team (silently).
     lines.push(
       'Los datos de pago NO se comparten por chat: pedí los datos del pedido y llamá escalate_to_human(payment_or_sinpe) para que el equipo se los envíe. Al cliente decile solo que enseguida le pasás cómo pagar.',
@@ -577,6 +616,7 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
 export function salesNeedsHuman(ctx: SalesContext, state: SalesState): boolean {
   // Any receipt cue → a person checks it, whatever the model writes (re-check INT-70).
   if (state.receiptCue) return true
+  // SecureDog L4: fail toward the person — a missed name match must never drop the team follow-up at the close.
   return closingStage(state.stage) && !ctx.paymentShareable
 }
 
@@ -585,12 +625,18 @@ function closingStage(stage: SalesStage): boolean {
   return stage === 'cierre' || stage === 'metodo_pago' || stage === 'esperando_comprobante'
 }
 
+/** A close that is really happening: not one for a sold-out product (no payment data, no team hand-off for it). */
+function closingFor(state: SalesState): boolean {
+  if (state.soldOutFocus && state.stage !== 'esperando_comprobante') return false
+  return closingStage(state.stage)
+}
+
 /**
  * Agentes IA 2.0 (B7): the close with payment data that is not shared by chat. The customer hears "Enseguida te paso
  * cómo pagar 😊", the team is asked to send the data, and the chat stays on IA (never a silent draft, never a flip).
  */
 export function salesCloseWithoutPaymentData(ctx: SalesContext, state: SalesState): boolean {
-  return !state.receiptCue && closingStage(state.stage) && !ctx.paymentShareable
+  return !state.receiptCue && closingFor(state) && !ctx.paymentShareable
 }
 
 /**
@@ -674,8 +720,15 @@ export function salesSystemBlock(ctx: SalesContext): string {
  * Amounts the agent may write: product prices, shipping prices and one product + its shipping; listed combos
  * (+ one shipping unless the owner marked it as including shipping). Never a free-shipping threshold (INT-84).
  */
+/** What the reply checks need about stock this turn (null = nothing sold out: no check). */
+export function salesStockGuard(ctx: SalesContext, state: SalesState | null): StockGuard | null {
+  if (!ctx.stock || ctx.stock.soldOut.length === 0) return null
+  return { ...ctx.stock, focus: Boolean(state?.soldOutFocus) }
+}
+
 export function salesAllowedAmounts(ctx: SalesContext): number[] {
-  const prices = (ctx.catalog ?? []).map((c) => Math.round(c.price))
+  // Sold-out prices are not quotable (their lines show none); a price an on-sale product shares stays valid.
+  const prices = (ctx.catalog ?? []).filter((c) => !c.soldOut).map((c) => Math.round(c.price))
   const ships = ctx.shippingMethods.map((s) => Math.round(s.price))
   const out = new Set<number>([...prices, ...ships])
   // Unit price + one shipping only (INT-72): any other total must come from code, never the model's own math.

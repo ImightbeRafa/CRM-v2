@@ -21,6 +21,8 @@ import { renderShortcutTemplate, type RuntimeShortcut } from '@/lib/soft-ai/shor
 import type { BrandFacts } from '@/lib/soft-ai/brand-facts'
 import type { AgentOrderOwnership } from '@/lib/soft-ai/agent-settings'
 import { SANDBOX_ORDERS, type SandboxOrder } from '@/lib/soft-ai/__fixtures__/sandbox'
+import { loadAgentStock } from '@/lib/soft-ai/product-availability'
+import { onSaleToolItem, soldOutToolItem } from '@/lib/soft-ai/product-availability-core'
 
 export type SoftAiToolRunContext = {
   tenantId: string
@@ -84,7 +86,7 @@ async function runSearchInventory(
       result: { asOf: new Date().toISOString(), currency: 'CRC', items: [], note: 'sin productos asignados a este agente' },
     }
   }
-  const select = { name: true, sku: true, category: true, currentStock: true, minStock: true, sellingPrice: true } as const
+  const select = { id: true, name: true, sku: true, category: true, currentStock: true, minStock: true, sellingPrice: true } as const
   let rows = await prisma.inventoryItem.findMany({
     where: {
       tenantId: ctx.tenantId,
@@ -97,14 +99,7 @@ async function runSearchInventory(
         { description: { contains: query, mode: 'insensitive' } },
       ],
     },
-    select: {
-      name: true,
-      sku: true,
-      category: true,
-      currentStock: true,
-      minStock: true,
-      sellingPrice: true,
-    },
+    select,
     take: 8,
     orderBy: { name: 'asc' },
   })
@@ -131,25 +126,16 @@ async function runSearchInventory(
       .map(({ r: { description: _d, ...rest } }) => rest)
   }
   const asOf = new Date().toISOString()
+  // Out-of-stock switch (SQL 055): sold out = owner switch, or stock 0 in a store that tracks stock. A sold-out row
+  // carries no price (so it is never a quotable amount) and stock 0 (a manual "Agotado" never shows its real count).
+  const stock = await loadAgentStock(ctx.tenantId, ctx.inventoryItemIds)
   return {
     ok: true,
     name: 'search_inventory',
     result: {
       asOf,
       currency: 'CRC',
-      items: rows.map((r) => ({
-        name: r.name,
-        sku: r.sku,
-        category: r.category,
-        currentStock: r.currentStock,
-        sellingPrice: r.sellingPrice,
-        stockLabel:
-          r.currentStock <= 0
-            ? 'agotado por ahora'
-            : r.currentStock < r.minStock
-              ? 'pocas unidades'
-              : 'disponible',
-      })),
+      items: rows.map((r) => (stock.soldOutIds.has(r.id) ? soldOutToolItem(r, stock.backById.get(r.id) ?? null) : onSaleToolItem(r))),
     },
   }
 }

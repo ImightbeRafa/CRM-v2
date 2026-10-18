@@ -8,8 +8,8 @@
   seen (done words anywhere in it: pagaste, usaste, fue, comprobante, vi, aparece, registrar…).
 - C2 `payment-classifier.ts` isBareOrderConfirmAsk + `sales-state.ts` noPaymentYet — NARROW on purpose (SecureDog r2):
   "Para confirmar el pedido!?" / "¿me confirmás?" is a sales message only in a short chat (< 20 messages) where EVERY
-  customer message is courtesy only ("Hola", "gracias") or the bare ask itself, every message is plain text, and no
-  money word appears on either side (store prices included). A bare ask after a price quote, or next to any other
+  customer message is courtesy only ("Hola", "gracias") or the bare ask itself, the store wrote nothing or only its one
+  greeting / intro, every message is plain text, and no money word appears on either side (store prices included). A bare ask after a price quote, or next to any other
   question, still goes to a person (INT-93). Ask verb forms only; character allowlist. Replies to a confirm ask (or to
   "¿les llegó?") may not say a payment arrived ("¡Sí, nos llegó!", "¡Perfecto, ya está!", "¡Sí!").
 - C3 `output-validator.ts` unitDerivedAmount: "₡317 por noche" passes only as a store rate — a product / combo price
@@ -31,8 +31,9 @@
   INT-84 kept: the threshold is never an allowed price, only valid at the spot the rule phrase states it.
 - Pre-existing gaps closed here too (SecureDog r2): INT-167 "¿Les llegó?" / "¿Lo recibieron?" now get the reply
   backstop; INT-168 "15 000 colones" (space thousands) is read as money.
-- Reviews: Verifier r1–r4 FAIL; SecureDog r1 FAIL (MEDIA-16, INT-159 High; INT-160–164, INFRA-23), r2 FAIL (INT-159 /
-  INT-161 reopened High; INT-166, MEDIA-17, INFRA-24 new) — all fixed and pinned in
+- Reviews: Verifier r1–r4 FAIL, r5 PASS WITH NOTES (notes fixed); SecureDog r1 FAIL, r2 FAIL, r3 FIX BEFORE PROD
+  (INT-169, INT-166 / INT-167 / INT-164 residuals — fixed after r3). Earlier: SecureDog r1 (MEDIA-16, INT-159 High;
+  INT-160–164, INFRA-23), r2 (INT-159 / INT-161 reopened High; INT-166, MEDIA-17, INFRA-24 new) — all fixed and pinned in
   `src/lib/__tests__/sleeping-exam-fixes.test.ts`. Final rounds: see the PR. Security Register IDs are proposals.
 
 ## 2026-10-18 — Claude setup on the live line + cloud push guard (claudio/luna-10-d2)

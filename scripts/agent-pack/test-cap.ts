@@ -64,7 +64,7 @@ async function main() {
     if (held && !flag('force') && !lockHolderGone(held)) {
       throw new Error(`La prueba que tiene el candado sigue corriendo o es de otra máquina (${held.label}, ${held.host} pid ${held.pid}). Esperá que termine, o --unlock --force.`)
     }
-    const freed = await forceReleaseTestLock(lockDb, { tenantId })
+    const freed = await forceReleaseTestLock(lockDb, { tenantId, ...(held ? { expectToken: held.token } : {}) })
     if (!freed) {
       console.log('No hay ninguna prueba con el candado tomado.')
       return

@@ -134,7 +134,7 @@ const METHOD_WORD_G = new RegExp(String.raw`(?<![\p{L}])${METHOD_WORD}(?![\p{L}]
 // "Me aparece un pago de…", "para registrar tu pago"). Verifier r2 #8: "ya" only with a done verb ("ya pagaste", "ya lo
 // hiciste"), so "¡Listo! Ya te lo aparto. ¿Querés pagar por SINPE?" still counts.
 const METHOD_QUESTION_DONE_RE =
-  /(?<![\p{L}])(?:ya\s+(?:(?:me|te|se|nos|le|les)\s+)?(?:(?:lo|la|los|las)\s+)?(?:\p{L}+(?:aste|aron|ó|iste|ieron|ió|é|í)|hice|hizo|pude|pudo)|\p{L}{2,}(?:aste|iste|aron|ieron)|canceló|abonó|cobró|rebajó|sinpeó|pasaste|pasaron|pasó|tiraste|tiró|tiraron|descontaron|descontó|depositó|mandó|envió|transfirió|¿\s*(?:ya\s+est[aá]|list[oa])\s*\?|hiciste|hicieron|hizo|pagaste|pagaron|pag[oó]|mandaste|mandaron|enviaste|enviaron|realizaste|pudiste|pudo|transferiste|depositaste|usaste|us[oó]|usaron|fue|comprobantes?|captura|pantallazo|dep[oó]sitos?|pago\s+de|aparec\p{L}*|registr\p{L}*|recib(?:í|i|iste|ió|io|imos|ieron|ido|ida)|vi|vimos|revis\p{L}*|no\s+(?:hay\s+(?:nada|ning\p{L}*|registro|pago)|veo|encuentro|aparece|me\s+aparece)|lleg[oó]|entr[oó]|cay[oó]|qued[oó])(?![\p{L}])/iu
+  /(?<![\p{L}])(?:ya\s+(?:(?:me|te|se|nos|le|les)\s+)?(?:(?:lo|la|los|las)\s+)?(?:\p{L}+(?:aste|aron|ó|iste|ieron|ió|é|í)|hice|hizo|pude|pudo)|\p{L}{2,}(?:aste|iste|aron|ieron)|canceló|abonó|cobró|rebajó|sinpeó|pasaste|pasaron|pasó|tiraste|tiró|tiraron|descontaron|descontó|depositó|mandó|envió|transfirió|¿\s*(?:ya\s+est[aá]|list[oa])\s*\?|hiciste|hicieron|hizo|pagaste|pagaron|pag[oó]|mandaste|mandaron|enviaste|enviaron|realizaste|pudiste|pudo|transferiste|depositaste|usaste|us[oó]|usaron|fue|comprobantes?|captura|pantallazo|dep[oó]sitos?|pago\s+de|aparec\p{L}*|registr\p{L}*|recib(?:í|i|iste|ió|io|imos|ieron|ido|ida)|vi|vimos|revis\p{L}*|no\s+(?:hay\s+(?:nada|ning\p{L}*|registro|pago|movimiento\p{L}*|transferencia|sinpe|dep[oó]sito)|veo|encuentro|aparece|me\s+aparece)|todav[ií]a\s+no|a[uú]n\s+no|no\s+\p{L}+\s+a[uú]n|lleg[oó]|entr[oó]|cay[oó]|qued[oó])(?![\p{L}])/iu
 
 /** The store asked HOW the customer wants to pay (the original wordings, or C1's other question shapes). Pure. */
 export function isPaymentMethodQuestion(text: string): boolean {
@@ -809,6 +809,8 @@ const STORE_PAYMENT_TALK_RE =
  * rows, so in a longer chat earlier payment messages may be out of view (fail closed: a person).
  */
 const NO_PAYMENT_YET_MAX_MESSAGES = 20
+/** The store's greeting / intro: it starts with a greeting ("¡Hola!", "Buenas", "Bienvenid@", "Pura vida"). */
+const STORE_GREETING_RE = /^[¡!\s]*(?:hol+a|buen[oa]s|buen\s+d[ií]a|bienvenid\p{L}*|pura\s+vida|saludos)(?![\p{L}])/iu
 
 /** SecureDog r1 INT-161: "ya compré", "compré por Instagram", "mi número de orden es 4521", "ahí les va", "ya está". */
 const ALREADY_BOUGHT_RE =
@@ -821,6 +823,11 @@ const MEDIA_PLACEHOLDER_RE = /^\s*\[(?:imagen|image|foto|archivo|document|docume
  */
 export function noPaymentYet(history: ReadonlyArray<{ direction: string; content?: string | null; messageType?: string | null }>): boolean {
   if (history.length >= NO_PAYMENT_YET_MAX_MESSAGES) return false
+  // SecureDog r3 INT-169: the store side is an allowlist too — nothing written yet, or only its one greeting / intro
+  // ("¡Hola! Soy Vale de … ¿En qué te ayudo?"). "¿Ya lo hiciste?", "Te paso los datos por privado" end it.
+  const outbound = history.filter((m) => m.direction === 'outbound')
+  if (outbound.length > 1) return false
+  if (outbound.length === 1 && !STORE_GREETING_RE.test(stripFormatChars((outbound[0].content || '').normalize('NFKC')).trim())) return false
   for (const m of history) {
     const text = stripFormatChars((m.content || '').normalize('NFKC'))
     // Any bubble that is not plain text, from either side (SecureDog r2 MEDIA-17: 'unsupported', 'share', 'unknown' too).

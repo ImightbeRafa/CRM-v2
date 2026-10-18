@@ -969,3 +969,72 @@ describe('Verifier r5 note 4: "¡No hay problema!" is not a done-payment sign', 
     assert.equal(isPaymentMethodQuestion('No hay ningún pago a tu nombre. ¿SINPE o transferencia?'), false)
   })
 })
+
+describe('SecureDog r3 (2026-10-18): every reported input pinned', () => {
+  it('INT-169: the store side is an allowlist — only one greeting / intro keeps "no payment yet"', () => {
+    for (const [store, reply] of [
+      ['¿Ya lo hiciste?', 'Sí'],
+      ['¿Pudiste?', 'Sí'],
+      ['Te paso los datos por privado', 'Gracias'],
+      ['Escribime al privado', 'Dale'],
+      ['Avisame cuando esté 😊', 'Perfecto'],
+      ['¡Te espero! 😊', 'Ok'],
+    ]) {
+      assert.equal(noPaymentYet([msg('outbound', store), msg('inbound', reply), msg('inbound', '¿Me confirmás?')]), false, store)
+    }
+    assert.equal(noPaymentYet([msg('inbound', 'Hola'), msg('outbound', '¡Hola! Soy Vale 🌙 ¿En qué te ayudo?'), msg('outbound', '¿Ya lo hiciste?'), msg('inbound', '¿Me confirmás?')]), false)
+    assert.equal(noPaymentYet([msg('inbound', 'Hola'), msg('outbound', '¡Hola! Soy Vale 🌙 ¿En qué te ayudo?'), msg('inbound', '¿Me confirmás?')]), true)
+  })
+  it('INT-169: short whole-reply affirmations to a confirm ask are held', () => {
+    for (const t of ['¡Claro que sí!', 'Sí, claro', '¡Sí, perfecto!', '¡Listo!', '¡Hecho!', '¡Por supuesto!', 'Correcto 👍']) {
+      assert.ok(validateAgentOutput({ text: t, citedToolNames: [], customerText: '¿Me confirmás?' }).reasons.includes('payment_status_claim'), t)
+    }
+    assert.equal(validateAgentOutput({ text: '¡Claro! ¿Cuántas bolsas querés?', citedToolNames: [], customerText: '¿Me confirmás?' }).ok, true)
+  })
+  it('INT-166 residual: no sentence about this customer next to the threshold rule', async () => {
+    const { salesFreeShippingRule, salesAllowedAmounts } = await import('@/lib/soft-ai/sales-state')
+    const ctx: SalesContext = {
+      ...CTX,
+      catalog: [
+        { name: 'Pura Sonrisa Menta', price: 12900, stockLabel: 'x' },
+        { name: 'Pura Sonrisa Fresa', price: 12900, stockLabel: 'x' },
+      ],
+      bundles: [],
+      freeShippingOver: 25000,
+    }
+    const rule = salesFreeShippingRule(ctx)!
+    const check = (t: string) => validateAgentOutput({ text: t, citedToolNames: [], quoteAmounts: salesAllowedAmounts(ctx), freeShippingRule: rule })
+    for (const tail of ['Ya entraste', 'Vos ya estás.', 'Con esto ya entrás.', 'Con 2 lo cumplís.', 'En tu caso, ya está.', 'Lo lográs con dos.', 'Ese monto ya lo cubrís.']) {
+      assert.equal(check(`Envío gratis desde ₡25 000. ${tail}`).ok, false, tail)
+    }
+    assert.equal(check('Pedidos desde ₡25 000 con envío gratis. Ya entraste').ok, false)
+    assert.equal(check('Envío gratis desde ₡25 000 a todo el país.').ok, true)
+  })
+  it('INT-167 residual: "¿Lo vio?", "¿Ya lo vio?", "¿Ya está?", "¿Lo tienen?" get the reply backstop', () => {
+    for (const [c, r] of [['¿Lo vio?', 'Sí, ya lo vi'], ['¿Ya lo vio?', 'Sí, ya lo vi'], ['¿Ya está?', '¡Sí, ya está!'], ['¿Lo tienen?', 'Sí, ya lo tenemos']]) {
+      assert.ok(validateAgentOutput({ text: r, citedToolNames: [], customerText: c }).reasons.includes('payment_status_claim'), c)
+    }
+  })
+  it('INT-164 residual: "Todavía no hay movimiento" / "No hay transferencia aún" are not the method question', () => {
+    for (const t of ['Todavía no hay movimiento. ¿SINPE o transferencia?', 'No hay transferencia aún. ¿SINPE o transferencia?']) assert.equal(isPaymentMethodQuestion(t), false, t)
+  })
+  it('INFRA-24: --unlock frees only the lock it checked', async () => {
+    const { forceReleaseTestLock } = await import('../../../scripts/agent-pack/test-lock')
+    const state: { row: { config: unknown } | null } = { row: null }
+    const tx = {
+      tenantFeatureFlag: {
+        upsert: async (a: { create: { config: unknown } }) => {
+          if (!state.row) state.row = { config: a.create.config }
+        },
+        update: async (a: { data: { config: unknown } }) => {
+          state.row = { config: a.data.config }
+        },
+      },
+      $queryRaw: async () => [{ config: state.row?.config }],
+    }
+    const db = { $transaction: <T>(fn: (t: typeof tx) => Promise<T>) => fn(tx) } as unknown as LockDb
+    const lock = await acquireTestLock(db, { tenantId: 't1', label: 'exam', cap: 1 })
+    assert.equal(await forceReleaseTestLock(db, { tenantId: 't1', expectToken: 'someone-else' }), null)
+    assert.equal((await forceReleaseTestLock(db, { tenantId: 't1', expectToken: lock.token }))?.token, lock.token)
+  })
+})

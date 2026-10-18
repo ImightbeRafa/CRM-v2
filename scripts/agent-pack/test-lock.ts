@@ -93,10 +93,11 @@ export async function readTestLock(db: LockDb, tenantId: string): Promise<unknow
 }
 
 /** test-cap --unlock: frees whatever lock is held (a dead run's). Returns the lock it freed, or null. Audited by the caller. */
-export async function forceReleaseTestLock(db: LockDb, input: { tenantId: string; now?: Date }): Promise<TestLock | null> {
+/** expectToken: free it only if it is still the lock the caller checked (SecureDog r3: a new run may have taken it since). */
+export async function forceReleaseTestLock(db: LockDb, input: { tenantId: string; now?: Date; expectToken?: string }): Promise<TestLock | null> {
   return db.$transaction(async (tx) => {
     const held = activeLock(await lockedRow(tx, input.tenantId), input.now ?? new Date())
-    if (!held) return null
+    if (!held || (input.expectToken !== undefined && held.token !== input.expectToken)) return null
     await tx.tenantFeatureFlag.update({
       where: { scope_key: { scope: input.tenantId, key: TEST_SESSION_LOCK_KEY } },
       data: { config: { ...held, released: true, releasedAt: new Date().toISOString(), releasedBy: 'test-cap --unlock' } as unknown as Prisma.InputJsonValue },

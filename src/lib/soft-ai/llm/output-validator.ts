@@ -23,7 +23,7 @@ import {
 } from '@/lib/soft-ai/shortcuts'
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
 import { fillPaymentToken, paymentNumberProblems, type PaymentFillOptions, type TokenPaymentMethod } from '@/lib/soft-ai/payment-guard'
-import { hasPaymentWord, mentionsConfirmVerb } from '@/lib/soft-ai/payment-classifier'
+import { hasPaymentStatusHint, hasPaymentWord, mentionsConfirmVerb } from '@/lib/soft-ai/payment-classifier'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import { buildLinkAllowlist, foreignLinks, type LinkAllowlist } from '@/lib/soft-ai/links'
 import { canonicalizeOrderDataList, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
@@ -45,8 +45,12 @@ const PAYMENT_STATUS_REPLY_RE =
  */
 const CONFIRM_ASK_STATUS_REPLY_RE =
   /(?<![\p{L}])(?:(?:nos|me|les|ya)\s+(?:lleg|entr|cay)[oó]|lleg[oó]\s+(?:bien|perfecto)|(?:entr|cay)[oó]\s+(?:bien|perfecto)|recibid[oa]s?|recibimos|acredit\p{L}*|reflej\p{L}*|(?:lo|la)\s+vimos|(?:lo|la)\s+vi|ya\s+(?:lo|la)\s+tenemos|vimos\s+(?:tu|su|el)|todo\s+en\s+orden|est[aá]\s+en\s+orden|todo\s+(?:bien|listo|correcto)|qued[oó]\s+(?:pagad|confirmad|registrad)\p{L}*|est[aá]\s+confirmad[oa]|ya\s+se\s+hizo|ya\s+est[aá](?=\s*(?:[.!,🙌😊👍💚❤✨]|$))|(?:ya\s+)?(?:lo|la)\s+revisamos|registrad[oa]|te\s+confirmo|(?:ya\s+)?est[aá]\s+list[oa]|todo\s+perfecto)(?![\p{L}])|^\s*[¡!]*\s*s[ií]\s*[!.,🙌😊👍💚❤✨\s]*$/iu
+/** SecureDog r3 INT-169: a reply that is ONLY an affirmation ("¡Claro que sí!", "¡Hecho!", "Correcto 👍", "Sí, claro"). */
+const AFFIRM_ONLY_RE =
+  /^[\s¡!.,]*(?:(?:s[ií]|claro|que|perfecto|list[oa]|hecho|por\s+supuesto|correct[oa]|ok|okay|dale|exacto|confirmad[oa]|todo|bien|genial|excelente|de\s+una)[\s¡!.,]*)+$/iu
 /** SecureDog r2 INT-167 (pre-existing): "¿Les llegó?", "¿Lo recibieron?", "¿Les cayó?" — a payment status question. */
-const STATUS_QUESTION_RE = /(?<![\p{L}])(?:(?:les|le|te|nos)\s+(?:lleg|cay|entr)[oó]|lo\s+(?:recibieron|vieron)|la\s+(?:recibieron|vieron))(?![\p{L}])/iu
+const STATUS_QUESTION_RE =
+  /(?<![\p{L}])(?:(?:les|le|te|nos)\s+(?:lleg|cay|entr)[oó]|(?:lo|la)\s+(?:recibieron|recibi[oó]|vieron|vio|tienen|tiene))(?![\p{L}])/iu
 
 /** Never said by the agent in any chat: it cannot see the bank ("acreditado", "recibimos tu sinpe", "pago verificado"). */
 const ALWAYS_PAYMENT_STATUS_REPLY_RE =
@@ -233,6 +237,11 @@ function thresholdClauseOk(clause: string, rule: FreeShippingRule): boolean {
 }
 const THRESHOLD_ELIGIBILITY_RE =
   /(?<![\p{L}])(?:calific\p{L}*|aplic\p{L}*|tuy[oa]s?|lleg[aá]s|llegaste|lleg[oó]|alcanz\p{L}*|pas[aá]s|pasaste|super[aá]s|superaste|al\s+monto|no\s+pag[aá]s|sin\s+costo|va\s+gratis|van\s+gratis|sale\s+gratis|a\s+vos|a\s+ti|te\s+(?:aplica|sale|queda|toca)|tu\s+(?:pedido|compra|env[ií]o|orden|carrito|total)|con\s+lo\s+que\s+llev[aá]s)(?![\p{L}])/iu
+/** Second person / "ya" / "con esto" — a sentence about THIS customer next to the threshold rule (INT-166). */
+const THRESHOLD_PERSONAL_RE =
+  /(?<![\p{L}])(?:vos|tu|tus|te|ti|tuy\p{L}*|ya|usted|con\s+(?:esto|eso|est[oa]s|es[oa]s)|\p{L}+[áéí]s|\p{L}+(?:aste|iste))(?![\p{L}])/iu
+/** Common words that end like a second-person verb but are not one. */
+const THRESHOLD_PERSONAL_OK_RE = /(?<![\p{L}])(?:m[aá]s|adem[aá]s|despu[eé]s|pa[ií]s|jam[aá]s|atr[aá]s|tambi[eé]n|cort[eé]s|ingl[eé]s|demás)(?![\p{L}])/giu
 const THRESHOLD_GREETING = new Set('hola buenas claro si gracias ok dale perfecto genial'.split(' '))
 const THRESHOLD_FILLER = new Set(
   'tenemos hay el la es va en con y de del para a todo pais compras compra pedidos pedido ordenes hola claro si gracias ademas ofrecemos manejamos nuestro nuestros envio envios gratis domicilio'.split(' '),
@@ -290,6 +299,13 @@ export function freeShippingRuleOk(rawText: string, rule: FreeShippingRule): boo
   // SecureDog r2 INT-166: with the threshold rule said, nothing in the reply may say THIS order reaches it ("tu pedido
   // califica", "el tuyo va gratis", "ya llegaste al monto", "no pagás envío") — that is a multi-unit total (INT-94).
   if (thresholdSpans.length > 0 && THRESHOLD_ELIGIBILITY_RE.test(text)) return false
+  // SecureDog r3 INT-166: outside the rule clause itself, nothing addressed to this customer ("Ya entraste", "Vos ya
+  // estás", "Con 2 lo cumplís", "Ese monto ya lo cubrís") — second person, "ya", "con esto / con dos".
+  if (thresholdSpans.length > 0) {
+    let others = text
+    for (const [s, e] of thresholdSpans) others = others.slice(0, s) + ' '.repeat(e - s) + others.slice(e)
+    if (THRESHOLD_PERSONAL_RE.test(others.replace(THRESHOLD_PERSONAL_OK_RE, ' '))) return false
+  }
   let rest = text
   for (const [s, e] of thresholdSpans) rest = rest.slice(0, s) + ' '.repeat(e - s) + rest.slice(e)
   // One included combo per fact: nothing in the reply may stretch it to other items.
@@ -790,8 +806,13 @@ export function validateAgentOutput(input: {
     reasons.push('payment_status_claim')
   } else if (
     input.customerText &&
-    (mentionsConfirmVerb(input.customerText) || STATUS_QUESTION_RE.test(stripFormatChars(input.customerText.normalize('NFKC')))) &&
-    anyForm(CONFIRM_ASK_STATUS_REPLY_RE, claimForms)
+    (mentionsConfirmVerb(input.customerText) ||
+      STATUS_QUESTION_RE.test(stripFormatChars(input.customerText.normalize('NFKC'))) ||
+      hasPaymentStatusHint(input.customerText)) &&
+    (anyForm(CONFIRM_ASK_STATUS_REPLY_RE, claimForms) ||
+      // SecureDog r3 INT-169: a short whole-reply affirmation with no question ("¡Claro que sí!", "¡Hecho!", "Correcto 👍")
+      // to a confirm ask reads as "your payment is fine".
+      (mentionsConfirmVerb(input.customerText) && AFFIRM_ONLY_RE.test(text.replace(/[\p{Extended_Pictographic}\uFE0F]/gu, ' '))))
   ) {
     // SecureDog r1 INT-159 / Verifier r3 #3: a reply to a confirm ask ("¿me confirmás?") may not say a payment arrived
     // ("¡Sí, nos llegó!", "¡Perfecto, ya está!", "todo en orden") — but "¡Claro, sin problema!" stays a sales answer.

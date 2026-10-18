@@ -86,17 +86,43 @@ describe('2 · a conditional next-step participle is not a confirmation claim', 
     '¡Listo! Apenas verificado tu SINPE, ya sale',
     '¡Listo! Apenas recibido tu pago',
     'El equipo confirma tu pedido: pago recibido',
+    // Verifier round 2: claim before the participle, perfect / passive / estar tails, present confirmation, next sentence.
+    'Tu pedido ya salió, una vez verificado tu pago.',
+    'Ya salió tu pedido 📦 luego de confirmado el pago',
+    'Tu pedido salió hoy, una vez confirmado el pago.',
+    'Una vez confirmado tu pago, hemos despachado tu pedido 📦',
+    'Una vez verificado tu pago, te hemos enviado la guía de Correos.',
+    'Una vez confirmado el pago, tu pedido ha sido enviado.',
+    'Una vez confirmado el pago, tu pedido está despachado',
+    'Una vez recibido tu comprobante, te confirmo que todo está bien 😊',
+    'Una vez confirmado tu pago, preparamos el pedido. Salió hoy con Correos 📦',
+    'Una vez confirmado tu pago, tu pedido se despacho hoy',
+    'Una vez confirmado el pago, ya sale ese mismo día 📦',
   ]
   for (const t of blocked) {
     it(`still blocks: ${JSON.stringify(t)}`, () => {
-      assert.ok(claimReasons(t).length > 0 || claimReasons(t, true).length > 0, 'blocked by a claim check')
-      assert.ok(claimReasons(t, true).length > 0, 'always blocked in a payment conversation')
+      assert.ok(claimReasons(t).length > 0, 'blocked without payment context')
+      assert.ok(claimReasons(t, true).length > 0, 'blocked in a payment conversation')
     })
   }
-  it('only the participle is masked, never the payment word or the rest', () => {
-    assert.equal(maskConditionalConfirmation('Una vez confirmado el pago, sale hoy'), 'Una vez ·········· el pago, sale hoy')
+  it('only the participle of an allow-listed next-step sentence is masked, never anything else', () => {
+    assert.equal(maskConditionalConfirmation('Una vez confirmado el pago, sale ese mismo día hábil'), 'Una vez ·········· el pago, sale ese mismo día hábil')
     assert.equal(maskConditionalConfirmation('Una vez confirmado el pago, ya salió'), 'Una vez confirmado el pago, ya salió')
-    assert.equal(maskConditionalConfirmation('Apenas confirmado el pago, sale hoy'), 'Apenas confirmado el pago, sale hoy', '"apenas" also means "just" in CR')
+    assert.equal(maskConditionalConfirmation('Una vez confirmado el pago, sale hoy'), 'Una vez confirmado el pago, sale hoy', '"hoy" alone is not on the list')
+    assert.equal(maskConditionalConfirmation('Apenas confirmado el pago, sale ese mismo día'), 'Apenas confirmado el pago, sale ese mismo día', '"apenas" also means "just" in CR')
+    // One allowed sentence never excuses another sentence of the same reply.
+    const two = 'Una vez confirmado el pago, sale ese mismo día. Pago confirmado ✅'
+    assert.equal(maskConditionalConfirmation(two), 'Una vez ·········· el pago, sale ese mismo día. Pago confirmado ✅')
+    assert.equal(hasOutboundConfirmationClaim(two), true)
+  })
+  it('the new patterns stay linear on long adversarial input (ReDoS)', () => {
+    const long = `una vez confirmado el pago, sale${' ese mismo día'.repeat(4000)} x`
+    const attend = `hola ${'buenas '.repeat(4000)}¿me atiende alguien${' 🙏'.repeat(4000)} x`
+    const t0 = Date.now()
+    maskConditionalConfirmation(long)
+    isAttendRequest(attend)
+    isAttendRequest(' '.repeat(50_000) + 'x')
+    assert.ok(Date.now() - t0 < 500, `took ${Date.now() - t0} ms`)
   })
   it('CONFIRMATION_WORDING_RE is unchanged; owner texts keep the strict check; live, Probar and the canary share the rule', () => {
     assert.equal(hasConfirmationWording('una vez confirmado el pago'), true)
@@ -127,7 +153,21 @@ describe('6 · reactions get no turn; a whole-message "me atiende alguien" reach
     assert.match(sweep, /messageType: true,/)
     assert.match(sweep, /waitingAck !== true && r\.messageType !== 'reaction'/)
   })
-  const person = ['Me atiende alguien por favor?', '¿Alguien me atiende?', 'me puede atender una persona?', '¿Me pueden atender un asesor?', 'quiero que alguien me atienda', 'Hola, ¿me atiende una persona?', 'Buenas noches ¿me atiende alguien porfa?']
+  const person = [
+    'Me atiende alguien por favor?',
+    '¿Alguien me atiende?',
+    'me puede atender una persona?',
+    '¿Me pueden atender un asesor?',
+    'quiero que alguien me atienda',
+    'Hola, ¿me atiende una persona?',
+    'Buenas noches ¿me atiende alguien porfa?',
+    // Verifier round 2
+    '¿Me atiende alguien? 🙏',
+    'Hola buenas, ¿me atiende alguien?',
+    'Disculpe, ¿me atiende alguien?',
+    'Hola\n¿me atiende alguien?',
+    'Quiero que me atienda alguien',
+  ]
   for (const t of person) {
     it(`person request: ${t}`, () => {
       assert.equal(isAttendRequest(t), true)

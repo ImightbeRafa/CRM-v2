@@ -339,31 +339,47 @@ export function hasConfirmationWording(text: string): boolean {
 
 /**
  * v53 tests 2026-10-18 ("¿Qué días hacen envíos?" → safe line): "una vez confirmado el pago, sale el mismo día hábil"
- * is how a store explains the NEXT step, not a claim that it happened. Only the conditional PARTICIPLE is masked —
- * "una vez / luego de / después de + confirmado / recibido / verificado + (el) pago / comprobante…" on ONE line — and
- * only when the rest of that sentence says nothing happened (no "ya", "fue", "listo", "en camino", "en proceso" or a
- * past-tense "-ó" verb: "Una vez confirmado tu pago, tu pedido salió hoy" stays a claim). Nothing else is removed, so
- * the payment word and every other claim in the reply stay visible to CONFIRMATION_WORDING_RE (unchanged, INT-70 /
- * INT-93) and to the payment-status checks (Verifier + SecureDog round 1: the first version deleted whole spans).
+ * is how a store explains the NEXT step, not a claim that it happened. ALLOW-LIST (Verifier round 2): the participle
+ * is masked only when its WHOLE sentence is exactly one known next-step line —
+ *   "(,) una vez / luego de / después de + confirmado / recibido / verificado + (el) pago / comprobante… (,) + a
+ *    next step: (tu pedido) sale … / se envía, se despacha, se prepara … / preparamos tu pedido / te llega en N a N
+ *    días hábiles / te enviamos el número de guía / te aviso por aquí"
+ * — with nothing else in that sentence (no "ya", no other verb, no claim before or after). Every other sentence of the
+ * reply, and any sentence that does not match exactly, is checked strictly by CONFIRMATION_WORDING_RE (unchanged,
+ * INT-70 / INT-93) and by the payment-status checks. Only the participle is ever masked, never other words.
  */
+const NEXT_STEP_WHEN = String.raw`(?:[ \t]+(?:ese[ \t]+mismo[ \t]+d[ií]a(?:[ \t]+h[aá]bil)?|el[ \t]+mismo[ \t]+d[ií]a(?:[ \t]+h[aá]bil)?|lo[ \t]+antes[ \t]+posible|en[ \t]+\d[ \t]*a[ \t]*\d[ \t]+d[ií]as[ \t]+h[aá]biles|hoy[ \t]+mismo|al[ \t]+d[ií]a[ \t]+siguiente(?:[ \t]+h[aá]bil)?|por[ \t]+correos(?:[ \t]+de[ \t]+costa[ \t]+rica)?|por[ \t]+mensajer[ií]a(?:[ \t]+privada)?))*`
+const NEXT_STEP = String.raw`(?:(?:(?:tu|el|su)[ \t]+pedido[ \t]+)?sale${NEXT_STEP_WHEN}|(?:(?:tu|el|su)[ \t]+pedido[ \t]+)?se[ \t]+(?:env[ií]a|despacha|prepara)${NEXT_STEP_WHEN}|(?:te[ \t]+lo[ \t]+|te[ \t]+la[ \t]+)?(?:preparamos|enviamos|despachamos)(?:[ \t]+(?:tu|el|su)[ \t]+pedido)?${NEXT_STEP_WHEN}|te[ \t]+llega(?:r[aá])?[ \t]+en[ \t]+\d[ \t]*a[ \t]*\d[ \t]+d[ií]as[ \t]+h[aá]biles|te[ \t]+(?:enviamos|mandamos|pasamos)[ \t]+(?:el[ \t]+n[uú]mero[ \t]+de[ \t]+gu[ií]a|la[ \t]+gu[ií]a|el[ \t]+n[uú]mero[ \t]+de[ \t]+seguimiento)|te[ \t]+(?:aviso|escribimos)(?:[ \t]+por[ \t]+(?:aqu[ií]|ac[aá]))?)`
 const PAY_THING = String.raw`(?:(?:el|tu|su|la|los)[ \t]+)?(?:pago|sinpe|comprobante|transferencia|dep[oó]sito)`
-const CONDITIONAL_PARTICIPLE_RE = new RegExp(
-  String.raw`(?<![\p{L}\p{N}_])(?:una[ \t]+vez|luego[ \t]+de|despu[eé]s[ \t]+de)[ \t]+(confirmad[oa]|recibid[oa]|verificad[oa])(?=[ \t]+${PAY_THING}(?![\p{L}\p{N}_]))`,
-  'giu',
+const NEXT_STEP_SENTENCE_RE = new RegExp(
+  String.raw`^[ \t,]*(?:una[ \t]+vez|luego[ \t]+de|despu[eé]s[ \t]+de)[ \t]+(confirmad[oa]|recibid[oa]|verificad[oa])[ \t]+${PAY_THING}[ \t]*,?[ \t]*${NEXT_STEP}[ \t]*[\p{Extended_Pictographic}\u{FE0F}\u{200D} \t]*$`,
+  'iu',
 )
-/** The rest of the sentence reports something that already happened: the participle is NOT conditional then. */
-const CLAIM_TAIL_RE = /(?<![\p{L}])(?:ya|fue|fueron|listo|lista|listos|en[ \t]+camino|en[ \t]+proceso|salio|quedo|llego|\p{L}{2,}ó)(?![\p{L}])/iu
-const SENTENCE_END_RE = /[.!?¡¿\n]/u
+const SENTENCE_RE = /[^.!?¡¿\n]+/gu
+/**
+ * Anything in the REST of the reply that reports something already done ("Salió hoy con Correos", "ya va", "hemos
+ * despachado", "ha sido enviado", "está despachado", "te confirmo…"): then nothing is masked at all (Verifier round 2).
+ */
+const DONE_CUE_RE =
+  /(?<![\p{L}])(?:ya|fue|fueron|sido|listo|lista|listos|en[ \t]+camino|en[ \t]+proceso|te[ \t]+confirmo|todo[ \t]+est[aá]|(?:he|has|ha|hemos|han)[ \t]+\p{L}+|est[aá]n?[ \t]+\p{L}+(?:ad|id)[oa]s?|salio|quedo|llego|despacho|\p{L}{2,}ó)(?![\p{L}])/iu
 
 export function maskConditionalConfirmation(text: string): string {
   const src = text || ''
-  return src.replace(CONDITIONAL_PARTICIPLE_RE, (match: string, participle: string, offset: number) => {
-    const after = src.slice(offset + match.length)
-    const end = after.search(SENTENCE_END_RE)
-    const rest = end < 0 ? after : after.slice(0, end)
-    if (CLAIM_TAIL_RE.test(rest)) return match
-    return match.slice(0, match.length - participle.length) + '·'.repeat(participle.length)
+  let masked = false
+  let rest = ''
+  const out = src.replace(SENTENCE_RE, (sentence: string) => {
+    const m = NEXT_STEP_SENTENCE_RE.exec(sentence)
+    if (!m) {
+      rest += `${sentence}\n`
+      return sentence
+    }
+    const participle = m[1]
+    const at = sentence.toLowerCase().indexOf(participle.toLowerCase())
+    if (at < 0) return sentence
+    masked = true
+    return sentence.slice(0, at) + '·'.repeat(participle.length) + sentence.slice(at + participle.length)
   })
+  return masked && !DONE_CUE_RE.test(rest) ? out : src
 }
 
 /** The agent's own reply claims a payment / order happened (a conditional next-step participle excluded). */

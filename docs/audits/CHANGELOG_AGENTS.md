@@ -5,11 +5,12 @@
 - (1) `planModelTurnDelivery`: when the model hands off and its own text cannot go out, the customer gets the payment
   line ("¡Gracias! … ya lo reviso") only for a payment / refund-complaint hand-off. Anything else ("¿de verdad funciona?",
   "¿dónde retiro?", "¿cuándo vuelve el NAD+?") gets the neutral "Dame un momento y te confirmo 😊".
-- (2) "Una vez / luego de / después de + confirmado / recibido / verificado + (el) pago / comprobante" on one line:
-  only that participle is masked before the claim checks (confirmation wording + payment status). It is masked only
-  when the rest of the sentence reports nothing done (no "ya", "fue", "listo", "en camino", "en proceso", past "-ó").
-  Live output check, Probar's check and the unlock canary share the rule. CONFIRMATION_WORDING_RE is unchanged
-  (INT-70 / INT-93), and owner-written texts keep the strict check.
+- (2) ALLOW-LIST: the participle in "una vez / luego de / después de + confirmado / recibido / verificado + (el)
+  pago / comprobante" is masked only when its WHOLE sentence is one known next-step line (sale … / se envía / preparamos
+  tu pedido / te llega en N a N días hábiles / te enviamos la guía / te aviso), and no other sentence of the reply
+  reports something done (ya, fue, sido, -ó, he/ha/hemos …, está …ado, te confirmo, en camino). Both claim checks
+  (confirmation wording + payment status) read the masked text; live output check, Probar and the unlock canary share
+  the rule. CONFIRMATION_WORDING_RE is unchanged (INT-70 / INT-93); owner-written texts keep the strict check.
 - (6) A WhatsApp emoji reaction (messageType 'reaction') gets no job, and the waiting sweep skips it too.
   "Me atiende alguien (por favor)?" as the WHOLE text message is a person request. Pickup / hours / "no hace falta
   que me atienda…" stay with the agent. A photo caption never uses this rule, and in a burst a payment hand-off wins
@@ -19,8 +20,10 @@
   deleted whole phrases, which unblocked real claims ("Después de verificado tu pago, ya salió tu pedido", "El equipo
   te confirma tu pedido ya va en camino"). It also had a broad "me atiende alguien" and a reaction skip that the
   sweep undid. Every bypass is pinned as a test.
-- Tests: `v53-handoff-lines.test.ts` (47). Source asserts updated in agents2-b-sales, instagram-media and
-  luna10-hard-blocks (same intent). test:soft-ai 1103/1103, test:chat-harden 680/680, test:security 271/271,
+- Verifier round 2 FAIL (deny-list tail still let "Tu pedido ya salió, una vez verificado tu pago" / "hemos despachado" /
+  next-sentence claims through) → the allow-list above; every round-2 bypass pinned.
+- Tests: `v53-handoff-lines.test.ts` (64). Source asserts updated in agents2-b-sales, instagram-media and
+  luna10-hard-blocks (same intent). test:soft-ai 1120/1120, test:chat-harden 680/680, test:security 271/271,
   tsc + lint clean.
 
 ## 2026-10-18 00:10Z — CF 8d94e714: staff bot on Luna, follow-up A/B (off), Simpe, Sofi v53

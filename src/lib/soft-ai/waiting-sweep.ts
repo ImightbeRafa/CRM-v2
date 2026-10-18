@@ -233,7 +233,8 @@ async function prepareConversation(
   const recentRows = await prisma.chatMessage.findMany({
     where: { tenantId: conv.tenantId, conversationId: conv.id },
     orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
-    take: 5,
+    // Room for a few reactions / waiting acks above the customer's waiting message (Verifier v53 round 2).
+    take: 10,
     select: {
       id: true,
       direction: true,

@@ -51,8 +51,13 @@ const BARE_HANDOFF_RE = /^\s*["'«]?\s*(agente|humano|persona|asesor|agent|human
 // person is a person request. ONLY as the whole message (Verifier / SecureDog round 1): "¿me atiende alguien en la tienda
 // para retirar?", "Si llego a las 5, ¿me atiende alguien?", "No hace falta que me atienda una persona, ¿precio?" are
 // questions / sales the agent answers.
-const ATTEND_ME_RE =
-  /^[ \t]*(?:(?:hola|buenas|buenos[ \t]+d[ií]as|buenas[ \t]+(?:tardes|noches))[ \t]*[,!.]?[ \t]*)?¿?[ \t]*(?:(?:me[ \t]+(?:atiende|atienden|puede[ \t]+atender|pueden[ \t]+atender|podr[ií]a[ \t]+atender|podr[ií]an[ \t]+atender)[ \t]+(?:alguien|una[ \t]+persona|un[ \t]+humano|un[ \t]+asesor|una[ \t]+asesora|un[ \t]+agente))|(?:alguien|una[ \t]+persona|un[ \t]+humano|un[ \t]+asesor)[ \t]+(?:que[ \t]+)?me[ \t]+(?:atiende|atienda|puede[ \t]+atender|podr[ií]a[ \t]+atender)|quiero[ \t]+que[ \t]+(?:alguien|una[ \t]+persona|un[ \t]+asesor)[ \t]+me[ \t]+atienda)[ \t]*(?:,?[ \t]*(?:por[ \t]+favor|porfa|x[ \t]+favor))?[ \t]*[?!.]*[ \t]*$/iu
+// (Verifier round 2: up to two greetings / "disculpe" before it, a line break after them, an emoji after it.)
+const ATTEND_GREETING = String.raw`(?:hola|holi|buenas|buen[oa]s?[ \t]+(?:d[ií]as?|tardes|noches)|disculp[eaá]|perd[oó]n|pura[ \t]+vida|upe)`
+const ATTEND_REQUEST = String.raw`(?:me[ \t]+(?:atiende|atienden|atienda|puede[ \t]+atender|pueden[ \t]+atender|podr[ií]a[ \t]+atender|podr[ií]an[ \t]+atender)[ \t]+(?:alguien|una[ \t]+persona|un[ \t]+humano|un[ \t]+asesor|una[ \t]+asesora|un[ \t]+agente)|(?:alguien|una[ \t]+persona|un[ \t]+humano|un[ \t]+asesor)[ \t]+(?:que[ \t]+)?me[ \t]+(?:atiende|atienda|puede[ \t]+atender|podr[ií]a[ \t]+atender)|quiero[ \t]+que[ \t]+(?:alguien|una[ \t]+persona|un[ \t]+asesor)[ \t]+me[ \t]+atienda|quiero[ \t]+que[ \t]+me[ \t]+atienda[ \t]+(?:alguien|una[ \t]+persona|un[ \t]+asesor|un[ \t]+humano))`
+const ATTEND_ME_RE = new RegExp(
+  String.raw`^\s*(?:${ATTEND_GREETING}[ \t]*[,!.]?\s*){0,2}¿?[ \t]*${ATTEND_REQUEST}[ \t]*(?:,?[ \t]*(?:por[ \t]+favor|porfa|x[ \t]+favor))?[ \t]*[?!.]*[\s\p{Extended_Pictographic}\u{FE0F}\u{200D}]*$`,
+  'iu',
+)
 
 /** "Me atiende alguien por favor?" — the whole message asks to be attended by a person (text messages only). */
 export function isAttendRequest(text: string): boolean {

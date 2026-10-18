@@ -1,0 +1,61 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "chatfix-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "D:/Coder/CRM-v2-chatfix",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3000"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "chatfix-prod",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "D:/Coder/CRM-v2-chatfix",
+        "run",
+        "start",
+        "--",
+        "-p",
+        "3000"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "linkorders-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "D:/Coder/CRM-v2-linkorders",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3010"
+      ],
+      "port": 3010
+    },
+    {
+      "name": "inbox-views-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "D:/Coder/CRM-v2-inbox-views",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3010"
+      ],
+      "port": 3010
+    }
+  ]
+}

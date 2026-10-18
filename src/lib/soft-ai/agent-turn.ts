@@ -103,7 +103,7 @@ import { dropRepeatedParts, REPEAT_WINDOW_MS } from '@/lib/soft-ai/repeat-guard'
 import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet, orderDataChoice } from '@/lib/soft-ai/sales-state'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
-import { decideInbound, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
+import { decideInbound, decisionOrderDataChoice, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import { paymentCheckGate, paymentCheckMode, runPaymentClaimCheck } from '@/lib/soft-ai/llm/payment-claim-check'
 import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
@@ -256,12 +256,15 @@ async function withPaymentClaimCheck(
   decision: InboundDecision,
   ctx: { tenantId: string; agentId: string; conversationId: string | null; history: Array<{ direction: string; content?: string | null }> },
 ): Promise<InboundDecision> {
-  const mode = paymentCheckMode()
+  // SecureDog r3 INT-H: a choice inside the order data is a regex ALLOWLIST over free text; the model check is its
+  // mandatory backstop — always enforced on that path, whatever SOFT_AI_PAYMENT_CHECK says (error / timeout → hand-off).
+  const dataChoicePath = decisionOrderDataChoice(decision) !== null
+  const mode = dataChoicePath ? 'enforce' : paymentCheckMode()
   if (mode === 'off' || decision.escalate || decision.handoff) return decision
   // SecureDog r9 F1: only real media skips (it has its own receipt path). A reaction / share / location / story
   // mention that took the burst over still gets the check: the claim text is in the unanswered history it reads.
   if (input.messageType && isMediaLikeMessageType(input.messageType)) return decision
-  if (!paymentCheckGate(input.inboundText, ctx.history)) return decision
+  if (!dataChoicePath && !paymentCheckGate(input.inboundText, ctx.history)) return decision
   const result = await runPaymentClaimCheck({
     inboundText: input.inboundText,
     history: ctx.history,

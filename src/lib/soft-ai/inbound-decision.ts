@@ -12,7 +12,9 @@ import {
 import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
 import {
   classifyPaymentText,
+  embeddedPaymentChoice,
   hasHardPaymentClaim,
+  hasHardPaymentClaimLabelMasked,
   hasPaymentStatusHint,
   isBareOrderConfirmAsk,
   isCourtesyText,
@@ -187,7 +189,11 @@ export function decideInbound(input: {
     nothingPaidYet,
   })
   // Verifier round 10: only a real claim in an earlier bubble counts ("Sinpe" + "gracias" is an answer).
-  const burstClaim = (input.earlierCustomerTexts || []).some((t) => hasHardPaymentClaim(t, { noPaymentYet }))
+  // Verifier r2 (pay-choice-in-data F1) / SecureDog r3 INT-G: an earlier order-data bubble is forgiven only the store's
+  // own list labels ("Nombre completo" ≠ "completo") — it must still pass every hard-claim check with those masked.
+  const burstClaim = (input.earlierCustomerTexts || []).some(
+    (t) => hasHardPaymentClaim(t, { noPaymentYet }) && !(embeddedPaymentChoice(t) && !hasHardPaymentClaimLabelMasked(t)),
+  )
   const forced = input.forcePaymentRisk === true
   const paymentClass: PaymentClassification = burstClaim || forced ? 'payment_proof_or_risk' : latestClass
   const why = forced ? `payment_llm_check (regex: ${latestClass})` : burstClaim ? `earlier_message (latest: ${latestClass})` : null
@@ -311,7 +317,8 @@ export function decideInbound(input: {
   const choice = pick ?? dataChoice
   if (choice === 'contra_entrega' || choice === 'efectivo') {
     // Contra entrega / efectivo: the model checks the zone and the order details, then a person takes the order.
-    steps.push({ step: 'payment_choice', outcome: 'model', reason: choice })
+    // Verifier r2 F5 / SecureDog r2 INT-F: inside the order data it is tagged so sales-state learns the choice.
+    steps.push({ step: 'payment_choice', outcome: 'model', reason: dataChoice && !pick ? `order_data_${choice}` : choice })
     return continueToModel(paymentClass, steps)
   }
   if (!choice && textMessage && input.awaitingPaymentMethod) {

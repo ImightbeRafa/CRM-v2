@@ -6,7 +6,10 @@
 import {
   hasPaymentClaimCue,
   classifyPaymentText,
+  DATA_ODD_BREAK_RE,
+  earlierRowMayBeClaim,
   embeddedPaymentChoice,
+  hasHardPaymentClaimLabelMasked,
   hasHardPaymentClaim,
   hasPaymentStatusHint,
   isBareOrderConfirmAsk,
@@ -932,8 +935,64 @@ export function noPaymentYet(history: ReadonlyArray<{ direction: string; content
 /** The store already asked for / talked about a receipt, a payment's check or a payment block. */
 const STORE_RECEIPT_TALK_RE =
   /(?<![\p{L}])(?:comprobante\p{L}*|recibo|captura|pantallazo|screenshot|voucher|constancia|foto\s+del\s+(?:pago|sinpe)|valid\p{L}*|verific\p{L}*|confirm\p{L}*\s+(?:el|tu|su)\s+pago)(?![\p{L}])|\[\[\s*PAGO/iu
-/** Payment details a person types by hand: "a nombre de" next to digits, an IBAN, a SINPE number split oddly. */
-const STORE_HAND_DETAILS_RE = /a\s+nombre\s+de[\s\S]*\d|\d[\s\S]*a\s+nombre\s+de|CR\s?\d{2}[\s-]?\d{4}/iu
+/**
+ * Payment details a person types by hand: "a nombre de" near digits (also on the next line — Verifier r3; bounded, so
+ * no O(n²) scan over a long digit row — SecureDog r2 INT-E), an IBAN, a SINPE number split 2-2-2-2 after a lead
+ * ("Al 62 01 99 14"; not "tallas 36 38 40 42").
+ */
+const STORE_HAND_DETAILS_RE =
+  /a\s+nombre\s+de[\s\S]{0,120}\d|\d[\s\S]{0,120}a\s+nombre\s+de|CR\s?\d{2}[\s-]?\d{4}|(?<![\p{L}])(?:al|sinpe|simpe|n[uú]mero)\s*:?\s*\d{2}[\s.-]\d{2}[\s.-]\d{2}[\s.-]\d{2}(?!\d)/iu
+/**
+ * SecureDog r2 INT-C: the store already thanked for a payment, pointed to its number elsewhere ("al número de la bio",
+ * "el SINPE está en la bio", "te paso el SINPE por privado") or asked for the receipt photo ("mandame la foto").
+ */
+const STORE_PAID_OR_ELSEWHERE_RE = new RegExp(
+  [
+    String.raw`gracias\s+por\s+(?:tu|su|el|la)\s+(?:pago|sinpe|simpe|transferencia|dep[oó]sito|compra)`,
+    // Word-bounded (Verifier r3: "cambio" ≠ bio, "admin" ≠ dm); no "correo" / "datos" (ordinary data collection).
+    String.raw`(?<![\p{L}])(?:n[uú]mero|sinpe|simpe|cuenta)(?![\p{L}])[^\n]{0,40}(?<![\p{L}])(?:bio|perfil|historia|story|privado|dm|inbox)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:bio|perfil|historia|story|privado|dm|inbox)(?![\p{L}])[^\n]{0,40}(?<![\p{L}])(?:n[uú]mero|sinpe|simpe|cuenta)(?![\p{L}])`,
+    // A receipt photo, not a product photo (Verifier r3: "pasame la foto del modelo" is sales talk).
+    String.raw`(?<![\p{L}])(?:foto|imagen)\s+del?\s+(?:pago|sinpe|simpe|comprobante|dep[oó]sito|transferencia)(?![\p{L}])`,
+    String.raw`(?:m[aá]ndame|p[aá]same|env[ií]ame|me\s+mand[aá]s|me\s+pas[aá]s|me\s+envi[aá]s)\s+(?:la\s+|una\s+|el\s+)?(?:foto|imagen|captura|print)\s+cuando`,
+    String.raw`(?<![\p{L}])(?:sinpe|simpe|pag\p{L}*|transfer\p{L}*|dep[oó]sit\p{L}*)(?![\p{L}])[^\n]{0,60}(?<![\p{L}])(?:foto|imagen|captura|print)(?![\p{L}])`,
+    // SecureDog r3 INT-K: "a este número", "al mismo de WhatsApp", the QR, "en la descripción / destacados / el post",
+    // "cuando pagués / lo hagás me avisás", "apenas me caiga", "me pasás la evidencia / el respaldo".
+    // Verifier r4: only the STORE's number / SINPE (not "tu número de WhatsApp", "número de guía / talla").
+    String.raw`(?<![\p{L}])(?:mi|nuestro|el|al|este)\s+(?:n[uú]mero|sinpe|simpe)(?!\s+de\s+(?:la\s+|el\s+|su\s+|tu\s+)?(?:tel[eé]fono|gu[ií]a|pedido|talla|orden|zapatilla|producto|modelo|serie|casa))(?![\p{L}])[^\n]{0,40}(?<![\p{L}])(?:este|mismo|aqu[ií]|chat|whats\p{L}*|siempre|descripci[oó]n|destacad\p{L}*|post|publicaci[oó]n|estado)(?![\p{L}])`,
+    // N1 r6: not "SINPE al mismo precio".
+    String.raw`(?<![\p{L}])(?:sinpe|simpe)(?:\s+m[oó]vil)?(?:[\s,]+lo\s+hac[eé]s)?[\s,]+(?:a|al)\s+(?:este|mismo)(?![\p{L}])(?!\s+precio)`,
+    String.raw`(?<![\p{L}])(?:a\s+este|al\s+mismo|el\s+mismo|a\s+este\s+mismo)\s+(?:n[uú]mero|sinpe|simpe|cuenta|de\s+whats\p{L}*)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:hacelo|pagalo|depositalo|transferilo)\s+(?:a|al)\s+(?:este|mismo)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:al\s+de\s+siempre|ya\s+ten[eé]s\s+los\s+datos|ya\s+sab[eé]s\s+el\s+n[uú]mero)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:escane\p{L}*\s+(?:el\s+)?qr|qr\s+(?:del?\s+)?(?:sinpe|simpe|pago)|(?:te\s+)?dejo\s+el\s+qr)(?![\p{L}])(?!\s+(?:(?:del?|de\s+(?:nuestro|mi|la))\s+(?:men[uú]|instagram|perfil|cat[aá]logo|whats\p{L}*|p[aá]gina|web|local|tienda|etiqueta|producto)|para\s+(?:ver|seguir|entrar)|est[aá]\s+en\s+la\s+etiqueta))`,
+    String.raw`(?<![\p{L}])(?:evidencia|respaldo)\s+(?:del?\s+)?(?:pago|sinpe|simpe|transferencia|dep[oó]sito)(?![\p{L}])|(?:me\s+)?(?:pas[aá]s|mand[aá]s)\s+(?:la\s+|el\s+)(?:evidencia|respaldo)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:cuando|apenas)\s+(?:pagu\p{L}*|lo\s+hag\p{L}*|(?:me|te)\s+(?:caiga|entre)(?!\s+(?:stock|mercader\p{L}*|producto|pedido|talla|el\s+pedido|la\s+mercader\p{L}*))|me\s+llegue\s+(?:el|la|tu|su)\s+(?:pago|sinpe|simpe|plata|transferencia|dep[oó]sito))(?![\p{L}])`,
+    String.raw`(?<![\p{L}])pag[aá]s\s+y\s+te\s+lo\s+mando(?![\p{L}])`,
+    // SecureDog r4 INT-R: "te lo paso por privado / DM", "está en la bio / el perfil", any QR.
+    String.raw`(?<![\p{L}])te\s+l[oa]\s+(?:paso|mando|env[ií]o)\s+por\s+(?:privado|interno|dm|inbox|mensaje)(?![\p{L}])`,
+    // Only as the whole answer ("Está en la bio 😊"), not "la talla está en la descripción" (Verifier r4 balance).
+    String.raw`^\s*(?:(?:el|mi)\s+(?:n[uú]mero|sinpe|simpe)\s+)?est[aá]\s+en\s+(?:la\s+bio\p{L}*|el\s+perfil|los\s+destacados|la\s+descripci[oó]n)(?![\p{L}])[\s.!😊🙌🙏]*$`,
+    String.raw`(?<![\p{L}])qr(?![\p{L}])[^\n]{0,60}(?<![\p{L}])(?:pag\p{L}*|sinpe|simpe|cobr\p{L}*)|(?<![\p{L}])(?:pag\p{L}*|sinpe|simpe)(?![\p{L}])[^\n]{0,30}(?<![\p{L}])qr(?![\p{L}])`,
+    String.raw`(?<![\p{L}])qr(?![\p{L}])(?!\s+(?:(?:del?|de\s+(?:nuestro|mi|la))\s+(?:men[uú]|instagram|perfil|cat[aá]logo|whats\p{L}*|p[aá]gina|web|local|tienda|etiqueta|producto)|para\s+(?:ver|seguir|entrar)|est[aá]\s+en\s+la\s+etiqueta))`,
+  ]
+    .map((p) => `(?:${p})`)
+    .join('|'),
+  'iu',
+)
+/**
+ * SecureDog r2 INT-E: a customer row longer than this (after collapsing whitespace) fails closed. Store rows may be as
+ * long as a model reply (Verifier r3: a long welcome / FAQ reply must not turn the feature off).
+ */
+const PAID_ROW_MAX_CHARS = 1200
+/** "62 01 99 14", "6201-9914", "62019914" typed by the store (used only when no payment number is configured). */
+// 2-2-2-2 only alone on its line or after a lead ("tallas 36 38 40 42" is not a number).
+const STORE_BARE_NUMBER_RE = /(?<!\d)\d{4}[\s.-]?\d{4}(?!\d)|(?:^|\n|(?<![\p{L}])(?:al|sinpe|simpe|m[oó]vil|n[uú]mero)\s*:?)\s*\d{2}[\s.-]\d{2}[\s.-]\d{2}[\s.-]\d{2}(?!\d)/iu
+/** SOFT_AI_ORDER_DATA_CHOICE=off turns the order-data choice off (old hand-off everywhere) — an ops switch. */
+export function orderDataChoiceEnabled(env: string | undefined = process.env.SOFT_AI_ORDER_DATA_CHOICE): boolean {
+  return (env || '').trim().toLowerCase() !== 'off'
+}
+const PAID_STORE_ROW_MAX_CHARS = 4000
 /** Any bubble that is only a bracketed placeholder ("[imagen]", "[share]", "[ig_story]", "[attachment]"). */
 const ANY_PLACEHOLDER_RE = /^\s*\[[^\]\n]{1,40}\]\s*$/u
 
@@ -950,19 +1009,33 @@ type PaidRow = { direction: string; content?: string | null; messageType?: strin
 export function nothingPaidYet(rows: ReadonlyArray<PaidRow>, opts: { windowFull?: boolean; paymentDigits?: readonly string[] } = {}): boolean {
   if (opts.windowFull) return false
   const payDigits = (opts.paymentDigits || []).map((d) => d.replace(/\D/g, '')).filter((d) => d.length >= 8).map((d) => d.slice(-8))
+  let storePaymentTalk = false
   for (const m of rows) {
-    const text = stripFormatChars((m.content || '').normalize('NFKC'))
+    const raw = (m.content || '').normalize('NFKC')
+    const text = stripFormatChars(raw).replace(/[ \t]+/gu, ' ').replace(/\n\s*\n+/gu, '\n')
+    if (text.length > (m.direction === 'outbound' ? PAID_STORE_ROW_MAX_CHARS : PAID_ROW_MAX_CHARS)) return false
+    // Verifier r3 F5: odd line breaks would be deleted below and glue a claim ("ya␤pagué" → "yapagué"): fail closed.
+    if (m.direction !== 'outbound' && DATA_ODD_BREAK_RE.test(raw)) return false
     if ((m.messageType && m.messageType !== 'text') || MEDIA_PLACEHOLDER_RE.test(text) || ANY_PLACEHOLDER_RE.test(text)) return false
+    // Verifier r2 F3: the store's own payment number, from either side (a customer echoing it is paying / has paid).
+    if (payDigits.length && payDigits.some((d) => text.replace(/\D/g, '').includes(d))) return false
     if (m.direction === 'outbound') {
+      // SecureDog r4 INT-R: with no payment number configured, any typed 8-digit number from the store fails closed.
+      if (!payDigits.length && STORE_BARE_NUMBER_RE.test(text)) return false
+      if (hasPaymentWord(text)) storePaymentTalk = true
       if (paymentDetailsIn(text) || PAYMENT_BLOCK_RE.test(text) || ORDER_BLOCK_RE.test(text) || STORE_RECEIPT_TALK_RE.test(text)) return false
       // Verifier r1 #4: only words about a payment already made ("ya pagaste", "vi el depósito"), not "¡Listo!" / "✅ envíos".
-      if (METHOD_QUESTION_DONE_RE.test(text) || STORE_HAND_DETAILS_RE.test(text)) return false
-      if (payDigits.length && payDigits.some((d) => text.replace(/\D/g, '').includes(d))) return false
+      if (METHOD_QUESTION_DONE_RE.test(text) || STORE_HAND_DETAILS_RE.test(text) || STORE_PAID_OR_ELSEWHERE_RE.test(text)) return false
       continue
     }
-    // An order-data choice passes its own (stricter) allowlist; anything else must not read as a payment claim.
-    if (embeddedPaymentChoice(text)) continue
-    if (hasHardPaymentClaim(text) || classifyPaymentText(text) === 'payment_proof_or_risk') return false
+    // SecureDog r3 INT-G: the claim checks run FIRST (additive by construction); only the store's own list labels
+    // ("Nombre completo") are forgiven, and only for a row that is an order-data choice. The raw row keeps odd breaks.
+    const choiceRow = embeddedPaymentChoice(raw) !== null
+    if (choiceRow ? hasHardPaymentClaimLabelMasked(text) : hasHardPaymentClaim(text)) return false
+    if (choiceRow) continue
+    // SecureDog r3 INT-I / Verifier r4: done / money wording the live classifier misses; a bare "Listo" / "Ya" only
+    // after the store talked about payment ("¿te lo aparto?" → "Listo" is buying, not paying).
+    if (classifyPaymentText(text) === 'payment_proof_or_risk' || earlierRowMayBeClaim(text, { afterStorePaymentTalk: storePaymentTalk })) return false
   }
   return true
 }
@@ -973,13 +1046,14 @@ export function nothingPaidYet(rows: ReadonlyArray<PaidRow>, opts: { windowFull?
  * is one embeddedPaymentChoice data message. Live and Probar pass history + burst + trigger, in order. Pure.
  */
 export function orderDataChoice(rows: ReadonlyArray<PaidRow>, opts: { windowFull?: boolean; paymentDigits?: readonly string[] } = {}): PaymentChoiceMethod | null {
-  if (!nothingPaidYet(rows, opts)) return null
+  if (!orderDataChoiceEnabled() || !nothingPaidYet(rows, opts)) return null
   let i = rows.length
   while (i > 0 && rows[i - 1].direction !== 'outbound') i -= 1
   const seen = new Set<string>()
   const unanswered = rows
     .slice(i)
-    .map((m) => stripFormatChars((m.content || '').normalize('NFKC')).trim())
+    // Raw (NFKC only): embeddedPaymentChoice rejects odd line breaks before it strips format characters (SecureDog r2 INT-D).
+    .map((m) => (m.content || '').normalize('NFKC').trim())
     .filter((t) => t && !seen.has(t) && (seen.add(t), true))
   return unanswered.length ? embeddedPaymentChoice(unanswered.join('\n')) : null
 }

@@ -57,7 +57,7 @@ describe('AI terms acceptance (business opt-in)', () => {
       .update([AI_TERMS_TITLE, ...AI_TERMS_POINTS, AI_TERMS_CHECKBOX, AI_CUSTOMER_NOTICE].join('\n'))
       .digest('hex')
       .slice(0, 16)
-    assert.deepEqual({ version: AI_TERMS_VERSION, hash }, { version: 'ia-2026-10-v3', hash: 'ad877572cea2895f' })
+    assert.deepEqual({ version: AI_TERMS_VERSION, hash }, { version: 'ia-2026-10-v4', hash: '88dc08529580ed59' })
   })
 })
 

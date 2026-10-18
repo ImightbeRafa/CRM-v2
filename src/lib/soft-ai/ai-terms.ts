@@ -4,13 +4,13 @@
  * Bump AI_TERMS_VERSION whenever the wording changes: everyone must accept the new version.
  */
 
-export const AI_TERMS_VERSION = 'ia-2026-10-v3'
+export const AI_TERMS_VERSION = 'ia-2026-10-v4'
 
 export const AI_TERMS_TITLE = 'Antes de activar agentes con IA: autorización de su negocio'
 
 export const AI_TERMS_POINTS: readonly string[] = [
   'Su negocio es el responsable de los datos de sus clientes. Betsy CRM actúa como encargada del tratamiento y los trata únicamente siguiendo sus instrucciones.',
-  'Cuando un agente de IA está activo, el texto de los mensajes de sus clientes, su nombre visible, el contexto reciente de la conversación y, si corresponde, el estado de un pedido se envían a un proveedor de IA (hoy OpenAI y/o xAI, en Estados Unidos) solo para generar la respuesta.',
+  'Cuando un agente de IA está activo, el texto de los mensajes de sus clientes, su nombre visible, el contexto reciente de la conversación y, si corresponde, el estado de un pedido se envían a un proveedor de IA (hoy OpenAI, en Estados Unidos) solo para generar la respuesta.',
   'Esos datos no se usan para entrenar ni mejorar modelos de IA, no se venden y no se comparten con otros fines. El proveedor puede conservarlos hasta 30 días únicamente por seguridad y prevención de abusos.',
   'Las pruebas del agente (Probar) usan solo mensajes que su equipo escribe; nunca conversaciones reales de clientes.',
   'Su negocio debe informar a sus clientes que los atiende un asistente de inteligencia artificial y contar con su permiso para escribirles (abajo hay un aviso sugerido que puede copiar).',

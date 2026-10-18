@@ -12,6 +12,7 @@ import {
   instagramAccountOwnedElsewhereHtml,
   upsertInstagramSocialAccount,
 } from '@/lib/instagram-social-account'
+import { instagramForeignOwnerResolver } from '@/lib/instagram-foreign-owner'
 import { debugMetaTokenExpiry } from '@/lib/social-account-token-health'
 import { getMetaWhatsAppAppId, getMetaWhatsAppAppSecret } from '@/lib/meta-api'
 
@@ -104,6 +105,7 @@ export async function POST(request: NextRequest) {
       igUsername: match.igUsername,
       isActive: subscribeOk,
       expiresAt,
+      resolveForeignOwner: instagramForeignOwnerResolver(loaded.record.userId),
     })
 
     await clearInstagramPending(loaded.cookie.pendingId)
@@ -145,7 +147,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof InstagramSocialAccountConflictError) {
       console.warn('[instagram/complete] Instagram account already connected on another tenant')
-      return new NextResponse(instagramAccountOwnedElsewhereHtml(), {
+      return new NextResponse(instagramAccountOwnedElsewhereHtml(error.workspaceName), {
         status: 409,
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       })

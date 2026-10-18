@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/auditLogger'
-import { FOLLOW_UP_FLAG, parseFollowUpConfig, type FollowUpCampaign } from '@/lib/soft-ai/follow-up'
+import { FOLLOW_UP_FLAG, MAX_CAMPAIGN_HOURS, SILENT_MIN_MINUTES, parseFollowUpConfig, type FollowUpCampaign } from '@/lib/soft-ai/follow-up'
 import { loadPack } from './pack'
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3)
@@ -33,6 +33,10 @@ async function main() {
     const b = (arg('b') || '').trim()
     if (!agentId || !lineIds.length || !a || !b) throw new Error('--agent, --lines, --a y --b son obligatorios')
     if (a.length > 500 || b.length > 500) throw new Error('textos de máximo 500 caracteres')
+    const hours = Number(arg('hours') || 18)
+    const silent = Number(arg('silent-min') || 90)
+    if (!Number.isFinite(hours) || hours <= 0 || hours > MAX_CAMPAIGN_HOURS) throw new Error(`--hours entre 1 y ${MAX_CAMPAIGN_HOURS}`)
+    if (!Number.isFinite(silent) || silent < SILENT_MIN_MINUTES || silent > 1440) throw new Error(`--silent-min entre ${SILENT_MIN_MINUTES} y 1440`)
     const agent = await prisma.chatAgent.findFirst({ where: { id: agentId, tenantId }, select: { id: true } })
     if (!agent) throw new Error('agente no encontrado en este negocio')
     const lines = await prisma.socialAccount.count({ where: { id: { in: lineIds }, tenantId } })
@@ -44,8 +48,8 @@ async function main() {
       lineIds,
       texts: { A: a, B: b },
       createdAt: new Date(now).toISOString(),
-      until: new Date(now + Number(arg('hours') || 18) * 3600_000).toISOString(),
-      silentMinMinutes: Number(arg('silent-min') || 90),
+      until: new Date(now + hours * 3600_000).toISOString(),
+      silentMinMinutes: silent,
       active: true,
       claimed: {},
     }
@@ -59,6 +63,7 @@ async function main() {
   if (flag('stop')) {
     const id = arg('id')
     if (!row) throw new Error('no hay campañas')
+    if (id && !config.campaigns.some((c) => c.id === id)) throw new Error(`no existe la campaña ${id}`)
     const next = { campaigns: config.campaigns.map((c) => (!id || c.id === id ? { ...c, active: false } : c)) }
     await prisma.tenantFeatureFlag.update({ where: { id: row.id }, data: { config: next } })
     await audit(`Follow-up A/B detenido ${id || '(todas)'}`, { campaignId: id || 'all' })
@@ -81,10 +86,16 @@ async function main() {
         where: { tenantId, conversationId: convId, direction: 'outbound', metadata: { path: ['followUp', 'campaignId'], equals: c.id } },
         select: { sentAt: true },
       })
-      if (!fu) continue
+      if (!fu) {
+        // Claimed but never stored as sent: not counted as sent (keeps the rates honest).
+        s.sent--
+        s.failed++
+        continue
+      }
       const replied = await prisma.chatMessage.count({ where: { tenantId, conversationId: convId, direction: 'inbound', sentAt: { gt: fu.sentAt } } })
       if (replied) s.replied++
-      const ordered = await prisma.chatMessage.count({ where: { tenantId, conversationId: convId, orderId: { not: null }, sentAt: { gt: fu.sentAt } } })
+      // Chats with an order were never followed up, so any linked order now came after the follow-up.
+      const ordered = await prisma.chatMessage.count({ where: { tenantId, conversationId: convId, orderId: { not: null } } })
       if (ordered) s.ordered++
       const conv = await prisma.chatConversation.findFirst({ where: { id: convId, tenantId }, select: { tags: true } })
       if (conv?.tags.includes('Pedido por confirmar') || conv?.tags.includes('Pago por verificar')) s.orderAlert++

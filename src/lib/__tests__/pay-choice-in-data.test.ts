@@ -235,3 +235,127 @@ describe('a real claim stays a claim / hand-off', () => {
     assert.equal(d.paymentClass, 'payment_proof_or_risk')
   })
 })
+
+describe('round 2 (Verifier r2 + SecureDog r2)', () => {
+  const N = 'Nombre: Ana Mora\n'
+  // SecureDog r2 INT-A (hard claims the live classifier already hands off), INT-B (claims hidden in a label value),
+  // INT-D (Latin look-alikes, letter-spacing, odd line breaks), Verifier r2 F4.
+  const CLAIMS_R2 = [
+    `${N}Dirección: Heredia, le dejé la plata en la cuenta\nPago por SINPE`,
+    `${N}Señas: le giré la plata\nPago por SINPE`,
+    `${N}Dirección: Heredia, le metí la plata\nPago por SINPE`,
+    `${N}Dirección: Heredia, le completé la plata\nPago por SINPE`,
+    `${N}Dirección: Heredia, se lo adelanté\nPago por SINPE`,
+    `${N}Dirección: Heredia, paid\nPago por SINPE`,
+    `${N}Dirección: Heredia, done\nPago por SINPE`,
+    `${N}Dirección: Heredia, sent\nPago por SINPE`,
+    `${N}Dirección: Heredia, paɡué\nPago por SINPE`,
+    `${N}Dirección: Heredia, ya­pagué\nPago por SINPE`,
+    `${N}Teléfono: 8888-8888\nDirección: Heredia, le puse la plata\nPago por SINPE 🙌`,
+    'Nombre: Ana Mora, le puse la plata, pago por SINPE',
+    `${N}Dirección: Heredia, pagao\nPago por SINPE`,
+    `${N}Dirección: Heredia, cancelao\nPago por SINPE`,
+    `${N}Dirección: Heredia, le dejamos el dinero\nPago por SINPE`,
+    `${N}Dirección: Heredia, la plata está puesta\nPago por SINPE`,
+    `${N}Dirección: Heredia, le puse la platica\nPago por SINPE`,
+    `${N}Dirección: Heredia, le puse la harina\nPago por SINPE`,
+    `${N}Dirección: Heredia, le puse la plata al cel de la bio\nPago por SINPE`,
+    `${N}Dirección: Heredia, le puse 12 900\nPago por SINPE`,
+    `${N}Dirección: Heredia, le puse los 9 900\nPago por SINPE`,
+    `${N}Dirección: Heredia 12 900\nPago por SINPE`,
+    `${N}Dirección: Heredia, ahí el print del banco\nPago por SINPE`,
+    `${N}Dirección: Heredia, ahí la imagen del banco\nPago por SINPE`,
+    `${N}Pago por SINPE\nNombre: le puse la plata`,
+    'Pago: SINPE\nSeñas: le puse la plata',
+    'Pago por SINPE\nSeñas: le dejé la plata al guarda',
+    'Pago por SINPE\nSeñas: giré',
+    'Pago por SINPE\nSeñas: lo gire',
+    `${N}Dirección: Heredia, ʟɪsᴛᴏ\nPago por SINPE`,
+    `${N}Dirección: Heredia, ʏᴀ\nPago por SINPE`,
+    `${N}Dirección: Heredia, l i s t o\nPago por SINPE`,
+    `${N}Dirección: Heredia, p a g u e\nPago por SINPE`,
+    'Nombre: Ana Mora ya le hice el sinpe\nPago por SINPE',
+    'Nombre: Ana Mora\u0085ya\u0085le\u0085hice\u0085el\u0085sinpe\nPago por SINPE',
+    'Nombre: Ana Mora\u000Bya\u000Ble\u000Bhice\u000Bel\u000Bsinpe\nPago por SINPE',
+  ]
+  it('claims hidden in the data are never an embedded choice', () => {
+    for (const t of CLAIMS_R2) {
+      assert.equal(embeddedPaymentChoice(t), null, t)
+      assert.equal(orderDataChoice(rows(SALES_HISTORY, t)), null, t)
+      assert.notEqual(classifyPaymentText(t, { nothingPaidYet: true }), 'payment_info_safe', t)
+    }
+  })
+  it('a claim split into a data bubble + the choice bubble stays out', () => {
+    assert.equal(orderDataChoice(rows(SALES_HISTORY, 'Dirección: Heredia, le puse la plata', S)), null)
+  })
+  it('legit addresses still pass (accents, landmarks, banks as landmarks)', () => {
+    for (const t of [
+      `${N}Dirección: San José, Pérez Zeledón, frente al café\nPago por SINPE`,
+      `${N}Dirección: Jacó, 200 m sur del BCR\nPago por SINPE`,
+      `${N}Dirección: Belén, Sarapiquí, casa 25\nPago por SINPE 🙌`,
+    ]) {
+      assert.equal(embeddedPaymentChoice(t), 'sinpe', t)
+    }
+  })
+  it('Verifier r2 F1: the store\'s list ("Nombre completo") + another bubble / a later message continues', () => {
+    // An earlier list bubble is not a hard claim in the burst.
+    for (const trigger of ['Gracias 🙏', 'Envío a domicilio']) {
+      const d = decideInbound({ inboundText: trigger, brandFacts: FACTS, shortcuts: SHORTCUTS, orderDataChoice: orderDataChoice(rows(SALES_HISTORY, LIST_LABELS, trigger)), earlierCustomerTexts: [LIST_LABELS] })
+      assert.notEqual(d.paymentClass, 'payment_proof_or_risk', trigger)
+      assert.equal(d.handoff, null, trigger)
+    }
+    // A follow-up after the agent answered the list (earlierCustomerTexts = recent customer texts).
+    for (const trigger of ['Gracias', 'Ok', '¿Cuánto tarda el envío?']) {
+      const d = decideInbound({ inboundText: trigger, brandFacts: FACTS, shortcuts: SHORTCUTS, earlierCustomerTexts: [LIST_LABELS] })
+      assert.notEqual(d.paymentClass, 'payment_proof_or_risk', trigger)
+    }
+    // Through the burst path exactly as live.
+    const history = [...SALES_HISTORY, msg('inbound', LIST_LABELS)]
+    const trigger = { content: 'Gracias 🙏', messageType: 'text' }
+    const burstEarlier = [{ id: 'b1', direction: 'inbound' as const, content: LIST_LABELS, messageType: 'text', sentAt: '' }]
+    const burst = planBurstInbound({ trigger: { ...trigger, sentAt: '' }, earlier: burstEarlier, awaitingReceipt: () => false })
+    const base = { brandFacts: FACTS, shortcuts: SHORTCUTS, orderDataChoice: orderDataChoice(rows(history, 'Gracias 🙏')) }
+    const { decision } = decideBurstTurn({ burst, burstEarlier, trigger, history, mediaSalesContext: null, earlierCustomerTexts: [LIST_LABELS], decisionBase: base })
+    assert.equal(decisionOrderDataChoice(decision), 'sinpe')
+    assert.equal(decision.handoff, null)
+  })
+  it('Verifier r2 F3: the store\'s own SINPE number typed by the customer ends "nothing paid yet"', () => {
+    for (const t of ['Nombre: Ana\nPago por SINPE\n6201-9914', 'Nombre: Ana\nTel: 6201-9914\nPago por SINPE', 'Nombre: Ana\nTeléfono: 62019914\nPago por SINPE']) {
+      assert.equal(orderDataChoice(rows(SALES_HISTORY, t), { paymentDigits: ['62019914'] }), null, t)
+    }
+    assert.equal(orderDataChoice(rows(SALES_HISTORY, S, 'Nombre: Ana Mora', '6201-9914'), { paymentDigits: ['62019914'] }), null)
+  })
+  it('SecureDog r2 INT-C: store thanks / number elsewhere / receipt-photo ask close the gate', () => {
+    for (const out of [
+      'Gracias por el SINPE 🙏 pasame tus datos',
+      'Gracias por tu compra 😊 pasame los datos del envío',
+      'Hacelo al número de la bio 😊',
+      'El SINPE está en la bio',
+      'Pagás por SINPE y me mandás la foto 😊',
+      'Mandame la foto cuando lo hagás',
+      'Te paso el SINPE por privado',
+      'Al 62 01 99 14, Rafael García',
+    ]) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('outbound', out)], SHOPPER)), false, out)
+    }
+    // Ordinary sales talk about photos of the product keeps it open.
+    assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('outbound', 'Te mando fotos del producto 😊')], SHOPPER)), true)
+  })
+  it('SecureDog r2 INT-E: an oversized history row fails closed and stays fast', () => {
+    const big = Array.from({ length: 12 }, () => msg('inbound', `Nombre: Ana${' \n'.repeat(2000)}`))
+    // Whitespace padding is collapsed before the per-row checks (SecureDog measured ~540 ms per turn before).
+    const t0 = Date.now()
+    orderDataChoice(rows([...SALES_HISTORY, ...big], SHOPPER))
+    assert.ok(Date.now() - t0 < 200, `took ${Date.now() - t0} ms`)
+    // A row that is still long after collapsing fails closed.
+    assert.equal(orderDataChoice(rows([...SALES_HISTORY, msg('inbound', 'Hola '.repeat(300))], SHOPPER)), null)
+  })
+  it('Verifier r2 F5 / INT-F: efectivo / contra entrega inside the data reach sales-state', () => {
+    const cod = parseBrandFacts({ payment: { shareWithCustomers: true, methods: ['sinpe', 'efectivo', 'contra_entrega'], sinpe: { number: '62019914', holderName: 'Rafael García' } } })
+    const t = 'Nombre: Ana Mora\nTeléfono: 8888-8888\nPago en efectivo'
+    const choice = orderDataChoice(rows(SALES_HISTORY, t))
+    assert.equal(choice, 'efectivo')
+    const d = decideInbound({ inboundText: t, brandFacts: cod, shortcuts: SHORTCUTS, orderDataChoice: choice })
+    assert.equal(decisionOrderDataChoice(d), 'efectivo')
+  })
+})

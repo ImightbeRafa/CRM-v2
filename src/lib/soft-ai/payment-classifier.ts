@@ -592,7 +592,7 @@ export function classifyPaymentText(
 ): PaymentClassification {
   // Rafael 2026-10-18: "Nombre: … Dirección: … Pago por SINPE 🙌" with nothing paid yet (sales-state nothingPaidYet: no
   // payment details from the store, no photo / file or payment message from the customer) is a CHOICE.
-  // embeddedPaymentChoice runs every claim check below itself, on the unmasked text, and rejects any cue.
+  // embeddedPaymentChoice runs every claim check below itself (hasHardPaymentClaim included) and rejects any cue.
   if (opts.nothingPaidYet && embeddedPaymentChoice(text)) return 'payment_info_safe'
   // SecureDog: full-width / invisible-character spellings ("ＳＩＮＰＥ ✅", "he\u200Bcho") are read as plain text.
   const value = maskNonPaymentPhrases(stripFormatChars((text || '').normalize('NFKC')))
@@ -896,7 +896,19 @@ export function pendingMethodMention(text: string): PaymentChoiceMethod | null {
  * "revisen / verifiquen", errors. Checked on the WHOLE message (raw, folded and with stretched letters collapsed).
  */
 const DATA_CHOICE_REJECT_RE =
-  /[#₡¢$€✅✔✓☑👍👌💸🧾📸📷]|(?<!\d)\d{5,7}(?!\d)|\d{1,3}[.,]\d{3}(?!\d)|\d{1,2}:\d{2}|\d{1,2}\/\d{1,2}|(?<![\p{L}])(?:ref\p{L}*|c[oó]digo|monto|total|mil|k|colones|rojos|comprobante\p{L}*|recibo|captura|pantallazo|screenshot|voucher|constancia|foto|lleg\p{L}*|vieron|vio|cay[oó]|entr[oó]|entra|pagu[eé]|hice|hicimos|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|cancel[eé]|pagamos|mandamos|enviamos|pasamos|ya|yast[aá]|listo|lista|hecho|hecha|sinpead\p{L}*|saldad\p{L}*|abon\p{L}*|chequ\p{L}*|f[ií]j\p{L}*|valid\p{L}*|revis\p{L}*|verific\p{L}*|confirm\p{L}*|av[ií]s\p{L}*|hace|antier|anteayer|ayer|anoche|hoy|reci[eé]n|ahorita|horita|ahora|temprano|rato|ratito|toque|minutos?|min|segundos?|horas?|fue|todo|efectu\p{L}*|realic\p{L}*|realiz\p{L}*|tir[eéó]|acab\p{L}*|di|dimos|error|doble|mitad|resto|adelanto|debo|debe|falta\p{L}*|pendiente|deja|problema)(?![\p{L}])/iu
+  /[#₡¢$€✅✔✓☑👍👌💸🧾📸📷]|(?<!\d)\d{5,7}(?!\d)|\d{1,3}[.,]\d{3}(?!\d)|\d{1,2}:\d{2}|\d{1,2}\/\d{1,2}|(?<![\p{L}])(?:ref\p{L}*|c[oó]digo|monto|total|mil|k|colones|rojos|comprobante\p{L}*|recibo|captura|pantallazo|screenshot|voucher|constancia|foto|lleg\p{L}*|vieron|vio|cay[oó]|entr[oó]|entra|pagu[eé]|hice|hicimos|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|cancel[eé]|pagamos|mandamos|enviamos|pasamos|ya|yast[aá]|listo|lista|hecho|hecha|sinpead\p{L}*|saldad\p{L}*|abon\p{L}*|chequ\p{L}*|f[ií]j\p{L}*|valid\p{L}*|revis\p{L}*|verific\p{L}*|confirm\p{L}*|av[ií]s\p{L}*|hace|antier|anteayer|ayer|anoche|hoy|reci[eé]n|ahorita|horita|ahora|temprano|rato|ratito|toque|minutos?|min|segundos?|horas?|fue|todo|efectu\p{L}*|realic\p{L}*|realiz\p{L}*|tir[eéó]|acab\p{L}*|di|dimos|error|doble|mitad|resto|adelanto|debo|debe|falta\p{L}*|pendiente|deja|problema|pus[eo]|pusimos|puest[oa]s?|dej[eé]|dejamos|met[ií]|metimos|gir[eé]|giramos|pagao|cancelao)(?![\p{L}])|(?<!\d)\d{1,3}\s\d{3}(?!\d)/iu
+/** SecureDog r2 INT-B: money / receipt nouns a name or address never needs (bank names stay: "200 m sur del BCR"). */
+const DATA_VALUE_MONEY_RE =
+  /(?<![\p{L}])(?:plata|platica|dinero|harina|billetes?|cuenta|print|imagen|sms|mensaje|cel|celular|n[uú]mero|bio)(?![\p{L}])/iu
+/** Free-value word caps: a name is a few words, an address a sentence (SecureDog r2 INT-B). */
+const DATA_NAME_MAX_WORDS = 5
+const DATA_VALUE_MAX_WORDS = 15
+/** SecureDog r2 INT-D: Latin-script look-alikes (IPA, phonetic small caps, Latin Extended-D / -E). */
+const DATA_LATIN_LOOKALIKE_RE = /[\u0250-\u02AF\u1D00-\u1DBF\uA720-\uA7FF\uAB30-\uAB6F]/u
+/** SecureDog r2 INT-D: line breaks other than \n / \r that stripFormatChars deletes (and so glues words together). */
+const DATA_ODD_BREAK_RE = /[\u000B\u000C\u0085\u2028\u2029]/u
+/** "l i s t o": three or more single letters in a row. */
+const DATA_SPACED_LETTERS_RE = /(?<![\p{L}])\p{L}(?:[\s.\-_]+\p{L}(?![\p{L}])){2,}/u
 /** A data message that carries a choice: short enough to read whole (a delivery-data block, not an essay). */
 const DATA_CHOICE_MAX_CHARS = 600
 const DATA_CHOICE_MAX_PARTS = 12
@@ -938,6 +950,9 @@ function isOrderDataPart(raw: string): boolean {
   if (label.startsWith('cedula')) return DATA_CEDULA_RE.test(v)
   if (/^(?:correo|e-?mail)/u.test(label)) return DATA_EMAIL_RE.test(v)
   if (label === 'cantidad') return /^\d{1,2}$/u.test(v)
+  if (DATA_VALUE_MONEY_RE.test(v)) return false
+  const words = v.split(/\s+/u).filter(Boolean).length
+  if (words > (/^(?:nombre|apellido)/u.test(label) ? DATA_NAME_MAX_WORDS : DATA_VALUE_MAX_WORDS)) return false
   return DATA_FREE_VALUE_RE.test(v)
 }
 
@@ -952,10 +967,14 @@ function isOrderDataPart(raw: string): boolean {
  * method, or null (the normal classifier path). Pure.
  */
 export function embeddedPaymentChoice(text: string): PaymentChoiceMethod | null {
+  // SecureDog r2 INT-D: VT / FF / NEL / U+2028-9 would be deleted below and glue "ya␤le␤hice" into one name.
+  if (DATA_ODD_BREAK_RE.test((text || '').normalize('NFKC'))) return null
   const value = stripFormatChars((text || '').normalize('NFKC')).replace(/\p{Default_Ignorable_Code_Point}/gu, '')
   if (!value.trim() || value.length > DATA_CHOICE_MAX_CHARS) return null
-  // Any question, any non-Latin letter (Cyrillic "Уа"), any symbol / emoji besides 🙏 😊 🙌.
-  if (/[?¿]/u.test(value) || /(?=\p{L})\P{Script=Latin}/u.test(value)) return null
+  // Any question, any non-Latin letter (Cyrillic "Уа") or Latin look-alike (small caps "ʟɪsᴛᴏ"), any symbol / emoji
+  // besides 🙏 😊 🙌, any letter-spaced word ("l i s t o").
+  if (/[?¿]/u.test(value) || /(?=\p{L})\P{Script=Latin}/u.test(value) || DATA_LATIN_LOOKALIKE_RE.test(value)) return null
+  if (DATA_SPACED_LETTERS_RE.test(value)) return null
   if (/[\p{So}\p{Extended_Pictographic}]/u.test(value.replace(DATA_CHOICE_EMOJI_RE, ''))) return null
   const masked = value.replace(DATA_LABEL_MASK_RE, (l) => l.split(/\s+/)[0])
   const folded = foldChoice(masked)
@@ -974,6 +993,9 @@ export function embeddedPaymentChoice(text: string): PaymentChoiceMethod | null 
     hasPaymentStatusClaim(masked) ||
     NARROW_STATUS_QUESTION_RE.test(masked) ||
     isPaymentCompletionClaim(masked) ||
+    // SecureDog r2 INT-A: additive, never a replacement — every input the live classifier hands off as a hard claim
+    // stays a hand-off (on the label-masked text: "Nombre completo" is not "completo").
+    hasHardPaymentClaim(masked) ||
     // Start-bounded here: an address has "centro" / "Concepción" (the plain list also matches inside words).
     DATA_STATUS_CUE_RE.test(masked)
   ) {

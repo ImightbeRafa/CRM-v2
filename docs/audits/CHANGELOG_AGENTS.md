@@ -1,3 +1,26 @@
+## 2026-10-18 — Payment choice inside the order data, round 2 (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
+
+- Reviews r2 on Fable: Verifier FAIL (F1 HIGH "Nombre completo" list + another bubble still handed off; F2 "?" in the
+  burst; F3–F5 LOW) and SecureDog FIX BEFORE PROD (INT-A/B High, INT-C/D Medium, INT-E/F Low). Fixed:
+  - INT-A: `embeddedPaymentChoice` also runs `hasHardPaymentClaim` on the label-masked text, so it is additive and never
+    a replacement (every input live already hands off stays a hand-off).
+  - INT-B: free label values reject money / receipt nouns (plata, dinero, cuenta, print, imagen, cel, número, bio…;
+    bank names stay allowed as landmarks), are capped (name ≤ 5 words, others ≤ 15); the whole-message reject list adds
+    puse / dejé / metí / giré / pagao / cancelao / puesta and spaced thousands ("12 900").
+  - INT-C: the gate closes on store "gracias por el SINPE / tu compra", "número / SINPE en la bio / por privado",
+    "mandame la foto", and a 2-2-2-2 typed number; "a nombre de" + digits is bounded to one line.
+  - INT-D: Latin look-alikes (IPA / small caps / Latin Ext-D/E), letter-spaced words and VT/FF/NEL/U+2028-9 are rejected
+    (orderDataChoice passes raw NFKC text so odd breaks are seen before they are stripped).
+  - INT-E: history rows are whitespace-collapsed and > 1 200 chars fail closed (the 4 KB padding case is now fast).
+  - Verifier F1: an earlier burst bubble that is itself an order-data choice is not a `burstClaim`.
+  - Verifier F3: the store's own payment number typed by the customer ends "nothing paid yet".
+  - Verifier F5 / INT-F: efectivo / contra entrega inside the data are tagged `order_data_<method>`.
+- Not changed (design limit, Rafael to decide): Verifier F2 — any "?" bubble in the unanswered burst voids the choice
+  (falls back to the old hand-off, safe direction). Not covered: SOFT_AI_PAYMENT_CHECK prod value (shadow by default).
+- Tests: `pay-choice-in-data.test.ts` 23/23 (8 new, every r2 input pinned); test:soft-ai 1325/1325; test:security
+  289/289; test:chat-harden 704/713 (1 fail + 8 cancelled identical on the base = baseline); tsc only the baseline
+  `@/BetsyLogo.png`; eslint clean.
+
 ## 2026-10-18 — Payment choice inside the order data (claudio/pay-choice-in-data, NOT deployed)
 
 - Rafael: getting customers to pay. "Nombre: … Dirección: … Envío a domicilio. Pago por SINPE 🙌" used to be

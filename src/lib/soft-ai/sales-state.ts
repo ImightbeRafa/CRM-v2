@@ -932,8 +932,29 @@ export function noPaymentYet(history: ReadonlyArray<{ direction: string; content
 /** The store already asked for / talked about a receipt, a payment's check or a payment block. */
 const STORE_RECEIPT_TALK_RE =
   /(?<![\p{L}])(?:comprobante\p{L}*|recibo|captura|pantallazo|screenshot|voucher|constancia|foto\s+del\s+(?:pago|sinpe)|valid\p{L}*|verific\p{L}*|confirm\p{L}*\s+(?:el|tu|su)\s+pago)(?![\p{L}])|\[\[\s*PAGO/iu
-/** Payment details a person types by hand: "a nombre de" next to digits, an IBAN, a SINPE number split oddly. */
-const STORE_HAND_DETAILS_RE = /a\s+nombre\s+de[\s\S]*\d|\d[\s\S]*a\s+nombre\s+de|CR\s?\d{2}[\s-]?\d{4}/iu
+/**
+ * Payment details a person types by hand: "a nombre de" next to digits (same line — SecureDog r2 INT-E: no O(n²) scan
+ * over a long digit row), an IBAN, a SINPE number split 2-2-2-2 ("62 01 99 14").
+ */
+const STORE_HAND_DETAILS_RE =
+  /a\s+nombre\s+de[^\n]{0,80}\d|\d[^\n]{0,80}a\s+nombre\s+de|CR\s?\d{2}[\s-]?\d{4}|(?<!\d)\d{2}[\s.-]\d{2}[\s.-]\d{2}[\s.-]\d{2}(?!\d)/iu
+/**
+ * SecureDog r2 INT-C: the store already thanked for a payment, pointed to its number elsewhere ("al número de la bio",
+ * "el SINPE está en la bio", "te paso el SINPE por privado") or asked for the receipt photo ("mandame la foto").
+ */
+const STORE_PAID_OR_ELSEWHERE_RE = new RegExp(
+  [
+    String.raw`gracias\s+por\s+(?:tu|su|el|la)\s+(?:pago|sinpe|simpe|transferencia|dep[oó]sito|compra)`,
+    String.raw`(?:n[uú]mero|sinpe|simpe|cuenta|datos)[^\n]{0,40}(?:bio|perfil|historia|story|privado|correo|dm|inbox)`,
+    String.raw`(?:bio|perfil|historia|story|privado|correo|dm|inbox)[^\n]{0,40}(?:n[uú]mero|sinpe|simpe|cuenta|datos)`,
+    String.raw`(?:m[aá]ndame|p[aá]same|env[ií]ame|me\s+mand[aá]s|me\s+pas[aá]s|me\s+envi[aá]s)\s+(?:la\s+|una\s+|el\s+)?(?:foto|imagen|captura|print)`,
+  ]
+    .map((p) => `(?:${p})`)
+    .join('|'),
+  'iu',
+)
+/** SecureDog r2 INT-E: a history row longer than this (after collapsing whitespace) fails closed. */
+const PAID_ROW_MAX_CHARS = 1200
 /** Any bubble that is only a bracketed placeholder ("[imagen]", "[share]", "[ig_story]", "[attachment]"). */
 const ANY_PLACEHOLDER_RE = /^\s*\[[^\]\n]{1,40}\]\s*$/u
 
@@ -951,17 +972,21 @@ export function nothingPaidYet(rows: ReadonlyArray<PaidRow>, opts: { windowFull?
   if (opts.windowFull) return false
   const payDigits = (opts.paymentDigits || []).map((d) => d.replace(/\D/g, '')).filter((d) => d.length >= 8).map((d) => d.slice(-8))
   for (const m of rows) {
-    const text = stripFormatChars((m.content || '').normalize('NFKC'))
+    const raw = (m.content || '').normalize('NFKC')
+    const text = stripFormatChars(raw).replace(/[ \t]+/gu, ' ').replace(/\n\s*\n+/gu, '\n')
+    if (text.length > PAID_ROW_MAX_CHARS) return false
     if ((m.messageType && m.messageType !== 'text') || MEDIA_PLACEHOLDER_RE.test(text) || ANY_PLACEHOLDER_RE.test(text)) return false
+    // Verifier r2 F3: the store's own payment number, from either side (a customer echoing it is paying / has paid).
+    if (payDigits.length && payDigits.some((d) => text.replace(/\D/g, '').includes(d))) return false
     if (m.direction === 'outbound') {
       if (paymentDetailsIn(text) || PAYMENT_BLOCK_RE.test(text) || ORDER_BLOCK_RE.test(text) || STORE_RECEIPT_TALK_RE.test(text)) return false
       // Verifier r1 #4: only words about a payment already made ("ya pagaste", "vi el depósito"), not "¡Listo!" / "✅ envíos".
-      if (METHOD_QUESTION_DONE_RE.test(text) || STORE_HAND_DETAILS_RE.test(text)) return false
-      if (payDigits.length && payDigits.some((d) => text.replace(/\D/g, '').includes(d))) return false
+      if (METHOD_QUESTION_DONE_RE.test(text) || STORE_HAND_DETAILS_RE.test(text) || STORE_PAID_OR_ELSEWHERE_RE.test(text)) return false
       continue
     }
-    // An order-data choice passes its own (stricter) allowlist; anything else must not read as a payment claim.
-    if (embeddedPaymentChoice(text)) continue
+    // An order-data choice passes its own (stricter) allowlist, which includes hasHardPaymentClaim on the label-masked
+    // text (SecureDog r2 INT-A); anything else must not read as a payment claim. The raw row keeps odd line breaks.
+    if (embeddedPaymentChoice(raw)) continue
     if (hasHardPaymentClaim(text) || classifyPaymentText(text) === 'payment_proof_or_risk') return false
   }
   return true
@@ -979,7 +1004,8 @@ export function orderDataChoice(rows: ReadonlyArray<PaidRow>, opts: { windowFull
   const seen = new Set<string>()
   const unanswered = rows
     .slice(i)
-    .map((m) => stripFormatChars((m.content || '').normalize('NFKC')).trim())
+    // Raw (NFKC only): embeddedPaymentChoice rejects odd line breaks before it strips format characters (SecureDog r2 INT-D).
+    .map((m) => (m.content || '').normalize('NFKC').trim())
     .filter((t) => t && !seen.has(t) && (seen.add(t), true))
   return unanswered.length ? embeddedPaymentChoice(unanswered.join('\n')) : null
 }

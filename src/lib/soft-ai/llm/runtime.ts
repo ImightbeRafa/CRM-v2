@@ -440,6 +440,7 @@ export async function runSoftAiLlmRuntime(
         allowedDeals: input.salesAllowedDeals,
         freeShippingRule: input.salesFreeShippingRule,
         unitRates: input.salesUnitRates,
+        ownText: input.brandFactsBlock ?? null,
         // SecureDog round 6: the whole burst since the store last wrote, not only the newest message.
         customerText: burstCustomerText(input.history, input.inboundText),
         linkAllowlist: input.linkAllowlist,

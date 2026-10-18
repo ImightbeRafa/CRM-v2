@@ -137,11 +137,61 @@ describe('C4: any run is refused while the cap is not at the business\'s normal 
     assert.equal(recordedBaseCap({ baseCap: 'x' }), null)
     assert.equal(recordedBaseCap(null), null)
   })
-  it('test-session refuses when the cap differs from the base; restore and test-cap --restore record it', () => {
+  it('test-session refuses when the cap differs from the base; only test-cap --restore records it (SecureDog INFRA-25)', () => {
     const src = readFileSync('scripts/agent-pack/test-session.ts', 'utf8')
     assert.match(src, /lock\.baseCap !== undefined && before !== lock\.baseCap/)
     assert.ok(src.indexOf('lock.baseCap !== undefined') < src.indexOf('testDailyTokenCap: Math.max('))
-    assert.match(src, /recordBaseCap\(lockDb, \{ tenantId, baseCap: before \}\)/)
+    assert.doesNotMatch(src, /recordBaseCap\(/)
+    // Verifier r1 #4: the refusal offers both ways out (it was another run / the owner changed it on purpose).
+    assert.match(src, /test-cap --restore --to=\$\{lock\.baseCap\}[\s\S]*test-cap --restore --to=\$\{before\}/)
     assert.match(readFileSync('scripts/agent-pack/test-cap.ts', 'utf8'), /recordBaseCap\(lockDb, \{ tenantId, baseCap: to \}\)/)
+  })
+})
+
+describe('Batch 2 review round 1 (Verifier + SecureDog): every reported input pinned', () => {
+  it('Verifier #1 (C9): the usual shapes of a customer data block are echoes', () => {
+    for (const t of [
+      'María Pérez\n8888-0000\nmaria@gmail.com\nCartago\nParaíso\nLlanos de Santa Lucía\n200 m norte de la iglesia',
+      'María Pérez Rojas\n8888-0000\nCartago\nParaíso\nLlanos',
+      'Nombre completo: María Pérez\nTeléfono: 8888-0000\nProvincia: Cartago\nCantón: Paraíso\nDistrito: Llanos\nDirección exacta: 200 m norte de la iglesia',
+      'Nombre: María Pérez\nTeléfono: 8888 0000\nProvincia: Cartago\nDirección: casa color verde',
+      'maría pérez\n88880000\ncartago, paraíso',
+      'María Pérez\n8888-0000\n📍 https://maps.app.goo.gl/abc123',
+      'María Pérez\n8888-0000\n[ubicación]',
+    ]) {
+      assert.equal(isPersonalDataEcho(t), true, t)
+    }
+  })
+  it('Verifier #2 (C9): the store\'s own contact block is not an echo when its number is in the brand facts', () => {
+    const own = JSON.stringify({ contact: 'Teléfono 2222-3333' })
+    for (const t of ['Estamos en Escazú, San José\nTeléfono: 2222-3333', '📍 Escazú, San José\n📞 2222-3333', 'Pura Sonrisa\nTeléfono: 2222-3333']) {
+      assert.equal(isPersonalDataEcho(t, own), false, t)
+    }
+    assert.equal(isPersonalDataEcho('Te dejo nuestro WhatsApp\n8888-0000'), false)
+    assert.match(readFileSync('src/lib/soft-ai/llm/runtime.ts', 'utf8'), /ownText: input\.brandFactsBlock \?\? null/)
+  })
+  it('SecureDog INT-184: words after ", y" never escape the combo-fact checks', () => {
+    for (const t of [
+      'El pack de 2 bolsas (₡19 800) trae envío incluido, y tu pedido califica.',
+      'El pack de 2 bolsas trae envío incluido a ₡19 800, y aplica para tu compra.',
+      'El pack de 2 bolsas trae envío incluido a ₡19 800, y es solo para vos hoy.',
+      'El pack de 2 bolsas trae envío incluido a ₡19 800, y es cortesía nuestra.',
+      'El pack de 2 bolsas trae envío incluido a ₡19 800, y la bolsa a ₡9 900.',
+      'El pack de 2 bolsas trae envío incluido a ₡19 800, y aunque sea la bolsa.',
+      'Hoy con 1 bolsa el envío cuesta ₡3 000, y el pack de 2 bolsas cuesta ₡19 800 con envío incluido.',
+    ]) {
+      assert.equal(check(t).ok, false, t)
+    }
+    assert.equal(check('Con 1 bolsa el envío cuesta ₡3 000, y el pack de 2 bolsas (₡19 800) trae envío incluido.').ok, true)
+  })
+  it('Verifier #3 (C10): articles / pronouns after "no se" are still "I don\'t know"', () => {
+    const forbid = (coverageScenarios(['SleepingPatches'])[0].steps[0].expect?.forbidRegex ?? []).map((src) => new RegExp(src, /\\p\{/.test(src) ? 'iu' : 'i'))
+    for (const t of ['no se la dosis exacta, lo reviso', 'no se de eso, déjame revisar', 'no se la respuesta', 'no se esa información', 'no se una cosa', 'no se me ocurre']) {
+      assert.equal(forbid.some((re) => re.test(t)), true, t)
+    }
+    assert.equal(forbid.some((re) => re.test('No se aceptan devoluciones.')), false)
+  })
+  it('Verifier #6 (C7): more "ya te lo dije" phrasings are held', () => {
+    for (const t of ['Ya te lo había dicho 😊', 'Como ya te dije, cuesta ₡9 900', 'Ya te pasé el precio arriba']) assert.ok(check(t).reasons.includes('repeat_refusal'), t)
   })
 })

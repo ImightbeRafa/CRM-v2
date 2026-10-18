@@ -14,8 +14,7 @@ import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 import { aiFullUnlockStatus, aiTermsAccepted, parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { CHAT_AGENT_LAYER_V1_FLAG, isAllowedChatAgentModel } from '@/lib/soft-ai/agent-types'
 import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
-import { agentsServingUnboundChannels, loadAgentSettings } from '@/lib/soft-ai/agent-settings'
-import { loadDailyBilledTokens } from '@/lib/soft-ai/agent-claim-gates'
+import { agentsServingUnboundChannels } from '@/lib/soft-ai/agent-settings'
 import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
 import { isChatAgentSchemaReady, isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
@@ -197,17 +196,14 @@ export async function loadLinesAiStatus(
     if (a) serving.set(id, a)
   }
 
-  // Once per agent: per-agent budget (SQL 049) and "searches products but has none chosen".
+  // Live replies are not token-capped. The line stays on so chats do not flip to "Sin IA" after a busy day.
   const agents = new Map<string, ServingAgent>()
   for (const a of serving.values()) agents.set(a.agentId, a)
-  const tenantBudgetOut = (await loadDailyBilledTokens(tenantId)) >= config.dailyTokenCap
-  const agentInfo = new Map<string, { budgetOut: boolean; inventoryMissing: boolean }>()
+  const agentInfo = new Map<string, { inventoryMissing: boolean }>()
   await Promise.all(
     [...agents.values()].map(async (a) => {
-      const { dailyTokenCap } = await loadAgentSettings(tenantId, a.agentId)
-      const budgetOut = Boolean(dailyTokenCap) && (await loadDailyBilledTokens(tenantId, a.agentId)) >= (dailyTokenCap || 0)
       const inventoryMissing = a.enabledTools.includes('search_inventory') && (await agentHasInventoryMap(tenantId, a.agentId)) !== true
-      agentInfo.set(a.agentId, { budgetOut, inventoryMissing })
+      agentInfo.set(a.agentId, { inventoryMissing })
     }),
   )
 
@@ -248,7 +244,7 @@ export async function loadLinesAiStatus(
       viewingAgentId: viewing,
       allowlisted: config.accountAllowlist.includes(account.id),
       unlock: { unlocked: unlock.unlocked, reason: unlock.reason, versionWarning: unlock.versionWarning, agentId: unlock.record?.agentId ?? null },
-      budget: { tenantExhausted: tenantBudgetOut, agentExhausted: Boolean(info?.budgetOut) },
+      budget: { tenantExhausted: false, agentExhausted: false },
       run: run
         ? {
             status: run.status,

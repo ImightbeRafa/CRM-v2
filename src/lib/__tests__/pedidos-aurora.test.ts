@@ -114,6 +114,8 @@ describe('/ventas Aurora wiring', () => {
     const detail = readFileSync(resolve(process.cwd(), 'src/components/aurora/pedidos/PedidoDetailDrawer.tsx'), 'utf8')
     assert.match(detail, /useUpdateOrderStatus/)
     assert.match(detail, /\/api\/orders\/confirm-payment/)
+    assert.match(detail, /Confirmar SINPE/)
+    assert.match(detail, /paymentType/)
     assert.match(detail, /\/api\/shipping\/guias\/status/)
     assert.match(detail, /\/api\/shipping\/guias\/download/)
     assert.match(detail, /\/api\/orders\/details/)

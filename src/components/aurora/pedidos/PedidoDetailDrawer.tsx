@@ -14,6 +14,7 @@ import { useUpdateOrderStatus } from '@/app/hooks/useOrderMutations'
 import { useToast } from '@/app/hooks/use-toast'
 import type { Sale } from '@/app/produccion/types/sales'
 import { isSinpeOrder, paymentChip, shipChip } from '@/lib/pedidos-aurora'
+import { isCancelledFulfillment } from '@/lib/order-payment-status'
 import { canalLabel, type OrderLine } from '@/lib/order-channel-line'
 
 const CR_TZ = 'America/Costa_Rica'
@@ -139,14 +140,14 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
   }, [sale.orderId, sale.orderType])
 
   const [confirming, setConfirming] = useState(false)
-  const confirmPayment = async () => {
+  const confirmPayment = async (paymentType?: 'sinpe') => {
     setConfirming(true)
     try {
       const res = await fetch('/api/orders/confirm-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ orderId: sale.orderId }),
+        body: JSON.stringify(paymentType ? { orderId: sale.orderId, paymentType } : { orderId: sale.orderId }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -165,7 +166,10 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
   const ship = shipChip(sale)
   const canal = canalLabel(sale, line)
   const sinpe = isSinpeOrder(sale)
-  const showConfirmPayment = canProduction && Boolean(sale.contraEntrega) && !sale.cePaymentConfirmed
+  const cancelled = isCancelledFulfillment(sale.status)
+  const showConfirmPayment = canProduction && Boolean(sale.contraEntrega) && !sale.cePaymentConfirmed && !cancelled
+  const showConfirmSinpe =
+    canProduction && !sale.contraEntrega && !cancelled && pay.key === 'pendiente_pago' && sinpe
   const address = [
     'address' in sale ? sale.address : '',
     'district' in sale ? sale.district : '',
@@ -336,8 +340,14 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
             {sinpe ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">SINPE</span> : null}
             {sale.contraEntrega ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">Contra entrega</span> : null}
           </div>
+          {showConfirmSinpe ? (
+            <button type="button" onClick={() => confirmPayment('sinpe')} disabled={confirming} className={`${auroraBtnPrimary} mt-3 w-full sm:w-auto`}>
+              {confirming ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Banknote className="h-4 w-4" aria-hidden />}
+              Confirmar SINPE
+            </button>
+          ) : null}
           {showConfirmPayment ? (
-            <button type="button" onClick={confirmPayment} disabled={confirming} className={`${auroraBtnPrimary} mt-3 w-full sm:w-auto`}>
+            <button type="button" onClick={() => confirmPayment()} disabled={confirming} className={`${auroraBtnPrimary} mt-3 w-full sm:w-auto`}>
               {confirming ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Banknote className="h-4 w-4" aria-hidden />}
               Confirmar pago
             </button>

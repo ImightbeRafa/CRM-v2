@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import type { OrderLifecycleAdapter } from '@/lib/feature-flags';
+import { sinpeConfirmationPatch } from '@/lib/order-payment-status';
 
 type Tx = Prisma.TransactionClient;
 
@@ -578,6 +579,70 @@ export async function confirmLifecycleCashPayment(input: {
     orderId: input.orderId,
     patch: { cePaymentConfirmed: true },
   });
+}
+
+/** Prepaid SINPE: merge customFields and set paymentStatus to paid. Does not touch fulfillment or COD columns. */
+export async function confirmLifecycleSinpePayment(input: {
+  tenantId: string; userId: string; idempotencyKey: string; orderId: string;
+}) {
+  return withSerializationRetry(() => prisma.$transaction(async tx => {
+    const existingOperation = await tx.orderLifecycleOperation.findUnique({
+      where: {
+        tenantId_adapter_idempotencyKey: {
+          tenantId: input.tenantId,
+          adapter: 'sinpe-confirmation',
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+      include: { order: true },
+    });
+    if (existingOperation?.order) return { order: existingOperation.order, idempotentReplay: true };
+
+    const existing = await tx.order.findFirst({ where: { tenantId: input.tenantId, orderId: input.orderId } });
+    if (!existing) throw new OrderLifecycleError('ORDER_NOT_FOUND', 'Order not found', 404);
+    const decision = sinpeConfirmationPatch(existing);
+    if (!decision.ok) throw new OrderLifecycleError(decision.code.toUpperCase(), decision.message, 400);
+
+    const changed = await tx.order.updateMany({
+      where: { id: existing.id, tenantId: input.tenantId, updatedAt: existing.updatedAt },
+      data: { customFields: decision.customFields as Prisma.InputJsonValue, lifecycleVersion: 2 },
+    });
+    if (changed.count !== 1) {
+      const again = await tx.order.findFirst({ where: { id: existing.id, tenantId: input.tenantId } });
+      const againDecision = again ? sinpeConfirmationPatch(again) : null;
+      if (againDecision && !againDecision.ok && againDecision.code === 'already_paid') {
+        throw new OrderLifecycleError('ALREADY_PAID', againDecision.message, 400);
+      }
+      throw new OrderLifecycleError('STALE_ORDER', 'El pedido cambió antes de confirmar el pago', 409);
+    }
+
+    const order = await tx.order.findUniqueOrThrow({ where: { id: existing.id } });
+    await tx.auditLog.create({
+      data: {
+        tenantId: input.tenantId,
+        action: 'UPDATE',
+        entityType: 'order',
+        entityId: order.id,
+        entityName: `Order #${order.orderId}`,
+        userId: auditUserId(input.userId),
+        userName: 'sinpe-confirmation',
+        userRole: 'LIFECYCLE_V2',
+        oldValues: { paymentStatus: decision.previousStatus },
+        newValues: { paymentStatus: 'paid' },
+      },
+    });
+    await tx.orderLifecycleOperation.create({
+      data: {
+        tenantId: input.tenantId,
+        adapter: 'sinpe-confirmation',
+        operation: 'update',
+        idempotencyKey: input.idempotencyKey,
+        orderId: order.id,
+        result: { paymentStatus: 'paid' },
+      },
+    });
+    return { order, idempotentReplay: false };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
 }
 
 export function lifecycleIdempotencyKey(request: Request, fallback: string) {

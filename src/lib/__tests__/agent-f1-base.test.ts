@@ -103,9 +103,12 @@ describe('F1 · isolation between businesses of one tenant (SQL 049)', () => {
     assert.match(gates, /exact\.agentId === input\.agentId/)
   })
 
-  it('per-agent daily budget is checked before the model and again before sending', () => {
-    assert.match(gates, /loadDailyBilledTokens\(tenantId: string, agentId\?: string\)/)
-    assert.equal((gates.match(/await agentBudgetExceeded\(input\.tenantId, input\.agentId\)/g) || []).length, 2)
+  it('live replies are not stopped by the daily token cap; tests still have their own cap', () => {
+    const pre = gates.slice(gates.indexOf('export async function runPreModelGates'), gates.indexOf('export async function runPreSendGates'))
+    const send = gates.slice(gates.indexOf('export async function runPreSendGates'))
+    assert.doesNotMatch(pre, /agentBudgetExceeded|loadDailyBilledTokens/)
+    assert.doesNotMatch(send, /agentBudgetExceeded|loadDailyBilledTokens/)
+    assert.match(read('src/lib/soft-ai/agent-turn.ts'), /testTokens >= config\.testDailyTokenCap/)
     assert.match(read('src/lib/soft-ai/agent-turn.ts'), /runPreModelGates\(\{\s*tenantId: row\.tenantId,\s*socialAccountId: row\.socialAccountId,\s*agentId: resolved\.agent\.id,/)
   })
 

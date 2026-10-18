@@ -17,7 +17,7 @@ import type {
 } from '@/lib/soft-ai/agent-types'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
-import { agentsServingUnboundChannels, loadAgentSettings } from '@/lib/soft-ai/agent-settings'
+import { agentsServingUnboundChannels } from '@/lib/soft-ai/agent-settings'
 
 const AGENT_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000
 
@@ -160,14 +160,6 @@ export function collectDryRunBlockers(input: {
   return blocked
 }
 
-/** Per-agent daily cap (SQL 049). No settings row / no cap = only the tenant cap applies. */
-async function agentBudgetExceeded(tenantId: string, agentId: string | undefined): Promise<boolean> {
-  if (!agentId) return false
-  const { dailyTokenCap } = await loadAgentSettings(tenantId, agentId)
-  if (!dailyTokenCap) return false
-  return (await loadDailyBilledTokens(tenantId, agentId)) >= dailyTokenCap
-}
-
 export async function runPreModelGates(input: {
   tenantId: string
   socialAccountId: string
@@ -203,13 +195,7 @@ export async function runPreModelGates(input: {
   if (!aiTermsAccepted(config)) {
     return { ok: false, status: 'skipped', skipReason: 'ai_terms_not_accepted' }
   }
-  const used = await loadDailyBilledTokens(input.tenantId)
-  if (used >= config.dailyTokenCap) {
-    return { ok: false, status: 'budget_blocked' }
-  }
-  if (await agentBudgetExceeded(input.tenantId, input.agentId)) {
-    return { ok: false, status: 'budget_blocked' }
-  }
+  // Live replies are not capped. dailyTokenCap stays in config for later; only Probar uses testDailyTokenCap.
   return { ok: true }
 }
 
@@ -328,14 +314,7 @@ export async function runPreSendGates(input: {
     return { ok: false, status: 'window_closed' }
   }
 
-  // Gate 8 — daily cap (config read at the top of this function)
-  const used = await loadDailyBilledTokens(input.tenantId)
-  if (used >= config.dailyTokenCap) {
-    return { ok: false, status: 'budget_blocked' }
-  }
-  if (await agentBudgetExceeded(input.tenantId, input.agentId)) {
-    return { ok: false, status: 'budget_blocked' }
-  }
+  // Live replies are not capped (the test cap is enforced only on Probar). Gate 8 used to stop the send here.
 
   // Gate 9 — provenance
   if (!input.outputValidationOk) {

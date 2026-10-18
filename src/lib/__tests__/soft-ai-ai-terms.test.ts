@@ -67,7 +67,7 @@ describe('AI terms enforcement (static)', () => {
     const pre = gates.slice(gates.indexOf('export async function runPreModelGates'), gates.indexOf('export async function runPreSendGates'))
     assert.match(pre, /aiTermsAccepted\(config\)/)
     assert.match(pre, /skipReason: 'ai_terms_not_accepted'/)
-    assert.ok(pre.indexOf('aiTermsAccepted(config)') < pre.indexOf('loadDailyBilledTokens'))
+    assert.doesNotMatch(pre, /loadDailyBilledTokens/)
     // agent-turn runs the pre-model gates before building any prompt
     const turn = read('src/lib/soft-ai/agent-turn.ts')
     assert.ok(turn.indexOf('runPreModelGates({') < turn.indexOf('runSoftAiLlmRuntime(runtimeInput)'))

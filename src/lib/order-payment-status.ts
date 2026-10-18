@@ -63,7 +63,7 @@ export function normalizeExternalPaymentStatus(raw: unknown): ManualPaymentChoic
   return null;
 }
 
-function fulfillmentIsCancelled(status: string | null | undefined): boolean {
+export function isCancelledFulfillment(status: string | null | undefined): boolean {
   return CANCELLED_TOKENS.has(normalizeToken(status));
 }
 
@@ -93,7 +93,7 @@ export function derivePaymentState(order: PaymentStatusSource): PaymentState {
     return { key: 'pendiente_pago', label: PAYMENT_STATE_LABELS.pendiente_pago, collected: false };
   }
 
-  if (fulfillmentIsCancelled(order.status)) {
+  if (isCancelledFulfillment(order.status)) {
     return { key: 'sin_registrar', label: PAYMENT_STATE_LABELS.sin_registrar, collected: false };
   }
   if (fulfillmentIsPending(order.status)) {
@@ -105,6 +105,51 @@ export function derivePaymentState(order: PaymentStatusSource): PaymentState {
 
 export function isCollectedRevenue(order: PaymentStatusSource): boolean {
   return derivePaymentState(order).collected;
+}
+
+/** Same SINPE signal the Pedidos chip uses: payment method or the order comment. */
+export function isSinpeEvidence(order: { comments?: string | null; customFields?: unknown }): boolean {
+  const fields = readCustomFields(order.customFields);
+  const method = fields.paymentMethod ?? fields.payment_method;
+  return /sinpe/.test(normalizeToken(method)) || /sinpe/.test(normalizeToken(order.comments));
+}
+
+export type SinpeConfirmCode = 'cancelled' | 'cod' | 'not_sinpe' | 'already_paid' | 'not_pending';
+
+export type SinpeConfirmDecision =
+  | { ok: true; customFields: Record<string, unknown>; previousStatus: string | null }
+  | { ok: false; code: SinpeConfirmCode; message: string };
+
+/**
+ * Prepaid SINPE confirmation. Merges customFields and sets only paymentStatus to paid.
+ * Refuses COD, cancelled, non-SINPE, and orders that are already collected.
+ */
+export function sinpeConfirmationPatch(
+  order: PaymentStatusSource & { comments?: string | null },
+): SinpeConfirmDecision {
+  if (isCancelledFulfillment(order.status)) {
+    return { ok: false, code: 'cancelled', message: 'No se puede confirmar el pago de un pedido cancelado' };
+  }
+  if (order.contraEntrega) {
+    return { ok: false, code: 'cod', message: 'Este pedido es contra entrega' };
+  }
+  if (!isSinpeEvidence(order)) {
+    return { ok: false, code: 'not_sinpe', message: 'Este pedido no es un pago SINPE' };
+  }
+  const state = derivePaymentState(order);
+  if (state.key === 'pagado') {
+    return { ok: false, code: 'already_paid', message: 'El pago ya está confirmado' };
+  }
+  if (state.key !== 'pendiente_pago') {
+    return { ok: false, code: 'not_pending', message: 'Este pedido no está pendiente de pago' };
+  }
+  const fields = readCustomFields(order.customFields);
+  const previous = fields.paymentStatus ?? fields.payment_status;
+  return {
+    ok: true,
+    previousStatus: previous == null || previous === '' ? null : String(previous),
+    customFields: { ...fields, paymentStatus: 'paid' },
+  };
 }
 
 export function paymentChoiceToOrderFields(choice: ManualPaymentChoice): {

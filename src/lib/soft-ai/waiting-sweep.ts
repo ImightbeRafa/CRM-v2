@@ -124,6 +124,15 @@ export function turnAllowsRearm(
   // "A person replied" is final for that message, whoever asks.
   if (turn.skipReason === 'human_replied') return false
   if (mode === 'periodic') {
+    // A live cap used to mark the whole line "Sin IA". Those turns get another try. A flag or terms skip does not.
+    if (
+      turn.status === 'budget_blocked' &&
+      turn.skipReason !== 'flag_off' &&
+      turn.skipReason !== 'kill_switch' &&
+      turn.skipReason !== 'ai_terms_not_accepted'
+    ) {
+      return true
+    }
     return turn.status === 'skipped' && PERIODIC_REARM_SKIP_REASONS.has(turn.skipReason || '')
   }
   // Explicit (line turned on / Devolver a IA): the owner removed the reason.

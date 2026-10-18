@@ -283,6 +283,7 @@ export type OrderLifecycleAdapter =
   | 'orders-update'
   | 'production-status'
   | 'ce-confirmation'
+  | 'sinpe-confirmation'
   | 'tenant-guia'
   | 'bot';
 

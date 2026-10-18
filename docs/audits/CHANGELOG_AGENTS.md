@@ -1,3 +1,13 @@
+## 2026-10-18 — Live AI replies are not stopped by the daily token cap
+
+- DeepSleep crossed its 5M live token cap, so every chat on those lines showed "Sin IA" and new replies were dropped. Answering is no longer capped. Probar still stops at testDailyTokenCap. Chats already blocked for budget are picked up again by the waiting sweep. The agents page shows this business's reply cost, average, and test spend separately.
+
+## 2026-10-18 — Website SINPE orders can be confirmed as pagado (claudio/confirm-sinpe-payment)
+
+- Pedidos detail only offered "Confirmar pago" for contra entrega, and that route refused anything else. A website order (payment method SINPE, payment status pending, fulfillment still Pendiente) stayed "Pendiente SINPE" with no action. Changing the Estado dropdown does not clear an explicit payment status.
+- "Confirmar SINPE" on the order (update_production, same-origin) sets `customFields.paymentStatus` to `paid` and leaves fulfillment, `contraEntrega`, `cePaymentConfirmed`, and the rest of the payment metadata alone. COD confirmation is unchanged. Cancelled, non-SINPE, and already-paid orders are refused. The write is conditional on `updatedAt`.
+- No schema change.
+
 ## 2026-10-18 — Instagram chats show the customer's real name, @username and photo (claudio/ig-profile-names onto the live line; apply SQL 056 before deploy)
 
 - Inbox list + thread header show "Name (@username)" and the profile photo instead of "Instagram User 076336" (initials stay as fallback).

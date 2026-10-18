@@ -174,3 +174,38 @@ export function clampUsageDays(raw: string | null | undefined): number {
 export function parseUsageMode(raw: string | null | undefined): AgentUsageMode {
   return raw === 'test' || raw === 'all' ? raw : 'live'
 }
+
+export type TenantSpend = {
+  todayUsd: number
+  periodUsd: number
+  delivered: number
+  avgPerReplyUsd: number
+  testUsd: number
+  testTurns: number
+  byAgent: Array<{ agentId: string; delivered: number; costUsd: number }>
+}
+
+/** This business's own estimated cost. Live replies and tests stay separate. */
+export function tenantSpend(rows: AgentUsageRow[], today: string): TenantSpend {
+  const live = rows.filter((row) => row.mode !== 'test')
+  const tests = rows.filter((row) => row.mode === 'test')
+  const usd = (list: AgentUsageRow[]) => list.reduce((sum, row) => sum + row.costMicros, 0) / 1_000_000
+  const delivered = live.filter((row) => row.status === 'delivered').reduce((sum, row) => sum + row.turns, 0)
+  const periodUsd = usd(live)
+  const byAgent = new Map<string, { agentId: string; delivered: number; costUsd: number }>()
+  for (const row of live) {
+    const entry = byAgent.get(row.agentId) || { agentId: row.agentId, delivered: 0, costUsd: 0 }
+    entry.costUsd += row.costMicros / 1_000_000
+    if (row.status === 'delivered') entry.delivered += row.turns
+    byAgent.set(row.agentId, entry)
+  }
+  return {
+    todayUsd: usd(live.filter((row) => row.day === today)),
+    periodUsd,
+    delivered,
+    avgPerReplyUsd: delivered > 0 ? periodUsd / delivered : 0,
+    testUsd: usd(tests),
+    testTurns: tests.reduce((sum, row) => sum + row.turns, 0),
+    byAgent: [...byAgent.values()].sort((a, b) => b.costUsd - a.costUsd).slice(0, 8),
+  }
+}

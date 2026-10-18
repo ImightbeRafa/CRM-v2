@@ -145,7 +145,8 @@ describe('C · which waiting chats get answered (pure)', () => {
     assert.equal(turnAllowsRearm({ status: 'skipped', skipReason: 'human_replied' }, 'explicit'), false)
     assert.equal(turnAllowsRearm({ status: 'skipped', skipReason: 'superseded' }, 'periodic'), false)
     assert.equal(turnAllowsRearm({ status: 'budget_blocked', skipReason: null }, 'explicit'), true)
-    assert.equal(turnAllowsRearm({ status: 'budget_blocked', skipReason: null }, 'periodic'), false)
+    assert.equal(turnAllowsRearm({ status: 'budget_blocked', skipReason: null }, 'periodic'), true)
+    assert.equal(turnAllowsRearm({ status: 'budget_blocked', skipReason: 'flag_off' }, 'periodic'), false)
   })
 
   it('attempt caps stop loops (periodic re-queues once; explicit has a hard cap)', () => {

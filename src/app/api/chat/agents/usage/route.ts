@@ -1,6 +1,6 @@
 /**
- * GET /api/chat/agents/usage — this business's own agent usage (volume and outcomes, never dollars).
- * tenantId always comes from the session.
+ * GET /api/chat/agents/usage — this business's own agent usage.
+ * tenantId always comes from the session. Cost is this tenant's estimate only.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
@@ -9,6 +9,7 @@ import {
   parseUsageMode,
   stripSummaryCost,
   summarizeAgentUsage,
+  tenantSpend,
 } from '@/lib/soft-ai/agent-usage'
 import {
   loadAgentNames,
@@ -37,11 +38,13 @@ export async function GET(request: NextRequest) {
         loadAgentP95Latency({ from, to, tenantId: auth.tenantId, mode }),
       ])
       const summary = stripSummaryCost(summarizeAgentUsage(rows, mode, p95))
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Costa_Rica' }).format(new Date())
+      const spend = tenantSpend(rows, today)
       const agentNames = await loadAgentNames(
-        summary.byAgent.map((row) => row.agentId),
+        [...new Set([...summary.byAgent.map((row) => row.agentId), ...spend.byAgent.map((row) => row.agentId)])],
         auth.tenantId,
       )
-      return { summary, agentNames }
+      return { summary, spend, agentNames }
     })
     return NextResponse.json(
       { success: true, days, mode, ...payload },

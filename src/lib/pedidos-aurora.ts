@@ -1,4 +1,4 @@
-import { derivePaymentState, type PaymentStateKey } from './order-payment-status'
+import { derivePaymentState, isSinpeEvidence, type PaymentStateKey } from './order-payment-status'
 
 /** Minimal order shape the Pedidos (ORD-01) list needs. Compatible with `Sale`. */
 export interface PedidoRow {
@@ -38,27 +38,12 @@ function norm(value: unknown): string {
     .trim()
 }
 
-function customFieldsObject(customFields: unknown): Record<string, unknown> {
-  if (!customFields) return {}
-  if (typeof customFields === 'string') {
-    try {
-      const parsed = JSON.parse(customFields)
-      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
-    } catch {
-      return {}
-    }
-  }
-  return typeof customFields === 'object' ? (customFields as Record<string, unknown>) : {}
-}
-
 /**
  * SINPE has no dedicated column: the bot writes "Pago: SINPE …" into comments and
  * integrations may send a payment method in customFields. Detect it from those.
  */
 export function isSinpeOrder(order: Pick<PedidoRow, 'comments' | 'customFields'>): boolean {
-  const fields = customFieldsObject(order.customFields)
-  const method = fields.paymentMethod ?? fields.payment_method
-  return /sinpe/.test(norm(method)) || /sinpe/.test(norm(order.comments))
+  return isSinpeEvidence(order)
 }
 
 export function isCorreosOrder(order: Pick<PedidoRow, 'courier'>): boolean {

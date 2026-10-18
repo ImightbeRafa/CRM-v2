@@ -58,7 +58,8 @@ export const PAYMENT_CHECK_INSTRUCTIONS = [
   'Un "listo" / "ok" seguido de una pregunta sobre CÓMO pagar ("Listo, ¿cómo pago?", "ok, ¿a qué número?") es claim=false:',
   'todavía no pagó.',
   'Los datos del pedido con el método elegido ("Nombre: Ana Mora / Teléfono: 8888-8888 / Dirección: … / Pago por SINPE")',
-  'son claim=false: está eligiendo cómo pagar. Pero si en esos datos dice que ya pagó o puso la plata, claim=true.',
+  'son claim=false SOLO si no traen ninguna palabra de pago hecho (ya, listo, hecho, enviado, ahí va, le puse, le tiré,',
+  'ahí le cae, transfe, depo, aunque esté escrita rara o pegada); cualquier palabra así dentro de los datos = claim=true.',
   'Ante la duda razonable de que ya pagó, claim=true. Respondé solo el JSON.',
 ].join('\n')
 

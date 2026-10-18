@@ -1,3 +1,27 @@
+## 2026-10-18 — Payment choice inside the order data, round 4 security (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
+
+- SecureDog r4 (Fable): **PASS** (no High / Medium; the mandatory model check is airtight at the wiring level: both
+  callers, burst merge, media skip). Its cheap pre-deploy fixes, applied:
+  - INT-N: C0 / C1 controls are rejected like the other invisible characters (trigger and earlier rows).
+  - INT-O: any separator between single letters, runs of short chunks ("l is t o", "tr an sf er i"), glued claims
+    ("yapague", "lohice", "selopague").
+  - INT-P: tenés / tienes, "le dejo / tiro / mando", "les cae / va", consignado / ingresado, misspellings (lysto, lito,
+    exo, tranferi, cansele, lo ise), EN/PT (payed, completed, received, feito, pronto), "12.9" shorthand,
+    respaldo / evidencia / prueba.
+  - INT-R: "te lo paso por privado / DM", a bare "Está en la bio / el perfil", any QR (not "QR del menú"); with no payment
+    number configured, a store row with a typed 8-digit number fails closed.
+  - INT-S: ø ð æ ß þ (no plain fold) are outside the name alphabet.
+  - Check prompt: data + method is claim=false ONLY with no done / paid word, even written oddly or glued.
+  - `scripts/agent-pack/payment-check-eval.ts`: 17 data-block claims + 3 plain data blocks (run it once against Luna
+    before deploy — it meters usage; not run here: no OpenAI in this cloud environment).
+  - Ops switch: `SOFT_AI_ORDER_DATA_CHOICE=off` turns the feature off (old hand-off everywhere).
+- Verifier r4 probes re-run on this head: 30 realistic chats 4 fall back (base 4), 90 customer lines 7 close the gate
+  (base 7), 67 store lines 1 (base 1), per-message 8/65 (the announced residue: lowercase "palí", "gire a la derecha",
+  "Barrio La Plata", "fábrica de harina", "Calle A, Avenida B y C", "casa 7 200 metros").
+- Tests: pay-choice-in-data 44/44; test:soft-ai 1346/1346; test:security 288/289 under load — the one failure is the
+  100 ms wall-clock perf guard (perf-guards.test.ts:109, safety router, untouched), 1/3 isolated runs pass → environment;
+  tsc and eslint clean.
+
 ## 2026-10-18 — Payment choice inside the order data, round 4 (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
 
 - Verifier r4 (Fable) FAIL on 957c681: safe, but the new conversation gates turned the feature off in 20/30 realistic

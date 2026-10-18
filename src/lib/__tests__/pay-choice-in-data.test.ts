@@ -13,7 +13,7 @@ import { classifyPaymentText, embeddedPaymentChoice } from '@/lib/soft-ai/paymen
 import { decideInbound, decisionOrderDataChoice } from '@/lib/soft-ai/inbound-decision'
 import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 import { planBurstInbound } from '@/lib/soft-ai/inbound-burst'
-import { deriveSalesState, nothingPaidYet, orderDataChoice, type SalesContext } from '@/lib/soft-ai/sales-state'
+import { deriveSalesState, nothingPaidYet, orderDataChoice, orderDataChoiceEnabled, type SalesContext } from '@/lib/soft-ai/sales-state'
 import { RESERVED_SHORTCUT_SEEDS } from '@/lib/soft-ai/shortcuts'
 import { SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
 
@@ -520,5 +520,49 @@ describe('round 4 (Verifier r4)', () => {
       assert.equal(embeddedPaymentChoice(t), 'sinpe', t)
     }
     for (const w of ['L1sto', 'y4', 'L1STO', 'l\u0131sto', '\u0142isto']) assert.equal(embeddedPaymentChoice(`Nombre: Ana Mora\nDirección: Heredia, ${w}\nPago por SINPE`), null, w)
+  })
+})
+
+describe('round 4 (SecureDog r4)', () => {
+  const D = (x: string) => `Nombre: Ana Mora\nDirección: Heredia, ${x}\nPago por SINPE`
+  it('INT-N: C0 / C1 controls are rejected (no glued claim), also in an earlier row', () => {
+    for (const c of ['\u0001', '\u0007', '\u0008', '\u000E', '\u001B', '\u001F', '\u007F', '\u0080', '\u0090', '\u009F']) {
+      assert.equal(embeddedPaymentChoice(D(`ya${c}pague`)), null, JSON.stringify(c))
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', `ya${c}pague`), msg('outbound', 'Perfecto 😊')], SHOPPER)), false, JSON.stringify(c))
+    }
+  })
+  it('INT-O: separators, chunks and glued claims are not order data', () => {
+    for (const w of ['l,i,s,t,o', 'l/i/s/t/o', "l'i's't'o", 'l(i)s(t)o', 'p,a,g,u,e', 'l is t o', 'p ag u e', 'h ec h o', 'tr an sf er i', 'yapague', 'lepuse', 'yaesta', 'lohice', 'selopague', 'yacancele']) {
+      assert.equal(embeddedPaymentChoice(D(w)), null, w)
+    }
+  })
+  it('INT-P: more claim wording is not order data', () => {
+    for (const w of ['ahí lo tenés', 'ahí tenés', 'ahí lo tienes', 'le dejo', 'le tiro', 'se lo envío', 'les cae', 'les va', 'consignado', 'ingresado', 'finiquitado', 'lysto', 'lito', 'exo', 'tranferi', 'trasferi', 'cansele', 'simpee', 'lo ise', 'completed', 'payed', 'received', 'feito', 'pronto', '12.9', '12,9', '9.9', 'ahí el respaldo', 'la evidencia', 'la prueba']) {
+      assert.equal(embeddedPaymentChoice(D(w)), null, w)
+    }
+  })
+  it('INT-R: more store wordings close the gate; an unconfigured store typing a number fails closed', () => {
+    for (const out of ['Te lo paso por privado', 'Te lo mando por DM', 'Está en la bio', 'Está en el perfil', 'Te paso el QR', 'Ahí está el QR', 'El QR está arriba']) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('outbound', out)], SHOPPER)), false, out)
+    }
+    for (const out of ['62 01 99 14', '6201 9914', '62019914', 'Sinpe móvil 62 01 99 14', 'Al 6201 9914']) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('outbound', out)], SHOPPER)), false, out)
+    }
+  })
+  it('INT-S: letters with no plain fold (ø ð æ ß þ) are not order data', () => {
+    for (const w of ['listø', 'hechø', 'pagaðo', 'lißto', 'yæ']) assert.equal(embeddedPaymentChoice(D(w)), null, w)
+  })
+  it('ops switch: SOFT_AI_ORDER_DATA_CHOICE=off turns the feature off', () => {
+    assert.equal(orderDataChoiceEnabled('off'), false)
+    assert.equal(orderDataChoiceEnabled(undefined), true)
+    const prev = process.env.SOFT_AI_ORDER_DATA_CHOICE
+    process.env.SOFT_AI_ORDER_DATA_CHOICE = 'off'
+    try {
+      assert.equal(orderDataChoice(rows(SALES_HISTORY, SHOPPER)), null)
+    } finally {
+      if (prev === undefined) delete process.env.SOFT_AI_ORDER_DATA_CHOICE
+      else process.env.SOFT_AI_ORDER_DATA_CHOICE = prev
+    }
+    assert.equal(orderDataChoice(rows(SALES_HISTORY, SHOPPER)), 'sinpe')
   })
 })

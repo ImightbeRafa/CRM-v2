@@ -364,14 +364,19 @@ const SENTENCE_RE = /[^.!?¡¿\n]+/gu
  * despachado", "ha sido enviado", "está despachado", "te confirmo…"): then nothing is masked at all (Verifier round 2).
  */
 const DONE_CUE_RE =
-  /(?<![\p{L}])(?:ya|fue|fueron|sido|listo|lista|listos|en[ \t]+camino|en[ \t]+proceso|te[ \t]+confirmo|todo[ \t]+est[aá]|(?:he|has|ha|hemos|han)[ \t]+\p{L}+|est[aá]n?[ \t]+\p{L}+(?:ad|id)[oa]s?|salio|quedo|llego|despacho|\p{L}{2,}ó)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:ya|fue|fueron|fuimos|sido|listo|lista|listos|en[ \t]+camino|en[ \t]+proceso|en[ \t]+ruta|en[ \t]+tr[aá]nsito|(?:tu|la|su)[ \t]+gu[ií]a[ \t]+es|n[uú]mero[ \t]+de[ \t]+gu[ií]a[ \t]+es|te[ \t]+confirmo|todo[ \t]+est[aá]|(?:he|has|ha|hemos|han)[ \t]+\p{L}+|est[aá]n?[ \t]+\p{L}+(?:ad|id)[oa]s?|salio|quedo|llego|despacho|\p{L}{2,}ó)(?![\p{L}])/iu
+
+/** A next-step line is short: anything longer is never masked (and bounds every regex run, SecureDog v53 R2-1). */
+const NEXT_STEP_MAX_CHARS = 300
 
 export function maskConditionalConfirmation(text: string): string {
-  const src = text || ''
+  // One space between words (line breaks kept for the sentence split): the patterns allow at most one optional space
+  // between tokens, so no run of spaces can be split many ways (ReDoS).
+  const src = (text || '').replace(/[^\S\n]+/gu, ' ')
   let masked = false
   let rest = ''
   const out = src.replace(SENTENCE_RE, (sentence: string) => {
-    const m = NEXT_STEP_SENTENCE_RE.exec(sentence)
+    const m = sentence.length <= NEXT_STEP_MAX_CHARS ? NEXT_STEP_SENTENCE_RE.exec(sentence) : null
     if (!m) {
       rest += `${sentence}\n`
       return sentence

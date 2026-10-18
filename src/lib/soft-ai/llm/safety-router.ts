@@ -53,15 +53,25 @@ const BARE_HANDOFF_RE = /^\s*["'«]?\s*(agente|humano|persona|asesor|agent|human
 // questions / sales the agent answers.
 // (Verifier round 2: up to two greetings / "disculpe" before it, a line break after them, an emoji after it.)
 const ATTEND_GREETING = String.raw`(?:hola|holi|buenas|buen[oa]s?[ \t]+(?:d[ií]as?|tardes|noches)|disculp[eaá]|perd[oó]n|pura[ \t]+vida|upe)`
-const ATTEND_REQUEST = String.raw`(?:me[ \t]+(?:atiende|atienden|atienda|puede[ \t]+atender|pueden[ \t]+atender|podr[ií]a[ \t]+atender|podr[ií]an[ \t]+atender)[ \t]+(?:alguien|una[ \t]+persona|un[ \t]+humano|un[ \t]+asesor|una[ \t]+asesora|un[ \t]+agente)|(?:alguien|una[ \t]+persona|un[ \t]+humano|un[ \t]+asesor)[ \t]+(?:que[ \t]+)?me[ \t]+(?:atiende|atienda|puede[ \t]+atender|podr[ií]a[ \t]+atender)|quiero[ \t]+que[ \t]+(?:alguien|una[ \t]+persona|un[ \t]+asesor)[ \t]+me[ \t]+atienda|quiero[ \t]+que[ \t]+me[ \t]+atienda[ \t]+(?:alguien|una[ \t]+persona|un[ \t]+asesor|un[ \t]+humano))`
+// SecureDog v53 R2-1 (High, ReDoS): the input is collapsed to single spaces and capped BEFORE this regex, which only
+// ever allows ONE optional space between tokens — no run of spaces can be split in many ways.
+const ATTEND_REQUEST = String.raw`(?:me (?:atiende|atienden|atienda|puede atender|pueden atender|podr[ií]a atender|podr[ií]an atender) (?:alguien|una persona|un humano|un asesor|una asesora|un agente)|(?:alguien|una persona|un humano|un asesor) (?:que )?me (?:atiende|atienda|puede atender|podr[ií]a atender)|quiero que (?:alguien|una persona|un asesor) me atienda|quiero que me atienda (?:alguien|una persona|un asesor|un humano))`
 const ATTEND_ME_RE = new RegExp(
-  String.raw`^\s*(?:${ATTEND_GREETING}[ \t]*[,!.]?\s*){0,2}¿?[ \t]*${ATTEND_REQUEST}[ \t]*(?:,?[ \t]*(?:por[ \t]+favor|porfa|x[ \t]+favor))?[ \t]*[?!.]*[\s\p{Extended_Pictographic}\u{FE0F}\u{200D}]*$`,
+  String.raw`^(?:${ATTEND_GREETING} ?[,!.]? ?){0,2}¿? ?${ATTEND_REQUEST} ?(?:,? ?(?:por favor|porfa|x favor))? ?[?!.]*(?: ?[\p{Extended_Pictographic}\u{FE0F}\u{200D}])*$`,
   'iu',
 )
+/** Longer than this is never a bare "¿me atiende alguien?" (and bounds every regex run). */
+const ATTEND_MAX_CHARS = 160
+
+/** One space between words, no leading / trailing space (bounds the attend / bare hand-off regexes). */
+function singleSpaced(text: string): string {
+  return (text || '').replace(/\s+/gu, ' ').trim()
+}
 
 /** "Me atiende alguien por favor?" — the whole message asks to be attended by a person (text messages only). */
 export function isAttendRequest(text: string): boolean {
-  return ATTEND_ME_RE.test((text || '').trim())
+  const t = singleSpaced(text)
+  return t.length > 0 && t.length <= ATTEND_MAX_CHARS && ATTEND_ME_RE.test(t)
 }
 
 /**
@@ -71,7 +81,8 @@ export function isAttendRequest(text: string): boolean {
  * captioned "¿me atiende alguien?" keeps the receipt path, SecureDog v53 #2.)
  */
 export function isOptOutText(text: string): boolean {
-  return OPT_OUT_RE.test(text || '') || BARE_HANDOFF_RE.test(text || '') || isStopContactText(text)
+  // SecureDog v53 P2: BARE_HANDOFF_RE is anchored with \s* at both ends — test it on the single-spaced text (linear).
+  return OPT_OUT_RE.test(text || '') || BARE_HANDOFF_RE.test(singleSpaced(text)) || isStopContactText(text)
 }
 
 /**

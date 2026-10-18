@@ -104,6 +104,10 @@ describe('2 · a conditional next-step participle is not a confirmation claim', 
     'Una vez recibido el comprobante, enviamos tu pedido.',
     'Luego de confirmado tu pago, te enviamos el número de guía.',
     'Una vez verificado el pago, despachamos tu pedido por Correos.',
+    // Verifier round 3: a done claim in the next sentence vetoes the mask.
+    'Una vez confirmado tu pago, se despacha hoy mismo. Tu pedido está en ruta 🚚',
+    'Una vez confirmado tu pago, sale hoy mismo. Tu guía es CR123456789CR',
+    'Una vez confirmado el pago, vamos a enviar tu pedido. Fuimos a Correos hoy',
   ]
   for (const t of blocked) {
     it(`still blocks: ${JSON.stringify(t)}`, () => {
@@ -128,6 +132,10 @@ describe('2 · a conditional next-step participle is not a confirmation claim', 
     maskConditionalConfirmation(long)
     isAttendRequest(attend)
     isAttendRequest(' '.repeat(50_000) + 'x')
+    // SecureDog R2-1 / Verifier N1: a run of spaces AFTER the request (was 13–35 s at 4 000 spaces).
+    isAttendRequest(`me atiende alguien${' '.repeat(4000)}x`)
+    isAttendRequest(`hola hola${' '.repeat(4000)}x`)
+    maskConditionalConfirmation(`una vez confirmado el pago,${' '.repeat(20_000)}x sale`)
     assert.ok(Date.now() - t0 < 500, `took ${Date.now() - t0} ms`)
   })
   it('CONFIRMATION_WORDING_RE is unchanged; owner texts keep the strict check; live, Probar and the canary share the rule', () => {

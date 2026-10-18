@@ -23,8 +23,12 @@
   sweep undid. Every bypass is pinned as a test.
 - Verifier round 2 FAIL (deny-list tail still let "Tu pedido ya salió, una vez verificado tu pago" / "hemos despachado" /
   next-sentence claims through) → the allow-list above; every round-2 bypass pinned.
-- Tests: `v53-handoff-lines.test.ts` (69). Source asserts updated in agents2-b-sales, instagram-media and
-  luna10-hard-blocks (same intent). test:soft-ai 1125/1125, test:chat-harden 680/680, test:security 271/271,
+- SecureDog round 2 BLOCK (High, ReDoS): the whole-message attend regex took 13–35 s on one 4 KB customer text with
+  spaces after the request. Fixed: input collapsed to single spaces and capped at 160 chars before matching; the regex
+  allows one optional space between tokens. The agent-side mask and BARE_HANDOFF_RE are single-spaced too. Perf guard
+  added to test:security (4 KB spaces / tabs / newlines through the router and the mask, < 100 ms each).
+- Tests: `v53-handoff-lines.test.ts` (72). Source asserts updated in agents2-b-sales, instagram-media and
+  luna10-hard-blocks (same intent). test:soft-ai 1128/1128, test:chat-harden 680/680, test:security 272/272,
   tsc + lint clean.
 
 ## 2026-10-18 00:10Z — CF 8d94e714: staff bot on Luna, follow-up A/B (off), Simpe, Sofi v53

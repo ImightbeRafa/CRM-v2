@@ -105,3 +105,27 @@ test('worker: container objects are pinned to Eastern North America (next to the
   // Every route to a container goes through the pinned stub.
   assert.doesNotMatch(w, /getContainer\(/)
 })
+
+test('v53 (SecureDog R2-1): the inbox safety router stays linear on 4 KB customer whitespace runs', async () => {
+  const { isAttendRequest, isOptOutText, routeInboundSafety } = await import('@/lib/soft-ai/llm/safety-router')
+  const { maskConditionalConfirmation, hasOutboundConfirmationClaim } = await import('@/lib/soft-ai/shortcuts')
+  const runs = [' ', '\t', '\n', ' \t ']
+  const inputs: string[] = []
+  for (const ws of runs) {
+    const pad = ws.repeat(Math.ceil(4000 / ws.length)).slice(0, 4000)
+    inputs.push(`me atiende alguien${pad}x`, `hola${pad}x`, `hola hola${pad}x`, `¿me atiende alguien?${pad},${pad}?x`, `${pad}agente${pad}x`, `Disculpe,${pad}¿me atiende alguien${pad}🙏x`)
+  }
+  for (const text of inputs) {
+    const t0 = Date.now()
+    isAttendRequest(text)
+    isOptOutText(text)
+    routeInboundSafety({ inboundText: text, messageType: 'text' })
+    maskConditionalConfirmation(`una vez confirmado el pago,${text} sale`)
+    hasOutboundConfirmationClaim(`una vez confirmado el pago${text}`)
+    const ms = Date.now() - t0
+    assert.ok(ms < 100, `${JSON.stringify(text.slice(0, 24))}… took ${ms} ms`)
+  }
+  // Behaviour is unchanged by the normalisation.
+  assert.equal(isAttendRequest('Me atiende   alguien \n por favor?'), true)
+  assert.equal(isAttendRequest('me atiende alguien en la tienda para retirar?'), false)
+})

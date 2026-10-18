@@ -15,8 +15,8 @@ import { prisma } from '@/lib/db'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { downloadMetaMediaWithCap, isAllowedMetaMediaDownloadUrl } from '@/lib/chat-media'
-import { cleanProfileUsername, isPlaceholderPeerName, peerAvatarStoragePath } from '@/lib/chat-peer-display'
-import { chatStoragePut } from '@/lib/chat-storage'
+import { cleanProfileUsername, hasStoredPeerAvatar, isPlaceholderPeerName, peerAvatarStoragePath } from '@/lib/chat-peer-display'
+import { chatStoragePut, chatStorageRemove } from '@/lib/chat-storage'
 import { makeChatThumbnail } from '@/lib/chat-media-thumb'
 
 export const PEER_PROFILE_TIMEOUT_MS = 8_000
@@ -37,12 +37,14 @@ const IGSID = /^\d{5,32}$/
 export function cleanProfileName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
   const v = raw
-    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '')
+    .normalize('NFKC')
+    // Every control / format character (zero-width, bidi, soft hyphen, word joiners, tag characters).
+    .replace(/[\p{Cc}\p{Cf}]/gu, '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 80)
-    .trim()
-  return v || null
+  // Cut by code points so an emoji is never split in half.
+  const capped = Array.from(v).slice(0, 80).join('').trim()
+  return capped || null
 }
 
 export type InstagramPeerProfile = { name: string | null; username: string | null; profilePic: string | null }
@@ -116,6 +118,7 @@ type Deps = {
   db?: any
   fetchImpl?: FetchLike
   putAvatar?: (pathname: string, bytes: Buffer) => Promise<unknown>
+  removeAvatar?: (pathname: string) => Promise<unknown>
   now?: () => Date
 }
 
@@ -145,13 +148,15 @@ export async function enrichInstagramPeerProfile(
       peerAvatarUrl: true,
       peerProfileCheckedAt: true,
       socialAccount: {
-        select: { platform: true, accessToken: true, isActive: true, disconnectedAt: true, tokenStatus: true },
+        select: { tenantId: true, platform: true, accessToken: true, isActive: true, disconnectedAt: true, tokenStatus: true },
       },
     },
   })
   if (!conv) return { status: 'skipped', reason: 'not_found' }
   const account = conv.socialAccount
   if (account?.platform !== 'instagram') return { status: 'skipped', reason: 'not_instagram' }
+  // Second safeguard: only ever use a token of a line that belongs to the chat's own tenant.
+  if (account.tenantId !== conv.tenantId) return { status: 'skipped', reason: 'tenant_mismatch' }
   const recheckMs = args.recheckMs ?? PEER_PROFILE_RECHECK_MS
   if (conv.peerProfileCheckedAt && now.getTime() - new Date(conv.peerProfileCheckedAt).getTime() < recheckMs) {
     return { status: 'skipped', reason: 'recent' }
@@ -172,6 +177,7 @@ export async function enrichInstagramPeerProfile(
   if (!accessToken) return { status: 'skipped', reason: 'no_token' }
 
   const fetched = await fetchInstagramUserProfile({ igsid: conv.peerId, accessToken, fetchImpl: deps.fetchImpl })
+  if (!fetched.ok && fetched.rateLimited) appThrottledUntil = Date.now() + PEER_PROFILE_APP_BACKOFF_MS
   if (!fetched.ok) {
     // App-wide rate limit: give the claim back (next run retries). This page throttled: retry in ~15 min (it no
     // longer heads the cron queue, so other tenants keep going). Other failures: ~6 h. Stamped against the webhook's
@@ -196,6 +202,15 @@ export async function enrichInstagramPeerProfile(
   if (profile.username && profile.username !== conv.peerUsername) data.peerUsername = profile.username
 
   let avatar = false
+  if (!profile.profilePic && hasStoredPeerAvatar(conv)) {
+    // The customer removed (or hid) their photo: delete our copy too; initials come back.
+    try {
+      await (deps.removeAvatar ?? ((p: string) => chatStorageRemove([p])))(peerAvatarStoragePath(conv.tenantId, conv.id))
+      data.peerAvatarUrl = null
+    } catch {
+      // Storage unreachable: keep the path so the next lookup tries again.
+    }
+  }
   if (profile.profilePic) {
     const bytes = await downloadPeerAvatar({ url: profile.profilePic, fetchImpl: deps.fetchImpl })
     if (bytes) {
@@ -220,13 +235,19 @@ export async function enrichInstagramPeerProfile(
 }
 
 const inFlight = new Set<string>()
+/** Meta said the whole app is rate limited (429 / code 4): no lookups at all until then (webhook and cron). */
+let appThrottledUntil = 0
+export const PEER_PROFILE_APP_BACKOFF_MS = 15 * 60 * 1000
+export function isPeerProfileAppThrottled(): boolean {
+  return Date.now() < appThrottledUntil
+}
 
 /**
  * Webhook hook: never awaited, never throws, never delays the 200 or the agent. A hard timeout bounds the work.
  */
 export function scheduleInstagramPeerProfile(args: { tenantId: string; conversationId: string; platform: string }): void {
   if (args.platform !== 'instagram' || !args.tenantId || !args.conversationId) return
-  if (inFlight.has(args.conversationId) || inFlight.size > 50) return
+  if (inFlight.has(args.conversationId) || inFlight.size > 50 || isPeerProfileAppThrottled()) return
   inFlight.add(args.conversationId)
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, 20_000).unref?.())
   void Promise.race([enrichInstagramPeerProfile(args).then(() => undefined), timeout])
@@ -256,6 +277,7 @@ export async function backfillInstagramPeerProfiles(
     take: Math.min(Math.max(opts.limit ?? 5, 1), 20),
   })
   const summary = { checked: 0, updated: 0, failed: 0, rateLimited: false }
+  if (isPeerProfileAppThrottled()) return { ...summary, rateLimited: true }
   const throttledLines = new Set<string>()
   for (const row of rows) {
     if (Date.now() - started > (opts.budgetMs ?? 8_000)) break

@@ -8,10 +8,10 @@
 /**
  * Invisible / control characters: C0 controls except tab and line breaks, DEL + C1 (incl. NEL U+0085), soft hyphen,
  * zero-width and direction marks, line / paragraph separators, bidi embeddings and isolates, word joiner and the other
- * invisible operators, BOM.
+ * invisible operators, BOM, Unicode tag characters (U+E0000–E007F, "ASCII smuggling").
  */
 // eslint-disable-next-line no-control-regex
-export const FORMAT_CHARS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u{AD}\u{200B}-\u{200F}\u{2028}\u{2029}\u{202A}-\u{202E}\u{2060}-\u{206F}\u{FEFF}]/gu
+export const FORMAT_CHARS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u{AD}\u{200B}-\u{200F}\u{2028}\u{2029}\u{202A}-\u{202E}\u{2060}-\u{206F}\u{FEFF}\u{E0000}-\u{E007F}]/gu
 
 /** NFKC + drop invisible / control characters (tabs and line breaks stay). */
 export function stripFormatChars(text: string): string {

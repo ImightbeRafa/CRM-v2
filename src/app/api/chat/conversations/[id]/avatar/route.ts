@@ -36,6 +36,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         'Content-Length': String(blob.bytes.length),
         'Cache-Control': 'private, max-age=86400',
         'X-Content-Type-Options': 'nosniff',
+        'Cross-Origin-Resource-Policy': 'same-origin',
         'Content-Security-Policy': "default-src 'none'; sandbox",
       },
     })

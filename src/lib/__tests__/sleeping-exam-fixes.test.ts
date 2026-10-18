@@ -925,3 +925,47 @@ describe('SecureDog r2 (2026-10-18): every reported input pinned', () => {
     assert.match(readFileSync('scripts/agent-pack/exam.ts', 'utf8'), /id: 'sys-lookback'[\s\S]*agoMin: 4[\s\S]*expect: \{ handoff: true \}/)
   })
 })
+
+describe('Verifier r5 note 1 (INT-84): a rule phrase before the free-shipping words never reads as a price', () => {
+  it('"Es / Tenemos / Hay / Todo / Va desde ₡25 000 con envío gratis" are refused; the order and "el" shapes pass', async () => {
+    const { salesFreeShippingRule, salesAllowedAmounts } = await import('@/lib/soft-ai/sales-state')
+    const ctx: SalesContext = {
+      ...CTX,
+      catalog: [
+        { name: 'Pura Sonrisa Menta', price: 11900, stockLabel: 'x' },
+        { name: 'Pura Sonrisa Fresa', price: 11900, stockLabel: 'x' },
+      ],
+      bundles: [],
+      freeShippingOver: 25000,
+    }
+    const rule = salesFreeShippingRule(ctx)!
+    const check = (text: string) => validateAgentOutput({ text, citedToolNames: [], quoteAmounts: salesAllowedAmounts(ctx), freeShippingRule: rule })
+    for (const t of [
+      'Es desde ₡25 000 con envío gratis',
+      'Tenemos desde ₡25 000 con envío gratis',
+      'Hay desde ₡25 000 con envío gratis',
+      'Todo desde ₡25 000 con envío gratis',
+      'Va desde ₡25 000 con envío gratis',
+      'Claro, es desde ₡25 000 con envío gratis a domicilio',
+    ]) {
+      assert.equal(check(t).ok, false, t)
+    }
+    for (const t of [
+      'Desde ₡25 000 el envío es gratis.',
+      'Pedidos desde ₡25 000 con envío gratis',
+      'En compras desde ₡25 000, envío gratis.',
+      'Envío gratis desde ₡25 000',
+      'Tenemos envío gratis en compras desde ₡25 000',
+    ]) {
+      assert.equal(check(t).ok, true, `${t} → ${check(t).reasons}`)
+    }
+  })
+})
+
+describe('Verifier r5 note 4: "¡No hay problema!" is not a done-payment sign', () => {
+  it('counts as the method question; "Revisé y no hay nada" still does not', () => {
+    assert.equal(isPaymentMethodQuestion('¡No hay problema! ¿Querés pagar por SINPE o tarjeta?'), true)
+    assert.equal(isPaymentMethodQuestion('Revisé y no hay nada. ¿Por SINPE o transferencia?'), false)
+    assert.equal(isPaymentMethodQuestion('No hay ningún pago a tu nombre. ¿SINPE o transferencia?'), false)
+  })
+})

@@ -185,6 +185,21 @@ function thresholdClauseOk(clause: string, rule: FreeShippingRule): boolean {
     }),
   )
   if (!near) return false
+  // Verifier r5 note 1 (INT-84): a rule phrase BEFORE the free-shipping words reads as a price ("Es / Tenemos / Hay /
+  // Va desde ₡25 000 con envío gratis") unless it is the explicit "compras / pedidos desde ₡X" shape, or only "el"
+  // stands between them ("Desde ₡25 000 el envío es gratis"). Before it: nothing but a greeting.
+  const firstWording = freeShippingWording(clause)[0]
+  for (const m of clause.matchAll(THRESHOLD_RE)) {
+    const s = m.index ?? 0
+    const e = s + m[0].length
+    if (!firstWording || firstWording.index < e) continue
+    const fold = (x: string) => x.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^\p{L}]+/u).filter(Boolean)
+    const before = fold(clause.slice(0, s))
+    const between = fold(clause.slice(e, firstWording.index))
+    const orderShape = /(?<![\p{L}])(?:compras?|pedidos?|[oó]rdenes)\s*$/iu.test(clause.slice(0, s).trim()) || /(?:compras?|pedidos?)\s+$/iu.test(clause.slice(0, s))
+    const greetingOnly = before.every((w) => THRESHOLD_GREETING.has(w))
+    if (!(orderShape || (greetingOnly && between.every((w) => w === 'el')))) return false
+  }
   const cheapest = Math.min(...(rule.unitPrices ?? []).filter((p) => p > 0))
   let any = false
   for (const m of clause.matchAll(THRESHOLD_RE)) {
@@ -218,6 +233,7 @@ function thresholdClauseOk(clause: string, rule: FreeShippingRule): boolean {
 }
 const THRESHOLD_ELIGIBILITY_RE =
   /(?<![\p{L}])(?:calific\p{L}*|aplic\p{L}*|tuy[oa]s?|lleg[aá]s|llegaste|lleg[oó]|alcanz\p{L}*|pas[aá]s|pasaste|super[aá]s|superaste|al\s+monto|no\s+pag[aá]s|sin\s+costo|va\s+gratis|van\s+gratis|sale\s+gratis|a\s+vos|a\s+ti|te\s+(?:aplica|sale|queda|toca)|tu\s+(?:pedido|compra|env[ií]o|orden|carrito|total)|con\s+lo\s+que\s+llev[aá]s)(?![\p{L}])/iu
+const THRESHOLD_GREETING = new Set('hola buenas claro si gracias ok dale perfecto genial'.split(' '))
 const THRESHOLD_FILLER = new Set(
   'tenemos hay el la es va en con y de del para a todo pais compras compra pedidos pedido ordenes hola claro si gracias ademas ofrecemos manejamos nuestro nuestros envio envios gratis domicilio'.split(' '),
 )

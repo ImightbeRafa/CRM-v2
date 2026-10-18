@@ -354,7 +354,7 @@ const NEXT_STEP: Record<SalesStage, string> = {
   saludo: 'Saludá corto (con tu nombre si es el primer mensaje), respondé lo que preguntó y hacé UNA pregunta para entender qué busca.',
   descubrir: 'Entendé qué necesita (producto, talla/modelo, para cuándo) con UNA pregunta. Recomendá el producto que encaja.',
   cotizar:
-    'Ya cotizaste: no repitas precio ni envío. Resolvé la duda puntual y llevá al cierre: preguntá si lo quiere o qué le falta para decidir.',
+    'Ya cotizaste: no repitas precio ni envío por tu cuenta, pero si el cliente los vuelve a preguntar, decíselos de nuevo (breve; nunca "ya te lo compartí"). Resolvé la duda puntual y llevá al cierre: preguntá si lo quiere o qué le falta para decidir.',
   pedido_en_revision:
     'Ya pasaste el pedido a la tienda para que lo revise (contra entrega / efectivo): no pidas comprobante ni datos de pago. Respondé breve lo que pregunte y decí que enseguida lo revisamos.',
   cierre:

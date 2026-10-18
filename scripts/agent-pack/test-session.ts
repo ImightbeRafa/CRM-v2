@@ -15,7 +15,7 @@ import { readChatAgentLayerConfig } from '@/lib/feature-flags'
 import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
 import { isPlatformAiPaused, readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
-import { acquireTestLock, releaseTestLock, type LockDb } from './test-lock'
+import { acquireTestLock, recordBaseCap, releaseTestLock, type LockDb } from './test-lock'
 
 export type ExamActor = { id: string; name: string; role: string }
 
@@ -80,6 +80,8 @@ export async function withExamSession<T>(
     if (res.after.testDailyTokenCap === res.before.testDailyTokenCap) return
     await audit(input.cap, before, why)
     console.log(`Tope de pruebas restaurado: ${before.toLocaleString('es-CR')}`)
+    // Sleeping C4: the restored value is the business's normal cap; the next run checks against it.
+    await recordBaseCap(lockDb, { tenantId, baseCap: before }).catch(() => undefined)
   }
   // Verifier r1 #7: the handlers go up right after the lock is taken, so Ctrl+C at any later point releases it.
   const onSignal = (sig: string) => {
@@ -92,6 +94,11 @@ export async function withExamSession<T>(
   try {
     await auditLock('tomado')
     before = parseChatAgentLayerConfig((await readChatAgentLayerConfig(tenantId)).config).testDailyTokenCap
+    // Sleeping C4: a cap left raised by an earlier run (not the business's normal value) refuses ANY new run, whatever cap
+    // it asks — restore it first (test-cap --restore --to=<normal>).
+    if (lock.baseCap !== undefined && before !== lock.baseCap) {
+      throw new Error(`El tope de pruebas está en ${before.toLocaleString('es-CR')} y lo normal es ${lock.baseCap.toLocaleString('es-CR')}: quedó subido por otra prueba. Bajalo con test-cap --restore --to=${lock.baseCap}.`)
+    }
     if (before >= input.cap) throw new Error(`El tope de pruebas ya está en ${before.toLocaleString('es-CR')}: otra prueba está corriendo (o quedó subido: bajalo desde Agentes).`)
     // SecureDog r1 INFRA-23: marked BEFORE the raise, so a Ctrl+C or error while it is in flight still restores (the
     // restore only resets a value equal to our own cap, so a raise that never landed changes nothing).

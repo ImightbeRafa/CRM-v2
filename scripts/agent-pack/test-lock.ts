@@ -16,7 +16,14 @@ export const TEST_SESSION_LOCK_KEY = 'agent_test_session_lock'
 /** Longest a run may hold the lock without releasing it (the longest silent trial takes ~3 h). */
 export const LOCK_TTL_MS = 6 * 60 * 60_000
 
-export type TestLock = { token: string; label: string; host: string; pid: number; startedAt: string; expiresAt: string; cap: number }
+/** baseCap (Sleeping C4): the business's normal TEST cap, written when a run restores it; kept across runs. */
+export type TestLock = { token: string; label: string; host: string; pid: number; startedAt: string; expiresAt: string; cap: number; baseCap?: number }
+
+/** The base cap the row remembers (null = never recorded). Pure. */
+export function recordedBaseCap(config: unknown): number | null {
+  const v = (config && typeof config === 'object' ? (config as { baseCap?: unknown }).baseCap : null) as unknown
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
+}
 
 /** The lock a row holds right now (null = free: no row, released, malformed or expired). Pure. */
 export function activeLock(config: unknown, now: Date): TestLock | null {
@@ -59,13 +66,16 @@ export async function acquireTestLock(
 ): Promise<TestLock> {
   const now = input.now ?? new Date()
   return db.$transaction(async (tx) => {
-    const held = activeLock(await lockedRow(tx, input.tenantId), now)
+    const prev = await lockedRow(tx, input.tenantId)
+    const held = activeLock(prev, now)
     if (held) {
       throw new Error(
         `Otra prueba está corriendo en este negocio (${held.label}, ${held.host} pid ${held.pid}, desde ${held.startedAt}, hasta ${held.expiresAt} como máximo). Esperá que termine.`,
       )
     }
+    const base = recordedBaseCap(prev)
     const lock: TestLock = {
+      ...(base !== null ? { baseCap: base } : {}),
       token: randomUUID(),
       label: input.label,
       host: hostname(),
@@ -103,6 +113,21 @@ export async function forceReleaseTestLock(db: LockDb, input: { tenantId: string
       data: { config: { ...held, released: true, releasedAt: new Date().toISOString(), releasedBy: 'test-cap --unlock' } as unknown as Prisma.InputJsonValue },
     })
     return held
+  })
+}
+
+/**
+ * Sleeping C4: record the business's normal TEST cap (after a run restored it, or test-cap --restore). Kept in the lock
+ * row so the next run can refuse while the cap is still raised. Row-locked; never touches a held lock's token.
+ */
+export async function recordBaseCap(db: LockDb, input: { tenantId: string; baseCap: number }): Promise<void> {
+  if (!Number.isFinite(input.baseCap) || input.baseCap <= 0) return
+  await db.$transaction(async (tx) => {
+    const c = ((await lockedRow(tx, input.tenantId)) ?? {}) as Record<string, unknown>
+    await tx.tenantFeatureFlag.update({
+      where: { scope_key: { scope: input.tenantId, key: TEST_SESSION_LOCK_KEY } },
+      data: { config: { ...c, baseCap: Math.floor(input.baseCap) } as unknown as Prisma.InputJsonValue },
+    })
   })
 }
 

@@ -77,11 +77,16 @@ export function knowledgeGaps(input: { knowledge: string; products: string[] }):
 
 /** Fails a step when the agent says it does not have the answer, or passes the chat to a person. */
 // luna-10 exam: "no se recomienda en embarazo" / "no se usa más de 8 horas" are answers, not "no sé".
+// Sleeping C10: any impersonal "no se + verb" too ("no se aceptan devoluciones", "no se envía fuera del país") —
+// an unaccented "se" followed by a third-person form (-a/-an/-e/-en) is not "no sé", except "no se exactamente / si /
+// qué / cuándo…". The accented "no sé" and "no sabría" are always flagged.
+const NOT_IMPERSONAL = String.raw`(?:exactamente|bien|nada|nunca|si|s[ií]|que|qu[eé]|cuanto|cu[aá]nto|cuando|cu[aá]ndo|donde|d[oó]nde|mucho|realmente|todav[ií]a|ahorita|ahora|bastante|tanto)`
 const MUST_KNOW = {
   handoff: false,
   forbidRegex: [
     CANNOT_ANSWER_SOURCE,
-    String.raw`(?<!\p{L})no\s+(?:te\s+)?(?:s[eé]|sabr[ií]a)(?!\p{L})(?!\s+(?:recomienda|usa|debe|puede|aplica|reutiliza|garantiza|vende|hace|nota|siente))`,
+    String.raw`(?<!\p{L})no\s+(?:te\s+)?(?:sé|sabr[ií]a)(?!\p{L})(?!\s+(?:recomienda|usa|debe|puede|aplica|reutiliza|garantiza|vende|hace|nota|siente))`,
+    String.raw`(?<!\p{L})no\s+(?:te\s+)?se(?!\p{L})(?!\s+(?:recomienda|usa|debe|puede|aplica|reutiliza|garantiza|vende|hace|nota|siente)(?!\p{L}))(?!\s+(?!${NOT_IMPERSONAL}(?!\p{L}))\p{L}+(?:a|an|e|en)(?!\p{L}))`,
   ],
 }
 

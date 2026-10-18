@@ -15,7 +15,7 @@ import { readChatAgentLayerConfig } from '@/lib/feature-flags'
 import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { loadDailyTestTokens } from '@/lib/soft-ai/agent-claim-gates'
 import { loadPack } from './pack'
-import { activeLock, forceReleaseTestLock, lockHolderGone, readTestLock, type LockDb } from './test-lock'
+import { activeLock, forceReleaseTestLock, lockHolderGone, readTestLock, recordBaseCap, type LockDb } from './test-lock'
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3)
 const flag = (name: string) => process.argv.includes(`--${name}`)
@@ -91,11 +91,15 @@ async function main() {
     const to = Number(arg('to') || 800_000)
     if (!Number.isFinite(to) || to <= 0) throw new Error('--to debe ser un número positivo')
     if (current <= to) {
+      // Sleeping C4: "--restore --to=<the current value>" also records it as the normal cap (an owner changed it in Agentes).
+      if (current === to) await recordBaseCap(lockDb, { tenantId, baseCap: to })
       console.log(`Nada que restaurar: el tope ya está en ${current.toLocaleString('es-CR')}`)
       return
     }
     await mutateChatAgentLayerConfig(tenantId, (c) => (c.testDailyTokenCap === current ? { ...c, testDailyTokenCap: to } : c))
     await audit(current, to, 'restaurado a mano')
+    // Sleeping C4: this is now the business's normal TEST cap (runs refuse while the cap differs from it).
+    await recordBaseCap(lockDb, { tenantId, baseCap: to })
     console.log(`Tope de pruebas restaurado: ${current.toLocaleString('es-CR')} → ${to.toLocaleString('es-CR')}`)
     return
   }

@@ -2,9 +2,9 @@
  * Betsy AI Agent
  *
  * The main AI agent that processes user messages, decides which tools to use,
- * and generates natural Spanish responses. Uses xAI Grok via the Responses API.
+ * and generates natural Spanish responses. Uses OpenAI gpt-6-luna via the Responses API (luna-10).
  *
- * xAI is OpenAI-compatible (OpenAI SDK + https://api.x.ai/v1). Chat Completions
+ * OpenAI SDK pinned to https://api.openai.com/v1 (OPENAI_API_KEY). Chat Completions
  * is legacy. Requests use store:false; tool follow-ups replay encrypted
  * reasoning + function_call_output in-process (no previous_response_id).
  */
@@ -25,14 +25,14 @@ import {
 import {
   buildPromptCacheKey,
   buildToolFollowUpInput,
-  buildXaiResponseBody,
+  buildStaffBotResponseBody,
   parseResponseFunctionCalls,
   parseResponseText,
   toFunctionCallOutputs,
   toResponsesInputMessages,
   type NormalizedFunctionCall,
   type ResponsesFunctionTool,
-} from './xai-responses';
+} from './ai-responses';
 import { parseCrcAmount } from '@/lib/crc-money';
 
 export type { ToolAttachment };
@@ -65,70 +65,83 @@ import { getTenantCustomFields } from '@/lib/customFields-server';
 import { getCurrentStatsDateKey, STATS_TIME_ZONE } from '@/lib/statistics-dates';
 import { normalizeLocationForOrderCapture } from '@/lib/locationValidator';
 
-const XAI_TIMEOUT_MS = Number(process.env.XAI_TIMEOUT_MS || 15_000);
-const XAI_EXTRACTION_TIMEOUT_MS = Number(process.env.XAI_EXTRACTION_TIMEOUT_MS || 10_000);
-const XAI_MAX_RETRIES = Number(process.env.XAI_MAX_RETRIES || 0);
-const XAI_EXTRACTION_REASONING_EFFORT: 'low' | 'medium' | 'high' = (() => {
-  const raw = (process.env.XAI_EXTRACTION_REASONING_EFFORT || 'low').toLowerCase();
+const STAFF_BOT_AI_TIMEOUT_MS = Number(process.env.STAFF_BOT_AI_TIMEOUT_MS || 15_000);
+const STAFF_BOT_AI_EXTRACTION_TIMEOUT_MS = Number(process.env.STAFF_BOT_AI_EXTRACTION_TIMEOUT_MS || 10_000);
+const STAFF_BOT_AI_MAX_RETRIES = Number(process.env.STAFF_BOT_AI_MAX_RETRIES || 0);
+const STAFF_BOT_AI_EXTRACTION_REASONING_EFFORT: 'low' | 'medium' | 'high' = (() => {
+  const raw = (process.env.STAFF_BOT_AI_EXTRACTION_REASONING_EFFORT || 'low').toLowerCase();
   if (raw === 'medium' || raw === 'high') return raw;
   return 'low';
 })();
 
-// xAI client (OpenAI-compatible API)
-const xai = new OpenAI({
-  apiKey: process.env.XAI_API_KEY,
-  baseURL: 'https://api.x.ai/v1',
-  timeout: XAI_TIMEOUT_MS,
-  // The SDK retries timeouts by default. For WhatsApp webhooks that turns a
-  // 15s timeout into ~45-50s. Keep retries explicit and bounded.
-  maxRetries: XAI_MAX_RETRIES,
-});
+// luna-10 (Rafael 2026-10-17: "move the staff bot to Luna too … remove XAI completely"): OpenAI gpt-6-luna with the
+// staff bot's own key (OPENAI_API_KEY, already used for voice notes) — never the inbox agents' SOFT_AI_OPENAI_API_KEY.
+// Created on first use (no key needed at build time). Endpoint / org / project pinned so ambient OPENAI_* settings
+// never redirect staff messages.
+let staffBotClient: OpenAI | null = null;
+function getStaffBotClient(): OpenAI {
+  if (staffBotClient) return staffBotClient;
+  const apiKey = (process.env.OPENAI_API_KEY || '').trim();
+  if (!apiKey) throw new Error('STAFF_BOT_AI_NOT_CONFIGURED');
+  staffBotClient = new OpenAI({
+    apiKey,
+    baseURL: 'https://api.openai.com/v1',
+    organization: null,
+    project: null,
+    timeout: STAFF_BOT_AI_TIMEOUT_MS,
+    // The SDK retries timeouts by default. For WhatsApp webhooks that turns a
+    // 15s timeout into ~45-50s. Keep retries explicit and bounded.
+    maxRetries: STAFF_BOT_AI_MAX_RETRIES,
+  });
+  return staffBotClient;
+}
 
 // Model configuration
-// IMPORTANT: For deterministic tool-calling, keep TEMPERATURE low (0.0-0.2).
-// REASONING_EFFORT defaults to low for WhatsApp latency (15s timeout).
-// grok-4.6 defaults to high if omitted — do not drop this field.
+// One model for the whole site (luna-10): no environment override.
+// REASONING_EFFORT defaults to low for WhatsApp latency. With reasoning on, OpenAI ignores TEMPERATURE (the body
+// builder drops it) and the output cap gets room for the reasoning tokens (ai-responses.ts).
 // MAX_TOKENS must be large enough to fit multi-product tool-call JSON.
-const MODEL = process.env.XAI_MODEL || 'grok-4.6';
-const MAX_TOKENS = Number(process.env.XAI_MAX_TOKENS || 2000);
+export const STAFF_BOT_MODEL = 'gpt-6-luna';
+const MODEL = STAFF_BOT_MODEL;
+const MAX_TOKENS = Number(process.env.STAFF_BOT_AI_MAX_TOKENS || 2000);
 const TEMPERATURE = (() => {
-  const raw = process.env.XAI_TEMPERATURE;
+  const raw = process.env.STAFF_BOT_AI_TEMPERATURE;
   if (raw === undefined || raw === '') return 0.1;
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : 0.1;
 })();
 const REASONING_EFFORT: 'low' | 'medium' | 'high' = (() => {
-  const raw = (process.env.XAI_REASONING_EFFORT || 'low').toLowerCase();
+  const raw = (process.env.STAFF_BOT_AI_REASONING_EFFORT || 'low').toLowerCase();
   if (raw === 'medium' || raw === 'high') return raw;
   return 'low';
 })();
 
 // Avoid top-level console noise during `next build` page-data collection.
 if (process.env.NEXT_PHASE !== 'phase-production-build') {
-  console.log('[AI Agent] xAI model config:', {
+  console.log('[AI Agent] model config:', {
     model: MODEL,
     maxTokens: MAX_TOKENS,
     temperature: TEMPERATURE,
     reasoningEffort: REASONING_EFFORT,
-    extractionReasoningEffort: XAI_EXTRACTION_REASONING_EFFORT,
-    timeoutMs: XAI_TIMEOUT_MS,
-    extractionTimeoutMs: XAI_EXTRACTION_TIMEOUT_MS,
-    maxRetries: XAI_MAX_RETRIES,
+    extractionReasoningEffort: STAFF_BOT_AI_EXTRACTION_REASONING_EFFORT,
+    timeoutMs: STAFF_BOT_AI_TIMEOUT_MS,
+    extractionTimeoutMs: STAFF_BOT_AI_EXTRACTION_TIMEOUT_MS,
+    maxRetries: STAFF_BOT_AI_MAX_RETRIES,
     api: 'responses',
   });
 }
 
-async function createXaiResponse(
-  args: Omit<Parameters<typeof buildXaiResponseBody>[0], 'model'> & { model?: string },
+async function createStaffBotResponse(
+  args: Omit<Parameters<typeof buildStaffBotResponseBody>[0], 'model'> & { model?: string },
   requestOptions?: { timeout?: number; maxRetries?: number },
 ): Promise<OpenAI.Responses.Response> {
   const startedAt = Date.now();
-  const body = buildXaiResponseBody({
+  const body = buildStaffBotResponseBody({
     ...args,
     model: args.model || MODEL,
   });
 
-  const response = await xai.responses.create(
+  const response = await getStaffBotClient().responses.create(
     body as unknown as OpenAI.Responses.ResponseCreateParamsNonStreaming,
     {
       ...(requestOptions?.timeout ? { timeout: requestOptions.timeout } : {}),
@@ -136,7 +149,7 @@ async function createXaiResponse(
     },
   );
 
-  console.info('[AI Agent] xAI responses call', {
+  console.info('[AI Agent] AI responses call', {
     elapsedMs: Date.now() - startedAt,
     store: body.store,
     hasTools: Boolean(body.tools?.length),
@@ -146,7 +159,7 @@ async function createXaiResponse(
     outputTokens: response.usage?.output_tokens,
     reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens,
   });
-  recordAiUsage({ feature: 'staff_bot', model: String(body.model), keyLabel: 'XAI_API_KEY', inputTokens: response.usage?.input_tokens, cachedTokens: response.usage?.input_tokens_details?.cached_tokens, outputTokens: response.usage?.output_tokens, reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens, latencyMs: Date.now() - startedAt });
+  recordAiUsage({ feature: 'staff_bot', model: String(body.model), keyLabel: 'OPENAI_API_KEY', inputTokens: response.usage?.input_tokens, cachedTokens: response.usage?.input_tokens_details?.cached_tokens, outputTokens: response.usage?.output_tokens, reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens, latencyMs: Date.now() - startedAt });
 
   return response;
 }
@@ -747,6 +760,9 @@ function isTemplatePlaceholderValue(value: unknown): boolean {
   if (/^["']?\s*e\.?\s*g\.?\b/i.test(trimmed)) return true;
   if (/^["']?\s*ej\.?\s*[:.]/i.test(trimmed)) return true;
   if (/^["']?\s*ejemplo\s*[:.]/i.test(trimmed)) return true;
+  // luna-10: gpt-6-luna fills an unknown strict-schema field with "." / "-" / "N/A" — that is empty, never a value.
+  if (/^[\s.\-_–—*·/\\|,;:]+$/.test(trimmed)) return true;
+  if (/^(n\/?a|null|none|ninguno|ninguna|nada|sin\s+dato)$/i.test(trimmed)) return true;
   if (/^\(opcional\)$/i.test(trimmed)) return true;
   if (/^\(optional\)$/i.test(trimmed)) return true;
   if (/^<[^>]*>$/.test(trimmed)) return true;
@@ -840,14 +856,14 @@ const OrderExtractionSchema = z.object({
 
 type AIOrderExtraction = z.infer<typeof OrderExtractionSchema>;
 
-async function extractOrderArgsWithGrok(
+async function extractOrderArgsWithAi(
   userMessage: string,
   customFieldsConfig?: CustomFieldsData,
 ): Promise<Record<string, any> | null> {
   const customFieldsBlock = describeCustomFieldsForAIExtraction(customFieldsConfig);
   const systemPrompt = [
     'Extract order data for Betsy CRM from messy WhatsApp Spanish. Return only the structured schema fields.',
-    'Do not invent. If unclear, use null or empty arrays. Never duplicate the same text into multiple fields.',
+    'Do not invent. If unclear, use null or empty arrays (never ".", "-" or "N/A" as a value). Never duplicate the same text into multiple fields.',
     'Order fields: customerName, phone, email, products, quantity, total, orderType, paymentMethod, courier, province, canton, district, address, comments, customFields.',
     'Costa Rica rules: phone is 8 digits, optionally with +506. Never use a cedula/ID as phone. EA means delivery/Correos/guia/domicilio. RA means pickup/retiro/local.',
     'Location: province/canton/district are Costa Rica places. Accept comma OR slash separators: "Heredia/Barva/San Pablo" => province=Heredia, canton=Barva, district=San Pablo. If labels exist, trust labels. If a user writes "Canton:Mora Colon" and also "Distrito:Brasil de Mora", use canton="Mora", district="Brasil de Mora". A product or total is never district/address.',
@@ -868,32 +884,32 @@ async function extractOrderArgsWithGrok(
   ].filter(Boolean).join('\n');
 
   const startedAt = Date.now();
-  console.info('[AI Agent] extractOrderArgsWithGrok: calling Grok structured parser', {
+  console.info('[AI Agent] extractOrderArgsWithAi: calling AI structured parser', {
     model: MODEL,
     messageLength: userMessage.length,
     promptLength: systemPrompt.length,
     hasCustomFieldsSchema: !!customFieldsBlock,
-    timeoutMs: XAI_EXTRACTION_TIMEOUT_MS,
-    reasoningEffort: XAI_EXTRACTION_REASONING_EFFORT,
+    timeoutMs: STAFF_BOT_AI_EXTRACTION_TIMEOUT_MS,
+    reasoningEffort: STAFF_BOT_AI_EXTRACTION_REASONING_EFFORT,
     maxRetries: 0,
   });
 
   try {
     const format = zodResponseFormat(OrderExtractionSchema, 'betsy_order_extraction');
-    const response = await createXaiResponse({
+    const response = await createStaffBotResponse({
       input: [{ role: 'user', content: userMessage }],
       instructions: systemPrompt,
       promptCacheKey: 'betsy:order-extraction',
       maxOutputTokens: 900,
       temperature: 0,
-      reasoningEffort: XAI_EXTRACTION_REASONING_EFFORT,
+      reasoningEffort: STAFF_BOT_AI_EXTRACTION_REASONING_EFFORT,
       textFormat: {
         name: format.json_schema.name,
         schema: format.json_schema.schema as Record<string, unknown>,
         strict: format.json_schema.strict ?? true,
       },
     }, {
-      timeout: XAI_EXTRACTION_TIMEOUT_MS,
+      timeout: STAFF_BOT_AI_EXTRACTION_TIMEOUT_MS,
       maxRetries: 0,
     });
 
@@ -909,13 +925,13 @@ async function extractOrderArgsWithGrok(
       }
     }
     if (!parsed) {
-      console.warn('[AI Agent] extractOrderArgsWithGrok: structured parse returned empty', {
+      console.warn('[AI Agent] extractOrderArgsWithAi: structured parse returned empty', {
         elapsedMs: Date.now() - startedAt,
       });
       return null;
     }
 
-    console.info('[AI Agent] extractOrderArgsWithGrok: success', {
+    console.info('[AI Agent] extractOrderArgsWithAi: success', {
       elapsedMs: Date.now() - startedAt,
       intent: parsed.intent,
       correctionAction: parsed.correctionAction,
@@ -929,7 +945,7 @@ async function extractOrderArgsWithGrok(
 
     return parsed as unknown as Record<string, any>;
   } catch (e) {
-    console.error('[AI Agent] extractOrderArgsWithGrok: Grok call FAILED', {
+    console.error('[AI Agent] extractOrderArgsWithAi: AI call FAILED', {
       error: e instanceof Error ? e.message : String(e),
       elapsedMs: Date.now() - startedAt,
     });
@@ -997,7 +1013,7 @@ function sanitizeAIExtractedArgs(
   setIfReal('district', aiArgs.district);
   setIfReal('comments', aiArgs.comments);
 
-  // Defensive label-leak cleanup: Grok sometimes returns "Método envío CORREOS DE CR".
+  // Defensive label-leak cleanup: AI sometimes returns "Método envío CORREOS DE CR".
   if (typeof out.paymentMethod === 'string') {
     out.paymentMethod = canonicalizePaymentMethod(out.paymentMethod);
   }
@@ -1032,7 +1048,7 @@ function sanitizeAIExtractedArgs(
       .map((p: any) => ({
         name: typeof p.name === 'string' ? p.name.trim() : undefined,
         quantity: Math.max(1, Math.floor(Number(p.quantity) || 1)),
-        ...(typeof p.sku === 'string' && p.sku.trim() ? { sku: String(p.sku).trim() } : {}),
+        ...(typeof p.sku === 'string' && p.sku.trim() && !isTemplatePlaceholderValue(p.sku) ? { sku: String(p.sku).trim() } : {}),
       }))
       .filter((p: any) => (p.name && !isTemplatePlaceholderValue(p.name)) || p.sku);
 
@@ -1993,7 +2009,7 @@ function mergeOrderCorrectionArgs(
   return merged;
 }
 
-export const __grokFirstOrderTestInternals = {
+export const __firstOrderTestInternals = {
   normalizeCostaRicaPhone,
   parseCrcAmount,
   sanitizeAIExtractedArgs,
@@ -2017,7 +2033,7 @@ export const __grokFirstOrderTestInternals = {
 /**
  * Fill only EMPTY fields from local heuristics. Never overwrites values the
  * AI (or a prior merge) already set — respects the "no regex layered on AI
- * output" rule while fixing partial Grok misses (Abigail case).
+ * output" rule while fixing partial AI misses (Abigail case).
  */
 function gapFillEmptyOrderFieldsFromMessage(
   args: Record<string, any>,
@@ -2451,7 +2467,7 @@ function zodFieldToJsonSchema(zodField: z.ZodTypeAny): any {
   return fieldSchema;
 }
 
-// Convert Zod schemas to xAI Responses function tools (flat, not Chat Completions nested).
+// Convert Zod schemas to Responses API function tools (flat, not Chat Completions nested).
 function zodToOpenAITool(name: string, schema: { description: string; parameters: z.ZodType<any> }): ResponsesFunctionTool {
   const zodSchema = schema.parameters;
 
@@ -2488,6 +2504,14 @@ function zodToOpenAITool(name: string, schema: { description: string; parameters
     strict: false,
   };
 }
+
+/** luna-10: read-only probe for the provider check script (scripts/staff-bot-luna-check.ts) — no tool is ever run. */
+export const __staffBotAiProbe = {
+  createStaffBotResponse,
+  extractOrderArgsWithAi,
+  buildTools: () => buildToolsArray(toolSchemas),
+  model: STAFF_BOT_MODEL,
+};
 
 // Build tools array from per-request schemas (avoids mutating shared global)
 function buildToolsArray(schemas: typeof toolSchemas) {
@@ -2529,7 +2553,7 @@ export async function processMessage(
 
   try {
     // Load tenant custom-fields config once per turn so every downstream code
-    // path (Grok extraction, pending repair flow, pending final-confirm
+    // path (AI extraction, pending repair flow, pending final-confirm
     // flow, and the LLM tool path) can use the same shape. Without
     // this, the LLM path would silently drop custom-field values the user
     // already typed in their message and the validator would report every
@@ -2560,11 +2584,11 @@ export async function processMessage(
         }
 
         // Only an explicit new-order intent clears the repair. Correction
-        // wording like "cambie el distrito" stays here and Grok interprets it.
+        // wording like "cambie el distrito" stays here and AI interprets it.
         if (hasOrderCreationIntent(userMessage)) {
           console.info('[AI Agent] Clearing pending order repair because the user started a new order');
           await clearPendingConfirmation(platform, platformId);
-          // Fall through to normal processing; Grok extraction or the LLM will
+          // Fall through to normal processing; AI extraction or the LLM will
           // pick up the fresh order data below.
         } else {
           // Otherwise treat ANY remaining message as a repair attempt. This is
@@ -2573,9 +2597,9 @@ export async function processMessage(
           // Desamparados / Distrito San Antonio" (no colons) and let them fall
           // through to the LLM, where it would borrow data from history.
           //
-          // We use Grok on the correction message so phrases like
+          // We use AI on the correction message so phrases like
           // "no, el distrito es Brasil de Mora, el producto es 1 sleeping
-          // patches" get understood as field updates. If Grok fails, we ask
+          // patches" get understood as field updates. If AI fails, we ask
           // for the correction again instead of guessing with regex.
           await clearPendingConfirmation(platform, platformId);
 
@@ -2596,17 +2620,17 @@ export async function processMessage(
             repairedArgs = mergeOrderCorrectionArgs(existingArgs, localCorrection);
             applyOrderCaptureLocationNormalization(repairedArgs);
           } else {
-            console.info('[AI Agent] order_repair correction source=grok');
-            const aiCorrection = await extractOrderArgsWithGrok(userMessage, customFieldsConfig);
+            console.info('[AI Agent] order_repair correction source=ai');
+            const aiCorrection = await extractOrderArgsWithAi(userMessage, customFieldsConfig);
             if (aiCorrection && Object.keys(aiCorrection).length > 0) {
               let sanitized = sanitizeAIExtractedArgs(aiCorrection, customFieldsConfig);
               if (!hasSubstantiveOrderFields(sanitized)) {
-                console.warn('[AI Agent] order_repair: Grok returned no substantive correction fields');
+                console.warn('[AI Agent] order_repair: AI returned no substantive correction fields');
                 await setPendingConfirmation(platform, platformId, pending as any);
                 return { text: buildOrderCorrectionRetryText(existingArgs, customFieldsConfig) };
               }
               if (shouldReplacePendingWithFreshOrder(userMessage, sanitized)) {
-                console.info('[AI Agent] order_repair: Grok detected a fresh order; replacing pending repair');
+                console.info('[AI Agent] order_repair: AI detected a fresh order; replacing pending repair');
                 // Full fresh order paste — gap-fill empties on the new payload only.
                 const freshArgs = stripOrderExtractionMetadata(
                   gapFillEmptyOrderFieldsFromMessage(sanitized, userMessage, customFieldsConfig),
@@ -2624,7 +2648,7 @@ export async function processMessage(
                 correctionAction: sanitized._correctionAction,
               });
             } else {
-              console.warn('[AI Agent] order_repair: Grok extraction failed/null after local correction miss');
+              console.warn('[AI Agent] order_repair: AI extraction failed/null after local correction miss');
               await setPendingConfirmation(platform, platformId, pending as any);
               return { text: buildOrderCorrectionRetryText(existingArgs, customFieldsConfig) };
             }
@@ -2668,7 +2692,7 @@ export async function processMessage(
         // If the user is starting a brand-new order rather than correcting the
         // pending one, discard the pending review entirely so old fields don't
         // leak into the new order. Falls through to normal processing, which
-        // will use Grok extraction or call the LLM.
+        // will use AI extraction or call the LLM.
         const looksLikeNewOrder = hasOrderCreationIntent(userMessage);
 
         if (looksLikeNewOrder) {
@@ -2695,23 +2719,23 @@ export async function processMessage(
             return requestCreateOrderFinalConfirmation(updatedArgs, context, platform, platformId);
           }
 
-          console.info('[AI Agent] order_final_confirm correction source=grok');
-          const aiCorrection = await extractOrderArgsWithGrok(userMessage, customFieldsConfig);
+          console.info('[AI Agent] order_final_confirm correction source=ai');
+          const aiCorrection = await extractOrderArgsWithAi(userMessage, customFieldsConfig);
           if (!aiCorrection || Object.keys(aiCorrection).length === 0) {
-            console.warn('[AI Agent] order_final_confirm: Grok extraction failed/null after local correction miss');
+            console.warn('[AI Agent] order_final_confirm: AI extraction failed/null after local correction miss');
             await setPendingConfirmation(platform, platformId, pending as any);
             return { text: buildOrderCorrectionRetryText(existingArgs, customFieldsConfig) };
           }
 
           const sanitized = sanitizeAIExtractedArgs(aiCorrection, customFieldsConfig);
           if (!hasSubstantiveOrderFields(sanitized)) {
-            console.warn('[AI Agent] order_final_confirm: Grok returned no substantive correction fields');
+            console.warn('[AI Agent] order_final_confirm: AI returned no substantive correction fields');
             await setPendingConfirmation(platform, platformId, pending as any);
             return { text: buildOrderCorrectionRetryText(existingArgs, customFieldsConfig) };
           }
 
           if (shouldReplacePendingWithFreshOrder(userMessage, sanitized)) {
-            console.info('[AI Agent] order_final_confirm: Grok detected a fresh order; replacing pending review');
+            console.info('[AI Agent] order_final_confirm: AI detected a fresh order; replacing pending review');
             const freshArgs = stripOrderExtractionMetadata(
               gapFillEmptyOrderFieldsFromMessage(sanitized, userMessage, customFieldsConfig),
             );
@@ -2724,7 +2748,7 @@ export async function processMessage(
           // fields onto a sparse correction that would clobber good pending data.
           updatedArgs = gapFillEmptyOrderFieldsFromMessage(updatedArgs, userMessage, customFieldsConfig);
           applyOrderCaptureLocationNormalization(updatedArgs);
-          console.info('[AI Agent] order_final_confirm: Grok applied correction', {
+          console.info('[AI Agent] order_final_confirm: AI applied correction', {
             correctionKeys: Object.keys(sanitized),
             correctionAction: sanitized._correctionAction,
           });
@@ -2822,7 +2846,7 @@ export async function processMessage(
     }
 
     // ── AI-first order extraction ───────────────────────────────────────
-    // Grok 4.6 is the brain. When the message looks like an order-creation
+    // AI 4.6 is the brain. When the message looks like an order-creation
     // request, we let the model read it the way a human would and produce
     // the structured fields. The regex parser is NOT layered on top of the
     // AI output — that was actively limiting the model and producing bugs
@@ -2847,16 +2871,16 @@ export async function processMessage(
 
     if (looksLikeOrderPayload(userMessage)) {
       console.info('[AI Agent] Order-creation intent detected → AI extraction path');
-      const aiExtracted = await extractOrderArgsWithGrok(userMessage, customFieldsConfig);
+      const aiExtracted = await extractOrderArgsWithAi(userMessage, customFieldsConfig);
 
       if (aiExtracted && Object.keys(aiExtracted).length > 0) {
         let args = sanitizeAIExtractedArgs(aiExtracted, customFieldsConfig);
         // Gap-fill ONLY empty fields from local heuristics. Never overwrites
-        // AI values — fixes partial Grok misses (unlabeled name, slash location).
+        // AI values — fixes partial AI misses (unlabeled name, slash location).
         args = gapFillEmptyOrderFieldsFromMessage(args, userMessage, customFieldsConfig);
         if (hasSubstantiveOrderFields(args)) {
           applyOrderCaptureLocationNormalization(args);
-          console.info('[AI Agent] Order extraction source=grok -> routing to final review', {
+          console.info('[AI Agent] Order extraction source=ai -> routing to final review', {
             hasCustomer: !!args.customerName,
             hasProducts: !!args.products,
             hasTotal: args.total !== undefined,
@@ -2867,9 +2891,9 @@ export async function processMessage(
           return requestCreateOrderFinalConfirmation(args, context, platform, platformId);
         }
 
-        console.warn('[AI Agent] Grok extraction returned no substantive fields; trying local_order_fallback');
+        console.warn('[AI Agent] AI extraction returned no substantive fields; trying local_order_fallback');
       } else {
-        console.warn('[AI Agent] Grok extraction failed/null; trying local_order_fallback');
+        console.warn('[AI Agent] AI extraction failed/null; trying local_order_fallback');
       }
 
       const localFallbackArgs = parseLocalStructuredOrderArgs(userMessage, customFieldsConfig);
@@ -2946,10 +2970,10 @@ export async function processMessage(
       console.log('[AI Agent] 🔧 Action request detected, forcing tool_choice: required');
     }
 
-    // Call xAI Responses API. store:false — do not retain PII on xAI.
+    // Call the Responses API. store:false — the provider does not retain PII.
     // Tool follow-up replays this response.output in-process; never persist
     // previous_response_id across WhatsApp turns (history sanitization).
-    const response = await createXaiResponse({
+    const response = await createStaffBotResponse({
       input,
       instructions: systemPromptWithDate,
       tools: currentTools,
@@ -3208,7 +3232,7 @@ export async function processMessage(
       // Stateless follow-up: replay prior output (incl. encrypted reasoning)
       // plus one function_call_output per call_id. No previous_response_id.
       const functionCallOutputs = toFunctionCallOutputs(preparedToolCalls, toolResults);
-      const followUpResponse = await createXaiResponse({
+      const followUpResponse = await createStaffBotResponse({
         input: buildToolFollowUpInput(response.output, functionCallOutputs),
         instructions: systemPromptWithDate,
         promptCacheKey,

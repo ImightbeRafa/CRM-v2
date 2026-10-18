@@ -97,14 +97,12 @@ interface Env {
   SOFT_AI_PAYMENT_CHECK?: string;
   SOFT_AGENT_KILL?: string;
   CHAT_SSE?: string;
-  XAI_API_KEY?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   BOT_JWT_SECRET?: string;
   UPSTASH_REDIS_REST_URL?: string;
   UPSTASH_REDIS_REST_TOKEN?: string;
   OPENAI_MODEL?: string;
-  XAI_MODEL?: string;
   // Meta / WA / IG / chats
   META_APP_ID?: string;
   META_APP_SECRET?: string;
@@ -189,14 +187,12 @@ const CONTAINER_ENV_KEYS = [
   "SOFT_AI_PAYMENT_CHECK",
   "SOFT_AGENT_KILL",
   "CHAT_SSE",
-  "XAI_API_KEY",
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
   "BOT_JWT_SECRET",
   "UPSTASH_REDIS_REST_URL",
   "UPSTASH_REDIS_REST_TOKEN",
   "OPENAI_MODEL",
-  "XAI_MODEL",
   "META_APP_ID",
   "META_APP_SECRET",
   "META_WEBHOOK_VERIFY_TOKEN",

@@ -30,7 +30,6 @@ ENV RESEND_API_KEY=build-only
 # Stub keys so Next "collect page data" does not crash on module-level clients.
 # Runtime secrets are injected by the Worker / Containers env — never bake real values here.
 ENV OPENAI_API_KEY=build-only
-ENV XAI_API_KEY=build-only
 ENV TELEGRAM_BOT_TOKEN=0:build-only
 ENV WHATSAPP_ACCESS_TOKEN=build-only
 ENV META_APP_SECRET=build-only

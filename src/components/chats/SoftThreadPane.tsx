@@ -78,6 +78,8 @@ import {
 import { stageChipClass, useCrmCatalog } from '@/components/chats/useCrmCatalog'
 import { ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
 import { ChatSnoozeButton } from '@/components/chats/ChatSnoozeButton'
+import { PeerAvatar } from '@/components/chats/PeerAvatar'
+import { conversationDisplayName } from '@/lib/chat-peer-display'
 
 export type SoftWaTemplateOption = {
   name: string
@@ -622,12 +624,15 @@ export function SoftThreadPane({
           >
             <ChevronLeft className="h-6 w-6" aria-hidden />
           </button>
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[14px] font-bold text-blue-700">
+          <PeerAvatar
+            src={conversation.isDemo ? null : conversation.recipientAvatarUrl}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[14px] font-bold text-blue-700"
+          >
             {initialsFromName(conversation.recipientName)}
-          </div>
+          </PeerAvatar>
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-[16px] font-bold leading-tight text-slate-900">
-              {conversation.recipientName || conversation.recipientId}
+              {conversationDisplayName(conversation)}
             </h2>
             <p
               className={`mt-0.5 flex items-center gap-1.5 truncate text-[12px] ${
@@ -696,7 +701,7 @@ export function SoftThreadPane({
                 </button>
               ) : null}
               <h2 className="truncate text-base font-semibold text-slate-900">
-                {conversation.recipientName || conversation.recipientId}
+                {conversationDisplayName(conversation)}
               </h2>
               <p
                 className={`mt-0.5 flex items-center gap-1.5 truncate text-[11px] ${

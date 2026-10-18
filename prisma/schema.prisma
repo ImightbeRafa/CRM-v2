@@ -928,6 +928,9 @@ model ChatConversation {
   peerId               String
   peerName             String?
   peerAvatarUrl        String?
+  /// Instagram @username + last profile lookup (SQL 055).
+  peerUsername         String?
+  peerProfileCheckedAt DateTime?
   clientId             String?
   status               String   @default("nuevo")
   assignedUserId       String?

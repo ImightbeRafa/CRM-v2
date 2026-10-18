@@ -18,6 +18,8 @@ import { ChannelLogo } from '@/components/social/ChannelLogo'
 import { AuroraLineFilter } from '@/components/chats/AuroraLineFilter'
 import { chatPreviewText } from '@/lib/chat-message-display'
 import { AuroraAvatar } from '@/components/aurora/shell/AuroraAvatar'
+import { PeerAvatar } from '@/components/chats/PeerAvatar'
+import { conversationDisplayName } from '@/lib/chat-peer-display'
 import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import { ChatTagFilter, ChatViewMenu } from '@/components/chats/ChatViewMenu'
 import { SyncAgeLabel } from '@/components/chats/SyncAgeLabel'
@@ -469,13 +471,14 @@ export function SoftConversationList({
                       }`}
                     >
                       <div className="relative shrink-0">
-                        <div
+                        <PeerAvatar
+                          src={isDemo ? null : conv.recipientAvatarUrl}
                           className={`flex h-[52px] w-[52px] items-center justify-center rounded-full text-[16px] font-bold ${
                             isDemo ? 'bg-slate-200 text-slate-600' : avatarTint(name)
                           }`}
                         >
                           {initialsFromName(conv.recipientName)}
-                        </div>
+                        </PeerAvatar>
                         <span className="absolute -bottom-0.5 -right-0.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white ring-2 ring-au-line-f5f4f0">
                           <ChannelLogo platform={conv.platform} size={14} />
                         </span>
@@ -557,11 +560,12 @@ export function SoftConversationList({
                       selected ? 'bg-au-tint-f1f3ff ring-1 ring-inset ring-[#5B6CFF]/20' : 'hover:bg-slate-50/80'
                     }`}
                   >
-                    <div
+                    <PeerAvatar
+                      src={isDemo ? null : conv.recipientAvatarUrl}
                       className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${avatarClass(conv.platform, isDemo)}`}
                     >
                       {initialsFromName(conv.recipientName)}
-                    </div>
+                    </PeerAvatar>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <p className="truncate text-[13px] font-semibold text-slate-900">
@@ -643,6 +647,3 @@ export function SoftConversationList({
   )
 }
 
-function conversationDisplayName(conv: SoftConversation) {
-  return conv.recipientName || conv.recipientId
-}

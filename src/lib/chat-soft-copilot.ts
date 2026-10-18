@@ -28,6 +28,10 @@ export interface SoftConversation extends ChatConversation {
   accountLabel: string
   /** Phone or @handle for thread meta (optional). */
   channelAddress?: string | null
+  /** Instagram customer @username (no "@"); the label becomes "Name (@username)". */
+  recipientUsername?: string | null
+  /** Customer photo (same-origin route); initials when missing or it fails to load. */
+  recipientAvatarUrl?: string | null
   status: ConversationStatus
   /** Stage category won / lost (from the server); falls back to status === 'hecho'. */
   closed?: boolean

@@ -39,6 +39,7 @@ export const FILES = {
   '052': '052_agent_studio_sources.sql',
   '053': '053_agent_studio_sales_setup.sql',
   '054': '054_luna_only_model.sql',
+  '055': '055_chat_peer_profile.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -109,6 +110,7 @@ export const EXPECTED_COLUMNS = {
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],
   '037': [['ChatConversation', 'repliedInboundCount']],
+  '055': [['ChatConversation', 'peerUsername'], ['ChatConversation', 'peerProfileCheckedAt']],
   '027b': [['ChatAgent', 'introductionNames']],
   '019': [
     ['Order', 'clientId'],

@@ -1,3 +1,4 @@
+import { cleanProfileUsername, hasStoredPeerAvatar, peerAvatarRoute } from '@/lib/chat-peer-display'
 import { z } from 'zod'
 import { staffDisplayName } from '@/lib/display-name'
 import { projectRawMessageForClient } from '@/lib/chat-message-display'
@@ -81,6 +82,9 @@ export type ConversationRow = {
   peerId: string
   peerName: string | null
   peerAvatarUrl: string | null
+  /** Instagram @username + last profile lookup (SQL 055). */
+  peerUsername?: string | null
+  peerProfileCheckedAt?: Date | null
   clientId: string | null
   status: string
   assignedUserId: string | null
@@ -106,6 +110,10 @@ export type ChatConversationListItemDto = {
   peerId: string
   recipientId: string
   recipientName: string | null
+  /** Instagram @username (no "@"), when Meta gave one. */
+  recipientUsername?: string | null
+  /** Same-origin photo route (private storage), or null → initials. Never a Meta link. */
+  recipientAvatarUrl?: string | null
   status: string
   /** open / won / lost from the tenant's chat stages: won or lost = closed (was "hecho"). */
   stageCategory: StageCategory
@@ -227,6 +235,8 @@ export function mapConversationToListDto(row: ConversationRow, stages: StageDef[
     peerId: row.peerId,
     recipientId: row.peerId,
     recipientName: row.peerName,
+    recipientUsername: cleanProfileUsername(row.peerUsername),
+    recipientAvatarUrl: hasStoredPeerAvatar(row) ? peerAvatarRoute(row.id, row.peerProfileCheckedAt) : null,
     status,
     stageCategory: stageCategoryOf(stages, status),
     tags: row.tags,
@@ -341,6 +351,8 @@ export function conversationSelect(): Prisma.ChatConversationSelect {
     peerId: true,
     peerName: true,
     peerAvatarUrl: true,
+    peerUsername: true,
+    peerProfileCheckedAt: true,
     clientId: true,
     status: true,
     assignedUserId: true,

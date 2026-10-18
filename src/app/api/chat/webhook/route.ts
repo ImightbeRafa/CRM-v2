@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { scheduleInstagramPeerProfile } from '@/lib/instagram-peer-profile'
 import {
   buildWebhookStoredMetadata,
   parseMetaChatPayload,
@@ -395,6 +396,17 @@ export async function POST(request: NextRequest) {
         softAiJobIds.push(enqueued.jobId)
         softAiSettleMs.set(enqueued.jobId, enqueued.settleMs)
       }
+    }
+
+    // Instagram: real name / @username / photo instead of "Instagram User NNNNNN". Fire-and-forget (never
+    // awaited, own timeout, errors swallowed); at most one Meta lookup per chat per week.
+    for (const result of results) {
+      if (!result.stored || !('tenantId' in result) || !result.conversationId) continue
+      scheduleInstagramPeerProfile({
+        tenantId: result.tenantId,
+        conversationId: result.conversationId,
+        platform: result.platform,
+      })
     }
 
     const durationMs = Date.now() - startedAt

@@ -91,6 +91,7 @@ import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import dynamic from 'next/dynamic'
 import type { CreatedOrderRef, OrderFormPrefill } from '@/app/ventas/components/EnhancedSalesForm'
 import { useToast } from '@/app/hooks/use-toast'
+import { conversationDisplayName, isPlaceholderPeerName } from '@/lib/chat-peer-display'
 
 const RAIL_TAB_KEY = 'betsy.chat.railTab.v2'
 const DETAILS_PANEL_KEY = 'betsy.chat.detailsPanel.v1'
@@ -2116,14 +2117,20 @@ export function SoftCopilotInboxV2() {
         <CrearPedidoDrawer
           open
           onOpenChange={setCreateOrderOpen}
-          subtitle={`Desde el chat con ${selectedConversation.recipientName || selectedConversation.recipientId}`}
+          subtitle={`Desde el chat con ${conversationDisplayName(selectedConversation)}`}
           prefill={{
             ...(chatPrefillForOpenChat ?? {}),
             // The customer's own data first; the chat's name / WhatsApp number when they did not write one.
-            name: chatPrefillForOpenChat?.name || selectedConversation.recipientName || undefined,
+            name:
+              chatPrefillForOpenChat?.name ||
+              (isPlaceholderPeerName(selectedConversation.recipientName) ? undefined : selectedConversation.recipientName) ||
+              undefined,
             // SecureDog L3: on WhatsApp the verified chat number is the order phone (a typed number never replaces it).
             phone: selectedConversation.platform === 'whatsapp' ? selectedConversation.recipientId : chatPrefillForOpenChat?.phone || undefined,
-            username: selectedConversation.platform === 'instagram' ? selectedConversation.recipientName || undefined : undefined,
+            username:
+              selectedConversation.platform === 'instagram'
+                ? selectedConversation.recipientUsername || selectedConversation.recipientName || undefined
+                : undefined,
           }}
           onCreated={handleOrderCreated}
           draftKey={selectedConversationId ? `chat:${selectedConversationId}` : undefined}

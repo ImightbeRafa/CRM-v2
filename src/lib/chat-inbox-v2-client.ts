@@ -116,6 +116,8 @@ export function listDtoToSoftConversation(
   return {
     recipientId: dto.peerId,
     recipientName: dto.recipientName ?? undefined,
+    recipientUsername: dto.recipientUsername ?? null,
+    recipientAvatarUrl: dto.recipientAvatarUrl ?? null,
     lastMessage: dto.lastMessage ?? undefined,
     lastMessageAt: dto.lastMessageAt,
     unreadCount: dto.unreadCount,

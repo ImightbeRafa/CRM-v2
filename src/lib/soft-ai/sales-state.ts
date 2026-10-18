@@ -5,6 +5,8 @@
  */
 import {
   hasPaymentClaimCue,
+  classifyPaymentText,
+  embeddedPaymentChoice,
   hasHardPaymentClaim,
   hasPaymentStatusHint,
   isBareOrderConfirmAsk,
@@ -20,6 +22,7 @@ import {
   type PaymentChoiceMethod,
 } from '@/lib/soft-ai/payment-classifier'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
+import { HISTORY_WINDOW_MAX } from '@/lib/soft-ai/agent-types'
 import { soldOutFocus, type StockGuard } from '@/lib/soft-ai/product-availability-core'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import { PICKUP_DATA_LIST, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
@@ -292,6 +295,10 @@ const NEVER_CONFIRM_ORDER =
   'NUNCA digas confirmado, registrado, anotado, agendado, listo, ni que sale hoy o mañana.'
 
 /** Next step once the customer picked a method (metodo_pago). */
+/** The customer chose the method inside the order data: the total goes first (Rafael 2026-10-18: get them to pay). */
+const DATA_CHOICE_TOTAL_STEP =
+  ' El cliente ya eligió el método junto con sus datos: si ya tenés todo, primero decí el total exacto con envío (producto + envío) en su propio mensaje y luego el token.'
+
 function chosenMethodStep(ctx: SalesContext, method: ChosenPaymentMethod): string {
   const offered = salesPaymentMethods(ctx)
   if (ctx.paymentMethods && !offered.includes(method)) {
@@ -383,6 +390,8 @@ export function deriveSalesState(input: {
   ctx: SalesContext
   /** Burst = one reply: read the buy cue across the unanswered burst (default). False: the newest message only. */
   burstBuyCue?: boolean
+  /** The method the inbound decision routed as a choice inside the order data (decisionOrderDataChoice), else null. */
+  dataChoice?: ChosenPaymentMethod | null
 }): SalesState {
   const ours = input.history.filter((m) => m.direction === 'outbound').map((m) => m.content || '')
   const oursText = ours.join('\n')
@@ -431,10 +440,14 @@ export function deriveSalesState(input: {
   // EARLIER message since the question is carried (the customer then sends the order data).
   const offered = salesPaymentMethods(input.ctx)
   const mention = askedMethod ? pendingMethodMention(last) : null
+  // Rafael 2026-10-18: a choice written inside the order data ("… Envío a domicilio. Pago por SINPE 🙌") — only what the
+  // inbound decision itself routed as one (SecureDog r1 F4: never recomputed here with less information).
+  const dataChoice = input.dataChoice ?? null
   const chosenMethod =
     paymentMethodPick(last, askedMethod, offered) ??
     (mention ? resolvePaymentChoice(mention, offered) : null) ??
-    carriedOrderMethod(input.history, last, offered)
+    carriedOrderMethod(input.history, last, offered) ??
+    (dataChoice ? resolvePaymentChoice(dataChoice, offered) : null)
 
   let stage: SalesStage
   if (receiptCue) stage = 'verificando'
@@ -461,11 +474,19 @@ export function deriveSalesState(input: {
       )
     : null
   const closing = stage === 'cierre' || stage === 'metodo_pago'
+  // Verifier r1 #5 / #6: the "total first" line only for an offered token method and a single unit (2+ units: the
+  // prompt keeps its own total rule, no contradiction).
+  const totalStepFits =
+    dataChoice !== null &&
+    chosenMethod === dataChoice &&
+    (chosenMethod === 'sinpe' || chosenMethod === 'transferencia' || chosenMethod === 'tarjeta') &&
+    (!input.ctx.paymentMethods || salesPaymentMethods(input.ctx).includes(chosenMethod)) &&
+    quantities.every((q) => q <= 1)
   const nextStep =
     focus && closing
       ? SOLD_OUT_STEP
       : stage === 'metodo_pago' && chosenMethod
-        ? chosenMethodStep(input.ctx, chosenMethod)
+        ? chosenMethodStep(input.ctx, chosenMethod) + (totalStepFits ? DATA_CHOICE_TOTAL_STEP : '')
         : NEXT_STEP[stage]
   return {
     soldOutFocus: focus,
@@ -906,6 +927,61 @@ export function noPaymentYet(history: ReadonlyArray<{ direction: string; content
     if (!isCourtesyText(text) && !isBareOrderConfirmAsk(text)) return false
   }
   return true
+}
+
+/** The store already asked for / talked about a receipt, a payment's check or a payment block. */
+const STORE_RECEIPT_TALK_RE =
+  /(?<![\p{L}])(?:comprobante\p{L}*|recibo|captura|pantallazo|screenshot|voucher|constancia|foto\s+del\s+(?:pago|sinpe)|valid\p{L}*|verific\p{L}*|confirm\p{L}*\s+(?:el|tu|su)\s+pago)(?![\p{L}])|\[\[\s*PAGO/iu
+/** Payment details a person types by hand: "a nombre de" next to digits, an IBAN, a SINPE number split oddly. */
+const STORE_HAND_DETAILS_RE = /a\s+nombre\s+de[\s\S]*\d|\d[\s\S]*a\s+nombre\s+de|CR\s?\d{2}[\s-]?\d{4}/iu
+/** Any bubble that is only a bracketed placeholder ("[imagen]", "[share]", "[ig_story]", "[attachment]"). */
+const ANY_PLACEHOLDER_RE = /^\s*\[[^\]\n]{1,40}\]\s*$/u
+
+type PaidRow = { direction: string; content?: string | null; messageType?: string | null }
+
+/**
+ * Rafael 2026-10-18 (a choice inside the order data): a NARROWER cousin of noPaymentYet that allows sales talk and the
+ * customer's own method choice — nothing about PAYING happened in this chat yet: no payment details (blocks, typed
+ * "a nombre de" + digits, an IBAN, the store's own payment numbers), order block, receipt / payment-check talk or
+ * "ya pagaste"-style words from the store; no photo / file / audio / placeholder bubble from either side; no customer
+ * message that the classifier reads as a payment claim / proof. A full history window fails closed (earlier payment
+ * details may be out of view). Input: history + burst + trigger, in order. Pure.
+ */
+export function nothingPaidYet(rows: ReadonlyArray<PaidRow>, opts: { windowFull?: boolean; paymentDigits?: readonly string[] } = {}): boolean {
+  if (opts.windowFull) return false
+  const payDigits = (opts.paymentDigits || []).map((d) => d.replace(/\D/g, '')).filter((d) => d.length >= 8).map((d) => d.slice(-8))
+  for (const m of rows) {
+    const text = stripFormatChars((m.content || '').normalize('NFKC'))
+    if ((m.messageType && m.messageType !== 'text') || MEDIA_PLACEHOLDER_RE.test(text) || ANY_PLACEHOLDER_RE.test(text)) return false
+    if (m.direction === 'outbound') {
+      if (paymentDetailsIn(text) || PAYMENT_BLOCK_RE.test(text) || ORDER_BLOCK_RE.test(text) || STORE_RECEIPT_TALK_RE.test(text)) return false
+      // Verifier r1 #4: only words about a payment already made ("ya pagaste", "vi el depósito"), not "¡Listo!" / "✅ envíos".
+      if (METHOD_QUESTION_DONE_RE.test(text) || STORE_HAND_DETAILS_RE.test(text)) return false
+      if (payDigits.length && payDigits.some((d) => text.replace(/\D/g, '').includes(d))) return false
+      continue
+    }
+    // An order-data choice passes its own (stricter) allowlist; anything else must not read as a payment claim.
+    if (embeddedPaymentChoice(text)) continue
+    if (hasHardPaymentClaim(text) || classifyPaymentText(text) === 'payment_proof_or_risk') return false
+  }
+  return true
+}
+
+/**
+ * The method a customer chose inside their order data, or null: nothingPaidYet holds AND every customer bubble since
+ * the store last wrote (the whole unanswered burst, joined — SecureDog r1: "Listo" + "Pago por SINPE" is one message)
+ * is one embeddedPaymentChoice data message. Live and Probar pass history + burst + trigger, in order. Pure.
+ */
+export function orderDataChoice(rows: ReadonlyArray<PaidRow>, opts: { windowFull?: boolean; paymentDigits?: readonly string[] } = {}): PaymentChoiceMethod | null {
+  if (!nothingPaidYet(rows, opts)) return null
+  let i = rows.length
+  while (i > 0 && rows[i - 1].direction !== 'outbound') i -= 1
+  const seen = new Set<string>()
+  const unanswered = rows
+    .slice(i)
+    .map((m) => stripFormatChars((m.content || '').normalize('NFKC')).trim())
+    .filter((t) => t && !seen.has(t) && (seen.add(t), true))
+  return unanswered.length ? embeddedPaymentChoice(unanswered.join('\n')) : null
 }
 
 /** The store already asked for the order data (the fixed list or an inline "nombre completo … teléfono" request). */

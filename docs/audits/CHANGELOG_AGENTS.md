@@ -1,3 +1,21 @@
+## 2026-10-18 — Payment choice inside the order data (claudio/pay-choice-in-data, NOT deployed)
+
+- Rafael: getting customers to pay. "Nombre: … Dirección: … Envío a domicilio. Pago por SINPE 🙌" used to be
+  payment_proof_or_risk ("Dame un momento, ya lo reviso…", sale stalls). Now, when nothing about paying happened in
+  the chat yet (`sales-state.ts` nothingPaidYet: no payment block / typed details / store payment number / receipt or
+  payment-check talk from the store, no photo / file / placeholder bubble, no customer claim, history window not
+  full), `orderDataChoice` joins the whole unanswered burst and `payment-classifier.ts` embeddedPaymentChoice reads it
+  as an ALLOWLIST: one method in the choice grammar ("Pago por SINPE", "Forma de pago: SINPE", ", pago por SINPE"),
+  every other part a known label + plain value / phone / delivery phrase / greeting; no "?", Latin letters only,
+  only 🙏 😊 🙌, and no claim / time / amount / status / part-payment / dispute word on raw, folded or collapsed text.
+  `inbound-decision.ts` then routes to the model (`payment_choice: order_data_<method>`, also after the close's method
+  question); sales-state nextStep: total with shipping first, then the method token (offered method, one unit only).
+- Claims stay hand-offs (pinned: `pay-choice-in-data.test.ts`, 15 tests incl. every SecureDog / Verifier r1 bypass).
+- Reviews r1: SecureDog FIX BEFORE PROD (F1 burst split, F2 cue on its own line HIGH; F3 typed details MEDIUM; F4/F5
+  LOW) and Verifier FAIL (same + close-question gap, label "Nombre completo", store "¡Listo!") — all fixed in r2
+  (eac08ebb); r2 not re-reviewed. Known fallbacks to the old hand-off: unlabelled data lines ("Ana Mora\n8888…"),
+  store "Revisá las fotos".
+
 ## 2026-10-18 — Dead-line alarm: a silent / token-dead WhatsApp or Instagram line can't go unnoticed (claudio/dead-line-alarm, NOT deployed)
 
 - Trigger: 09:02 UTC Rafael connected @prototipo.cr via Facebook Login; 09:03 @patchhouse.cr stopped (page picker

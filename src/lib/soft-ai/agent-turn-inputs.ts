@@ -19,7 +19,7 @@ import {
 } from '@/lib/soft-ai/agent-types'
 import type { ResolvedChatAgent } from '@/lib/soft-ai/agent-resolver'
 import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
-import type { InboundDecision } from '@/lib/soft-ai/inbound-decision'
+import { decisionOrderDataChoice, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import { guideShortcutCatalog, renderShortcutTemplate } from '@/lib/soft-ai/shortcuts'
 import { brandFactsLinkAllowlist } from '@/lib/soft-ai/llm/output-validator'
@@ -198,7 +198,7 @@ export function assembleAgentRuntimeInputs(input: {
   // With the sales flow, shipping comes only from Betsy's shipping list (promo applied); the store's own shipping
   // text would show a second, stale price (e.g. ₡3.000 during a free-shipping promo).
   const promptFacts = sales ? { ...input.agent.brandFacts, shipping: undefined } : input.agent.brandFacts
-  const salesState = sales ? deriveSalesState({ history: input.history, inboundText: input.inboundText, ctx: sales }) : null
+  const salesState = sales ? deriveSalesState({ history: input.history, inboundText: input.inboundText, ctx: sales, dataChoice: decisionOrderDataChoice(input.decision) }) : null
   return {
     tenantId: input.toolCtxBase.tenantId,
     agentId: input.agent.id,

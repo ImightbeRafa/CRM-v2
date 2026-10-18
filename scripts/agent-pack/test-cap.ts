@@ -6,6 +6,7 @@
  *   node --env-file=.env.local --import tsx --import ./scripts/shim-server-only.mjs scripts/agent-pack/test-cap.ts \
  *     --pack=../betsy-agent-packs/patchhouse --raise --headroom=1500000
  *   … --restore --to=800000
+ *   … --unlock   (Sleeping C4: frees the test-run lock a dead run left behind; audited. Only when no run is going.)
  */
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/auditLogger'
@@ -14,6 +15,7 @@ import { readChatAgentLayerConfig } from '@/lib/feature-flags'
 import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { loadDailyTestTokens } from '@/lib/soft-ai/agent-claim-gates'
 import { loadPack } from './pack'
+import { activeLock, forceReleaseTestLock, readTestLock, type LockDb } from './test-lock'
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3)
 const flag = (name: string) => process.argv.includes(`--${name}`)
@@ -54,7 +56,32 @@ async function main() {
     console.log(`Tope de pruebas: ${current.toLocaleString('es-CR')} → ${target.toLocaleString('es-CR')} (usado hoy ≈ ${usedTokens.toLocaleString('es-CR')}). Restaurar con --restore --to=800000`)
     return
   }
+  const lockDb = prisma as unknown as LockDb
+  if (flag('unlock')) {
+    const freed = await forceReleaseTestLock(lockDb, { tenantId })
+    if (!freed) {
+      console.log('No hay ninguna prueba con el candado tomado.')
+      return
+    }
+    await logAudit({
+      action: 'UPDATE',
+      entityType: 'ChatAgentLayerConfig',
+      entityId: tenantId,
+      description: `test lock liberado a mano (test-cap --unlock; era de ${freed.label}, pid ${freed.pid}, desde ${freed.startedAt})`,
+      oldValues: { testLock: freed.label, startedAt: freed.startedAt },
+      newValues: { testLock: 'liberado a mano' },
+      userId: actor.id,
+      userName: actor.name,
+      userRole: actor.role,
+      tenantId,
+    })
+    console.log(`Candado liberado (era de ${freed.label}, ${freed.host} pid ${freed.pid}, desde ${freed.startedAt}).`)
+    return
+  }
   if (flag('restore')) {
+    // Verifier r1 #7: never lower the cap under a run that is still going (its rows would end "not run").
+    const held = activeLock(await readTestLock(lockDb, tenantId), new Date())
+    if (held && !flag('force')) throw new Error(`Hay una prueba corriendo (${held.label}, pid ${held.pid}, desde ${held.startedAt}). Esperá que termine, o --force.`)
     const to = Number(arg('to') || 800_000)
     if (!Number.isFinite(to) || to <= 0) throw new Error('--to debe ser un número positivo')
     if (current <= to) {

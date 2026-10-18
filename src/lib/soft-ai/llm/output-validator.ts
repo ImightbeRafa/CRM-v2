@@ -350,31 +350,59 @@ function amountAllowed(amount: number, allowed: number[]): boolean {
 
 /**
  * Sleeping exam C3 (2026-10-18): a per-night / per-patch amount ("₡317 por noche") is sourced when it IS a known price
- * divided by a night / patch count written in the reply or by the customer ("el pack de 3 trae 90 noches": ₡28 500 ÷ 90
- * = ₡317). Only consumption units (noche, día, parche, uso, aplicación, dosis) — never "por bolsa / unidad / paquete", so
- * a pack's per-bag figure cannot read as a single-bag price. The amount must sit next to that per-unit wording.
+ * divided by a count of the SAME unit, both written in one sentence — of the reply or of the customer's message ("el
+ * pack de 3 cuesta ₡28 500 y trae 90 noches": ₡28 500 ÷ 90 = ₡317 por noche). Verifier r1 #5: the unit of the count
+ * and of the per-unit wording must match (noches ↔ noche); a delivery time ("llega en 3 días", "2 días hábiles") is no
+ * count; a shipping amount ("envío ₡3 000", "con envío ₡12 900") is no base. Only consumption units (noche, día,
+ * parche, uso, aplicación, dosis) — never "por bolsa / unidad / paquete", so a pack's per-bag figure cannot read as a
+ * single-bag price. Every place the amount is written must be that per-unit mention.
  */
-const UNIT_WORD = String.raw`(?:noches?|d[ií]as?|parches?|usos?|aplicaci[oó]n(?:es)?|dosis)`
+const UNIT_WORD = String.raw`(noches?|d[ií]as?|parches?|usos?|aplicaci[oó]n(?:es)?|dosis)`
 const UNIT_COUNT_RE = new RegExp(String.raw`(?<![\d.,])(\d{1,4})\s*${UNIT_WORD}(?![\p{L}])`, 'giu')
-const PER_UNIT_AFTER_RE = new RegExp(String.raw`^\s*(?:colones\s*)?(?:por|al|a\s+la|al\s+d[ií]a|la|el|cada|\/|x)\s*${UNIT_WORD}(?![\p{L}])`, 'iu')
+const PER_UNIT_AFTER_RE = new RegExp(String.raw`^\s*(?:colones\s*)?(?:por|al|a\s+la|la|el|cada|\/|x)\s*${UNIT_WORD}(?![\p{L}])`, 'iu')
 const PER_UNIT_BEFORE_RE = new RegExp(String.raw`(?:por|cada|la|el)\s+${UNIT_WORD}[^₡\n.!?]{0,25}$`, 'iu')
 const COLON_AMOUNT_RE = /[₡¢]\s?(\d{1,3}(?:[.,\s ]\d{3})+|\d+)(?![\d])/gu
+const NOT_A_COUNT_BEFORE_RE = /(?:(?<![\p{L}])(?:en|entre|tarda\p{L}*|llega\p{L}*|demora\p{L}*|dura\s+el\s+env[ií]o|hace|hasta)\s+)$/iu
+const NOT_A_COUNT_AFTER_RE = /^\s*(?:h[aá]biles|naturales|de\s+(?:entrega|env[ií]o))/iu
+const SHIPPING_BEFORE_RE = /env[ií]o[^₡\n.!?]{0,12}$/iu
+
+function unitFamily(word: string): string {
+  const w = word.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  return w.startsWith('noche') ? 'noche' : w.startsWith('dia') ? 'dia' : w.startsWith('parche') ? 'parche' : w.startsWith('uso') ? 'uso' : w.startsWith('aplicacion') ? 'aplicacion' : 'dosis'
+}
+/** Sentences (a period between digits — ₡28.500 — is not an end). */
+const sentencesOf = (t: string) => t.split(/(?:(?<!\d)\.|\.(?!\d)|[!?;\n])+/u).filter((s) => s.trim())
 
 export function unitDerivedAmount(amount: number, text: string, customerText: string | null | undefined, bases: number[]): boolean {
   const rounded = Math.round(amount)
-  const counts = [...`${text}\n${customerText || ''}`.matchAll(UNIT_COUNT_RE)].map((m) => Number(m[1])).filter((n) => n >= 2 && n <= 1000)
-  if (!counts.length || !bases.length) return false
-  const derived = bases.some((b) => b > 0 && counts.some((n) => Math.abs(Math.round(b / n) - rounded) <= 1))
-  if (!derived) return false
-  // Every place this amount is written must be a per-unit mention.
+  const priceBases = bases.filter((b) => b > 0)
+  if (!priceBases.length) return false
+  // (family, base ÷ count) pairs, from sentences that state both a known price and a count.
+  const derived: Array<{ family: string; value: number }> = []
+  for (const s of [...sentencesOf(text), ...sentencesOf(customerText || '')]) {
+    const stated = [...s.matchAll(COLON_AMOUNT_RE)]
+      .filter((m) => !SHIPPING_BEFORE_RE.test(s.slice(0, m.index ?? 0)))
+      .map((m) => Number(m[1].replace(/\D/g, '')))
+      .filter((v) => priceBases.some((b) => Math.abs(b - v) <= 1))
+    if (!stated.length) continue
+    for (const c of s.matchAll(UNIT_COUNT_RE)) {
+      const at = c.index ?? 0
+      const n = Number(c[1])
+      if (n < 2 || n > 1000) continue
+      if (NOT_A_COUNT_BEFORE_RE.test(s.slice(0, at)) || NOT_A_COUNT_AFTER_RE.test(s.slice(at + c[0].length))) continue
+      for (const b of stated) derived.push({ family: unitFamily(c[2]), value: Math.round(b / n) })
+    }
+  }
+  if (!derived.length) return false
   let seen = false
   for (const m of text.matchAll(COLON_AMOUNT_RE)) {
-    if (Number(m[1].replace(/\D/g, '')) !== rounded) continue
+    if (Math.abs(Number(m[1].replace(/\D/g, '')) - rounded) > 0) continue
     seen = true
     const at = m.index ?? 0
-    const after = text.slice(at + m[0].length, at + m[0].length + 30)
-    const before = text.slice(Math.max(0, at - 40), at)
-    if (!PER_UNIT_AFTER_RE.test(after) && !PER_UNIT_BEFORE_RE.test(before)) return false
+    const after = PER_UNIT_AFTER_RE.exec(text.slice(at + m[0].length, at + m[0].length + 30))
+    const before = PER_UNIT_BEFORE_RE.exec(text.slice(Math.max(0, at - 40), at))
+    const family = after ? unitFamily(after[1]) : before ? unitFamily(before[1]) : null
+    if (!family || !derived.some((d) => d.family === family && Math.abs(d.value - rounded) <= 1)) return false
   }
   return seen
 }
@@ -880,19 +908,20 @@ export function applyFinalOutputPolicy(input: {
     text = canonicalList
     reasons.push('data_list')
   }
-  if (input.shortenLongReply) {
-    const short = shortenToMaxLines(text, style.maxLines)
-    if (short !== text) {
-      text = short
-      reasons.push('shortened')
-    }
-  }
   // Sleeping C6 (Rafael's rule): at the close the data list goes before the payment question, each in its own message.
+  // Before shortening (Verifier r1 #2): the reordered messages are then shortened like any reply.
   if (input.paymentOptions?.dataListFirst) {
     const ordered = dataListBeforePaymentQuestion(text, input.paymentOptions.dataListFirst)
     if (ordered !== text) {
       text = ordered
       reasons.push('data_list_first')
+    }
+  }
+  if (input.shortenLongReply) {
+    const short = shortenToMaxLines(text, style.maxLines)
+    if (short !== text) {
+      text = short
+      reasons.push('shortened')
     }
   }
   // Anything still spelling the internal tag (case-sensitive) is never sent.

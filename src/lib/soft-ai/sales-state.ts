@@ -113,35 +113,33 @@ export const PAYMENT_METHOD_ASKED_RE =
 const METHOD_WORD = String.raw`(?:sinpe(?:\s+m[oó]vil)?|simpe|transferencias?|tarjetas?|efectivo|contra\s?entrega)`
 const METHOD_QUESTION_EXTRA_RES = [
   new RegExp(
-    String.raw`(?<![\p{L}])(?:prefer[ií]s|prefiere|prefieren|quer[eé]s|quiere|quieren|te\s+gustar[ií]a|le\s+gustar[ií]a|vas\s+a|va\s+a)\s+pagar(?:lo|la|los|las)?\s+(?:por|con|mediante|v[ií]a|en)(?![\p{L}])[^?¿.!\n]{0,100}\?`,
+    String.raw`(?<![\p{L}])(?:prefer[ií]s|prefiere|prefieren|quer[eé]s|quiere|quieren|te\s+gustar[ií]a|le\s+gustar[ií]a|vas\s+a|va\s+a)\s+pagar(?:lo|la|los|las)?\s+(?:(?:por|con|mediante|v[ií]a|en)(?![\p{L}])|contra\s?entrega|al\s+recibir)[^?¿.!\n]{0,100}\?`,
     'iu',
   ),
-  new RegExp(String.raw`(?<![\p{L}])pag[aá]s\s+(?:por|con|en)(?![\p{L}])[^?¿.!\n]{0,100}\?`, 'iu'),
+  new RegExp(String.raw`(?<![\p{L}])pag[aá]s\s+(?:(?:por|con|en)(?![\p{L}])|contra\s?entrega|al\s+recibir)[^?¿.!\n]{0,100}\?`, 'iu'),
   new RegExp(String.raw`¿\s*(?:(?:y\s+)?(?:por|con|en)\s+)?${METHOD_WORD}[^?¿.!\n]{0,60}(?<![\p{L}])o(?![\p{L}])[^?¿.!\n]{0,60}\?`, 'iu'),
 ]
 /** "¿Cuál preferís?" counts only in a message that names at least two methods. */
 const WHICH_ONE_RE = /¿\s*(?:y\s+)?cu[aá]l\s+(?:prefer[ií]s|prefiere|prefieren|te\s+sirve|le\s+sirve|te\s+queda\s+mejor|le\s+queda\s+mejor)[^?¿.!\n]{0,40}\?/iu
 const METHOD_WORD_G = new RegExp(String.raw`(?<![\p{L}])${METHOD_WORD}(?![\p{L}])`, 'giu')
-/** Done / sent words: a question about a payment already made, never the method question. */
+/**
+ * Done / sent words: a message about a payment already made is never the method question. Verifier r1: checked on the
+ * WHOLE message ("¿Pudiste hacer el pago? ¿Por SINPE o transferencia?", "Si ya pagaste, ¿por SINPE…?").
+ */
 const METHOD_QUESTION_DONE_RE =
-  /(?<![\p{L}])(?:ya|hiciste|hizo|pagaste|pag[oó]|mandaste|enviaste|realizaste|pudiste|pudo|transferiste|depositaste|comprobante|lleg[oó]|entr[oó]|cay[oó]|qued[oó])(?![\p{L}])/iu
-
-/** The question sentence around a match: from the sentence start (or its "¿") to the end of the match. */
-function questionSentence(t: string, m: RegExpExecArray): string {
-  const start = Math.max(0, t.lastIndexOf('¿', m.index), ...['.', '!', '\n', '?'].map((c) => t.lastIndexOf(c, m.index - 1) + 1))
-  return t.slice(Math.min(start, m.index), m.index + m[0].length)
-}
+  /(?<![\p{L}])(?:ya|hiciste|hicieron|hizo|pagaste|pagaron|pag[oó]|mandaste|mandaron|enviaste|enviaron|realizaste|pudiste|pudo|transferiste|depositaste|usaste|us[oó]|usaron|fue|comprobante|lleg[oó]|entr[oó]|cay[oó]|qued[oó])(?![\p{L}])/iu
 
 /** The store asked HOW the customer wants to pay (the original wordings, or C1's other question shapes). Pure. */
 export function isPaymentMethodQuestion(text: string): boolean {
   const t = text || ''
   if (PAYMENT_METHOD_ASKED_RE.test(t)) return true
+  // The wider shapes only in a message with no done / sent word anywhere (fail closed: a person).
+  if (METHOD_QUESTION_DONE_RE.test(t)) return false
   for (const re of METHOD_QUESTION_EXTRA_RES) {
-    const m = re.exec(t)
-    if (m && !METHOD_QUESTION_DONE_RE.test(questionSentence(t, m))) return true
+    if (re.test(t)) return true
   }
   const which = WHICH_ONE_RE.exec(t)
-  if (which && !METHOD_QUESTION_DONE_RE.test(t)) {
+  if (which) {
     const named = new Set([...t.matchAll(METHOD_WORD_G)].map((x) => x[0].toLowerCase().slice(0, 5)))
     if (named.size >= 2) return true
   }
@@ -795,11 +793,21 @@ const WEB_ORDER_RE = /(?<![\p{L}])(?:ord-?\s?\d|pedido\s*#?\s*\d|#\s?\d{3,}|(?:p
  * order number. Only then is a bare "Para confirmar el pedido" / "¿me confirmás?" an ordinary sales message. Pure;
  * live and Probar pass the same history (with messageType where known).
  */
+/** The store talked about paying at all: payment words, a receipt, "te paso cómo pagar", or a phone-like number. */
+const STORE_PAYMENT_TALK_RE = /comprobante|c[oó]mo\s+pagar|datos\s+de\s+pago|(?<!\d)\d{4}[\s.-]?\d{4}(?!\d)/iu
+/**
+ * Verifier r1 #6: only a short chat can be known to have "no payment yet" — the live history is a window of the newest
+ * rows, so in a longer chat earlier payment messages may be out of view (fail closed: a person).
+ */
+const NO_PAYMENT_YET_MAX_MESSAGES = 20
+
 export function noPaymentYet(history: ReadonlyArray<{ direction: string; content?: string | null; messageType?: string | null }>): boolean {
+  if (history.length >= NO_PAYMENT_YET_MAX_MESSAGES) return false
   for (const m of history) {
     const text = m.content || ''
     if (m.direction === 'outbound') {
-      if (paymentDetailsIn(text) || ORDER_BLOCK_RE.test(text)) return false
+      // Verifier r1 #6: ANY payment talk from the store (the method question too), not only filled-in details.
+      if (paymentDetailsIn(text) || ORDER_BLOCK_RE.test(text) || PAYMENT_WORDS_RE.test(text) || STORE_PAYMENT_TALK_RE.test(text)) return false
       continue
     }
     if (MEDIA_LIKE_TYPES.has(m.messageType || '') || /^\s*\[(?:imagen|image|foto|archivo|document|audio|video|voice|sticker)[^\]]*\]\s*$/iu.test(text)) return false
@@ -819,7 +827,14 @@ function customerGaveOrderData(inbound: readonly string[]): boolean {
   return inbound.some((t) => /(?<!\d)\d{4}[\s.-]?\d{4}(?!\d)/.test(t) || t.split('\n').filter((l) => l.trim()).length >= 3)
 }
 
-const PICKUP_CUE_RE = /(?<![\p{L}])(?:retir\p{L}*|recog\p{L}*|paso\s+(?:a\s+)?(?:por\s+)?(?:él|el|ella|la|lo)|pickup)(?![\p{L}])/iu
+/**
+ * The customer picks it up: "retiro", "lo recojo", "paso por él / por ahí / a la tienda", "pickup". Verifier r1: never
+ * "te paso la dirección / el número" (that is sending data, for a delivery).
+ */
+const PICKUP_CUE_RE =
+  /(?<![\p{L}])(?:retir\p{L}*|recog\p{L}*|(?<!(?:te|le|les|se\s+l[oa]s?)\s)paso\s+(?:por\s+(?:él|ella|ellos|ellas|ah[ií]|all[aá]|la\s+tienda|el\s+local)|a\s+(?:recoger\p{L}*|retirar\p{L}*|traer\p{L}*|buscar\p{L}*|la\s+tienda|el\s+local))|pickup)(?![\p{L}])/iu
+/** A store whose every shipping method is a pickup ("Retiro en tienda") only ever needs the pickup list. */
+const PICKUP_METHOD_RE = /retir|recog|pick\s?up|en\s+tienda/iu
 
 /**
  * Sleeping exam C6 (Rafael 2026-10-16: total + data list first, the payment question after, in its own message): at the
@@ -831,46 +846,91 @@ const PICKUP_CUE_RE = /(?<![\p{L}])(?:retir\p{L}*|recog\p{L}*|paso\s+(?:a\s+)?(?
  * counts; the reply is only touched when it actually asks the payment method.
  */
 const DATA_LIST_STAGES: ReadonlySet<SalesStage> = new Set(['saludo', 'descubrir', 'cotizar', 'cierre'])
-export function salesDataListFirst(state: SalesState, history: SoftAiHistoryMessage[], inboundText: string): 'shipping' | 'pickup' | null {
+export function salesDataListFirst(
+  state: SalesState,
+  history: SoftAiHistoryMessage[],
+  inboundText: string,
+  ctx?: Pick<SalesContext, 'shippingMethods'> | null,
+): 'shipping' | 'pickup' | null {
   if (!DATA_LIST_STAGES.has(state.stage) || state.said.payment || state.said.order || state.said.howToBuy) return null
   const outbound = history.filter((m) => m.direction === 'outbound').map((m) => m.content || '')
   if (orderDataAsked(outbound)) return null
   const inbound = [...history.filter((m) => m.direction === 'inbound').map((m) => m.content || ''), inboundText || '']
   if (customerGaveOrderData(inbound)) return null
+  const methods = ctx?.shippingMethods ?? []
+  if (methods.length > 0 && methods.every((m) => PICKUP_METHOD_RE.test(`${m.name} ${m.coverage || ''}`))) return 'pickup'
   return inbound.slice(-4).some((t) => PICKUP_CUE_RE.test(t)) ? 'pickup' : 'shipping'
 }
 
 const DATA_LIST_LEAD = { shipping: 'Para coordinar el envío, pasame estos datos:', pickup: 'Para el retiro, pasame estos datos:' } as const
 
+const DATA_ITEM_RE = /^\s*(?:[-•*–]|\d{1,2}[.)])\s+/
+const DATA_FIELD_RE = /(?<![\p{L}])(?:nombre|apellidos?|tel[eé]fono|celular|correo|e-?mail|provincia|cant[oó]n|distrito|direcci[oó]n|se[nñ]as)(?![\p{L}])/iu
+const isDataItem = (l: string) => DATA_ITEM_RE.test(l) && DATA_FIELD_RE.test(l)
+const isInlineDataAsk = (l: string) => !DATA_ITEM_RE.test(l) && /nombre\s+completo/iu.test(l) && /tel[eé]fono/iu.test(l)
+
 /**
  * C6: reorder (or complete) a closing reply so the data list comes before the payment-method question: the text before
- * the question stays first, then the list (moved, or the fixed one added), then the question in its own message. A reply
- * with no method question, or with payment details / tokens in it, is left as written. Pure.
+ * the question stays first (one message), then the list (moved — also out of the question's own message, Verifier r1
+ * #3 — or the fixed one added), then the question and whatever followed it (one message). A reply with no method
+ * question, or with payment details / tokens in it, is left as written. Pure.
  */
 export function dataListBeforePaymentQuestion(text: string, kind: 'shipping' | 'pickup'): string {
   const value = (text || '').replace(/\r\n?/g, '\n').trim()
   if (!value || /\[\[?\s*(?:DATOS|PAGO)/iu.test(value) || paymentDetailsIn(value)) return text
-  const paras = value.split(/\n[ \t]*\n+/).map((p) => p.trim()).filter(Boolean)
-  const isList = (p: string) => /nombre\s+completo/iu.test(p) && /tel[eé]fono/iu.test(p)
-  const q = paras.findIndex((p) => isPaymentMethodQuestion(p))
-  if (q < 0) return text
-  const listIdx = paras.findIndex(isList)
-  if (listIdx >= 0 && listIdx < q) return text
-  // Split the question's paragraph at the question: the sentences before it stay in front.
-  const sentences = paras[q].split(/(?<=[.!?…])\s+|\n/u).filter((s) => s.trim())
-  let j = 0
-  for (let i = sentences.length - 1; i >= 0; i -= 1) {
-    if (isPaymentMethodQuestion(sentences.slice(i).join(' '))) {
-      j = i
-      break
-    }
+  const lines = value.split('\n')
+  const list = new Set<number>()
+  lines.forEach((l, i) => {
+    if (isDataItem(l) || isInlineDataAsk(l)) list.add(i)
+  })
+  // The list's lead-in ("Para coordinar el envío, pasame estos datos:") travels with it.
+  const firstItem = [...list].sort((a, b) => a - b).find((i) => isDataItem(lines[i]))
+  if (firstItem !== undefined) {
+    let k = firstItem - 1
+    while (k >= 0 && !lines[k].trim()) k -= 1
+    if (k >= 0 && /:\s*$/.test(lines[k]) && !isPaymentMethodQuestion(lines[k])) list.add(k)
   }
-  const head = sentences.slice(0, j).join(' ').trim()
-  const tail = sentences.slice(j).join(' ').trim()
-  if (listIdx === q || isList(tail)) return text
-  const others = (from: number, to: number) => paras.slice(from, to).filter((_, k) => from + k !== listIdx)
-  const front = [...others(0, q), head].filter(Boolean).join('\n')
-  const list = listIdx >= 0 ? paras[listIdx] : `${DATA_LIST_LEAD[kind]}\n${kind === 'pickup' ? PICKUP_DATA_LIST : SHIPPING_DATA_LIST}`
-  const back = [tail, ...others(q + 1, paras.length)].filter(Boolean).join('\n')
-  return [front, list, back].filter(Boolean).join('\n\n')
+  // The question: one line, or two lines together ("Tenemos SINPE y tarjeta.\n¿Cuál preferís?").
+  let q = lines.findIndex((l, i) => !list.has(i) && isPaymentMethodQuestion(l))
+  let qEnd = q
+  if (q < 0) {
+    q = lines.findIndex((l, i) => !list.has(i) && !list.has(i + 1) && i + 1 < lines.length && isPaymentMethodQuestion(`${l}\n${lines[i + 1]}`))
+    qEnd = q + 1
+  }
+  if (q < 0) return text
+  if (list.size && Math.min(...list) < q) return text
+  // Split the question's line at the question: the sentences before it stay in front.
+  let head = ''
+  let tail = lines.slice(q, qEnd + 1).join('\n')
+  if (qEnd === q) {
+    const sentences = lines[q].split(/(?<=[.!?…])\s+/u).filter((s) => s.trim())
+    let j = 0
+    for (let i = sentences.length - 1; i >= 0; i -= 1) {
+      if (isPaymentMethodQuestion(sentences.slice(i).join(' '))) {
+        j = i
+        break
+      }
+    }
+    head = sentences.slice(0, j).join(' ').trim()
+    tail = sentences.slice(j).join(' ').trim()
+  }
+  const keep = (from: number, to: number) => lines.slice(from, to).filter((l, k) => !list.has(from + k) && l.trim())
+  // The text before the question keeps its own message breaks (merging them could make one message too long to send —
+  // Verifier r1 #2); past 3 messages the list and the question share the last one, list first.
+  const front = [
+    lines
+      .slice(0, q)
+      .filter((_, k) => !list.has(k))
+      .join('\n')
+      .replace(/\n[ \t]*\n(?:[ \t]*\n)*/g, '\n\n')
+      .trim(),
+    head,
+  ]
+    .filter(Boolean)
+    .join('\n')
+  const listPart = list.size
+    ? [...list].sort((a, b) => a - b).map((i) => lines[i]).join('\n')
+    : `${DATA_LIST_LEAD[kind]}\n${kind === 'pickup' ? PICKUP_DATA_LIST : SHIPPING_DATA_LIST}`
+  const back = [tail, ...keep(qEnd + 1, lines.length)].filter(Boolean).join('\n')
+  return [front, listPart, back].filter(Boolean).join('\n\n')
 }

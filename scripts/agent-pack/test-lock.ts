@@ -82,6 +82,29 @@ export async function acquireTestLock(
   })
 }
 
+/** The lock row's config right now (no row lock; for read-only checks). */
+export async function readTestLock(db: LockDb, tenantId: string): Promise<unknown> {
+  return db.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<Array<{ config: unknown }>>`
+      SELECT config FROM "TenantFeatureFlag" WHERE scope = ${tenantId} AND key = ${TEST_SESSION_LOCK_KEY}
+    `
+    return rows[0]?.config ?? null
+  })
+}
+
+/** test-cap --unlock: frees whatever lock is held (a dead run's). Returns the lock it freed, or null. Audited by the caller. */
+export async function forceReleaseTestLock(db: LockDb, input: { tenantId: string; now?: Date }): Promise<TestLock | null> {
+  return db.$transaction(async (tx) => {
+    const held = activeLock(await lockedRow(tx, input.tenantId), input.now ?? new Date())
+    if (!held) return null
+    await tx.tenantFeatureFlag.update({
+      where: { scope_key: { scope: input.tenantId, key: TEST_SESSION_LOCK_KEY } },
+      data: { config: { ...held, released: true, releasedAt: new Date().toISOString(), releasedBy: 'test-cap --unlock' } as unknown as Prisma.InputJsonValue },
+    })
+    return held
+  })
+}
+
 /** Releases OUR lock only (a lock another run took after ours expired is left alone). True when released. */
 export async function releaseTestLock(db: LockDb, input: { tenantId: string; token: string }): Promise<boolean> {
   return db.$transaction(async (tx) => {

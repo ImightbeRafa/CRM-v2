@@ -270,7 +270,7 @@ export function assembleAgentRuntimeInputs(input: {
       ? {
           ...salesPaymentOptions(sales),
           chosenMethod: salesState?.chosenMethod ?? null,
-          dataListFirst: salesState ? salesDataListFirst(salesState, input.history, input.inboundText) : null,
+          dataListFirst: salesState ? salesDataListFirst(salesState, input.history, input.inboundText, sales) : null,
         }
       : undefined,
     salesTrace: salesState ? { stage: salesState.stage, said: salesState.said, chosenMethod: salesState.chosenMethod ?? null } : null,

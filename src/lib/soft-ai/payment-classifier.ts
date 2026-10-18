@@ -352,7 +352,9 @@ const SENT_AMOUNT_CLAIM_RE =
  * (greetings, "para / quisiera / me", the order itself), so nothing about a payment, a receipt or "lo recibieron" can
  * ride along. Only used when the chat has no payment yet (see confirmCueCounts).
  */
-const BARE_CONFIRM_VERB_RE = /(?<![\p{L}])(?:me\s+)?confirm[aáeé]\p{L}*/iu
+// Ask forms only (Verifier r1 #6): never the past / participle ("me confirmaron", "pedido confirmado") — those stay claims.
+const BARE_CONFIRM_VERB_RE =
+  /(?<![\p{L}])(?:me\s+|nos\s+)?(?:confirmar(?:me|nos|lo|la)?|confirm[aá]s|confirma(?:me|nos|lo|la)?|conf[ií]rma(?:me|nos|lo|la|melo)|confirmen(?:me|nos)?|confirman|confirme|confirmar[ií]a[sn]?)(?![\p{L}])/iu
 const BARE_CONFIRM_FILLER = new Set(
   (
     'hola holi buenas buen dia dias tardes noches pura vida disculpe disculpa disculpá una consulta ok okay dale bueno perfecto ' +

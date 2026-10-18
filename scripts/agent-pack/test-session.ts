@@ -35,13 +35,6 @@ export async function withExamSession<T>(
 
   const lockDb = prisma as unknown as LockDb
   const lock = await acquireTestLock(lockDb, { tenantId, label: input.label, cap: input.cap })
-  let lockReleased = false
-  const releaseLock = async () => {
-    if (lockReleased) return
-    lockReleased = true
-    await releaseTestLock(lockDb, { tenantId, token: lock.token }).catch(() => undefined)
-    await auditLock('liberado')
-  }
   const auditLock = (why: string) =>
     logAudit({
       action: 'UPDATE',
@@ -54,16 +47,6 @@ export async function withExamSession<T>(
       userRole: actor.role,
       tenantId,
     }).catch(() => undefined)
-  await auditLock('tomado')
-
-  let before: number
-  try {
-    before = parseChatAgentLayerConfig((await readChatAgentLayerConfig(tenantId)).config).testDailyTokenCap
-    if (before >= input.cap) throw new Error(`El tope de pruebas ya está en ${before.toLocaleString('es-CR')}: otra prueba está corriendo (o quedó subido: bajalo desde Agentes).`)
-  } catch (error) {
-    await releaseLock()
-    throw error
-  }
   const audit = (from: number, to: number, why: string) =>
     logAudit({
       action: 'UPDATE',
@@ -78,6 +61,14 @@ export async function withExamSession<T>(
       tenantId,
     }).catch(() => undefined)
 
+  let lockReleased = false
+  const releaseLock = async () => {
+    if (lockReleased) return
+    lockReleased = true
+    await releaseTestLock(lockDb, { tenantId, token: lock.token }).catch(() => undefined)
+    await auditLock('liberado')
+  }
+  let before = 0
   let restored = false
   let raised = false
   const restore = async (why: string) => {
@@ -88,6 +79,7 @@ export async function withExamSession<T>(
     await audit(input.cap, before, why)
     console.log(`Tope de pruebas restaurado: ${before.toLocaleString('es-CR')}`)
   }
+  // Verifier r1 #7: the handlers go up right after the lock is taken, so Ctrl+C at any later point releases it.
   const onSignal = (sig: string) => {
     void restore(`interrumpido (${sig})`)
       .finally(() => releaseLock())
@@ -96,7 +88,10 @@ export async function withExamSession<T>(
   process.once('SIGINT', onSignal)
   process.once('SIGTERM', onSignal)
   try {
-    // Inside the try: a failed raise still restores (only our own value) and releases the lock.
+    await auditLock('tomado')
+    before = parseChatAgentLayerConfig((await readChatAgentLayerConfig(tenantId)).config).testDailyTokenCap
+    if (before >= input.cap) throw new Error(`El tope de pruebas ya está en ${before.toLocaleString('es-CR')}: otra prueba está corriendo (o quedó subido: bajalo desde Agentes).`)
+    // A failed raise still restores (only our own value) and releases the lock.
     await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: Math.max(c.testDailyTokenCap, input.cap) }))
     raised = true
     await audit(before, input.cap, 'inicio')

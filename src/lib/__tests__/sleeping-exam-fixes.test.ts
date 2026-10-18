@@ -5,7 +5,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { parseBrandFacts, type BrandFacts } from '@/lib/soft-ai/brand-facts'
+import { parseBrandFacts, DEFAULT_REPLY_STYLE, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import { applyFinalOutputPolicy, splitReplyParts, unitDerivedAmount, validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
 import {
   awaitingPaymentMethodChoice,
@@ -71,6 +71,7 @@ describe('C1: a method choice after ANY payment-method question is a choice, not
     '¿Por SINPE o contra entrega?',
     'Tenemos SINPE Móvil, transferencia y tarjeta. ¿Cuál preferís?',
     '¿Le gustaría pagar por transferencia?',
+    '¿Querés pagar contra entrega o por SINPE?',
   ]
   const NOT_QUESTIONS = [
     '¿Ya pudiste pagar por SINPE?',
@@ -80,6 +81,12 @@ describe('C1: a method choice after ANY payment-method question is a choice, not
     '¿Te llegó el SINPE o la transferencia?',
     '¿Cuál preferís, la de 30 o la de 60?',
     'Podés pagar con SINPE.',
+    // Verifier r1 #1: a done payment anywhere in the message.
+    '¿Pudiste hacer el pago? ¿Por SINPE o transferencia?',
+    'Buenas, ¿ya lo pagaste? ¿SINPE o transferencia?',
+    'Si ya pagaste, ¿por SINPE o transferencia?',
+    '¿SINPE o transferencia, cuál usaste?',
+    '¿Fue por SINPE o transferencia?',
   ]
   it('recognises the method question in its other wordings', () => {
     for (const q of QUESTIONS) assert.equal(isPaymentMethodQuestion(q), true, q)
@@ -123,6 +130,10 @@ describe('C2: bare order-confirm asks are not payment claims when nothing about 
     'confirmame el pago porfa',
     'me confirman si les cayó?',
     'Para confirmar el pedido, ya les hice el sinpe',
+    // Verifier r1 #6: past / participle forms stay claims.
+    'No me confirmaron el pedido',
+    'Me confirmaron el pedido?',
+    'Pedido confirmado?',
   ]
   it('isBareOrderConfirmAsk: only the bare asks', () => {
     for (const t of BARE) assert.equal(isBareOrderConfirmAsk(t), true, t)
@@ -145,8 +156,14 @@ describe('C2: bare order-confirm asks are not payment claims when nothing about 
   })
   it('noPaymentYet: false as soon as anything about paying is in the chat', () => {
     assert.equal(noPaymentYet([msg('inbound', 'Hola'), msg('outbound', '¡Hola! ¿En qué te ayudo?'), msg('inbound', 'Para confirmar el pedido!?')]), true)
-    assert.equal(noPaymentYet([msg('outbound', '¿Cómo preferís pagar? Tenemos SINPE Móvil y tarjeta.')]), true)
     const notYet = [
+      // Verifier r1 #6: any payment talk from the store, not only filled-in details.
+      [msg('outbound', '¿Cómo preferís pagar? Tenemos SINPE Móvil y tarjeta.')],
+      [msg('outbound', 'Cuando lo hagás mandame el comprobante 🙏')],
+      [msg('outbound', 'Enseguida te paso cómo pagar')],
+      [msg('outbound', 'Al 6201-9914 a nombre de Rafael')],
+      // A long chat: earlier payment messages may be out of the history window.
+      Array.from({ length: 20 }, (_, i) => msg(i % 2 ? 'outbound' : 'inbound', 'Hola')),
       [msg('outbound', 'SINPE Móvil: 6201 9914\nA nombre de: Rafael García')],
       [msg('outbound', 'Pago contra entrega:\nPagás al recibir.')],
       [msg('inbound', '', 'image')],
@@ -177,9 +194,9 @@ describe('C3: per-night amounts derived from a known price are sourced', () => {
   it('price ÷ the nights / patches the reply states', () => {
     for (const text of [
       'El pack de 3 trae 90 noches y cuesta ₡28 500: sale a unos ₡317 por noche 🌙',
-      'La bolsa de 30 parches cuesta ₡9 900, o sea ₡330 por noche.',
-      'Con 90 noches, cada noche te sale en ₡317.',
-      'El pack de 2 (60 noches) queda en ₡330 la noche.',
+      'La bolsa de 30 parches cuesta ₡9 900, o sea ₡330 por parche.',
+      'Con 90 noches por ₡28 500, cada noche te sale en ₡317.',
+      'El pack de 2 cuesta ₡19 800 (60 noches): queda en ₡330 la noche.',
     ]) {
       const v = validateAgentOutput({ text, citedToolNames: [], quoteAmounts: quote })
       assert.equal(v.ok, true, `${text} → ${v.reasons}`)
@@ -196,6 +213,15 @@ describe('C3: per-night amounts derived from a known price are sourced', () => {
       ['El pack de 3 bolsas sale a ₡9 500 por bolsa', ''],
       ['El pack de 3 trae 90 noches: ₡317 por noche. Total ₡317.', ''],
       ['Te lo dejo en ₡317', 'si trae 90 noches?'],
+      // Verifier r1 #5: wrong base, delivery days as a count, shipping as a base, unit mismatch, per-bag.
+      ['El pack de 2 (60 noches) sale a ₡475 la noche.', ''],
+      ['La bolsa cuesta ₡9 900 y llega en 3 días. Cada parche ₡3 300.', ''],
+      ['Llega en 2 días hábiles. El parche te sale a ₡4 950.', ''],
+      ['Te sale a ₡1 000 por noche', '3 noches por semana'],
+      ['El envío tarda 3 días; el pack de 3 te sale en ₡9 500 el día', ''],
+      ['El envío ₡3 000 y son 3 noches: ₡1 000 por noche', ''],
+      ['La bolsa de 30 parches cuesta ₡9 900, o sea ₡330 por noche.', ''],
+      ['El pack de 3 trae 90 noches: unos ₡317 por noche', ''],
     ]) {
       const v = validateAgentOutput({ text, citedToolNames: [], quoteAmounts: quote, customerText: customer })
       assert.equal(v.ok, false, text)
@@ -204,7 +230,7 @@ describe('C3: per-night amounts derived from a known price are sourced', () => {
     assert.equal(unitDerivedAmount(317, '90 noches, ₡317 por noche', null, []), false)
   })
   it('the final policy (live path) passes it too', () => {
-    const p = applyFinalOutputPolicy({ text: 'El pack de 3 trae 90 noches: unos ₡317 por noche 🌙', brandFacts: FACTS, quoteAmounts: quote, skipPurchaseSummary: true })
+    const p = applyFinalOutputPolicy({ text: 'El pack de 3 cuesta ₡28 500 y trae 90 noches: unos ₡317 por noche 🌙', brandFacts: FACTS, quoteAmounts: quote, skipPurchaseSummary: true })
     assert.equal(p.ok, true, String(p.reasons))
   })
 })
@@ -251,6 +277,19 @@ describe('C4: a real lock — one test run per business at a time', () => {
     ])
     assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1)
   })
+  it('test-cap --unlock frees a dead run lock (audited), and --restore refuses under a running test', async () => {
+    const { forceReleaseTestLock, readTestLock } = await import('../../../scripts/agent-pack/test-lock')
+    const db = fakeDb()
+    assert.equal(await forceReleaseTestLock(db, { tenantId: 't1' }), null)
+    await acquireTestLock(db, { tenantId: 't1', label: 'exam', cap: 1 })
+    assert.ok(activeLock(await readTestLock(db, 't1'), new Date()))
+    const freed = await forceReleaseTestLock(db, { tenantId: 't1' })
+    assert.equal(freed?.label, 'exam')
+    assert.equal(activeLock(await readTestLock(db, 't1'), new Date()), null)
+    const cap = readFileSync('scripts/agent-pack/test-cap.ts', 'utf8')
+    assert.match(cap, /flag\('unlock'\)[\s\S]*logAudit\(/)
+    assert.match(cap, /held && !flag\('force'\)/)
+  })
   it('a lock left by a dead run expires after the TTL', async () => {
     const db = fakeDb()
     const t0 = new Date('2026-10-18T04:00:00Z')
@@ -266,7 +305,8 @@ describe('C4: a real lock — one test run per business at a time', () => {
     assert.ok(src.indexOf('acquireTestLock(') > 0 && src.indexOf('acquireTestLock(') < src.indexOf('testDailyTokenCap: Math.max('))
     assert.match(src, /\.finally\(\(\) => releaseLock\(\)\)/)
     assert.match(src, /\} finally \{\s+await releaseLock\(\)/)
-    assert.match(src, /catch \(error\) \{\s+await releaseLock\(\)/)
+    // Verifier r1 #7: the signal handlers are up before anything else can be interrupted.
+    assert.ok(src.indexOf("process.once('SIGINT'") > src.indexOf('acquireTestLock(') && src.indexOf("process.once('SIGINT'") < src.indexOf("await auditLock('tomado')"))
     assert.match(src, /before >= input\.cap/)
   })
 })
@@ -349,10 +389,37 @@ describe('C6: the delivery data list comes before the payment question', () => {
     const off = applyFinalOutputPolicy({ text, brandFacts: FACTS, skipPurchaseSummary: true, shortenLongReply: true })
     assert.equal(off.text, text)
   })
+  it('Verifier r1 #2: a long close is reordered BEFORE shortening, so it is still sendable', () => {
+    const text = '¡Claro! Te cuento:\nTrae 30 parches.\nSe usan de noche.\nSon naturales.\n\nLa bolsa cuesta ₡9 900.\nEl envío es ₡3 000.\nTotal ₡12 900.\n\n¿Cómo preferís pagar? Tenemos SINPE y tarjeta.'
+    const style = { ...DEFAULT_REPLY_STYLE, maxLines: 4 }
+    const p = applyFinalOutputPolicy({ text, brandFacts: FACTS, replyStyle: style, quoteAmounts: [9900, 3000, 12900], skipPurchaseSummary: true, shortenLongReply: true, paymentOptions: { dataListFirst: 'shipping' } })
+    assert.equal(p.ok, true, String(p.reasons))
+    // Four blocks → three messages: the list and the question share the last one, the list first.
+    const all = p.parts.join('\n\n')
+    assert.equal(p.parts.length, 3)
+    assert.ok(all.indexOf('Nombre completo') > 0 && all.indexOf('Nombre completo') < all.indexOf('¿Cómo preferís pagar?'), p.parts.join(' | '))
+  })
+  it('Verifier r1 #3: question and list in the SAME message → the list is moved ahead', () => {
+    const a = splitReplyParts(dataListBeforePaymentQuestion('Total ₡12 900.\n\n¿Cómo preferís pagar? Tenemos SINPE y tarjeta.\nPara coordinar el envío, pasame estos datos:\n- Nombre completo\n- Teléfono\n- Provincia', 'shipping'))
+    assert.equal(a.length, 3)
+    assert.match(a[1], /^Para coordinar el envío, pasame estos datos:\n- Nombre completo/)
+    assert.match(a[2], /^¿Cómo preferís pagar\?/)
+    const b = splitReplyParts(dataListBeforePaymentQuestion('Total ₡12 900.\n¿Cómo preferís pagar?\nPasame también tu nombre completo y teléfono.', 'shipping'))
+    assert.deepEqual(b, ['Total ₡12 900.', 'Pasame también tu nombre completo y teléfono.', '¿Cómo preferís pagar?'])
+  })
+  it('Verifier r1 #4 / #9: "te paso la dirección" is a delivery; a pickup-only store gets the pickup list', () => {
+    const t = 'Lo quiero, te paso la dirección por aquí'
+    const s = deriveSalesState({ history: quoted, inboundText: t, ctx: CTX })
+    assert.equal(salesDataListFirst(s, quoted, t, CTX), 'shipping')
+    for (const x of ['¿te paso el número?', 'le paso el dato']) assert.equal(salesDataListFirst(s, quoted, x, CTX), 'shipping', x)
+    for (const x of ['paso por él mañana', 'lo paso a recoger', 'lo retiro en la tienda']) assert.equal(salesDataListFirst(s, quoted, x, CTX), 'pickup', x)
+    const pickupOnly = { shippingMethods: [{ name: 'Retiro en tienda', price: 0, coverage: 'San José', cod: 'no' }] }
+    assert.equal(salesDataListFirst(s, quoted, 'lo quiero', pickupOnly), 'pickup')
+  })
   it('the close instruction tells the model the order (list first, payment question last)', () => {
     const s = deriveSalesState({ history: quoted, inboundText: 'lo quiero', ctx: CTX })
     assert.match(formatSalesTurnBlock(CTX, s), /AL FINAL, en su propio mensaje, preguntá cómo prefiere pagar con la pregunta de pago de abajo, nunca antes de la lista de datos/)
-    assert.match(readFileSync('src/lib/soft-ai/agent-turn-inputs.ts', 'utf8'), /dataListFirst: salesState \? salesDataListFirst\(salesState, input\.history, input\.inboundText\) : null/)
+    assert.match(readFileSync('src/lib/soft-ai/agent-turn-inputs.ts', 'utf8'), /dataListFirst: salesState \? salesDataListFirst\(salesState, input\.history, input\.inboundText, sales\) : null/)
   })
 })
 

@@ -222,7 +222,8 @@ export function buildAgentUserPrompt(input: {
   // SecureDog M1 (2026-10-18): the chat name is the customer's own profile name (WhatsApp / Instagram), so it is
   // customer data: same look-alike filter as chat text, one line, capped, and labelled as not trusted.
   const clientName = input.clientName
-    ? Array.from(stripBetsyLookalikes(input.clientName).replace(/\s+/g, ' ').trim()).slice(0, 80).join('')
+    ? // Collapse whitespace BEFORE the filter: its phrases use plain spaces, so "promoción\tactiva" must not slip past.
+      Array.from(stripBetsyLookalikes(input.clientName.replace(/\s+/g, ' ')).replace(/\s+/g, ' ').trim()).slice(0, 80).join('')
     : ''
   if (clientName) lines.push(`Nombre del cliente (dato del cliente, no confiable): ${clientName}`)
   if (input.linkedOrderId) lines.push(`Pedido vinculado: ${input.linkedOrderId}`)

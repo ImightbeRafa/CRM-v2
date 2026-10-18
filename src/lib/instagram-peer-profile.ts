@@ -26,7 +26,7 @@ export const PEER_PROFILE_RECHECK_MS = 7 * 24 * 60 * 60 * 1000
 export const PEER_PROFILE_BACKFILL_STALE_MS = 30 * 24 * 60 * 60 * 1000
 /** A failed lookup (Meta error / timeout) is retried after this long. */
 export const PEER_PROFILE_RETRY_FAILED_MS = 6 * 60 * 60 * 1000
-/** This page / account is throttled by Meta: that chat is retried after this long. */
+/** This page / account is throttled by Meta: that line is paused this long (webhook + cron). */
 export const PEER_PROFILE_RETRY_PAGE_LIMIT_MS = 15 * 60 * 1000
 export const PEER_AVATAR_MAX_BYTES = 2 * 1024 * 1024
 const AVATAR_WIDTH = 128
@@ -142,6 +142,7 @@ export async function enrichInstagramPeerProfile(
     select: {
       id: true,
       tenantId: true,
+      socialAccountId: true,
       peerId: true,
       peerName: true,
       peerUsername: true,
@@ -161,6 +162,7 @@ export async function enrichInstagramPeerProfile(
   if (conv.peerProfileCheckedAt && now.getTime() - new Date(conv.peerProfileCheckedAt).getTime() < recheckMs) {
     return { status: 'skipped', reason: 'recent' }
   }
+  if (conv.socialAccountId && isLineThrottled(conv.socialAccountId)) return { status: 'skipped', reason: 'line_throttled' }
   // Claim the lookup first (compare-and-set on the old timestamp): concurrent webhooks / cron runs for the same
   // chat don't both call Meta, and a failure (or a line without a usable token) still waits before the next try.
   const claim = await db.chatConversation.updateMany({
@@ -178,15 +180,15 @@ export async function enrichInstagramPeerProfile(
 
   const fetched = await fetchInstagramUserProfile({ igsid: conv.peerId, accessToken, fetchImpl: deps.fetchImpl })
   if (!fetched.ok && fetched.rateLimited) appThrottledUntil = Date.now() + PEER_PROFILE_APP_BACKOFF_MS
+  if (!fetched.ok && fetched.pageLimited && conv.socialAccountId) throttleLine(conv.socialAccountId)
   if (!fetched.ok) {
-    // App-wide rate limit: give the claim back (next run retries). This page throttled: retry in ~15 min (it no
-    // longer heads the cron queue, so other tenants keep going). Other failures: ~6 h. Stamped against the webhook's
-    // 7-day window, so neither path retries sooner than that.
-    const retryAt = fetched.rateLimited
-      ? (conv.peerProfileCheckedAt ?? null)
-      : new Date(
-          now.getTime() - PEER_PROFILE_RECHECK_MS + (fetched.pageLimited ? PEER_PROFILE_RETRY_PAGE_LIMIT_MS : PEER_PROFILE_RETRY_FAILED_MS),
-        )
+    // Rate limit (whole app, or this page): give the claim back, so the chat stays in the cron queue; the in-memory
+    // 15 min pause (app-wide, or this line only) keeps both paths off Meta meanwhile. Other failures: retry in ~6 h
+    // on the path that tried (webhook 7-day window / cron 30-day window).
+    const retryAt =
+      fetched.rateLimited || fetched.pageLimited
+        ? (conv.peerProfileCheckedAt ?? null)
+        : new Date(now.getTime() - recheckMs + PEER_PROFILE_RETRY_FAILED_MS)
     await db.chatConversation
       .updateMany({ where: { id: conv.id, tenantId: conv.tenantId }, data: { peerProfileCheckedAt: retryAt } })
       .catch(() => undefined)
@@ -241,6 +243,22 @@ export const PEER_PROFILE_APP_BACKOFF_MS = 15 * 60 * 1000
 export function isPeerProfileAppThrottled(): boolean {
   return Date.now() < appThrottledUntil
 }
+/** Lines (SocialAccount ids) whose page / account Meta is throttling: skipped until the time stored here. */
+const lineThrottledUntil = new Map<string, number>()
+function throttleLine(socialAccountId: string): void {
+  if (lineThrottledUntil.size >= 500) lineThrottledUntil.clear()
+  lineThrottledUntil.set(socialAccountId, Date.now() + PEER_PROFILE_RETRY_PAGE_LIMIT_MS)
+}
+export function isLineThrottled(socialAccountId: string): boolean {
+  const until = lineThrottledUntil.get(socialAccountId)
+  if (!until) return false
+  if (Date.now() < until) return true
+  lineThrottledUntil.delete(socialAccountId)
+  return false
+}
+function throttledLineIds(): string[] {
+  return [...lineThrottledUntil.keys()].filter((id) => isLineThrottled(id))
+}
 
 /**
  * Webhook hook: never awaited, never throws, never delays the 200 or the agent. A hard timeout bounds the work.
@@ -264,8 +282,12 @@ export async function backfillInstagramPeerProfiles(
   const started = Date.now()
   const now = deps.now?.() ?? new Date()
   const stale = new Date(now.getTime() - PEER_PROFILE_BACKFILL_STALE_MS)
+  if (isPeerProfileAppThrottled()) return { checked: 0, updated: 0, failed: 0, rateLimited: true }
+  const skipLines = throttledLineIds()
   const rows: Array<{ id: string; tenantId: string; socialAccountId?: string }> = await db.chatConversation.findMany({
     where: {
+      // Throttled lines leave the query (they would head the queue every minute and starve other tenants).
+      ...(skipLines.length ? { socialAccountId: { notIn: skipLines } } : {}),
       socialAccount: { platform: 'instagram', isActive: true, disconnectedAt: null },
       OR: [
         { peerProfileCheckedAt: null },
@@ -277,11 +299,9 @@ export async function backfillInstagramPeerProfiles(
     take: Math.min(Math.max(opts.limit ?? 5, 1), 20),
   })
   const summary = { checked: 0, updated: 0, failed: 0, rateLimited: false }
-  if (isPeerProfileAppThrottled()) return { ...summary, rateLimited: true }
-  const throttledLines = new Set<string>()
   for (const row of rows) {
     if (Date.now() - started > (opts.budgetMs ?? 8_000)) break
-    if (row.socialAccountId && throttledLines.has(row.socialAccountId)) continue
+    if (row.socialAccountId && isLineThrottled(row.socialAccountId)) continue
     summary.checked += 1
     const result = await enrichInstagramPeerProfile(
       { tenantId: row.tenantId, conversationId: row.id, recheckMs: PEER_PROFILE_BACKFILL_STALE_MS },
@@ -294,7 +314,6 @@ export async function backfillInstagramPeerProfiles(
         summary.rateLimited = true
         break
       }
-      if (result.pageLimited && row.socialAccountId) throttledLines.add(row.socialAccountId)
     }
   }
   return summary

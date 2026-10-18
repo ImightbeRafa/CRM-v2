@@ -1,3 +1,26 @@
+## 2026-10-18 — Instagram chats show the customer's real name, @username and photo (claudio/ig-profile-names → draft PR into claudio/luna-10-d2, NOT deployed)
+
+- Inbox list + thread header show "Name (@username)" and the profile photo instead of "Instagram User 076336" (initials stay as fallback).
+- Server-only Graph lookup `GET /{IGSID}?fields=name,username,profile_pic` with the line's page token (decrypted like the send path):
+  fire-and-forget from the Meta webhook after the message is stored (never awaited, 20 s cap), plus 5 chats/min in the
+  `chat-workspace` cron. At most one lookup per chat per week (CAS claim on `peerProfileCheckedAt`); failures retry after 6 h,
+  a throttled page after 15 min, an app-wide 429 / code 4 pauses all lookups 15 min.
+- Photo: Meta CDN hosts only (every redirect re-checked, 2 MB cap, no token to the CDN) → 128 px WebP in private chat storage
+  `chat-media/<tenant>/avatars/<conversation>` → served by `GET /api/chat/conversations/[id]/avatar` (update_sales, tenant-scoped,
+  nosniff, CSP sandbox, CORP same-origin). Meta links are never stored or sent; a removed photo is deleted too.
+- Real names already on a chat are never overwritten. @username is searchable (server + client).
+- SecureDog M1 (also covers WhatsApp): the chat name reaches the agent prompt through `stripBetsyLookalikes`, one line, 80 code points,
+  labelled "Nombre del cliente (dato del cliente, no confiable)". `FORMAT_CHARS_RE` also drops Unicode tag characters (U+E0000–E007F).
+- **SQL 055** (`peerUsername`, `peerProfileCheckedAt`, additive): **apply BEFORE deploying** — Prisma reads every ChatConversation
+  column, so the code without the columns breaks the inbox and drops inbound messages. Also before this branch reaches Railway preview
+  (same prod DB).
+- Proof: tsc + lint clean; new `instagram-peer-profile.test.ts` 29/29 (in test:chat-harden); test:security 272/0; test:soft-ai 1170/0;
+  test:soft-ai-agent 321/0; test:chat-harden 708/1 — the 1 is baseline (`instagram-media.test.ts` "a lone confirmada…", fails the same on luna-10-d2).
+- Review: Verifier PASS-with-notes → fixed; SecureDog (0 Critical/High, 1 Medium) → fixed. Residual Lows: avatar download keeps its own
+  60 s fetch timeout after our 8 s give-up and shares the 2 image-decode slots with previews; Ley 8968 erase must cover `peerUsername` +
+  `chat-media/<tenant>/avatars/*`; backfill query has no index on `peerProfileCheckedAt`. Agent turns still get the webhook's
+  "Instagram User NNNNNN" as `senderName` (payload wins over `peerName`) — unchanged here.
+
 ## 2026-10-18 — Claude setup on the live line + cloud push guard (claudio/luna-10-d2)
 
 - Cherry-picked a7f137a (CLAUDE.md, .claude/agents, .claude/skills, .claude/settings.json + hooks/guard.mjs, AGENTS.md

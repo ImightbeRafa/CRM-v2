@@ -1,3 +1,25 @@
+## 2026-10-18 — Payment choice inside the order data, round 3 security (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
+
+- SecureDog r3 (Fable, on 9e110b6): INT-A..F closed; new INT-G High (invisible-character glue), INT-H High (plain CR
+  claim wording in free values), INT-I/J Medium, INT-K/L/M Low. Fixed:
+  - INT-G: `embeddedPaymentChoice` rejects every \p{Cf} / default-ignorable character and odd break (never strips);
+    `nothingPaidYet` runs the hard-claim check BEFORE honouring an order-data row; the burst exemption and that row
+    forgive only the store's list labels (`hasHardPaymentClaimLabelMasked`).
+  - INT-H: **the "¿ya pagó?" model check is always enforced on an `order_data_*` decision** (whatever
+    SOFT_AI_PAYMENT_CHECK says; error / timeout → hand-off) — the semantic backstop behind the regex allowlist. Its prompt
+    gets one claim=false example for "datos del pedido + método". Plus every reported word: tiramos, liquidado, girado,
+    -ao forms, listísimo, la transfe / el depo, desde el BAC / mi banco, app del banco, al día, ahí le cae, payment / wired.
+  - INT-I: earlier customer rows (not questions) with done / money wording ("Listo", "Ya", "pagao", "Le puse la plata")
+    close the gate (`earlierRowMayBeClaim`).
+  - INT-J: an alphabet allowlist (Spanish letters only) and no digit glued after a letter ("l1sto").
+  - INT-K: store "a este número / el mismo de WhatsApp", QR, "en la descripción / destacados / post", "cuando pagués /
+    lo hagás", "apenas me caiga", evidencia / respaldo close the gate.
+  - INT-L / INT-M: spoken amounts ("doce novecientos"), 3+ spaced numbers, and a bare "puesto" are rejected.
+- Not done (SecureDog's optional structural idea): a closed lowercase address vocabulary for free values — the model
+  check now covers the open-ended wording instead. Needs OpenAI reachable in prod (it is); without it the path hands off.
+- Tests: pay-choice-in-data 35/35 (7 new); test:soft-ai 1337/1337; test:security 289/289; test:chat-harden 704/713
+  (baseline 1 fail + 8 cancelled); tsc and eslint clean.
+
 ## 2026-10-18 — Payment choice inside the order data, round 3 (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
 
 - Verifier r3 (Fable) FAIL on round 2: security fixes held, but the new rules were too strict (20/65 realistic CR order

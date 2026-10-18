@@ -6,6 +6,8 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { parseBrandFacts, type BrandFacts } from '@/lib/soft-ai/brand-facts'
 import { classifyPaymentText, embeddedPaymentChoice } from '@/lib/soft-ai/payment-classifier'
 import { decideInbound, decisionOrderDataChoice } from '@/lib/soft-ai/inbound-decision'
@@ -409,5 +411,76 @@ describe('round 3 (Verifier r3)', () => {
   it('F5: an earlier customer row with odd line breaks ends "nothing paid yet"', () => {
     const glued = [...SALES_HISTORY, msg('inbound', 'ya\u0085pagué'), msg('outbound', 'Perfecto 👌')]
     assert.equal(nothingPaidYet(rows(glued, SHOPPER)), false)
+  })
+})
+
+describe('round 3 (SecureDog r3)', () => {
+  const D = (x: string) => `Nombre: Ana Mora\nDirección: Heredia, ${x}\nPago por SINPE`
+  it('INT-G: invisible characters are rejected, never stripped (no glued claim)', () => {
+    for (const c of ['​', '‌', '‍', '­', '⁠', '﻿', '‎', '\u{E0020}', '͏']) {
+      for (const w of [`ya${c}lo${c}hice`, `le${c}puse`, `ya${c}pague`, `ya${c}esta`, `se${c}lo${c}pague`]) {
+        assert.equal(embeddedPaymentChoice(D(w)), null, JSON.stringify(w))
+        assert.equal(orderDataChoice(rows(SALES_HISTORY, D(w))), null, JSON.stringify(w))
+      }
+    }
+    // An earlier glued bubble keeps the burst hand-off and closes the gate for later rows.
+    const glued = D('ya\u{E0020}pague')
+    const d = decideInbound({ inboundText: 'Gracias 🙏', brandFacts: FACTS, shortcuts: SHORTCUTS, orderDataChoice: 'sinpe', earlierCustomerTexts: [glued] })
+    assert.equal(d.paymentClass, 'payment_proof_or_risk')
+    assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', glued), msg('outbound', 'Perfecto 😊')], SHOPPER)), false)
+  })
+  it('INT-H: CR claim wording inside a free value is not order data', () => {
+    for (const w of [
+      'se lo tiramos', 'le tiramos', 'le adelantamos', 'le cubrimos', 'liquidado', 'girado', 'girada', 'adelantado', 'debitado',
+      'rebajado', 'descontado', 'tramitado', 'ejecutada', 'concretado', 'transacción finalizada', 'mandao', 'enviao', 'pasao',
+      'tirao', 'girao', 'dejao', 'depositao', 'metio', 'le complete', 'liquide', 'lo cubri', 'kancele', 'listísimo', 'listisimo',
+      'hechísimo', 'lizto', 'hexo', 'la transfe', 'ahí la transfe', 'el depo', 'ahí el depo', 'desde el BAC', 'desde el BCR',
+      'desde el BN', 'desde mi banco', 'por la app del banco', 'app del BAC', 'ahí lo tienen', 'ahí tiene', 'al día',
+      'estamos al día', 'payment made', 'wired',
+    ]) {
+      assert.equal(embeddedPaymentChoice(D(w)), null, w)
+    }
+    // Position: the claim line after "Pago por SINPE".
+    for (const w of ['ahí le cae', 'ahí les cae', 'desde mi banco']) {
+      assert.equal(embeddedPaymentChoice(`Nombre: Ana Mora\nPago por SINPE\nDirección: Heredia, ${w}`), null, w)
+    }
+  })
+  it('INT-I: an earlier done / money row the live classifier misses closes the gate', () => {
+    for (const x of ['Le puse la plata', 'pagao', 'Ahí les cae', 'Ahí le cae', 'Se lo tiramos', 'Liquidado', 'Listo', 'Ya', 'ya está', 'Ya le puse']) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', x), msg('outbound', 'Perfecto 😊')], SHOPPER)), false, x)
+    }
+    // Questions keep it open.
+    for (const x of ['¿Aceptan SINPE?', '¿Cuánto es?', '¿Ya tienen la talla M?']) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', x), msg('outbound', 'Sí 😊')], SHOPPER)), true, x)
+    }
+  })
+  it('INT-J: look-alike letters and digits glued to letters are not order data', () => {
+    for (const w of ['lısto', 'hıce el sınpe', 'Lısto', 'lıstø', 'łisto', 'ƴa', 'l1sto', 'hech0', 'pagu3', 'p4gue', 'y4']) {
+      assert.equal(embeddedPaymentChoice(D(w)), null, w)
+    }
+    assert.equal(embeddedPaymentChoice(D('casa 25, 2da entrada')), 'sinpe')
+  })
+  it('INT-K: more store wordings close the gate', () => {
+    for (const out of [
+      'SINPE a este número 😊', 'Hacelo a este número', 'Al mismo número de aquí', 'A este mismo número', 'Mi número es el mismo de WhatsApp',
+      'Al número de este chat', 'Te dejo el QR', 'Escaneá el QR', 'El número está en la descripción', 'El SINPE está en los destacados',
+      'El número está en el post', 'Cuando pagués me avisás 😊', 'Cuando lo hagás me decís', 'Apenas me caiga te confirmo',
+      'Cuando me entre te aviso', 'Pagás y te lo mando', 'me pasás la evidencia', 'me mandás el respaldo', 'Ya tenés los datos',
+      'Al de siempre 😊', 'Ya sabés el número 😊',
+    ]) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('outbound', out)], SHOPPER)), false, out)
+    }
+  })
+  it('INT-L / INT-M: spoken / spaced amounts and a bare "puesto" are not order data', () => {
+    for (const w of ['doce novecientos', 'nueve novecientos', 'los doce novecientos', 'doce nueve', '1 2 9 0 0', '12 9 00', 'puesto']) {
+      assert.equal(embeddedPaymentChoice(D(w)), null, w)
+    }
+    for (const w of ['200 m norte del puesto de salud', 'doscientos metros al norte']) assert.equal(embeddedPaymentChoice(D(w)), 'sinpe', w)
+  })
+  it('INT-H backstop: the "¿ya pagó?" model check is always enforced on an order-data choice', () => {
+    const src = readFileSync(resolve('src/lib/soft-ai/agent-turn.ts'), 'utf8')
+    assert.match(src, /const dataChoicePath = decisionOrderDataChoice\(decision\) !== null/)
+    assert.match(src, /const mode = dataChoicePath \? 'enforce' : paymentCheckMode\(\)/)
+    assert.match(src, /if \(!dataChoicePath && !paymentCheckGate\(/)
   })
 })

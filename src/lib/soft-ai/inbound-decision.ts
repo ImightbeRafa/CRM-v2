@@ -14,6 +14,7 @@ import {
   classifyPaymentText,
   embeddedPaymentChoice,
   hasHardPaymentClaim,
+  hasHardPaymentClaimLabelMasked,
   hasPaymentStatusHint,
   isBareOrderConfirmAsk,
   isCourtesyText,
@@ -188,9 +189,11 @@ export function decideInbound(input: {
     nothingPaidYet,
   })
   // Verifier round 10: only a real claim in an earlier bubble counts ("Sinpe" + "gracias" is an answer).
-  // Verifier r2 (pay-choice-in-data F1): an earlier bubble that is itself an order-data choice is not a claim — its
-  // allowlist already ran every hard-claim check on the label-masked text ("Nombre completo" ≠ "completo").
-  const burstClaim = (input.earlierCustomerTexts || []).some((t) => hasHardPaymentClaim(t, { noPaymentYet }) && !embeddedPaymentChoice(t))
+  // Verifier r2 (pay-choice-in-data F1) / SecureDog r3 INT-G: an earlier order-data bubble is forgiven only the store's
+  // own list labels ("Nombre completo" ≠ "completo") — it must still pass every hard-claim check with those masked.
+  const burstClaim = (input.earlierCustomerTexts || []).some(
+    (t) => hasHardPaymentClaim(t, { noPaymentYet }) && !(embeddedPaymentChoice(t) && !hasHardPaymentClaimLabelMasked(t)),
+  )
   const forced = input.forcePaymentRisk === true
   const paymentClass: PaymentClassification = burstClaim || forced ? 'payment_proof_or_risk' : latestClass
   const why = forced ? `payment_llm_check (regex: ${latestClass})` : burstClaim ? `earlier_message (latest: ${latestClass})` : null

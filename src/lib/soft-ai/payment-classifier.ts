@@ -896,7 +896,7 @@ export function pendingMethodMention(text: string): PaymentChoiceMethod | null {
  * "revisen / verifiquen", errors. Checked on the WHOLE message (raw, folded and with stretched letters collapsed).
  */
 const DATA_CHOICE_REJECT_RE =
-  /[#₡¢$€✅✔✓☑👍👌💸🧾📸📷]|(?<!\d)\d{5,7}(?!\d)|\d{1,3}[.,]\d{3}(?!\d)|\d{1,2}:\d{2}|\d{1,2}\/\d{1,2}|(?<![\p{L}])(?:ref\p{L}*|c[oó]digo|monto|total|mil|k|colones|rojos|comprobante\p{L}*|recibo|captura|pantallazo|screenshot|voucher|constancia|foto|lleg\p{L}*|vieron|vio|cay[oó]|entr[oó]|entra|pagu[eé]|hice|hicimos|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|cancel[eé]|pagamos|mandamos|enviamos|pasamos|ya|yast[aá]|listo|lista|hecho|hecha|sinpead\p{L}*|saldad\p{L}*|abon\p{L}*|chequ\p{L}*|f[ií]j\p{L}*|valid\p{L}*|revis\p{L}*|verific\p{L}*|confirm\p{L}*|av[ií]s\p{L}*|hace|antier|anteayer|ayer|anoche|hoy|reci[eé]n|ahorita|horita|ahora|temprano|rato|ratito|toque|minutos?|min|segundos?|horas?|fue|todo|efectu\p{L}*|realic\p{L}*|realiz\p{L}*|tir[eéó]|acab\p{L}*|di|dimos|error|doble|mitad|resto|adelanto|debo|debe|falta\p{L}*|pendiente|deja|problema|pus[eo]|pusimos|dej[eé]|dejamos|met[ií]|metimos|gir[eé](?!\s+(?:a\s+)?(?:la\s+)?(?:derecha|izquierda))|giramos|pagao|cancelao)(?![\p{L}])|(?<![\p{L}])(?:est[aá]|qued[oó]|ya)\s+puest[oa]s?(?![\p{L}])|(?<!\d)\d{1,3}\s\d{3}(?!\d)/iu
+  /[#₡¢$€✅✔✓☑👍👌💸🧾📸📷]|(?<!\d)\d{5,7}(?!\d)|\d{1,3}[.,]\d{3}(?!\d)|\d{1,2}:\d{2}|\d{1,2}\/\d{1,2}|(?<![\p{L}])(?:ref\p{L}*|c[oó]digo|monto|total|mil|k|colones|rojos|comprobante\p{L}*|recibo|captura|pantallazo|screenshot|voucher|constancia|foto|lleg\p{L}*|vieron|vio|cay[oó]|entr[oó]|entra|pagu[eé]|hice|hicimos|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|cancel[eé]|pagamos|mandamos|enviamos|pasamos|ya|yast[aá]|listo|lista|hecho|hecha|sinpead\p{L}*|saldad\p{L}*|abon\p{L}*|chequ\p{L}*|f[ií]j\p{L}*|valid\p{L}*|revis\p{L}*|verific\p{L}*|confirm\p{L}*|av[ií]s\p{L}*|hace|antier|anteayer|ayer|anoche|hoy|reci[eé]n|ahorita|horita|ahora|temprano|rato|ratito|toque|minutos?|min|segundos?|horas?|fue|todo|efectu\p{L}*|realic\p{L}*|realiz\p{L}*|tir[eéó]|acab\p{L}*|di|dimos|error|doble|mitad|resto|adelanto|debo|debe|falta\p{L}*|pendiente|deja|problema|pus[eo]|pusimos|dej[eé]|dejamos|met[ií]|metimos|gir[eé](?!\s+(?:a\s+)?(?:la\s+)?(?:derecha|izquierda))|giramos|pagao|cancelao|tiramos|tiraron|cubr[ií]|cubrimos|adelantamos|complet[eé]|liquid\p{L}*|girad[oa]s?|adelantad[oa]s?|debitad[oa]s?|rebajad[oa]s?|descontad[oa]s?|tramitad[oa]s?|ejecutad[oa]s?|concretad[oa]s?|finalizad[oa]s?|transacci[oó]n|mandao|enviao|pasao|tirao|girao|dejao|depositao|metio|kancel\p{L}*|list[ií]simo|hech[ií]simo|lizto|hexo|transfe|depo|payment|paid|wired|done|sent)(?![\p{L}])|(?<![\p{L}])(?:est[aá]|qued[oó]|ya)\s+puest[oa]s?(?![\p{L}])|(?<![\p{L}])puest[oa]s?(?!\s+(?:de|del|la|el)(?![\p{L}]))(?![\p{L}])|(?<![\p{L}])desde\s+(?:el|la|mi)\s+(?:bac|bcr|bn|banco|app)(?![\p{L}])|(?<![\p{L}])app\s+del?\s+(?:banco|bac|bcr|bn)(?![\p{L}])|(?<![\p{L}])ah[ií]\s+(?:l[oa]s?\s+)?tienen?(?![\p{L}])|(?<![\p{L}])al\s+d[ií]a(?![\p{L}])|(?<![\p{L}])(?:un|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciséis|dieciseis|diecisiete|dieciocho|diecinueve|veinte|treinta|cuarenta|cincuenta)\s+(?:cien|ciento|doscientos|trescientos|cuatrocientos|quinientos|seiscientos|setecientos|ochocientos|novecientos|mil|nueve|ocho|siete|seis|cinco)(?![\p{L}])|(?<!\d)\d{1,3}(?:\s\d{1,3}){2,}(?!\d)|(?<![\p{L}])(?:ah[ií]\s+(?:le|les|te)\s+cae|ah[ií]\s+est[aá]|eso\s+est[aá])(?![\p{L}])|(?<!\d)\d{1,3}\s\d{3}(?!\d)/iu
 /**
  * SecureDog r2 INT-B: money / receipt nouns a name or address never needs. Bank names stay ("200 m sur del BCR") and so
  * does "número" (Verifier r3: "casa número 25"; "al número" / "número de la bio" are rejected elsewhere).
@@ -906,13 +906,31 @@ const DATA_VALUE_MONEY_RE =
 /** Free-value word caps (SecureDog r2 INT-B; Verifier r3: CR "dirección exacta con señas" runs 20–30 words). */
 const DATA_NAME_MAX_WORDS = 8
 const DATA_VALUE_MAX_WORDS = 40
+/**
+ * SecureDog r3 INT-I: an earlier customer row (not a question, not an order-data choice) with done / money wording the
+ * live classifier misses ("Le puse la plata", "pagao", "Ahí les cae", "Se lo tiramos", "Liquidado", "Listo", "Ya").
+ */
+const EARLIER_DONE_LEXICON_RE =
+  /(?<![\p{L}])(?:ya|yast[aá]|list[oa]|hech[oa]|pus[eo]|pusimos|dej[eé]|dejamos|met[ií]|tir[eé]|tiramos|gir[eé]|liquid\p{L}*|pagao|cancelao|mandao|enviao|pasao|tirao|plata|platica|dinero|transfe|depo)(?![\p{L}])|(?<![\p{L}])ah[ií]\s+(?:le|les|te)\s+cae(?![\p{L}])/iu
+export function earlierRowMayBeClaim(text: string): boolean {
+  const value = stripFormatChars((text || '').normalize('NFKC'))
+  if (/[?¿]/u.test(value)) return false
+  return EARLIER_DONE_LEXICON_RE.test(value) || EARLIER_DONE_LEXICON_RE.test(foldChoice(value).replace(/(\p{L})\1+/gu, '$1'))
+}
+
 /** Verifier r3 F4: a done / paid word split in two or three chunks ("lis to", "li s to", "pa gué"). */
 const DATA_SPLIT_CLAIM_RE =
   /^(?:ya|yasta|listo|lista|hecho|hecha|pague|pagado|pagada|pago|sinpe\p{L}*|cancel\p{L}*|deposit\p{L}*|transfer\p{L}*|envie|mande|pase|hice|abon\p{L}*|confirm\p{L}*)$/u
-/** SecureDog r2 INT-D: Latin-script look-alikes (IPA, phonetic small caps, Latin Extended-D / -E). */
-const DATA_LATIN_LOOKALIKE_RE = /[\u0250-\u02AF\u1D00-\u1DBF\uA720-\uA7FF\uAB30-\uAB6F]/u
-/** SecureDog r2 INT-D: line breaks other than \n / \r that stripFormatChars deletes (and so glues words together). */
-export const DATA_ODD_BREAK_RE = /[\u000B\u000C\u0085\u2028\u2029]/u
+/**
+ * SecureDog r2 INT-D / r3 INT-J: an ALPHABET allowlist — Spanish letters only ("lısto" with a dotless i, "łisto", small
+ * caps and every other look-alike fall out); emoji are checked separately.
+ */
+const DATA_LATIN_LOOKALIKE_RE = /(?=\p{L})[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/u
+/**
+ * SecureDog r2 INT-D / r3 INT-G: line breaks other than \n / \r and every invisible / format character. They would be
+ * deleted before the checks and glue a claim into one unknown token ("ya\u200Bpague"); order data never needs them.
+ */
+export const DATA_ODD_BREAK_RE = /[\u000B\u000C\u0085\u2028\u2029\p{Cf}\p{Default_Ignorable_Code_Point}]/u
 /** "l i s t o": three or more single letters in a row. */
 const DATA_SPACED_LETTERS_RE = /(?<![\p{L}])\p{L}(?:[\s.\-_]+\p{L}(?![\p{L}])){2,}/u
 /** A data message that carries a choice: short enough to read whole (a delivery-data block, not an essay). */
@@ -934,7 +952,8 @@ const DATA_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/iu
 /** Plain delivery phrases on their own: "Envío a domicilio", "Retiro en tienda", "A domicilio". */
 const DATA_DELIVERY_RE = /^(?:con\s+)?(?:env[ií]o\s+(?:a\s+(?:domicilio|la\s+casa|mi\s+casa)|por\s+correos)|a\s+domicilio|retiro\s+en\s+(?:la\s+)?tienda|paso\s+a\s+retirar(?:lo|la)?)$/iu
 /** A free value (name / place / address): Latin letters, spaces, basic punctuation, numbers of up to 3 digits. */
-const DATA_FREE_VALUE_RE = /^[\p{L}\s,.'()\-/]*(?:(?<!\d)\d{1,3}(?!\d)[\p{L}\s,.'()\-/]*)*$/u
+// SecureDog r3 INT-J: a number never glued after a letter ("l1sto", "pagu3"); "casa 25", "2da entrada" stay valid.
+const DATA_FREE_VALUE_RE = /^[\p{L}\s,.'()\-/]*(?:(?<![\p{L}\d])\d{1,3}(?!\d)[\p{L}\s,.'()\-/]*)*$/u
 
 /** A data part with no payment word and no method word. */
 function noPaymentTalk(part: string): boolean {
@@ -977,8 +996,16 @@ function isOrderDataPart(raw: string): boolean {
  * caller runs it on the whole unanswered burst and adds the history gate (sales-state nothingPaidYet). Returns the
  * method, or null (the normal classifier path). Pure.
  */
+/**
+ * hasHardPaymentClaim on the text with the store's own list labels read short ("Nombre completo" → "Nombre"). Verifier
+ * r2 F1 / SecureDog r3 INT-G: the burst exemption forgives exactly these label false positives and nothing else.
+ */
+export function hasHardPaymentClaimLabelMasked(text: string): boolean {
+  return hasHardPaymentClaim((text || '').replace(DATA_LABEL_MASK_RE, (l) => l.split(/\s+/)[0]))
+}
+
 export function embeddedPaymentChoice(text: string): PaymentChoiceMethod | null {
-  // SecureDog r2 INT-D: VT / FF / NEL / U+2028-9 would be deleted below and glue "ya␤le␤hice" into one name.
+  // SecureDog r2 INT-D / r3 INT-G: invisible characters and odd breaks are rejected, never stripped (they glue words).
   if (DATA_ODD_BREAK_RE.test((text || '').normalize('NFKC'))) return null
   const value = stripFormatChars((text || '').normalize('NFKC')).replace(/\p{Default_Ignorable_Code_Point}/gu, '')
   if (!value.trim() || value.length > DATA_CHOICE_MAX_CHARS) return null

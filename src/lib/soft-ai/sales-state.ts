@@ -7,7 +7,9 @@ import {
   hasPaymentClaimCue,
   classifyPaymentText,
   DATA_ODD_BREAK_RE,
+  earlierRowMayBeClaim,
   embeddedPaymentChoice,
+  hasHardPaymentClaimLabelMasked,
   hasHardPaymentClaim,
   hasPaymentStatusHint,
   isBareOrderConfirmAsk,
@@ -954,6 +956,13 @@ const STORE_PAID_OR_ELSEWHERE_RE = new RegExp(
     String.raw`(?<![\p{L}])(?:foto|imagen)\s+del?\s+(?:pago|sinpe|simpe|comprobante|dep[oó]sito|transferencia)(?![\p{L}])`,
     String.raw`(?:m[aá]ndame|p[aá]same|env[ií]ame|me\s+mand[aá]s|me\s+pas[aá]s|me\s+envi[aá]s)\s+(?:la\s+|una\s+|el\s+)?(?:foto|imagen|captura|print)\s+cuando`,
     String.raw`(?<![\p{L}])(?:sinpe|simpe|pag\p{L}*|transfer\p{L}*|dep[oó]sit\p{L}*)(?![\p{L}])[^\n]{0,60}(?<![\p{L}])(?:foto|imagen|captura|print)(?![\p{L}])`,
+    // SecureDog r3 INT-K: "a este número", "al mismo de WhatsApp", the QR, "en la descripción / destacados / el post",
+    // "cuando pagués / lo hagás me avisás", "apenas me caiga", "me pasás la evidencia / el respaldo".
+    String.raw`(?<![\p{L}])(?:n[uú]mero|sinpe|simpe)(?![\p{L}])[^\n]{0,40}(?<![\p{L}])(?:este|mismo|aqu[ií]|chat|whats\p{L}*|siempre|descripci[oó]n|destacad\p{L}*|post|publicaci[oó]n|estado)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:a\s+este|al\s+mismo|el\s+mismo|al\s+de\s+siempre|ya\s+ten[eé]s\s+los\s+datos|ya\s+sab[eé]s\s+el\s+n[uú]mero)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:qr|evidencia|respaldo)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:cuando|apenas)\s+(?:pagu\p{L}*|lo\s+hag\p{L}*|me\s+(?:caiga|entre|llegue)|te\s+(?:caiga|entre))(?![\p{L}])`,
+    String.raw`(?<![\p{L}])pag[aá]s\s+y\s+te\s+lo\s+mando(?![\p{L}])`,
   ]
     .map((p) => `(?:${p})`)
     .join('|'),
@@ -996,10 +1005,13 @@ export function nothingPaidYet(rows: ReadonlyArray<PaidRow>, opts: { windowFull?
       if (METHOD_QUESTION_DONE_RE.test(text) || STORE_HAND_DETAILS_RE.test(text) || STORE_PAID_OR_ELSEWHERE_RE.test(text)) return false
       continue
     }
-    // An order-data choice passes its own (stricter) allowlist, which includes hasHardPaymentClaim on the label-masked
-    // text (SecureDog r2 INT-A); anything else must not read as a payment claim. The raw row keeps odd line breaks.
-    if (embeddedPaymentChoice(raw)) continue
-    if (hasHardPaymentClaim(text) || classifyPaymentText(text) === 'payment_proof_or_risk') return false
+    // SecureDog r3 INT-G: the claim checks run FIRST (additive by construction); only the store's own list labels
+    // ("Nombre completo") are forgiven, and only for a row that is an order-data choice. The raw row keeps odd breaks.
+    const choiceRow = embeddedPaymentChoice(raw) !== null
+    if (choiceRow ? hasHardPaymentClaimLabelMasked(text) : hasHardPaymentClaim(text)) return false
+    if (choiceRow) continue
+    // SecureDog r3 INT-I: the allowlist's done / money lexicon applies to earlier rows too, so the gates agree.
+    if (classifyPaymentText(text) === 'payment_proof_or_risk' || earlierRowMayBeClaim(text)) return false
   }
   return true
 }

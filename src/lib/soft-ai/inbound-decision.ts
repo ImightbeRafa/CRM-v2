@@ -14,6 +14,8 @@ import {
   classifyPaymentText,
   hasHardPaymentClaim,
   hasPaymentStatusHint,
+  isBareOrderConfirmAsk,
+  isCourtesyText,
   isCueFreePaymentChoiceText,
   isPlainPaymentLinkQuestion,
   paymentHandoffReason,
@@ -166,7 +168,10 @@ export function decideInbound(input: {
   // a payment's state ("¿Me confirmás?" + "¿Les llegó?" stays a payment hand-off).
   const isText = !input.messageType || input.messageType === 'text'
   const noPaymentYet =
-    input.noPaymentYet === true && isText && ![input.inboundText, ...(input.earlierCustomerTexts || [])].some((t) => hasPaymentStatusHint(t || ''))
+    input.noPaymentYet === true &&
+    isText &&
+    // SecureDog r2: every bubble of the burst is courtesy only or the bare ask itself (an allowlist, not a word list).
+    [input.inboundText, ...(input.earlierCustomerTexts || [])].every((t) => !hasPaymentStatusHint(t || '') && (isCourtesyText(t || '') || isBareOrderConfirmAsk(t || '')))
   const latestClass = classifyPaymentText(input.inboundText, {
     awaitingPaymentMethod: input.awaitingPaymentMethod === true && isText,
     noPaymentYet,

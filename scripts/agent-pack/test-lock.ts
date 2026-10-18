@@ -117,3 +117,18 @@ export async function releaseTestLock(db: LockDb, input: { tenantId: string; tok
     return true
   })
 }
+
+/**
+ * SecureDog r2 INFRA-24: the run holding the lock is known to be gone — it ran on THIS machine and its process no
+ * longer exists. A lock from another machine is never "gone" from here (use --force, or wait for the expiry).
+ */
+export function lockHolderGone(lock: Pick<TestLock, 'host' | 'pid'>, host: string = hostname()): boolean {
+  if (lock.host !== host) return false
+  try {
+    process.kill(lock.pid, 0)
+    return false
+  } catch (error) {
+    // ESRCH: no such process. EPERM: it exists (owned by someone else) — not gone.
+    return (error as NodeJS.ErrnoException)?.code === 'ESRCH'
+  }
+}

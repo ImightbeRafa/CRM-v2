@@ -402,6 +402,16 @@ export function hasPaymentStatusHint(text: string): boolean {
   return PAYMENT_STATUS_HINT_RE.test(stripFormatChars((text || '').normalize('NFKC')))
 }
 
+/**
+ * SecureDog r2 (INT-159 / INT-161): a courtesy-only bubble — greetings, thanks, "ok / dale / claro / sí", plain
+ * punctuation and the friendly emoji only (never 👍 💸 🤑, never "listo" / "todo bien"). Pure.
+ */
+const COURTESY_ONLY_RE = new RegExp(String.raw`^(?:[\s,.!¡¿?…]|(?:${GREETING})(?![\p{L}\d]))+$`, 'iu')
+export function isCourtesyText(text: string): boolean {
+  const value = stripFormatChars((text || '').normalize('NFKC')).replace(FRIENDLY_RE, ' ').trim()
+  return value.length > 0 && value.length <= 60 && COURTESY_ONLY_RE.test(value)
+}
+
 /** The customer used a confirm / review verb (any form): replies to it get the payment-status backstop (INT-159). */
 export function mentionsConfirmVerb(text: string): boolean {
   return CONFIRM_CUE_RE.test(stripFormatChars((text || '').normalize('NFKC')))

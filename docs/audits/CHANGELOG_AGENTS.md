@@ -6,11 +6,12 @@
   "¿Pagás por SINPE?", "Tenemos SINPE y tarjeta, ¿cuál preferís?" count as the method question, so a bare "sinpe" is a
   choice (the agent sends that method's details). Never when the store's message is about a payment already made /
   seen (done words anywhere in it: pagaste, usaste, fue, comprobante, vi, aparece, registrar…).
-- C2 `payment-classifier.ts` isBareOrderConfirmAsk + `sales-state.ts` noPaymentYet: "Para confirmar el pedido!?",
-  "Pura vida, me confirmás entonces?" are sales messages ONLY while the chat has no payment at all (no store payment
-  talk / details / media, no customer media / payment words / "ya compré" / order number, under 20 messages) and no
-  bubble of the burst hints at a payment state (ya, llegó, recibieron, ✅…). Ask verb forms only; character allowlist.
-  Replies to a confirm ask get the payment-status backstop. INT-93 unchanged everywhere else.
+- C2 `payment-classifier.ts` isBareOrderConfirmAsk + `sales-state.ts` noPaymentYet — NARROW on purpose (SecureDog r2):
+  "Para confirmar el pedido!?" / "¿me confirmás?" is a sales message only in a short chat (< 20 messages) where EVERY
+  customer message is courtesy only ("Hola", "gracias") or the bare ask itself, every message is plain text, and no
+  money word appears on either side (store prices included). A bare ask after a price quote, or next to any other
+  question, still goes to a person (INT-93). Ask verb forms only; character allowlist. Replies to a confirm ask (or to
+  "¿les llegó?") may not say a payment arrived ("¡Sí, nos llegó!", "¡Perfecto, ya está!", "¡Sí!").
 - C3 `output-validator.ts` unitDerivedAmount: "₡317 por noche" passes only as a store rate — a product / combo price
   with the count in its own name ("Pack 3 bolsas (90 noches)", salesUnitRates), right before "por / cada / al" + the
   same unit. Sleeping's single bag needs "(30 noches)" in its inventory name for "₡330 por noche".
@@ -18,7 +19,8 @@
   agent_test_session_lock, FOR UPDATE, 6 h expiry, audited), taken before the TEST cap is raised; `test-cap --unlock`
   frees a dead run's lock; `--restore` refuses under a running test.
 - C5 `exam.ts` / `exam-bank.ts`: history replays with the real gaps (agoMin) or, by default, the answered history
-  outside the 10-min claim look-back.
+  outside the 10-min claim look-back; one built-in item ("sys-lookback") keeps that look-back covered every run.
+- `test-cap --unlock` only frees a lock whose process is gone on this machine (or with --force).
 - C6 sales-state salesDataListFirst + dataListBeforePaymentQuestion (applied in applyFinalOutputPolicy): before payment,
   when the customer wants to buy and the store has not asked the data yet, the reply carries the fixed data list BEFORE
   the payment question (the question in its own last message when it fits); pickup list for pickup cues / pickup-only
@@ -27,9 +29,11 @@
 - P1 free-shipping "other product" names skip words every catalog item shares ("Pura Sonrisa …").
 - P2 the store's "envío gratis desde ₡X / desde N cajas" (brandFacts.shipping.ea.freeOver) may be said as that rule;
   INT-84 kept: the threshold is never an allowed price, only valid at the spot the rule phrase states it.
-- Reviews: Verifier r1 FAIL (10), r2 FAIL (10); SecureDog r1 FAIL (MEDIA-16, INT-159 High; INT-160–164, INFRA-23) —
-  all fixed and pinned in `src/lib/__tests__/sleeping-exam-fixes.test.ts`. Final rounds: see the PR.
-- Known, not changed: extractMoneyAmounts does not read "25 000 colones" (space thousands without ₡).
+- Pre-existing gaps closed here too (SecureDog r2): INT-167 "¿Les llegó?" / "¿Lo recibieron?" now get the reply
+  backstop; INT-168 "15 000 colones" (space thousands) is read as money.
+- Reviews: Verifier r1–r4 FAIL; SecureDog r1 FAIL (MEDIA-16, INT-159 High; INT-160–164, INFRA-23), r2 FAIL (INT-159 /
+  INT-161 reopened High; INT-166, MEDIA-17, INFRA-24 new) — all fixed and pinned in
+  `src/lib/__tests__/sleeping-exam-fixes.test.ts`. Final rounds: see the PR. Security Register IDs are proposals.
 
 ## 2026-10-18 — INT-158 round 2: structural claim check + INT-165 data-list ReDoS (claudio/luna-10-d2, NOT deployed)
 

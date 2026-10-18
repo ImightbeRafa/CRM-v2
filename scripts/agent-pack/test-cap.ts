@@ -15,7 +15,7 @@ import { readChatAgentLayerConfig } from '@/lib/feature-flags'
 import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { loadDailyTestTokens } from '@/lib/soft-ai/agent-claim-gates'
 import { loadPack } from './pack'
-import { activeLock, forceReleaseTestLock, readTestLock, type LockDb } from './test-lock'
+import { activeLock, forceReleaseTestLock, lockHolderGone, readTestLock, type LockDb } from './test-lock'
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3)
 const flag = (name: string) => process.argv.includes(`--${name}`)
@@ -58,6 +58,12 @@ async function main() {
   }
   const lockDb = prisma as unknown as LockDb
   if (flag('unlock')) {
+    // SecureDog r2 INFRA-24: never free the lock of a run that is still going (its restore would then leave the cap
+    // raised). Only a run on THIS machine whose process is gone, unless --force.
+    const held = activeLock(await readTestLock(lockDb, tenantId), new Date())
+    if (held && !flag('force') && !lockHolderGone(held)) {
+      throw new Error(`La prueba que tiene el candado sigue corriendo o es de otra máquina (${held.label}, ${held.host} pid ${held.pid}). Esperá que termine, o --unlock --force.`)
+    }
     const freed = await forceReleaseTestLock(lockDb, { tenantId })
     if (!freed) {
       console.log('No hay ninguna prueba con el candado tomado.')

@@ -20,7 +20,7 @@ export function paymentCheckMode(env: string | undefined = process.env.SOFT_AI_P
  * Broad and cheap on purpose — a false hit costs one small check, never a hand-off: money / payment / order-state words,
  * an amount, or any 4+ digit number.
  */
-const MONEY_WORDS_RE =
+export const MONEY_WORDS_RE =
   /(?<![\p{L}])(?:pag\p{L}*|cancel\p{L}*|abon\p{L}*|sinp\p{L}*|plat\p{L}*|diner\p{L}*|transfer\p{L}*|transfi\p{L}*|deposit\p{L}*|dep[oó]sit\p{L}*|cobr\p{L}*|cargo\p{L}*|devol\p{L}*|devuelv\p{L}*|reembols\p{L}*|comprobante\p{L}*|recib\p{L}*|lleg\p{L}*|cay[oó]|entr[oó]|colones|rojos|mil|tarjeta\p{L}*|link\p{L}*|enlace\p{L}*|cuenta\p{L}*|banco\p{L}*|bac|bcr|bn|iban|rebaj\p{L}*|descont\p{L}*|adelanto|resto|mitad|saldo|ya\s+est[aá]|listo|hecho)(?![\p{L}])|₡|\d{4,}|\d+\s*(?:mil|k)(?![\p{L}])|[✅✔☑]/iu
 
 /**

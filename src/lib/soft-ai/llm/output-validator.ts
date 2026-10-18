@@ -24,6 +24,7 @@ import {
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
 import { fillPaymentToken, paymentNumberProblems, type PaymentFillOptions, type TokenPaymentMethod } from '@/lib/soft-ai/payment-guard'
 import { hasPaymentWord, mentionsConfirmVerb } from '@/lib/soft-ai/payment-classifier'
+import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import { buildLinkAllowlist, foreignLinks, type LinkAllowlist } from '@/lib/soft-ai/links'
 import { canonicalizeOrderDataList, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
 import { MAX_REPLY_PARTS, splitReplyParts } from '@/lib/soft-ai/reply-parts'
@@ -43,7 +44,9 @@ const PAYMENT_STATUS_REPLY_RE =
  * correcto" (ordinary sales answers there). "ya está" only at the end of a sentence ("ya está disponible" is a stock fact).
  */
 const CONFIRM_ASK_STATUS_REPLY_RE =
-  /(?<![\p{L}])(?:(?:nos|me|les|ya)\s+(?:lleg|entr|cay)[oó]|lleg[oó]\s+(?:bien|perfecto)|(?:entr|cay)[oó]\s+(?:bien|perfecto)|recibid[oa]s?|recibimos|acredit\p{L}*|reflej\p{L}*|(?:lo|la)\s+vimos|vimos\s+(?:tu|su|el)|todo\s+en\s+orden|est[aá]\s+en\s+orden|todo\s+(?:bien|listo|correcto)|qued[oó]\s+(?:pagad|confirmad|registrad)\p{L}*|est[aá]\s+confirmad[oa]|ya\s+se\s+hizo|ya\s+est[aá](?=\s*(?:[.!,🙌😊👍💚❤✨]|$)))(?![\p{L}])/iu
+  /(?<![\p{L}])(?:(?:nos|me|les|ya)\s+(?:lleg|entr|cay)[oó]|lleg[oó]\s+(?:bien|perfecto)|(?:entr|cay)[oó]\s+(?:bien|perfecto)|recibid[oa]s?|recibimos|acredit\p{L}*|reflej\p{L}*|(?:lo|la)\s+vimos|(?:lo|la)\s+vi|ya\s+(?:lo|la)\s+tenemos|vimos\s+(?:tu|su|el)|todo\s+en\s+orden|est[aá]\s+en\s+orden|todo\s+(?:bien|listo|correcto)|qued[oó]\s+(?:pagad|confirmad|registrad)\p{L}*|est[aá]\s+confirmad[oa]|ya\s+se\s+hizo|ya\s+est[aá](?=\s*(?:[.!,🙌😊👍💚❤✨]|$))|(?:ya\s+)?(?:lo|la)\s+revisamos|registrad[oa]|te\s+confirmo|(?:ya\s+)?est[aá]\s+list[oa]|todo\s+perfecto)(?![\p{L}])|^\s*[¡!]*\s*s[ií]\s*[!.,🙌😊👍💚❤✨\s]*$/iu
+/** SecureDog r2 INT-167 (pre-existing): "¿Les llegó?", "¿Lo recibieron?", "¿Les cayó?" — a payment status question. */
+const STATUS_QUESTION_RE = /(?<![\p{L}])(?:(?:les|le|te|nos)\s+(?:lleg|cay|entr)[oó]|lo\s+(?:recibieron|vieron)|la\s+(?:recibieron|vieron))(?![\p{L}])/iu
 
 /** Never said by the agent in any chat: it cannot see the bank ("acreditado", "recibimos tu sinpe", "pago verificado"). */
 const ALWAYS_PAYMENT_STATUS_REPLY_RE =
@@ -198,8 +201,26 @@ function thresholdClauseOk(clause: string, rule: FreeShippingRule): boolean {
   // ("Envío gratis desde ₡25 000, los 3 te quedan en ₡25 000" is refused).
   let rest = clause
   for (const [s, e] of thresholdCaptures(clause)) rest = rest.slice(0, s) + ' '.repeat(e - s) + rest.slice(e)
-  return extractMoneyAmounts(rest).every((a) => Math.round(a) < 100) && [...rest.matchAll(BARE_AMOUNT_RE)].length === 0
+  if (!extractMoneyAmounts(rest).every((a) => Math.round(a) < 100) || [...rest.matchAll(BARE_AMOUNT_RE)].length > 0) return false
+  // Verifier r4 #1 (INT-84): an ALLOWLIST — once the free-shipping words and the rule phrase are removed, only filler
+  // may remain ("Tenemos … a todo el país", "Pedidos desde ₡X con envío gratis"). Never a product, a quantity or a verb
+  // ("Tres cajas desde…", "La Menta desde…", "Lo tenés desde…").
+  let words = clause
+  for (const m of [...clause.matchAll(THRESHOLD_RE)].reverse()) words = words.slice(0, m.index ?? 0) + ' ' + words.slice((m.index ?? 0) + m[0].length)
+  for (const w of freeShippingWording(words).reverse()) words = words.slice(0, w.index) + ' ' + words.slice(w.end)
+  const left = words
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .split(/[^\p{L}]+/u)
+    .filter(Boolean)
+  return left.every((w) => THRESHOLD_FILLER.has(w))
 }
+const THRESHOLD_ELIGIBILITY_RE =
+  /(?<![\p{L}])(?:calific\p{L}*|aplic\p{L}*|tuy[oa]s?|lleg[aá]s|llegaste|lleg[oó]|alcanz\p{L}*|pas[aá]s|pasaste|super[aá]s|superaste|al\s+monto|no\s+pag[aá]s|sin\s+costo|va\s+gratis|van\s+gratis|sale\s+gratis|a\s+vos|a\s+ti|te\s+(?:aplica|sale|queda|toca)|tu\s+(?:pedido|compra|env[ií]o|orden|carrito|total)|con\s+lo\s+que\s+llev[aá]s)(?![\p{L}])/iu
+const THRESHOLD_FILLER = new Set(
+  'tenemos hay el la es va en con y de del para a todo pais compras compra pedidos pedido ordenes hola claro si gracias ademas ofrecemos manejamos nuestro nuestros envio envios gratis domicilio'.split(' '),
+)
 
 const foldNote = (s: string) => s.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim()
 
@@ -250,6 +271,9 @@ export function freeShippingRuleOk(rawText: string, rule: FreeShippingRule): boo
   const thresholdSpans = rule.freeOver
     ? matches.map(spanOf).filter((sp): sp is [number, number] => Boolean(sp) && thresholdClauseOk(text.slice(sp![0], sp![1]), rule))
     : []
+  // SecureDog r2 INT-166: with the threshold rule said, nothing in the reply may say THIS order reaches it ("tu pedido
+  // califica", "el tuyo va gratis", "ya llegaste al monto", "no pagás envío") — that is a multi-unit total (INT-94).
+  if (thresholdSpans.length > 0 && THRESHOLD_ELIGIBILITY_RE.test(text)) return false
   let rest = text
   for (const [s, e] of thresholdSpans) rest = rest.slice(0, s) + ' '.repeat(e - s) + rest.slice(e)
   // One included combo per fact: nothing in the reply may stretch it to other items.
@@ -391,8 +415,9 @@ export function brandFactsLinkAllowlist(
   return buildLinkAllowlist({ website: facts?.website, catalogUrl: facts?.catalogUrl, mapsUrl: facts?.location?.mapsUrl, ownerTexts })
 }
 
+// SecureDog r2 INT-168 (pre-existing): "15 000 colones" (space / no-break-space thousands) is money too.
 const MONEY_AMOUNT_RE =
-  /[₡¢$]\s?(\d(?:[\d.\s]*\d)?)(\s*mil(?![\p{L}]))?|(?<![\d.,\p{L}])(\d[\d.,]*)(\s*mil)?\s*(?:colones|crc|usd)(?![\p{L}])/giu
+  /[₡¢$]\s?(\d(?:[\d.\s]*\d)?)(\s*mil(?![\p{L}]))?|(?<![\d.,\p{L}])(\d{1,3}(?:[   ]\d{3})+|\d[\d.,]*)(\s*mil)?\s*(?:colones|crc|usd)(?![\p{L}])/giu
 
 function amountAllowed(amount: number, allowed: number[]): boolean {
   const rounded = Math.round(amount)
@@ -417,8 +442,8 @@ export function unitFamily(word: string): string {
   return w.startsWith('noche') ? 'noche' : w.startsWith('dia') ? 'dia' : w.startsWith('parche') ? 'parche' : w.startsWith('uso') ? 'uso' : w.startsWith('aplicacion') ? 'aplicacion' : 'dosis'
 }
 
-const NUMBER_WORDS: Record<string, number> = { una: 1, un: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6 }
-const SMALL_NUMBER_RE = /(?<![\d.,₡¢])(\d{1,4})(?![\d.,])|(?<![\p{L}])(una|un|uno|dos|tres|cuatro|cinco|seis)(?![\p{L}])/giu
+const NUMBER_WORDS: Record<string, number> = { una: 1, un: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, doble: 2, triple: 3 }
+const SMALL_NUMBER_RE = /(?<![\d.,₡¢])(\d{1,4})(?![\d.,])|(?<![\p{L}])(una|un|uno|dos|tres|cuatro|cinco|seis|doble|triple)(?![\p{L}])/giu
 function nameNumbers(name: string): number[] {
   return [...name.matchAll(SMALL_NUMBER_RE)].map((m) => (m[1] ? Number(m[1]) : NUMBER_WORDS[m[2].toLowerCase()]))
 }
@@ -747,7 +772,11 @@ export function validateAgentOutput(input: {
     anyForm(PAYMENT_STATUS_REPLY_RE, claimForms)
   ) {
     reasons.push('payment_status_claim')
-  } else if (input.customerText && mentionsConfirmVerb(input.customerText) && anyForm(CONFIRM_ASK_STATUS_REPLY_RE, claimForms)) {
+  } else if (
+    input.customerText &&
+    (mentionsConfirmVerb(input.customerText) || STATUS_QUESTION_RE.test(stripFormatChars(input.customerText.normalize('NFKC')))) &&
+    anyForm(CONFIRM_ASK_STATUS_REPLY_RE, claimForms)
+  ) {
     // SecureDog r1 INT-159 / Verifier r3 #3: a reply to a confirm ask ("¿me confirmás?") may not say a payment arrived
     // ("¡Sí, nos llegó!", "¡Perfecto, ya está!", "todo en orden") — but "¡Claro, sin problema!" stays a sales answer.
     reasons.push('payment_status_claim')
@@ -1022,6 +1051,11 @@ export function applyFinalOutputPolicy(input: {
     if (ordered !== text && splitReplyParts(shortened).every(fits)) {
       // SecureDog r1 INT-163: the claim wording is also judged on the text as the model wrote it (line breaks and all).
       if (hasOutboundConfirmationClaim(text)) reasons.push('confirmation_wording')
+      // SecureDog r2 INT-163: the written-claim and "payment received" checks too ("Tu pedido\nquedó anotado").
+      const preForms = confirmationCheckForms(text)
+      const inAnyForm = (re: RegExp) => preForms.some((form) => re.test(form))
+      if (inAnyForm(CREATED_CLAIM_RE)) reasons.push('write_claim')
+      if (inAnyForm(ALWAYS_PAYMENT_STATUS_REPLY_RE)) reasons.push('payment_status_claim')
       text = ordered
       reasons.push('data_list_first')
     }

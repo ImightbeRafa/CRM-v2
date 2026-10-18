@@ -7,6 +7,8 @@ import {
   hasPaymentClaimCue,
   hasHardPaymentClaim,
   hasPaymentStatusHint,
+  isBareOrderConfirmAsk,
+  isCourtesyText,
   hasPaymentWord,
   hasChoiceClaimOrStatusWord,
   hasPaymentStatusClaim,
@@ -20,6 +22,7 @@ import {
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import { PICKUP_DATA_LIST, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
+import { MONEY_WORDS_RE } from '@/lib/soft-ai/payment-claim-check-core'
 import {
   paymentMethodLabels,
   paymentMethodQuestion,
@@ -131,7 +134,7 @@ const METHOD_WORD_G = new RegExp(String.raw`(?<![\p{L}])${METHOD_WORD}(?![\p{L}]
 // "Me aparece un pago de…", "para registrar tu pago"). Verifier r2 #8: "ya" only with a done verb ("ya pagaste", "ya lo
 // hiciste"), so "¡Listo! Ya te lo aparto. ¿Querés pagar por SINPE?" still counts.
 const METHOD_QUESTION_DONE_RE =
-  /(?<![\p{L}])(?:ya\s+(?:(?:me|te|se|nos|le|les)\s+)?(?:(?:lo|la|los|las)\s+)?(?:\p{L}+(?:aste|aron|ó|iste|ieron|ió|é|í)|hice|hizo|pude|pudo)|pasaste|pasaron|pasó|tiraste|tiró|tiraron|descontaron|descontó|depositó|mandó|envió|transfirió|¿\s*(?:ya\s+est[aá]|list[oa])\s*\?|hiciste|hicieron|hizo|pagaste|pagaron|pag[oó]|mandaste|mandaron|enviaste|enviaron|realizaste|pudiste|pudo|transferiste|depositaste|usaste|us[oó]|usaron|fue|comprobantes?|captura|pantallazo|dep[oó]sitos?|pago\s+de|aparec\p{L}*|registr\p{L}*|recib(?:í|i|iste|ió|io|imos|ieron|ido|ida)|vi|vimos|lleg[oó]|entr[oó]|cay[oó]|qued[oó])(?![\p{L}])/iu
+  /(?<![\p{L}])(?:ya\s+(?:(?:me|te|se|nos|le|les)\s+)?(?:(?:lo|la|los|las)\s+)?(?:\p{L}+(?:aste|aron|ó|iste|ieron|ió|é|í)|hice|hizo|pude|pudo)|\p{L}{2,}(?:aste|iste|aron|ieron)|canceló|abonó|cobró|rebajó|sinpeó|pasaste|pasaron|pasó|tiraste|tiró|tiraron|descontaron|descontó|depositó|mandó|envió|transfirió|¿\s*(?:ya\s+est[aá]|list[oa])\s*\?|hiciste|hicieron|hizo|pagaste|pagaron|pag[oó]|mandaste|mandaron|enviaste|enviaron|realizaste|pudiste|pudo|transferiste|depositaste|usaste|us[oó]|usaron|fue|comprobantes?|captura|pantallazo|dep[oó]sitos?|pago\s+de|aparec\p{L}*|registr\p{L}*|recib(?:í|i|iste|ió|io|imos|ieron|ido|ida)|vi|vimos|revis\p{L}*|no\s+(?:hay|veo|encuentro|aparece|me\s+aparece)|lleg[oó]|entr[oó]|cay[oó]|qued[oó])(?![\p{L}])/iu
 
 /** The store asked HOW the customer wants to pay (the original wordings, or C1's other question shapes). Pure. */
 export function isPaymentMethodQuestion(text: string): boolean {
@@ -798,7 +801,9 @@ const WEB_ORDER_RE = /(?<![\p{L}])(?:ord-?\s?\d|pedido\s*#?\s*\d|#\s?\d{3,}|(?:p
  * live and Probar pass the same history (with messageType where known).
  */
 /** The store talked about paying at all: payment words, a receipt, "te paso cómo pagar", or a phone-like number. */
-const STORE_PAYMENT_TALK_RE = /comprobante|c[oó]mo\s+pagar|datos\s+de\s+pago|(?<!\d)\d{4}[\s.-]?\d{4}(?!\d)/iu
+// SecureDog r2 INT-161: also an order the store already handles ("Gracias por tu compra", "Tu pedido va en camino").
+const STORE_PAYMENT_TALK_RE =
+  /comprobante|c[oó]mo\s+pagar|datos\s+de\s+pago|(?<!\d)\d{4}[\s.-]?\d{4}(?!\d)|compra|en\s+camino|despach\p{L}*|enviad[oa]|(?:tu|su)\s+(?:pedido|orden)|#\s?\d/iu
 /**
  * Verifier r1 #6: only a short chat can be known to have "no payment yet" — the live history is a window of the newest
  * rows, so in a longer chat earlier payment messages may be out of view (fail closed: a person).
@@ -818,17 +823,20 @@ export function noPaymentYet(history: ReadonlyArray<{ direction: string; content
   if (history.length >= NO_PAYMENT_YET_MAX_MESSAGES) return false
   for (const m of history) {
     const text = stripFormatChars((m.content || '').normalize('NFKC'))
-    // Any photo / file / audio, from either side (store payment details sent as an image too).
-    if (MEDIA_LIKE_TYPES.has(m.messageType || '') || MEDIA_PLACEHOLDER_RE.test(text)) return false
+    // Any bubble that is not plain text, from either side (SecureDog r2 MEDIA-17: 'unsupported', 'share', 'unknown' too).
+    if ((m.messageType && m.messageType !== 'text') || MEDIA_PLACEHOLDER_RE.test(text)) return false
+    // SecureDog r2 INT-161: any money word from either side ("le transfiero", "la plata", "el simpe", "les cancelo", ₡,
+    // "mil", 4+ digits — the same broad list as the "¿ya pagó?" check gate).
+    if (MONEY_WORDS_RE.test(text) || /(?<![\p{L}])simp\p{L}*/iu.test(text)) return false
     if (m.direction === 'outbound') {
-      // Verifier r1 #6: ANY payment talk from the store (the method question too), not only filled-in details.
-      if (paymentDetailsIn(text) || ORDER_BLOCK_RE.test(text) || PAYMENT_WORDS_RE.test(text) || STORE_PAYMENT_TALK_RE.test(text)) return false
+      // Verifier r1 #6: ANY payment talk from the store (the method question too), not only filled-in details; any price.
+      if (paymentDetailsIn(text) || ORDER_BLOCK_RE.test(text) || PAYMENT_WORDS_RE.test(text) || STORE_PAYMENT_TALK_RE.test(text) || /\d{3,}/.test(text)) return false
       continue
     }
-    // A bare order-confirm ask in the history does not count by itself (it is what this check exists for).
-    if (hasPaymentWord(text) || hasHardPaymentClaim(text, { noPaymentYet: true }) || WEB_ORDER_RE.test(text)) return false
-    // INT-159 / INT-161: status hints ("¿les llegó?", "ya", "lo recibieron") and "already bought" wordings.
-    if (hasPaymentStatusHint(text) || ALREADY_BOUGHT_RE.test(text)) return false
+    // SecureDog r2 INT-159 / INT-161: an ALLOWLIST — every customer message is courtesy only ("Hola", "gracias", "ok")
+    // or the bare confirm ask itself. Anything else (a status hint, "ya compré", a web order, a question) ends it.
+    if (hasPaymentWord(text) || WEB_ORDER_RE.test(text) || ALREADY_BOUGHT_RE.test(text) || hasPaymentStatusHint(text)) return false
+    if (!isCourtesyText(text) && !isBareOrderConfirmAsk(text)) return false
   }
   return true
 }
@@ -964,7 +972,8 @@ export function dataListBeforePaymentQuestion(text: string, kind: 'shipping' | '
 }
 
 /** "(90 noches)", "30 parches", "(60 dosis)" in an owner's product / combo name. */
-const NAME_UNIT_COUNT_RE = /(?<![\d.,])(\d{1,4})\s*(noches?|d[ií]as?|parches?|usos?|aplicaci[oó]n(?:es)?|dosis)(?![\p{L}])/iu
+// Verifier r4 #3: never a product count after "los / las" ("Combo Full House (los 5 parches)" = 5 products).
+const NAME_UNIT_COUNT_RE = /(?<![\d.,])(?<!(?:los|las)\s)(\d{1,4})\s*(noches?|d[ií]as?|parches?|usos?|aplicaci[oó]n(?:es)?|dosis)(?![\p{L}])/iu
 
 /**
  * Sleeping exam C3 (SecureDog r1 INT-162): the store's own per-unit rates — a product / combo price with the count its

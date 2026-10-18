@@ -176,9 +176,16 @@ describe('C2: bare order-confirm asks are not payment claims when nothing about 
     ]
     for (const h of notYet) assert.equal(noPaymentYet(h), false, JSON.stringify(h))
   })
-  it('burst: an earlier "Para confirmar el pedido!?" no longer hands off the next delivery question (only with noPaymentYet)', () => {
+  it('burst (SecureDog r2 allowlist): the bare ask is relaxed only next to courtesy bubbles; with any other question it stays a hand-off', () => {
     const base = { inboundText: '¿Cuánto duran en entregarlo a San Sebastián?', brandFacts: FACTS, shortcuts: SHORTCUTS, earlierCustomerTexts: ['Para confirmar el pedido!?'] }
-    assert.equal(decideInbound({ ...base, noPaymentYet: true }).paymentClass, 'non_payment')
+    assert.equal(decideInbound({ ...base, noPaymentYet: true }).paymentClass, 'payment_proof_or_risk')
+    for (const [earlier, latest] of [
+      [['Buen día!'], 'Para confirmar el pedido!?'],
+      [['Para confirmar el pedido!?'], 'gracias'],
+      [['Hola'], 'Pura vida, me confirmás entonces?'],
+    ] as Array<[string[], string]>) {
+      assert.notEqual(decideInbound({ ...base, inboundText: latest, earlierCustomerTexts: earlier, noPaymentYet: true }).paymentClass, 'payment_proof_or_risk', latest)
+    }
     assert.equal(decideInbound({ ...base, noPaymentYet: false }).paymentClass, 'payment_proof_or_risk')
     assert.equal(decideInbound(base).paymentClass, 'payment_proof_or_risk')
     // A photo message never gets the relaxation.
@@ -764,5 +771,157 @@ describe('Verifier r3 (2026-10-18): every reported input pinned', () => {
     assert.equal(check('El pack de 2 sale a ₡330 por noche').ok, true)
     assert.equal(check('El pack de 3 (90 noches) son ₡317 la noche.').ok, true)
     assert.equal(check('Las 3 bolsas cuestan ₡28.500, unos ₡317 por noche.').ok, true)
+  })
+})
+
+describe('Verifier r4 (2026-10-18): every reported input pinned', () => {
+  it('#1 (INT-84): a threshold clause is an allowlist — no product, quantity or verb before "desde"', async () => {
+    const { salesFreeShippingRule, salesAllowedAmounts } = await import('@/lib/soft-ai/sales-state')
+    const ctx: SalesContext = {
+      ...CTX,
+      catalog: [
+        { name: 'Pura Sonrisa Menta', price: 11900, stockLabel: 'x' },
+        { name: 'Pura Sonrisa Fresa', price: 11900, stockLabel: 'x' },
+      ],
+      bundles: [],
+      freeShippingOver: 25000,
+    }
+    const rule = salesFreeShippingRule(ctx)!
+    const check = (text: string) => validateAgentOutput({ text, citedToolNames: [], quoteAmounts: salesAllowedAmounts(ctx), freeShippingRule: rule })
+    for (const t of [
+      'Tres cajas desde ₡25 000 con envío gratis',
+      '3 cajas desde ₡25 000 con envío gratis',
+      'La Menta desde ₡25 000 con envío gratis',
+      'Menta y Fresa desde ₡25 000 con envío gratis',
+      'El de menta desde ₡25 000 y envío gratis',
+      'Tubos desde ₡25 000 con envío gratis',
+      'Lo tenés desde ₡25 000 con envío gratis',
+    ]) {
+      assert.equal(check(t).ok, false, t)
+    }
+    for (const t of ['Pedidos desde ₡25 000 con envío gratis', 'Envío gratis comprando 3 cajas', 'El envío es gratis en compras desde ₡25 000.']) {
+      assert.equal(check(t).ok, true, `${t} → ${check(t).reasons}`)
+    }
+  })
+  it('#2: past-tense store questions without "ya" are not the method question ("¿Me lo cancelaste?" = did you pay)', () => {
+    for (const t of [
+      '¿Lo sinpeaste? ¿SINPE o transferencia?',
+      '¿Me lo cancelaste? ¿SINPE o transferencia?',
+      '¿Me lo canceló? ¿SINPE o transferencia?',
+      '¿Lo abonaste? ¿SINPE o transferencia?',
+      '¿Se lo cobraron? ¿Tarjeta o SINPE?',
+      '¿Le rebajaron? ¿Tarjeta o SINPE?',
+    ]) {
+      assert.equal(isPaymentMethodQuestion(t), false, t)
+    }
+    assert.equal(isPaymentMethodQuestion('¿Cómo preferís pagar? ¿SINPE o transferencia?'), true)
+  })
+  it('#3: a product count after "los / las" in a name is no unit rate (PatchHouse "Combo Full House (los 5 parches)")', () => {
+    const ph: SalesContext = { ...CTX, bundles: [{ name: 'Combo Full House (los 5 parches)', price: 44900, shippingIncluded: false }] }
+    assert.deepEqual(salesUnitRates(ph), [])
+    const v = validateAgentOutput({ text: 'Con el Combo Full House te sale a ₡8 980 por parche 🙌', citedToolNames: [], quoteAmounts: [44900], unitRates: salesUnitRates(ph) })
+    assert.equal(v.ok, false)
+  })
+  it('#4: "pack doble" names the pack of 2', () => {
+    const SLEEP: SalesContext = {
+      ...CTX,
+      catalog: [],
+      bundles: [
+        { name: 'Pack 2 bolsas (60 noches)', price: 19800, shippingIncluded: true },
+        { name: 'Pack 3 bolsas (90 noches)', price: 28500, shippingIncluded: true },
+      ],
+    }
+    const v = validateAgentOutput({ text: 'El pack doble sale a ₡317 por noche', citedToolNames: [], quoteAmounts: [19800, 28500], unitRates: salesUnitRates(SLEEP) })
+    assert.equal(v.ok, false)
+  })
+  it('#5: "Sí, lo vi 👍" / "Sí, ya lo tenemos 🙌" to "me confirmás?" are held', () => {
+    for (const t of ['Sí, lo vi 👍', 'Sí, ya lo tenemos 🙌']) {
+      assert.ok(validateAgentOutput({ text: t, citedToolNames: [], customerText: 'me confirmás?' }).reasons.includes('payment_status_claim'), t)
+    }
+  })
+})
+
+describe('SecureDog r2 (2026-10-18): every reported input pinned', () => {
+  const base = { brandFacts: FACTS, shortcuts: SHORTCUTS }
+  it('INT-159: "¿Me confirmás?" + any non-courtesy bubble stays a payment hand-off', () => {
+    for (const other of ['¿Lo vieron?', '¿Lo pudieron ver?', '¿Está todo bien?', '¿Todo bien?', '¿Se hizo?', '¿Pasó?', '¿Les salió?', '¿Funcionó?', '¿Lo tienen?', '¿Me avisan?', '¿Y?', 'ahí está', '👍', '💸', '🤑']) {
+      for (const [earlier, latest] of [[other, '¿Me confirmás?'], ['¿Me confirmás?', other]]) {
+        const d = decideInbound({ ...base, inboundText: latest, earlierCustomerTexts: [earlier], noPaymentYet: true })
+        assert.notEqual(d.paymentClass, 'non_payment', `${earlier} + ${latest}`)
+      }
+    }
+  })
+  it('INT-159: more "it is done" replies to a confirm ask are held', () => {
+    for (const t of ['¡Sí! Ya lo revisamos', 'Sí, ya lo tenemos registrado', '¡Sí, te confirmo!', '¡Sí, ya está listo!', '¡Sí, todo perfecto!', '¡Sí!']) {
+      assert.ok(validateAgentOutput({ text: t, citedToolNames: [], customerText: '¿Me confirmás?' }).reasons.includes('payment_status_claim'), t)
+    }
+  })
+  it('INT-161: any money word from either side, or a non-courtesy customer message, ends "no payment yet"', () => {
+    for (const t of ['Ahorita le transfiero', 'Ahorita les mando la plata', 'Les mando el dinero en un rato', 'Te paso la platica ahorita', 'Ahorita le hago el simpe', 'Ahorita les cancelo', 'Ordené online', 'Les escribo por el pedido de ayer']) {
+      assert.equal(noPaymentYet([msg('inbound', t), msg('outbound', '¡Perfecto! Te espero 😊'), msg('inbound', '¿Me confirma?')]), false, t)
+    }
+    for (const t of ['¡Gracias por tu compra! Tu pedido va en camino', 'Tu pedido #1234 está listo']) {
+      assert.equal(noPaymentYet([msg('outbound', t), msg('inbound', '¿Me confirma?')]), false, t)
+    }
+    assert.equal(noPaymentYet([msg('inbound', 'Buenas'), msg('outbound', '¡Hola! ¿En qué te ayudo?'), msg('inbound', 'Para confirmar el pedido!?')]), true)
+  })
+  it('MEDIA-17: any non-text bubble ends "no payment yet"', () => {
+    for (const type of ['unsupported', 'unknown', 'share', 'reaction', 'location']) {
+      assert.equal(noPaymentYet([msg('inbound', '', type), msg('inbound', 'Confirmen porfa')]), false, type)
+    }
+  })
+  it('INT-166: with the threshold rule said, no eligibility claim anywhere in the reply', async () => {
+    const { salesFreeShippingRule, salesAllowedAmounts } = await import('@/lib/soft-ai/sales-state')
+    const ctx: SalesContext = {
+      ...CTX,
+      catalog: [
+        { name: 'Pura Sonrisa Menta', price: 12900, stockLabel: 'x' },
+        { name: 'Pura Sonrisa Fresa', price: 12900, stockLabel: 'x' },
+      ],
+      bundles: [],
+      freeShippingOver: 25000,
+    }
+    const rule = salesFreeShippingRule(ctx)!
+    for (const t of [
+      'Envío gratis desde ₡25 000. Tu pedido califica',
+      'Envío gratis desde ₡25 000 (y el tuyo califica).',
+      'Envío gratis desde ₡25 000, así que el tuyo va gratis.',
+      'Envío gratis desde ₡25 000, o sea que no pagás envío.',
+      'Envío gratis desde ₡25 000. Con lo que llevás ya llegás.',
+      'Envío gratis desde ₡25 000. A vos ya te aplica.',
+      'Envío gratis desde ₡25 000. Ya llegaste al monto',
+      'Envío gratis desde ₡25 000. El tuyo ya califica, así que va sin costo.',
+    ]) {
+      assert.equal(validateAgentOutput({ text: t, citedToolNames: [], quoteAmounts: salesAllowedAmounts(ctx), freeShippingRule: rule }).ok, false, t)
+    }
+  })
+  it('INT-163: a written claim split by the reorder is still held', () => {
+    const p = applyFinalOutputPolicy({ text: 'Tu pedido\nquedó anotado ¿Cómo preferís pagar?', brandFacts: FACTS, skipPurchaseSummary: true, shortenLongReply: true, paymentOptions: { dataListFirst: 'shipping' } })
+    assert.equal(p.ok, false)
+  })
+  it('INT-164: "Revisé y no hay nada" / "No veo nada todavía" are not the method question', () => {
+    for (const t of ['Revisé y no hay nada. ¿Por SINPE o transferencia?', 'No veo nada todavía, ¿SINPE o transferencia?']) assert.equal(isPaymentMethodQuestion(t), false, t)
+  })
+  it('INFRA-24: --unlock refuses while the holding run is alive; a gone local process may be freed', async () => {
+    const { lockHolderGone } = await import('../../../scripts/agent-pack/test-lock')
+    const { hostname } = await import('node:os')
+    assert.equal(lockHolderGone({ host: hostname(), pid: process.pid }), false)
+    assert.equal(lockHolderGone({ host: 'other-machine', pid: 999999 }), false)
+    assert.equal(lockHolderGone({ host: hostname(), pid: 2147483646 }), true)
+    assert.match(readFileSync('scripts/agent-pack/test-cap.ts', 'utf8'), /held && !flag\('force'\) && !lockHolderGone\(held\)/)
+  })
+  it('INT-167 (pre-existing): "¿Les llegó?" / "¿Lo recibieron?" get the reply backstop', () => {
+    for (const c of ['¿Les llegó?', '¿Les cayó?', '¿Les entró?', '¿Lo recibieron?']) {
+      assert.ok(validateAgentOutput({ text: '¡Sí, nos llegó!', citedToolNames: [], customerText: c }).reasons.includes('payment_status_claim'), c)
+      assert.ok(validateAgentOutput({ text: 'Sí, lo recibimos', citedToolNames: [], customerText: c }).reasons.includes('payment_status_claim'), c)
+    }
+  })
+  it('INT-168 (pre-existing): "15 000 colones" is read as money', () => {
+    const v = validateAgentOutput({ text: 'El pack de 3 te queda en 15 000 colones', citedToolNames: [], quoteAmounts: [28500] })
+    assert.equal(v.ok, false)
+    assert.ok(v.reasons.includes('unsourced_amount'))
+  })
+  it('C5: exam.ts adds the built-in 10-min look-back item', () => {
+    assert.match(readFileSync('scripts/agent-pack/exam.ts', 'utf8'), /id: 'sys-lookback'[\s\S]*agoMin: 4[\s\S]*expect: \{ handoff: true \}/)
   })
 })

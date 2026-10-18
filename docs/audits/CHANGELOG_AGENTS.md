@@ -1,3 +1,10 @@
+## 2026-10-18 00:10Z — CF 8d94e714: staff bot on Luna, follow-up A/B (off), Simpe, Sofi v53
+
+- Sofi v53 (live data): the instructions had been silently cut at the 1 200-char cap (v51/v52 rules never fully live). The core now fits in 1 098 chars; the rest is in the selling script (voice / closing / objections / neverSay). Combo of 2 = ₡22 800 with shipping included (Rafael). 8 h max. Health → doctor. One question per message.
+- "Simpe"/"Sinpi" = SINPE method choice (live 467818 false payment flag).
+- Staff bot (Telegram/WA) on gpt-6-luna merged and deployed; real-provider check OK. XAI_API_KEY / XAI_MODEL secrets still set (deleting them needs Rafael's GO).
+- Follow-up A/B (agent_follow_up_v1): deployed OFF; verifier FAIL → fixed; SecureDog 2 Medium → fixed; claim proven on local Postgres. Starts only when a campaign is created with Rafael-approved texts.
+
 ## 2026-10-17 (night) — Deploy 2 LIVE: CF 816cd5c9 (claudio/luna-10-d2 @ 67381146)
 
 - SQL 054 applied (prod, guarded script): all non-live agents → gpt-6-luna, default Luna. 5 live test-business agents stay on Grok and now go quiet (model_not_allowed); no real business affected.

@@ -204,9 +204,9 @@ describe('C3: per-night amounts come only from the store\'s own rates (names lik
   const check = (text: string, customerText = '') => validateAgentOutput({ text, citedToolNames: [], quoteAmounts: quote, unitRates: rates, customerText })
   it('salesUnitRates reads the counts from the owner\'s names only', () => {
     assert.deepEqual(rates, [
-      { price: 9900, count: 30, unit: 'noches' },
-      { price: 19800, count: 60, unit: 'noches' },
-      { price: 28500, count: 90, unit: 'noches' },
+      { price: 9900, count: 30, unit: 'noches', name: 'Sleeping Patches (30 noches)' },
+      { price: 19800, count: 60, unit: 'noches', name: 'Pack 2 bolsas (60 noches)' },
+      { price: 28500, count: 90, unit: 'noches', name: 'Pack 3 bolsas (90 noches)' },
     ])
     assert.deepEqual(salesUnitRates(CTX), [])
   })
@@ -691,5 +691,78 @@ describe('SecureDog r1 + Verifier r2 (2026-10-18): every reported input pinned',
     assert.match(parts[0], /^Total ₡12 900\./)
     assert.ok(parts[1].includes('Nombre completo'))
     assert.match(parts[parts.length - 1], /¿Cuál preferís\?$/)
+  })
+})
+
+describe('Verifier r3 (2026-10-18): every reported input pinned', () => {
+  it('#1 (INT-84): "desde ₡X" used as a starting price is never the threshold rule', async () => {
+    const { salesFreeShippingRule, salesAllowedAmounts } = await import('@/lib/soft-ai/sales-state')
+    const ctx: SalesContext = {
+      ...CTX,
+      catalog: [
+        { name: 'Pura Sonrisa Menta', price: 11900, stockLabel: 'x' },
+        { name: 'Pura Sonrisa Fresa', price: 11900, stockLabel: 'x' },
+      ],
+      bundles: [],
+      freeShippingOver: 25000,
+    }
+    const rule = salesFreeShippingRule(ctx)!
+    const check = (text: string) => validateAgentOutput({ text, citedToolNames: [], quoteAmounts: salesAllowedAmounts(ctx), freeShippingRule: rule })
+    for (const t of [
+      'Los 3 te quedan desde ₡25 000 con envío gratis',
+      'Los 3 tubos te salen desde ₡25 000 con envío gratis 🙌',
+      'Tenemos combos desde ₡25 000 con envío gratis',
+      'El trío de menta está desde ₡25 000 con envío gratis',
+      'Precio desde ₡25 000 con envío gratis',
+      'Llevás los 3 desde ₡25 000 y con envío gratis',
+    ]) {
+      assert.equal(check(t).ok, false, t)
+    }
+    for (const t of ['Envío gratis en compras desde ₡25 000 🚚', 'Desde ₡25 000 el envío es gratis.', 'Tenemos envío gratis a partir de 3 cajas.']) {
+      assert.equal(check(t).ok, true, `${t} → ${check(t).reasons}`)
+    }
+  })
+  it('#2: more "did you pay?" store questions are not the method question; the store\'s own present actions still are', () => {
+    for (const t of [
+      '¿Ya me lo pasaste? ¿SINPE o transferencia?',
+      '¿Ya nos pasaste la plata? ¿Por SINPE o transferencia?',
+      '¿Ya me lo mandó? ¿SINPE o transferencia?',
+      '¿Ya me lo depositó? ¿SINPE o transferencia?',
+      '¿Ya lo tiraste? ¿SINPE o transferencia?',
+      '¿Ya te lo descontaron? ¿Tarjeta o SINPE?',
+      '¿Ya está? ¿SINPE o transferencia?',
+      '¿Listo? ¿SINPE o transferencia?',
+    ]) {
+      assert.equal(isPaymentMethodQuestion(t), false, t)
+    }
+    for (const t of ['¡Listo! Ya te lo aparto. ¿Querés pagar por SINPE o tarjeta?', '¿Querés pagar por SINPE? Ya te paso el número.', '¡Listo! ¿SINPE o transferencia?']) {
+      assert.equal(isPaymentMethodQuestion(t), true, t)
+    }
+  })
+  it('#3: replies to a bare confirm ask may be ordinary sales answers; only "it arrived / it is done" is held', () => {
+    const customerText = 'Para confirmar el pedido!?'
+    for (const t of ['¡Claro, sin problema! ¿Cuántas bolsas querés?', '¡Sí, lo tenemos disponible!', 'Es correcto, la bolsa cuesta ₡9 900', '¡Sí, ya está disponible!']) {
+      const v = validateAgentOutput({ text: t, citedToolNames: [], quoteAmounts: [9900], customerText })
+      assert.equal(v.ok, true, `${t} → ${v.reasons}`)
+    }
+    for (const t of ['¡Sí, nos llegó!', '¡Perfecto, ya está!', 'Listo, todo en orden', 'Recibido, gracias']) {
+      assert.ok(validateAgentOutput({ text: t, citedToolNames: [], customerText }).reasons.includes('payment_status_claim'), t)
+    }
+  })
+  it('#4: a rate must belong to the product the sentence names; "₡317 la noche" is fine', () => {
+    const SLEEP: SalesContext = {
+      ...CTX,
+      catalog: [{ name: 'Sleeping Patches (30 noches)', price: 9900, stockLabel: 'x' }],
+      bundles: [
+        { name: 'Pack 2 bolsas (60 noches)', price: 19800, shippingIncluded: true },
+        { name: 'Pack 3 bolsas (90 noches)', price: 28500, shippingIncluded: true },
+      ],
+    }
+    const rates = salesUnitRates(SLEEP)
+    const check = (text: string) => validateAgentOutput({ text, citedToolNames: [], quoteAmounts: [9900, 19800, 28500], unitRates: rates })
+    assert.equal(check('El pack de 2 sale a ₡317 por noche').ok, false)
+    assert.equal(check('El pack de 2 sale a ₡330 por noche').ok, true)
+    assert.equal(check('El pack de 3 (90 noches) son ₡317 la noche.').ok, true)
+    assert.equal(check('Las 3 bolsas cuestan ₡28.500, unos ₡317 por noche.').ok, true)
   })
 })

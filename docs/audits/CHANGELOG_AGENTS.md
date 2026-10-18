@@ -27,8 +27,12 @@
   spaces after the request. Fixed: input collapsed to single spaces and capped at 160 chars before matching; the regex
   allows one optional space between tokens. The agent-side mask and BARE_HANDOFF_RE are single-spaced too. Perf guard
   added to test:security (4 KB spaces / tabs / newlines through the router and the mask, < 100 ms each).
-- Tests: `v53-handoff-lines.test.ts` (72). Source asserts updated in agents2-b-sales, instagram-media and
-  luna10-hard-blocks (same intent). test:soft-ai 1128/1128, test:chat-harden 680/680, test:security 272/272,
+- Final reviews: Verifier round 4 PASS WITH NOTES (skin-tone emoji fixed), SecureDog round 3 PASS for production
+  (P2 BARE_HANDOFF_RE fixed; veto also catches -aron / -ieron / first-person -é and ignores invisible characters).
+  Still open, older than this branch: P1 — INT-93 claim-regex gaps ("Ya confirmé tu pago", "Tu pedido va en camino",
+  look-alike / zero-width letters) → file in the register.
+- Tests: `v53-handoff-lines.test.ts` (76). Source asserts updated in agents2-b-sales, instagram-media and
+  luna10-hard-blocks (same intent). test:soft-ai 1132/1132, test:chat-harden 680/680, test:security 272/272,
   tsc + lint clean.
 
 ## 2026-10-18 00:10Z — CF 8d94e714: staff bot on Luna, follow-up A/B (off), Simpe, Sofi v53

@@ -364,7 +364,7 @@ const SENTENCE_RE = /[^.!?¡¿\n]+/gu
  * despachado", "ha sido enviado", "está despachado", "te confirmo…"): then nothing is masked at all (Verifier round 2).
  */
 const DONE_CUE_RE =
-  /(?<![\p{L}])(?:ya|fue|fueron|fuimos|sido|listo|lista|listos|en[ \t]+camino|en[ \t]+proceso|en[ \t]+ruta|en[ \t]+tr[aá]nsito|(?:tu|la|su)[ \t]+gu[ií]a[ \t]+es|n[uú]mero[ \t]+de[ \t]+gu[ií]a[ \t]+es|te[ \t]+confirmo|todo[ \t]+est[aá]|(?:he|has|ha|hemos|han)[ \t]+\p{L}+|est[aá]n?[ \t]+\p{L}+(?:ad|id)[oa]s?|salio|quedo|llego|despacho|\p{L}{2,}ó)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:ya|fue|fueron|fuimos|sido|listo|lista|listos|en[ \t]+camino|en[ \t]+proceso|en[ \t]+ruta|en[ \t]+tr[aá]nsito|(?:tu|la|su)[ \t]+gu[ií]a[ \t]+es|n[uú]mero[ \t]+de[ \t]+gu[ií]a[ \t]+es|te[ \t]+confirmo|todo[ \t]+est[aá]|(?:he|has|ha|hemos|han)[ \t]+\p{L}+|est[aá]n?[ \t]+\p{L}+(?:ad|id)[oa]s?|salio|quedo|llego|despacho|\p{L}{2,}ó|\p{L}{2,}(?:aron|ieron)|\p{L}{3,}é)(?![\p{L}])/iu
 
 /** A next-step line is short: anything longer is never masked (and bounds every regex run, SecureDog v53 R2-1). */
 const NEXT_STEP_MAX_CHARS = 300
@@ -387,7 +387,8 @@ export function maskConditionalConfirmation(text: string): string {
     masked = true
     return sentence.slice(0, at) + '·'.repeat(participle.length) + sentence.slice(at + participle.length)
   })
-  return masked && !DONE_CUE_RE.test(rest) ? out : src
+  // SecureDog round 3: invisible format characters ("Ya​ salió") never hide a done cue.
+  return masked && !DONE_CUE_RE.test(rest.replace(/\p{Cf}/gu, '')) ? out : src
 }
 
 /** The agent's own reply claims a payment / order happened (a conditional next-step participle excluded). */

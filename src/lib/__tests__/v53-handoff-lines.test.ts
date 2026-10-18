@@ -108,6 +108,10 @@ describe('2 · a conditional next-step participle is not a confirmation claim', 
     'Una vez confirmado tu pago, se despacha hoy mismo. Tu pedido está en ruta 🚚',
     'Una vez confirmado tu pago, sale hoy mismo. Tu guía es CR123456789CR',
     'Una vez confirmado el pago, vamos a enviar tu pedido. Fuimos a Correos hoy',
+    // SecureDog round 3 (informational, hardened): -aron / -ieron / first-person -é, invisible characters.
+    'Una vez confirmado el pago, sale ese mismo día. Lo despacharon.',
+    'Una vez confirmado el pago, sale ese mismo día. Te envié la guía.',
+    'Una vez confirmado el pago, sale ese mismo día. Ya​ salió.',
   ]
   for (const t of blocked) {
     it(`still blocks: ${JSON.stringify(t)}`, () => {

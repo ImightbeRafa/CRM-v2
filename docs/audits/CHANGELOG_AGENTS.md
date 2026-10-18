@@ -1,3 +1,24 @@
+## 2026-10-18 — /chats quick views + follow-ups keep list position (claudio/inbox-views, NOT deployed)
+
+- Draft PR into claudio/luna-10-d2; Rafael's GO to merge / deploy. No SQL, no new index.
+- Tabs with counts on desktop and mobile: Bandeja · 👤 Persona (aiMode human / paused / human_takeover, oldest
+  customer message first) · 💳 Revisar pago · 📦 Pedido (built-in tags) · ✦ IA (line AI on, nobody took it, no review
+  tag) · ↻ Seguimientos (newest message is our follow-up, `metadata.followUp`). They replace the two review chips.
+  Channel / line filter and search still apply; a bandeja tab (Míos / Sin asignar…) returns to Bandeja.
+- Counts: `GET /api/chat/conversations/view-counts` (update_sales, session tenant) = one grouped SQL by line;
+  the client refreshes at most every 20 s while the list changes. A tab loads its rows with `?view=` (one page, up to
+  100, no cursor; old cursors keep their scope hash). Rules shared in `src/lib/chat-inbox-views.ts`.
+- Follow-up / reactivation sends pass `keepListPosition`: preview, direction and lastOutboundAt update, lastMessageAt
+  does not, so a mass nudge no longer floods the top; the customer's reply moves the chat up as before.
+- Tab remembered per user in localStorage (`betsy.chats.view.v1:<userId>`).
+- Proof: tsc, lint, test:security, test:soft-ai, test:chat-harden (1 baseline fail, same on the base), new
+  chat-inbox-views.test.ts, verify-betsy `drive-inbox-views.mjs` PASS (desktop + 390 px).
+- Reviews: SecureDog PASS (2 Low fixed: counts cached 15 s per tenant + one shared query + client in-flight guard;
+  list route no longer echoes DB error text). Verifier PASS WITH NOTES (fixed: open view keeps its rows across the
+  2-min refresh, Persona puts chats still waiting first, view request follows line / channel, PATCH keeps the flag).
+- Open for Rafael: Persona / IA follow the aiMode column (as briefed), not the badge's "a person wrote in 24 h";
+  `scripts/chat-inbox-backfill.ts --apply` would reset nudged chats' lastMessageAt (verify script reports them).
+
 ## 2026-10-18 — Sleeping final report batch 2 (PR #106) + Pura Sonrisa batch 3 slim (PR #107) (NOT deployed)
 
 - Stacked: #107 → #106 → #104 → claudio/luna-10-d2. Draft PRs; Rafael's GO to merge / deploy.

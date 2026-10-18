@@ -45,6 +45,7 @@ export function InboxViewTabs({
             role="tab"
             aria-selected={active}
             title={def.label}
+            aria-label={count != null ? `${def.label}: ${count}` : def.label}
             onClick={() => onChange(def.id)}
             className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-semibold ring-1 transition-colors ${
               active ? tone.on : tone.off
@@ -52,7 +53,7 @@ export function InboxViewTabs({
             data-testid={`chat-view-${def.id}`}
           >
             {def.emoji ? <span aria-hidden>{def.emoji}</span> : null}
-            {def.id === 'todos' ? 'Bandeja' : def.label}
+            {def.short}
             {count != null ? (
               <span
                 className={`rounded-full px-1.5 py-px text-[10.5px] font-bold ${

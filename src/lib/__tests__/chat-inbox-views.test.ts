@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import {
+  inboxViewRowFromDto,
   matchesInboxView,
   parseInboxView,
   sortForInboxView,
@@ -59,14 +60,22 @@ describe('chat views · rules', () => {
     assert.equal(matchesInboxView(row({ closed: true }), 'todos'), true)
   })
 
-  it('Persona sorts who waits longest first; other views keep the list order', () => {
+  it('Persona: chats waiting for our reply first (longest wait on top), answered ones after', () => {
     const rows = [
-      { id: 'new', lastInboundAt: '2026-10-18T10:00:00Z', lastMessageAt: '2026-10-18T10:05:00Z' },
-      { id: 'old', lastInboundAt: '2026-10-18T08:00:00Z', lastMessageAt: '2026-10-18T11:00:00Z' },
-      { id: 'none', lastInboundAt: null, lastMessageAt: '2026-10-18T09:00:00Z' },
+      { id: 'new', lastMessageDirection: 'inbound', lastInboundAt: '2026-10-18T10:00:00Z', lastMessageAt: '2026-10-18T10:05:00Z' },
+      { id: 'answeredOld', lastMessageDirection: 'outbound', lastInboundAt: '2026-10-11T08:00:00Z', lastMessageAt: '2026-10-11T09:00:00Z' },
+      { id: 'old', lastMessageDirection: 'inbound', lastInboundAt: '2026-10-18T08:00:00Z', lastMessageAt: '2026-10-18T08:00:00Z' },
+      { id: 'answeredNew', lastMessageDirection: 'outbound', lastInboundAt: '2026-10-17T08:00:00Z', lastMessageAt: '2026-10-17T09:00:00Z' },
     ]
-    assert.deepEqual(sortForInboxView(rows, 'persona').map((r) => r.id), ['old', 'none', 'new'])
-    assert.deepEqual(sortForInboxView(rows, 'pago').map((r) => r.id), ['new', 'old', 'none'])
+    assert.deepEqual(sortForInboxView(rows, 'persona').map((r) => r.id), ['old', 'new', 'answeredNew', 'answeredOld'])
+    assert.deepEqual(sortForInboxView(rows, 'pago').map((r) => r.id), ['new', 'answeredOld', 'old', 'answeredNew'])
+  })
+
+  it('a list row maps to the same view fields (closed from the stage category)', () => {
+    const dto = { aiMode: 'human', tags: [PAYMENT_REVIEW_TAG], lastMessageDirection: 'outbound', lastIsFollowUp: true, aiLine: { state: 'on' }, stageCategory: 'open' as const }
+    assert.deepEqual(inboxViewRowFromDto(dto), { aiMode: 'human', tags: [PAYMENT_REVIEW_TAG], lastMessageDirection: 'outbound', lastIsFollowUp: true, lineAiOn: true, closed: false })
+    assert.equal(inboxViewRowFromDto({ ...dto, stageCategory: 'won' }).closed, true)
+    assert.equal(inboxViewRowFromDto({ ...dto, aiLine: null }).lineAiOn, false)
   })
 
   it('counts follow the channel / line filter; unknown stored tab falls back to Todos', () => {
@@ -95,6 +104,14 @@ describe('chat views · server', () => {
     assert.equal((server.match(/WHERE c\."tenantId" = \$\{tenantId\}/g) || []).length, 3)
     assert.match(server, /m\."tenantId" = c\."tenantId"/)
     assert.match(server, /GROUP BY c\."socialAccountId"/)
+    // SecureDog: the last message row itself must be ours; counts cached 15 s per tenant with one shared query.
+    assert.equal((server.match(/AND m\.direction = 'outbound'/g) || []).length, 3)
+    assert.match(server, /COUNTS_TTL_MS = 15_000/)
+    assert.match(server, /if \(hit && Date\.now\(\) - hit\.at < COUNTS_TTL_MS\) return hit\.value/)
+    // Database errors never reach the client from the list route.
+    const list = read('src/app/api/chat/conversations/route.ts')
+    assert.match(list, /\/\^Invalid \[A-Za-z\]\+\$\/\.test\(message\)/)
+    assert.match(list, /error: status === 400 \? message : 'list_failed'/)
     const route = read('src/app/api/chat/conversations/view-counts/route.ts')
     assert.match(route, /authenticateAPIWithPermission\(request, 'update_sales'\)/)
     assert.match(route, /loadInboxViewCounts\(auth\.tenantId/)
@@ -110,6 +127,11 @@ describe('chat views · server', () => {
     const inbox = read('src/components/chats/SoftCopilotInboxV2.tsx')
     assert.match(inbox, /INBOX_VIEW_STORAGE_KEY\}:\$\{/)
     assert.match(inbox, /viewCountsAtRef\.current \+ 20_000/)
-    assert.match(inbox, /pinRows\(`view=\$\{inboxView\}&limit=100`\)/)
+    // Verifier: the view request follows the line / channel; the full refresh keeps rows of the open view; PATCH keeps the flag.
+    assert.match(inbox, /new URLSearchParams\(\{ view: inboxView, limit: '100' \}\)/)
+    assert.match(inbox, /qs\.set\('socialAccountId', accountFilter\)/)
+    assert.match(inbox, /if \(matchesInboxView\(inboxViewRowFromDto\(d\), view\)\) keep\.push\(d\)/)
+    assert.match(inbox, /lastIsFollowUp: incoming\.lastIsFollowUp \?\? before\.lastIsFollowUp/)
+    assert.match(inbox, /if \(viewCountsBusyRef\.current\) return/)
   })
 })

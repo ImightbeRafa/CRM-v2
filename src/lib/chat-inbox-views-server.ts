@@ -24,7 +24,7 @@ export async function followUpLastIds(tenantId: string, ids: string[]): Promise<
     const rows = await prisma.$queryRaw<Array<{ id: string }>>`
       SELECT c.id
       FROM "ChatConversation" c
-      JOIN "ChatMessage" m ON m.id = c."lastMessageId" AND m."tenantId" = c."tenantId"
+      JOIN "ChatMessage" m ON m.id = c."lastMessageId" AND m."tenantId" = c."tenantId" AND m.direction = 'outbound'
       WHERE c."tenantId" = ${tenantId}
         AND c.id = ANY(${ids}::text[])
         AND c."lastMessageDirection" = 'outbound'
@@ -48,17 +48,23 @@ export async function attachFollowUpFlag<T extends { id: string; lastMessageDire
 
 /** Open chats of the tenant whose newest message is our follow-up (cap: one list page of a view). */
 export async function listFollowUpOnlyIds(tenantId: string, closedKeys: string[], limit = 100): Promise<string[]> {
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT c.id
-    FROM "ChatConversation" c
-    JOIN "ChatMessage" m ON m.id = c."lastMessageId" AND m."tenantId" = c."tenantId"
-    WHERE c."tenantId" = ${tenantId}
-      AND c."lastMessageDirection" = 'outbound'
-      AND m.metadata -> 'followUp' IS NOT NULL
-      AND NOT (c.status = ANY(${closedKeys}::text[]))
-    ORDER BY c."lastMessageAt" DESC, c.id DESC
-    LIMIT ${limit}`
-  return rows.map((r) => r.id)
+  try {
+    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT c.id
+      FROM "ChatConversation" c
+      JOIN "ChatMessage" m ON m.id = c."lastMessageId" AND m."tenantId" = c."tenantId" AND m.direction = 'outbound'
+      WHERE c."tenantId" = ${tenantId}
+        AND c."lastMessageDirection" = 'outbound'
+        AND m.metadata -> 'followUp' IS NOT NULL
+        AND NOT (c.status = ANY(${closedKeys}::text[]))
+      ORDER BY c."lastMessageAt" DESC, c.id DESC
+      LIMIT ${limit}`
+    return rows.map((r) => r.id)
+  } catch (error) {
+    // Degrade to an empty tab; never surface database text to the client.
+    console.error('[chat views] follow-up ids', { code: error instanceof Error ? error.name : 'error' })
+    return []
+  }
 }
 
 /** The list `where` part of a view (seguimientos is resolved to ids by the caller). */
@@ -92,8 +98,28 @@ export function viewWhere(
   }
 }
 
+/**
+ * Counts are kept 15 s per business and process, and concurrent callers share one in-flight query: every open /chats
+ * tab (or a looping client) costs at most one scan per tenant per window.
+ */
+const countsCache = new Map<string, { at: number; value: Promise<Record<string, InboxViewCounts>> }>()
+const COUNTS_TTL_MS = 15_000
+
+export function loadInboxViewCounts(tenantId: string, stages: StageDef[]): Promise<Record<string, InboxViewCounts>> {
+  const hit = countsCache.get(tenantId)
+  if (hit && Date.now() - hit.at < COUNTS_TTL_MS) return hit.value
+  const value = queryInboxViewCounts(tenantId, stages)
+  if (countsCache.size > 2_000) countsCache.clear()
+  countsCache.set(tenantId, { at: Date.now(), value })
+  // A failed query is not cached.
+  value.catch(() => {
+    if (countsCache.get(tenantId)?.value === value) countsCache.delete(tenantId)
+  })
+  return value
+}
+
 /** Per-line counts of every view: ONE grouped query over the tenant's open chats. */
-export async function loadInboxViewCounts(
+async function queryInboxViewCounts(
   tenantId: string,
   stages: StageDef[],
 ): Promise<Record<string, InboxViewCounts>> {
@@ -119,6 +145,7 @@ export async function loadInboxViewCounts(
     FROM "ChatConversation" c
     LEFT JOIN "ChatMessage" m
       ON c."lastMessageDirection" = 'outbound' AND m.id = c."lastMessageId" AND m."tenantId" = c."tenantId"
+        AND m.direction = 'outbound'
     WHERE c."tenantId" = ${tenantId}
       AND NOT (c.status = ANY(${closedKeys}::text[]))
     GROUP BY c."socialAccountId"`

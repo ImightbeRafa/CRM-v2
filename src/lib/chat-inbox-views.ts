@@ -3,20 +3,20 @@
  * "Seguimientos". Pure: the same rules decide the list (client, on the loaded rows) and the counts (server SQL in
  * chat-inbox-views-server.ts), so a tab's number and its rows agree. Every view is open chats only.
  */
-import { ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
+import { isClosedCategory, ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG, type StageCategory } from '@/lib/crm-stages'
 
 export type InboxView = 'todos' | 'persona' | 'pago' | 'pedido' | 'ia' | 'seguimientos'
 export type InboxCountedView = Exclude<InboxView, 'todos'>
 
 export const INBOX_COUNTED_VIEWS: InboxCountedView[] = ['persona', 'pago', 'pedido', 'ia', 'seguimientos']
 
-export const INBOX_VIEW_DEFS: Array<{ id: InboxView; label: string; emoji: string }> = [
-  { id: 'todos', label: 'Todos', emoji: '' },
-  { id: 'persona', label: 'Persona', emoji: '👤' },
-  { id: 'pago', label: 'Revisar pago', emoji: '💳' },
-  { id: 'pedido', label: 'Pedido por confirmar', emoji: '📦' },
-  { id: 'ia', label: 'IA atendiendo', emoji: '✦' },
-  { id: 'seguimientos', label: 'Seguimientos', emoji: '↻' },
+export const INBOX_VIEW_DEFS: Array<{ id: InboxView; label: string; short: string; emoji: string }> = [
+  { id: 'todos', label: 'Bandeja', short: 'Bandeja', emoji: '' },
+  { id: 'persona', label: 'Persona (chats con alguien del equipo)', short: 'Persona', emoji: '👤' },
+  { id: 'pago', label: 'Revisar pago', short: 'Revisar pago', emoji: '💳' },
+  { id: 'pedido', label: 'Pedido por confirmar', short: 'Pedido', emoji: '📦' },
+  { id: 'ia', label: 'IA atendiendo', short: 'IA', emoji: '✦' },
+  { id: 'seguimientos', label: 'Seguimientos sin respuesta', short: 'Seguimientos', emoji: '↻' },
 ]
 
 /** aiMode values that mean a person has the chat (agent hand-off sets 'human'; legacy 'human_takeover'). */
@@ -87,12 +87,37 @@ export function sumInboxViewCounts(
   return out
 }
 
-/** "Persona": who waits longest comes first (oldest customer message on top). Other views keep the list order. */
-export function sortForInboxView<T extends { lastInboundAt?: string | null; lastMessageAt: string }>(
-  rows: T[],
-  view: InboxView,
-): T[] {
+/**
+ * "Persona": chats still waiting for our reply (customer wrote last) come first, the longest wait on top; chats the
+ * team already answered follow, newest activity first. Other views keep the list order.
+ */
+export function sortForInboxView<
+  T extends { lastInboundAt?: string | null; lastMessageAt: string; lastMessageDirection?: string | null },
+>(rows: T[], view: InboxView): T[] {
   if (view !== 'persona') return rows
+  const waiting = (r: T) => r.lastMessageDirection === 'inbound'
   const at = (r: T) => r.lastInboundAt || r.lastMessageAt
-  return [...rows].sort((a, b) => at(a).localeCompare(at(b)))
+  return [...rows].sort((a, b) => {
+    if (waiting(a) !== waiting(b)) return waiting(a) ? -1 : 1
+    return waiting(a) ? at(a).localeCompare(at(b)) : b.lastMessageAt.localeCompare(a.lastMessageAt)
+  })
+}
+
+/** The view fields of a list row (DTO). */
+export function inboxViewRowFromDto(d: {
+  aiMode: string | null
+  tags: string[]
+  lastMessageDirection: string | null
+  lastIsFollowUp?: boolean
+  aiLine?: { state: string } | null
+  stageCategory?: StageCategory | null
+}): InboxViewRow {
+  return {
+    aiMode: d.aiMode,
+    tags: d.tags || [],
+    lastMessageDirection: d.lastMessageDirection,
+    lastIsFollowUp: d.lastIsFollowUp,
+    lineAiOn: d.aiLine?.state === 'on',
+    closed: isClosedCategory(d.stageCategory ?? 'open'),
+  }
 }

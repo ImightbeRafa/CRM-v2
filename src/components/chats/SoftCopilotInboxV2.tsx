@@ -35,6 +35,7 @@ import {
 import type { ChatConversationListItemDto } from '@/lib/chat-conversation-api'
 import {
   INBOX_VIEW_STORAGE_KEY,
+  inboxViewRowFromDto,
   matchesInboxView,
   parseInboxView,
   sortForInboxView,
@@ -206,6 +207,8 @@ export function SoftCopilotInboxV2() {
   const searchHitsRef = useRef<ChatConversationListItemDto[]>([])
   /** Rows loaded outside the pages (deep link, Pospuestos): kept when the first page reloads. */
   const pinnedDtosRef = useRef<ChatConversationListItemDto[]>([])
+  /** The open quick view, read by the full list refresh (see `inboxView` below). */
+  const inboxViewRef = useRef<InboxView>('todos')
   const pollInFlightRef = useRef(false)
   const pollStartedAtRef = useRef(0)
   const lastPollAtRef = useRef(0)
@@ -302,6 +305,15 @@ export function SoftCopilotInboxV2() {
             const fresh = mergeListDtoIntoMap(new Map(), parsed.data.conversations!)
             // Prefer the live row (snooze / PATCH / changes feed) over the snapshot taken when pinned.
             const keep = [...searchHitsRef.current, ...pinnedDtosRef.current].map((c) => prev.get(c.id) ?? c).filter((c) => !fresh.has(c.id))
+            // An open quick view keeps the rows that joined it after it opened (e.g. a nudge far down the list).
+            const view = inboxViewRef.current
+            if (view !== 'todos') {
+              const kept = new Set(keep.map((c) => c.id))
+              for (const d of prev.values()) {
+                if (fresh.has(d.id) || kept.has(d.id)) continue
+                if (matchesInboxView(inboxViewRowFromDto(d), view)) keep.push(d)
+              }
+            }
             return keep.length ? mergeListDtoIntoMap(fresh, keep) : fresh
           })()
         : mergeListDtoIntoMap(prev, parsed.data.conversations!),
@@ -1025,17 +1037,28 @@ export function SoftCopilotInboxV2() {
     },
     [viewStorageKey],
   )
-  // A view lists every open chat of its kind, even far down the list: load them once when it opens
-  // (the changes feed keeps them fresh afterwards).
   useEffect(() => {
-    if (inboxView !== 'todos') void pinRows(`view=${inboxView}&limit=100`)
-  }, [inboxView, pinRows])
+    inboxViewRef.current = inboxView
+  }, [inboxView])
+  // A view lists every open chat of its kind, even far down the list: load them when it opens or the line /
+  // channel changes (the changes feed keeps them fresh afterwards; the full refresh keeps them, see fetchListPage).
+  useEffect(() => {
+    if (inboxView === 'todos') return
+    const qs = new URLSearchParams({ view: inboxView, limit: '100' })
+    if (accountFilter !== 'all') qs.set('socialAccountId', accountFilter)
+    else if (channelFilter !== 'todos') qs.set('platform', channelFilter)
+    void pinRows(qs.toString())
+  }, [inboxView, accountFilter, channelFilter, pinRows])
 
   // Counts: one grouped query, refreshed at most every 20 s while the list changes (never per poll).
   const [viewCountsByAccount, setViewCountsByAccount] = useState<Record<string, Partial<InboxViewCounts>> | null>(null)
   const viewCountsAtRef = useRef(0)
+  const viewCountsBusyRef = useRef(false)
   useEffect(() => {
     const load = async () => {
+      // One request at a time: a slow answer never stacks a second query.
+      if (viewCountsBusyRef.current) return
+      viewCountsBusyRef.current = true
       viewCountsAtRef.current = Date.now()
       try {
         const res = await fetch('/api/chat/conversations/view-counts', { credentials: 'same-origin', cache: 'no-store' })
@@ -1043,6 +1066,8 @@ export function SoftCopilotInboxV2() {
         if (parsed.ok && res.ok && parsed.data.success && parsed.data.byAccount) setViewCountsByAccount(parsed.data.byAccount)
       } catch {
         // offline: keep the last counts
+      } finally {
+        viewCountsBusyRef.current = false
       }
     }
     const wait = Math.max(0, viewCountsAtRef.current + 20_000 - Date.now())
@@ -1069,7 +1094,7 @@ export function SoftCopilotInboxV2() {
   const visibleConversations = useMemo(() => {
     if (inboxView !== 'todos') {
       const q = search.trim().toLowerCase()
-      const rows: Array<{ c: SoftConversation; lastInboundAt: string | null; lastMessageAt: string }> = []
+      const rows: Array<{ c: SoftConversation; lastInboundAt: string | null; lastMessageAt: string; lastMessageDirection: string | null }> = []
       for (const c of conversations) {
         const dto = dtoByKey.get(`${c.socialAccountId}|${c.recipientId}`)
         if (!dto) continue
@@ -1086,7 +1111,7 @@ export function SoftCopilotInboxV2() {
         }
         if (!matchesInboxView(row, inboxView)) continue
         if (q && !`${c.recipientName || ''} ${c.lastMessage || ''} ${c.accountLabel} ${c.recipientId}`.toLowerCase().includes(q)) continue
-        rows.push({ c, lastInboundAt: dto.lastInboundAt ?? null, lastMessageAt: dto.lastMessageAt })
+        rows.push({ c, lastInboundAt: dto.lastInboundAt ?? null, lastMessageAt: dto.lastMessageAt, lastMessageDirection: dto.lastMessageDirection })
       }
       return sortForInboxView(rows, inboxView).map((r) => r.c)
     }
@@ -1223,6 +1248,8 @@ export function SoftCopilotInboxV2() {
               aiStatus: incoming.aiStatus ?? before.aiStatus,
               // PATCH never changes the snooze; keep what the list knew.
               snooze: incoming.snooze !== undefined ? incoming.snooze : before.snooze,
+              // Nor the last message: a chat stays under "Seguimientos".
+              lastIsFollowUp: incoming.lastIsFollowUp ?? before.lastIsFollowUp,
             }
           : incoming
         return mergeListDtoIntoMap(prev, [merged])

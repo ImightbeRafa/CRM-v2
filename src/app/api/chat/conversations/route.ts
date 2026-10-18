@@ -103,8 +103,8 @@ export async function GET(request: NextRequest) {
       prisma.chatConversation.findMany({
         where,
         orderBy: input.view === 'persona'
-          ? // "Persona": who waits longest first.
-            [{ lastInboundAt: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }]
+          ? // "Persona": chats waiting for our reply first ('inbound' < 'outbound'), longest wait on top.
+            [{ lastMessageDirection: 'asc' }, { lastInboundAt: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }]
           : [{ lastMessageAt: 'desc' }, { id: 'desc' }],
         take: limit + 1,
         select: {
@@ -156,8 +156,9 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invalid request'
-    const status = /Invalid/.test(message) ? 400 : 500
+    // Only our own input checks ("Invalid view", "Invalid cursor"…) are echoed; database errors stay generic.
+    const status = /^Invalid [A-Za-z]+$/.test(message) ? 400 : 500
     if (status === 500) console.error('[chat/conversations GET]', error)
-    return NextResponse.json({ success: false, error: message }, { status })
+    return NextResponse.json({ success: false, error: status === 400 ? message : 'list_failed' }, { status })
   }
 }

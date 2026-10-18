@@ -100,7 +100,7 @@ import { notifyHandoff } from '@/lib/soft-ai/handoff-notify'
 import { decideWaitingAck, isOptOutText, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS, WAITING_ALERT_THROTTLE_MS } from '@/lib/soft-ai/waiting-ack'
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { dropRepeatedParts, REPEAT_WINDOW_MS } from '@/lib/soft-ai/repeat-guard'
-import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet } from '@/lib/soft-ai/sales-state'
+import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet, nothingPaidYet } from '@/lib/soft-ai/sales-state'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
 import { decideInbound, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
@@ -1088,6 +1088,12 @@ export async function executeAgentLayerTurn(
     // Sleeping C2: nothing about paying in this chat yet (no payment details, receipt photo, payment words, web order).
     // SecureDog r1 MEDIA-16: the trigger too (a receipt photo sent as the newest bubble ends "no payment yet").
     noPaymentYet: noPaymentYet([
+      ...history.map((m) => ({ ...m, messageType: messageTypeOf.get(m.id) ?? null })),
+      ...burstEarlier,
+      { direction: 'inbound', content: payload.content || '', messageType: trigger.messageType },
+    ]),
+    // Rafael 2026-10-18: nothing paid yet (a choice inside the order data is a choice) — same rows, same types.
+    nothingPaidYet: nothingPaidYet([
       ...history.map((m) => ({ ...m, messageType: messageTypeOf.get(m.id) ?? null })),
       ...burstEarlier,
       { direction: 'inbound', content: payload.content || '', messageType: trigger.messageType },
@@ -2283,6 +2289,7 @@ async function runAgentTestTurnInner(input: {
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // Sleeping C2: nothing about paying in this chat yet (photos / files counted from their type, like live).
     noPaymentYet: noPaymentYet([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }]),
+    nothingPaidYet: nothingPaidYet([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }]),
   }
   const probarBurstTurn = decideBurstTurn({
     burst: probarBurst,

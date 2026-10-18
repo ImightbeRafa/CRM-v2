@@ -588,8 +588,12 @@ export function classifyPaymentText(
    * awaitingPaymentMethod: the store's method question is pending. noPaymentYet (Sleeping C2): nothing about paying happened
    * in this chat yet (sales-state noPaymentYet) — a bare order-confirm ask is then not a payment cue.
    */
-  opts: { awaitingPaymentMethod?: boolean; noPaymentYet?: boolean } = {},
+  opts: { awaitingPaymentMethod?: boolean; noPaymentYet?: boolean; nothingPaidYet?: boolean } = {},
 ): PaymentClassification {
+  // Rafael 2026-10-18: "Nombre: … Dirección: … Pago por SINPE 🙌" with nothing paid yet (sales-state nothingPaidYet: no
+  // payment details from the store, no photo / file or payment message from the customer) is a CHOICE.
+  // embeddedPaymentChoice runs every claim check below itself, on the unmasked text, and rejects any cue.
+  if (opts.nothingPaidYet && embeddedPaymentChoice(text)) return 'payment_info_safe'
   // SecureDog: full-width / invisible-character spellings ("ＳＩＮＰＥ ✅", "he\u200Bcho") are read as plain text.
   const value = maskNonPaymentPhrases(stripFormatChars((text || '').normalize('NFKC')))
   if (!value.trim()) return 'non_payment'
@@ -884,6 +888,67 @@ export function pendingMethodMention(text: string): PaymentChoiceMethod | null {
   // Heredia", "a domicilio", "para Cartago"); anything else falls through to the normal path.
   const m = LOGISTICS_CHOICE_RE.exec(t)
   return m ? methodOf(m[1]) : null
+}
+
+/**
+ * Anything in a data message that is more than order data + a choice: money (₡ $ ¢, "mil", "colones", 5–7 digit runs,
+ * "25.000"), references, done / like emojis, receipts, "te llegó / lo vieron", past-tense sends. Checked on the WHOLE
+ * message (raw and folded) — the choice part and the data parts alike.
+ */
+const DATA_CHOICE_REJECT_RE =
+  /[#₡¢$€✅✔☑👍💸🧾]|(?<!\d)\d{5,7}(?!\d)|\d{1,3}[.,]\d{3}(?!\d)|(?<![\p{L}])(?:ref\p{L}*|mil|k|colones|rojos|comprobante\p{L}*|recibo|captura|pantallazo|voucher|lleg\p{L}*|vieron|vio|cay[oó]|entr[oó]|pagu[eé]|hice|hicimos|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|cancel[eé]|pagamos|mandamos|enviamos|pasamos|ya|listo|lista|hecho|hecha)(?![\p{L}])/iu
+/** A data message that carries a choice: short enough to read whole (a delivery-data block, not an essay). */
+const DATA_CHOICE_MAX_CHARS = 600
+const DATA_CHOICE_MAX_PARTS = 12
+const DATA_STATUS_CUE_RE = new RegExp(String.raw`(?<![\p{L}])(?:${PAYMENT_STATUS_CUE_RE.source})`, 'iu')
+
+/**
+ * Rafael 2026-10-18 (getting customers to pay): a method CHOICE written inside the order message — "Nombre: Ana …
+ * Dirección: … Envío a domicilio. Pago por SINPE 🙌". The message is split into lines / sentences; the parts that match
+ * the choice allowlist grammar (no detail ask) name ONE method, and every other part is plain order data: no payment
+ * word, no loose method word, non_payment on its own. The WHOLE message must also be free of every claim / proof /
+ * status / risk cue. The caller adds the history gate (sales-state nothingPaidYet: nothing about paying happened in this
+ * chat yet). Returns the method, or null (the normal classifier path). Pure.
+ */
+export function embeddedPaymentChoice(text: string): PaymentChoiceMethod | null {
+  const value = stripFormatChars((text || '').normalize('NFKC'))
+  if (!value.trim() || value.length > DATA_CHOICE_MAX_CHARS) return null
+  const folded = foldChoice(value)
+  if (DATA_CHOICE_REJECT_RE.test(value) || DATA_CHOICE_REJECT_RE.test(folded) || CHOICE_CLAIM_WORD_RE.test(value) || PAYMENT_COMPLETION_RE.test(value)) return null
+  if (
+    SENT_AMOUNT_CLAIM_RE.test(value) ||
+    PROOF_CUE_RE.test(value) ||
+    hasPaymentClaimCue(value) ||
+    CONFIRM_CUE_RE.test(value) ||
+    CONFIRM_PAYMENT_RE.test(value) ||
+    RISK_CUE_RE.test(value) ||
+    hasPaymentStatusClaim(value) ||
+    NARROW_STATUS_QUESTION_RE.test(value) ||
+    isPaymentCompletionClaim(value) ||
+    // Start-bounded here: an address has "centro" / "Concepción" (the plain list also matches inside words).
+    DATA_STATUS_CUE_RE.test(value)
+  ) {
+    return null
+  }
+  const parts = value
+    .split(/\n+|(?<=[.!;])\s+/u)
+    .map((p) => p.trim())
+    .filter(Boolean)
+  if (parts.length > DATA_CHOICE_MAX_PARTS) return null
+  let method: PaymentChoiceMethod | null = null
+  for (const part of parts) {
+    const g = paymentChoiceGrammar(part)
+    if (g) {
+      if (g.ask || (method && method !== g.method)) return null
+      method = g.method
+      continue
+    }
+    // Order data only: no payment word, no method word, nothing the classifier reads as payment.
+    const f = foldChoice(part)
+    if (hasPaymentWord(part) || LOOSE_METHODS.some(([re]) => new RegExp(re.source, 'u').test(f))) return null
+    if (classifyPaymentText(part) !== 'non_payment') return null
+  }
+  return method
 }
 
 /** "no quiero contra entrega", "no tengo efectivo", "sinpe no", "mejor no por sinpe": never a choice. */

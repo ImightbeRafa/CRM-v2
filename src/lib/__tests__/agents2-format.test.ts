@@ -839,7 +839,10 @@ describe('SecureDog INT-114 reopened: safety first, then choices', () => {
   it('structure: the classifier / safety hand-off runs before any choice or mention route', () => {
     const src = read('src/lib/soft-ai/inbound-decision.ts')
     const safetyAt = src.indexOf('  if (safety.escalate) {')
-    assert.ok(safetyAt > 0 && safetyAt < src.indexOf('const choice = textMessage'))
+    assert.ok(safetyAt > 0 && safetyAt < src.indexOf('const pick = textMessage'))
+    // Rafael 2026-10-18: the order-data choice too, and only for a message the classifier itself called a choice.
+    assert.ok(safetyAt < src.indexOf('embeddedPaymentChoice(input.inboundText)'))
+    assert.match(src, /nothingPaidYet && paymentClass === 'payment_info_safe' \? embeddedPaymentChoice/)
     assert.ok(safetyAt < src.indexOf('pendingMethodMention(input.inboundText)'))
     assert.match(src, /paymentClass !== 'payment_proof_or_risk'/)
   })

@@ -5,6 +5,8 @@
  */
 import {
   hasPaymentClaimCue,
+  classifyPaymentText,
+  embeddedPaymentChoice,
   hasHardPaymentClaim,
   hasPaymentStatusHint,
   isBareOrderConfirmAsk,
@@ -20,6 +22,7 @@ import {
   type PaymentChoiceMethod,
 } from '@/lib/soft-ai/payment-classifier'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
+import { HISTORY_WINDOW_MAX } from '@/lib/soft-ai/agent-types'
 import { soldOutFocus, type StockGuard } from '@/lib/soft-ai/product-availability-core'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import { PICKUP_DATA_LIST, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
@@ -292,6 +295,10 @@ const NEVER_CONFIRM_ORDER =
   'NUNCA digas confirmado, registrado, anotado, agendado, listo, ni que sale hoy o mañana.'
 
 /** Next step once the customer picked a method (metodo_pago). */
+/** The customer chose the method inside the order data: the total goes first (Rafael 2026-10-18: get them to pay). */
+const DATA_CHOICE_TOTAL_STEP =
+  ' El cliente ya eligió el método junto con sus datos: si ya tenés todo, primero decí el total exacto con envío (producto + envío) en su propio mensaje y luego el token.'
+
 function chosenMethodStep(ctx: SalesContext, method: ChosenPaymentMethod): string {
   const offered = salesPaymentMethods(ctx)
   if (ctx.paymentMethods && !offered.includes(method)) {
@@ -431,10 +438,17 @@ export function deriveSalesState(input: {
   // EARLIER message since the question is carried (the customer then sends the order data).
   const offered = salesPaymentMethods(input.ctx)
   const mention = askedMethod ? pendingMethodMention(last) : null
+  // Rafael 2026-10-18: a choice written inside the order data ("… Envío a domicilio. Pago por SINPE 🙌") with nothing
+  // paid yet in this chat counts as the pick (the same gate as the inbound decision).
+  const dataChoice =
+    !askedMethod && embeddedPaymentChoice(last) && nothingPaidYet([...input.history, { direction: 'inbound', content: last }])
+      ? embeddedPaymentChoice(last)
+      : null
   const chosenMethod =
     paymentMethodPick(last, askedMethod, offered) ??
     (mention ? resolvePaymentChoice(mention, offered) : null) ??
-    carriedOrderMethod(input.history, last, offered)
+    carriedOrderMethod(input.history, last, offered) ??
+    (dataChoice ? resolvePaymentChoice(dataChoice, offered) : null)
 
   let stage: SalesStage
   if (receiptCue) stage = 'verificando'
@@ -465,7 +479,7 @@ export function deriveSalesState(input: {
     focus && closing
       ? SOLD_OUT_STEP
       : stage === 'metodo_pago' && chosenMethod
-        ? chosenMethodStep(input.ctx, chosenMethod)
+        ? chosenMethodStep(input.ctx, chosenMethod) + (dataChoice ? DATA_CHOICE_TOTAL_STEP : '')
         : NEXT_STEP[stage]
   return {
     soldOutFocus: focus,
@@ -904,6 +918,30 @@ export function noPaymentYet(history: ReadonlyArray<{ direction: string; content
     // or the bare confirm ask itself. Anything else (a status hint, "ya compré", a web order, a question) ends it.
     if (hasPaymentWord(text) || WEB_ORDER_RE.test(text) || ALREADY_BOUGHT_RE.test(text) || hasPaymentStatusHint(text)) return false
     if (!isCourtesyText(text) && !isBareOrderConfirmAsk(text)) return false
+  }
+  return true
+}
+
+/** The store already asked for / talked about a receipt or a payment's state. */
+const STORE_RECEIPT_TALK_RE = /(?<![\p{L}])(?:comprobante\p{L}*|recibo|captura|pantallazo)(?![\p{L}])|\[\[\s*PAGO/iu
+
+/**
+ * Rafael 2026-10-18 (a choice inside the order data): a NARROWER cousin of noPaymentYet that allows sales talk and the
+ * customer's own method choice — nothing about PAYING happened in this chat yet: no payment details, payment block,
+ * order block, receipt or payment-state talk from the store; no photo / file / audio (any non-text bubble) from either
+ * side; no customer message that the classifier reads as a payment claim / proof. A full history window fails closed
+ * (earlier payment details may be out of view). Same input as noPaymentYet (history + burst + trigger). Pure.
+ */
+export function nothingPaidYet(history: ReadonlyArray<{ direction: string; content?: string | null; messageType?: string | null }>): boolean {
+  if (history.length >= HISTORY_WINDOW_MAX) return false
+  for (const m of history) {
+    const text = stripFormatChars((m.content || '').normalize('NFKC'))
+    if ((m.messageType && m.messageType !== 'text') || MEDIA_PLACEHOLDER_RE.test(text)) return false
+    if (m.direction === 'outbound') {
+      if (paymentDetailsIn(text) || PAYMENT_BLOCK_RE.test(text) || ORDER_BLOCK_RE.test(text) || STORE_RECEIPT_TALK_RE.test(text) || hasPaymentStatusHint(text)) return false
+      continue
+    }
+    if (hasHardPaymentClaim(text) || (classifyPaymentText(text, { nothingPaidYet: true }) === 'payment_proof_or_risk')) return false
   }
   return true
 }

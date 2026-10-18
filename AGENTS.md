@@ -14,6 +14,8 @@ cover non-obvious setup/run gotchas.
 - **Never grok-4.5** (no `grok-4.5` alias) for coding, planning, or verification.
 - Rule file: `.cursor/rules/coding-model-grok-4.7.mdc`.
 - Do not merge to `dev` unless Rafael explicitly says to merge.
+- Scope: this model lock is for **Cursor** sessions. Claude Code sessions use the model
+  map in `CLAUDE.md` (`.claude/agents/`); every other rule in this file still applies.
 
 ### Agent OS & audits
 - Skill: `.cursor/skills/executor-advisor-loop/SKILL.md` (Sol-orchestrated Executor/Advisor;

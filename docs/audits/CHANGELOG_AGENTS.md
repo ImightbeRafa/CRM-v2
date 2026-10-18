@@ -1,3 +1,11 @@
+## 2026-10-18 — Claude setup on the live line + cloud push guard (claudio/luna-10-d2)
+
+- Cherry-picked a7f137a (CLAUDE.md, .claude/agents, .claude/skills, .claude/settings.json + hooks/guard.mjs, AGENTS.md
+  scope line) from claudio/agents2-pace. CLAUDE.md now names `claudio/luna-10-d2` as the live line.
+- guard.mjs: cloud sessions (CLAUDE_CODE_REMOTE=true or a non-Windows host) cannot push to `claudio/luna-10-d2`
+  (any refspec form, or a bare push while on it); they push their own branch and open a draft PR. Rafael's PC still can.
+  Tested: 3/3 live-line forms blocked from cloud, own branch allowed, local push allowed, dev still blocked.
+
 ## 2026-10-18 — INT-158 round 2: structural claim check + INT-165 data-list ReDoS (claudio/luna-10-d2, NOT deployed)
 
 - Structural fixes for SecureDog's four Highs (no new claim words except cheap Mediums):
@@ -421,6 +429,20 @@ Two safety gaps SecureDog found while reviewing PR #100. Both predate it.
 - Verifier: round 1 FAIL (H1/H2, M3–M5, L6/L7) → round 2 PASS WITH NOTES (M1–M3, L4, L6) → fixed.
 - Proof: tsc 0, lint 0, test:soft-ai 826/826 (new agents2-data-list), soft-ai-agent 319/319, security 271/271,
   chat-harden 643/643. Not deployed.
+
+## 2026-10-17 — Claude Code cloud setup + shared-branch rules (claudio/agents2-pace)
+
+- Committed the Claude Code setup so cloud sessions get it: `CLAUDE.md` (model map + "Always" rules),
+  `.claude/agents/` (advisor, verifier, securedog, scout), `.claude/skills/executor-advisor-loop/`, and the
+  AGENTS.md scope line (grok-4.7 lock = Cursor only).
+- Repo guard: `.claude/settings.json` deny rules + `.claude/hooks/guard.mjs` (runs before every Bash call). Blocks
+  pushes to dev/main/master (any refspec form, --all/--mirror), `gh pr merge`, local merges on dev/main, Cloudflare /
+  Railway / Vercel deploys and secret changes, `gh workflow run`, `prisma db push` / `migrate`, `--accept-data-loss`,
+  `ALLOW_LM_DROP`. Works alongside the claude.ai cloud environment's own guard.
+- Shared-branch rule: one writer per branch. Grok (Cursor) works on `grok/agents2-pace`, cut from
+  `claudio/agents2-pace`, and never pushes to it directly. Every agent pulls and reads this changelog before
+  starting, and adds an entry (what changed, files, what's left) when done.
+- Proof: guard tested locally, 13/13 blocked, 7/7 allowed. No app code changed.
 
 ## 2026-10-16 — agents2-pace/hours: Verifier F1–F7 + SecureDog INT-120..124, DATA-55/56 (claudio/agents2-pace)
 

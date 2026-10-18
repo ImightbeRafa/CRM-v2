@@ -1279,6 +1279,7 @@ export async function executeAgentLayerTurn(
     shortcuts,
     shortenLongReply: true,
     linkAllowlist: runtimeInput.linkAllowlist,
+    modelText: true,
     // Verifier round 4: "pasame los datos" … "gracias" — every customer message since the store last answered.
     paymentOptions: { ...runtimeInput.salesPaymentOptions, customerText: customerTextSinceLastAnswer(history, burst.inboundText) },
   })
@@ -2392,6 +2393,7 @@ async function runAgentTestTurnInner(input: {
       shortcuts,
       shortenLongReply: true,
       linkAllowlist: runtimeInput.linkAllowlist,
+      modelText: true,
       paymentOptions: { ...runtimeInput.salesPaymentOptions, customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText) },
     })
     // Same plan as the live turn (B1): checked model reply, safe line, or hand-off text.

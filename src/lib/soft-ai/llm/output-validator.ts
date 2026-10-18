@@ -11,7 +11,16 @@ import {
   type ReplyStyle,
   DEFAULT_REPLY_STYLE,
 } from '@/lib/soft-ai/brand-facts'
-import { hasOutboundConfirmationClaim, maskConditionalConfirmation, renderShortcutTemplate, shortcutByKey, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
+import {
+  confirmationCheckForms,
+  hasOutboundConfirmationClaim,
+  hasUnsafeLetters,
+  maskConditionalConfirmation,
+  renderShortcutTemplate,
+  shortcutByKey,
+  stripBidiControls,
+  type RuntimeShortcut,
+} from '@/lib/soft-ai/shortcuts'
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
 import { fillPaymentToken, paymentNumberProblems, type PaymentFillOptions, type TokenPaymentMethod } from '@/lib/soft-ai/payment-guard'
 import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
@@ -29,7 +38,7 @@ const PAYMENT_STATUS_REPLY_RE =
 
 /** Never said by the agent in any chat: it cannot see the bank ("acreditado", "recibimos tu sinpe", "pago verificado"). */
 const ALWAYS_PAYMENT_STATUS_REPLY_RE =
-  /(?<![\p{L}])(?:(?:tu|su|el)\s+(?:sinpe|pago|dep[oó]sito|transferencia)\s+ya\s+(?:cay[oó]|lleg[oó]|entr[oó])|ya\s+nos\s+(?:lleg|cay|entr)[oó](?=\s*(?:[.!🙌😊👍💚❤✨]|$|,\s*(?:muchas\s+)?gracias))|acredit\p{L}*|(?:recibimos|ya\s+recibimos|verificamos|confirmamos|ya\s+vimos|vimos|ya\s+vi|vi)\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|(?:pago|sinpe|dep[oó]sito|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|acreditad[oa]|aprobad[oa])|(?:tu|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia)\s+(?:ya\s+)?(?:est[aá]|qued[oó]|fue)\s+(?:recibid|confirmad|verificad|acreditad|aprobad|procesad|registrad)\p{L}*)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:(?:tu|su|el)\s+(?:sinpe|pago|dep[oó]sito|transferencia)\s+ya\s+(?:cay[oó]|lleg[oó]|entr[oó])|ya\s+nos\s+(?:lleg|cay|entr)[oó](?=\s*(?:[.!🙌😊👍💚❤✨]|$|,\s*(?:muchas\s+)?gracias))|acredit\p{L}*|(?:recibimos|ya\s+recibimos|verificamos|validamos|confirmamos|ya\s+vimos|vimos|ya\s+vi|vi)\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|(?:pago|sinpe|dep[oó]sito|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|validad[oa]|acreditad[oa]|aprobad[oa])|(?:tu|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia)\s+(?:ya\s+)?(?:est[aá]|qued[oó]|fue)\s+(?:recibid|confirmad|verificad|validad|acreditad|aprobad|procesad|registrad)\p{L}*)(?![\p{L}])/iu
 
 export type OutputValidationResult = {
   ok: boolean
@@ -479,6 +488,20 @@ export function resultsClaimIn(text: string, opts: { instructions?: boolean } = 
   return null
 }
 
+/** Longest model reply checked at all (~700 output tokens is ~3 000 characters). */
+export const MODEL_TEXT_MAX_CHARS = 4000
+
+const WORD_START_CACHE = new Map<RegExp, RegExp>()
+/** The same pattern, matched only where a word starts (for the accent-free form, INT-158). */
+function fromWordStart(re: RegExp): RegExp {
+  let edged = WORD_START_CACHE.get(re)
+  if (!edged) {
+    edged = new RegExp(String.raw`(?<![\p{L}\p{N}])(?:${re.source})`, re.flags.includes('u') ? re.flags : `${re.flags}u`)
+    WORD_START_CACHE.set(re, edged)
+  }
+  return edged
+}
+
 export function validateAgentOutput(input: {
   text: string
   citedToolNames: string[]
@@ -509,9 +532,13 @@ export function validateAgentOutput(input: {
   linkText?: string
   /** N3: the contra-entrega / efectivo closing turn — the order-confirmation wording check applies. */
   orderClosing?: boolean
+  /** INT-158 H3: the text was written by the model — a letter outside Latin-1 / a stray combining mark is held. */
+  modelText?: boolean
 }): OutputValidationResult {
   const reasons: string[] = []
   const text = input.text || ''
+  // INT-158 r2 F4/F11: a model reply this long is never a real answer; held before any pattern runs on it.
+  if (input.modelText && text.length > MODEL_TEXT_MAX_CHARS) return { ok: false, needsHuman: true, reasons: ['model_text_too_long'], highlightedAmounts: [] }
   const cited = new Set(input.citedToolNames)
   const highlighted: number[] = []
 
@@ -519,12 +546,22 @@ export function validateAgentOutput(input: {
   // configuration needs no allowlist entry, and the allowlist never widens to a whole payment host (Verifier F2).
   if (input.linkAllowlist && foreignLinks(input.linkText ?? text, input.linkAllowlist).length > 0) reasons.push('foreign_link')
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
-  if (CREATED_CLAIM_RE.test(text) || (input.orderClosing && ORDER_CLOSING_CLAIM_RE.test(text))) reasons.push('write_claim')
+  // INT-158 H4: the sibling claim checks read every form the confirmation-wording check reads (raw, normalised —
+  // invisible characters, look-alikes, WhatsApp markup, odd separators — without accents, and the look-alike
+  // skeleton). These patterns have no word edges, so the accent-free and skeleton forms are matched from a word start
+  // only ("arnés corrector" would otherwise read "es correct…").
+  const textForms = confirmationCheckForms(text)
+  const anyForm = (re: RegExp, forms: string[]) => forms.some((form, i) => (i >= 2 ? fromWordStart(re) : re).test(form))
+  if (anyForm(CREATED_CLAIM_RE, textForms) || (input.orderClosing && anyForm(ORDER_CLOSING_CLAIM_RE, textForms))) {
+    reasons.push('write_claim')
+  }
   if (dealProblemWithRule(text, input.allowedDeals ?? [], input.freeShippingRule)) reasons.push('deal_offer')
   // v53 tests 2026-10-18: a conditional next-step participle ("una vez confirmado el pago, sale…") is not a claim; only
   // that participle is masked (shortcuts.ts maskConditionalConfirmation), for this check and the payment-status ones.
   const claimText = maskConditionalConfirmation(text)
+  const claimForms = confirmationCheckForms(claimText)
   if (hasOutboundConfirmationClaim(text)) reasons.push('confirmation_wording')
+  if (input.modelText && hasUnsafeLetters(input.styleText ?? text)) reasons.push('unsafe_letters')
   if (resultsClaimIn(text)) reasons.push('results_claim')
   // SecureDog round 5 (INT-138): to a pregnancy / medication question, "¡Sí! Podés usarlo sin problema" with no doctor
   // referral is the same promise.
@@ -533,9 +570,12 @@ export function validateAgentOutput(input: {
     reasons.push('results_claim')
   }
   // Advisor (luna-10): the unmistakable "payment received" wordings are held on EVERY reply, payment words or not.
-  if (ALWAYS_PAYMENT_STATUS_REPLY_RE.test(claimText)) {
+  if (anyForm(ALWAYS_PAYMENT_STATUS_REPLY_RE, claimForms)) {
     reasons.push('payment_status_claim')
-  } else if ((input.paymentContext || (input.customerText && hasPaymentWord(input.customerText))) && PAYMENT_STATUS_REPLY_RE.test(claimText)) {
+  } else if (
+    (input.paymentContext || (input.customerText && hasPaymentWord(input.customerText))) &&
+    anyForm(PAYMENT_STATUS_REPLY_RE, claimForms)
+  ) {
     reasons.push('payment_status_claim')
   }
 
@@ -746,12 +786,29 @@ export function applyFinalOutputPolicy(input: {
   linkAllowlist?: LinkAllowlist | null
   /** Sales flow: contra entrega offered by a shipping method (agent-sales-context) for [[PAGO_CONTRA_ENTREGA]]. */
   paymentOptions?: PaymentFillOptions
+  /** INT-158 H3: the text was written by the model (live turn / Probar): letters outside Latin-1 are held. */
+  modelText?: boolean
 }): FinalOutputPolicy {
   const facts = input.brandFacts || { schemaVersion: 1 }
   const style = input.replyStyle || DEFAULT_REPLY_STYLE
   const intent = (input.intent || 'other') as AgentIntent
   const shippingAmounts = input.freeShipping ? [] : shippingProvenanceAmounts(facts)
-  let text = (input.text || '').trim()
+  // INT-158 H2: no bidi controls go out, so the text checked below is the text the customer sees (and is sent).
+  let text = stripBidiControls(input.text || '').trim()
+  // INT-158 r2 F4: a model reply this long is never sent and never parsed (bounds every pattern below).
+  if (input.modelText && text.length > MODEL_TEXT_MAX_CHARS) {
+    return {
+      text: '',
+      ok: false,
+      needsHuman: true,
+      reasons: ['model_text_too_long'],
+      purchaseSummaryAppended: false,
+      highlightedAmounts: [],
+      intent,
+      parts: [],
+      paymentMethods: [],
+    }
+  }
   let purchaseSummaryAppended = false
   const reasons: string[] = []
   // Backstop: an unrendered template ({{brand.…}}) or a leftover [[ATAJO…]] never reaches the customer.
@@ -846,6 +903,7 @@ export function applyFinalOutputPolicy(input: {
     linkAllowlist: input.linkAllowlist ?? undefined,
     styleText,
     linkText: styleText,
+    modelText: input.modelText,
     orderClosing:
       filled.methods.some((m) => m === 'contra_entrega' || m === 'efectivo') ||
       input.paymentOptions?.chosenMethod === 'contra_entrega' ||

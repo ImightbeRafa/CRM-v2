@@ -38,7 +38,7 @@ export const VERBATIM_ONLY_KINDS: readonly ShortcutKind[] = [
 
 // Accent-safe word edges (JS \b fails after á/ó) and the first-person forms a seller would use (INT-70, 2026-10-09).
 const CONFIRMATION_WORDING_RE =
-  /(?<![\p{L}\p{N}_])(confirmad[oa]|verificad[oa]|recib(?:í|i|imos)\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|plata|dinero)|recibido|pago\s+(?:recibido|aplicado|acreditado|aprobado|confirmado)|(?:ya\s+)?(?:me\s+|nos\s+)?(?:lleg[oó]|cay[oó]|entr[oó])\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|plata|dinero)|(?:ya\s+)?(?:est[aá]|qued[oó])\s+(?:pagad[oa]|acreditad[oa]|aplicad[oa]|confirmad[oa])|te\s+confirmo\s+que\s+(?:el|tu|su|la)\s+(?:pago|plata|transferencia|sinpe)|todo\s+bien\s+con\s+(?:el|tu|su)\s+pago|ya\s+qued[oó]|gracias\s+por\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia)|(?:ya\s+)?tenemos\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia)|ya\s+(?:te\s+|le\s+)?(?:lo\s+|la\s+)?(?:preparamos|enviamos|despachamos|mandamos)(?:\s+(?:tu|su|el)\s+pedido)?|(?:tu|el|su)\s+pedido\s+ya\s+(?:est[aá]|va)\s+(?:en\s+camino|en\s+proceso\s+de\s+env[ií]o|listo)|(?:confirm[éó]|verifiqué|verificó|aprob[éó]|registr[éó]|te\s+confirmo|ya\s+(?:confirmamos|verificamos|aprobamos|registramos))\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante|pedido|compra|orden)|recibi[oó]\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|plata|dinero)|(?<=^|[.!?¡¿\n]\s{0,3})(?:pedido|orden|compra)\s+(?:ya\s+)?pagad[oa]|(?:tu|su)\s+(?:pedido|orden|compra)\s+(?:ya\s+)?(?:est[aá]\s+)?pagad[oa]|(?:tu|el|su)\s+pedido\s+(?:ya\s+)?(?:va|est[aá]|sali[oó])\s+(?:en\s+camino|en\s+ruta|de\s+camino)|(?:tu|el|su)\s+(?:pedido|compra|orden)\s+ya\s+sali[oó]|ya\s+sali[oó]\s+(?:tu|el|su)\s+(?:pedido|compra|paquete)|(?:tu|el|su)\s+(?:pedido|compra|orden|pago)\s+(?:ya\s+)?(?:fue|ha\s+sido|est[aá])\s+(?:enviad|despachad|entregad|aprobad|registrad)[oa]|ya\s+(?:te\s+|le\s+)?(?:lo|la)\s+(?:despach[éó]|envi[éó]|mand[éó]|prepar[éó])|ya\s+(?:te\s+|le\s+)?(?:despach[éó]|envi[éó]|mand[éó]|prepar[éó])\s+(?:tu|el|su)\s+(?:pedido|paquete|env[ií]o|compra))(?=$|[^\p{L}\p{N}_])/iu
+  /(?<![\p{L}\p{N}])(confirmad[oa]|verificad[oa]|recib(?:í|i|imos)\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|plata|dinero)|recibido|pago(?:\s*[:\-–—]\s*|\s+)(?:[✅☑✔👌]\u{FE0F}?[^\S\n]*)?(?:recibido|aplicado|acreditado|aprobado|confirmado|validado)|(?<!(?<![\p{L}])(?:de|el|del|para)\s)pago(?:[^\S\n]*:)?[^\S\n]*(?:✅|☑|✔|👌|ok(?:ay|ey)?(?![\p{L}]))(?=[^\S\n]*(?:[\p{Extended_Pictographic}\u{FE0F}\u{200D}][^\S\n]*)*(?:$|[\n.!,;¡¿]))|(?:ya\s+)?(?:me\s+|nos\s+)?(?:lleg[oó]|cay[oó]|entr[oó])\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|plata|dinero)|(?:ya\s+)?(?:est[aá]|qued[oó])\s+(?:pagad[oa]|acreditad[oa]|aplicad[oa]|confirmad[oa])|te\s+confirmo\s+que\s+(?:el|tu|su|la)\s+(?:pago|plata|transferencia|sinpe)|todo\s+bien\s+con\s+(?:el|tu|su)\s+pago|ya\s+qued[oó]|gracias\s+por\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia)|(?:ya\s+)?tenemos\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia)|ya\s+(?:te\s+|le\s+)?(?:lo\s+|la\s+)?(?:preparamos|enviamos|despachamos|mandamos)(?:\s+(?:tu|su|el)\s+pedido)?|(?:tu|el|su)\s+pedido\s+ya\s+(?:est[aá]|va)\s+(?:en\s+camino|en\s+proceso\s+de\s+env[ií]o|listo)|(?:confirm[éó]|verifiqué|verificó|valid[éó]|aprob[éó]|registr[éó]|te\s+confirmo|ya\s+(?:confirmamos|verificamos|validamos|aprobamos|registramos))\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante|pedido|compra|orden)|recibi[oó]\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|plata|dinero)|(?<=^|[.!?¡¿\n,:;]\s{0,3}|\p{Extended_Pictographic}\u{FE0F}?\s{0,3})(?:pedido|orden|compra)(?:\s*:)?\s+(?:ya\s+)?pagad[oa](?![^\S\n]+antes[^\S\n]+de[^\S\n]+(?:las?[^\S\n]+)?\d)|(?:tu|su)\s+(?:pedido|orden|compra)\s+(?:ya\s+)?(?:est[aá]\s+)?pagad[oa]|(?:(?:tu|el|su)\s+pedido|(?:tu|su)\s+(?:paquete|env[ií]o|orden|compra))\s+(?:ya\s+)?(?:va|est[aá]|sali[oó])\s+(?:en\s+camino|en\s+ruta|de\s+camino)|(?:tu|el|su)\s+(?:pedido|compra|orden)\s+ya\s+sali[oó]|ya\s+sali[oó]\s+(?:tu|el|su)\s+(?:pedido|compra|paquete)|(?:tu|el|su)\s+(?:pedido|compra|orden|pago)\s+(?:ya\s+)?(?:fue|ha\s+sido|est[aá])\s+(?:enviad|despachad|entregad|aprobad|validad|registrad)[oa]|(?:tu|su)\s+(?:paquete|env[ií]o)\s+(?:ya\s+)?(?:fue|ha\s+sido|est[aá])\s+(?:enviad|despachad)[oa]|ya\s+(?:te\s+|le\s+)?(?:lo|la)\s+(?:despach[éó]|envi[éó]|mand[éó]|prepar[éó])|ya\s+(?:te\s+|le\s+)?(?:despach[éó]|envi[éó]|mand[éó]|prepar[éó])\s+(?:tu|el|su)\s+(?:pedido|paquete|env[ií]o|compra)|(?:(?:tu|su)\s+(?:pedido|paquete|compra|orden|env[ií]o)|el\s+pedido)\s+(?:ya\s+)?se\s+(?:envi|despach)[oó]|(?:ya\s+)?se\s+(?:envi|despach)[oó]\s+(?:tu|el|su)\s+(?:pedido|paquete|compra|orden))(?![\p{L}\p{N}])/iu
 
 /**
  * INT-158: Cyrillic / Greek letters that look like Latin ones ("cоnfirmado" with a Cyrillic о) are read as Latin.
@@ -49,21 +49,214 @@ const LOOKALIKES: Record<string, string> = {
   А: 'A', В: 'B', Е: 'E', К: 'K', М: 'M', Н: 'H', О: 'O', Р: 'P', С: 'C', Т: 'T', Х: 'X', І: 'I', Ј: 'J', Ѕ: 'S',
   α: 'a', ε: 'e', ι: 'i', ο: 'o', ρ: 'p', ν: 'v', τ: 't', κ: 'k',
   Α: 'A', Β: 'B', Ε: 'E', Ι: 'I', Κ: 'K', Μ: 'M', Ν: 'N', Ο: 'O', Ρ: 'P', Τ: 'T', Χ: 'X',
+  // Latin-1 letters NFD cannot split (Verifier r1): "cønfirmado", "recibiðo".
+  ø: 'o', Ø: 'O', ð: 'd', Ð: 'D', þ: 'p', Þ: 'P', μ: 'u',
 }
 const LOOKALIKE_RE = new RegExp(`[${Object.keys(LOOKALIKES).join('')}]`, 'gu')
 
-/** NFKC, no invisible format characters, look-alikes as Latin, one space between words (INT-158). */
-export function normalizeForConfirmationCheck(text: string): string {
-  return (
-    stripFormatChars(text || '')
-      // Blank-looking fillers used as a space ("vaㅤen camino") stay a space; every other ignorable goes.
-      .replace(/[\u{115F}\u{1160}\u{3164}\u{FFA0}\u{2800}]/gu, ' ')
-      .replace(/\p{Default_Ignorable_Code_Point}/gu, '')
-      .replace(LOOKALIKE_RE, (ch) => LOOKALIKES[ch] || ch)
-      .replace(/[^\S\n]+/gu, ' ')
-      // A folded letter + a combining accent ("о" + U+0301) becomes one letter again.
-      .normalize('NFC')
-  )
+/** Emoji letters NFKC keeps (🅒 🅲 🇨): read as A–Z for the check only (INT-158 round 2). */
+const EMOJI_LETTER_RE = /[\u{1F150}-\u{1F169}\u{1F170}-\u{1F189}\u{1F1E6}-\u{1F1FF}]/gu
+const EMOJI_LETTER_BASES = [0x1f150, 0x1f170, 0x1f1e6]
+function emojiLetter(ch: string): string {
+  const cp = ch.codePointAt(0) as number
+  const base = EMOJI_LETTER_BASES.filter((b) => cp >= b).pop() as number
+  return String.fromCharCode(65 + cp - base)
+}
+
+/** Other line breaks read as "\n" (U+2028 / NEL start a line on screen, SecureDog r2 F8). */
+// eslint-disable-next-line no-control-regex
+const LINE_BREAK_RE = /\r\n?|[\x85\u{2028}\u{2029}]/gu
+/** Separators shown as a gap — or as nothing (r2 F5): a space in the spaced form, deleted in the joined form. */
+// eslint-disable-next-line no-control-regex
+const GAP_SEPARATOR_RE = /[\v\f\x1C-\x1F]/gu
+/** A word hyphenated across a line break ("confir-\nmado", soft / non-breaking hyphens too). */
+const LINE_HYPHEN_RE = /(?<=\p{L})[-\u{AD}\u{2010}-\u{2013}][^\S\n]*\n\s*(?=\p{L})/gu
+/** Between two letters: drawn as nothing or a sliver (NEL, U+2028-9, en/thin/hair/narrow spaces; Verifier r2). */
+// A letter on one side and a letter or a digit stand-in on the other ("CONFIRMAD" + U+2009 + "0", Verifier r4);
+// digit-gap-digit ("₡22 800") is a price.
+const NARROW_GAP_IN_WORD_RE =
+  /(?:(?<=\p{L})(?:[\x85\u{2028}\u{2029}\u{2000}-\u{200A}\u{202F}\u{205F}]|\r(?!\n))(?=[\p{L}\p{N}])|(?<=[\p{L}\p{N}])(?:[\x85\u{2028}\u{2029}\u{2000}-\u{200A}\u{202F}\u{205F}]|\r(?!\n))(?=\p{L}))/gu
+/** A digit, superscript, ordinal or modifier letter touching a letter is its own word ("enviado¹", "ºconfirmado", "enviadoᵃ"). */
+const DIGIT_EDGE_RE = /(?<=\p{L})(?=[\p{N}ºª\p{Lm}])|(?<=[\p{N}ºª\p{Lm}])(?=\p{L})/gu
+
+/**
+ * NFKC, no invisible format characters, look-alikes as Latin, one space between words (INT-158). Round 2: NEL /
+ * U+2028-9 are line breaks; vertical tab / form feed / info separators are a space (stripFormatChars would delete them
+ * and join the words, L1); WhatsApp markup _ * ~ ` is a space (H1); "confir-\nmado" is one word; 4+ single letters with
+ * one separator each ("c o n f i r m a d o", "C•O•N•F…", one per line) are one word. `joined`: separators, markup and
+ * in-word hyphens are DELETED instead ("conf\x1Firmado", "con*firm*ado", "CON-FIR-MA-DO"), no digit split.
+ */
+export function normalizeForConfirmationCheck(text: string, joined = false): string {
+  let t = text || ''
+  // Joined: NEL / U+2028-9 and narrow / hair spaces inside a word may be drawn as (almost) nothing ("conf\x85irmado").
+  if (joined) t = t.replace(NARROW_GAP_IN_WORD_RE, '')
+  t = t.replace(LINE_BREAK_RE, '\n').replace(LINE_HYPHEN_RE, '')
+  t = t.replace(GAP_SEPARATOR_RE, joined ? '' : ' ')
+  if (!joined) t = t.replace(DIGIT_EDGE_RE, ' ')
+  t = stripFormatChars(t)
+    // Blank-looking fillers used as a space ("vaㅤen camino") stay a space; every other ignorable goes.
+    .replace(/[\u{115F}\u{1160}\u{3164}\u{FFA0}\u{2800}]/gu, ' ')
+    .replace(/\p{Default_Ignorable_Code_Point}/gu, '')
+    // Decomposed first, so an accented look-alike ("ό" = ο + accent) is mapped too.
+    .normalize('NFD')
+    .replace(LOOKALIKE_RE, (ch) => LOOKALIKES[ch] || ch)
+    // A folded letter + a combining accent ("о" + U+0301) becomes one letter again.
+    .normalize('NFC')
+    .replace(/[èêë]/gu, 'é')
+    .replace(/[ÈÊË]/gu, 'É')
+    .replace(/[òôö]/gu, 'ó')
+    .replace(/[ÒÔÖ]/gu, 'Ó')
+    .replace(EMOJI_LETTER_RE, emojiLetter)
+    // Parenthesized letters (⒞ 🄒 → "(c)" after NFKC) and in-word ¡ / ¢ ("conf¡rmado", "¢onfirmado"): letters.
+    .replace(/\((\p{L})\)/gu, '$1')
+    .replace(/(?<=\p{L})¡(?=\p{L})/gu, 'i')
+    .replace(/(?<=\p{L})¢|¢(?=\p{L})/gu, 'c')
+    .replace(/[_*~`]/gu, joined ? '' : ' ')
+  if (joined) t = t.replace(/(?<=\p{L})[-\u{2010}-\u{2014}](?=\p{L})/gu, '')
+  return t
+    .replace(/[^\S\n]+/gu, ' ')
+    .replace(/(?<![\p{L}\p{N}])\p{L}(?:[^\p{L}\p{N}]\p{L}(?![\p{L}\p{N}])){3,}/gu, (m) => m.replace(/[^\p{L}]/gu, ''))
+}
+
+/** Same text without accents ("confirmádo" → "confirmado"): a misspelt claim still reads as one. */
+function withoutMarks(text: string): string {
+  return text.normalize('NFD').replace(/\p{M}/gu, '').normalize('NFC')
+}
+
+/**
+ * Stand-ins inside a word that has letters ("C0NFIRMAD0", "confirm@do", "€nviado", "c○nfirmado", "CONF│RMADO", "en√iado").
+ * SecureDog r3 / Verifier r3: case-aware, sentence punctuation only inside a word, and an "l" reading.
+ */
+const SKELETON: Record<string, string> = {
+  '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '6': 'g', '7': 't', '8': 'b', '9': 'g', '@': 'a', $: 's', '€': 'e',
+  '¢': 'c', '¡': 'i', '|': 'i', '!': 'i', '¦': 'i', '‖': 'li', '○': 'o', '◯': 'o', '◦': 'o', '●': 'o', '⭕': 'o', '•': 'o',
+  '⚬': 'o', '◌': 'o', '❍': 'o', '☉': 'o', '⚪': 'o', '🔴': 'o', '∙': 'o', '©': 'c', '®': 'r', '°': 'o', '†': 't', '√': 'v',
+  '▽': 'v', '│': 'i', '┃': 'i', '╎': 'i', '╏': 'i', '┆': 'i', '┇': 'i', '┊': 'i', '┋': 'i', '▌': 'i', '▐': 'i', '▏': 'i',
+  '▕': 'i', '❘': 'i', '❙': 'i', '❚': 'i', '✝': 't', '✞': 't', '✟': 't', '‡': 't', '🔽': 'i', '▼': 'v',
+}
+/** Stand-ins that also read as l ("||egó", "ap1icado", "PAGO RECIB❘DO", "‖egó"). */
+const L_STANDINS = new Set(['1', '|', '¦', '‖', '│', '┃', '╎', '╏', '┆', '┇', '┊', '┋', '▌', '▐', '▏', '▕', '❘', '❙', '❚'])
+/** Sentence punctuation is a stand-in only inside a word, never at its edge ("¡C0NFIRMAD0!"). */
+const EDGE_PUNCT = new Set(['!', '¡'])
+const SKELETON_TOKEN_RE = new RegExp(String.raw`[\p{L}` + Object.keys(SKELETON).join('') + ']+', 'gu')
+
+/** What a look-alike word reads as, with stand-ins as i (asL false) or as l (asL true). Check-only text. */
+function skeleton(text: string, asL: boolean): string {
+  return text
+    .replace(SKELETON_TOKEN_RE, (tok) => {
+      if (!/\p{L}/u.test(tok)) return tok
+      const chars = [...tok]
+      let a = 0
+      let b = chars.length
+      while (a < b && EDGE_PUNCT.has(chars[a])) a++
+      // A trailing bar is trimmed in the i reading only; in the l reading it is an l ("E| pedido", SecureDog r4).
+      while (b > a && (EDGE_PUNCT.has(chars[b - 1]) || (!asL && L_STANDINS.has(chars[b - 1]) && !/\p{N}/u.test(chars[b - 1])))) b--
+      const core = chars.slice(a, b)
+      const letters = core.filter((c) => /\p{L}/u.test(c))
+      // An all-caps word ("C0NFlRMAD0"): stand-ins upper-case, a lower-case l is an I.
+      const caps = letters.filter((c) => /\p{Lu}/u.test(c)).length >= 2 && !letters.some((c) => c !== 'l' && /\p{Ll}/u.test(c))
+      const mapped = core.map((c, i) => {
+        if (caps && c === 'l') return 'I'
+        // l reading: a capital I reads as l in a lower-case word ("IIegó", "Io despaché") and, after the first letter,
+        // in an all-caps word of at most two letters ("EI pedido" = "El pedido", SecureDog r4; not "SINPE", r5).
+        if (asL && c === 'I' && (!caps || (i > 0 && letters.length <= 2))) return 'l'
+        const m = asL && L_STANDINS.has(c) ? (c === '‖' ? 'll' : 'l') : SKELETON[c]
+        if (!m) return c
+        return caps ? m.toUpperCase() : m
+      })
+      return chars.slice(0, a).join('') + mapped.join('') + chars.slice(b).join('')
+    })
+    .replace(/rn/g, 'm')
+    .replace(/cl/g, 'd')
+}
+
+/** A run of emoji / symbols glued to a letter on either side (variation selectors, skin tones and ZWJ included). */
+const GLUED_RUN_PART = String.raw`(?:[\p{Extended_Pictographic}\p{So}\p{Sm}\u{FE0F}\u{1F3FB}-\u{1F3FF}\u{200D}\u{2016}\u{2021}])+`
+const GLUED_RUN_RE = new RegExp(String.raw`(?<=\p{L})${GLUED_RUN_PART}|${GLUED_RUN_PART}(?=\p{L})`, 'gu')
+
+/**
+ * Chat Spanish drops the accent of the first-person past right after "ya" ("Ya confirme tu pago", "Ya te lo envie"):
+ * read it as the accented form — unless a subjunctive frame (cuando, si, hasta que, querés / espero / necesito … que)
+ * comes before "ya" in the same sentence ("cuando el equipo
+ * ya confirme tu pago", "¿querés que ya te envie…?", Verifier r6), so "Pura vida mae ya te lo envie" is still read
+ * (SecureDog r5).
+ */
+const UNACCENTED_PAST_RE =
+  /(?<![\p{L}])(?<!(?<![\p{L}])(?:cuando|apenas|en\s+cuanto|una\s+vez\s+que|si|para\s+que|hasta\s+que|ojal[aá]|(?:quer|quier|esper|necesit|pid|pide|ped|prefer|gust)\p{L}*\s+(?:\p{L}+\s+)?que)(?![\p{L}])[^.!?¡¿\n]{0,80})(ya(?:\s+(?:te|le|se|lo|la|los|las)){0,2}\s+)(confirm|verifiqu|valid|aprob|registr|despach|envi|mand|prepar)e(?![\p{L}])/giu
+
+/**
+ * The forms every done-claim check reads (INT-158). Forms 1-2 are always the raw text and the normalised one; then the
+ * normalised one without accents ("Confírmamos tu pago"), the unaccented past read as accented ("Ya confirme"), and —
+ * in ONE chain, so the tricks combine (SecureDog r5: "Ya te Io envie", "YA C0NFIRME", "PAGO C🔵NFIRMAD0") — for the
+ * joined form with and without accents, in the i and the l reading: skeleton → emoji / symbol run glued to a letter
+ * read as "o" (🔵 🟢 ⚫ 🍩 ➰) → unaccented past as accented. Patterns without word edges read every form after the
+ * second from a word start.
+ */
+export function confirmationCheckForms(text: string): string[] {
+  const raw = text || ''
+  const normalized = normalizeForConfirmationCheck(raw)
+  const joined = normalizeForConfirmationCheck(raw, true)
+  const extra = new Set([withoutMarks(normalized), normalized.replace(UNACCENTED_PAST_RE, '$1$2é')])
+  for (const base of [joined, withoutMarks(joined)]) {
+    for (const asL of [false, true]) {
+      const sk = skeleton(base, asL)
+      // With and without the glued-run step: "C0NFIRMAD0✅" must not become "CONFIRMADOo".
+      extra.add(sk.replace(UNACCENTED_PAST_RE, '$1$2é'))
+      extra.add(sk.replace(GLUED_RUN_RE, 'o').replace(UNACCENTED_PAST_RE, '$1$2é'))
+    }
+  }
+  return [raw, normalized, ...extra]
+}
+
+/** Bidi controls that make the screen order differ from the text order (RLO + reversed letters, H2). */
+const BIDI_CONTROL_RE = /[\u{61C}\u{200E}\u{200F}\u{202A}-\u{202E}\u{2066}-\u{2069}]/gu
+/** Outgoing text without bidi controls: the text that is checked is the text the customer sees (INT-158 H2). */
+export function stripBidiControls(text: string): string {
+  return (text || '').replace(BIDI_CONTROL_RE, '')
+}
+
+/**
+ * Characters a model reply may use (SecureDog r2 F1/F2): ASCII, Latin-1 as written (µ ° ½ ñ), general punctuation,
+ * currency, arrows, a few math signs, geometric shapes / dingbats / misc symbols (● ★ ✔), emoji.
+ */
+// eslint-disable-next-line no-control-regex
+const MODEL_CHAR_RE = /^[\t\n\r\x20-\x7E\u{A0}-\u{FF}\u{2010}-\u{2027}\u{2030}-\u{205E}\u{20A0}-\u{20C0}\u{2190}-\u{21FF}\u{2212}\u{2248}\u{2260}\u{2264}\u{2265}\u{221E}\u{2219}\u{221A}\u{2500}-\u{259F}\u{25A0}-\u{27BF}\u{27F0}-\u{27FF}]$/u
+const EMOJI_RE = /^\p{Extended_Pictographic}$/u
+/**
+ * A symbol glued between two letters ("CONF│RMADO", "en√iado"): ASCII and Latin-1 punctuation, curly quotes, dashes,
+ * the ellipsis, emoji, arrows, ★ and the stand-ins the skeleton already reads (• ⭕ ⚪) are ordinary glue ("Listo✅te
+ * paso…", "Lunes→Viernes", "Talla•M"; Verifier r4).
+ */
+const GLUED_SYMBOL_RE =
+  /\p{L}(?:(?!\p{Extended_Pictographic})[^\p{L}\p{N}\p{M}\s\x21-\x7E\u{A1}-\u{BF}\u{D7}\u{F7}\u{2010}-\u{2014}\u{2018}\u{2019}\u{201C}\u{201D}\u{2022}\u{2026}\u{2190}-\u{21FF}\u{2605}\u{2606}\u{25CB}\u{25CF}\u{25EF}\u{25E6}\u{1F3FB}-\u{1F3FF}\u{200D}])+\p{L}/u
+const EMOJI_PART_RE = /^[\u{1F3FB}-\u{1F3FF}\u{1F1E6}-\u{1F1FF}\u{FE0E}\u{FE0F}]$/u
+const TAG_RE = /^[\u{E0020}-\u{E007F}]$/u
+/**
+ * INT-158 H3 (model text only): no map can list every look-alike (ı ɑ ᴄ օ Ꮯ ά, Bengali ০, 〇, ⊂, U+FFF9, Hebrew
+ * punctuation that turns the line right-to-left …), so a model reply is held for a person when it has any character
+ * outside an ALLOW-list: MODEL_CHAR_RE, emoji, anything NFKC folds into the list (full-width, circled, superscript),
+ * ZWJ only inside an emoji sequence, the keycap mark only after 0-9 # *, tag characters only in a 🏴 flag. Prices (₡),
+ * *bold*, ñ/ü, µg, links and Nº / 1ª pass. The owner's own texts keep the look-alike map only.
+ */
+export function hasUnsafeLetters(text: string): boolean {
+  const nfc = stripBidiControls(text).normalize('NFC')
+  if (new RegExp(NARROW_GAP_IN_WORD_RE.source, 'u').test(nfc) || GLUED_SYMBOL_RE.test(nfc)) return true
+  const cs = [...nfc]
+  for (let i = 0; i < cs.length; i++) {
+    const ch = cs[i]
+    if (MODEL_CHAR_RE.test(ch) || EMOJI_RE.test(ch) || EMOJI_PART_RE.test(ch)) continue
+    const folded = [...ch.normalize('NFKC')]
+    if (folded.length > 0 && folded.every((c) => MODEL_CHAR_RE.test(c))) continue
+    if (ch === '\u{200D}' && i > 0 && i + 1 < cs.length && EMOJI_RE.test(cs[i + 1])) continue
+    if (ch === '\u{20E3}' && /^[0-9#*]$/.test(cs[i - 1] === '\u{FE0F}' ? cs[i - 2] ?? '' : cs[i - 1] ?? '')) continue
+    if (TAG_RE.test(ch)) {
+      let j = i
+      while (j > 0 && TAG_RE.test(cs[j - 1])) j--
+      if (j > 0 && cs[j - 1] === '\u{1F3F4}') continue
+    }
+    return true
+  }
+  return false
 }
 
 export type ShortcutDraft = {
@@ -360,8 +553,8 @@ export function reservedShortcutBody(key: ReservedShortcutKey): string {
 }
 
 export function hasConfirmationWording(text: string): boolean {
-  const raw = text || ''
-  return CONFIRMATION_WORDING_RE.test(raw) || CONFIRMATION_WORDING_RE.test(normalizeForConfirmationCheck(raw))
+  if (CONFIRMATION_WORDING_RE.test(text || '')) return true
+  return confirmationCheckForms(text).some((form) => CONFIRMATION_WORDING_RE.test(form))
 }
 
 /**
@@ -382,7 +575,7 @@ const FUTURE_VERB = String.raw`(?:vamos[ \t]+a[ \t]+(?:preparar|enviar|despachar
 const NEXT_STEP = String.raw`(?:(?:(?:tu|el|su)[ \t]+pedido[ \t]+)?sale${NEXT_STEP_WHEN}|(?:(?:tu|el|su)[ \t]+pedido[ \t]+)?se[ \t]+(?:env[ií]a|despacha|prepara)(?:[ \t]+(?:tu|el|su)[ \t]+pedido)?${NEXT_STEP_WHEN}|${FUTURE_VERB}(?:[ \t]+(?:tu|el|su)[ \t]+pedido|[ \t]+el[ \t]+n[uú]mero[ \t]+de[ \t]+gu[ií]a|[ \t]+la[ \t]+gu[ií]a)?${NEXT_STEP_WHEN}|te[ \t]+llega(?:r[aá])?[ \t]+en[ \t]+\d[ \t]*a[ \t]*\d[ \t]+d[ií]as[ \t]+h[aá]biles|te[ \t]+aviso(?:[ \t]+por[ \t]+(?:aqu[ií]|ac[aá]))?)`
 const PAY_THING = String.raw`(?:(?:el|tu|su|la|los)[ \t]+)?(?:pago|sinpe|comprobante|transferencia|dep[oó]sito)`
 const NEXT_STEP_SENTENCE_RE = new RegExp(
-  String.raw`^[ \t,]*(?:una[ \t]+vez|luego[ \t]+de|despu[eé]s[ \t]+de)[ \t]+(confirmad[oa]|recibid[oa]|verificad[oa])[ \t]+${PAY_THING}[ \t]*,?[ \t]*${NEXT_STEP}[ \t]*[\p{Extended_Pictographic}\u{FE0F}\u{200D} \t]*$`,
+  String.raw`^[ \t,]*(?:una[ \t]+vez|luego[ \t]+de|despu[eé]s[ \t]+de)[ \t]+(confirmad[oa]|recibid[oa]|verificad[oa]|validad[oa])[ \t]+${PAY_THING}[ \t]*,?[ \t]*${NEXT_STEP}[ \t]*[\p{Extended_Pictographic}\u{FE0F}\u{200D} \t]*$`,
   'iu',
 )
 const SENTENCE_RE = /[^.!?¡¿\n]+/gu
@@ -395,25 +588,42 @@ const DONE_CUE_RE =
 
 /** A next-step line is short: anything longer is never masked (and bounds every regex run, SecureDog v53 R2-1). */
 const NEXT_STEP_MAX_CHARS = 300
+/** Single horizontal spaces other than " " / tab (BMP, one code unit each). */
+const HORIZONTAL_SPACE_RE = /[\u{A0}\u{2000}-\u{200A}\u{202F}\u{205F}\u{3000}]/gu
 
 export function maskConditionalConfirmation(text: string): string {
   // One space between words (line breaks kept for the sentence split): the patterns allow at most one optional space
-  // between tokens, so no run of spaces can be split many ways (ReDoS).
-  const src = (text || '').replace(/[^\S\n]+/gu, ' ')
+  // between tokens, so no run of spaces can be split many ways (ReDoS). Only spaces / tabs (all the patterns use):
+  // other whitespace inside a word ("conf\virmado", U+2028) is kept for the claim checks (INT-158 r2).
+  const src = (text || '').replace(/[ \t]+/g, ' ')
+  // Next-step lines are matched on a copy where a single wide / narrow space ("pago," + NBSP + "sale") is a plain space —
+  // same length, so positions match `src` — and masked in `src`; the claim checks keep the original characters.
+  const probe = src.replace(HORIZONTAL_SPACE_RE, ' ')
   let masked = false
   let rest = ''
-  const out = src.replace(SENTENCE_RE, (sentence: string) => {
-    const m = sentence.length <= NEXT_STEP_MAX_CHARS ? NEXT_STEP_SENTENCE_RE.exec(sentence) : null
-    if (!m) {
-      rest += `${sentence}\n`
-      return sentence
+  let out = ''
+  let last = 0
+  for (const m of probe.matchAll(SENTENCE_RE)) {
+    const start = m.index ?? 0
+    const sentence = m[0]
+    out += src.slice(last, start)
+    last = start + sentence.length
+    const original = src.slice(start, last)
+    const hit = sentence.length <= NEXT_STEP_MAX_CHARS ? NEXT_STEP_SENTENCE_RE.exec(sentence) : null
+    if (!hit) {
+      rest += `${original}\n`
+      out += original
+      continue
     }
-    const participle = m[1]
-    const at = sentence.toLowerCase().indexOf(participle.toLowerCase())
-    if (at < 0) return sentence
+    const at = sentence.toLowerCase().indexOf(hit[1].toLowerCase())
+    if (at < 0) {
+      out += original
+      continue
+    }
     masked = true
-    return sentence.slice(0, at) + '·'.repeat(participle.length) + sentence.slice(at + participle.length)
-  })
+    out += original.slice(0, at) + '·'.repeat(hit[1].length) + original.slice(at + hit[1].length)
+  }
+  out += src.slice(last)
   // SecureDog round 3: invisible format characters ("Ya​ salió") never hide a done cue.
   return masked && !DONE_CUE_RE.test(normalizeForConfirmationCheck(rest)) ? out : src
 }

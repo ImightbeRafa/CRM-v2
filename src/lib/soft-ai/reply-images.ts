@@ -32,12 +32,17 @@ const BARE_TAG_RE = /(?<![\p{L}])\**ATAJO\**\s*[:=：＝]\s*\**\s*([a-z0-9_-]{2,
 const TAG_KEY_RE = /^[\s*]*[:=：＝\s-][\s*]*([a-z0-9_]{2,40})\s*$/i
 
 /** Removes every [[ATAJO:…]] tag; returns the first key named. */
+const SHORTCUT_TAG_SCAN_MAX_CHARS = 8000
+
 export function extractShortcutTag(text: string): { text: string; key: string | null } {
   let key: string | null = null
   const take = (k: string | undefined) => {
     if (!key && k && /^[a-z0-9_]{2,40}$/i.test(k)) key = k.toLowerCase()
   }
   const raw = text || ''
+  // SecureDog INT-158 r3: the tag patterns are not linear on huge text; a reply this long is held by the output check
+  // anyway (MODEL_TEXT_MAX_CHARS = 4000), so it is returned as is.
+  if (raw.length > SHORTCUT_TAG_SCAN_MAX_CHARS) return { text: raw, key: null }
   // Normalise only when a tag hides behind full-width / compatibility letters ("ＡＴＡＪＯ"): ordinary replies keep
   // their exact characters (1º, m², ™ …).
   const source = !/ATAJO/i.test(raw) && /ATAJO/i.test(raw.normalize('NFKC')) ? raw.normalize('NFKC') : raw

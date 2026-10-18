@@ -379,6 +379,11 @@ export async function executeSoftAiInboundTurn(
   }
 }
 
+/** The webhook stores a WhatsApp / Instagram emoji reaction as the bubble "[reaction]" (meta-chat.ts). */
+export function isReactionOnly(content: string | null | undefined): boolean {
+  return /^\s*\[reaction\]\s*$/i.test(content || '')
+}
+
 /**
  * Persist a Soft AI automation job after inbound dual-write succeeds.
  * Returns null when flag is off or ids are missing. Never throws to webhook.
@@ -393,6 +398,9 @@ export async function enqueueSoftAiAfterInbound(
     // No text and no attachment (e.g. an unsupported Instagram event): the job could only fail (SOFT_AI_PAYLOAD_INVALID),
     // and as the newest job of a burst it would hold back / supersede the real question (burst = one reply).
     if (!(args.content || '').trim()) return { skippedReason: 'empty_content' }
+    // v53 tests 2026-10-18: an emoji reaction to one of our messages ("[reaction]") asks nothing — no turn (it got the
+    // after-hours hand-off line at night). Like empty content, it never holds back / supersedes a real question.
+    if (isReactionOnly(args.content)) return { skippedReason: 'reaction' }
     const enabled = await shouldUseSoftTenantAiV1(args.tenantId)
     if (!enabled) return { skippedReason: 'flag_off' }
     // Burst = one reply needs the agent layer's burst planning; the legacy Soft turn answers one message at a time,

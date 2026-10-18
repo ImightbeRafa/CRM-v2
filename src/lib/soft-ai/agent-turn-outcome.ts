@@ -176,6 +176,11 @@ export const SAFE_LINE = {
 
 export type TurnDeliveryPlan = { text: string; handoff: TurnHandoff | null }
 
+/** A hand-off about money (payment / receipt, refund or charge complaint): the customer gets the payment line. */
+export function isPaymentHandoffReason(reason: string | null | undefined): boolean {
+  return reason === HANDOFF_REASON.payment || reason === HANDOFF_REASON.refund
+}
+
 const SAYS_HOW_TO_PAY_RE = /c[oó]mo\s+pagar|datos\s+(de|para)\s+(pago|pagar)|te\s+paso\s+c[oó]mo/i
 
 /**
@@ -220,8 +225,11 @@ export function planModelTurnDelivery(input: {
   }
   const cannotAnswer = usable && admitsCannotAnswer(text)
   if (input.llmHandoff?.kind === 'handoff' && !(input.paymentDataByTeam && modelPaymentEscalate)) {
+    // v53 tests 2026-10-18: "¡Gracias! … ya lo reviso" is the PAYMENT line. A hand-off for anything else whose own text
+    // cannot go out ("¿de verdad funciona?", "¿dónde retiro?", "¿cuándo vuelve el NAD+?") gets the neutral safe line.
+    const paymentHandoff = modelPaymentEscalate || isPaymentHandoffReason(input.llmHandoff.reason)
     return {
-      text: modelPaymentEscalate || !usable ? SAFE_LINE.payment : cannotAnswer ? cutAfterCannotAnswer(text) : text,
+      text: modelPaymentEscalate ? SAFE_LINE.payment : !usable ? (paymentHandoff ? SAFE_LINE.payment : SAFE_LINE.review) : cannotAnswer ? cutAfterCannotAnswer(text) : text,
       handoff: input.llmHandoff,
     }
   }

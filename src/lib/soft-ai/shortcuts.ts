@@ -337,6 +337,32 @@ export function hasConfirmationWording(text: string): boolean {
   return CONFIRMATION_WORDING_RE.test(text || '')
 }
 
+/**
+ * v53 tests 2026-10-18 ("¿Qué días hacen envíos?" → safe line): a CONDITIONAL, future phrase is how a store explains the
+ * next step, not a claim that something happened — "una vez confirmado el pago, sale el mismo día", "apenas recibamos
+ * el comprobante", "cuando se confirme tu pago", "el equipo confirma tu pedido". Only these exact shapes are removed
+ * before the claim check; CONFIRMATION_WORDING_RE itself is unchanged (INT-70 / INT-93) and every real claim in the
+ * rest of the reply ("pago confirmado", "ya quedó", "te confirmo que tu pago…") is still caught.
+ */
+const PAY_THING = String.raw`(?:(?:el|tu|su|la|los)\s+)?(?:pago|sinpe|comprobante|transferencia|dep[oó]sito)`
+const CONDITIONAL_CONFIRMATION_RES: RegExp[] = [
+  // "una vez / apenas / luego de / después de (que) confirmado / recibido / verificado el pago"
+  new RegExp(String.raw`(?<![\p{L}\p{N}_])(?:una\s+vez|apenas|luego\s+de|despu[eé]s\s+de)\s+(?:confirmad[oa]|recibid[oa]|verificad[oa])\s+${PAY_THING}(?![\p{L}\p{N}_])`, 'giu'),
+  // "cuando / apenas / en cuanto / una vez que (se) confirme(mos) / reciba(mos) / verifique(mos) (el) pago"
+  new RegExp(String.raw`(?<![\p{L}\p{N}_])(?:cuando|apenas|en\s+cuanto|una\s+vez\s+que|luego\s+de\s+que|despu[eé]s\s+de\s+que)\s+(?:se\s+|lo\s+|la\s+)?(?:confirm|recib|verifiqu|verific)(?:e|emos|en|amos|a|an)\s+${PAY_THING}(?![\p{L}\p{N}_])`, 'giu'),
+  // "el equipo (te) confirma / confirmará (tu pedido / el pago / el envío)"
+  new RegExp(String.raw`(?<![\p{L}\p{N}_])el\s+equipo\s+(?:te\s+|le\s+)?confirma(?:r[aá])?(?:\s+(?:enseguida|pronto))?(?:\s+(?:tu|el|su)\s+(?:pedido|pago|env[ií]o))?(?![\p{L}\p{N}_])`, 'giu'),
+]
+
+export function withoutConditionalConfirmation(text: string): string {
+  return CONDITIONAL_CONFIRMATION_RES.reduce((out, re) => out.replace(re, ' '), text || '')
+}
+
+/** The agent's own reply claims a payment / order happened (conditional "next step" phrases excluded). */
+export function hasOutboundConfirmationClaim(text: string): boolean {
+  return hasConfirmationWording(withoutConditionalConfirmation(text))
+}
+
 export function validateShortcutForSave(draft: {
   key: string
   title: string

@@ -47,12 +47,17 @@ export function isMediaMessageType(value: string | null | undefined): value is M
 // The suggested customer notice says «escriba agente»: a bare word must reach a person deterministically.
 const BARE_HANDOFF_RE = /^\s*["'«]?\s*(agente|humano|persona|asesor|agent|human|person)\s*["'».!]*\s*$/i
 
+// v53 tests 2026-10-18 (night exam: "Me atiende alguien por favor?" stayed with the agent): asking to be ATTENDED by a
+// person is a person request too — "me atiende alguien", "alguien me atiende", "me puede atender una persona".
+const ATTEND_ME_RE =
+  /(?<![\p{L}])(?:me\s+(?:atiende|atienden|atienda|puede\s+atender|pueden\s+atender|podr[ií]a\s+atender|podr[ií]an\s+atender)\s+(?:alguien|una\s+persona|un\s+humano|un\s+asesor|una\s+asesora|un\s+agente)|(?:alguien|una\s+persona|un\s+humano|un\s+asesor)\s+(?:que\s+)?me\s+(?:atiende|atienda|puede\s+atender|podr[ií]a\s+atender))(?![\p{L}])/iu
+
 /**
  * A person request or an opt-out: both hand off. At least as wide as the waiting ack's "stop writing to me" list
  * (basta, no me escriban más, darme de baja…) so those never reach the model (SecureDog, PR #100).
  */
 export function isOptOutText(text: string): boolean {
-  return OPT_OUT_RE.test(text || '') || BARE_HANDOFF_RE.test(text || '') || isStopContactText(text)
+  return OPT_OUT_RE.test(text || '') || BARE_HANDOFF_RE.test(text || '') || ATTEND_ME_RE.test(text || '') || isStopContactText(text)
 }
 
 /**

@@ -1,3 +1,20 @@
+## 2026-10-18 — v53 test fixes: hand-off lines, conditional confirmations, reactions, "me atiende alguien" (branch claudio/inbox-handoff-lines, NOT deployed)
+
+- From the v53 exam + mystery shoppers + silent trial (live 43e6fc27; 0 serious in bursts / silent trial, 7 in the exam,
+  5 shopper chats): most lost answers were Sofi waiting or handing off where she should answer.
+- (1) `planModelTurnDelivery`: when the model hands off and its own text cannot go out, the customer gets the payment
+  line ("¡Gracias! … ya lo reviso") only for a payment / refund-complaint hand-off. Anything else ("¿de verdad funciona?",
+  "¿dónde retiro?", "¿cuándo vuelve el NAD+?") gets the neutral "Dame un momento y te confirmo 😊".
+- (2) Conditional next-step phrases ("una vez confirmado el pago, sale…", "apenas recibamos el comprobante", "cuando se
+  confirme tu pago", "el equipo confirma tu pedido") are removed before the claim check on the agent's own replies
+  (live output check + Probar's check). CONFIRMATION_WORDING_RE is unchanged (INT-70 / INT-93), owner-written texts keep
+  the strict check, and every real claim in the reply is still blocked.
+- (6) A "[reaction]" bubble gets no job. "Me atiende alguien" / "alguien me atiende" / "me puede atender una persona"
+  are person requests (opt-out hand-off).
+- (8) Pack tests and the buyer persona now expect ₡22 800 (combo of 2 with shipping), not ₡17 900 / ₡20 900.
+- Tests: `v53-handoff-lines.test.ts` (31). Source asserts updated in agents2-b-sales and instagram-media (same intent).
+  test:soft-ai 1087/1087, test:chat-harden 680/680, test:security 271/271, tsc + lint clean.
+
 ## 2026-10-18 00:10Z — CF 8d94e714: staff bot on Luna, follow-up A/B (off), Simpe, Sofi v53
 
 - Sofi v53 (live data): the instructions had been silently cut at the 1 200-char cap (v51/v52 rules never fully live). The core now fits in 1 098 chars; the rest is in the selling script (voice / closing / objections / neverSay). Combo of 2 = ₡22 800 with shipping included (Rafael). 8 h max. Health → doctor. One question per message.

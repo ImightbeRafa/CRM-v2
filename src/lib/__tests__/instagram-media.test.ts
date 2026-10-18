@@ -171,6 +171,7 @@ describe('luna-10 live · confirmation wording', () => {
     assert.match(rt, /hasPaymentWord\(finalText\) \|\|\s+hasPaymentWord\(customerSide\) \|\|\s+hasPaymentWord\(lastStoreText\)/)
     assert.match(rt, /const paymentRisk =\s+confirmationIsPayment \|\|\s+validation\.reasons\.includes\('payment_status_claim'\)/)
     // The reply itself is still never sent: confirmation_wording keeps needsHuman (safe line + review).
-    assert.match(readFileSync('src/lib/soft-ai/llm/output-validator.ts', 'utf8'), /if \(hasConfirmationWording\(text\)\) reasons\.push\('confirmation_wording'\)/)
+    // v53 (2026-10-18): same claim regex, conditional next-step phrases removed first (shortcuts.ts).
+    assert.match(readFileSync('src/lib/soft-ai/llm/output-validator.ts', 'utf8'), /if \(hasOutboundConfirmationClaim\(text\)\) reasons\.push\('confirmation_wording'\)/)
   })
 })

@@ -118,8 +118,17 @@ describe('B1 never a silent draft; only TRUE hand-offs flip the chat', () => {
       llmEscalateReason: 'opt_out',
     })
     assert.equal(optOut.text, 'Claro 😊 ya te escribe alguien de la tienda.')
+    // v53 tests 2026-10-18: a non-payment hand-off whose text cannot go out gets the neutral line, never "ya lo reviso".
     const bad = planModelTurnDelivery({ text: 'x ₡1', textOk: false, llmHandoff: { kind: 'handoff', reason: 'escalate' }, llmEscalateReason: 'other' })
-    assert.equal(bad.text, SAFE_LINE.payment)
+    assert.equal(bad.text, SAFE_LINE.review)
+    assert.equal(bad.handoff?.kind, 'handoff')
+    const unknown = planModelTurnDelivery({ text: '', textOk: true, llmHandoff: { kind: 'handoff', reason: 'unknown_answer' } })
+    assert.equal(unknown.text, SAFE_LINE.review)
+    // A money hand-off keeps the payment line (payment / refund-complaint reasons), even with no model escalate reason.
+    for (const reason of ['payment', 'complaint']) {
+      const money = planModelTurnDelivery({ text: 'x', textOk: false, llmHandoff: { kind: 'handoff', reason } })
+      assert.equal(money.text, SAFE_LINE.payment, reason)
+    }
     const receipt = planModelTurnDelivery({ text: 'Perfecto', textOk: true, llmHandoff: null, receiptCue: true })
     assert.deepEqual(receipt, { text: SAFE_LINE.payment, handoff: { kind: 'handoff', reason: 'payment' } })
   })

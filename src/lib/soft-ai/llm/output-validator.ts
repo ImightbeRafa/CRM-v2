@@ -11,7 +11,7 @@ import {
   type ReplyStyle,
   DEFAULT_REPLY_STYLE,
 } from '@/lib/soft-ai/brand-facts'
-import { hasConfirmationWording, renderShortcutTemplate, shortcutByKey, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
+import { hasOutboundConfirmationClaim, renderShortcutTemplate, shortcutByKey, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
 import { fillPaymentToken, paymentNumberProblems, type PaymentFillOptions, type TokenPaymentMethod } from '@/lib/soft-ai/payment-guard'
 import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
@@ -521,7 +521,8 @@ export function validateAgentOutput(input: {
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
   if (CREATED_CLAIM_RE.test(text) || (input.orderClosing && ORDER_CLOSING_CLAIM_RE.test(text))) reasons.push('write_claim')
   if (dealProblemWithRule(text, input.allowedDeals ?? [], input.freeShippingRule)) reasons.push('deal_offer')
-  if (hasConfirmationWording(text)) reasons.push('confirmation_wording')
+  // v53 tests 2026-10-18: conditional next-step phrases ("una vez confirmado el pago, sale…") are not claims.
+  if (hasOutboundConfirmationClaim(text)) reasons.push('confirmation_wording')
   if (resultsClaimIn(text)) reasons.push('results_claim')
   // SecureDog round 5 (INT-138): to a pregnancy / medication question, "¡Sí! Podés usarlo sin problema" with no doctor
   // referral is the same promise.

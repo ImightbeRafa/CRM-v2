@@ -60,7 +60,7 @@ export async function loadAgentSalesContext(input: {
     if (input.strict) throw error
     return fallback
   }
-  const [setup, requirements, coverage, items, stock] = await Promise.all([
+  const [setup, requirements, coverage, items, stockRead] = await Promise.all([
     loadSalesSetup(input.tenantId, input.agentId).catch(soft(null)),
     loadOrderRequirements(input.tenantId).catch(soft(null)),
     loadCoverage(input.tenantId).catch(soft([] as Awaited<ReturnType<typeof loadCoverage>>)),
@@ -74,8 +74,10 @@ export async function loadAgentSalesContext(input: {
           .catch(soft(null))
       : Promise.resolve(null),
     // Out-of-stock switch (SQL 055): all of the agent's products, not only the inline ones (search_inventory too).
-    loadAgentStock(input.tenantId, ids).catch(soft(buildStockGuard([], new Map()))),
+    loadAgentStock(input.tenantId, ids).catch(soft(null)),
   ])
+  // SecureDog L3: a failed switch read still marks stock-0 products of the inline list sold out (never "disponible").
+  const stock = stockRead ?? buildStockGuard(items ?? [], new Map())
 
   const offered = new Set(setup?.offeredShippingMethodIds ?? [])
   const methods = coverage.filter((m) => offered.size === 0 || offered.has(m.shippingMethodId))

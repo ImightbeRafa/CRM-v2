@@ -8,6 +8,7 @@ import 'server-only'
 import { prisma } from '@/lib/db'
 import { isMissingRelation } from '@/lib/db-missing-relation'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
+import { logAuditEvent } from '@/lib/auditLogger'
 import { buildStockGuard, sanitizeBackNote, type AvailabilityRow } from '@/lib/soft-ai/product-availability-core'
 
 const TABLE = 'InventoryItemAvailability'
@@ -29,12 +30,15 @@ export async function loadAvailability(tenantId: string, itemIds: string[]): Pro
   const ids = [...new Set(itemIds)].filter(Boolean).slice(0, 400)
   if (ids.length === 0 || !(await isTableReady(TABLE))) return out
   try {
-    const rows = await prisma.$queryRaw<Array<{ inventoryItemId: string; soldOut: boolean; backDate: string | null; backNote: string | null }>>`
-      SELECT "inventoryItemId", "soldOut", to_char("backDate", 'YYYY-MM-DD') AS "backDate", "backNote"
+    const rows = await prisma.$queryRaw<
+      Array<{ inventoryItemId: string; soldOut: boolean; backDate: string | null; backNote: string | null; version: string }>
+    >`
+      SELECT "inventoryItemId", "soldOut", to_char("backDate", 'YYYY-MM-DD') AS "backDate", "backNote",
+             to_char("updatedAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS') AS "version"
         FROM "InventoryItemAvailability"
        WHERE "tenantId" = ${tenantId} AND "inventoryItemId" = ANY(${ids}::text[])`
     for (const r of rows) {
-      out.set(r.inventoryItemId, { soldOut: r.soldOut === true, backDate: r.backDate, backNote: sanitizeBackNote(r.backNote) })
+      out.set(r.inventoryItemId, { soldOut: r.soldOut === true, backDate: r.backDate, backNote: sanitizeBackNote(r.backNote), version: r.version })
     }
   } catch (error) {
     if (isMissingRelation(error)) return out
@@ -79,21 +83,41 @@ export async function loadAgentStock(tenantId: string, itemIds: string[]) {
     loadAvailability(tenantId, ids),
   ])
   const built = buildStockGuard(items, rows)
-  await clearStaleBack(tenantId, built.staleBackIds)
+  await clearStaleBack(
+    tenantId,
+    built.staleBackIds.map((id) => ({ id, name: items.find((i) => i.id === id)?.name ?? '', version: rows.get(id)?.version ?? null })),
+  )
   return built
 }
 
 /**
- * Clears a spent "vuelve aprox." (stock-0 product back on sale, no manual switch). Only touches rows that STILL have
- * no manual switch; rare (once per restock), tenant-scoped; a failure never breaks the turn.
+ * Clears a spent "vuelve aprox." (stock-0 product back on sale, no manual switch). Rare (once per restock),
+ * tenant-scoped, credited to "system" and audited. SecureDog L2: only a row still exactly as it was read (same
+ * updatedAt, still no manual switch) is cleared, so an owner edit made in between is never wiped. Never breaks a turn.
  */
-export async function clearStaleBack(tenantId: string, itemIds: string[]): Promise<void> {
-  if (itemIds.length === 0) return
-  try {
-    await prisma.$executeRaw`
-      UPDATE "InventoryItemAvailability" SET "backDate" = NULL, "backNote" = NULL, "updatedAt" = now()
-       WHERE "tenantId" = ${tenantId} AND "inventoryItemId" = ANY(${itemIds.slice(0, 400)}::text[]) AND "soldOut" = false`
-  } catch (error) {
-    console.error('[product-availability] stale back not cleared', error instanceof Error ? error.name : 'unknown')
+export async function clearStaleBack(tenantId: string, stale: Array<{ id: string; name: string; version: string | null }>): Promise<void> {
+  for (const s of stale.slice(0, 20)) {
+    if (!s.version) continue
+    try {
+      const n = await prisma.$executeRaw`
+        UPDATE "InventoryItemAvailability" SET "backDate" = NULL, "backNote" = NULL, "updatedBy" = 'system', "updatedAt" = now()
+         WHERE "tenantId" = ${tenantId} AND "inventoryItemId" = ${s.id} AND "soldOut" = false
+           AND to_char("updatedAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS') = ${s.version}`
+      if (n > 0) {
+        await logAuditEvent({
+          action: 'UPDATE',
+          entityType: 'InventoryItem',
+          entityId: s.id,
+          entityName: s.name.slice(0, 80),
+          description: 'Vuelve aprox. borrado: el producto volvió a tener stock',
+          newValues: { inventoryItemId: s.id, backDate: null, backNote: null, by: 'system' },
+          userId: null,
+          userRole: 'system',
+          tenantId,
+        }).catch((error: unknown) => console.error('[product-availability] audit skipped', error instanceof Error ? error.name : 'unknown'))
+      }
+    } catch (error) {
+      console.error('[product-availability] stale back not cleared', error instanceof Error ? error.name : 'unknown')
+    }
   }
 }

@@ -47,7 +47,11 @@ function AvailabilityList({ agentId, items, canEdit, onSaved }: { agentId: strin
         body: JSON.stringify({ itemId, ...next }),
       })
       const json = (await res.json().catch(() => ({}))) as { error?: string }
-      if (!res.ok) setError(json.error || 'No se pudo guardar.')
+      if (!res.ok) {
+        // A refused save keeps what the owner typed (e.g. a note with numbers) so it can be fixed, not retyped.
+        setError(json.error || 'No se pudo guardar.')
+        return
+      }
       await onSaved()
       // The saved value is shown from the server now (a stale draft never comes back after "Disponible").
       setNotes(({ [itemId]: _drop, ...rest }) => rest)

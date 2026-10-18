@@ -16,7 +16,7 @@ import {
   stockProblems,
   type StockGuard,
 } from '@/lib/soft-ai/product-availability-core'
-import { deriveSalesState, formatSalesTurnBlock, salesAllowedAmounts, salesNeedsHuman, salesStockGuard, type SalesContext } from '@/lib/soft-ai/sales-state'
+import { deriveSalesState, formatSalesTurnBlock, salesAllowedAmounts, salesCloseWithoutPaymentData, salesNeedsHuman, salesStockGuard, type SalesContext } from '@/lib/soft-ai/sales-state'
 import { applyFinalOutputPolicy, validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
 import { REPAIRABLE_REASONS } from '@/lib/soft-ai/llm/runtime'
 import { IMMUTABLE_SAFETY_POLICY } from '@/lib/soft-ai/llm/prompt'
@@ -146,6 +146,21 @@ describe('out-of-stock switch · reply checks', () => {
     assert.deepEqual(stockProblems('El repuesto te llega mañana por Correos', NO_DATE), [])
     assert.deepEqual(stockProblems('La encargada vuelve en la tarde, mañana te confirmo', NO_DATE), [])
     assert.deepEqual(stockProblems('El Focus vuelve el 30 😊', NO_DATE), ['restock_date_invented'])
+    // Verifier r2: the natural invented dates are caught ("repondrá" too: JS \b is ASCII-only).
+    for (const t of [
+      'El Focus está agotado, vuelve el lunes',
+      'Está agotado, vuelve en dos semanas',
+      'Está agotado, vuelve en unos días',
+      'Se repondrá el 30 de octubre',
+      'El Focus se repondrá la próxima semana',
+      'Está agotado, vuelve mañana',
+      'El Focus está agotado, llega el viernes',
+    ]) {
+      assert.deepEqual(stockProblems(t, NO_DATE), ['restock_date_invented'], t)
+    }
+    // Delivery times stay delivery times, even next to "disponible" or a sold-out note.
+    assert.deepEqual(stockProblems('Sí, está disponible 😊 te llega en 2 a 4 días hábiles', NO_DATE), [])
+    assert.deepEqual(stockProblems('El Focus está agotado, pero el Energy Patch te llega en 2 días', NO_DATE), [])
     // Nothing sold out: no check at all.
     assert.deepEqual(stockProblems('vuelve el lunes, ¿cómo preferís pagar?', null), [])
   })
@@ -197,7 +212,9 @@ describe('out-of-stock switch · sales flow', () => {
     const block = formatSalesTurnBlock(CTX, state)
     assert.doesNotMatch(block, /Pregunta de pago/)
     assert.match(block, /«Focus Patch»\) está AGOTADO/)
-    assert.equal(salesNeedsHuman({ ...CTX, paymentShareable: false }, state), false)
+    // SecureDog L4: the team follow-up at the close stays on (fail toward a person); only the code text is not used.
+    assert.equal(salesNeedsHuman({ ...CTX, paymentShareable: false }, state), true)
+    assert.equal(salesCloseWithoutPaymentData({ ...CTX, paymentShareable: false }, state), false)
     assert.equal(salesStockGuard(CTX, state)?.focus, true)
     // Verifier r1 #1: the store offered the Energy and the customer says "sí, lo quiero": a normal close.
     const offered = [...history.slice(0, 1), { id: '2', direction: 'outbound' as const, content: 'El Focus está agotado 😔 ¿Te sirve el Energy Patch? ₡11 900', sentAt: '2026-10-17T10:01:00Z' }]
@@ -239,6 +256,11 @@ describe('out-of-stock switch · route, SQL and wiring (source)', () => {
     assert.match(lib, /WHERE "tenantId" = \$\{tenantId\} AND "inventoryItemId" = ANY/)
     assert.match(lib, /ON CONFLICT \("tenantId", "inventoryItemId"\)/)
     assert.match(lib, /where: \{ tenantId, isActive: true, id: \{ in: ids \} \}/)
+    // SecureDog L2: the system clear only touches an unchanged row, is credited to "system" and audited.
+    assert.match(lib, /"updatedBy" = 'system'[\s\S]*AND "soldOut" = false[\s\S]*to_char\("updatedAt"[^)]*\) = \$\{s\.version\}/)
+    assert.match(lib, /userRole: 'system'/)
+    // SecureDog L3: a failed switch read falls back to the stock-0 rule on the inline list (never "disponible").
+    assert.match(read('src/lib/soft-ai/agent-sales-context.ts'), /const stock = stockRead \?\? buildStockGuard\(items \?\? \[\], new Map\(\)\)/)
   })
   it('SQL 055 is additive, gated and registered', () => {
     const sql = read('supabase/migrations/055_inventory_item_availability.sql')

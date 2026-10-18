@@ -11,7 +11,8 @@ export const MAX_BACK_DAYS = 180
 const CR_TZ = 'America/Costa_Rica'
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
-export type AvailabilityRow = { soldOut: boolean; backDate: string | null; backNote: string | null }
+/** version: the row's updatedAt as read (optimistic check for the system clear). */
+export type AvailabilityRow = { soldOut: boolean; backDate: string | null; backNote: string | null; version?: string | null }
 /** What the agent is told about one sold-out product (never its price). */
 export type SoldOutItem = { name: string; back: string | null }
 /** Sold-out products of this agent + the names it may still sell (the reply checks use both). */
@@ -196,15 +197,29 @@ const hasWords = (hay: string, needle: string) => needle.length > 0 && ` ${hay} 
  * ("el Focus" = "Focus Patch" when "Energy Patch" is the other one; "arnés forge" never singles out one size).
  */
 export function mentionsProduct(text: string, name: string, otherNames: string[]): boolean {
-  const t = normalizeName(text)
-  const n = normalizeName(name)
-  if (!n) return false
-  if (hasWords(t, n)) return true
-  const others = otherNames.map(normalizeName)
-  return n
-    .split(' ')
-    .filter((w) => w.length >= 4 && !GENERIC.has(w) && !/^\p{N}+$/u.test(w))
-    .some((w) => hasWords(t, w) && !others.some((o) => hasWords(o, w)))
+  return nameHit(normalizeName(clip(text)), indexNames([name], otherNames)) >= 0
+}
+
+/** Customer / model text is capped before matching (SecureDog L5: the customer controls its length). */
+const clip = (s: string) => (s || '').slice(0, 2000)
+
+type NameIndex = Array<{ norm: string; words: string[] }>
+
+/** Names normalized ONCE per check (SecureDog L5), with the words that single each one out against `others`. */
+function indexNames(names: string[], others: string[]): NameIndex {
+  const othersNorm = others.map(normalizeName)
+  return names.map((name) => {
+    const norm = normalizeName(name)
+    const words = norm
+      .split(' ')
+      .filter((w) => w.length >= 4 && !GENERIC.has(w) && !/^\p{N}+$/u.test(w) && !othersNorm.some((o) => hasWords(o, w)))
+    return { norm, words }
+  })
+}
+
+/** Index of the first name the (normalized) text names, or -1. */
+function nameHit(textNorm: string, idx: NameIndex): number {
+  return idx.findIndex((n) => n.norm.length > 0 && (hasWords(textNorm, n.norm) || n.words.some((w) => hasWords(textNorm, w))))
 }
 
 /** A combo naming a sold-out product: whole-name match only (a word match would drop "Combo Calma" on a near miss). */
@@ -224,13 +239,14 @@ export type FocusMessage = { direction: 'inbound' | 'outbound'; content: string 
 export function soldOutFocus(newestFirst: FocusMessage[], guard: Pick<StockGuard, 'soldOut' | 'inStockNames'>): string | null {
   if (guard.soldOut.length === 0) return null
   const soldNames = guard.soldOut.map((s) => s.name)
+  const onSale = indexNames(guard.inStockNames, soldNames)
+  const sold = indexNames(soldNames, guard.inStockNames)
   for (const m of newestFirst.slice(0, 8)) {
-    const text = m.content || ''
-    const inStock = guard.inStockNames.some((n) => mentionsProduct(text, n, soldNames))
-    if (inStock) return null
+    const t = normalizeName(clip(m.content))
+    if (nameHit(t, onSale) >= 0) return null
     if (m.direction === 'outbound') continue
-    const sold = guard.soldOut.find((s) => mentionsProduct(text, s.name, guard.inStockNames))
-    if (sold) return sold.name
+    const hit = nameHit(t, sold)
+    if (hit >= 0) return soldNames[hit]
   }
   return null
 }
@@ -239,16 +255,33 @@ export function soldOutFocus(newestFirst: FocusMessage[], guard: Pick<StockGuard
 const CLOSE_ASK_RE =
   /\[\[\s*(?:PAGO_|DATOS_PAGO)|c[oó]mo\s+(?:prefer\p{L}*|quer[eé]s|quiere|vas\s+a|va\s+a|pod[eé]s|puede)\s+pagar|m[eé]todo\s+de\s+pago|forma\s+de\s+pago|nombre\s+completo|direcci[oó]n\s+exacta|(?:p[aá]same|m[aá]ndame|env[ií]ame|ocupo|necesito)\s+(?:tus|los|unos)\s+datos|datos\s+(?:del|para\s+el)\s+(?:pedido|env[ií]o)|te\s+lo\s+(?:aparto|reservo|separo|anoto)|(?:sinpe|transferencia)\s+al\s/iu
 
-/** Restock words that mean nothing else ("reponemos", "reingresa", "nuevo lote"). */
-const RESTOCK_STRONG_RE =
-  /\brep[oó]n(?:e|en|emos|dr[aá]n?|dremos|go|ga|gan)\b|\breingres\p{L}*|\b(?:nuevo|pr[oó]ximo)\s+(?:ingreso|lote)\b|\bvuelv\p{L}*\s+(?:a\s+(?:haber|entrar|ingresar)\b|aprox)|\b(?:hay|habr[aá])\s+(?:de\s+nuevo|otra\s+vez|nuevamente)/iu
+// JS \b is ASCII-only: after "á" it never matches ("repondrá"), so word ends use (?![\p{L}\p{N}]) (Verifier r2).
+const END = String.raw`(?![\p{L}\p{N}])`
+/** Restock words that mean nothing else ("reponemos", "se repondrá", "reingresa", "nuevo lote", "vuelve a haber"). */
+const RESTOCK_STRONG_RE = new RegExp(
+  [
+    String.raw`\brep[oó]n(?:e|en|emos|dr[aá]n?|dremos|go|ga|gan)${END}`,
+    String.raw`\breingres\p{L}*`,
+    String.raw`\b(?:nuevo|pr[oó]ximo)\s+(?:ingreso|lote)${END}`,
+    String.raw`\bvuelv\p{L}*\s+(?:a\s+(?:haber|entrar|ingresar)${END}|aprox)`,
+    String.raw`\b(?:hay|habr[aá])\s+(?:de\s+nuevo|otra\s+vez|nuevamente)${END}`,
+  ].join('|'),
+  'iu',
+)
 /**
- * "vuelve a haber / entrar", "vuelve aprox.", "vuelve el 25", "llega de nuevo": restock talk only next to stock words or
- * a sold-out product's name ("la encargada vuelve en la tarde" and "el repuesto te llega mañana" are not restocks).
+ * "vuelve el lunes / en dos semanas / mañana", "llega el viernes", "tenerlo de nuevo": restock talk only in a
+ * sold-out context (sold-out words or a sold-out product's name). "Te / le llega …" is a delivery time, never a restock
+ * ("está disponible, te llega en 2 días" and "la encargada vuelve en la tarde" pass).
  */
-const RESTOCK_WEAK_RE =
-  /\bvuelv\p{L}*\s+(?:a\s+(?:haber|entrar|estar|llegar|tener)|aprox|(?:el|para\s+el)\s+\d|(?:la|esta|el)\s+(?:pr[oó]xim[ao]|otr[ao]|siguiente)\s+(?:semana|mes)|a\s+(?:finales|inicios|mediados|principios))|\b(?:llega|llegan|llegar[aá]n?|entra|entran|entrar[aá]n?|hay|habr[aá])\s+(?:de\s+nuevo|otra\s+vez|nuevamente)/iu
-const STOCK_WORD_RE = /agotad|\bstock\b|inventario|disponib|existencias/iu
+const RESTOCK_WEAK_RE = new RegExp(
+  [
+    String.raw`\bvuelv\p{L}*\s+(?:a\s+(?:estar|llegar|tener)|el|la|en|para|ma[nñ]ana|a\s+(?:finales|inicios|mediados|principios))${END}`,
+    String.raw`(?<!\b(?:te|le|les|lo|la)\s)\b(?:llega|llegan|llegar[aá]n?|entra|entran|entrar[aá]n?)\s+(?:de\s+nuevo|otra\s+vez|nuevamente|el|la|en|para|ma[nñ]ana)${END}`,
+    String.raw`\btener(?:lo|la|los|las)?\s+(?:de\s+nuevo|otra\s+vez|el|la|en|para)${END}`,
+  ].join('|'),
+  'iu',
+)
+const SOLD_OUT_WORD_RE = /agotad|sin\s+stock|no\s+(?:hay|tenemos|nos\s+queda|queda)|se\s+(?:acab|termin)/iu
 
 const DATEISH_RE = new RegExp(
   [
@@ -275,12 +308,13 @@ const DATEISH_RE = new RegExp(
 export function stockProblems(text: string, guard: StockGuard | null | undefined): string[] {
   if (!guard || guard.soldOut.length === 0) return []
   const out: string[] = []
-  const t = text || ''
+  const t = clip(text)
+  const tNorm = normalizeName(t)
   const soldNames = guard.soldOut.map((s) => s.name)
-  const namesInStock = guard.inStockNames.some((n) => mentionsProduct(t, n, soldNames))
-  const namesSoldOut = guard.soldOut.some((s) => mentionsProduct(t, s.name, guard.inStockNames))
+  const namesInStock = nameHit(tNorm, indexNames(guard.inStockNames, soldNames)) >= 0
+  const namesSoldOut = nameHit(tNorm, indexNames(soldNames, guard.inStockNames)) >= 0
   if (CLOSE_ASK_RE.test(t) && !namesInStock && (guard.focus || namesSoldOut)) out.push('sold_out_offered')
-  const restock = RESTOCK_STRONG_RE.test(t) || (RESTOCK_WEAK_RE.test(t) && (STOCK_WORD_RE.test(t) || namesSoldOut))
+  const restock = RESTOCK_STRONG_RE.test(t) || (RESTOCK_WEAK_RE.test(t) && (SOLD_OUT_WORD_RE.test(t) || namesSoldOut))
   if (restock) {
     const allowed = guard.soldOut.map((s) => normalizeName(s.back || '')).filter(Boolean)
     const dates = [...t.matchAll(DATEISH_RE)].map((m) => normalizeName(m[0]).replace(/^(?:para el|el|del|al|a)\s+/, ''))

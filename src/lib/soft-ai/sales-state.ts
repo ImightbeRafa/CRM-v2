@@ -496,7 +496,12 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
   const lines: string[] = ['<BETSY_DATOS>']
   if (ctx.catalog?.length) {
     lines.push('Productos que vendés (precio y stock en vivo; son tus ÚNICOS precios válidos):')
-    for (const c of ctx.catalog) lines.push(c.soldOut ? `- ${oneLine(c.name, 120)}: ${c.stockLabel}` : `- ${oneLine(c.name, 120)}: ${money(c.price)} · ${c.stockLabel}`)
+    // SecureDog L1: product names (and the sold-out label with the owner's note) are data — no Betsy look-alike markers.
+    for (const c of ctx.catalog) {
+      const name = oneLine(stripBetsyLookalikes(c.name), 120)
+      const label = oneLine(stripBetsyLookalikes(c.stockLabel), 160)
+      lines.push(c.soldOut ? `- ${name}: ${label}` : `- ${name}: ${money(c.price)} · ${label}`)
+    }
   }
   // Sold-out products beyond the inline list (search_inventory stores): named here so the agent never offers them.
   const inlineSold = new Set((ctx.catalog ?? []).filter((c) => c.soldOut).map((c) => c.name))
@@ -554,7 +559,8 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
 export function salesNeedsHuman(ctx: SalesContext, state: SalesState): boolean {
   // Any receipt cue → a person checks it, whatever the model writes (re-check INT-70).
   if (state.receiptCue) return true
-  return closingFor(state) && !ctx.paymentShareable
+  // SecureDog L4: fail toward the person — a missed name match must never drop the team follow-up at the close.
+  return closingStage(state.stage) && !ctx.paymentShareable
 }
 
 /** Stages where payment comes up: the close, the method question and waiting for the receipt. */

@@ -173,6 +173,20 @@ test('bump: pending / failed outbound and inbound never mark; the marker never g
   assert.equal(Boolean(history.calls.update && 'repliedInboundCount' in history.calls.update), false)
 })
 
+test('bump: a follow-up send updates the preview but keeps the chat where it was in the list', async () => {
+  const nudge = fakeTx({ inboundCount: 0, repliedInboundCount: 0, messages: [] })
+  await bumpConversationAfterInsert(nudge.tx, bumpArgs({ messageId: 'fu-1', content: '¿Seguís interesada?', keepListPosition: true }))
+  assert.equal('lastMessageAt' in (nudge.calls.update ?? {}), false)
+  assert.equal(nudge.calls.update?.lastMessageId, 'fu-1')
+  assert.equal(nudge.calls.update?.lastMessageDirection, 'outbound')
+  assert.equal(nudge.calls.update?.lastMessagePreview, '¿Seguís interesada?')
+  assert.deepEqual(nudge.calls.update?.lastOutboundAt, t(10))
+  // Every other send still moves the chat up.
+  const normal = fakeTx({ inboundCount: 0, repliedInboundCount: 0, messages: [] })
+  await bumpConversationAfterInsert(normal.tx, bumpArgs({}))
+  assert.deepEqual(normal.calls.update?.lastMessageAt, t(10))
+})
+
 test('bump: legacy duplicate inbound rows are not counted and the counter caps the result', async () => {
   const messages: Msg[] = [
     { id: 'in-1', direction: 'inbound', sentAt: t(1) },

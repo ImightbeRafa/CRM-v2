@@ -121,6 +121,8 @@ export type ChatConversationListItemDto = {
   assignedUser: { id: string; name: string | null; image: string | null } | null
   /** Last customer message (snooze wakes up when the customer writes after it was snoozed). */
   lastInboundAt?: string | null
+  /** The newest message is our follow-up / reactivation send (metadata.followUp); set by the list/changes routes. */
+  lastIsFollowUp?: boolean
   /** Snoozed until (Phase 2b); set by the list/changes routes only while it is in effect. */
   snooze?: { until: string; at: string } | null
   /** Latest order linked from this chat (internal id + human number); set by the list/changes routes. */

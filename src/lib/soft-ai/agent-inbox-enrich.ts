@@ -182,3 +182,17 @@ export async function enrichConversationDtosWithAgents(
     return items
   }
 }
+
+/** Lines (of `accountIds`) where the AI answers right now — same truth as `aiLine.state === 'on'` on list rows. */
+export async function aiOnLineIds(tenantId: string, accountIds: string[]): Promise<string[]> {
+  if (!accountIds.length) return []
+  try {
+    if (!(await agentLayerEnabled(tenantId))) return []
+    if (!(await isChatAgentSchemaReady())) return []
+    const lines = await cachedLines(tenantId, accountIds)
+    return accountIds.filter((id) => lines.get(id)?.status.state === 'on')
+  } catch (error) {
+    if (!isMissingRelationError(error)) console.error('[agent-inbox] ai lines', { code: error instanceof Error ? error.name : 'error' })
+    return []
+  }
+}

@@ -1,3 +1,20 @@
+## 2026-10-18 — Sleeping final report batch 2 (PR #106) + Pura Sonrisa batch 3 slim (PR #107) (NOT deployed)
+
+- Stacked: #107 → #106 → #104 → claudio/luna-10-d2. Draft PRs; Rafael's GO to merge / deploy.
+- #106 C9 (night silent trial): a reply made only of someone's personal data (name / phone / place / address /
+  email / location link, any case, labelled or not) gets a repairable `data_echo` hold; the store's own phone (brand
+  facts) is not an echo. C7: "ya te lo compartí / como te dije" → repairable `repeat_refusal`; cotizar says to repeat
+  price / shipping when asked again. C8: ", y" splits a clause only after a shipping-cost statement, brackets holding
+  only an included-combo price are no break; exception / other-product words judged on the whole sentence (INT-184).
+  C10 (exam tooling): impersonal "no se aceptan / envía" is not "no sé". C4: the lock row keeps the normal TEST cap
+  (recorded only by `test-cap --restore`); a run refuses while the cap differs.
+- #107: "retirar para no pagar envío" and a delivery person arriving ("El Uber ya llegó") are not payment messages
+  unless a payment noun is present; "Por SINPE (móvil), pasame el número" is a choice + details ask; the payment
+  question never shares the data list's message; a "₡0" shipping cost never opens the ", y" split.
+- Reviews: #106 Verifier r2 PASS WITH NOTES, SecureDog r2 PASS. #107: see the PR. Register: INT-184, INFRA-25 Verified;
+  INT-185 (Low), INT-186 (Medium, pre-existing: "₡0." / "lo trae incluido") Open.
+- Later (dropped to save usage): negated "no hay descuentos", night person-request wording, DATA-65 name redaction.
+
 ## 2026-10-18 — Sleeping + Pura Sonrisa exam engine fixes C1–C6, P1/P2/P4 (claudio/sleeping-exam-fixes, NOT deployed)
 
 - From the Sleeping Patches exam (betsy-agent-packs sleeping/STATUS.md C1–C6) and the Pura Sonrisa exam (P1/P2/P4).

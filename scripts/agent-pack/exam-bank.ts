@@ -62,18 +62,8 @@ const ADDRESS_WORDS = /\b(calle|avenida|ave\.?|casa|frente|metros|esquina|barrio
 const L_BEFORE = String.raw`(?<![\p{L}\p{N}])`
 const L_AFTER = String.raw`(?![\p{L}\p{N}])`
 
-/** Two-to-five capitalised words that are a place or a product, not a person ("San José", "Pura Sonrisa", "Buenas Tardes"). */
-const NOT_A_NAME_LINE_RE = /^\s*(?:San\s|Santa\s|Santo\s|Buen[oa]s\s|Pura\s+Vida|Pura\s+Sonrisa|Sleeping|Patch|Costa\s+Rica|Muchas\s+Gracias|Feliz\s)/u
 export function redactCustomerText(text: string, peerName?: string | null): string {
   let t = redactSensitiveForProvider(text || '')
-  // DATA-65 (Pura Sonrisa P9 / Sleeping): social profile links, order numbers and a name typed alone on a line (the
-  // start of a forwarded order: "María Pérez Solís\n8888-0000\n…") never stay in the bank.
-  t = t.replace(/(?:https?:\/\/)?(?:www\.)?(?:instagram\.com|facebook\.com|fb\.com|tiktok\.com|wa\.me|m\.me)\/[^\s]+/giu, '[perfil]')
-  t = t.replace(/(?<![\p{L}\p{N}])ord-?\s?\d+/giu, '[pedido]')
-  t = t
-    .split('\n')
-    .map((line) => (/^\s*\p{Lu}\p{Ll}+(?:\s+(?:de\s+|del\s+|la\s+)?\p{Lu}\p{Ll}+){1,4}\s*$/u.test(line) && !NOT_A_NAME_LINE_RE.test(line) ? '[nombre]' : line))
-    .join('\n')
   t = t.replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[correo]')
   t = t.replace(/(?<![\p{L}\p{N}])@[\w.]{2,30}/gu, '[usuario]')
   // Phones, cédulas, accounts — also written with dots ("8888.8888", "1.1234.0567").

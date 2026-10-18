@@ -265,19 +265,6 @@ export function afterHoursPaymentSoonLine(label: string): string {
   return `El equipo te pasa cómo pagar ${label} 😊`
 }
 
-/** "En un momento", "enseguida", "ya mismo", "en unos minutos"… — true in hours, false at night. */
-const IMMEDIACY_RE =
-  /(?<![\p{L}])(?:en\s+un\s+(?:momento|momentito|ratito|rato|instante)|enseguida|en\s+seguida|ya\s+mismo|ahorita|en\s+breve|en\s+unos\s+(?:minutos|segundos)|de\s+inmediato|inmediatamente|pronto|ya\s+te\s+(?:escribe|atiende|contacta|responde))(?![\p{L}])/iu
-
-/** Pura Sonrisa P8: the text without its sentences that promise an immediate reply (pure; '' when nothing is left). */
-export function withoutImmediacy(text: string): string {
-  const sentences = (text || '').split(/(?<=[.!?…])\s+|\n+/u).filter((s) => s.trim())
-  return sentences
-    .filter((s) => !IMMEDIACY_RE.test(s))
-    .join(' ')
-    .trim()
-}
-
 /** INT-121: added after the owner's opt-out text ("en un momento te escribe alguien") — keeps their words. */
 export function afterHoursTeamLine(label: string): string {
   return `El equipo te escribe ${sentenceEnd(label)}`
@@ -316,14 +303,7 @@ export function applyAfterHoursText(
     // A "no lo tengo" answer (unknown_answer) keeps what the agent did know, then says when the team writes.
     if (kind === 'person' && (plan.handoff.reason === 'human_request' || plan.handoff.reason === 'unknown_answer') && text && text !== opts.safeReview.trim()) {
       // luna-10: the model already said when the team writes ("…hoy a las 8:00 a. m.") → never a second line.
-      // Pura Sonrisa P8: at night, a promise of immediacy ("en un momento te escribe alguien") contradicts the opening
-      // time — those sentences are dropped (nothing left → the code's night line).
-      const kept = withoutImmediacy(text)
-      body = !kept
-        ? afterHoursHandoffLine('person', state.label, state.transparent)
-        : kept.includes(state.label.replace(/\.$/, ''))
-          ? kept
-          : `${kept}\n${afterHoursTeamLine(state.label)}`
+      body = text.includes(state.label.replace(/\.$/, '')) ? text : `${text}\n${afterHoursTeamLine(state.label)}`
     } else {
       const line = afterHoursHandoffLine(kind, state.label, state.transparent)
       const keep = kind === 'order' && text && text !== opts.safeReview.trim()

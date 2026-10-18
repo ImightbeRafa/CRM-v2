@@ -123,16 +123,7 @@ export function freeShippingWording(text: string): Array<{ index: number; end: n
  * Deal wording is blocked unless the owner's active promo enables that exact kind (B1): free shipping and a special
  * price can be enabled; discounts, %, 2x1, "te lo dejo en", gifts are always blocked.
  */
-/**
- * Pura Sonrisa P3: the honest "no" ("No hay descuentos", "no manejamos rebajas", "por ahora no tenemos promociones") is
- * not an offer — that exact negated phrase is blanked before the deal check. Anything else in the reply is still checked
- * ("No hay descuentos, pero te lo dejo en ₡9 000" keeps "te lo dejo").
- */
-const NEGATED_DEAL_RE =
-  /(?<![\p{L}])(?:(?:por\s+(?:ahora|el\s+momento)|ahorita|de\s+momento|actualmente)\s*,?\s*)?no\s+(?:hay|tenemos|manejamos|ofrecemos|hacemos|aplicamos|aplica|damos|contamos\s+con|existen|se\s+(?:hacen|aplican|dan|manejan))\s+(?:ning[uú]n(?:a)?\s+)?(?:descuentos?|rebajas?|promociones?|ofertas?)(?:\s+(?:por\s+(?:ahora|el\s+momento)|en\s+este\s+momento|ahorita|disponibles?|especiales?|activ[oa]s?))*(?![\p{L}])/giu
-
-export function dealProblem(rawText: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
-  const text = rawText.replace(NEGATED_DEAL_RE, (m) => ' '.repeat(m.length))
+export function dealProblem(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
   for (const m of text.matchAll(DEAL_ALL_RE)) {
     const phrase = m[1].trim()
     // Free-shipping phrasing is judged below with the wider wording list.
@@ -295,7 +286,8 @@ function maskIncludedPriceParentheticals(text: string, includedPrices: ReadonlyA
 }
 
 /** The clause before ", y" states a shipping cost ("Con 1 bolsa el envío cuesta ₡3 000", "son ₡3 000 de envío"). */
-const SHIPPING_COST_TAIL_RE = /env[ií]o\s+(?:cuesta|sale|es|vale|queda)\s+(?:en\s+)?[₡¢]\s?[\d.,\s\u00a0]+$|[₡¢]\s?[\d.,\s\u00a0]+\s+de\s+env[ií]o\s*$/iu
+// SecureDog r2 (INT-186 hardening): never "₡0" — a zero shipping cost is a free-shipping claim, not a cost statement.
+const SHIPPING_COST_TAIL_RE = /env[ií]o\s+(?:cuesta|sale|es|vale|queda)\s+(?:en\s+)?[₡¢]\s?[1-9][\d.,\s\u00a0]*$|[₡¢]\s?[1-9][\d.,\s\u00a0]*\s+de\s+env[ií]o\s*$/iu
 
 function clauseSpans(text: string, splitAtCommaY = true): Array<[number, number]> {
   const spans: Array<[number, number]> = []

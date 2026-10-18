@@ -31,6 +31,35 @@
   all fixed and pinned in `src/lib/__tests__/sleeping-exam-fixes.test.ts`. Final rounds: see the PR.
 - Known, not changed: extractMoneyAmounts does not read "25 000 colones" (space thousands without ₡).
 
+## 2026-10-18 — INT-158 round 2: structural claim check + INT-165 data-list ReDoS (claudio/luna-10-d2, NOT deployed)
+
+- Structural fixes for SecureDog's four Highs (no new claim words except cheap Mediums):
+  - H1: claim words end at any non-letter/digit, so WhatsApp `_confirmado_` is caught.
+  - H2: bidi controls are stripped from outgoing text; the checked text is the sent text.
+  - H3: a model reply is held ('unsafe_letters') on any character outside an allow-list: ASCII, Latin-1, punctuation, currency, arrows, shapes and emoji. ZWJ, keycap and flag tags are allowed only where emoji use them. It is also held on RTL marks, a symbol glued between letters, or a hair/thin space inside a word.
+  - H4: the payment-status / write-claim checks read every normalised form, not only the raw text.
+  - L1: NEL / U+2028-9 count as line breaks; VT / FF / info separators count as spaces.
+- New check forms (shortcuts.ts `confirmationCheckForms`): normalised (markup/separators as spaces, digits split off letters), without accents, the unaccented past after "ya" (not after a subjunctive frame), and look-alike skeletons chained together. The skeleton maps 0→o, @→a, C0NFIRMAD0, IIegó/EI as l, bars, ⭕🔵 as o, cl→d, rn→m, and the joined form ("con*firm*ado", "conf\x1Firmado"). Owner texts keep the map + forms; the allow-list is for model text only.
+- Cheap Mediums: the validar family, "pago ✅" (not "de/el pago ✅"), "pedido pagado" after , : or an emoji, paquete/envío/orden as subject of "va en camino", and "se envió / despachó" tied to an order.
+- INT-165 (High, predates this): a data-list line over 300 chars is never rewritten. Model text over 4 000 chars is held before any pattern runs ('model_text_too_long'). extractShortcutTag skips text over 8 000 chars. The 39 s regex case now takes 4 ms.
+- maskConditionalConfirmation collapses only spaces/tabs, and matches next-step lines on a same-length copy with NBSP as space.
+- Review: Verifier 8 rounds → PASS; SecureDog 6 rounds → PASS (all Highs closed). Work was done in a side worktree and copied in once reviewed.
+- Residual Mediums for the Luna eval set:
+  - perfect tense ("Ya te lo hemos enviado")
+  - third person plural ("Ya te lo enviaron")
+  - se/les clitics
+  - unaccented third person past ("El equipo confirmo tu pago")
+  - English/Portuguese
+  - "Pagado ✅" / "Pago completado"
+  - visible-gap splits ("con fir ma do")
+  - the full list is in the int158 test comment
+- Proof:
+  - test:soft-ai 1170/1170
+  - test:security 272/272 (the perf-guards timing test flakes under parallel load and passes alone)
+  - tsc clean; eslint clean on touched files
+  - int158 tests 38/38, pinning every SecureDog/Verifier bypass and its negatives
+- False positives vs HEAD: 0 new holds and 0 allow-list hits across 11 066 pack strings and 2 791 real model replies (prod, read-only).
+
 ## 2026-10-18 — INT-158 payment/order claim check + per-store exam grader (claudio/luna-10-d2, NOT deployed)
 
 - INT-158: CONFIRMATION_WORDING_RE now also catches "ya confirmé / el equipo confirmó / verifiqué / verificó / aprobé /

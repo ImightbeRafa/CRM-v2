@@ -35,6 +35,8 @@ const CODE_TEXT: Record<string, string> = {
   deal_offer: 'Ofreció una promoción o descuento que no está activo',
   confirmation_wording: 'Dijo que un pago quedó confirmado (eso lo confirma una persona)',
   payment_status_claim: 'Dijo que un pago quedó confirmado (eso lo confirma una persona)',
+  unsafe_letters: 'Usó letras o signos raros que pueden esconder palabras (lo revisa una persona)',
+  model_text_too_long: 'La respuesta de la IA era demasiado larga para revisarla (lo revisa una persona)',
   unit_cost_leak: 'Mencionó el costo interno de un producto',
   brand_facts_missing: 'Faltan datos del negocio para responder',
   empty_output: 'La IA respondió vacío',

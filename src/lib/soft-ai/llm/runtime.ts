@@ -444,6 +444,7 @@ export async function runSoftAiLlmRuntime(
         customerText: burstCustomerText(input.history, input.inboundText),
         linkAllowlist: input.linkAllowlist,
         paymentContext: conversationPaymentContext(input.history, input.inboundText),
+        modelText: true,
       })
     let validation = validate(finalText)
     // B7: a reply that breaks a rule (made-up amount, a deal, "ya quedó pagado"…) gets ONE rewrite with the reasons
@@ -505,7 +506,8 @@ export async function runSoftAiLlmRuntime(
     const customerSide = burstCustomerText(input.history, input.inboundText || '')
     const lastStoreText = [...input.history].reverse().find((m) => m.direction === 'outbound')?.content || ''
     const confirmationIsPayment =
-      validation.reasons.includes('confirmation_wording') &&
+      // INT-158 H3: an odd-letter reply may be a disguised claim ("confırmado"): same rule.
+      (validation.reasons.includes('confirmation_wording') || validation.reasons.includes('unsafe_letters')) &&
       (hasPaymentWord(finalText) ||
         hasPaymentWord(customerSide) ||
         hasPaymentWord(lastStoreText) ||

@@ -148,8 +148,10 @@ describe('2 · a conditional next-step participle is not a confirmation claim', 
     assert.match(read('src/lib/soft-ai/shortcut-import.ts'), /hasConfirmationWording\(trimmed\)/)
     const v = read('src/lib/soft-ai/llm/output-validator.ts')
     assert.match(v, /const claimText = maskConditionalConfirmation\(text\)/)
-    assert.match(v, /ALWAYS_PAYMENT_STATUS_REPLY_RE\.test\(claimText\)/)
-    assert.match(v, /PAYMENT_STATUS_REPLY_RE\.test\(claimText\)/)
+    // INT-158 round 2: the masked text is read raw and normalised.
+    assert.match(v, /const claimForms = confirmationCheckForms\(claimText\)/)
+    assert.match(v, /anyForm\(ALWAYS_PAYMENT_STATUS_REPLY_RE, claimForms\)/)
+    assert.match(v, /anyForm\(PAYMENT_STATUS_REPLY_RE, claimForms\)/)
     assert.match(read('src/lib/soft-ai/probar-scenarios.ts'), /if \(hasOutboundConfirmationClaim\(reply\)\) failures\.push/)
     assert.match(read('src/lib/soft-ai/agent-replay.ts'), /if \(hasOutboundConfirmationClaim\(input\.text\)\) return \{ ok: false, reason: 'confirmation' \}/)
   })

@@ -98,6 +98,8 @@ const leadOk = (lead: string) => {
   return !NOT_A_REQUEST_LEAD_RE.test(norm(clauses[clauses.length - 1] || ''))
 }
 
+const INLINE_REQUEST_MAX_CHARS = 300
+
 /** "necesito tu nombre…" / "pasame tu nombre…" without a colon: the verb ends the lead-in. */
 const ASK_VERB_RE = /^(.*?\b(?:necesito|pas[aá]me|me pas[aá]s|me (?:das|dar[ií]as|ayud[aá]s con|compart[ií]s)|env[ií]ame|mand[aá]me))\s+(.+)$/iu
 
@@ -107,7 +109,9 @@ const ASK_VERB_RE = /^(.*?\b(?:necesito|pas[aá]me|me pas[aá]s|me (?:das|dar[i�
  * "👤 Nombre completo 📞 Teléfono 📍 Provincia / Cantón / Distrito …". Returns the lead-in (ends in ':') or null.
  */
 function inlineRequest(line: string): string | null {
-  if (LIST_ITEM_RE.test(line)) return null
+  // A data request is one short line; a long one is never rewritten (and bounds the trailing-trim regexes: a 4k
+  // run of dots took 10 s, SecureDog INT-158 r2 F4).
+  if (line.length > INLINE_REQUEST_MAX_CHARS || LIST_ITEM_RE.test(line)) return null
   let lead = ''
   let body = line
   const colon = line.indexOf(':')

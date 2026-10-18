@@ -960,7 +960,8 @@ const STORE_PAID_OR_ELSEWHERE_RE = new RegExp(
     // "cuando pagués / lo hagás me avisás", "apenas me caiga", "me pasás la evidencia / el respaldo".
     // Verifier r4: only the STORE's number / SINPE (not "tu número de WhatsApp", "número de guía / talla").
     String.raw`(?<![\p{L}])(?:mi|nuestro|el|al|este)\s+(?:n[uú]mero|sinpe|simpe)(?!\s+de\s+(?:la\s+|el\s+|su\s+|tu\s+)?(?:tel[eé]fono|gu[ií]a|pedido|talla|orden|zapatilla|producto|modelo|serie|casa))(?![\p{L}])[^\n]{0,40}(?<![\p{L}])(?:este|mismo|aqu[ií]|chat|whats\p{L}*|siempre|descripci[oó]n|destacad\p{L}*|post|publicaci[oó]n|estado)(?![\p{L}])`,
-    String.raw`(?<![\p{L}])(?:sinpe|simpe)(?:\s+m[oó]vil)?\s+(?:a|al)\s+(?:este|mismo)(?![\p{L}])`,
+    // N1 r6: not "SINPE al mismo precio".
+    String.raw`(?<![\p{L}])(?:sinpe|simpe)(?:\s+m[oó]vil)?(?:[\s,]+lo\s+hac[eé]s)?[\s,]+(?:a|al)\s+(?:este|mismo)(?![\p{L}])(?!\s+precio)`,
     String.raw`(?<![\p{L}])(?:a\s+este|al\s+mismo|el\s+mismo|a\s+este\s+mismo)\s+(?:n[uú]mero|sinpe|simpe|cuenta|de\s+whats\p{L}*)(?![\p{L}])`,
     String.raw`(?<![\p{L}])(?:hacelo|pagalo|depositalo|transferilo)\s+(?:a|al)\s+(?:este|mismo)(?![\p{L}])`,
     String.raw`(?<![\p{L}])(?:al\s+de\s+siempre|ya\s+ten[eé]s\s+los\s+datos|ya\s+sab[eé]s\s+el\s+n[uú]mero)(?![\p{L}])`,
@@ -972,6 +973,7 @@ const STORE_PAID_OR_ELSEWHERE_RE = new RegExp(
     String.raw`(?<![\p{L}])te\s+l[oa]\s+(?:paso|mando|env[ií]o)\s+por\s+(?:privado|interno|dm|inbox|mensaje)(?![\p{L}])`,
     // Only as the whole answer ("Está en la bio 😊"), not "la talla está en la descripción" (Verifier r4 balance).
     String.raw`^\s*(?:(?:el|mi)\s+(?:n[uú]mero|sinpe|simpe)\s+)?est[aá]\s+en\s+(?:la\s+bio\p{L}*|el\s+perfil|los\s+destacados|la\s+descripci[oó]n)(?![\p{L}])[\s.!😊🙌🙏]*$`,
+    String.raw`(?<![\p{L}])qr(?![\p{L}])[^\n]{0,60}(?<![\p{L}])(?:pag\p{L}*|sinpe|simpe|cobr\p{L}*)|(?<![\p{L}])(?:pag\p{L}*|sinpe|simpe)(?![\p{L}])[^\n]{0,30}(?<![\p{L}])qr(?![\p{L}])`,
     String.raw`(?<![\p{L}])qr(?![\p{L}])(?!\s+(?:(?:del?|de\s+(?:nuestro|mi|la))\s+(?:men[uú]|instagram|perfil|cat[aá]logo|whats\p{L}*|p[aá]gina|web|local|tienda|etiqueta|producto)|para\s+(?:ver|seguir|entrar)|est[aá]\s+en\s+la\s+etiqueta))`,
   ]
     .map((p) => `(?:${p})`)

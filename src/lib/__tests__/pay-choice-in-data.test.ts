@@ -600,7 +600,7 @@ describe('round 5 (Verifier r5)', () => {
     }
   })
   it('N2: "Listo ✅" / "Ya está ✔" close the gate even before store payment talk', () => {
-    for (const x of ['Listo ✅', 'Ya ✅', 'Listo 👍', 'Ya está ✔']) {
+    for (const x of ['Listo ✅', 'Ya ✅', 'Ya está ✔']) {
       assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', x), msg('outbound', 'Perfecto 😊')], SHOPPER)), false, x)
     }
   })
@@ -617,5 +617,37 @@ describe('round 5 (Verifier r5)', () => {
     for (const out of ['Escaneá el QR para ver el catálogo', 'El código QR está en la etiqueta del producto', 'Escaneá el QR de la tienda para seguirnos', 'Aceptamos SINPE o tarjeta, a este precio solo hoy', 'Podés pagar por SINPE o tarjeta, al mismo precio']) {
       assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('outbound', out)], SHOPPER)), true, out)
     }
+  })
+})
+
+describe('round 6 (Verifier r6)', () => {
+  const N = 'Nombre: Ana Mora\n'
+  const after = (x: string) => nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', x), msg('outbound', 'Perfecto 😊')], SHOPPER))
+  it('F1 / F2 / F4: claim rows the anchored rule had reopened close the gate again', () => {
+    for (const x of ['Se lo tiramos, bien?', 'Se lo tiramos ayer', 'Se lo tiramos ahorita', 'Se lo giramos hoy', 'Se lo giré ayer', 'Le puse 9900', 'Le puse, revise', 'Le dejé, fíjese', 'Se lo tiramos, revisá', 'La plata está', 'La plata está en su cuenta', 'El dinero está en su cuenta', 'Liquidao', 'Liquidó']) {
+      assert.equal(after(x), false, x)
+    }
+    for (const x of ['Le dejé un mensaje ayer', 'Le puse like a la foto', 'Les dejé una reseña', 'Le dejé mis datos arriba', 'La transfe ya la hago']) assert.equal(after(x), true, x)
+  })
+  it('F3 / F4: glued "ya le …" forms and "liquidao" are not order data; names still are', () => {
+    for (const w of ['yaleenvie', 'yalehice', 'yaledeje', 'yalegire', 'yalespase', 'yalesmande', 'liquidao']) {
+      assert.equal(embeddedPaymentChoice(`${N}Dirección: Heredia, ${w}\nPago por SINPE`), null, w)
+    }
+    for (const t of ['Nombre: Carlos Ayales Rojas\nPago por SINPE', 'Nombre: Yaleska Chaves\nPago por SINPE', `${N}Producto: listón rojo 2 m\nPago por SINPE`, 'Nombre: Ana Kallisto\nPago por SINPE']) {
+      assert.equal(embeddedPaymentChoice(t), 'sinpe', t)
+    }
+  })
+  it('F5 / N1: a QR with a pay verb closes; "SINPE al mismo precio" stays open', () => {
+    for (const out of ['Escaneá el QR de la etiqueta para pagar', 'Pagá con el QR de la tienda', 'Escaneá el QR para ver el número de SINPE', 'Sinpe lo hacés al mismo', 'Sinpe móvil, al mismo de siempre']) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('outbound', out)], SHOPPER)), false, out)
+    }
+    for (const out of ['Aceptamos SINPE al mismo precio', 'SINPE a este precio solo hoy', 'Aceptamos sinpe móvil al mismo precio']) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('outbound', out)], SHOPPER)), true, out)
+    }
+  })
+  it('N2 / N4: "Listo 👍" after "¿te lo aparto?" is buying; more half-size shapes are order data', () => {
+    assert.equal(after('Listo 👍'), true)
+    assert.equal(after('Listo ☑'), false)
+    for (const v of ['tallas 7.5 y 8', 'talla US 7.5', 'tenis 7.5']) assert.equal(embeddedPaymentChoice(`${N}Producto: ${v}\nPago por SINPE`), 'sinpe', v)
   })
 })

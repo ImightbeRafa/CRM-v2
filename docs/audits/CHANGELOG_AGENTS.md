@@ -1,3 +1,18 @@
+## 2026-10-18 — Payment choice inside the order data, round 6 notes (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
+
+- Verifier r6 (Fable, on 9d56f5f): PASS WITH NOTES — r5 notes all fixed, but three over-corrections reopened part of
+  INT-I / INT-O / INT-K. Fixed:
+  - F1: the whole-row "le puse / se lo tiré" rule now excludes only non-money objects (mensaje, like, reseña, datos,
+    número…) instead of allowing a fixed tail ("Se lo tiramos ayer", "Le puse 9900", "Le dejé, fíjese" close again).
+  - F2: "la plata está (en su cuenta)" statements close again (not "está habilitado / disponible"); "la transfe ya la
+    hago" is intent and stays open.
+  - F3: "yale…" glued forms rejected again except names (Ayales, Yaleska). F4: liquidao / liquidó.
+  - F5: a QR line with a pay word closes regardless of the product-QR exclusions; "Sinpe lo hacés al mismo" closes.
+  - N1: "SINPE al mismo precio" stays open. N2: "Listo 👍" is buying talk again (✅ ✔ ☑ only). N3: "listón", Kallisto
+    and common -isto / -echo words allowed. N4: "tallas 7.5", "talla US 7.5", "tenis 7.5".
+- Tests: pay-choice-in-data 55/55; test:soft-ai 1357/1357; test:security 289/289; tsc, eslint clean. Probes: flows 4/30,
+  earlier 7/90, store 1/67, attacks 32/33 blocked (the announced standalone "Y4"), legit 8/65.
+
 ## 2026-10-18 — Payment choice inside the order data, round 5 notes (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
 
 - Verifier r5 (Fable, on 1d6f8b6): **PASS WITH NOTES** (r4 F1–F5 fixed; 32/33 attacks blocked end-to-end, the 1 routed is

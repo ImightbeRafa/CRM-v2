@@ -17,7 +17,7 @@ import {
   salesDataListFirst,
   type SalesContext,
 } from '@/lib/soft-ai/sales-state'
-import { classifyPaymentText, hasHardPaymentClaim, isBareOrderConfirmAsk } from '@/lib/soft-ai/payment-classifier'
+import { classifyPaymentText, hasHardPaymentClaim, isBareOrderConfirmAsk, isHowPayShipQuestion } from '@/lib/soft-ai/payment-classifier'
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
 import { RESERVED_SHORTCUT_SEEDS } from '@/lib/soft-ai/shortcuts'
 import { PICKUP_DATA_LIST, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
@@ -353,5 +353,114 @@ describe('C6: the delivery data list comes before the payment question', () => {
     const s = deriveSalesState({ history: quoted, inboundText: 'lo quiero', ctx: CTX })
     assert.match(formatSalesTurnBlock(CTX, s), /AL FINAL, en su propio mensaje, preguntá cómo prefiere pagar con la pregunta de pago de abajo, nunca antes de la lista de datos/)
     assert.match(readFileSync('src/lib/soft-ai/agent-turn-inputs.ts', 'utf8'), /dataListFirst: salesState \? salesDataListFirst\(salesState, input\.history, input\.inboundText\) : null/)
+  })
+})
+
+describe('Pura Sonrisa exam (2026-10-18) cases', () => {
+  const PURA: SalesContext = {
+    ...CTX,
+    catalog: [
+      { name: 'Pura Sonrisa  Menta ', price: 11900, stockLabel: 'disponible' },
+      { name: 'Pura Sonrisa Sandia ', price: 11900, stockLabel: 'disponible' },
+      { name: 'Pura Sonrisa   Blue Raspberry.', price: 11900, stockLabel: 'disponible' },
+      { name: 'Pura Sonrisa  Fresa ', price: 11900, stockLabel: 'disponible' },
+    ],
+    bundles: [{ name: 'Combo 2 cajas', price: 19900, shippingIncluded: true }],
+    freeShippingOver: 19900,
+  }
+  it('1. "Quiero el combo de menta y fresa con envío a San José" → data list before "¿Cómo preferís pagar?"', () => {
+    const inbound = 'Quiero el combo de menta y fresa con envío a San José'
+    const s = deriveSalesState({ history: [], inboundText: inbound, ctx: PURA })
+    assert.equal(salesDataListFirst(s, [], inbound), 'shipping')
+    const p = applyFinalOutputPolicy({
+      text: '¡Claro! El Combo 2 cajas sale ₡19 900 en total, ya con el envío.\n\n¿Cómo preferís pagar? Tenemos SINPE Móvil y tarjeta.',
+      brandFacts: FACTS,
+      quoteAmounts: [19900],
+      skipPurchaseSummary: true,
+      shortenLongReply: true,
+      paymentOptions: { dataListFirst: 'shipping' },
+    })
+    assert.ok(p.parts[1].includes('Nombre completo'), p.parts.join(' | '))
+    assert.match(p.parts[2], /^¿Cómo preferís pagar\?/)
+  })
+  it('2. "¿cómo sería el envío y el pago?" / "y el pago como seria" are questions, not claims', () => {
+    assert.equal(classifyPaymentText('¿cómo sería el envío y el pago?'), 'payment_info_safe')
+    assert.equal(classifyPaymentText('y el pago como seria'), 'payment_info_safe')
+    for (const t of ['¿cómo sería el envío y el pago?', 'y el pago como seria', 'Hola, ¿cómo sería el pago y el envío?', '¿y el pago cómo es?', 'Buenas, el envío y el pago cómo sería?']) {
+      assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+    for (const t of ['¿cómo sería el pago del resto?', 'y el pago como seria, ya pagué', '¿cómo sería el pago? ya les hice el sinpe', 'el pago cómo quedó?']) assert.equal(isHowPayShipQuestion(t), false, t)
+    for (const t of ['¿cómo sería el pago? ya les hice el sinpe', 'y el pago como seria, ya pagué', 'el pago cómo quedó?']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+  it('3. the shared brand prefix ("Pura Sonrisa") is not "another product"; the flavour still is', async () => {
+    const { salesFreeShippingRule } = await import('@/lib/soft-ai/sales-state')
+    const rule = salesFreeShippingRule(PURA)!
+    assert.deepEqual(rule.otherNames, ['menta', 'sandia', 'blue', 'fresa'])
+    const ok = validateAgentOutput({ text: 'El Combo 2 cajas de Pura Sonrisa sale ₡19 900 con envío incluido.', citedToolNames: [], quoteAmounts: [19900], freeShippingRule: rule })
+    assert.equal(ok.ok, true, String(ok.reasons))
+    const flavour = validateAgentOutput({ text: 'La Menta sale ₡19 900 con envío incluido.', citedToolNames: [], quoteAmounts: [19900], freeShippingRule: rule })
+    assert.equal(flavour.ok, false)
+    // PatchHouse-like names (different first words) keep their old first-word rule.
+    const ph = salesFreeShippingRule({ ...CTX, catalog: [{ name: 'GLP-1', price: 15900, stockLabel: 'x' }, { name: 'Focus', price: 9900, stockLabel: 'x' }] })!
+    assert.deepEqual(ph.otherNames, ['glp', 'focus'])
+  })
+  it('4. the store\'s own threshold rule may be said ("envío gratis desde 2 cajas / desde ₡19 900")', async () => {
+    const { salesFreeShippingRule, salesAllowedAmounts } = await import('@/lib/soft-ai/sales-state')
+    const rule = salesFreeShippingRule(PURA)!
+    assert.equal(rule.freeOver, 19900)
+    // INT-84: the threshold is never an allowed price (19 900 is allowed here only because it is the combo price).
+    assert.ok(!salesAllowedAmounts({ ...PURA, bundles: [] }).includes(19900))
+    for (const text of [
+      'Tenemos envío gratis desde 2 cajas 🚚',
+      'El envío es gratis en compras desde ₡19 900.',
+      'Envío gratis a todo el país a partir de dos cajas.',
+      'Con 1 caja el envío cuesta ₡3 000. Envío gratis llevando 2 cajas o más.',
+    ]) {
+      const v = validateAgentOutput({ text, citedToolNames: [], quoteAmounts: [...salesAllowedAmounts(PURA)], freeShippingRule: rule })
+      assert.equal(v.ok, true, `${text} → ${v.reasons}`)
+    }
+    for (const text of [
+      'Envío gratis desde 1 caja',
+      'Envío gratis desde ₡15 000',
+      'Tu pedido califica: envío gratis desde 2 cajas',
+      'Hoy te damos envío gratis desde 2 cajas',
+      'Envío gratis en todos los pedidos',
+      'Envío gratis desde 2 cajas. La Menta también trae envío gratis.',
+    ]) {
+      const v = validateAgentOutput({ text, citedToolNames: [], quoteAmounts: [...salesAllowedAmounts(PURA), 15000], freeShippingRule: rule })
+      assert.equal(v.ok, false, text)
+    }
+    // No threshold configured: the rule is not there at all (old behaviour).
+    assert.equal(salesFreeShippingRule({ ...PURA, bundles: [], freeShippingOver: null }), null)
+    assert.match(readFileSync('src/lib/soft-ai/agent-sales-context.ts', 'utf8'), /freeShippingOver: input\.brandFacts\.shipping\?\.ea\?\.enabled !== false/)
+  })
+})
+
+describe('Pura Sonrisa P2 keeps INT-84: the threshold amount is only valid inside the threshold rule', () => {
+  it('threshold ₡25 000 that is no product price: rule OK, as a price blocked, count checked against the cheapest item', async () => {
+    const { salesFreeShippingRule, salesAllowedAmounts } = await import('@/lib/soft-ai/sales-state')
+    const ctx: SalesContext = {
+      ...CTX,
+      catalog: [
+        { name: 'Pura Sonrisa Menta', price: 11900, stockLabel: 'x' },
+        { name: 'Pura Sonrisa Fresa', price: 11900, stockLabel: 'x' },
+      ],
+      bundles: [],
+      freeShippingOver: 25000,
+    }
+    const rule = salesFreeShippingRule(ctx)!
+    const quote = salesAllowedAmounts(ctx)
+    assert.ok(!quote.includes(25000))
+    const check = (text: string) => validateAgentOutput({ text, citedToolNames: [], quoteAmounts: quote, freeShippingRule: rule })
+    for (const t of ['Envío gratis en compras desde ₡25 000 🚚', 'Tenemos envío gratis a partir de 3 cajas.']) assert.equal(check(t).ok, true, `${t} → ${check(t).reasons}`)
+    for (const t of [
+      'Los 3 en ₡25 000',
+      'Te quedan en ₡25 000 con envío gratis',
+      'Envío gratis desde ₡25 000. Los 3 te quedan en ₡25 000.',
+      'Envío gratis a partir de 2 cajas.',
+      'Envío gratis desde ₡20 000',
+    ]) assert.equal(check(t).ok, false, t)
   })
 })

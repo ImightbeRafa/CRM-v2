@@ -116,7 +116,44 @@ const FREE_SHIPPING_EXCEPTION_RE =
  * Combos the owner marked as including shipping (exact prices), plus words that name other things the agent sells
  * (catalog items): a clause that names one of them is not only about the included combo (INT-91).
  */
-export type FreeShippingRule = { includedPrices: number[]; otherNames?: string[]; bundleWords?: string[]; nameNotes?: string[] }
+export type FreeShippingRule = {
+  includedPrices: number[]
+  otherNames?: string[]
+  bundleWords?: string[]
+  nameNotes?: string[]
+  /** Pura Sonrisa P2: the store's own "envío gratis desde ₡X" threshold, with the catalog unit prices. */
+  freeOver?: number
+  unitPrices?: number[]
+}
+
+/**
+ * Pura Sonrisa P2: the store's threshold rule said as a rule — "envío gratis desde ₡19 900", "a partir de 2 cajas",
+ * "en compras desde ₡20 000", "llevando 2 cajas o más". A count N is true only when N of the CHEAPEST item already
+ * reach the threshold. The clause may name no exception / personal wording ("tu pedido califica", "hoy", "a vos").
+ */
+const THRESHOLD_RE =
+  /(?<![\p{L}])(?:desde|a\s+partir\s+de|en\s+compras?\s+(?:de|desde|mayores\s+a|sobre|de\s+m[aá]s\s+de)|por\s+compras?\s+(?:de|desde|mayores\s+a|sobre|de\s+m[aá]s\s+de)|comprando|llevando)\s+(?:(?:[₡¢]\s?(\d{1,3}(?:[.,\s ]\d{3})+|\d{4,7}))|(\d{1,2}|dos|tres|cuatro|cinco|seis)\s+(?:cajas?|unidades|productos?|paquetes?|bolsas?|frascos?|art[ií]culos?|piezas?)(?:\s+o\s+m[aá]s)?)(?![\p{L}\d])/giu
+const COUNT_WORDS: Record<string, number> = { dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6 }
+
+function thresholdClauseOk(clause: string, rule: FreeShippingRule): boolean {
+  const over = rule.freeOver
+  if (!over || FREE_SHIPPING_EXCEPTION_RE.test(clause)) return false
+  const cheapest = Math.min(...(rule.unitPrices ?? []).filter((p) => p > 0))
+  let any = false
+  for (const m of clause.matchAll(THRESHOLD_RE)) {
+    if (m[1]) {
+      if (Math.abs(Number(m[1].replace(/\D/g, '')) - over) > 1) return false
+    } else {
+      const n = COUNT_WORDS[m[2].toLowerCase()] ?? Number(m[2])
+      if (!Number.isFinite(cheapest) || !(n >= 1) || n * cheapest < over - 1) return false
+    }
+    any = true
+  }
+  if (!any) return false
+  // Any other amount in that clause must be the threshold itself or an included combo's price.
+  const amounts = [...extractMoneyAmounts(clause).map((a) => Math.round(a)), ...[...clause.matchAll(BARE_AMOUNT_RE)].map((x) => Number(x[0].replace(/\D/g, '')))].filter((a) => a >= 100)
+  return amounts.every((a) => Math.abs(a - over) <= 1 || rule.includedPrices.some((p) => Math.abs(a - p) <= 1))
+}
 
 const foldNote = (s: string) => s.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim()
 
@@ -159,14 +196,24 @@ export function freeShippingRuleOk(rawText: string, rule: FreeShippingRule): boo
   const extraWords = (rule.bundleWords ?? []).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).filter(Boolean)
   const bundleWordRe = new RegExp(`(?<![\\p{L}])(?:combos?|packs?|kits?${extraWords.length ? '|' + extraWords.map((w) => `${w}s?`).join('|') : ''})(?![\\p{L}])`, 'giu')
   const matches = freeShippingWording(text)
-  if (matches.length === 0 || rule.includedPrices.length === 0) return false
-  // One included combo per fact: nothing in the reply may stretch it to other items.
-  if (FREE_SHIPPING_SPREAD_RE.test(text)) return false
-  const others = (rule.otherNames ?? []).map((n) => n.trim().toLowerCase()).filter((n) => n.length >= 3)
+  if (matches.length === 0 || (rule.includedPrices.length === 0 && !rule.freeOver)) return false
   const spans = clauseSpans(text)
+  const spanOf = (m: { index: number; end: number }) => spans.find(([s, e]) => m.index >= s && m.index < e)
+  // P2: clauses that state the store's own threshold rule are judged on their own (a rule for every order may say
+  // "todos"); the spread check below reads the rest of the reply.
+  const thresholdSpans = rule.freeOver
+    ? matches.map(spanOf).filter((sp): sp is [number, number] => Boolean(sp) && thresholdClauseOk(text.slice(sp![0], sp![1]), rule))
+    : []
+  let rest = text
+  for (const [s, e] of thresholdSpans) rest = rest.slice(0, s) + ' '.repeat(e - s) + rest.slice(e)
+  // One included combo per fact: nothing in the reply may stretch it to other items.
+  if (FREE_SHIPPING_SPREAD_RE.test(rest)) return false
+  const others = (rule.otherNames ?? []).map((n) => n.trim().toLowerCase()).filter((n) => n.length >= 3)
   for (const m of matches) {
-    const span = spans.find(([s, e]) => m.index >= s && m.index < e)
+    const span = spanOf(m)
     if (!span || m.end > span[1]) return false
+    if (thresholdSpans.some(([s, e]) => s === span[0] && e === span[1])) continue
+    if (rule.includedPrices.length === 0) return false
     const clause = text.slice(span[0], span[1])
     // Exactly one combo / pack named in the clause (not "el Combo Trío y el Combo 2").
     if ((clause.match(bundleWordRe) || []).length !== 1) return false
@@ -183,6 +230,28 @@ export function freeShippingRuleOk(rawText: string, rule: FreeShippingRule): boo
   return true
 }
 
+
+/**
+ * Pura Sonrisa P2 with INT-84 kept: the threshold amount is NOT an allowed price. It passes only when every place it is
+ * written sits in a clause that states the store's threshold rule ("envío gratis desde ₡19 900") — never as a price
+ * ("los 3 en ₡19 900").
+ */
+export function thresholdAmountOk(amount: number, rawText: string, rule: FreeShippingRule | null | undefined): boolean {
+  if (!rule?.freeOver || Math.abs(Math.round(amount) - rule.freeOver) > 1) return false
+  const text = maskNameParentheticals(rawText, rule.nameNotes ?? [])
+  const spans = clauseSpans(text)
+  let seen = false
+  for (const m of text.matchAll(COLON_AMOUNT_RE)) {
+    if (Math.abs(Number(m[1].replace(/\D/g, '')) - rule.freeOver) > 1) continue
+    seen = true
+    const at = m.index ?? 0
+    const span = spans.find(([s, e]) => at >= s && at < e)
+    if (!span) return false
+    const clause = text.slice(span[0], span[1])
+    if (freeShippingWording(clause).length === 0 || !thresholdClauseOk(clause, rule)) return false
+  }
+  return seen
+}
 /** Deal check with the narrower included-combo rule on top of the promo kinds. */
 function dealProblemWithRule(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>, rule: FreeShippingRule | null | undefined): boolean {
   if (!dealProblem(text, allowed)) return false
@@ -588,6 +657,8 @@ export function validateAgentOutput(input: {
     if (amountAllowed(amount, allowed)) continue
     // Sleeping C3: a per-night / per-patch amount that is a known price ÷ a stated count.
     if (unitDerivedAmount(amount, text, input.customerText, [...inventory, ...quote])) continue
+    // Pura Sonrisa P2 (INT-84 kept): the store's threshold amount only inside its own threshold-rule clause.
+    if (thresholdAmountOk(amount, text, input.freeShippingRule)) continue
     highlighted.push(Math.round(amount))
     if (!cited.has('search_inventory') && shipping.length === 0 && quote.length === 0) {
       reasons.push('unsourced_money')

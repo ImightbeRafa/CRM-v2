@@ -59,6 +59,11 @@ export type SalesContext = {
   cardOnWeb?: boolean
   /** The brand's own contra-entrega text says GAM. */
   codGamOnly?: boolean
+  /**
+   * Pura Sonrisa P2: the store's "envío gratis desde ₡X" (brand facts shipping.ea.freeOver). Only lets the validator
+   * pass that exact threshold rule; it is never applied to prices. Undefined = none.
+   */
+  freeShippingOver?: number | null
 }
 
 export type SalesStage =
@@ -720,19 +725,39 @@ export function salesAllowedDeals(ctx: SalesContext): Array<'free_shipping' | 's
  */
 export function salesFreeShippingRule(
   ctx: SalesContext,
-): { includedPrices: number[]; otherNames: string[]; bundleWords: string[]; nameNotes: string[] } | null {
+): {
+  includedPrices: number[]
+  otherNames: string[]
+  bundleWords: string[]
+  nameNotes: string[]
+  freeOver?: number
+  unitPrices?: number[]
+} | null {
   const includedPrices = (ctx.bundles ?? []).filter((b) => b.shippingIncluded).map((b) => Math.round(b.price))
-  if (!includedPrices.length) return null
-  const firstWord = (name: string) => (name.trim().split(/[\s\-–—]+/)[0] || '').toLowerCase()
+  // Pura Sonrisa P2: the store's own "envío gratis desde ₡X" threshold (brand facts), when it has one.
+  const freeOver = typeof ctx.freeShippingOver === 'number' && ctx.freeShippingOver > 0 ? Math.round(ctx.freeShippingOver) : undefined
+  if (!includedPrices.length && freeOver === undefined) return null
+  const words = (name: string) =>
+    name
+      .trim()
+      .split(/[\s\-–—]+/)
+      .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '').toLowerCase())
+      .filter(Boolean)
+  const firstWord = (name: string) => words(name)[0] || ''
   // The owner's own word for a bundle ("Combo", "Pack", "Kit"): first word of each bundle name.
   const bundleWords = [...new Set((ctx.bundles ?? []).map((b) => firstWord(b.name)).filter((w) => /^\p{L}{3,}$/u.test(w)))]
-  // First word of each catalog item ("Focus", "GLP"): naming one next to "envío incluido" is not a combo fact (INT-91).
+  // The distinguishing word of each catalog item ("Focus", "GLP"): naming one next to "envío incluido" is not a combo
+  // fact (INT-91). Pura Sonrisa P1: words EVERY item shares (the brand: "Pura Sonrisa Menta / Fresa …") are skipped, so
+  // the brand name itself never counts as "another product".
   // A one-product store has no OTHER item to stretch the fact to: its bundles are of that product (Sleeping).
   const catalog = ctx.catalog ?? []
+  const shared = catalog.length > 1 ? new Set(words(catalog[0].name).filter((w) => catalog.every((c) => words(c.name).includes(w)))) : new Set<string>()
+  const distinguishing = (name: string) => words(name).find((w) => !shared.has(w)) || ''
   const otherNames =
     catalog.length > 1
-      ? [...new Set(catalog.map((c) => firstWord(c.name)).filter((w) => w.length >= 3 && !bundleWords.includes(w)))]
+      ? [...new Set(catalog.map((c) => distinguishing(c.name)).filter((w) => w.length >= 3 && !bundleWords.includes(w)))]
       : []
+  const unitPrices = catalog.map((c) => Math.round(c.price)).filter((p) => p > 0)
   // Bracketed notes that are part of the owner's own names ("(60 noches)", "(3 paquetes a elección)").
   const nameNotes = [
     ...new Set(
@@ -741,7 +766,7 @@ export function salesFreeShippingRule(
       ),
     ),
   ]
-  return { includedPrices, otherNames, bundleWords, nameNotes }
+  return { includedPrices, otherNames, bundleWords, nameNotes, ...(freeOver !== undefined ? { freeOver, unitPrices } : {}) }
 }
 
 const MEDIA_LIKE_TYPES = new Set(['image', 'document', 'audio', 'video', 'voice', 'sticker'])
@@ -801,9 +826,13 @@ const PICKUP_CUE_RE = /(?<![\p{L}])(?:retir\p{L}*|recog\p{L}*|paso\s+(?:a\s+)?(?
  * close, before any payment details, when the store has not asked for the order data yet and the customer has not sent
  * it, the reply must carry the data list BEFORE the method question. Which list: pickup when the customer talks about
  * picking it up, else shipping. Null = nothing to order. Pure.
+ * Pura Sonrisa exam: not only at the detected close — "Quiero el combo de menta y fresa con envío a San José" has no
+ * buy cue the state knows, yet the model asked "¿Cómo preferís pagar?" without the list. Any stage before payment
+ * counts; the reply is only touched when it actually asks the payment method.
  */
+const DATA_LIST_STAGES: ReadonlySet<SalesStage> = new Set(['saludo', 'descubrir', 'cotizar', 'cierre'])
 export function salesDataListFirst(state: SalesState, history: SoftAiHistoryMessage[], inboundText: string): 'shipping' | 'pickup' | null {
-  if (state.stage !== 'cierre' || state.said.payment || state.said.order || state.said.howToBuy) return null
+  if (!DATA_LIST_STAGES.has(state.stage) || state.said.payment || state.said.order || state.said.howToBuy) return null
   const outbound = history.filter((m) => m.direction === 'outbound').map((m) => m.content || '')
   if (orderDataAsked(outbound)) return null
   const inbound = [...history.filter((m) => m.direction === 'inbound').map((m) => m.content || ''), inboundText || '']

@@ -466,6 +466,28 @@ function agentExit(value: string, cls: PaymentClassification): PaymentClassifica
 }
 /* ---- end live-equivalence gate ---- */
 
+const HOW_VERB = String.raw`(?:c[oó]mo|qu[eé]\s+tal)\s+(?:ser[ií]a|es|funciona|va|queda|se\s+hace|se\s+maneja)`
+const PAY_THE = String.raw`(?:el|lo\s+del?)\s+pago`
+const SHIP_THE = String.raw`(?:el|lo\s+del?|la)\s+(?:env[ií]o|entrega)`
+const HOW_PAY_SHIP_RE = new RegExp(
+  String.raw`^(?:y\s+)?(?:` +
+    String.raw`${HOW_VERB}\s+(?:${SHIP_THE}\s+y\s+)?${PAY_THE}(?:\s+y\s+${SHIP_THE})?` +
+    String.raw`|${PAY_THE}(?:\s+y\s+${SHIP_THE})?\s+${HOW_VERB}` +
+    String.raw`|${SHIP_THE}\s+y\s+${PAY_THE}\s+${HOW_VERB}` +
+    String.raw`)\s*[?!.]*$`,
+  'iu',
+)
+/** P4: a closed "how do shipping and payment work?" question, nothing else in the message. Pure. */
+export function isHowPayShipQuestion(text: string): boolean {
+  const v = clean(stripFormatChars(text || ''))
+    .replace(/[¿¡]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(LEADING_GREETING_RE, '')
+    .trim()
+  return v.length > 0 && v.length <= 80 && HOW_PAY_SHIP_RE.test(v)
+}
+
 export function classifyPaymentText(
   text: string,
   /**
@@ -542,6 +564,9 @@ export function classifyPaymentText(
   if (PAYMENT_RE.test(value) && isPaymentInfoQuestion(value)) {
     return agentExit(value, 'non_payment')
   }
+  // Pura Sonrisa exam P4: "¿cómo sería el envío y el pago?" / "y el pago como sería" — the WHOLE message (after a
+  // greeting) is this closed how-does-it-work question: the agent answers with the method list.
+  if (isHowPayShipQuestion(value)) return 'payment_info_safe'
   if (PAYMENT_RE.test(value)) {
     return 'payment_proof_or_risk'
   }

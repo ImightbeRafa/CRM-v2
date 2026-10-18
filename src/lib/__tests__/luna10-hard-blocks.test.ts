@@ -294,7 +294,8 @@ describe('verifier + SecureDog round 2 (luna-10)', () => {
     assert.match(shadow, /customerName: 'Cliente',/)
     assert.match(shadow, /agent: redactCustomerText\(r\.text, c\.peerName\)/)
     const session = fs.readFileSync('scripts/agent-pack/test-session.ts', 'utf8')
-    assert.match(session, /input\.cap > 20_000_000/)
+    // Rafael 2026-10-18 raised the per-day test ceiling from 20M to 40M.
+    assert.match(session, /input\.cap > 40_000_000/)
     assert.match(session, /c\.testDailyTokenCap === input\.cap \? \{ \.\.\.c, testDailyTokenCap: before \} : c/)
   })
 })

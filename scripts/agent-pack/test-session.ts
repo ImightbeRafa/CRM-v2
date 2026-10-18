@@ -24,7 +24,7 @@ export async function withExamSession<T>(
   fn: (actor: ExamActor) => Promise<T>,
 ): Promise<T> {
   const { tenantId } = input
-  if (!Number.isFinite(input.cap) || input.cap <= 0 || input.cap > 20_000_000) throw new Error('--cap debe ser un número entre 1 y 20 000 000')
+  if (!Number.isFinite(input.cap) || input.cap <= 0 || input.cap > 40_000_000) throw new Error('--cap debe ser un número entre 1 y 40 000 000')
   if (!(await isAiTermsAcceptedNow(tenantId))) throw new Error('El negocio no aceptó los términos de IA: no se usan sus chats con la IA.')
   if ((await readAgentKillState(tenantId)).armed) throw new Error('El freno de emergencia de la IA está activo en este negocio.')
   if (await isPlatformAiPaused()) throw new Error('La IA de la plataforma está en pausa.')

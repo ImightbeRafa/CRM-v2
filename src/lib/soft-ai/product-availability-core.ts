@@ -110,6 +110,7 @@ export function buildStockGuard(items: StockItem[], rows: Map<string, Availabili
   guard: Omit<StockGuard, 'focus'>
   soldOutIds: Set<string>
   backById: Map<string, string | null>
+  staleBackIds: string[]
 } {
   const active = items.filter((i) => i.isActive !== false).map((i) => ({ ...i, currentStock: Number(i.currentStock) || 0 }))
   const tracks = tracksStock(active)
@@ -134,7 +135,21 @@ export function buildStockGuard(items: StockItem[], rows: Map<string, Availabili
     guard: { soldOut: soldOut.filter((s) => !onSale.has(normalizeName(s.name))).slice(0, 60), inStockNames: inStock.slice(0, 200) },
     soldOutIds,
     backById,
+    staleBackIds: staleBackIds(items, rows),
   }
+}
+
+/**
+ * A "vuelve aprox." written for a product sold out by stock 0 (no manual switch) is spent once stock is back: it must
+ * not come back with the next outage (Verifier r1 #2). Those rows are cleared by the server.
+ */
+export function staleBackIds(items: StockItem[], rows: Map<string, AvailabilityRow>): string[] {
+  return items
+    .filter((i) => {
+      const row = rows.get(i.id)
+      return Boolean(row && !row.soldOut && (row.backDate || row.backNote) && Number(i.currentStock) > 0)
+    })
+    .map((i) => i.id)
 }
 
 type ToolRow = { name: string; sku: string | null; category: string | null; currentStock: unknown; minStock: unknown; sellingPrice: unknown }
@@ -198,14 +213,23 @@ export function bundleHasSoldOut(bundleName: string, soldOutNames: string[]): bo
   return soldOutNames.some((n) => hasWords(b, normalizeName(n)))
 }
 
-/** The customer is (still) asking for a sold-out product: the newest message that names a product names a sold-out one. */
-export function soldOutFocus(customerMessagesNewestFirst: string[], guard: Pick<StockGuard, 'soldOut' | 'inStockNames'>): string | null {
+/** A chat message as the focus walk reads it (newest first): the customer's and the store's. */
+export type FocusMessage = { direction: 'inbound' | 'outbound'; content: string }
+
+/**
+ * The customer is (still) asking for a sold-out product. Walks the chat newest first: a customer message naming a
+ * product decides (sold out → focus, on sale → none); a store message that offered a product on sale ends it (the
+ * customer's later "sí, lo quiero" is for that alternative — Verifier r1 #1). Only the last 8 messages count.
+ */
+export function soldOutFocus(newestFirst: FocusMessage[], guard: Pick<StockGuard, 'soldOut' | 'inStockNames'>): string | null {
   if (guard.soldOut.length === 0) return null
   const soldNames = guard.soldOut.map((s) => s.name)
-  for (const msg of customerMessagesNewestFirst) {
-    const inStock = guard.inStockNames.some((n) => mentionsProduct(msg, n, soldNames))
+  for (const m of newestFirst.slice(0, 8)) {
+    const text = m.content || ''
+    const inStock = guard.inStockNames.some((n) => mentionsProduct(text, n, soldNames))
     if (inStock) return null
-    const sold = guard.soldOut.find((s) => mentionsProduct(msg, s.name, guard.inStockNames))
+    if (m.direction === 'outbound') continue
+    const sold = guard.soldOut.find((s) => mentionsProduct(text, s.name, guard.inStockNames))
     if (sold) return sold.name
   }
   return null
@@ -215,9 +239,16 @@ export function soldOutFocus(customerMessagesNewestFirst: string[], guard: Pick<
 const CLOSE_ASK_RE =
   /\[\[\s*(?:PAGO_|DATOS_PAGO)|c[oó]mo\s+(?:prefer\p{L}*|quer[eé]s|quiere|vas\s+a|va\s+a|pod[eé]s|puede)\s+pagar|m[eé]todo\s+de\s+pago|forma\s+de\s+pago|nombre\s+completo|direcci[oó]n\s+exacta|(?:p[aá]same|m[aá]ndame|env[ií]ame|ocupo|necesito)\s+(?:tus|los|unos)\s+datos|datos\s+(?:del|para\s+el)\s+(?:pedido|env[ií]o)|te\s+lo\s+(?:aparto|reservo|separo|anoto)|(?:sinpe|transferencia)\s+al\s/iu
 
-/** "vuelve a haber / entrar / llegar", "reponemos", "reingresa", "llega de nuevo", "vuelve aprox." — restock talk only. */
-const RESTOCK_RE =
-  /\bvuelv\p{L}*\s+(?:a\s+(?:haber|entrar|estar|llegar|tener)|aprox|el\s|la\s|en\s|para\s|a\s+(?:finales|inicios|mediados|principios))|\brep[oó]n\p{L}*|\brepuest\p{L}*|\breingres\p{L}*|\b(?:llega|llegan|llegar[aá]n?|entra|entran|entrar[aá]n?|hay|habr[aá])\s+(?:de\s+nuevo|otra\s+vez|nuevamente)|\b(?:nuevo|pr[oó]ximo)\s+(?:ingreso|lote|pedido\s+de\s+la\s+tienda)/iu
+/** Restock words that mean nothing else ("reponemos", "reingresa", "nuevo lote"). */
+const RESTOCK_STRONG_RE =
+  /\brep[oó]n(?:e|en|emos|dr[aá]n?|dremos|go|ga|gan)\b|\breingres\p{L}*|\b(?:nuevo|pr[oó]ximo)\s+(?:ingreso|lote)\b|\bvuelv\p{L}*\s+(?:a\s+(?:haber|entrar|ingresar)\b|aprox)|\b(?:hay|habr[aá])\s+(?:de\s+nuevo|otra\s+vez|nuevamente)/iu
+/**
+ * "vuelve a haber / entrar", "vuelve aprox.", "vuelve el 25", "llega de nuevo": restock talk only next to stock words or
+ * a sold-out product's name ("la encargada vuelve en la tarde" and "el repuesto te llega mañana" are not restocks).
+ */
+const RESTOCK_WEAK_RE =
+  /\bvuelv\p{L}*\s+(?:a\s+(?:haber|entrar|estar|llegar|tener)|aprox|(?:el|para\s+el)\s+\d|(?:la|esta|el)\s+(?:pr[oó]xim[ao]|otr[ao]|siguiente)\s+(?:semana|mes)|a\s+(?:finales|inicios|mediados|principios))|\b(?:llega|llegan|llegar[aá]n?|entra|entran|entrar[aá]n?|hay|habr[aá])\s+(?:de\s+nuevo|otra\s+vez|nuevamente)/iu
+const STOCK_WORD_RE = /agotad|\bstock\b|inventario|disponib|existencias/iu
 
 const DATEISH_RE = new RegExp(
   [
@@ -249,7 +280,8 @@ export function stockProblems(text: string, guard: StockGuard | null | undefined
   const namesInStock = guard.inStockNames.some((n) => mentionsProduct(t, n, soldNames))
   const namesSoldOut = guard.soldOut.some((s) => mentionsProduct(t, s.name, guard.inStockNames))
   if (CLOSE_ASK_RE.test(t) && !namesInStock && (guard.focus || namesSoldOut)) out.push('sold_out_offered')
-  if (RESTOCK_RE.test(t)) {
+  const restock = RESTOCK_STRONG_RE.test(t) || (RESTOCK_WEAK_RE.test(t) && (STOCK_WORD_RE.test(t) || namesSoldOut))
+  if (restock) {
     const allowed = guard.soldOut.map((s) => normalizeName(s.back || '')).filter(Boolean)
     const dates = [...t.matchAll(DATEISH_RE)].map((m) => normalizeName(m[0]).replace(/^(?:para el|el|del|al|a)\s+/, ''))
     if (dates.some((d) => !allowed.some((a) => hasWords(a, d)))) out.push('restock_date_invented')

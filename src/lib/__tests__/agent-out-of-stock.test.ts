@@ -12,6 +12,7 @@ import {
   sanitizeBackNote,
   soldOutFocus,
   soldOutToolItem,
+  staleBackIds,
   stockProblems,
   type StockGuard,
 } from '@/lib/soft-ai/product-availability-core'
@@ -80,11 +81,26 @@ describe('out-of-stock switch · who is sold out', () => {
     assert.ok(mentionsProduct('el ARNESS FORGE XL', 'ARNESS FORGE XL', ['ARNESS FORGE M/L']))
     assert.ok(!mentionsProduct('un arnés forge', 'ARNESS FORGE XL', ['ARNESS FORGE M/L']))
   })
-  it('focus: the newest message naming a product names a sold-out one', () => {
+  it('focus: walks the chat newest first; a store offer of a product on sale ends it (Verifier r1 #1)', () => {
     const g = { soldOut: [{ name: 'Focus Patch', back: null }], inStockNames: ['Energy Patch'] }
-    assert.equal(soldOutFocus(['la quiero', 'Hola, quiero el Focus'], g), 'Focus Patch')
-    assert.equal(soldOutFocus(['dame el energy entonces', 'quiero el Focus'], g), null)
-    assert.equal(soldOutFocus(['hola'], g), null)
+    const c = (content: string) => ({ direction: 'inbound' as const, content })
+    const s = (content: string) => ({ direction: 'outbound' as const, content })
+    assert.equal(soldOutFocus([c('la quiero'), c('Hola, quiero el Focus')], g), 'Focus Patch')
+    assert.equal(soldOutFocus([c('dame el energy entonces'), c('quiero el Focus')], g), null)
+    assert.equal(soldOutFocus([c('hola')], g), null)
+    // "Sí, lo quiero" after the store offered the Energy is for the Energy.
+    assert.equal(soldOutFocus([c('Sí, lo quiero'), s('Está agotado 😔 ¿Te sirve el Energy Patch? ₡11 900'), c('¿tienen el Focus?')], g), null)
+    // The store only said "agotado" (no alternative): "igual lo quiero" is still for the Focus.
+    assert.equal(soldOutFocus([c('igual lo quiero'), s('El Focus está agotado 😔'), c('¿tienen el Focus?')], g), 'Focus Patch')
+  })
+  it('a spent "vuelve aprox." (back on sale, no manual switch) is marked for clearing (Verifier r1 #2)', () => {
+    const rows = new Map([
+      ['a', { soldOut: false, backDate: '2026-10-25', backNote: null }],
+      ['b', { soldOut: false, backDate: '2026-10-25', backNote: null }],
+      ['c', { soldOut: true, backDate: '2026-10-25', backNote: null }],
+    ])
+    const items = [{ id: 'a', name: 'A', currentStock: 5 }, { id: 'b', name: 'B', currentStock: 0 }, { id: 'c', name: 'C', currentStock: 9 }]
+    assert.deepEqual(staleBackIds(items, rows), ['a'])
   })
   it('combos naming a sold-out product (whole name) are not offered', () => {
     assert.ok(bundleHasSoldOut('2 Focus Patch', ['Focus Patch']))
@@ -126,6 +142,10 @@ describe('out-of-stock switch · reply checks', () => {
     assert.deepEqual(stockProblems('Vuelve a haber el 28 de octubre', { ...GUARD, focus: false }), ['restock_date_invented'])
     // Shipping times are not restock talk.
     assert.deepEqual(stockProblems('El Energy te llega en 2 días hábiles, mañana sale', NO_DATE), [])
+    // Verifier r1 #4: a spare part arriving and a person coming back are not restocks.
+    assert.deepEqual(stockProblems('El repuesto te llega mañana por Correos', NO_DATE), [])
+    assert.deepEqual(stockProblems('La encargada vuelve en la tarde, mañana te confirmo', NO_DATE), [])
+    assert.deepEqual(stockProblems('El Focus vuelve el 30 😊', NO_DATE), ['restock_date_invented'])
     // Nothing sold out: no check at all.
     assert.deepEqual(stockProblems('vuelve el lunes, ¿cómo preferís pagar?', null), [])
   })
@@ -179,6 +199,14 @@ describe('out-of-stock switch · sales flow', () => {
     assert.match(block, /«Focus Patch»\) está AGOTADO/)
     assert.equal(salesNeedsHuman({ ...CTX, paymentShareable: false }, state), false)
     assert.equal(salesStockGuard(CTX, state)?.focus, true)
+    // Verifier r1 #1: the store offered the Energy and the customer says "sí, lo quiero": a normal close.
+    const offered = [...history.slice(0, 1), { id: '2', direction: 'outbound' as const, content: 'El Focus está agotado 😔 ¿Te sirve el Energy Patch? ₡11 900', sentAt: '2026-10-17T10:01:00Z' }]
+    for (const yes of ['Sí, lo quiero', 'Dale, ese me sirve, lo quiero']) {
+      const st = deriveSalesState({ history: offered, inboundText: yes, ctx: CTX })
+      assert.equal(st.soldOutFocus, null, yes)
+      assert.match(formatSalesTurnBlock(CTX, st), /Pregunta de pago/, yes)
+      assert.deepEqual(stockProblems('¡Perfecto! ¿Cómo preferís pagar?', salesStockGuard(CTX, st)), [], yes)
+    }
     // Switching to a product on sale closes normally.
     const other = deriveSalesState({ history, inboundText: 'Ok, lo quiero, el Energy entonces', ctx: CTX })
     assert.equal(other.soldOutFocus, null)
@@ -203,6 +231,8 @@ describe('out-of-stock switch · route, SQL and wiring (source)', () => {
     assert.match(patch, /where: \{ id: body\.itemId, tenantId: auth\.tenantId \}/)
     assert.match(patch, /tenantId: auth\.tenantId,\s*inventoryItemId: item\.id/)
     assert.match(patch, /logAuditEvent\(/)
+    // Verifier r1 #5: a note with numbers is refused (they would be stripped), the date goes in the calendar.
+    assert.ok(patch.includes('if (!backDate && body.backNote && /\\p{N}/u.test(body.backNote))'))
   })
   it('every availability query is tenant-scoped', () => {
     const lib = read('src/lib/soft-ai/product-availability.ts')

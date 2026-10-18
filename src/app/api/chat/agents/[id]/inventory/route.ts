@@ -19,7 +19,7 @@ import { recordAgentVersionSnapshot } from '@/lib/soft-ai/agent-improvement'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
 import { z } from 'zod'
 import { AvailabilityNotReadyError, availabilityReady, loadAvailability, saveAvailability } from '@/lib/soft-ai/product-availability'
-import { backDateExpired, backText, checkBackDate, sanitizeBackNote, tracksStock } from '@/lib/soft-ai/product-availability-core'
+import { backDateExpired, backText, checkBackDate, sanitizeBackNote, staleBackIds, tracksStock } from '@/lib/soft-ai/product-availability-core'
 
 const inventoryRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 20, identifier: 'chat-agent-inventory' })
 const availabilityRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 60, identifier: 'chat-agent-availability' })
@@ -39,12 +39,15 @@ async function withAvailability(tenantId: string, result: Awaited<ReturnType<typ
   const ready = result.available && (await availabilityReady())
   const rows = ready ? await loadAvailability(tenantId, result.items.map((i) => i.id)) : new Map()
   const tracks = tracksStock(result.items.filter((i) => i.isActive))
+  // A spent "vuelve aprox." (back on sale, no manual switch) is not shown; the agent's next turn clears it (no write on GET).
+  const stale = new Set(staleBackIds(result.items, rows))
   return {
     ...result,
     availabilityReady: ready,
     tracksStock: tracks,
     items: result.items.map((i) => {
-      const row = rows.get(i.id) ?? null
+      const raw = rows.get(i.id) ?? null
+      const row = raw && stale.has(i.id) ? { ...raw, backDate: null, backNote: null } : raw
       return {
         ...i,
         soldOut: row?.soldOut === true,
@@ -206,6 +209,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const backDate = checkBackDate(body.backDate)
     if (backDate === 'invalid') {
       return NextResponse.json({ success: false, error: 'La fecha de regreso tiene que ser de hoy a 6 meses.' }, { status: 400 })
+    }
+    // Numbers are removed from the note (it is shown to the agent): say so instead of saving "en semanas" (Verifier r1 #5).
+    if (!backDate && body.backNote && /\p{N}/u.test(body.backNote)) {
+      return NextResponse.json({ success: false, error: 'La nota no lleva números: para una fecha usá el calendario.' }, { status: 400 })
     }
     // Only a product of THIS agent's list (fail closed: an agent with no list sells nothing) and of this business.
     const mapped = await loadMappedInventoryIds(auth.tenantId, agent.id)

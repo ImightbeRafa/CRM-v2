@@ -78,5 +78,22 @@ export async function loadAgentStock(tenantId: string, itemIds: string[]) {
     }),
     loadAvailability(tenantId, ids),
   ])
-  return buildStockGuard(items, rows)
+  const built = buildStockGuard(items, rows)
+  await clearStaleBack(tenantId, built.staleBackIds)
+  return built
+}
+
+/**
+ * Clears a spent "vuelve aprox." (stock-0 product back on sale, no manual switch). Only touches rows that STILL have
+ * no manual switch; rare (once per restock), tenant-scoped; a failure never breaks the turn.
+ */
+export async function clearStaleBack(tenantId: string, itemIds: string[]): Promise<void> {
+  if (itemIds.length === 0) return
+  try {
+    await prisma.$executeRaw`
+      UPDATE "InventoryItemAvailability" SET "backDate" = NULL, "backNote" = NULL, "updatedAt" = now()
+       WHERE "tenantId" = ${tenantId} AND "inventoryItemId" = ANY(${itemIds.slice(0, 400)}::text[]) AND "soldOut" = false`
+  } catch (error) {
+    console.error('[product-availability] stale back not cleared', error instanceof Error ? error.name : 'unknown')
+  }
 }

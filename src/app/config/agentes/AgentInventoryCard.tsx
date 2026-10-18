@@ -33,6 +33,7 @@ function AvailabilityList({ agentId, items, canEdit, onSaved }: { agentId: strin
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notes, setNotes] = useState<Record<string, string>>({})
+  const [dates, setDates] = useState<Record<string, string>>({})
   const today = crToday()
   const maxDay = addDays(today, MAX_BACK_DAYS)
 
@@ -50,6 +51,7 @@ function AvailabilityList({ agentId, items, canEdit, onSaved }: { agentId: strin
       await onSaved()
       // The saved value is shown from the server now (a stale draft never comes back after "Disponible").
       setNotes(({ [itemId]: _drop, ...rest }) => rest)
+      setDates(({ [itemId]: _drop, ...rest }) => rest)
     } catch {
       setError('No se pudo guardar. Intentá de nuevo.')
     } finally {
@@ -70,8 +72,20 @@ function AvailabilityList({ agentId, items, canEdit, onSaved }: { agentId: strin
         {active.map((i) => {
           const out = Boolean(i.soldOut || i.autoSoldOut)
           const busy = busyId === i.id
-          const current: Availability = { soldOut: Boolean(i.soldOut), backDate: i.backDate ?? null, backNote: i.backNote ?? null }
+          // An expired date is never sent back (the server would refuse it and the owner could not clear it).
+          const liveDate = i.backExpired ? null : (i.backDate ?? null)
+          const current: Availability = { soldOut: Boolean(i.soldOut), backDate: liveDate, backNote: i.backNote ?? null }
           const noteDraft = notes[i.id] ?? i.backNote ?? ''
+          const dateDraft = dates[i.id] ?? liveDate ?? ''
+          const saveDate = () => {
+            if (dateDraft === (liveDate ?? '')) return
+            // Typing a year key by key gives "0002-…" for a moment: only a full date in range is saved (on blur).
+            if (dateDraft && (dateDraft < today || dateDraft > maxDay)) {
+              setError('La fecha de regreso tiene que ser de hoy a 6 meses.')
+              return
+            }
+            void patch(i.id, { ...current, backDate: dateDraft || null, backNote: dateDraft ? null : current.backNote })
+          }
           return (
             <li key={i.id} className="py-2" data-testid="agent-availability-row">
               <div className="flex items-center gap-2 text-[12.5px]">
@@ -84,7 +98,8 @@ function AvailabilityList({ agentId, items, canEdit, onSaved }: { agentId: strin
                   aria-label={`Agotado: ${i.name}`}
                   disabled={!canEdit || busy || Boolean(i.autoSoldOut && !i.soldOut)}
                   title={i.autoSoldOut ? 'Agotado porque el stock está en 0. Se quita solo cuando vuelva a haber stock.' : undefined}
-                  onClick={() => void patch(i.id, i.soldOut ? { soldOut: false, backDate: null, backNote: null } : { ...current, soldOut: true })}
+                  // Both ways start clean: an old "vuelve aprox." never comes back with a new outage.
+                  onClick={() => void patch(i.id, { soldOut: !i.soldOut, backDate: null, backNote: null })}
                   className={`shrink-0 rounded-full px-2.5 py-1 text-[11.5px] font-medium disabled:cursor-not-allowed ${
                     out ? 'bg-red-50 text-red-700 ring-1 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
                   } ${busy ? 'opacity-50' : ''}`}
@@ -98,20 +113,21 @@ function AvailabilityList({ agentId, items, canEdit, onSaved }: { agentId: strin
                     Vuelve aprox.
                     <input
                       type="date"
-                      value={i.backDate ?? ''}
+                      value={dateDraft}
                       min={today}
                       max={maxDay}
                       disabled={!canEdit || busy}
-                      onChange={(e) => void patch(i.id, { ...current, backDate: e.target.value || null, backNote: e.target.value ? null : current.backNote })}
+                      onChange={(e) => setDates((d) => ({ ...d, [i.id]: e.target.value }))}
+                      onBlur={saveDate}
                       className="rounded-lg border border-slate-200 px-2 py-0.5 text-[12px]"
                     />
                   </label>
-                  {!i.backDate ? (
+                  {!liveDate ? (
                     <input
                       type="text"
                       value={noteDraft}
                       maxLength={BACK_NOTE_MAX}
-                      placeholder="o una nota: la próxima semana"
+                      placeholder="o una nota sin números: la próxima semana"
                       aria-label={`Nota de regreso: ${i.name}`}
                       disabled={!canEdit || busy}
                       onChange={(e) => setNotes((n) => ({ ...n, [i.id]: e.target.value }))}

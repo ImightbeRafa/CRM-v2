@@ -399,7 +399,7 @@ export function deriveSalesState(input: {
   // Out-of-stock switch (advisor): "la quiero" on a sold-out product must not turn into the close (data / payment).
   const focus = input.ctx.stock
     ? soldOutFocus(
-        [last, ...input.history.filter((m) => m.direction === 'inbound').map((m) => m.content || '').reverse()].slice(0, 6),
+        [{ direction: 'inbound' as const, content: last }, ...input.history.map((m) => ({ direction: m.direction, content: m.content || '' })).reverse()],
         input.ctx.stock,
       )
     : null

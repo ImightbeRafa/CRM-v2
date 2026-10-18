@@ -1,3 +1,36 @@
+## 2026-10-18 — Sleeping + Pura Sonrisa exam engine fixes C1–C6, P1/P2/P4 (claudio/sleeping-exam-fixes, NOT deployed)
+
+- From the Sleeping Patches exam (betsy-agent-packs sleeping/STATUS.md C1–C6) and the Pura Sonrisa exam (P1/P2/P4).
+  Draft PR against claudio/luna-10-d2; needs Rafael's GO to merge / deploy. Also affects live Sofi (PatchHouse).
+- C1 `sales-state.ts` isPaymentMethodQuestion: "¿Querés pagar por SINPE o tarjeta?", "¿SINPE o transferencia?",
+  "¿Pagás por SINPE?", "Tenemos SINPE y tarjeta, ¿cuál preferís?" count as the method question, so a bare "sinpe" is a
+  choice (the agent sends that method's details). Never when the store's message is about a payment already made /
+  seen (done words anywhere in it: pagaste, usaste, fue, comprobante, vi, aparece, registrar…).
+- C2 `payment-classifier.ts` isBareOrderConfirmAsk + `sales-state.ts` noPaymentYet: "Para confirmar el pedido!?",
+  "Pura vida, me confirmás entonces?" are sales messages ONLY while the chat has no payment at all (no store payment
+  talk / details / media, no customer media / payment words / "ya compré" / order number, under 20 messages) and no
+  bubble of the burst hints at a payment state (ya, llegó, recibieron, ✅…). Ask verb forms only; character allowlist.
+  Replies to a confirm ask get the payment-status backstop. INT-93 unchanged everywhere else.
+- C3 `output-validator.ts` unitDerivedAmount: "₡317 por noche" passes only as a store rate — a product / combo price
+  with the count in its own name ("Pack 3 bolsas (90 noches)", salesUnitRates), right before "por / cada / al" + the
+  same unit. Sleeping's single bag needs "(30 noches)" in its inventory name for "₡330 por noche".
+- C4 `scripts/agent-pack/test-lock.ts`: one test run per business — an atomic lock row (TenantFeatureFlag key
+  agent_test_session_lock, FOR UPDATE, 6 h expiry, audited), taken before the TEST cap is raised; `test-cap --unlock`
+  frees a dead run's lock; `--restore` refuses under a running test.
+- C5 `exam.ts` / `exam-bank.ts`: history replays with the real gaps (agoMin) or, by default, the answered history
+  outside the 10-min claim look-back.
+- C6 sales-state salesDataListFirst + dataListBeforePaymentQuestion (applied in applyFinalOutputPolicy): before payment,
+  when the customer wants to buy and the store has not asked the data yet, the reply carries the fixed data list BEFORE
+  the payment question (the question in its own last message when it fits); pickup list for pickup cues / pickup-only
+  stores. The cierre prompt says the order too.
+- P4 "¿cómo sería el envío y el pago?" / "y el pago como sería" (whole message) → method list, not a hand-off.
+- P1 free-shipping "other product" names skip words every catalog item shares ("Pura Sonrisa …").
+- P2 the store's "envío gratis desde ₡X / desde N cajas" (brandFacts.shipping.ea.freeOver) may be said as that rule;
+  INT-84 kept: the threshold is never an allowed price, only valid at the spot the rule phrase states it.
+- Reviews: Verifier r1 FAIL (10), r2 FAIL (10); SecureDog r1 FAIL (MEDIA-16, INT-159 High; INT-160–164, INFRA-23) —
+  all fixed and pinned in `src/lib/__tests__/sleeping-exam-fixes.test.ts`. Final rounds: see the PR.
+- Known, not changed: extractMoneyAmounts does not read "25 000 colones" (space thousands without ₡).
+
 ## 2026-10-18 — INT-158 payment/order claim check + per-store exam grader (claudio/luna-10-d2, NOT deployed)
 
 - INT-158: CONFIRMATION_WORDING_RE now also catches "ya confirmé / el equipo confirmó / verifiqué / verificó / aprobé /

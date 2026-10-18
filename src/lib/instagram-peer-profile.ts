@@ -26,6 +26,8 @@ export const PEER_PROFILE_RECHECK_MS = 7 * 24 * 60 * 60 * 1000
 export const PEER_PROFILE_BACKFILL_STALE_MS = 30 * 24 * 60 * 60 * 1000
 /** A failed lookup (Meta error / timeout) is retried after this long. */
 export const PEER_PROFILE_RETRY_FAILED_MS = 6 * 60 * 60 * 1000
+/** This page / account is throttled by Meta: that chat is retried after this long. */
+export const PEER_PROFILE_RETRY_PAGE_LIMIT_MS = 15 * 60 * 1000
 export const PEER_AVATAR_MAX_BYTES = 2 * 1024 * 1024
 const AVATAR_WIDTH = 128
 
@@ -47,13 +49,16 @@ export type InstagramPeerProfile = { name: string | null; username: string | nul
 
 type FetchLike = typeof fetch
 
-/** Graph call. Returns null on any failure; `rateLimited` tells the cron to stop for this run. */
+/**
+ * Graph call. `rateLimited`: app-wide limit (HTTP 429 / code 4) → the cron stops this run. `pageLimited`: this
+ * line's page / account is throttled (17, 32, 613) → only this line waits; other tenants keep going.
+ */
 export async function fetchInstagramUserProfile(opts: {
   igsid: string
   accessToken: string
   fetchImpl?: FetchLike
   timeoutMs?: number
-}): Promise<{ ok: true; profile: InstagramPeerProfile } | { ok: false; rateLimited: boolean }> {
+}): Promise<{ ok: true; profile: InstagramPeerProfile } | { ok: false; rateLimited: boolean; pageLimited?: boolean }> {
   if (!IGSID.test(opts.igsid)) return { ok: false, rateLimited: false }
   const fetchImpl = opts.fetchImpl ?? fetch
   const url = addAppSecretProofToUrl(
@@ -69,7 +74,8 @@ export async function fetchInstagramUserProfile(opts: {
     const data = (await res.json().catch(() => ({}))) as Record<string, any>
     if (!res.ok) {
       const code = Number(data?.error?.code)
-      return { ok: false, rateLimited: res.status === 429 || [4, 17, 32, 613].includes(code) }
+      const rateLimited = res.status === 429 || code === 4
+      return { ok: false, rateLimited, pageLimited: !rateLimited && [17, 32, 613].includes(code) }
     }
     const profilePic = typeof data.profile_pic === 'string' && isAllowedMetaMediaDownloadUrl(data.profile_pic) ? data.profile_pic : null
     return {
@@ -116,7 +122,7 @@ type Deps = {
 export type EnrichResult =
   | { status: 'updated'; name: boolean; username: boolean; avatar: boolean }
   | { status: 'skipped'; reason: string }
-  | { status: 'failed'; rateLimited: boolean }
+  | { status: 'failed'; rateLimited: boolean; pageLimited?: boolean }
 
 /**
  * Look up one Instagram conversation's customer and save name / @username / photo. Tenant-scoped (the row is
@@ -167,14 +173,18 @@ export async function enrichInstagramPeerProfile(
 
   const fetched = await fetchInstagramUserProfile({ igsid: conv.peerId, accessToken, fetchImpl: deps.fetchImpl })
   if (!fetched.ok) {
-    // Rate limit: give the claim back (next run retries). Other failures: try again in ~6 h, not in a week.
+    // App-wide rate limit: give the claim back (next run retries). This page throttled: retry in ~15 min (it no
+    // longer heads the cron queue, so other tenants keep going). Other failures: ~6 h. Stamped against the webhook's
+    // 7-day window, so neither path retries sooner than that.
     const retryAt = fetched.rateLimited
       ? (conv.peerProfileCheckedAt ?? null)
-      : new Date(now.getTime() - recheckMs + PEER_PROFILE_RETRY_FAILED_MS)
+      : new Date(
+          now.getTime() - PEER_PROFILE_RECHECK_MS + (fetched.pageLimited ? PEER_PROFILE_RETRY_PAGE_LIMIT_MS : PEER_PROFILE_RETRY_FAILED_MS),
+        )
     await db.chatConversation
       .updateMany({ where: { id: conv.id, tenantId: conv.tenantId }, data: { peerProfileCheckedAt: retryAt } })
       .catch(() => undefined)
-    return { status: 'failed', rateLimited: fetched.rateLimited }
+    return { status: 'failed', rateLimited: fetched.rateLimited, pageLimited: Boolean(fetched.pageLimited) }
   }
   const { profile } = fetched
 
@@ -194,6 +204,8 @@ export async function enrichInstagramPeerProfile(
       try {
         await put(pathname, bytes)
         data.peerAvatarUrl = pathname
+        // New ?v= for the photo route (the claim's stamp was already seen while the old photo was stored).
+        data.peerProfileCheckedAt = new Date(Math.max(Date.now(), now.getTime() + 1))
         avatar = true
       } catch {
         // Storage down / not configured: initials stay.
@@ -231,7 +243,7 @@ export async function backfillInstagramPeerProfiles(
   const started = Date.now()
   const now = deps.now?.() ?? new Date()
   const stale = new Date(now.getTime() - PEER_PROFILE_BACKFILL_STALE_MS)
-  const rows: Array<{ id: string; tenantId: string }> = await db.chatConversation.findMany({
+  const rows: Array<{ id: string; tenantId: string; socialAccountId?: string }> = await db.chatConversation.findMany({
     where: {
       socialAccount: { platform: 'instagram', isActive: true, disconnectedAt: null },
       OR: [
@@ -239,13 +251,15 @@ export async function backfillInstagramPeerProfiles(
         { peerProfileCheckedAt: { lt: stale }, lastMessageAt: { gt: stale } },
       ],
     },
-    select: { id: true, tenantId: true },
+    select: { id: true, tenantId: true, socialAccountId: true },
     orderBy: [{ lastMessageAt: 'desc' }],
     take: Math.min(Math.max(opts.limit ?? 5, 1), 20),
   })
   const summary = { checked: 0, updated: 0, failed: 0, rateLimited: false }
+  const throttledLines = new Set<string>()
   for (const row of rows) {
     if (Date.now() - started > (opts.budgetMs ?? 8_000)) break
+    if (row.socialAccountId && throttledLines.has(row.socialAccountId)) continue
     summary.checked += 1
     const result = await enrichInstagramPeerProfile(
       { tenantId: row.tenantId, conversationId: row.id, recheckMs: PEER_PROFILE_BACKFILL_STALE_MS },
@@ -258,6 +272,7 @@ export async function backfillInstagramPeerProfiles(
         summary.rateLimited = true
         break
       }
+      if (result.pageLimited && row.socialAccountId) throttledLines.add(row.socialAccountId)
     }
   }
   return summary

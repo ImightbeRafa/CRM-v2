@@ -165,6 +165,7 @@ describe('fetchInstagramUserProfile', () => {
     assert.deepEqual(await fetchInstagramUserProfile({ igsid: '1234567890', accessToken: 'tok', fetchImpl: f.impl }), {
       ok: false,
       rateLimited: true,
+      pageLimited: false,
     })
   })
 })
@@ -236,7 +237,7 @@ describe('enrichInstagramPeerProfile', () => {
     const { db } = fakeDb(conv)
     const f = fakeFetch(() => ({ status: 400, body: { error: { code: 100, message: 'nope' } } }))
     const r = await enrichInstagramPeerProfile({ tenantId: 't1', conversationId: 'conv1' }, { db, fetchImpl: f.impl, now: () => now })
-    assert.deepEqual(r, { status: 'failed', rateLimited: false })
+    assert.deepEqual(r, { status: 'failed', rateLimited: false, pageLimited: false })
     assert.equal(conv.peerName, 'Instagram User 567890')
     const wait = now.getTime() - (conv.peerProfileCheckedAt as unknown as Date).getTime()
     assert.ok(wait > 0 && wait < PEER_PROFILE_RECHECK_MS, 'stamped so the next try comes before a full week')
@@ -298,6 +299,39 @@ describe('backfill + webhook hook', () => {
     assert.deepEqual(r, { checked: 1, updated: 0, failed: 1, rateLimited: true })
     // Rate limited: the claim is given back so the next run retries.
     assert.equal(conv.peerProfileCheckedAt, null)
+  })
+
+  it('a throttled page does not stop the run for other tenants and backs off ~15 min', async () => {
+    const now = new Date('2026-10-18T12:00:00Z')
+    const conv = igConv()
+    const { db } = fakeDb(conv)
+    const f = fakeFetch(() => ({ status: 400, body: { error: { code: 32 } } }))
+    const r = await backfillInstagramPeerProfiles({ limit: 5 }, { db, fetchImpl: f.impl, now: () => now })
+    assert.deepEqual(r, { checked: 1, updated: 0, failed: 1, rateLimited: false })
+    const next = (conv.peerProfileCheckedAt as unknown as Date).getTime() + PEER_PROFILE_RECHECK_MS - now.getTime()
+    assert.equal(next, 15 * 60 * 1000)
+  })
+
+  it('a new photo gets a newer ?v= than the claim', async (t) => {
+    let png: Buffer
+    try {
+      const { default: sharp } = await import('sharp')
+      png = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#0af' } }).png().toBuffer()
+    } catch {
+      t.skip('sharp not available')
+      return
+    }
+    const now = new Date('2026-10-18T12:00:00Z')
+    const conv = igConv()
+    const { db, updates } = fakeDb(conv)
+    const f = fakeFetch((url) =>
+      url.startsWith('https://graph.facebook.com/')
+        ? { status: 200, body: { name: 'Ana', profile_pic: 'https://scontent.xx.fbcdn.net/p.jpg' } }
+        : { status: 200, body: new Uint8Array(png), headers: { 'content-type': 'image/png' } },
+    )
+    await enrichInstagramPeerProfile({ tenantId: 't1', conversationId: 'conv1' }, { db, fetchImpl: f.impl, putAvatar: async () => undefined, now: () => now })
+    const claim = updates[0].data.peerProfileCheckedAt as Date
+    assert.ok((conv.peerProfileCheckedAt as unknown as Date).getTime() > claim.getTime())
   })
 
   it('scheduleInstagramPeerProfile ignores non-Instagram events and returns synchronously', () => {

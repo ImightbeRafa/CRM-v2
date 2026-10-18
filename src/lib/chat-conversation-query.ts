@@ -118,6 +118,7 @@ export function buildConversationListWhere(args: {
     and.push({
       OR: [
         { peerName: { contains: q, mode: 'insensitive' } },
+        ...(q.replace(/^@/, '') ? [{ peerUsername: { contains: q.replace(/^@/, ''), mode: 'insensitive' as const } }] : []),
         { peerId: { contains: q, mode: 'insensitive' } },
         { lastMessagePreview: { contains: q, mode: 'insensitive' } },
       ],

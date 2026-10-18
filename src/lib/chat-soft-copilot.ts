@@ -384,7 +384,7 @@ export function filterSoftConversations(
       if (opts.channel === 'instagram' && c.platform !== 'instagram') return false
       if (opts.accountId !== 'all' && c.socialAccountId !== opts.accountId) return false
       if (!q) return true
-      return `${c.recipientName || ''} ${c.lastMessage || ''} ${c.accountLabel} ${c.recipientId}`.toLowerCase().includes(q)
+      return `${c.recipientName || ''} ${c.recipientUsername ? `@${c.recipientUsername}` : ''} ${c.lastMessage || ''} ${c.accountLabel} ${c.recipientId}`.toLowerCase().includes(q)
     }
     const snoozed = isSnoozedConversation(c, now)
     if (opts.bucket === 'pospuestos' && !snoozed) return false
@@ -408,7 +408,7 @@ export function filterSoftConversations(
     // IA manejando filtered by SoftCopilotInbox via agentMode map (status still open)
     if (opts.bucket === 'ia_manejando' && isConversationClosed(c)) return false
     if (!q) return true
-    const hay = `${c.recipientName || ''} ${c.lastMessage || ''} ${c.accountLabel} ${c.recipientId}`.toLowerCase()
+    const hay = `${c.recipientName || ''} ${c.recipientUsername ? `@${c.recipientUsername}` : ''} ${c.lastMessage || ''} ${c.accountLabel} ${c.recipientId}`.toLowerCase()
     return hay.includes(q)
   })
 }

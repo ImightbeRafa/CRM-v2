@@ -34,6 +34,8 @@ type InboundHookArgs = {
   content: string
   conversationId?: string | null
   messageId?: string | null
+  /** The stored message type ('reaction', 'image', 'text', …) when the caller knows it. */
+  messageType?: string | null
 }
 
 export type SoftAiMetaSendResult = {
@@ -379,9 +381,12 @@ export async function executeSoftAiInboundTurn(
   }
 }
 
-/** The webhook stores a WhatsApp / Instagram emoji reaction as the bubble "[reaction]" (meta-chat.ts). */
-export function isReactionOnly(content: string | null | undefined): boolean {
-  return /^\s*\[reaction\]\s*$/i.test(content || '')
+/**
+ * A WhatsApp emoji reaction (stored messageType 'reaction', content "[reaction]"; Instagram reactions are not stored).
+ * Decided by the TYPE (SecureDog): a caption or a typed text that reads "[reaction]" is a real message.
+ */
+export function isReactionMessage(messageType: string | null | undefined): boolean {
+  return messageType === 'reaction'
 }
 
 /**
@@ -400,7 +405,7 @@ export async function enqueueSoftAiAfterInbound(
     if (!(args.content || '').trim()) return { skippedReason: 'empty_content' }
     // v53 tests 2026-10-18: an emoji reaction to one of our messages ("[reaction]") asks nothing — no turn (it got the
     // after-hours hand-off line at night). Like empty content, it never holds back / supersedes a real question.
-    if (isReactionOnly(args.content)) return { skippedReason: 'reaction' }
+    if (isReactionMessage(args.messageType)) return { skippedReason: 'reaction' }
     const enabled = await shouldUseSoftTenantAiV1(args.tenantId)
     if (!enabled) return { skippedReason: 'flag_off' }
     // Burst = one reply needs the agent layer's burst planning; the legacy Soft turn answers one message at a time,

@@ -11,7 +11,7 @@ import {
   type ReplyStyle,
   DEFAULT_REPLY_STYLE,
 } from '@/lib/soft-ai/brand-facts'
-import { hasOutboundConfirmationClaim, renderShortcutTemplate, shortcutByKey, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
+import { hasOutboundConfirmationClaim, maskConditionalConfirmation, renderShortcutTemplate, shortcutByKey, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
 import { fillPaymentToken, paymentNumberProblems, type PaymentFillOptions, type TokenPaymentMethod } from '@/lib/soft-ai/payment-guard'
 import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
@@ -521,7 +521,9 @@ export function validateAgentOutput(input: {
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
   if (CREATED_CLAIM_RE.test(text) || (input.orderClosing && ORDER_CLOSING_CLAIM_RE.test(text))) reasons.push('write_claim')
   if (dealProblemWithRule(text, input.allowedDeals ?? [], input.freeShippingRule)) reasons.push('deal_offer')
-  // v53 tests 2026-10-18: conditional next-step phrases ("una vez confirmado el pago, sale…") are not claims.
+  // v53 tests 2026-10-18: a conditional next-step participle ("una vez confirmado el pago, sale…") is not a claim; only
+  // that participle is masked (shortcuts.ts maskConditionalConfirmation), for this check and the payment-status ones.
+  const claimText = maskConditionalConfirmation(text)
   if (hasOutboundConfirmationClaim(text)) reasons.push('confirmation_wording')
   if (resultsClaimIn(text)) reasons.push('results_claim')
   // SecureDog round 5 (INT-138): to a pregnancy / medication question, "¡Sí! Podés usarlo sin problema" with no doctor
@@ -531,9 +533,9 @@ export function validateAgentOutput(input: {
     reasons.push('results_claim')
   }
   // Advisor (luna-10): the unmistakable "payment received" wordings are held on EVERY reply, payment words or not.
-  if (ALWAYS_PAYMENT_STATUS_REPLY_RE.test(text)) {
+  if (ALWAYS_PAYMENT_STATUS_REPLY_RE.test(claimText)) {
     reasons.push('payment_status_claim')
-  } else if ((input.paymentContext || (input.customerText && hasPaymentWord(input.customerText))) && PAYMENT_STATUS_REPLY_RE.test(text)) {
+  } else if ((input.paymentContext || (input.customerText && hasPaymentWord(input.customerText))) && PAYMENT_STATUS_REPLY_RE.test(claimText)) {
     reasons.push('payment_status_claim')
   }
 

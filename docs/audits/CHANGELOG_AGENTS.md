@@ -5,15 +5,23 @@
 - (1) `planModelTurnDelivery`: when the model hands off and its own text cannot go out, the customer gets the payment
   line ("¡Gracias! … ya lo reviso") only for a payment / refund-complaint hand-off. Anything else ("¿de verdad funciona?",
   "¿dónde retiro?", "¿cuándo vuelve el NAD+?") gets the neutral "Dame un momento y te confirmo 😊".
-- (2) Conditional next-step phrases ("una vez confirmado el pago, sale…", "apenas recibamos el comprobante", "cuando se
-  confirme tu pago", "el equipo confirma tu pedido") are removed before the claim check on the agent's own replies
-  (live output check + Probar's check). CONFIRMATION_WORDING_RE is unchanged (INT-70 / INT-93), owner-written texts keep
-  the strict check, and every real claim in the reply is still blocked.
-- (6) A "[reaction]" bubble gets no job. "Me atiende alguien" / "alguien me atiende" / "me puede atender una persona"
-  are person requests (opt-out hand-off).
+- (2) "Una vez / luego de / después de + confirmado / recibido / verificado + (el) pago / comprobante" on one line:
+  only that participle is masked before the claim checks (confirmation wording + payment status). It is masked only
+  when the rest of the sentence reports nothing done (no "ya", "fue", "listo", "en camino", "en proceso", past "-ó").
+  Live output check, Probar's check and the unlock canary share the rule. CONFIRMATION_WORDING_RE is unchanged
+  (INT-70 / INT-93), and owner-written texts keep the strict check.
+- (6) A WhatsApp emoji reaction (messageType 'reaction') gets no job, and the waiting sweep skips it too.
+  "Me atiende alguien (por favor)?" as the WHOLE text message is a person request. Pickup / hours / "no hace falta
+  que me atienda…" stay with the agent. A photo caption never uses this rule, and in a burst a payment hand-off wins
+  over a person request (receipt alert kept).
 - (8) Pack tests and the buyer persona now expect ₡22 800 (combo of 2 with shipping), not ₡17 900 / ₡20 900.
-- Tests: `v53-handoff-lines.test.ts` (31). Source asserts updated in agents2-b-sales and instagram-media (same intent).
-  test:soft-ai 1087/1087, test:chat-harden 680/680, test:security 271/271, tsc + lint clean.
+- Verifier round 1 FAIL + SecureDog round 1 FIX BEFORE PROD on the first version, all fixed. The first version
+  deleted whole phrases, which unblocked real claims ("Después de verificado tu pago, ya salió tu pedido", "El equipo
+  te confirma tu pedido ya va en camino"). It also had a broad "me atiende alguien" and a reaction skip that the
+  sweep undid. Every bypass is pinned as a test.
+- Tests: `v53-handoff-lines.test.ts` (47). Source asserts updated in agents2-b-sales, instagram-media and
+  luna10-hard-blocks (same intent). test:soft-ai 1103/1103, test:chat-harden 680/680, test:security 271/271,
+  tsc + lint clean.
 
 ## 2026-10-18 00:10Z — CF 8d94e714: staff bot on Luna, follow-up A/B (off), Simpe, Sofi v53
 

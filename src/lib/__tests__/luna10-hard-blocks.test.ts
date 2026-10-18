@@ -227,7 +227,8 @@ describe('verifier round 1 (luna-10)', () => {
     assert.ok(ack.indexOf("if (!lastTurn || handoffKind !== 'handoff') return") < ack.indexOf('resolveChatAgent('))
     assert.match(turn, /if \(outgoingText !== input\.outputText\) \{\s*await prisma\.chatAgentTurn\.update\(\{\s*where: \{ id: input\.turnId \},\s*data: \{ outputText: outgoingText, outputHash: hashSoftAiOutput\(outgoingText\) \}/)
     assert.match(turn, /input\.replyAssets\?\.size && !repeatAllDropped\)/)
-    assert.match(fs.readFileSync('src/lib/soft-ai/waiting-sweep.ts', 'utf8'), /\.find\(\(r\) => \(r\.metadata as \{ waitingAck\?: unknown \} \| null\)\?\.waitingAck !== true\)/)
+    // v53 (2026-10-18): the same skip, plus emoji reactions (no turn for a reaction).
+    assert.match(fs.readFileSync('src/lib/soft-ai/waiting-sweep.ts', 'utf8'), /\.find\(\(r\) => \(r\.metadata as \{ waitingAck\?: unknown \} \| null\)\?\.waitingAck !== true && r\.messageType !== 'reaction'\)/)
   })
 })
 

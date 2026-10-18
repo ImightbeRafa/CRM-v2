@@ -48,16 +48,25 @@ export function isMediaMessageType(value: string | null | undefined): value is M
 const BARE_HANDOFF_RE = /^\s*["'«]?\s*(agente|humano|persona|asesor|agent|human|person)\s*["'».!]*\s*$/i
 
 // v53 tests 2026-10-18 (night exam: "Me atiende alguien por favor?" stayed with the agent): asking to be ATTENDED by a
-// person is a person request too — "me atiende alguien", "alguien me atiende", "me puede atender una persona".
+// person is a person request. ONLY as the whole message (Verifier / SecureDog round 1): "¿me atiende alguien en la tienda
+// para retirar?", "Si llego a las 5, ¿me atiende alguien?", "No hace falta que me atienda una persona, ¿precio?" are
+// questions / sales the agent answers.
 const ATTEND_ME_RE =
-  /(?<![\p{L}])(?:me\s+(?:atiende|atienden|atienda|puede\s+atender|pueden\s+atender|podr[ií]a\s+atender|podr[ií]an\s+atender)\s+(?:alguien|una\s+persona|un\s+humano|un\s+asesor|una\s+asesora|un\s+agente)|(?:alguien|una\s+persona|un\s+humano|un\s+asesor)\s+(?:que\s+)?me\s+(?:atiende|atienda|puede\s+atender|podr[ií]a\s+atender))(?![\p{L}])/iu
+  /^[ \t]*(?:(?:hola|buenas|buenos[ \t]+d[ií]as|buenas[ \t]+(?:tardes|noches))[ \t]*[,!.]?[ \t]*)?¿?[ \t]*(?:(?:me[ \t]+(?:atiende|atienden|puede[ \t]+atender|pueden[ \t]+atender|podr[ií]a[ \t]+atender|podr[ií]an[ \t]+atender)[ \t]+(?:alguien|una[ \t]+persona|un[ \t]+humano|un[ \t]+asesor|una[ \t]+asesora|un[ \t]+agente))|(?:alguien|una[ \t]+persona|un[ \t]+humano|un[ \t]+asesor)[ \t]+(?:que[ \t]+)?me[ \t]+(?:atiende|atienda|puede[ \t]+atender|podr[ií]a[ \t]+atender)|quiero[ \t]+que[ \t]+(?:alguien|una[ \t]+persona|un[ \t]+asesor)[ \t]+me[ \t]+atienda)[ \t]*(?:,?[ \t]*(?:por[ \t]+favor|porfa|x[ \t]+favor))?[ \t]*[?!.]*[ \t]*$/iu
+
+/** "Me atiende alguien por favor?" — the whole message asks to be attended by a person (text messages only). */
+export function isAttendRequest(text: string): boolean {
+  return ATTEND_ME_RE.test((text || '').trim())
+}
 
 /**
  * A person request or an opt-out: both hand off. At least as wide as the waiting ack's "stop writing to me" list
  * (basta, no me escriban más, darme de baja…) so those never reach the model (SecureDog, PR #100).
+ * (isAttendRequest is checked on TEXT messages only — routeInboundSafety — never on a photo caption: a receipt
+ * captioned "¿me atiende alguien?" keeps the receipt path, SecureDog v53 #2.)
  */
 export function isOptOutText(text: string): boolean {
-  return OPT_OUT_RE.test(text || '') || BARE_HANDOFF_RE.test(text || '') || ATTEND_ME_RE.test(text || '') || isStopContactText(text)
+  return OPT_OUT_RE.test(text || '') || BARE_HANDOFF_RE.test(text || '') || isStopContactText(text)
 }
 
 /**
@@ -88,7 +97,7 @@ export function routeInboundSafety(input: {
       paymentClass,
     }
   }
-  if (isOptOutText(input.inboundText)) {
+  if (isOptOutText(input.inboundText) || isAttendRequest(input.inboundText)) {
     return {
       escalate: true,
       reason: 'opt_out',

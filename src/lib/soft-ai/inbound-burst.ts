@@ -14,7 +14,7 @@
 
 import { isOptOutText, mediaInboundPlan } from '@/lib/soft-ai/llm/safety-router'
 import { isOptOutText as isWaitingOptOutText } from '@/lib/soft-ai/waiting-ack'
-import type { TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
+import { isPaymentHandoffReason, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
 
 /** A running job yields to a newer burst job only while its trigger is this young (no starvation on a long chat). */
 export const BURST_YIELD_MAX_AGE_MS = 60_000
@@ -233,9 +233,13 @@ export function resolveBurstDecision<T extends BurstDecisionLike>(
   others: Array<{ text: string; decision: T }>,
   toModel: (decision: T) => T,
 ): { decision: T; carriedReview: TurnHandoff | null } {
+  // SecureDog v53 #2: among the burst's TRUE hand-offs a money one (payment / refund complaint) wins — "Ya hice el SINPE"
+  // + "¿me atiende alguien?" is a payment hand-off (receipt alert + "Pago por verificar"), not a person request.
+  const handoffs = [main, ...others.map((o) => o.decision)].filter((d) => d.handled && d.handoff?.kind === 'handoff')
+  const money = handoffs.find((d) => isPaymentHandoffReason(d.handoff?.reason))
+  if (money) return { decision: money, carriedReview: null }
   if (main.handled && main.handoff?.kind === 'handoff') return { decision: main, carriedReview: null }
-  const otherHandoff = others.find((o) => o.decision.handled && o.decision.handoff?.kind === 'handoff')
-  if (otherHandoff) return { decision: otherHandoff.decision, carriedReview: null }
+  if (handoffs.length) return { decision: handoffs[0], carriedReview: null }
   // A greeting / thanks bubble ("Hola" + "¿Cómo pago?") asks nothing: the code reply stays. Another bubble that needs
   // the model — or got a DIFFERENT code reply of its own ("¿Cómo pago?" + an owner's "precio" saved reply, Verifier
   // r4 #1) — would be dropped by one code reply: the model answers the whole burst instead.

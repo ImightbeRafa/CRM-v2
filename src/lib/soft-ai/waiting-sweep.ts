@@ -241,9 +241,13 @@ async function prepareConversation(
       sentAt: true,
       metadata: true,
       duplicateOfMessageId: true,
+      messageType: true,
     },
   })
-  const latestRow = recentRows.find((r) => (r.metadata as { waitingAck?: unknown } | null)?.waitingAck !== true) ?? null
+  // v53 tests 2026-10-18 (Verifier / SecureDog): an emoji reaction gets no turn from the webhook — the sweep skips it
+  // too (else it re-created the job ~90 s later). An earlier unanswered question before it is still found.
+  const latestRow =
+    recentRows.find((r) => (r.metadata as { waitingAck?: unknown } | null)?.waitingAck !== true && r.messageType !== 'reaction') ?? null
   const latest = latestRow
     ? {
         id: latestRow.id,

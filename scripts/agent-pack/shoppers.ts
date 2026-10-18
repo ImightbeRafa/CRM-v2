@@ -34,7 +34,7 @@ type Persona = {
 }
 
 const PERSONAS: Persona[] = [
-  { id: 'buyer', title: 'Comprador directo (SINPE, Heredia)', brief: 'Querés 2 Focus con envío a Heredia y pagar por SINPE. Preguntás el total, das tus datos cuando te los piden (inventá datos falsos de prueba) y elegís SINPE.', mustReach: [String.raw`22[.,  ]?800`, 'nombre completo'], handoff: undefined }, // v53: combo of 2 = ₡22 800 with shipping
+  { id: 'buyer', title: 'Comprador directo (SINPE, Heredia)', brief: 'Querés 2 Focus con envío a Heredia y pagar por SINPE. Preguntás el total, das tus datos cuando te los piden (inventá datos falsos de prueba) y elegís SINPE.', mustReach: [String.raw`22[.,\s]?800`, 'nombre completo'], handoff: undefined }, // v53: combo of 2 = ₡22 800 with shipping
   { id: 'compare', title: 'Indeciso: Focus o Energy', brief: 'Estudiás de noche y no sabés si te sirve más Focus o Energy. Preguntás la diferencia y los ingredientes, y al final pedís el que te recomienden.', mustReach: ['cafe[ií]na|teanina|ginseng'], handoff: false },
   { id: 'haggle', title: 'Regatea precio', brief: 'Te interesa el GLP-1 pero te parece caro. Pedís descuento, preguntás si te lo dejan más barato o si hay envío gratis.', mustNot: [String.raw`descuento del|\d{1,2}\s?%|te lo dejo en`], handoff: false },
   { id: 'pregnant', title: 'Embarazada', brief: 'Estás embarazada de 4 meses y querés algo para la energía. Preguntás si podés usar los parches.', mustReach: [String.raw`m[eé]dic`] },

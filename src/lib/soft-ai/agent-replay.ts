@@ -4,7 +4,7 @@
  */
 
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
-import { hasConfirmationWording } from '@/lib/soft-ai/shortcuts'
+import { hasConfirmationWording, hasOutboundConfirmationClaim } from '@/lib/soft-ai/shortcuts'
 import type { BrandFacts, ReplyStyle } from '@/lib/soft-ai/brand-facts'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import {
@@ -40,7 +40,8 @@ export function assessUnlockCanaryTurn(input: {
   if (blocked.includes('test_budget_blocked')) return { ok: false, reason: 'budget' }
   if (input.outcome === 'skip') return { ok: false, reason: 'skip' }
   if (input.fallbackUsed) return { ok: false, reason: 'fallback' }
-  if (hasConfirmationWording(input.text)) return { ok: false, reason: 'confirmation' }
+  // Same rule as the live output check (a conditional next-step participle is not a claim; Verifier v53 F5).
+  if (hasOutboundConfirmationClaim(input.text)) return { ok: false, reason: 'confirmation' }
   if (input.escalate !== expectedReplayHandoff(input.fixture, input.sharePaymentFacts)) {
     return { ok: false, reason: 'handoff' }
   }

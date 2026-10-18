@@ -338,29 +338,37 @@ export function hasConfirmationWording(text: string): boolean {
 }
 
 /**
- * v53 tests 2026-10-18 ("¿Qué días hacen envíos?" → safe line): a CONDITIONAL, future phrase is how a store explains the
- * next step, not a claim that something happened — "una vez confirmado el pago, sale el mismo día", "apenas recibamos
- * el comprobante", "cuando se confirme tu pago", "el equipo confirma tu pedido". Only these exact shapes are removed
- * before the claim check; CONFIRMATION_WORDING_RE itself is unchanged (INT-70 / INT-93) and every real claim in the
- * rest of the reply ("pago confirmado", "ya quedó", "te confirmo que tu pago…") is still caught.
+ * v53 tests 2026-10-18 ("¿Qué días hacen envíos?" → safe line): "una vez confirmado el pago, sale el mismo día hábil"
+ * is how a store explains the NEXT step, not a claim that it happened. Only the conditional PARTICIPLE is masked —
+ * "una vez / luego de / después de + confirmado / recibido / verificado + (el) pago / comprobante…" on ONE line — and
+ * only when the rest of that sentence says nothing happened (no "ya", "fue", "listo", "en camino", "en proceso" or a
+ * past-tense "-ó" verb: "Una vez confirmado tu pago, tu pedido salió hoy" stays a claim). Nothing else is removed, so
+ * the payment word and every other claim in the reply stay visible to CONFIRMATION_WORDING_RE (unchanged, INT-70 /
+ * INT-93) and to the payment-status checks (Verifier + SecureDog round 1: the first version deleted whole spans).
  */
-const PAY_THING = String.raw`(?:(?:el|tu|su|la|los)\s+)?(?:pago|sinpe|comprobante|transferencia|dep[oó]sito)`
-const CONDITIONAL_CONFIRMATION_RES: RegExp[] = [
-  // "una vez / apenas / luego de / después de (que) confirmado / recibido / verificado el pago"
-  new RegExp(String.raw`(?<![\p{L}\p{N}_])(?:una\s+vez|apenas|luego\s+de|despu[eé]s\s+de)\s+(?:confirmad[oa]|recibid[oa]|verificad[oa])\s+${PAY_THING}(?![\p{L}\p{N}_])`, 'giu'),
-  // "cuando / apenas / en cuanto / una vez que (se) confirme(mos) / reciba(mos) / verifique(mos) (el) pago"
-  new RegExp(String.raw`(?<![\p{L}\p{N}_])(?:cuando|apenas|en\s+cuanto|una\s+vez\s+que|luego\s+de\s+que|despu[eé]s\s+de\s+que)\s+(?:se\s+|lo\s+|la\s+)?(?:confirm|recib|verifiqu|verific)(?:e|emos|en|amos|a|an)\s+${PAY_THING}(?![\p{L}\p{N}_])`, 'giu'),
-  // "el equipo (te) confirma / confirmará (tu pedido / el pago / el envío)"
-  new RegExp(String.raw`(?<![\p{L}\p{N}_])el\s+equipo\s+(?:te\s+|le\s+)?confirma(?:r[aá])?(?:\s+(?:enseguida|pronto))?(?:\s+(?:tu|el|su)\s+(?:pedido|pago|env[ií]o))?(?![\p{L}\p{N}_])`, 'giu'),
-]
+const PAY_THING = String.raw`(?:(?:el|tu|su|la|los)[ \t]+)?(?:pago|sinpe|comprobante|transferencia|dep[oó]sito)`
+const CONDITIONAL_PARTICIPLE_RE = new RegExp(
+  String.raw`(?<![\p{L}\p{N}_])(?:una[ \t]+vez|luego[ \t]+de|despu[eé]s[ \t]+de)[ \t]+(confirmad[oa]|recibid[oa]|verificad[oa])(?=[ \t]+${PAY_THING}(?![\p{L}\p{N}_]))`,
+  'giu',
+)
+/** The rest of the sentence reports something that already happened: the participle is NOT conditional then. */
+const CLAIM_TAIL_RE = /(?<![\p{L}])(?:ya|fue|fueron|listo|lista|listos|en[ \t]+camino|en[ \t]+proceso|salio|quedo|llego|\p{L}{2,}ó)(?![\p{L}])/iu
+const SENTENCE_END_RE = /[.!?¡¿\n]/u
 
-export function withoutConditionalConfirmation(text: string): string {
-  return CONDITIONAL_CONFIRMATION_RES.reduce((out, re) => out.replace(re, ' '), text || '')
+export function maskConditionalConfirmation(text: string): string {
+  const src = text || ''
+  return src.replace(CONDITIONAL_PARTICIPLE_RE, (match: string, participle: string, offset: number) => {
+    const after = src.slice(offset + match.length)
+    const end = after.search(SENTENCE_END_RE)
+    const rest = end < 0 ? after : after.slice(0, end)
+    if (CLAIM_TAIL_RE.test(rest)) return match
+    return match.slice(0, match.length - participle.length) + '·'.repeat(participle.length)
+  })
 }
 
-/** The agent's own reply claims a payment / order happened (conditional "next step" phrases excluded). */
+/** The agent's own reply claims a payment / order happened (a conditional next-step participle excluded). */
 export function hasOutboundConfirmationClaim(text: string): boolean {
-  return hasConfirmationWording(withoutConditionalConfirmation(text))
+  return hasConfirmationWording(maskConditionalConfirmation(text))
 }
 
 export function validateShortcutForSave(draft: {

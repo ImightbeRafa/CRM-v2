@@ -230,6 +230,7 @@ async function storeMessage(event: ParsedMetaChatMessage) {
     senderName: result.peerName,
     platform: event.platform as string,
     content: result.content,
+    messageType: event.messageType || null,
     suppressSoftAi: result.suppressSoftAi,
     conversationId: result.conversationId,
     messageId: result.messageId,
@@ -386,6 +387,7 @@ export async function POST(request: NextRequest) {
         senderName: result.senderName,
         platform: result.platform,
         content: result.content,
+        messageType: result.messageType,
         conversationId: result.conversationId,
         messageId: result.messageId,
       })

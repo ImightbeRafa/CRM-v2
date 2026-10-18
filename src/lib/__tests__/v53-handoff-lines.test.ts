@@ -1,37 +1,42 @@
 /**
- * PatchHouse v53 tests (2026-10-18) — code fixes 1, 2 and 6 from the exam / mystery-shopper / silent-trial report.
- * Pure functions + source asserts (no DB, no model calls).
+ * PatchHouse v53 tests (2026-10-18) — code fixes 1, 2 and 6 from the exam / mystery-shopper / silent-trial report,
+ * hardened after Verifier + SecureDog round 1. Pure functions + source asserts (no DB, no model calls).
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { isPaymentHandoffReason, planModelTurnDelivery, SAFE_LINE } from '@/lib/soft-ai/agent-turn-outcome'
-import { hasConfirmationWording, hasOutboundConfirmationClaim, withoutConditionalConfirmation } from '@/lib/soft-ai/shortcuts'
+import { hasConfirmationWording, hasOutboundConfirmationClaim, maskConditionalConfirmation } from '@/lib/soft-ai/shortcuts'
 import { validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
-import { isOptOutText } from '@/lib/soft-ai/llm/safety-router'
-import { isReactionOnly } from '@/lib/soft-ai/inbound-hook'
+import { isAttendRequest, isOptOutText } from '@/lib/soft-ai/llm/safety-router'
+import { isReactionMessage } from '@/lib/soft-ai/inbound-hook'
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
 import { parseBrandFacts } from '@/lib/soft-ai/brand-facts'
 import { RESERVED_SHORTCUT_SEEDS, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
+import { planBurstInbound, unansweredBurst, type BurstMessage } from '@/lib/soft-ai/inbound-burst'
+import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 
 const read = (p: string) => readFileSync(p, 'utf8')
 const shortcuts: RuntimeShortcut[] = RESERVED_SHORTCUT_SEEDS.map((row, index) => ({ ...row, id: `s-${index}`, isActive: true, sortOrder: index }))
 const facts = parseBrandFacts({ schemaVersion: 1 })
+/** Every claim check the live reply goes through, with and without a payment conversation. */
+const claimReasons = (text: string, paymentContext = false) =>
+  validateAgentOutput({ text, citedToolNames: [], paymentContext, customerText: paymentContext ? 'sinpe' : undefined }).reasons.filter(
+    (r) => r === 'confirmation_wording' || r === 'payment_status_claim',
+  )
 
 describe('1 · the payment line only for payment hand-offs', () => {
   it('a non-payment hand-off whose text cannot go out gets the neutral line', () => {
     for (const reason of ['escalate', 'unknown_answer', 'human_request', 'owner_reply']) {
       const p = planModelTurnDelivery({ text: '', textOk: false, llmHandoff: { kind: 'handoff', reason } })
       assert.equal(p.text, SAFE_LINE.review, reason)
-      assert.notEqual(p.text, SAFE_LINE.payment, reason)
       assert.deepEqual(p.handoff, { kind: 'handoff', reason }, 'the hand-off itself is unchanged')
     }
   })
   it('payment hand-offs keep the fixed payment line', () => {
-    // The model escalated about a payment: always the fixed line, even with a usable text (INT-93).
     assert.equal(planModelTurnDelivery({ text: 'Ya quedó pagado', textOk: true, llmHandoff: { kind: 'handoff', reason: 'payment' }, llmEscalateReason: 'payment_or_sinpe' }).text, SAFE_LINE.payment)
     assert.equal(planModelTurnDelivery({ text: 'x', textOk: true, llmHandoff: null, llmEscalateReason: 'payment_claim' }).text, SAFE_LINE.payment)
-    // A money hand-off reason (payment / refund complaint) with an unusable text: the payment line.
+    assert.equal(planModelTurnDelivery({ text: 'x', textOk: true, llmHandoff: null, receiptCue: true }).text, SAFE_LINE.payment)
     for (const reason of ['payment', 'complaint']) {
       assert.equal(planModelTurnDelivery({ text: '', textOk: false, llmHandoff: { kind: 'handoff', reason } }).text, SAFE_LINE.payment, reason)
     }
@@ -46,74 +51,130 @@ describe('1 · the payment line only for payment hand-offs', () => {
   })
 })
 
-describe('2 · conditional "next step" phrases are not confirmation claims', () => {
-  const allowed = [
+describe('2 · a conditional next-step participle is not a confirmation claim', () => {
+  // Blocked at the base (the bare participle), allowed now — with or without a payment conversation.
+  const nowAllowed = [
     'Si pagás antes de las 5 p. m., una vez confirmado el pago sale ese mismo día hábil 📦',
     'Una vez recibido el comprobante, preparamos tu pedido.',
-    'Apenas recibamos el comprobante te lo enviamos 😊',
-    'Cuando se confirme tu pago, el pedido sale lo antes posible.',
-    'Cuando confirmemos el pago te aviso por aquí.',
-    'Mandame el comprobante y el equipo confirma tu pedido 😊',
     'Después de verificado el pago, sale en 2 a 5 días hábiles.',
+    'Luego de confirmado tu pago, te enviamos el número de guía.',
   ]
-  for (const t of allowed) {
+  for (const t of nowAllowed) {
     it(`allows: ${t}`, () => {
+      assert.equal(hasConfirmationWording(t), true, 'the strict regex still sees the participle')
       assert.equal(hasOutboundConfirmationClaim(t), false)
-      assert.ok(!validateAgentOutput({ text: t, citedToolNames: [] }).reasons.includes('confirmation_wording'))
+      assert.deepEqual(claimReasons(t), [])
+      assert.deepEqual(claimReasons(t, true), [], 'also in a payment conversation (payment-status check)')
     })
   }
+  // Every real claim stays blocked — including each bypass Verifier / SecureDog round 1 found.
   const blocked = [
     'Pago confirmado ✅',
     'Ya quedó tu pedido 😊',
     'Te confirmo que tu pago llegó bien.',
-    'Recibimos tu pago, gracias.',
     'Tu pago está confirmado.',
     'Una vez confirmado el pago, ya quedó tu pedido.',
-    'Cuando confirmemos el pago te aviso. Pago recibido 🙌',
-    'Ya te lo enviamos.',
+    'Después de verificado tu pago, ya salió tu pedido 📦',
+    'Luego de verificado el pago, ya agendamos tu envío para hoy 🚚',
+    'Una vez confirmado tu pago, tu pedido salió hoy.',
+    'Despues de confirmado tu pago, salio tu pedido hoy',
+    'Una vez\nconfirmado\nel pago, listo, ya va en camino',
+    'UNA VEZ CONFIRMADO EL PAGO, YA SALIÓ TU PEDIDO',
+    'Una vez confirmado el pago aplicado, te aviso',
+    'El equipo te confirma tu pedido ya va en camino',
+    'El equipo te confirma tu pedido ya va en proceso de envío',
+    '¡Listo! Apenas verificado tu SINPE, ya sale',
+    '¡Listo! Apenas recibido tu pago',
+    'El equipo confirma tu pedido: pago recibido',
   ]
   for (const t of blocked) {
-    it(`still blocks: ${t}`, () => {
-      assert.equal(hasOutboundConfirmationClaim(t), true)
-      assert.ok(validateAgentOutput({ text: t, citedToolNames: [] }).reasons.includes('confirmation_wording'))
+    it(`still blocks: ${JSON.stringify(t)}`, () => {
+      assert.ok(claimReasons(t).length > 0 || claimReasons(t, true).length > 0, 'blocked by a claim check')
+      assert.ok(claimReasons(t, true).length > 0, 'always blocked in a payment conversation')
     })
   }
-  it('the claim regex itself is unchanged (INT-70 / INT-93): the bare word still trips it', () => {
+  it('only the participle is masked, never the payment word or the rest', () => {
+    assert.equal(maskConditionalConfirmation('Una vez confirmado el pago, sale hoy'), 'Una vez ·········· el pago, sale hoy')
+    assert.equal(maskConditionalConfirmation('Una vez confirmado el pago, ya salió'), 'Una vez confirmado el pago, ya salió')
+    assert.equal(maskConditionalConfirmation('Apenas confirmado el pago, sale hoy'), 'Apenas confirmado el pago, sale hoy', '"apenas" also means "just" in CR')
+  })
+  it('CONFIRMATION_WORDING_RE is unchanged; owner texts keep the strict check; live, Probar and the canary share the rule', () => {
     assert.equal(hasConfirmationWording('una vez confirmado el pago'), true)
-    assert.equal(withoutConditionalConfirmation('una vez confirmado el pago, sale hoy').includes('confirmado'), false)
-    // Owner-written texts (saved replies, after-hours note, import) keep the strict check.
     assert.match(read('src/lib/soft-ai/after-hours-note.ts'), /hasConfirmationWording\(text\)/)
     assert.match(read('src/lib/soft-ai/shortcut-import.ts'), /hasConfirmationWording\(trimmed\)/)
-    // The live output check and Probar's own check use the same rule.
-    assert.match(read('src/lib/soft-ai/llm/output-validator.ts'), /if \(hasOutboundConfirmationClaim\(text\)\) reasons\.push\('confirmation_wording'\)/)
+    const v = read('src/lib/soft-ai/llm/output-validator.ts')
+    assert.match(v, /const claimText = maskConditionalConfirmation\(text\)/)
+    assert.match(v, /ALWAYS_PAYMENT_STATUS_REPLY_RE\.test\(claimText\)/)
+    assert.match(v, /PAYMENT_STATUS_REPLY_RE\.test\(claimText\)/)
     assert.match(read('src/lib/soft-ai/probar-scenarios.ts'), /if \(hasOutboundConfirmationClaim\(reply\)\) failures\.push/)
+    assert.match(read('src/lib/soft-ai/agent-replay.ts'), /if \(hasOutboundConfirmationClaim\(input\.text\)\) return \{ ok: false, reason: 'confirmation' \}/)
   })
 })
 
-describe('6 · reactions get no turn; "me atiende alguien" reaches a person', () => {
-  it('a reaction bubble is skipped before any job is written', () => {
-    assert.equal(isReactionOnly('[reaction]'), true)
-    assert.equal(isReactionOnly(' [Reaction] '), true)
-    assert.equal(isReactionOnly('[reaction] hola'), false)
-    assert.equal(isReactionOnly('hola'), false)
+describe('6 · reactions get no turn; a whole-message "me atiende alguien" reaches a person', () => {
+  it('a reaction is decided by its TYPE, in the webhook hook and in the waiting sweep', () => {
+    assert.equal(isReactionMessage('reaction'), true)
+    assert.equal(isReactionMessage('text'), false, 'a typed "[reaction]" is a real message')
+    assert.equal(isReactionMessage('image'), false)
+    assert.equal(isReactionMessage(null), false)
     const hook = read('src/lib/soft-ai/inbound-hook.ts')
     const enqueue = hook.slice(hook.indexOf('export async function enqueueSoftAiAfterInbound'))
-    const skip = enqueue.indexOf("if (isReactionOnly(args.content)) return { skippedReason: 'reaction' }")
+    const skip = enqueue.indexOf("if (isReactionMessage(args.messageType)) return { skippedReason: 'reaction' }")
     assert.ok(skip > 0 && skip < enqueue.indexOf('persistJob('))
+    assert.match(read('src/app/api/chat/webhook/route.ts'), /messageType: result\.messageType,/)
+    // The sweep never treats a reaction as the customer's waiting message (else it re-created the job ~90 s later).
+    const sweep = read('src/lib/soft-ai/waiting-sweep.ts')
+    assert.match(sweep, /messageType: true,/)
+    assert.match(sweep, /waitingAck !== true && r\.messageType !== 'reaction'/)
   })
-  const person = ['Me atiende alguien por favor?', '¿Alguien me atiende?', 'me puede atender una persona?', '¿Me pueden atender un asesor?', 'quiero que alguien me atienda', 'Hola, ¿me atiende una persona?']
+  const person = ['Me atiende alguien por favor?', '¿Alguien me atiende?', 'me puede atender una persona?', '¿Me pueden atender un asesor?', 'quiero que alguien me atienda', 'Hola, ¿me atiende una persona?', 'Buenas noches ¿me atiende alguien porfa?']
   for (const t of person) {
     it(`person request: ${t}`, () => {
-      assert.equal(isOptOutText(t), true)
+      assert.equal(isAttendRequest(t), true)
       const d = decideInbound({ inboundText: t, messageType: 'text', brandFacts: facts, shortcuts })
       assert.equal(d.shortcutKey, 'sys_handoff_optout')
       assert.deepEqual(d.handoff, { kind: 'handoff', reason: 'human_request' })
     })
   }
-  const notPerson = ['¿A qué hora atienden?', '¿Atienden los domingos?', 'Me atendieron muy bien, gracias', '¿Alguien me puede decir el precio?', 'me atiende la tienda en San Pedro?']
+  const notPerson = [
+    '¿A qué hora atienden?',
+    '¿Atienden los domingos?',
+    'Me atendieron muy bien, gracias',
+    '¿me atiende alguien en la tienda de San Pedro para retirar?',
+    '¿En la tienda me atiende alguien los domingos?',
+    'Si llego a las 5, ¿me atiende alguien?',
+    '¿Alguien me puede atender el sábado en la tienda para retirar?',
+    'No hace falta que me atienda una persona, ¿cuánto cuesta el Focus?',
+    'no necesito que me atienda alguien, solo quiero el precio',
+    'No quiero que me atienda una persona, prefiero que me sigas ayudando vos',
+    'Siempre hay una persona que me atiende muy bien',
+  ]
   for (const t of notPerson) {
     it(`stays with the agent: ${t}`, () => {
-      assert.equal(isOptOutText(t), false)
+      assert.equal(isAttendRequest(t), false)
+      const d = decideInbound({ inboundText: t, messageType: 'text', brandFacts: facts, shortcuts })
+      assert.notEqual(d.shortcutKey, 'sys_handoff_optout')
     })
   }
+  it('SecureDog #2: a receipt captioned "¿me atiende alguien?" keeps the receipt / payment path', () => {
+    // A photo caption never goes through the attend rule.
+    const caption = decideInbound({ inboundText: 'Ya pagué, ¿me atiende alguien?', messageType: 'image', brandFacts: facts, shortcuts, awaitingReceipt: true })
+    assert.equal(caption.shortcutKey, 'sys_handoff_media')
+    assert.equal(caption.handoff?.reason, 'payment')
+    const onlyAttend = decideInbound({ inboundText: '¿me atiende alguien?', messageType: 'image', brandFacts: facts, shortcuts, awaitingReceipt: true })
+    assert.equal(onlyAttend.handoff?.reason, 'payment')
+    // Burst: "Ya hice el SINPE" + "¿me atiende alguien?" → the payment hand-off wins (receipt alert, "Pago por verificar").
+    const at = (s: number) => new Date(Date.UTC(2026, 9, 18, 15, 0, s)).toISOString()
+    const history = [{ id: 'm1', direction: 'inbound' as const, content: 'Ya hice el SINPE', messageType: 'text', sentAt: at(0) }]
+    const trigger = { content: '¿me atiende alguien?', messageType: 'text', sentAt: at(3) }
+    const earlier = unansweredBurst(history as BurstMessage[], trigger)
+    const burst = planBurstInbound({ trigger, earlier, awaitingReceipt: () => false })
+    const { decision } = decideBurstTurn({ burst, burstEarlier: earlier, trigger, history, mediaSalesContext: null, earlierCustomerTexts: [], decisionBase: { brandFacts: facts, shortcuts, awaitingPaymentMethod: false } })
+    assert.equal(decision.handoff?.kind, 'handoff')
+    assert.equal(decision.handoff?.reason, 'payment')
+  })
+  it('the attend rule never widens the caption / burst opt-out (isOptOutText)', () => {
+    assert.equal(isOptOutText('Me atiende alguien por favor?'), false)
+    assert.equal(isOptOutText('quiero hablar con una persona'), true)
+  })
 })

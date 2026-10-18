@@ -92,6 +92,13 @@ export async function withExamSession<T>(
   try {
     await auditLock('tomado')
     before = parseChatAgentLayerConfig((await readChatAgentLayerConfig(tenantId)).config).testDailyTokenCap
+    // Sleeping C4: a cap left raised by an earlier run (not the business's normal value) refuses ANY new run, whatever cap
+    // it asks — restore it first (test-cap --restore --to=<normal>).
+    if (lock.baseCap !== undefined && before !== lock.baseCap) {
+      throw new Error(
+        `El tope de pruebas está en ${before.toLocaleString('es-CR')} y lo normal registrado es ${lock.baseCap.toLocaleString('es-CR')}. Si quedó subido por otra prueba: test-cap --restore --to=${lock.baseCap}. Si el dueño lo cambió a propósito: test-cap --restore --to=${before} (lo registra como el nuevo normal).`,
+      )
+    }
     if (before >= input.cap) throw new Error(`El tope de pruebas ya está en ${before.toLocaleString('es-CR')}: otra prueba está corriendo (o quedó subido: bajalo desde Agentes).`)
     // SecureDog r1 INFRA-23: marked BEFORE the raise, so a Ctrl+C or error while it is in flight still restores (the
     // restore only resets a value equal to our own cap, so a raise that never landed changes nothing).

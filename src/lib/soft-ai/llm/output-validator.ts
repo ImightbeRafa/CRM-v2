@@ -273,10 +273,29 @@ const FREE_SHIPPING_SPREAD_RE = /(?<![\p{L}])(tambi[eé]n|igual(?:mente)?|lo\s+m
 const BARE_AMOUNT_RE = /\d{1,3}(?:[.,   ]\d{3})+|\d{4,7}/g
 
 /** Clause spans: sentence ends, parentheses, line breaks (a period inside ₡25.000 is not an end). */
-function clauseSpans(text: string): Array<[number, number]> {
+/**
+ * Sleeping C8: "con el pack de 2 bolsas (₡19 800) el envío va incluido" — brackets holding ONLY an included combo's
+ * price are not a clause break (the brackets become spaces, same length). Any other bracket keeps breaking (INT-126).
+ */
+function maskIncludedPriceParentheticals(text: string, includedPrices: ReadonlyArray<number>): string {
+  if (!includedPrices.length) return text
+  return text.replace(/\(\s*[₡¢]\s?(\d{1,3}(?:[.,\s ]\d{3})+|\d{4,7})\s*\)/gu, (m, amount: string) => {
+    const v = Number(amount.replace(/\D/g, ''))
+    return includedPrices.some((p) => Math.abs(p - v) <= 1) ? ` ${m.slice(1, -1)} ` : m
+  })
+}
+
+/** The clause before ", y" states a shipping cost ("Con 1 bolsa el envío cuesta ₡3 000", "son ₡3 000 de envío"). */
+const SHIPPING_COST_TAIL_RE = /env[ií]o\s+(?:cuesta|sale|es|vale|queda)\s+(?:en\s+)?[₡¢]\s?[\d.,\s\u00a0]+$|[₡¢]\s?[\d.,\s\u00a0]+\s+de\s+env[ií]o\s*$/iu
+
+function clauseSpans(text: string, splitAtCommaY = true): Array<[number, number]> {
   const spans: Array<[number, number]> = []
   let start = 0
-  for (const m of text.matchAll(/(?:(?<!\d)\.|\.(?!\d)|[!?;()\n])+/g)) {
+  // Sleeping C8: ", y …" starts a new clause too ("Con 1 bolsa el envío cuesta ₡3 000, y el pack de 2 … con envío
+  // incluido" — the ₡3 000 belongs to the first clause, not to the combo fact).
+  for (const m of text.matchAll(/(?:(?<!\d)\.|\.(?!\d)|[!?;()\n]|,(?=\s+y\s))+/g)) {
+    // SecureDog r1 INT-184: ", y" ends a clause ONLY right after a shipping-cost statement ("el envío cuesta ₡3 000").
+    if (m[0] === ',' && (!splitAtCommaY || !SHIPPING_COST_TAIL_RE.test(text.slice(start, m.index ?? 0)))) continue
     spans.push([start, m.index ?? 0])
     start = (m.index ?? 0) + m[0].length
   }
@@ -291,12 +310,13 @@ function clauseSpans(text: string): Array<[number, number]> {
  */
 export function freeShippingRuleOk(rawText: string, rule: FreeShippingRule): boolean {
   const near = (a: number, b: number) => Math.abs(a - b) <= 1
-  const text = maskNameParentheticals(rawText, rule.nameNotes ?? [])
+  const text = maskIncludedPriceParentheticals(maskNameParentheticals(rawText, rule.nameNotes ?? []), rule.includedPrices)
   const extraWords = (rule.bundleWords ?? []).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).filter(Boolean)
   const bundleWordRe = new RegExp(`(?<![\\p{L}])(?:combos?|packs?|kits?${extraWords.length ? '|' + extraWords.map((w) => `${w}s?`).join('|') : ''})(?![\\p{L}])`, 'giu')
   const matches = freeShippingWording(text)
   if (matches.length === 0 || (rule.includedPrices.length === 0 && !rule.freeOver)) return false
   const spans = clauseSpans(text)
+  const sentenceSpans = clauseSpans(text, false)
   const spanOf = (m: { index: number; end: number }) => spans.find(([s, e]) => m.index >= s && m.index < e)
   // P2: clauses that state the store's own threshold rule are judged on their own (a rule for every order may say
   // "todos"); the spread check below reads the rest of the reply.
@@ -336,8 +356,12 @@ export function freeShippingRuleOk(rawText: string, rule: FreeShippingRule): boo
     const clause = text.slice(span[0], span[1])
     // Exactly one combo / pack named in the clause (not "el Combo Trío y el Combo 2").
     if ((clause.match(bundleWordRe) || []).length !== 1) return false
-    if (FREE_SHIPPING_EXCEPTION_RE.test(clause)) return false
-    const lower = clause.toLowerCase()
+    // SecureDog r1 INT-184: exception / personal words and other products are judged on the WHOLE sentence (never
+    // escaping behind ", y"); only the amounts are judged on the clause.
+    const sentenceSpan = sentenceSpans.find(([s0, e0]) => span[0] >= s0 && span[0] < e0) ?? span
+    const sentence = text.slice(sentenceSpan[0], sentenceSpan[1])
+    if (FREE_SHIPPING_EXCEPTION_RE.test(sentence)) return false
+    const lower = sentence.toLowerCase()
     if (others.some((n) => new RegExp(`(?<![\\p{L}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, 'iu').test(lower))) return false
     const amounts = [
       ...extractMoneyAmounts(clause).map((a) => Math.round(a)),
@@ -395,6 +419,58 @@ const CREATED_CLAIM_RE =
 const ORDER_CLOSING_CLAIM_RE =
   /pedido\s+(?:ya\s+)?(?:qued[oó]\s+|est[aá]\s+)?(?:registrad|anotad|agendad|confirmad|list)[oa]|(?:orden|compra)\s+(?:ya\s+)?(?:qued[oó]\s+|est[aá]\s+)?(?:registrad|anotad|agendad|confirmad|list)[oa]|(?<![\p{L}])agend[eé](?![\p{L}])|anot[eé]\s+(?:tu|el|su)\s+pedido|sale\s+(?:hoy|ma[nñ]ana)|te\s+(?:lo|la|los|las)\s+mando\s+(?:hoy|ma[nñ]ana)|ma[nñ]ana\s+te\s+llega|(?:queda|qued[oó])\s+(?:programad|agendad)\p{L}*|te\s+(?:lo|la|los|las)\s+despachamos|va\s+en\s+camino|tu\s+entrega\s+(?:queda|est[aá])\s+(?:para|agendada)/iu
 const UNIT_COST_RE = /unitCost|costo\s+unitario|precio\s+de\s+costo/i
+
+/** Sleeping C7: "ya te lo compartí / dije / pasé / mencioné / indiqué" (refusing to repeat what the customer asks again). */
+const REPEAT_REFUSAL_RE =
+  /(?<![\p{L}])(?:ya\s+(?:te|se|le|les)\s+(?:(?:lo|la|los|las)\s+)?(?:hab[ií]a\s+)?(?:compart\p{L}*|dicho|dije|di|pas[eé]|pasado|mencion\p{L}*|indiqu[eé]|indicado|envi[eé]|enviado|mand[eé]|mandado)|como\s+(?:ya\s+)?(?:te|le)\s+(?:dije|coment[eé]|mencion[eé]|indiqu[eé]|hab[ií]a\s+dicho))(?![\p{L}])/iu
+
+/** One line of a personal-data block: a phone, an email, a "Provincia, Cantón, Distrito" place, an address or a name. */
+const DATA_LABEL_RE = /^(?:[-•*]\s*)?(?:nombre(?:\s+completo)?|tel[eé]fono|celular|cel|whatsapp|correo|e-?mail|provincia|cant[oó]n|distrito|direcci[oó]n(?:\s+exacta)?|se[nñ]as|c[eé]dula)\s*[:\-–]\s*/iu
+const DATA_PHONE_LINE_RE = /^[+()\d\s.-]*(?<!\d)\d{4}[\s.-]?\d{4}(?!\d)[\s\d.-]*$/u
+const DATA_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/u
+const DATA_PLACE_RE = /^\p{Lu}[\p{L}.\s]{1,40}(?:,\s*\p{Lu}[\p{L}.\s]{1,40}){1,3}\.?$/u
+const DATA_ADDRESS_RE = /(?<![\p{L}])(?:\d+\s*(?:m|mts|metros|km)\s+(?:al\s+)?(?:norte|sur|este|oeste)|de\s+la\s+(?:iglesia|escuela|plaza|pulper[ií]a|parada)|casa\s+(?:color|blanca|verde|azul|amarilla|n[uú]mero|#)|frente\s+a|contiguo\s+a|costado\s+(?:norte|sur|este|oeste)|apartamento|condominio|residencial|barrio)(?![\p{L}])/iu
+const DATA_NAME_RE = /^\p{Lu}\p{Ll}+(?:\s+(?:de\s+|del\s+|la\s+)?\p{Lu}\p{Ll}+){1,4}$/u
+
+/** Words a data value never is ("Te dejo nuestro WhatsApp", "¡Gracias!"): such a line is a sentence, not data. */
+const DATA_NOT_VALUE_RE =
+  /(?<![\p{L}])(?:te|le|les|nos|nuestro|nuestra|nuestros|escrib\p{L}*|llam\p{L}*|whatsapp|gracias|hola|aqu[ií]|ac[aá]|este|esta|es|son|est[aá]|tu|su|para|por|con|que|qu[eé]|cuando|si|pod[eé]s|puedes|quer[eé]s|pedido|precio|total|producto|bolsa|pack|env[ií]o|pago|horario|lunes|abierto)(?![\p{L}])/iu
+/** A location bubble / maps link the customer shared ("[ubicación]", "📍 https://maps.app.goo.gl/…"). */
+const DATA_LOCATION_RE = /^(?:\[(?:ubicaci[oó]n|location)[^\]]*\]|(?:https?:\/\/)?(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.)?google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|waze\.com)\S*)$/iu
+/** One short value: up to 5 words of letters only ("Cartago", "Llanos de Santa Lucía", "maría pérez"). */
+const DATA_WORDS_RE = /^[\p{L}][\p{L}'.,\s-]{0,60}$/u
+
+/**
+ * Sleeping exam C9 (night silent trial, 2026-10-03): after a location pin the model replied with nothing but a name /
+ * phone / address block copied from the chat. A reply of 2+ lines where EVERY line is personal data and at least one
+ * is a phone or an email is never sent (it is never an answer; it can leak one person's data). Verifier r1: a data
+ * line is also a labelled one ("Provincia: Cartago"), a lone place / name word (any case), a location placeholder or a
+ * maps link. A phone the store itself publishes (`ownText`: its brand facts) is not an echo. An order summary
+ * ("Producto: …", "Total …") or the data-request list ("- Nombre completo") has other lines and passes. Pure.
+ */
+export function isPersonalDataEcho(text: string, ownText?: string | null): boolean {
+  const lines = (text || '')
+    .split('\n')
+    .map((l) => l.replace(/[\p{Extended_Pictographic}️]/gu, ' ').trim())
+    .filter(Boolean)
+  if (lines.length < 2 || lines.length > 12) return false
+  const own = new Set(
+    [...(ownText || '').matchAll(/\d[\d\s.-]{6,}\d/g)].map((m) => m[0].replace(/\D/g, '')).filter((d) => d.length >= 8).map((d) => d.slice(-8)),
+  )
+  const isOwnPhone = (v: string) => own.size > 0 && own.has(v.replace(/\D/g, '').slice(-8))
+  const raw = lines.map((l) => l.replace(/^[-•*–]\s*/u, ''))
+  const labelled = raw.map((l) => DATA_LABEL_RE.test(l))
+  const values = raw.map((l) => l.replace(DATA_LABEL_RE, '').trim())
+  const contact = values.some((v) => (DATA_PHONE_LINE_RE.test(v) && !isOwnPhone(v)) || DATA_EMAIL_RE.test(v))
+  if (!contact) return false
+  return values.every((v, i) => {
+    if (DATA_PHONE_LINE_RE.test(v)) return !isOwnPhone(v)
+    if (labelled[i]) return true
+    if (!v) return false
+    if (DATA_EMAIL_RE.test(v) || DATA_LOCATION_RE.test(v) || DATA_PLACE_RE.test(v) || DATA_ADDRESS_RE.test(v) || DATA_NAME_RE.test(v)) return true
+    return DATA_WORDS_RE.test(v) && v.split(/[\s,]+/).filter(Boolean).length <= 6 && !DATA_NOT_VALUE_RE.test(v)
+  })
+}
 const SHIP_CUE_RE = /env[ií]o|retiro|domicilio|\bGAM\b|correos|mensajer/i
 const PAY_CUE_RE = /\b(pago|sinpe|transferencia|tarjeta|efectivo|contra\s*entrega)\b/i
 const PURCHASE_INTENTS = new Set<AgentIntent>(['price', 'how_to_buy'])
@@ -778,6 +854,8 @@ export function validateAgentOutput(input: {
   modelText?: boolean
   /** Sleeping C3: the store's own per-unit rates (sales-state salesUnitRates). */
   unitRates?: UnitRate[] | null
+  /** Sleeping C9: the store's own published text (brand facts) — its phones are never a data echo. */
+  ownText?: string | null
 }): OutputValidationResult {
   const reasons: string[] = []
   const text = input.text || ''
@@ -790,6 +868,10 @@ export function validateAgentOutput(input: {
   // configuration needs no allowlist entry, and the allowlist never widens to a whole payment host (Verifier F2).
   if (input.linkAllowlist && foreignLinks(input.linkText ?? text, input.linkAllowlist).length > 0) reasons.push('foreign_link')
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
+  // Sleeping C9: a reply that is only a personal-data block (someone's name / phone / address copied from the chat).
+  if (isPersonalDataEcho(input.styleText ?? text, input.ownText)) reasons.push('data_echo')
+  // Sleeping C7: the customer asked again — "ya te lo compartí / ya te lo dije" refuses an answer it can give.
+  if (REPEAT_REFUSAL_RE.test(text)) reasons.push('repeat_refusal')
   // INT-158 H4: the sibling claim checks read every form the confirmation-wording check reads (raw, normalised —
   // invisible characters, look-alikes, WhatsApp markup, odd separators — without accents, and the look-alike
   // skeleton). These patterns have no word edges, so the accent-free and skeleton forms are matched from a word start
@@ -1190,6 +1272,7 @@ export function applyFinalOutputPolicy(input: {
     linkText: styleText,
     modelText: input.modelText,
     unitRates: input.unitRates,
+    ownText: JSON.stringify(facts),
     orderClosing:
       filled.methods.some((m) => m === 'contra_entrega' || m === 'efectivo') ||
       input.paymentOptions?.chosenMethod === 'contra_entrega' ||

@@ -440,6 +440,7 @@ export async function runSoftAiLlmRuntime(
         allowedDeals: input.salesAllowedDeals,
         freeShippingRule: input.salesFreeShippingRule,
         unitRates: input.salesUnitRates,
+        ownText: input.brandFactsBlock ?? null,
         // SecureDog round 6: the whole burst since the store last wrote, not only the newest message.
         customerText: burstCustomerText(input.history, input.inboundText),
         linkAllowlist: input.linkAllowlist,
@@ -728,6 +729,9 @@ export const REPAIRABLE_REASONS: ReadonlySet<string> = new Set([
   'unit_cost_leak',
   'style_too_long',
   'results_claim',
+  // Sleeping C9 / C7.
+  'data_echo',
+  'repeat_refusal',
   'foreign_link',
 ])
 
@@ -740,6 +744,8 @@ const REPAIR_REASON_TEXT: Record<string, string> = {
   unit_cost_leak: 'mencionaste un costo interno',
   style_too_long: 'quedó muy largo',
   foreign_link: 'pusiste un enlace que no es del sitio del negocio (no pongas enlaces)',
+  data_echo: 'copiaste datos personales (nombre, teléfono, dirección) en vez de responder; respondé lo que el cliente necesita sin repetir datos de nadie',
+  repeat_refusal: 'dijiste que ya lo habías dicho; el cliente lo volvió a preguntar: repetilo breve, sin decir que ya lo compartiste',
   results_claim:
     'prometiste un resultado o efecto (cambios, en cuántos días, lo que notan otras personas, curar o bajar de peso) o aseguraste que es seguro / sin efectos secundarios; decí solo los ingredientes y el modo de uso de los datos del negocio, que cada organismo responde diferente y que ante embarazo, lactancia, una condición o medicamentos consulte a su médico',
 }

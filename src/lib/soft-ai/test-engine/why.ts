@@ -24,6 +24,8 @@ const CODE_TEXT: Record<string, string> = {
   unsourced_money: 'El agente mencionó un monto que no está en los datos',
   money_mismatch_inventory: 'El agente dio un precio distinto al del inventario',
   foreign_link: 'Puso un enlace que no es de la tienda',
+  data_echo: 'Respondió solo con datos personales copiados del chat (nombre, teléfono, dirección)',
+  repeat_refusal: 'Dijo que ya lo había compartido en vez de repetirlo',
   write_claim: 'Dijo que ya hizo algo que no hizo (pedido, guía…)',
   payment_number_unsourced: 'Dio un número de pago que no está en los datos',
   payment_number_not_shareable: 'Dio un número de pago que no se puede compartir por chat',

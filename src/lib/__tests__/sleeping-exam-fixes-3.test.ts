@@ -85,3 +85,29 @@ describe('SecureDog batch-2 r2 hardening: a "₡0" shipping cost never opens the
     assert.equal(ok.ok, true, String(ok.reasons))
   })
 })
+
+describe('Verifier b3 r1: cash handed to the courier stays a payment hand-off', () => {
+  it('a delivery-arrival phrase is masked only next to courtesy', () => {
+    for (const t of [
+      'Ya llegó el mensajero, ya le di los 15 mil',
+      'El mensajero ya llegó, le di 15000',
+      'Ya llegó el mensajero y le entregué los 15 mil',
+      'Ya llegó el mensajero, le dejé el efectivo',
+      'Ya llegó el repartidor, todo listo',
+      'El motorizado ya llegó, ya está',
+      'Ya llegó el mensajero, ya quedó',
+    ]) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+    for (const t of ['Ya llegó el Uber, gracias', 'El Uber ya llegó 😊', 'Ya llegó el pedido, muchas gracias']) assert.equal(classifyPaymentText(t), 'non_payment', t)
+  })
+})
+
+describe('SecureDog b3 r1 INT-187: cash-on-delivery claims next to "ya llegó el mensajero" keep the hand-off', () => {
+  it('payment-state words after the arrival phrase are never masked', () => {
+    for (const t of ['Ya llegó el mensajero, ya le di todo', 'Ya llegó el mensajero, ya está', 'El mensajero ya llegó y ya quedó', 'Ya llegó el mensajero y ya le entregué lo del pedido']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+    for (const t of ['Para no pagar envío lo retiro', 'quería retirar para no pagar envío']) assert.equal(classifyPaymentText(t), 'non_payment', t)
+  })
+})

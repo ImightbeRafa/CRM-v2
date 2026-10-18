@@ -439,15 +439,24 @@ function confirmCueCounts(value: string, noPaymentYet: boolean): boolean {
  * stays a claim). Pure.
  */
 const DELIVERY_SUBJECT = String.raw`(?:(?:el|la|mi)\s+)?(?:uber|didi|indriver|mensajer[oa]|motorizad[oa]|repartidor(?:a)?|chofer|taxi|paquete|pedido|encomienda|env[ií]o)`
-const NON_PAYMENT_PHRASE_RE = new RegExp(
-  String.raw`(?<![\p{L}])(?:(?:para\s+)?no\s+pagar(?:\s+(?:el|lo\s+del))?\s+env[ií]o|${DELIVERY_SUBJECT}\s+ya\s+lleg[oó]|ya\s+lleg[oó]\s+${DELIVERY_SUBJECT}|ya\s+${DELIVERY_SUBJECT}\s+lleg[oó])(?![\p{L}])`,
+const NO_PAY_SHIPPING_RE = /(?<![\p{L}])(?:para\s+)?no\s+pagar(?:\s+(?:el|lo\s+del))?\s+env[ií]o(?![\p{L}])/giu
+const DELIVERY_ARRIVAL_RE = new RegExp(
+  String.raw`(?<![\p{L}])(?:${DELIVERY_SUBJECT}\s+ya\s+lleg[oó]|ya\s+lleg[oó]\s+${DELIVERY_SUBJECT}|ya\s+${DELIVERY_SUBJECT}\s+lleg[oó])(?![\p{L}])`,
   'giu',
 )
-const PAYMENT_NOUN_ANY_RE = /(?<![\p{L}])(?:sinpe|simpe|pag(?:o|u[eé]|ad[oa]|amos|aron)|plata|dinero|transfer\p{L}*|dep[oó]sit\p{L}*|comprobante|monto|tarjeta|cuenta|cancel[eé]|abon\p{L}*)(?![\p{L}])|₡/iu
+/** Money / payment / done words (Verifier b3: cash to the courier — "le di los 15 mil", "le dejé el efectivo", "ya quedó"). */
+const PAYMENT_NOUN_ANY_RE =
+  /(?<![\p{L}])(?:sinpe|simpe|pag\p{L}*|plata|platica|dinero|efectivo|cash|transfer\p{L}*|dep[oó]sit\p{L}*|comprobante|monto|tarjeta|cuenta|cancel\p{L}*|abon\p{L}*|mil|rojos|colones|di|dimos|entregu[eé]|entregamos|dej[eé]|dejamos|listo|hecho|qued[oó]|ya\s+est[aá]|revis\p{L}*|confirm\p{L}*)(?![\p{L}])|[₡¢]|\d{3,}|[✅✔☑👍]/iu
 export function maskNonPaymentPhrases(value: string): string {
-  const masked = value.replace(NON_PAYMENT_PHRASE_RE, ' ')
-  if (masked === value || PAYMENT_NOUN_ANY_RE.test(masked)) return value
-  return masked
+  let out = value
+  // "(para) no pagar (el) envío": blanked only when no money / done word is left ("Mejor lo retiro para no pagar envío").
+  const noPay = out.replace(NO_PAY_SHIPPING_RE, ' ')
+  if (noPay !== out && !PAYMENT_NOUN_ANY_RE.test(noPay) && !hasPaymentStatusHint(noPay)) out = noPay
+  // A delivery person / the order arriving: blanked only when nothing but courtesy is left ("Ya llegó el Uber, gracias").
+  // Verifier b3: "Ya llegó el mensajero, le di los 15 mil" is a cash-on-delivery claim and keeps its hand-off.
+  const arrival = out.replace(DELIVERY_ARRIVAL_RE, ' ')
+  if (arrival !== out && (!arrival.replace(FRIENDLY_RE, '').replace(/[\s,.!¡¿?…]+/gu, '') || isCourtesyText(arrival))) out = arrival
+  return out
 }
 
 export function hasHardPaymentClaim(text: string, opts: { noPaymentYet?: boolean } = {}): boolean {

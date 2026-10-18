@@ -356,8 +356,8 @@ describe('backfill + webhook hook', () => {
     assert.match(src, /'X-Content-Type-Options': 'nosniff'/)
   })
 
-  it('SQL 055 is additive only', () => {
-    const sql = read('supabase/migrations/055_chat_peer_profile.sql').replace(/--.*$/gm, '')
+  it('SQL 056 is additive only', () => {
+    const sql = read('supabase/migrations/056_chat_peer_profile.sql').replace(/--.*$/gm, '')
     assert.match(sql, /ADD COLUMN IF NOT EXISTS "peerUsername" TEXT/)
     assert.match(sql, /ADD COLUMN IF NOT EXISTS "peerProfileCheckedAt" TIMESTAMP\(3\)/)
     assert.doesNotMatch(sql, /\b(DROP|TRUNCATE|DELETE|UPDATE)\b/i)

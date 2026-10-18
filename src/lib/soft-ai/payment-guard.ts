@@ -35,6 +35,12 @@ export type PaymentFillOptions = {
    */
   chosenMethod?: string | null
   /**
+   * Sleeping exam C6 (Rafael's rule): at the close, the delivery data list goes BEFORE the payment-method question, in
+   * its own message (sales-state salesDataListFirst: the list was not asked yet and the customer gave no data). Not
+   * used by the token fill itself; applyFinalOutputPolicy orders the reply.
+   */
+  dataListFirst?: 'shipping' | 'pickup' | null
+  /**
    * luna-10 exam (Rafael's rule, 2026-10-16): [[DATOS_PAGO]] = every method's DETAILS only when the customer asked for
    * the details ("pasame los datos / el número / la cuenta"). "¿Cómo puedo pagar?" / "¿se puede con tarjeta?" get the
    * method names and the question "¿Cuál preferís?" instead (Luna wrote [[DATOS_PAGO]] for those). Undefined = old

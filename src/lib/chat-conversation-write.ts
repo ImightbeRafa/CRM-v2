@@ -62,6 +62,11 @@ export interface DualWriteMessageInput {
   /** Human agent who sent this outbound (null for Soft AI / webhooks). */
   senderUserId?: string | null
   /**
+   * Follow-up / reactivation sends: update the preview but keep `lastMessageAt`, so a mass nudge never pushes chats
+   * to the top of the inbox (Rafael 2026-10-18). The customer's reply moves the chat up as usual.
+   */
+  keepListPosition?: boolean
+  /**
    * AI replies: the inbound message this reply answers. Only customer messages up to that one are
    * marked answered for the team (a message that arrived while the AI was thinking stays pending).
    */
@@ -290,6 +295,7 @@ export async function bumpConversationAfterInsert(
     tenantId: string
     peerId: string
     platform?: string | null
+    keepListPosition?: boolean
   },
 ) {
   await tx.$queryRaw`SELECT 1 FROM "ChatConversation" WHERE id = ${args.conversationId} FOR UPDATE`
@@ -317,7 +323,7 @@ export async function bumpConversationAfterInsert(
     )
   ) {
     data.lastMessageId = args.messageId
-    data.lastMessageAt = args.sentAt
+    if (!args.keepListPosition) data.lastMessageAt = args.sentAt
     data.lastMessagePreview = truncatePreview(args.content)
     data.lastMessageDirection = args.direction
   }
@@ -527,6 +533,7 @@ export async function dualWriteChatMessage(
         tenantId: input.tenantId,
         peerId: peer.peerId,
         platform: input.platform,
+        keepListPosition: input.keepListPosition === true,
       })
 
       await tx.socialAccount.update({

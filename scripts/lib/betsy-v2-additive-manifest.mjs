@@ -39,7 +39,8 @@ export const FILES = {
   '052': '052_agent_studio_sources.sql',
   '053': '053_agent_studio_sales_setup.sql',
   '054': '054_luna_only_model.sql',
-  '055': '055_chat_peer_profile.sql',
+  '055': '055_inventory_item_availability.sql',
+  '056': '056_chat_peer_profile.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -92,6 +93,7 @@ export const EXPECTED_TABLES = {
   '051': ['AiBudget'],
   '052': ['ChatAgentSource', 'ChatAgentProfileDraft'],
   '053': ['ShippingMethodCoverage'],
+  '055': ['InventoryItemAvailability'],
 };
 
 export const EXPECTED_COLUMNS = {
@@ -107,10 +109,11 @@ export const EXPECTED_COLUMNS = {
   '051': [['AiBudget', 'monthlyUsdMicros'], ['AiBudget', 'autoPause'], ['AiBudget', 'pausedMonth']],
   '052': [['ChatAgentSource', 'sha256'], ['ChatAgentProfileDraft', 'profile']],
   '053': [['ChatAgentAsset', 'agentId'], ['ChatAgentAsset', 'inventoryCategory'], ['ShippingMethodCoverage', 'codPlaces'], ['ChatAgentSettings', 'offeredShippingMethodIds'], ['ChatAgentSettings', 'salesRules']],
+  '055': [['InventoryItemAvailability', 'soldOut'], ['InventoryItemAvailability', 'backDate'], ['InventoryItemAvailability', 'backNote']],
+  '056': [['ChatConversation', 'peerUsername'], ['ChatConversation', 'peerProfileCheckedAt']],
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],
   '037': [['ChatConversation', 'repliedInboundCount']],
-  '055': [['ChatConversation', 'peerUsername'], ['ChatConversation', 'peerProfileCheckedAt']],
   '027b': [['ChatAgent', 'introductionNames']],
   '019': [
     ['Order', 'clientId'],

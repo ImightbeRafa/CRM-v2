@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client'
 import { hashCursorScope } from '@/lib/cursor-pagination'
+import { INBOX_COUNTED_VIEWS, type InboxCountedView } from '@/lib/chat-inbox-views'
 
 /** A chat stage key (system or custom). */
 export type SoftConversationStatus = string
@@ -15,6 +16,8 @@ export interface ChatConversationListQuery {
   id?: string | null
   /** Only chats snoozed right now (Pospuestos bucket); resolved to ids by the route. */
   snoozed?: boolean
+  /** /chats quick view (chat-inbox-views.ts); applied by the list route only. */
+  view?: InboxCountedView | null
 }
 
 export interface ChatConversationChangesQuery extends ChatConversationListQuery {
@@ -51,8 +54,11 @@ export function parseConversationListQuery(searchParams: URLSearchParams): ChatC
   if (idRaw && !/^[A-Za-z0-9_-]{8,64}$/.test(idRaw)) throw new Error('Invalid id')
   const id = idRaw || null
   const snoozed = searchParams.get('snoozed') === '1'
+  const viewRaw = (searchParams.get('view') || '').trim()
+  if (viewRaw && !(INBOX_COUNTED_VIEWS as string[]).includes(viewRaw)) throw new Error('Invalid view')
+  const view = (viewRaw || null) as InboxCountedView | null
 
-  return { platform, socialAccountId, status, assigned, tag, q, id, snoozed }
+  return { platform, socialAccountId, status, assigned, tag, q, id, snoozed, view }
 }
 
 export function parseConversationChangesQuery(
@@ -81,6 +87,8 @@ export function conversationListCursorScope(
     q: (input.q || '').toLowerCase(),
     id: input.id || '',
     snoozed: input.snoozed ? '1' : '',
+    // Only when set: existing cursors keep their scope hash.
+    ...(input.view ? { view: input.view } : {}),
   })
 }
 

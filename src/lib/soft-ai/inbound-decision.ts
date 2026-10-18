@@ -13,6 +13,9 @@ import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
 import {
   classifyPaymentText,
   hasHardPaymentClaim,
+  hasPaymentStatusHint,
+  isBareOrderConfirmAsk,
+  isCourtesyText,
   isCueFreePaymentChoiceText,
   isPlainPaymentLinkQuestion,
   paymentHandoffReason,
@@ -154,12 +157,27 @@ export function decideInbound(input: {
    * a regex payment claim (same hand-off, same notification). Can only force toward a person.
    */
   forcePaymentRisk?: true
+  /**
+   * Sleeping exam C2: nothing about paying happened in this chat yet (sales-state noPaymentYet — no payment details
+   * sent, no photo / file from the customer, no payment words or web order from them). A bare "Para confirmar el
+   * pedido" / "¿me confirmás?" is then an ordinary sales message, not a payment claim. Undefined = old behaviour.
+   */
+  noPaymentYet?: boolean
 }): InboundDecision {
+  // SecureDog r1 INT-159: the relaxation needs a text message AND no bubble of the burst (this one included) hinting at
+  // a payment's state ("¿Me confirmás?" + "¿Les llegó?" stays a payment hand-off).
+  const isText = !input.messageType || input.messageType === 'text'
+  const noPaymentYet =
+    input.noPaymentYet === true &&
+    isText &&
+    // SecureDog r2: every bubble of the burst is courtesy only or the bare ask itself (an allowlist, not a word list).
+    [input.inboundText, ...(input.earlierCustomerTexts || [])].every((t) => !hasPaymentStatusHint(t || '') && (isCourtesyText(t || '') || isBareOrderConfirmAsk(t || '')))
   const latestClass = classifyPaymentText(input.inboundText, {
-    awaitingPaymentMethod: input.awaitingPaymentMethod === true && (!input.messageType || input.messageType === 'text'),
+    awaitingPaymentMethod: input.awaitingPaymentMethod === true && isText,
+    noPaymentYet,
   })
   // Verifier round 10: only a real claim in an earlier bubble counts ("Sinpe" + "gracias" is an answer).
-  const burstClaim = (input.earlierCustomerTexts || []).some((t) => hasHardPaymentClaim(t))
+  const burstClaim = (input.earlierCustomerTexts || []).some((t) => hasHardPaymentClaim(t, { noPaymentYet }))
   const forced = input.forcePaymentRisk === true
   const paymentClass: PaymentClassification = burstClaim || forced ? 'payment_proof_or_risk' : latestClass
   const why = forced ? `payment_llm_check (regex: ${latestClass})` : burstClaim ? `earlier_message (latest: ${latestClass})` : null

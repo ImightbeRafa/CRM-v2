@@ -38,6 +38,9 @@
  * 047 saved Probar tests: ChatAgentTestCase (BETSY_V2_APPLY_FILES=047; new table only, safe any time).
  * 046 per-agent inventory map: ChatAgentInventoryItem (BETSY_V2_APPLY_FILES=046; new table only, safe any time).
  * 045 agent improvement loop: ChatAgentVersion, ChatAgentFeedback, ChatAgentEvalRun (BETSY_V2_APPLY_FILES=045; new tables only, safe any time).
+ * 055 out-of-stock switch: InventoryItemAvailability (BETSY_V2_APPLY_FILES=055; new table only, safe any time).
+ * 056 Instagram customer profile: ChatConversation.peerUsername + peerProfileCheckedAt
+ * (BETSY_V2_APPLY_FILES=056; two nullable columns, apply BEFORE the code that reads them).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

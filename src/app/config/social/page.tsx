@@ -1053,20 +1053,26 @@ export default function SocialConfigPage() {
                   </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  void handleAddInstagram()
-                }}
-                disabled={connectingInstagram}
-                className="shrink-0 rounded-[10px] border border-slate-200 bg-white px-3.5 py-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                {connectingInstagram
-                  ? 'Conectando…'
-                  : igAccounts.length > 0
-                    ? '+ Agregar otra Instagram'
-                    : '+ Conectar Instagram'}
-              </button>
+              <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleAddInstagram()
+                  }}
+                  disabled={connectingInstagram}
+                  className="shrink-0 rounded-[10px] border border-slate-200 bg-white px-3.5 py-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {connectingInstagram
+                    ? 'Conectando…'
+                    : igAccounts.length > 0
+                      ? '+ Agregar otra Instagram'
+                      : '+ Conectar Instagram'}
+                </button>
+                {/* Dead-line alarm: the Facebook page picker drops every page that is not ticked. */}
+                <p data-testid="ig-connect-all-pages-note" className="max-w-[260px] text-[11px] font-medium text-amber-700 sm:text-right">
+                  En Facebook, marcá todas tus páginas, no solo la nueva.
+                </p>
+              </div>
             </div>
 
             {showManualWhatsApp ? (

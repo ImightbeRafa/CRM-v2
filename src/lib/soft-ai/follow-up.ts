@@ -293,6 +293,8 @@ async function runCampaign(
             followUp: { campaignId: c.id, variant },
           },
           suppressSoftAi: true,
+          // A nudge never pushes the chat to the top of /chats (it shows under "Seguimientos").
+          keepListPosition: true,
         })
         if (!isPersistedDualWrite(write)) console.warn('[follow-up] sent but not stored')
       }

@@ -5,6 +5,11 @@
  */
 import {
   hasPaymentClaimCue,
+  hasHardPaymentClaim,
+  hasPaymentStatusHint,
+  isBareOrderConfirmAsk,
+  isCourtesyText,
+  hasPaymentWord,
   hasChoiceClaimOrStatusWord,
   hasPaymentStatusClaim,
   isPaymentCompletionClaim,
@@ -15,7 +20,10 @@ import {
   type PaymentChoiceMethod,
 } from '@/lib/soft-ai/payment-classifier'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
+import { soldOutFocus, type StockGuard } from '@/lib/soft-ai/product-availability-core'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
+import { PICKUP_DATA_LIST, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
+import { MONEY_WORDS_RE } from '@/lib/soft-ai/payment-claim-check-core'
 import {
   paymentMethodLabels,
   paymentMethodQuestion,
@@ -24,7 +32,8 @@ import {
   type PaymentMethodKey,
 } from '@/lib/soft-ai/brand-facts'
 
-export type SalesCatalogItem = { name: string; price: number; stockLabel: string }
+/** soldOut (SQL 055 switch / stock 0): the line shows no price and the price is not quotable. */
+export type SalesCatalogItem = { name: string; price: number; stockLabel: string; soldOut?: boolean }
 export type SalesShippingMethod = { name: string; price: number; coverage: string; cod: string }
 /** Owner's combo at a fixed total; shippingIncluded = the owner says this combo's price includes shipping. */
 export type SalesBundle = { name: string; price: number; shippingIncluded: boolean }
@@ -56,6 +65,13 @@ export type SalesContext = {
   cardOnWeb?: boolean
   /** The brand's own contra-entrega text says GAM. */
   codGamOnly?: boolean
+  /**
+   * Pura Sonrisa P2: the store's "envío gratis desde ₡X" (brand facts shipping.ea.freeOver). Only lets the validator
+   * pass that exact threshold rule; it is never applied to prices. Undefined = none.
+   */
+  freeShippingOver?: number | null
+  /** Out-of-stock switch (SQL 055): this agent's sold-out products (with the owner's "vuelve aprox.") and names on sale. */
+  stock?: Omit<StockGuard, 'focus'>
 }
 
 export type SalesStage =
@@ -82,6 +98,8 @@ export type SalesState = {
   askedMethod?: boolean
   /** agents2-format: the method the customer picked in this message (resolvePaymentChoice). */
   chosenMethod?: ChosenPaymentMethod | null
+  /** Out-of-stock switch: the customer is asking for this sold-out product (newest message naming a product). */
+  soldOutFocus?: string | null
 }
 
 /** A method the customer can pick (efectivo is its own method when configured; otherwise it means contra entrega). */
@@ -95,6 +113,51 @@ export function parsePaymentMethodChoice(text: string): ChosenPaymentMethod | nu
 /** The store's own method question ("¿Cómo preferís pagar?", "¿qué método de pago preferís?"). */
 export const PAYMENT_METHOD_ASKED_RE =
   /c[oó]mo\s+(prefer[ií]s|quer[eé]s|prefiere|quiere|te\s+gustar[ií]a)\s+pagar|qu[eé]\s+m[eé]todo\s+de\s+pago|con\s+qu[eé]\s+(prefer[ií]s|quer[eé]s)\s+pagar|cu[aá]l\s+m[eé]todo\s+(de\s+pago\s+)?prefer[ií]s/iu
+
+/**
+ * Sleeping exam C1 (2026-10-18): the store's method question in other wordings, as a QUESTION (the "?" ends the same
+ * sentence): "¿Querés pagar por SINPE o tarjeta?", "¿Preferís pagar con SINPE?", "¿Pagás por SINPE o en la web?",
+ * "¿SINPE o transferencia?", "Tenemos SINPE y tarjeta, ¿cuál preferís?". Never a question about a payment already made
+ * ("¿Ya pudiste pagar por SINPE?", "¿Hiciste el SINPE o la transferencia?"): the next "sinpe" there stays a claim.
+ */
+const METHOD_WORD = String.raw`(?:sinpe(?:\s+m[oó]vil)?|simpe|transferencias?|tarjetas?|efectivo|contra\s?entrega)`
+const METHOD_QUESTION_EXTRA_RES = [
+  new RegExp(
+    String.raw`(?<![\p{L}])(?:prefer[ií]s|prefiere|prefieren|quer[eé]s|quiere|quieren|te\s+gustar[ií]a|le\s+gustar[ií]a|vas\s+a|va\s+a)\s+pagar(?:lo|la|los|las)?\s+(?:(?:por|con|mediante|v[ií]a|en)(?![\p{L}])|contra\s?entrega|al\s+recibir)[^?¿.!\n]{0,100}\?`,
+    'iu',
+  ),
+  new RegExp(String.raw`(?<![\p{L}])pag[aá]s\s+(?:(?:por|con|en)(?![\p{L}])|contra\s?entrega|al\s+recibir)[^?¿.!\n]{0,100}\?`, 'iu'),
+  new RegExp(String.raw`¿\s*(?:(?:y\s+)?(?:por|con|en)\s+)?${METHOD_WORD}[^?¿.!\n]{0,60}(?<![\p{L}])o(?![\p{L}])[^?¿.!\n]{0,60}\?`, 'iu'),
+]
+/** "¿Cuál preferís?" counts only in a message that names at least two methods. */
+const WHICH_ONE_RE = /¿\s*(?:y\s+)?cu[aá]l\s+(?:prefer[ií]s|prefiere|prefieren|te\s+sirve|le\s+sirve|te\s+queda\s+mejor|le\s+queda\s+mejor)[^?¿.!\n]{0,40}\?/iu
+const METHOD_WORD_G = new RegExp(String.raw`(?<![\p{L}])${METHOD_WORD}(?![\p{L}])`, 'giu')
+/**
+ * Done / sent words: a message about a payment already made is never the method question. Verifier r1: checked on the
+ * WHOLE message ("¿Pudiste hacer el pago? ¿Por SINPE o transferencia?", "Si ya pagaste, ¿por SINPE…?").
+ */
+// SecureDog r1 INT-164: also the store talking about a payment it saw ("Gracias por el comprobante", "Vi un depósito",
+// "Me aparece un pago de…", "para registrar tu pago"). Verifier r2 #8: "ya" only with a done verb ("ya pagaste", "ya lo
+// hiciste"), so "¡Listo! Ya te lo aparto. ¿Querés pagar por SINPE?" still counts.
+const METHOD_QUESTION_DONE_RE =
+  /(?<![\p{L}])(?:ya\s+(?:(?:me|te|se|nos|le|les)\s+)?(?:(?:lo|la|los|las)\s+)?(?:\p{L}+(?:aste|aron|ó|iste|ieron|ió|é|í)|hice|hizo|pude|pudo)|\p{L}{2,}(?:aste|iste|aron|ieron)|canceló|abonó|cobró|rebajó|sinpeó|pasaste|pasaron|pasó|tiraste|tiró|tiraron|descontaron|descontó|depositó|mandó|envió|transfirió|¿\s*(?:ya\s+est[aá]|list[oa])\s*\?|hiciste|hicieron|hizo|pagaste|pagaron|pag[oó]|mandaste|mandaron|enviaste|enviaron|realizaste|pudiste|pudo|transferiste|depositaste|usaste|us[oó]|usaron|fue|comprobantes?|captura|pantallazo|dep[oó]sitos?|pago\s+de|aparec\p{L}*|registr\p{L}*|recib(?:í|i|iste|ió|io|imos|ieron|ido|ida)|vi|vimos|revis\p{L}*|no\s+(?:hay\s+(?:nada|ning\p{L}*|registro|pago|movimiento\p{L}*|transferencia|sinpe|dep[oó]sito)|veo|encuentro|aparece|me\s+aparece)|todav[ií]a\s+no|a[uú]n\s+no|no\s+\p{L}+\s+a[uú]n|lleg[oó]|entr[oó]|cay[oó]|qued[oó])(?![\p{L}])/iu
+
+/** The store asked HOW the customer wants to pay (the original wordings, or C1's other question shapes). Pure. */
+export function isPaymentMethodQuestion(text: string): boolean {
+  const t = text || ''
+  if (PAYMENT_METHOD_ASKED_RE.test(t)) return true
+  // The wider shapes only in a message with no done / sent word anywhere (fail closed: a person).
+  if (METHOD_QUESTION_DONE_RE.test(t)) return false
+  for (const re of METHOD_QUESTION_EXTRA_RES) {
+    if (re.test(t)) return true
+  }
+  const which = WHICH_ONE_RE.exec(t)
+  if (which) {
+    const named = new Set([...t.matchAll(METHOD_WORD_G)].map((x) => x[0].toLowerCase().slice(0, 5)))
+    if (named.size >= 2) return true
+  }
+  return false
+}
 
 /**
  * efectivo is its own method when the store offers it; otherwise, when contra entrega is offered, it means paying the
@@ -153,7 +216,7 @@ export function carriedOrderMethod(history: SoftAiHistoryMessage[], inboundText:
   let at = -1
   for (let i = history.length - 1; i >= 0; i -= 1) {
     const m = history[i]
-    if (m.direction === 'outbound' && PAYMENT_METHOD_ASKED_RE.test(m.content || '')) {
+    if (m.direction === 'outbound' && isPaymentMethodQuestion(m.content || '')) {
       at = i
       break
     }
@@ -172,7 +235,7 @@ export function carriedOrderMethod(history: SoftAiHistoryMessage[], inboundText:
 export function methodQuestionPending(outbound: readonly string[]): boolean {
   // Only the store's last 3 messages (one reply = up to 3 parts): an old question is not pending anymore.
   const recent = outbound.slice(-3)
-  const at = recent.map((m) => PAYMENT_METHOD_ASKED_RE.test(m)).lastIndexOf(true)
+  const at = recent.map((m) => isPaymentMethodQuestion(m)).lastIndexOf(true)
   return at >= 0 && !recent.slice(at).some((m) => paymentDetailsIn(m) || ORDER_BLOCK_RE.test(m))
 }
 
@@ -297,11 +360,11 @@ const NEXT_STEP: Record<SalesStage, string> = {
   saludo: 'Saludá corto (con tu nombre si es el primer mensaje), respondé lo que preguntó y hacé UNA pregunta para entender qué busca.',
   descubrir: 'Entendé qué necesita (producto, talla/modelo, para cuándo) con UNA pregunta. Recomendá el producto que encaja.',
   cotizar:
-    'Ya cotizaste: no repitas precio ni envío. Resolvé la duda puntual y llevá al cierre: preguntá si lo quiere o qué le falta para decidir.',
+    'Ya cotizaste: no repitas precio ni envío por tu cuenta, pero si el cliente los vuelve a preguntar, decíselos de nuevo (breve; nunca "ya te lo compartí"). Resolvé la duda puntual y llevá al cierre: preguntá si lo quiere o qué le falta para decidir.',
   pedido_en_revision:
     'Ya pasaste el pedido a la tienda para que lo revise (contra entrega / efectivo): no pidas comprobante ni datos de pago. Respondé breve lo que pregunte y decí que enseguida lo revisamos.',
   cierre:
-    'Respondé primero lo que preguntó (breve). Después CERRÁ: dá el total (precio + envío) en un mensaje, pedí los datos del pedido con la lista fija de "Datos que necesita un pedido" (un dato por renglón), y preguntá cómo prefiere pagar ofreciendo los métodos configurados (la pregunta de pago de abajo). Todavía no des datos de pago. No repitas precio/envío salvo el total final una vez.',
+    'Respondé primero lo que preguntó (breve). Después CERRÁ en este orden, cada cosa en su propio mensaje: 1) el total (precio + envío); 2) pedí los datos del pedido con la lista fija de "Datos que necesita un pedido" (un dato por renglón); 3) AL FINAL, en su propio mensaje, preguntá cómo prefiere pagar con la pregunta de pago de abajo, nunca antes de la lista de datos (aunque pregunte cómo comprar o cómo pagar). Si ya te mandó los datos, solo la pregunta de pago. Todavía no des datos de pago. No repitas precio/envío salvo el total final una vez.',
   metodo_pago:
     'Esperá que elija el método de pago; si preguntó otra cosa, respondé y volvé a preguntar (la pregunta de pago de abajo). No des datos de pago hasta que elija.',
   esperando_comprobante:
@@ -309,6 +372,10 @@ const NEXT_STEP: Record<SalesStage, string> = {
   verificando:
     'El cliente dice que ya pagó o mandó comprobante: agradecé y decí que lo revisás y le confirmás. Nunca confirmés el pago vos.',
 }
+
+/** The customer wants a product that is AGOTADO: no close for it (no total, data or payment question). */
+const SOLD_OUT_STEP =
+  'Lo que pide está AGOTADO: decilo claro y corto, con el "vuelve aprox." de la lista si lo tiene (si no, decí que todavía no hay fecha; nunca des una fecha). Ofrecé UN producto disponible de la lista si le sirve para lo mismo. No cierres ese producto: no des total, no pidas datos del pedido ni preguntes cómo pagar hasta que elija uno disponible.'
 
 export function deriveSalesState(input: {
   history: SoftAiHistoryMessage[]
@@ -320,7 +387,7 @@ export function deriveSalesState(input: {
   const ours = input.history.filter((m) => m.direction === 'outbound').map((m) => m.content || '')
   const oursText = ours.join('\n')
   const oursAmounts = new Set(ours.flatMap((m) => amountsIn(m)))
-  const catalogPrices = [...(input.ctx.catalog ?? []), ...(input.ctx.bundles ?? [])].map((c) => Math.round(c.price))
+  const catalogPrices = [...(input.ctx.catalog ?? []).filter((c) => !c.soldOut), ...(input.ctx.bundles ?? [])].map((c) => Math.round(c.price))
   const shipPrices = input.ctx.shippingMethods.map((s) => Math.round(s.price)).filter((p) => p > 0)
 
   const said = {
@@ -386,8 +453,22 @@ export function deriveSalesState(input: {
     last,
   ]
   const quantities = [...new Set(recentInbound.flatMap((t) => requestedQuantities(t)))].sort((a, b) => a - b)
-  const nextStep = stage === 'metodo_pago' && chosenMethod ? chosenMethodStep(input.ctx, chosenMethod) : NEXT_STEP[stage]
+  // Out-of-stock switch (advisor): "la quiero" on a sold-out product must not turn into the close (data / payment).
+  const focus = input.ctx.stock
+    ? soldOutFocus(
+        [{ direction: 'inbound' as const, content: last }, ...input.history.map((m) => ({ direction: m.direction, content: m.content || '' })).reverse()],
+        input.ctx.stock,
+      )
+    : null
+  const closing = stage === 'cierre' || stage === 'metodo_pago'
+  const nextStep =
+    focus && closing
+      ? SOLD_OUT_STEP
+      : stage === 'metodo_pago' && chosenMethod
+        ? chosenMethodStep(input.ctx, chosenMethod)
+        : NEXT_STEP[stage]
   return {
+    soldOutFocus: focus,
     stage,
     said,
     buyCue,
@@ -472,7 +553,22 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
   const lines: string[] = ['<BETSY_DATOS>']
   if (ctx.catalog?.length) {
     lines.push('Productos que vendés (precio y stock en vivo; son tus ÚNICOS precios válidos):')
-    for (const c of ctx.catalog) lines.push(`- ${oneLine(c.name, 120)}: ${money(c.price)} · ${c.stockLabel}`)
+    // SecureDog L1: product names (and the sold-out label with the owner's note) are data — no Betsy look-alike markers.
+    for (const c of ctx.catalog) {
+      const name = oneLine(stripBetsyLookalikes(c.name), 120)
+      const label = oneLine(stripBetsyLookalikes(c.stockLabel), 160)
+      lines.push(c.soldOut ? `- ${name}: ${label}` : `- ${name}: ${money(c.price)} · ${label}`)
+    }
+  }
+  // Sold-out products beyond the inline list (search_inventory stores): named here so the agent never offers them.
+  const inlineSold = new Set((ctx.catalog ?? []).filter((c) => c.soldOut).map((c) => c.name))
+  const extraSold = (ctx.stock?.soldOut ?? []).filter((s) => !inlineSold.has(s.name)).slice(0, 20)
+  if (!ctx.catalog?.length && extraSold.length) {
+    lines.push('Productos AGOTADOS ahora (no los ofrezcas ni tomes el pedido; sin precio):')
+    for (const s of extraSold) lines.push(`- ${oneLine(stripBetsyLookalikes(s.name), 120)}: ${s.back ? oneLine(stripBetsyLookalikes(s.back), 90) : 'sin fecha de regreso: no des fecha'}`)
+  }
+  if (state.soldOutFocus) {
+    lines.push(`Lo que pide ahora («${oneLine(stripBetsyLookalikes(state.soldOutFocus), 120)}») está AGOTADO.`)
   }
   if (ctx.bundles?.length) {
     lines.push('Combos (dato del dueño; precio total del combo; únicos precios de combo válidos, no calcules otros ni hables de ahorro):')
@@ -503,10 +599,10 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
     `Etapa: ${state.stage}. Siguiente paso: ${state.nextStep}`,
   )
   // agents2-format: the method question is built by code from the configured methods (never a dump of every number).
-  if (ctx.paymentShareable && (state.stage === 'cierre' || (state.stage === 'metodo_pago' && !state.chosenMethod))) {
+  if (ctx.paymentShareable && !state.soldOutFocus && (state.stage === 'cierre' || (state.stage === 'metodo_pago' && !state.chosenMethod))) {
     lines.push(`Pregunta de pago (usala tal cual, en su propio mensaje): «${salesMethodQuestion(ctx)}»`)
   }
-  if ((state.stage === 'cierre' || state.stage === 'metodo_pago' || state.stage === 'esperando_comprobante') && !ctx.paymentShareable) {
+  if (closingFor(state) && !ctx.paymentShareable) {
     // Payment data not shareable by chat: never promise data nobody will send — notify the team (silently).
     lines.push(
       'Los datos de pago NO se comparten por chat: pedí los datos del pedido y llamá escalate_to_human(payment_or_sinpe) para que el equipo se los envíe. Al cliente decile solo que enseguida le pasás cómo pagar.',
@@ -520,6 +616,7 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
 export function salesNeedsHuman(ctx: SalesContext, state: SalesState): boolean {
   // Any receipt cue → a person checks it, whatever the model writes (re-check INT-70).
   if (state.receiptCue) return true
+  // SecureDog L4: fail toward the person — a missed name match must never drop the team follow-up at the close.
   return closingStage(state.stage) && !ctx.paymentShareable
 }
 
@@ -528,12 +625,18 @@ function closingStage(stage: SalesStage): boolean {
   return stage === 'cierre' || stage === 'metodo_pago' || stage === 'esperando_comprobante'
 }
 
+/** A close that is really happening: not one for a sold-out product (no payment data, no team hand-off for it). */
+function closingFor(state: SalesState): boolean {
+  if (state.soldOutFocus && state.stage !== 'esperando_comprobante') return false
+  return closingStage(state.stage)
+}
+
 /**
  * Agentes IA 2.0 (B7): the close with payment data that is not shared by chat. The customer hears "Enseguida te paso
  * cómo pagar 😊", the team is asked to send the data, and the chat stays on IA (never a silent draft, never a flip).
  */
 export function salesCloseWithoutPaymentData(ctx: SalesContext, state: SalesState): boolean {
-  return !state.receiptCue && closingStage(state.stage) && !ctx.paymentShareable
+  return !state.receiptCue && closingFor(state) && !ctx.paymentShareable
 }
 
 /**
@@ -617,8 +720,15 @@ export function salesSystemBlock(ctx: SalesContext): string {
  * Amounts the agent may write: product prices, shipping prices and one product + its shipping; listed combos
  * (+ one shipping unless the owner marked it as including shipping). Never a free-shipping threshold (INT-84).
  */
+/** What the reply checks need about stock this turn (null = nothing sold out: no check). */
+export function salesStockGuard(ctx: SalesContext, state: SalesState | null): StockGuard | null {
+  if (!ctx.stock || ctx.stock.soldOut.length === 0) return null
+  return { ...ctx.stock, focus: Boolean(state?.soldOutFocus) }
+}
+
 export function salesAllowedAmounts(ctx: SalesContext): number[] {
-  const prices = (ctx.catalog ?? []).map((c) => Math.round(c.price))
+  // Sold-out prices are not quotable (their lines show none); a price an on-sale product shares stays valid.
+  const prices = (ctx.catalog ?? []).filter((c) => !c.soldOut).map((c) => Math.round(c.price))
   const ships = ctx.shippingMethods.map((s) => Math.round(s.price))
   const out = new Set<number>([...prices, ...ships])
   // Unit price + one shipping only (INT-72): any other total must come from code, never the model's own math.
@@ -673,19 +783,39 @@ export function salesAllowedDeals(ctx: SalesContext): Array<'free_shipping' | 's
  */
 export function salesFreeShippingRule(
   ctx: SalesContext,
-): { includedPrices: number[]; otherNames: string[]; bundleWords: string[]; nameNotes: string[] } | null {
+): {
+  includedPrices: number[]
+  otherNames: string[]
+  bundleWords: string[]
+  nameNotes: string[]
+  freeOver?: number
+  unitPrices?: number[]
+} | null {
   const includedPrices = (ctx.bundles ?? []).filter((b) => b.shippingIncluded).map((b) => Math.round(b.price))
-  if (!includedPrices.length) return null
-  const firstWord = (name: string) => (name.trim().split(/[\s\-–—]+/)[0] || '').toLowerCase()
+  // Pura Sonrisa P2: the store's own "envío gratis desde ₡X" threshold (brand facts), when it has one.
+  const freeOver = typeof ctx.freeShippingOver === 'number' && ctx.freeShippingOver > 0 ? Math.round(ctx.freeShippingOver) : undefined
+  if (!includedPrices.length && freeOver === undefined) return null
+  const words = (name: string) =>
+    name
+      .trim()
+      .split(/[\s\-–—]+/)
+      .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '').toLowerCase())
+      .filter(Boolean)
+  const firstWord = (name: string) => words(name)[0] || ''
   // The owner's own word for a bundle ("Combo", "Pack", "Kit"): first word of each bundle name.
   const bundleWords = [...new Set((ctx.bundles ?? []).map((b) => firstWord(b.name)).filter((w) => /^\p{L}{3,}$/u.test(w)))]
-  // First word of each catalog item ("Focus", "GLP"): naming one next to "envío incluido" is not a combo fact (INT-91).
+  // The distinguishing word of each catalog item ("Focus", "GLP"): naming one next to "envío incluido" is not a combo
+  // fact (INT-91). Pura Sonrisa P1: words EVERY item shares (the brand: "Pura Sonrisa Menta / Fresa …") are skipped, so
+  // the brand name itself never counts as "another product".
   // A one-product store has no OTHER item to stretch the fact to: its bundles are of that product (Sleeping).
   const catalog = ctx.catalog ?? []
+  const shared = catalog.length > 1 ? new Set(words(catalog[0].name).filter((w) => catalog.every((c) => words(c.name).includes(w)))) : new Set<string>()
+  const distinguishing = (name: string) => words(name).find((w) => !shared.has(w)) || ''
   const otherNames =
     catalog.length > 1
-      ? [...new Set(catalog.map((c) => firstWord(c.name)).filter((w) => w.length >= 3 && !bundleWords.includes(w)))]
+      ? [...new Set(catalog.map((c) => distinguishing(c.name)).filter((w) => w.length >= 3 && !bundleWords.includes(w)))]
       : []
+  const unitPrices = catalog.map((c) => Math.round(c.price)).filter((p) => p > 0)
   // Bracketed notes that are part of the owner's own names ("(60 noches)", "(3 paquetes a elección)").
   const nameNotes = [
     ...new Set(
@@ -694,7 +824,7 @@ export function salesFreeShippingRule(
       ),
     ),
   ]
-  return { includedPrices, otherNames, bundleWords, nameNotes }
+  return { includedPrices, otherNames, bundleWords, nameNotes, ...(freeOver !== undefined ? { freeOver, unitPrices } : {}) }
 }
 
 const MEDIA_LIKE_TYPES = new Set(['image', 'document', 'audio', 'video', 'voice', 'sticker'])
@@ -712,4 +842,225 @@ export function mediaAwaitingReceipt(messageType: string | null | undefined, his
 
 export function isMediaLikeMessageType(messageType: string | null | undefined): boolean {
   return MEDIA_LIKE_TYPES.has(messageType || '')
+}
+
+/** A web order or an order / reference number the customer wrote ("ORD-1234", "pedido #55", "pedí en la web"). */
+const WEB_ORDER_RE = /(?<![\p{L}])(?:ord-?\s?\d|pedido\s*#?\s*\d|#\s?\d{3,}|(?:p[aá]gina|web|sitio|tienda\s+en\s+l[ií]nea))/iu
+
+/**
+ * Sleeping exam C2: nothing about paying happened in this chat yet — the store sent no payment details / order block,
+ * the customer sent no photo / file / audio (a receipt), wrote no payment word, no payment claim and no web order or
+ * order number. Only then is a bare "Para confirmar el pedido" / "¿me confirmás?" an ordinary sales message. Pure;
+ * live and Probar pass the same history (with messageType where known).
+ */
+/** The store talked about paying at all: payment words, a receipt, "te paso cómo pagar", or a phone-like number. */
+// SecureDog r2 INT-161: also an order the store already handles ("Gracias por tu compra", "Tu pedido va en camino").
+const STORE_PAYMENT_TALK_RE =
+  /comprobante|c[oó]mo\s+pagar|datos\s+de\s+pago|(?<!\d)\d{4}[\s.-]?\d{4}(?!\d)|compra|en\s+camino|despach\p{L}*|enviad[oa]|(?:tu|su)\s+(?:pedido|orden)|#\s?\d/iu
+/**
+ * Verifier r1 #6: only a short chat can be known to have "no payment yet" — the live history is a window of the newest
+ * rows, so in a longer chat earlier payment messages may be out of view (fail closed: a person).
+ */
+const NO_PAYMENT_YET_MAX_MESSAGES = 20
+/** The store's greeting / intro: it starts with a greeting ("¡Hola!", "Buenas", "Bienvenid@", "Pura vida"). */
+/** SecureDog r4 INT-169: a store line waiting on the customer or handing data elsewhere ("te paso los datos por privado"). */
+const STORE_PENDING_RE = /(?<![\p{L}])(?:privado|av[ií]s\p{L}*|esper\p{L}*|te\s+paso|le\s+paso|datos|cuando\s+(?:est[eé]|puedas|lo\s+hagas|tengas))(?![\p{L}])/iu
+const STORE_GREETING_RE = /^[¡!\s]*(?:hol+a|buen[oa]s|buen\s+d[ií]a|bienvenid\p{L}*|pura\s+vida|saludos|soy\s+\p{L}+)(?![\p{L}])/iu
+
+/** SecureDog r1 INT-161: "ya compré", "compré por Instagram", "mi número de orden es 4521", "ahí les va", "ya está". */
+const ALREADY_BOUGHT_RE =
+  /(?<![\p{L}])(?:compr[eé]|compramos|compraron|ped[ií]\s+(?:por|en|online|ayer)|n[uú]mero\s+de\s+(?:orden|pedido|compra)|orden\s*#?\s*\d|ah[ií]\s+(?:les|le|te)\s+va|ya\s+est[aá]|list[oa]\s*,?\s*ya)(?![\p{L}])/iu
+const MEDIA_PLACEHOLDER_RE = /^\s*\[(?:imagen|image|foto|archivo|document|documento|audio|video|voice|sticker)[^\]]*\]\s*$/iu
+
+/**
+ * The live / Probar caller passes the history, the earlier bubbles of this burst AND the trigger itself (SecureDog r1
+ * MEDIA-16: a receipt photo sent as the newest bubble). Text is read normalised (NFKC, format characters removed).
+ */
+export function noPaymentYet(history: ReadonlyArray<{ direction: string; content?: string | null; messageType?: string | null }>): boolean {
+  if (history.length >= NO_PAYMENT_YET_MAX_MESSAGES) return false
+  // SecureDog r3 INT-169: the store side is an allowlist too — nothing written yet, or only its one greeting / intro
+  // ("¡Hola! Soy Vale de … ¿En qué te ayudo?"). "¿Ya lo hiciste?", "Te paso los datos por privado" end it.
+  const outIdx = history.map((m, i) => (m.direction === 'outbound' ? i : -1)).filter((i) => i >= 0)
+  // Verifier r6 #2: the first store turn may be several parts (rows) with no customer message between them.
+  if (outIdx.length > 3 || (outIdx.length > 0 && outIdx[outIdx.length - 1] - outIdx[0] !== outIdx.length - 1)) return false
+  if (outIdx.length > 0 && !STORE_GREETING_RE.test(stripFormatChars((history[outIdx[0]].content || '').normalize('NFKC')).trim())) return false
+  for (const i of outIdx) {
+    const t = stripFormatChars((history[i].content || '').normalize('NFKC'))
+    if (hasPaymentStatusHint(t) || METHOD_QUESTION_DONE_RE.test(t) || STORE_PENDING_RE.test(t)) return false
+  }
+  for (const m of history) {
+    const text = stripFormatChars((m.content || '').normalize('NFKC'))
+    // Any bubble that is not plain text, from either side (SecureDog r2 MEDIA-17: 'unsupported', 'share', 'unknown' too).
+    if ((m.messageType && m.messageType !== 'text') || MEDIA_PLACEHOLDER_RE.test(text)) return false
+    // SecureDog r2 INT-161: any money word from either side ("le transfiero", "la plata", "el simpe", "les cancelo", ₡,
+    // "mil", 4+ digits — the same broad list as the "¿ya pagó?" check gate).
+    if (MONEY_WORDS_RE.test(text) || /(?<![\p{L}])simp\p{L}*/iu.test(text)) return false
+    if (m.direction === 'outbound') {
+      // Verifier r1 #6: ANY payment talk from the store (the method question too), not only filled-in details; any price.
+      if (paymentDetailsIn(text) || ORDER_BLOCK_RE.test(text) || PAYMENT_WORDS_RE.test(text) || STORE_PAYMENT_TALK_RE.test(text) || /\d{3,}/.test(text)) return false
+      continue
+    }
+    // SecureDog r2 INT-159 / INT-161: an ALLOWLIST — every customer message is courtesy only ("Hola", "gracias", "ok")
+    // or the bare confirm ask itself. Anything else (a status hint, "ya compré", a web order, a question) ends it.
+    if (hasPaymentWord(text) || WEB_ORDER_RE.test(text) || ALREADY_BOUGHT_RE.test(text) || hasPaymentStatusHint(text)) return false
+    if (!isCourtesyText(text) && !isBareOrderConfirmAsk(text)) return false
+  }
+  return true
+}
+
+/** The store already asked for the order data (the fixed list or an inline "nombre completo … teléfono" request). */
+function orderDataAsked(outbound: readonly string[]): boolean {
+  return outbound.some((t) => /nombre\s+completo/iu.test(t) && /tel[eé]fono/iu.test(t))
+}
+
+/** The customer already sent order data: a phone number, or a message of 3+ lines (name / place / address). */
+function customerGaveOrderData(inbound: readonly string[]): boolean {
+  return inbound.some((t) => /(?<!\d)\d{4}[\s.-]?\d{4}(?!\d)/.test(t) || t.split('\n').filter((l) => l.trim()).length >= 3)
+}
+
+/**
+ * The customer picks it up: "retiro", "lo recojo", "paso por él / por ahí / a la tienda", "pickup". Verifier r1: never
+ * "te paso la dirección / el número" (that is sending data, for a delivery).
+ */
+const PICKUP_CUE_RE =
+  /(?<![\p{L}])(?:retir\p{L}*|recog\p{L}*|(?<!(?:te|le|les|se\s+l[oa]s?)\s)paso\s+(?:por\s+(?:él|ella|ellos|ellas|ah[ií]|all[aá]|la\s+tienda|el\s+local)|a\s+(?:recoger\p{L}*|retirar\p{L}*|traer\p{L}*|buscar\p{L}*|la\s+tienda|el\s+local))|pickup)(?![\p{L}])/iu
+/** A store whose every shipping method is a pickup ("Retiro en tienda") only ever needs the pickup list. */
+const PICKUP_METHOD_RE = /retir|recog|pick\s?up|en\s+tienda/iu
+
+/**
+ * Sleeping exam C6 (Rafael 2026-10-16: total + data list first, the payment question after, in its own message): at the
+ * close, before any payment details, when the store has not asked for the order data yet and the customer has not sent
+ * it, the reply must carry the data list BEFORE the method question. Which list: pickup when the customer talks about
+ * picking it up, else shipping. Null = nothing to order. Pure.
+ * Pura Sonrisa exam: not only at the detected close — "Quiero el combo de menta y fresa con envío a San José" has no
+ * buy cue the state knows, yet the model asked "¿Cómo preferís pagar?" without the list. Any stage before payment
+ * counts; the reply is only touched when it actually asks the payment method.
+ */
+const DATA_LIST_STAGES: ReadonlySet<SalesStage> = new Set(['saludo', 'descubrir', 'cotizar', 'cierre'])
+/** Verifier r2 #7: outside the detected close, a want / order cue ("Quiero el combo…", "me interesa", "deme 2"). */
+const WANT_CUE_RE = /(?<![\p{L}])(?:quiero|quisiera|me\s+interesa|me\s+llevo|dame|deme|d[eé]me|ocupo|necesito|me\s+gustar[ií]a\s+(?:pedir|comprar|el|la|los|las|un|una)|lo\s+pido|la\s+pido)(?![\p{L}])/iu
+export function salesDataListFirst(
+  state: SalesState,
+  history: SoftAiHistoryMessage[],
+  inboundText: string,
+  ctx?: Pick<SalesContext, 'shippingMethods'> | null,
+): 'shipping' | 'pickup' | null {
+  if (!DATA_LIST_STAGES.has(state.stage) || state.said.payment || state.said.order || state.said.howToBuy) return null
+  const outbound = history.filter((m) => m.direction === 'outbound').map((m) => m.content || '')
+  if (orderDataAsked(outbound)) return null
+  const inbound = [...history.filter((m) => m.direction === 'inbound').map((m) => m.content || ''), inboundText || '']
+  // Not at the greeting of someone only looking ("solo estoy viendo precios, ¿cómo funciona el pago?").
+  if (state.stage !== 'cierre' && !inbound.slice(-3).some((t) => WANT_CUE_RE.test(t))) return null
+  if (customerGaveOrderData(inbound)) return null
+  const methods = ctx?.shippingMethods ?? []
+  if (methods.length > 0 && methods.every((m) => PICKUP_METHOD_RE.test(`${m.name} ${m.coverage || ''}`))) return 'pickup'
+  return inbound.slice(-4).some((t) => PICKUP_CUE_RE.test(t)) ? 'pickup' : 'shipping'
+}
+
+const DATA_LIST_LEAD = { shipping: 'Para coordinar el envío, pasame estos datos:', pickup: 'Para el retiro, pasame estos datos:' } as const
+
+/** Verifier r2 #3: a data item STARTS with the field word ("- Nombre completo"); "- Contra entrega (… tu dirección)" is not. */
+const DATA_ITEM_RE =
+  /^\s*(?:[-•*–]|\d{1,2}[.)])\s+(?:\p{Extended_Pictographic}️?\s*)?(?:nombre|apellidos?|n[uú]mero\s+de\s+tel[eé]fono|tel[eé]fono|celular|correo|e-?mail|provincia|cant[oó]n|distrito|direcci[oó]n|se[nñ]as)(?![\p{L}])/iu
+const isDataItem = (l: string) => DATA_ITEM_RE.test(l)
+const isInlineDataAsk = (l: string) => !/^\s*(?:[-•*–]|\d{1,2}[.)])\s+/.test(l) && /nombre\s+completo/iu.test(l) && /tel[eé]fono/iu.test(l)
+
+/** The sentences of one line before the payment question (`next` = the line after, for a two-line question). */
+function splitAtQuestion(line: string, next: string | null): { head: string; tail: string } {
+  const sentences = line.split(/(?<=[.!?…])\s+/u).filter((s) => s.trim())
+  let j = 0
+  for (let i = sentences.length - 1; i >= 0; i -= 1) {
+    const suffix = sentences.slice(i).join(' ')
+    if (isPaymentMethodQuestion(next === null ? suffix : `${suffix}\n${next}`)) {
+      j = i
+      break
+    }
+  }
+  const tail = sentences.slice(j).join(' ').trim()
+  return { head: sentences.slice(0, j).join(' ').trim(), tail: next === null ? tail : `${tail}\n${next}`.trim() }
+}
+
+/**
+ * C6: reorder (or complete) a closing reply so the data list comes before the payment-method question: the text before
+ * the question first, then the list (moved — also out of the question's own message, Verifier r1 #3 — or the fixed one
+ * added), then the question and whatever followed it, in its own message. The text before the question becomes ONE
+ * message when `fits` says it fits (Verifier r2 #5: the question gets its own message); otherwise it keeps its breaks
+ * and, past 3 messages, the list and the question share the last one (list first). A reply with no method question, or
+ * with payment details / tokens in it, is left as written. Pure.
+ */
+export function dataListBeforePaymentQuestion(text: string, kind: 'shipping' | 'pickup', fits?: (message: string) => boolean): string {
+  const value = (text || '').replace(/\r\n?/g, '\n').trim()
+  if (!value || /\[\[?\s*(?:DATOS|PAGO)/iu.test(value) || paymentDetailsIn(value)) return text
+  const lines = value.split('\n')
+  const list = new Set<number>()
+  const items = lines.map((l, i) => (isDataItem(l) ? i : -1)).filter((i) => i >= 0)
+  // At least two field items make a data list (one stray "- Dirección…" line is not one).
+  if (items.length >= 2) items.forEach((i) => list.add(i))
+  lines.forEach((l, i) => {
+    if (isInlineDataAsk(l)) list.add(i)
+  })
+  // The list's lead-in ("Para coordinar el envío, pasame estos datos:") travels with it.
+  const firstItem = items.length >= 2 ? items[0] : undefined
+  if (firstItem !== undefined) {
+    let k = firstItem - 1
+    while (k >= 0 && !lines[k].trim()) k -= 1
+    if (k >= 0 && /:\s*$/.test(lines[k]) && !isPaymentMethodQuestion(lines[k])) list.add(k)
+  }
+  // The question: one line, or two lines together ("Tenemos SINPE y tarjeta.\n¿Cuál preferís?").
+  let q = lines.findIndex((l, i) => !list.has(i) && isPaymentMethodQuestion(l))
+  let qEnd = q
+  if (q < 0) {
+    q = lines.findIndex((l, i) => !list.has(i) && !list.has(i + 1) && i + 1 < lines.length && isPaymentMethodQuestion(`${l}\n${lines[i + 1]}`))
+    qEnd = q + 1
+  }
+  if (q < 0) return text
+  if (list.size && Math.min(...list) < q) {
+    // Pura Sonrisa P7: list first is right, but the question goes in its OWN message — when it shares the list's
+    // message (no blank line between the last list line and the question), split it there.
+    const lastList = Math.max(...[...list].filter((i) => i < q))
+    if (lines.slice(lastList + 1, q).some((l) => !l.trim())) return text
+    const { head, tail } = splitAtQuestion(lines[q], qEnd > q ? lines[qEnd] : null)
+    const before = [...lines.slice(0, q), head].filter((l, k, a) => k < a.length - 1 || l).join('\n').replace(/\n+$/u, '')
+    const after = [tail, ...lines.slice(qEnd + 1)].join('\n').trim()
+    return `${before}\n\n${after}`
+  }
+  // Split the question's line at the question (Verifier r2 #9: also for a two-line question).
+  const { head, tail } = splitAtQuestion(lines[q], qEnd > q ? lines[qEnd] : null)
+  const keep = (from: number, to: number) => lines.slice(from, to).filter((l, k) => !list.has(from + k) && l.trim())
+  const frontBlocks = [
+    lines
+      .slice(0, q)
+      .filter((_, k) => !list.has(k))
+      .join('\n')
+      .replace(/\n[ \t]*\n(?:[ \t]*\n)*/g, '\n\n')
+      .trim(),
+    head,
+  ]
+    .filter(Boolean)
+    .join('\n')
+  const merged = frontBlocks.replace(/\n[ \t]*\n+/g, '\n')
+  const front = fits && merged !== frontBlocks && fits(merged) ? merged : frontBlocks
+  const listPart = list.size
+    ? [...list].sort((a, b) => a - b).map((i) => lines[i]).join('\n')
+    : `${DATA_LIST_LEAD[kind]}\n${kind === 'pickup' ? PICKUP_DATA_LIST : SHIPPING_DATA_LIST}`
+  const back = [tail, ...keep(qEnd + 1, lines.length)].filter(Boolean).join('\n')
+  return [front, listPart, back].filter(Boolean).join('\n\n')
+}
+
+/** "(90 noches)", "30 parches", "(60 dosis)" in an owner's product / combo name. */
+// Verifier r4 #3: never a product count after "los / las" ("Combo Full House (los 5 parches)" = 5 products).
+const NAME_UNIT_COUNT_RE = /(?<![\d.,])(?<!(?:los|las)\s)(\d{1,4})\s*(noches?|d[ií]as?|parches?|usos?|aplicaci[oó]n(?:es)?|dosis)(?![\p{L}])/iu
+
+/**
+ * Sleeping exam C3 (SecureDog r1 INT-162): the store's own per-unit rates — a product / combo price with the count its
+ * NAME carries ("Pack 3 bolsas (90 noches)" ₡28 500). The only source of a per-night amount the agent may say. Pure.
+ */
+export function salesUnitRates(ctx: SalesContext): Array<{ price: number; count: number; unit: string; name: string }> {
+  const out: Array<{ price: number; count: number; unit: string; name: string }> = []
+  for (const item of [...(ctx.catalog ?? []), ...(ctx.bundles ?? [])]) {
+    const m = NAME_UNIT_COUNT_RE.exec(item.name || '')
+    const price = Math.round(item.price)
+    if (m && price > 0 && Number(m[1]) >= 2) out.push({ price, count: Number(m[1]), unit: m[2].toLowerCase(), name: item.name })
+  }
+  return out
 }

@@ -156,9 +156,11 @@ export async function rearmFinishedJob(input: {
 }
 
 /**
- * Burst = one reply: is there a newer customer-message job in this chat that will answer the whole burst? Only a
- * pending / retry job created after this one (same tenant and chat). Checked before the model runs and again right
- * before the send: this job then stops as superseded and the newer one answers everything.
+ * Burst = one reply: is there a newer customer-message job in this chat that will answer the whole burst? A pending /
+ * retry job created after this one (same tenant and chat), or one already claimed and still inside its lease (live
+ * 2026-10-18: the newer job was already claimed and waiting out the burst window, so both replies went out). Checked
+ * before the model runs and again right before the send: this job then stops as superseded and the newer one answers
+ * everything. An expired lease does not count (a crashed worker never silences the older reply).
  */
 export async function newerBurstJobPending(
   row: Pick<ClaimedChatAutomationJob, 'id' | 'tenantId' | 'conversationId'>,
@@ -176,7 +178,7 @@ export async function newerBurstJobPending(
       conversationId: row.conversationId,
       id: { not: row.id },
       kind: SOFT_AI_JOB_KIND,
-      status: { in: ['pending', 'retry'] },
+      OR: [{ status: { in: ['pending', 'retry'] } }, { status: 'processing', leaseExpiresAt: { gt: new Date() } }],
       createdAt: { gt: self.createdAt },
       ...(triggerSentAt ? { message: { sentAt: { gte: triggerSentAt } } } : {}),
     },

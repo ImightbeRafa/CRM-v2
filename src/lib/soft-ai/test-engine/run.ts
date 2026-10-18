@@ -224,10 +224,12 @@ export async function buildSuite(tenantId: string, agent: { id: string; name: st
   // V4: no catch — a load failure must fail the run clearly, never build a different suite (and hash) silently.
   // An agent without a sales setup still gets a context (loadAgentSalesContext falls back to empty lists).
   const salesCtx = await loadAgentSalesContext({ tenantId, agentId: agent.id, inventoryItemIds: mapped, brandFacts: facts, strict: true })
+  const soldNames = new Set((salesCtx.stock?.soldOut ?? []).map((s) => s.name))
   return generateAgentSuite({
     agentName: agent.name,
     systemInstructions: agent.systemInstructions || '',
-    products: products.map((p) => ({ name: p.name, sellingPrice: Number(p.sellingPrice), currentStock: Number(p.currentStock) })),
+    // Out-of-stock switch (SQL 055): the same sold-out view the agent has (owner switch, stock 0 when stock is tracked).
+    products: products.map((p) => ({ name: p.name, sellingPrice: Number(p.sellingPrice), currentStock: Number(p.currentStock), soldOut: soldNames.has(p.name) })),
     foreignProduct: foreign ? { name: foreign.name, sellingPrice: Number(foreign.sellingPrice) } : null,
     payment: {
       shareable: canSharePaymentFacts(facts),

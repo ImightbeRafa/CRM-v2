@@ -37,6 +37,8 @@ export const IMMUTABLE_SAFETY_POLICY = [
   '15) Si buscás un pedido y no aparece (o no es de este cliente), no pasés el chat: pedile con amabilidad el número de pedido (o el nombre y teléfono con que compró). Nunca inventés un estado.',
   // agents2-format (Rafael 2026-10-16): readability is a fixed rule for every message.
   `16) Formato: ${WHATSAPP_FORMAT_RULE}`,
+  // Out-of-stock switch (Rafael 2026-10-18): a sold-out product is never offered, closed or given a made-up date.
+  '17) Producto AGOTADO (lo dice la lista o search_inventory): decilo claro y sin vueltas; si la lista trae "vuelve aprox.", decí exactamente eso; si no, decí que todavía no hay fecha (nunca inventes ni estimes una fecha). Si un producto disponible de la lista sirve para lo mismo, ofrecé ese. Nunca ofrezcas, cotices ni cierres un producto agotado (sin precio, sin datos del pedido, sin pago) y nunca prometas avisarle automáticamente.',
 ].join('\n')
 
 export type SoftAiHistoryMessage = {

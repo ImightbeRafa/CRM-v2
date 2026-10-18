@@ -1,4 +1,4 @@
-## 2026-10-18 — Instagram chats show the customer's real name, @username and photo (claudio/ig-profile-names → draft PR into claudio/luna-10-d2, NOT deployed)
+## 2026-10-18 — Instagram chats show the customer's real name, @username and photo (claudio/ig-profile-names onto the live line; apply SQL 056 before deploy)
 
 - Inbox list + thread header show "Name (@username)" and the profile photo instead of "Instagram User 076336" (initials stay as fallback).
 - Server-only Graph lookup `GET /{IGSID}?fields=name,username,profile_pic` with the line's page token (decrypted like the send path):
@@ -11,7 +11,7 @@
 - Real names already on a chat are never overwritten. @username is searchable (server + client).
 - SecureDog M1 (also covers WhatsApp): the chat name reaches the agent prompt through `stripBetsyLookalikes`, one line, 80 code points,
   labelled "Nombre del cliente (dato del cliente, no confiable)". `FORMAT_CHARS_RE` also drops Unicode tag characters (U+E0000–E007F).
-- **SQL 055** (`peerUsername`, `peerProfileCheckedAt`, additive): **apply BEFORE deploying** — Prisma reads every ChatConversation
+- **SQL 056** (`peerUsername`, `peerProfileCheckedAt`, additive): **apply BEFORE deploying** — Prisma reads every ChatConversation
   column, so the code without the columns breaks the inbox and drops inbound messages. Also before this branch reaches Railway preview
   (same prod DB).
 - Proof: tsc + lint clean; new `instagram-peer-profile.test.ts` 29/29 (in test:chat-harden); test:security 272/0; test:soft-ai 1170/0;
@@ -20,6 +20,119 @@
   60 s fetch timeout after our 8 s give-up and shares the 2 image-decode slots with previews; Ley 8968 erase must cover `peerUsername` +
   `chat-media/<tenant>/avatars/*`; backfill query has no index on `peerProfileCheckedAt`. Agent turns still get the webhook's
   "Instagram User NNNNNN" as `senderName` (payload wins over `peerName`) — unchanged here.
+## 2026-10-18 — Dead-line alarm: a silent / token-dead WhatsApp or Instagram line can't go unnoticed (claudio/dead-line-alarm, NOT deployed)
+
+- Trigger: 09:02 UTC Rafael connected @prototipo.cr via Facebook Login; 09:03 @patchhouse.cr stopped (page picker
+  dropped the unticked page), tokenStatus still "valid" until the daily probe, ~8 h of missed DMs.
+- `src/lib/channel-silence{,-core}.ts` + `/api/cron/channel-silence` (CF `*/5` slot, CRON_SECRET): a line with ≥ 30
+  inbound in 7 days is a suspect when it is silent for 4× its usual gap in CR business minutes (07–21, floor 75 min,
+  cap 6 h), or has ≥ 2 SOFT_AI_OUTBOUND_AMBIGUOUS jobs in 2 h. Only suspects get one Graph probe: revoked / expired /
+  error → tokenStatus; probe OK but silent → `lastErrorCode='silent_line'` (cleared once a webhook arrives later).
+  A reconnect / re-subscribe restarts the clock; busy = also ≥ 5 distinct chats; probe writes only if the stored
+  token is still the probed one. Webhook path untouched. The daily token probe keeps an open incident's start and the
+  silence marker (no nightly re-alert).
+- Alerts (one per incident, any path that flips a line down within 15 min): bell to the business's chat members
+  (kind `ai_no_reply`, key `line_down:<id>:<reason>:<minute>`, no SQL needed), ops email, red banner in /chats +
+  Canales ("No llegan mensajes desde 18/10 09:03 · Reconectá y marcá TODAS tus páginas en Facebook").
+  `/api/chat/accounts` exposes only `silentSince` (never the raw code).
+- IG connect (`callback` + `complete`): after saving, re-probe the tenant's OTHER IG lines; any that lost access are
+  marked and named on the result page ("Al conectar X se desconectó Y: volvé a conectar marcando todas las páginas"),
+  which then stays open. Connect card + reconnect modal: "marcá todas tus páginas, no solo la nueva".
+- Proof: tsc 0, lint clean, test:security 285/285 (new `channel-silence.test.ts` 14/14), channels-ui + neighbours green.
+- Reviews: Verifier r1 FAIL → 6 findings fixed (re-alert after recovery, nightly re-alert, re-flag after reconnect,
+  banner "since", sibling blame for already-dead lines, email dedupe). SecureDog OK (nothing above Low); L1–L5 fixed:
+  Meta 10/200 stay `error` (not `revoked`, sends not blocked), tenant text sanitized in the ops email, distinct-chat
+  gate, token-conditional writes, cron runs after ai-budget.
+## 2026-10-18 — /chats quick views + follow-ups keep list position (claudio/inbox-views, NOT deployed)
+
+- Draft PR into claudio/luna-10-d2; Rafael's GO to merge / deploy. No SQL, no new index.
+- Tabs with counts on desktop and mobile: Bandeja · 👤 Persona (aiMode human / paused / human_takeover, oldest
+  customer message first) · 💳 Revisar pago · 📦 Pedido (built-in tags) · ✦ IA (line AI on, nobody took it, no review
+  tag) · ↻ Seguimientos (newest message is our follow-up, `metadata.followUp`). They replace the two review chips.
+  Channel / line filter and search still apply; a bandeja tab (Míos / Sin asignar…) returns to Bandeja.
+- Counts: `GET /api/chat/conversations/view-counts` (update_sales, session tenant) = one grouped SQL by line;
+  the client refreshes at most every 20 s while the list changes. A tab loads its rows with `?view=` (one page, up to
+  100, no cursor; old cursors keep their scope hash). Rules shared in `src/lib/chat-inbox-views.ts`.
+- Follow-up / reactivation sends pass `keepListPosition`: preview, direction and lastOutboundAt update, lastMessageAt
+  does not, so a mass nudge no longer floods the top; the customer's reply moves the chat up as before.
+- Tab remembered per user in localStorage (`betsy.chats.view.v1:<userId>`).
+- Proof: tsc, lint, test:security, test:soft-ai, test:chat-harden (1 baseline fail, same on the base), new
+  chat-inbox-views.test.ts, verify-betsy `drive-inbox-views.mjs` PASS (desktop + 390 px).
+- Reviews: SecureDog PASS (2 Low fixed: counts cached 15 s per tenant + one shared query + client in-flight guard;
+  list route no longer echoes DB error text). Verifier PASS WITH NOTES (fixed: open view keeps its rows across the
+  2-min refresh, Persona puts chats still waiting first, view request follows line / channel, PATCH keeps the flag).
+- Open for Rafael: Persona / IA follow the aiMode column (as briefed), not the badge's "a person wrote in 24 h";
+  `scripts/chat-inbox-backfill.ts --apply` would reset nudged chats' lastMessageAt (verify script reports them).
+
+## 2026-10-18 — Sleeping final report batch 2 (PR #106) + Pura Sonrisa batch 3 slim (PR #107) (NOT deployed)
+
+- Stacked: #107 → #106 → #104 → claudio/luna-10-d2. Draft PRs; Rafael's GO to merge / deploy.
+- #106 C9 (night silent trial): a reply made only of someone's personal data (name / phone / place / address /
+  email / location link, any case, labelled or not) gets a repairable `data_echo` hold; the store's own phone (brand
+  facts) is not an echo. C7: "ya te lo compartí / como te dije" → repairable `repeat_refusal`; cotizar says to repeat
+  price / shipping when asked again. C8: ", y" splits a clause only after a shipping-cost statement, brackets holding
+  only an included-combo price are no break; exception / other-product words judged on the whole sentence (INT-184).
+  C10 (exam tooling): impersonal "no se aceptan / envía" is not "no sé". C4: the lock row keeps the normal TEST cap
+  (recorded only by `test-cap --restore`); a run refuses while the cap differs.
+- #107: "retirar para no pagar envío" and a delivery person arriving ("El Uber ya llegó") are not payment messages
+  unless a payment noun is present; "Por SINPE (móvil), pasame el número" is a choice + details ask; the payment
+  question never shares the data list's message; a "₡0" shipping cost never opens the ", y" split.
+- Reviews: #106 Verifier r2 PASS WITH NOTES, SecureDog r2 PASS. #107: see the PR. Register: INT-184, INFRA-25 Verified;
+  INT-185 (Low), INT-186 (Medium, pre-existing: "₡0." / "lo trae incluido") Open.
+- Later (dropped to save usage): negated "no hay descuentos", night person-request wording, DATA-65 name redaction.
+
+## 2026-10-18 — Sleeping + Pura Sonrisa exam engine fixes C1–C6, P1/P2/P4 (claudio/sleeping-exam-fixes, NOT deployed)
+
+- From the Sleeping Patches exam (betsy-agent-packs sleeping/STATUS.md C1–C6) and the Pura Sonrisa exam (P1/P2/P4).
+  Draft PR against claudio/luna-10-d2; needs Rafael's GO to merge / deploy. Also affects live Sofi (PatchHouse).
+- C1 `sales-state.ts` isPaymentMethodQuestion: "¿Querés pagar por SINPE o tarjeta?", "¿SINPE o transferencia?",
+  "¿Pagás por SINPE?", "Tenemos SINPE y tarjeta, ¿cuál preferís?" count as the method question, so a bare "sinpe" is a
+  choice (the agent sends that method's details). Never when the store's message is about a payment already made /
+  seen (done words anywhere in it: pagaste, usaste, fue, comprobante, vi, aparece, registrar…).
+- C2 `payment-classifier.ts` isBareOrderConfirmAsk + `sales-state.ts` noPaymentYet — NARROW on purpose (SecureDog r2):
+  "Para confirmar el pedido!?" / "¿me confirmás?" is a sales message only in a short chat (< 20 messages) where EVERY
+  customer message is courtesy only ("Hola", "gracias") or the bare ask itself, the store wrote nothing or only its one
+  greeting / intro, every message is plain text, and no money word appears on either side (store prices included). A bare ask after a price quote, or next to any other
+  question, still goes to a person (INT-93). Ask verb forms only; character allowlist. Replies to a confirm ask (or to
+  "¿les llegó?") may not say a payment arrived ("¡Sí, nos llegó!", "¡Perfecto, ya está!", "¡Sí!").
+- C3 `output-validator.ts` unitDerivedAmount: "₡317 por noche" passes only as a store rate — a product / combo price
+  with the count in its own name ("Pack 3 bolsas (90 noches)", salesUnitRates), right before "por / cada / al" + the
+  same unit. Sleeping's single bag needs "(30 noches)" in its inventory name for "₡330 por noche".
+- C4 `scripts/agent-pack/test-lock.ts`: one test run per business — an atomic lock row (TenantFeatureFlag key
+  agent_test_session_lock, FOR UPDATE, 6 h expiry, audited), taken before the TEST cap is raised; `test-cap --unlock`
+  frees a dead run's lock; `--restore` refuses under a running test.
+- C5 `exam.ts` / `exam-bank.ts`: history replays with the real gaps (agoMin) or, by default, the answered history
+  outside the 10-min claim look-back; one built-in item ("sys-lookback") keeps that look-back covered every run.
+- `test-cap --unlock` only frees a lock whose process is gone on this machine (or with --force).
+- C6 sales-state salesDataListFirst + dataListBeforePaymentQuestion (applied in applyFinalOutputPolicy): before payment,
+  when the customer wants to buy and the store has not asked the data yet, the reply carries the fixed data list BEFORE
+  the payment question (the question in its own last message when it fits); pickup list for pickup cues / pickup-only
+  stores. The cierre prompt says the order too.
+- P4 "¿cómo sería el envío y el pago?" / "y el pago como sería" (whole message) → method list, not a hand-off.
+- P1 free-shipping "other product" names skip words every catalog item shares ("Pura Sonrisa …").
+- P2 the store's "envío gratis desde ₡X / desde N cajas" (brandFacts.shipping.ea.freeOver) may be said as that rule;
+  INT-84 kept: the threshold is never an allowed price, only valid at the spot the rule phrase states it.
+- Pre-existing gaps closed here too (SecureDog r2): INT-167 "¿Les llegó?" / "¿Lo recibieron?" now get the reply
+  backstop; INT-168 "15 000 colones" (space thousands) is read as money.
+- Reviews: Verifier r1–r4 FAIL, r5 PASS WITH NOTES (notes fixed); SecureDog r1 FAIL, r2 FAIL, r3 FIX BEFORE PROD
+  (INT-169, INT-166 / INT-167 / INT-164 residuals — fixed after r3). Earlier: SecureDog r1 (MEDIA-16, INT-159 High;
+  INT-160–164, INFRA-23), r2 (INT-159 / INT-161 reopened High; INT-166, MEDIA-17, INFRA-24 new) — all fixed and pinned in
+  `src/lib/__tests__/sleeping-exam-fixes.test.ts`. FINAL: Verifier r7 PASS WITH NOTES (notes fixed, 220cfffd);
+  SecureDog r5 PASS (delta 220cfffd confirmed). Security Register (renumbered, the proposed INT IDs were taken):
+  MEDIA-16, MEDIA-17, INT-170…179, INFRA-23, INFRA-24 Verified/Fixed; open: INT-180, INT-182, INT-183 (Low), INT-181
+  (Medium, pre-existing on live: bare "¿Llegó?" / "¿Listo?" after payment details — schedule soon).
+## 2026-10-18 — Instagram reconnect: move the asset from a workspace you administer (claude/sharp-hawking-wgee33, NOT deployed)
+
+- Symptom: reconnecting `@betsy_crm` (shown as "Desvinculada") always returned "Instagram ya está conectado en otro
+  espacio". `upsertInstagramSocialAccount` refused because another tenant still holds an active row for the same IG
+  business account (025 partial unique: one active tenant per asset), and the page didn't say which workspace.
+- Fix: callback + complete pass `resolveForeignOwner` (`src/lib/instagram-foreign-owner.ts`). If the connecting user is
+  an active OWNER/ADMIN (`update_config`) of the holding tenant, that row is soft-unlinked (`softUnlinkUpdateData`:
+  history kept, tokens cleared) and the asset reconnects here. Otherwise it is still a 409 and the original row is not
+  touched. The page names the workspace only to its members (escaped); non-members learn nothing.
+- Saving an inactive row (subscribe failed) never asks or moves anything.
+- Tests: 4 new cases in `instagram-social-account.test.ts` (move, member-not-admin, non-member, inactive save) + HTML escape.
+
 
 ## 2026-10-18 — Claude setup on the live line + cloud push guard (claudio/luna-10-d2)
 
@@ -57,6 +170,30 @@
   - tsc clean; eslint clean on touched files
   - int158 tests 38/38, pinning every SecureDog/Verifier bypass and its negatives
 - False positives vs HEAD: 0 new holds and 0 allow-list hits across 11 066 pack strings and 2 791 real model replies (prod, read-only).
+## 2026-10-18 — Out-of-stock switch for the inbox sales agents (branch claudio/agent-out-of-stock off claudio/luna-10-d2, NOT deployed, SQL 055 NOT applied)
+
+- Rafael 2026-10-18: Configuración › Agentes › ② Productos que vende → new "¿Hay stock?" list: per product
+  «Disponible / Agotado» + optional "Vuelve aprox." (date, today..+180 days, Costa Rica) or a short note without numbers.
+  Store-level (one row per InventoryItem, every agent of the store sees it). Stock 0 also counts as sold out, but only
+  when the agent's products track stock (some product > 0) — a store left at the default 0 is not "all sold out".
+- SQL 055 `InventoryItemAvailability` (new table, RLS on, no FKs, UNIQUE tenantId+inventoryItemId, note ≤60) — gated
+  BETSY_V2_APPLY_FILES=055; until applied the code behaves exactly as before and the list is hidden.
+- Agent: sold-out lines carry no price (prompt, search_inventory: price omitted, stock 0) and their prices (+ shipping
+  pairs) are not allowed amounts; combos whose name contains a sold-out product are dropped; fixed rule 17 (say it,
+  owner's "vuelve aprox." only, offer an on-sale alternative, never close it, never promise an automatic notice).
+  Code: when the newest product the customer names is sold out (walk stops at a store offer of an on-sale product),
+  the close step is replaced (no total / data / payment question). Validator: `sold_out_offered` (a close for a
+  sold-out product) and `restock_date_invented` (a restock date that is not the owner's) — both repairable.
+- PATCH /api/chat/agents/[id]/inventory: update_config, same-origin, 60/min, zod strict, item must be in THIS agent's
+  list and tenant, audited (before/after). A spent "vuelve aprox." (stock back, no manual switch) is cleared by the
+  system (optimistic on updatedAt, audited, userRole system). Activation suite: no price case for sold-out products.
+- Reviews: advisor GO-with-changes (all applied); verifier r1 FAIL (accepted alternative could not close + 4) → r2
+  FAIL (restock dates) → r3 PASS; SecureDog r1 PASS, 0 C/H/M, L1–L5 folded in.
+- Proof: tsc 0, lint clean, test:soft-ai 1155/0 (new agent-out-of-stock 20), chat-harden 680/0, soft-ai-agent 321/0,
+  agentes-ui 34/0, security 272/0. Not verified: real model replies, the card in a browser (needs SQL 055).
+- Open for Rafael: apply SQL 055; AGENT_RULES_VERSION not bumped for rule 17 (bumping forces a re-test of live agents).
+  Known gaps (prompt-only): "lo vamos a tener de nuevo el lunes" without a sold-out word; a sold-out product named
+  only by photo / SKU / nickname. Follow-up: an explicit product link for combos.
 
 ## 2026-10-18 — INT-158 payment/order claim check + per-store exam grader (claudio/luna-10-d2, NOT deployed)
 

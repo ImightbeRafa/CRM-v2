@@ -354,7 +354,11 @@ describe('2026-10-15 combos (agent packs) — SecureDog INT-84..INT-89', () => {
     assert.match(wiring, /salesFreeShippingRule: sales \? salesFreeShippingRule\(sales\) : null/)
     assert.equal(read('src/lib/soft-ai/agent-turn.ts').match(/freeShippingRule: runtimeInput\.salesFreeShippingRule/g)?.length, 2, 'live and test chat')
     assert.match(read('src/lib/soft-ai/llm/runtime.ts'), /freeShippingRule: input\.salesFreeShippingRule/)
-    assert.doesNotMatch(read('src/lib/soft-ai/agent-sales-context.ts'), /freeOver|freeShippingOver/)
+    // INT-84 kept (Pura Sonrisa P2, 2026-10-18): the store's threshold reaches the sales context ONLY as
+    // freeShippingOver for the validator's threshold-rule clause; it is never an allowed amount / price.
+    assert.equal(read('src/lib/soft-ai/agent-sales-context.ts').match(/freeOver|freeShippingOver/g)?.length, 2)
+    assert.doesNotMatch(read('src/lib/soft-ai/sales-state.ts').slice(read('src/lib/soft-ai/sales-state.ts').indexOf('export function salesAllowedAmounts'), read('src/lib/soft-ai/sales-state.ts').indexOf('type FactsShipping')), /freeShippingOver|freeOver/)
+    assert.ok(!salesAllowedAmounts({ ...PH, freeShippingOver: 25000 }).includes(25000))
   })
   it('INT-87: combo names that pose as rules, amounts, markers or shipping/payment words are refused; owner flag decides "included"', async () => {
     const { parseBundles, parseSalesRules } = await import('@/lib/soft-ai/agent-sales-setup')

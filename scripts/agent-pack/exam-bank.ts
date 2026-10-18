@@ -16,7 +16,33 @@ import { normalizeForRepeat } from '@/lib/soft-ai/repeat-guard'
 import { redactSensitiveForProvider } from '@/lib/soft-ai/llm/redact'
 import { arg, loadPack } from './pack'
 
-export type ExamHistoryLine = { direction: 'inbound' | 'outbound'; content: string }
+/** agoMin (C5): minutes before the step's message it was sent (real chats keep their real gaps). */
+export type ExamHistoryLine = { direction: 'inbound' | 'outbound'; content: string; agoMin?: number }
+
+/**
+ * Sleeping exam C5 (2026-10-18): realistic send times for an item's history (ms), oldest first, all before stepAt.
+ * The replay used to put every line 1 min apart, so old, already-answered messages fell inside the 10-min payment-claim
+ * look-back of the live turn. Now: a line's own agoMin when the bank has it (real chats); otherwise the customer's
+ * unanswered tail (after the store's last message) 1 min apart right before the step, the store's last message 12 min
+ * before the step and everything older 3 min apart before that — outside the look-back, like a real chat. Pure.
+ */
+export function examHistoryTimes(lines: ReadonlyArray<ExamHistoryLine>, stepAt: number): number[] {
+  const MIN = 60_000
+  const lastOut = lines.map((l) => l.direction).lastIndexOf('outbound')
+  const out: number[] = []
+  let prev = -Infinity
+  lines.forEach((l, i) => {
+    let at: number
+    if (typeof l.agoMin === 'number' && Number.isFinite(l.agoMin) && l.agoMin > 0) at = stepAt - l.agoMin * MIN
+    else if (i > lastOut) at = stepAt - (lines.length - i) * MIN
+    else at = stepAt - (12 + (lastOut - i) * 3) * MIN
+    // Never out of order and never at / after the step itself.
+    at = Math.min(Math.max(at, prev + 1_000), stepAt - 1_000)
+    prev = at
+    out.push(at)
+  })
+  return out
+}
 export type ExamItem = {
   id: string
   source: 'real' | 'pack' | 'coverage' | 'failure' | 'night'
@@ -97,11 +123,11 @@ async function main() {
     const msgs = await prisma.chatMessage.findMany({
       where: { tenantId, conversationId: c.id, messageType: 'text' },
       orderBy: { sentAt: 'asc' },
-      select: { direction: true, content: true },
+      select: { direction: true, content: true, sentAt: true },
       take: 200,
     })
     const lines = msgs
-      .map((m) => ({ direction: (m.direction === 'inbound' ? 'inbound' : 'outbound') as 'inbound' | 'outbound', content: redactCustomerText(m.content || '', c.peerName) }))
+      .map((m) => ({ direction: (m.direction === 'inbound' ? 'inbound' : 'outbound') as 'inbound' | 'outbound', content: redactCustomerText(m.content || '', c.peerName), at: m.sentAt.getTime() }))
       .filter((m) => m.content.trim())
     lines.forEach((m, i) => {
       if (m.direction !== 'inbound' || items.filter((x) => x.source === 'real').length >= maxReal) return
@@ -112,7 +138,8 @@ async function main() {
         id: `real-${items.length + 1}`,
         source: 'real',
         title: `Chat real: ${m.content.slice(0, 60).replace(/\n/g, ' ')}`,
-        history: lines.slice(Math.max(0, i - 6), i),
+        // C5: the real gaps (minutes before this message), so the replay sees the same 10-min look-back as live.
+        history: lines.slice(Math.max(0, i - 6), i).map((h) => ({ direction: h.direction, content: h.content, agoMin: Math.max(0.1, Math.round((m.at - h.at) / 6_000) / 10) })),
         steps: [{ text: m.content, expect: expectForRealMessage(m.content) }],
       })
     })

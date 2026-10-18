@@ -134,6 +134,9 @@ describe('burst = one reply · queue coalescing (source)', () => {
     assert.match(fn, /tenantId: row\.tenantId,\s+conversationId: row\.conversationId/)
     assert.match(fn, /kind: SOFT_AI_JOB_KIND/)
     assert.match(fn, /status: \{ in: \['pending', 'retry'\] \}/)
+    // Live 2026-10-18 duplicate reply: a newer job already claimed (inside its lease) also takes the burst; an expired
+    // lease never does.
+    assert.match(fn, /\{ status: 'processing', leaseExpiresAt: \{ gt: new Date\(\) \} \}/)
     assert.match(fn, /createdAt: \{ gt: self\.createdAt \}/)
   })
 

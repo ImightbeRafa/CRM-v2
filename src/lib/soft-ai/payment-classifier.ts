@@ -896,7 +896,7 @@ export function pendingMethodMention(text: string): PaymentChoiceMethod | null {
  * "revisen / verifiquen", errors. Checked on the WHOLE message (raw, folded and with stretched letters collapsed).
  */
 const DATA_CHOICE_REJECT_RE =
-  /[#₡¢$€✅✔✓☑👍👌💸🧾📸📷]|(?<!\d)\d{5,7}(?!\d)|\d{1,3}[.,]\d{3}(?!\d)|\d{1,2}:\d{2}|\d{1,2}\/\d{1,2}|(?<![\p{L}])(?:ref\p{L}*|c[oó]digo|monto|total|mil|k|colones|rojos|comprobante\p{L}*|recibo|captura|pantallazo|screenshot|voucher|constancia|foto|lleg\p{L}*|vieron|vio|cay[oó]|entr[oó]|entra|pagu[eé]|hice|hicimos|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|cancel[eé]|pagamos|mandamos|enviamos|pasamos|ya|yast[aá]|listo|lista|hecho|hecha|sinpead\p{L}*|saldad\p{L}*|abon\p{L}*|chequ\p{L}*|f[ií]j\p{L}*|valid\p{L}*|revis\p{L}*|verific\p{L}*|confirm\p{L}*|av[ií]s\p{L}*|hace|antier|anteayer|ayer|anoche|hoy|reci[eé]n|ahorita|horita|ahora|temprano|rato|ratito|toque|minutos?|min|segundos?|horas?|fue|todo|efectu\p{L}*|realic\p{L}*|realiz\p{L}*|tir[eéó]|acab\p{L}*|di|dimos|error|doble|mitad|resto|adelanto|debo|debe|falta\p{L}*|pendiente|deja|problema|pus[eo]|pusimos|dej[eé]|dejamos|met[ií]|metimos|gir[eé](?!\s+(?:a\s+)?(?:la\s+)?(?:derecha|izquierda))|giramos|pagao|cancelao|tiramos|tiraron|cubr[ií]|cubrimos|adelantamos|complet[eé]|liquid\p{L}*|girad[oa]s?|adelantad[oa]s?|debitad[oa]s?|rebajad[oa]s?|descontad[oa]s?|tramitad[oa]s?|ejecutad[oa]s?|concretad[oa]s?|finalizad[oa]s?|transacci[oó]n|mandao|enviao|pasao|tirao|girao|dejao|depositao|metio|kancel\p{L}*|list[ií]simo|hech[ií]simo|lizto|hexo|transfe|depo|payment|paid|wired|done|sent|ten[eé]s|tienes|payed|completed|received|finished|settled|cleared|feito|pronto|lysto|lito|exo|tranfer\p{L}*|trasfer\p{L}*|cansel\p{L}*|simpee|ise|consignad\p{L}*|ingresad\p{L}*|finiquitad\p{L}*|evidencia|respaldo|prueba)(?![\p{L}])|(?<![\p{L}])(?:est[aá]|qued[oó]|ya)\s+puest[oa]s?(?![\p{L}])|(?<![\p{L}])puest[oa]s?(?!\s+(?:de|del|la|el)(?![\p{L}]))(?![\p{L}])|(?<![\p{L}])desde\s+(?:el|la|mi)\s+(?:bac|bcr|bn|banco|app)(?![\p{L}])|(?<![\p{L}])app\s+del?\s+(?:banco|bac|bcr|bn)(?![\p{L}])|(?<![\p{L}])ah[ií]\s+(?:l[oa]s?\s+)?tienen?(?![\p{L}])|(?<![\p{L}])al\s+d[ií]a(?![\p{L}])|(?<![\p{L}])(?:un|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciséis|dieciseis|diecisiete|dieciocho|diecinueve|veinte|treinta|cuarenta|cincuenta)\s+(?:cien|ciento|doscientos|trescientos|cuatrocientos|quinientos|seiscientos|setecientos|ochocientos|novecientos|mil|nueve|ocho|siete|seis|cinco)(?![\p{L}])|(?<!\d)\d{1,3}(?:\s\d{1,3}){2,}(?!\d)|(?<!\d)\d{1,2}[.,]\d(?!\d)|(?<![\p{L}])(?:le|les|se\s+l[oa]s?)\s+(?:dejo|tiro|giro|meto|pongo|hago|env[ií]o|mando|paso)(?![\p{L}])|(?<![\p{L}])(?:les|le)\s+(?:cae|va|consta|figura)(?![\p{L}])|(?<![\p{L}])(?:ah[ií]\s+(?:le|les|te)\s+cae|ah[ií]\s+est[aá]|eso\s+est[aá])(?![\p{L}])|(?<!\d)\d{1,3}\s\d{3}(?!\d)/iu
+  /[#₡¢$€✅✔✓☑👍👌💸🧾📸📷]|(?<!\d)\d{5,7}(?!\d)|\d{1,3}[.,]\d{3}(?!\d)|\d{1,2}:\d{2}|\d{1,2}\/\d{1,2}|(?<![\p{L}])(?:ref\p{L}*|c[oó]digo|monto|total|mil|k|colones|rojos|comprobante\p{L}*|recibo|captura|pantallazo|screenshot|voucher|constancia|foto|lleg\p{L}*|vieron|vio|cay[oó]|entr[oó]|entra|pagu[eé]|hice|hicimos|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|cancel[eé]|pagamos|mandamos|enviamos|pasamos|ya|yast[aá]|listo|lista|hecho|hecha|sinpead\p{L}*|saldad\p{L}*|abon\p{L}*|chequ\p{L}*|f[ií]j\p{L}*|valid\p{L}*|revis\p{L}*|verific\p{L}*|confirm\p{L}*|av[ií]s\p{L}*|hace|antier|anteayer|ayer|anoche|hoy|reci[eé]n|ahorita|horita|ahora|temprano|rato|ratito|toque|minutos?|min|segundos?|horas?|fue|todo|efectu\p{L}*|realic\p{L}*|realiz\p{L}*|tir[eéó]|acab\p{L}*|di|dimos|error|doble|mitad|resto|adelanto|debo|debe|falta\p{L}*|pendiente|deja|problema|pus[eo]|pusimos|dej[eé]|dejamos|met[ií]|metimos|gir[eé](?!\s+(?:a\s+)?(?:la\s+)?(?:derecha|izquierda))|giramos|pagao|cancelao|tiramos|tiraron|cubr[ií]|cubrimos|adelantamos|complet[eé]|liquidad[oa]s?|liquid[eé]|liquidamos|girad[oa]s?|adelantad[oa]s?|debitad[oa]s?|rebajad[oa]s?|descontad[oa]s?|tramitad[oa]s?|ejecutad[oa]s?|concretad[oa]s?|finalizad[oa]s?|transacci[oó]n|mandao|enviao|pasao|tirao|girao|dejao|depositao|metio|kancel\p{L}*|list[ií]simo|hech[ií]simo|lizto|hexo|transfe|depo|payment|paid|wired|done|sent|payed|completed|received|finished|settled|cleared|feito|pronto|lysto|exo|tranfer\p{L}*|trasfer\p{L}*|cansel\p{L}*|simpee|ise|consignad\p{L}*|ingresad\p{L}*|finiquitad\p{L}*|evidencia|respaldo|prueba)(?![\p{L}])|(?<![\p{L}])(?:est[aá]|qued[oó]|ya)\s+puest[oa]s?(?![\p{L}])|(?<![\p{L}])puest[oa]s?(?!\s+(?:de|del|la|el)(?![\p{L}]))(?![\p{L}])|(?<![\p{L}])desde\s+(?:el|la|mi)\s+(?:bac|bcr|bn|banco|app)(?![\p{L}])|(?<![\p{L}])app\s+del?\s+(?:banco|bac|bcr|bn)(?![\p{L}])|(?<![\p{L}])ah[ií]\s+(?:l[oa]s?\s+)?(?:tienen?|ten[eé]s|tienes)(?![\p{L}])|(?<![\p{L}])al\s+d[ií]a(?![\p{L}])|(?<![\p{L}])(?:un|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciséis|dieciseis|diecisiete|dieciocho|diecinueve|veinte|treinta|cuarenta|cincuenta)\s+(?:cien|ciento|doscientos|trescientos|cuatrocientos|quinientos|seiscientos|setecientos|ochocientos|novecientos|mil|nueve|ocho|siete|seis|cinco)(?![\p{L}])|(?<!\d)\d{1,3}(?:\s\d{1,3}){2,}(?!\d)|(?<![\p{L}])(?<!(?:talla|tala|km|kg|lb|cm|kilómetro|kilometro|tamaño|tamano|número|numero)\s)(?<!\d)\d{1,2}[.,]\d(?!\d)(?!\s*(?:kg|lb|g|ml|l|cm|m|km|oz)(?![\p{L}]))|(?<![\p{L}])(?:le|les|se\s+l[oa]s?)\s+(?:dejo|tiro|giro|meto|pongo|hago|env[ií]o|mando|paso)(?![\p{L}])|(?<![\p{L}])(?:les|le)\s+(?:cae|va|consta|figura)(?![\p{L}])|(?<![\p{L}])(?:ah[ií]\s+(?:le|les|te)\s+cae|ah[ií]\s+est[aá]|eso\s+est[aá])(?![\p{L}])|(?<!\d)\d{1,3}\s\d{3}(?!\d)/iu
 /**
  * SecureDog r2 INT-B: money / receipt nouns a name or address never needs. Bank names stay ("200 m sur del BCR") and so
  * does "número" (Verifier r3: "casa número 25"; "al número" / "número de la bio" are rejected elsewhere).
@@ -916,15 +916,21 @@ const DATA_VALUE_MAX_WORDS = 40
  */
 const EARLIER_SPECIFIC_DONE_RE = new RegExp(
   [
-    String.raw`(?:le|les|se\s+l[oa]s?)\s+(?:pus[eo]|pusimos|dej[eé]|dejamos|met[ií]|metimos|tir[eé]|tiramos|gir[eé]|giramos|complet[eé]|adelant[eé]|adelantamos|cubr[ií]|cubrimos)`,
+    // Verifier r5: only as the whole row ("Ya le puse", "Se lo tiramos ok"), not "Le dejé un mensaje ayer".
+    String.raw`^\s*(?:ya\s+)?(?:le|les|se\s+l[oa]s?)\s+(?:pus[eo]|pusimos|dej[eé]|dejamos|met[ií]|metimos|tir[eé]|tiramos|gir[eé]|giramos|complet[eé]|adelant[eé]|adelantamos|cubr[ií]|cubrimos)(?:\s+(?:ya|ok|listo|todo))?[\s.!,?¿🙌🙏😊👍✅]*$`,
     String.raw`(?:pus[eo]|pusimos|dej[eé]|dejamos|met[ií]|tir[eé]|tiramos|gir[eé]|mand[eé]|pas[eé]|envi[eé])\s+(?:la|el|mi|los)?\s*(?:plata|platica|dinero|harina|transfe|depo|sinpe|simpe)`,
-    String.raw`(?:la|el)\s+(?:plata|dinero|transfe|depo|sinpe|simpe)\s+(?:ya|est[aá]|qued[oó]|lleg[oó]|cay[oó]|entr[oó])`,
-    String.raw`liquid\p{L}*|pagao|cancelao|mandao|enviao|pasao|tirao|depositao|ah[ií]\s+(?:le|les|te)\s+cae`,
+    String.raw`(?:la|el)\s+(?:plata|dinero|transfe|depo|sinpe|simpe)\s+(?:ya\s+)?(?:qued[oó]|lleg[oó]|cay[oó]|entr[oó])`,
+    // Verifier r5: "labial líquido", "en liquidación" are products, not payments.
+    String.raw`liquidad[oa]s?|liquid[eé]|liquidamos|pagao|cancelao|mandao|enviao|pasao|tirao|depositao|ah[ií]\s+(?:le|les|te)\s+cae`,
   ]
     .map((p) => `(?:${p})`)
     .join('|'),
   'iu',
 )
+/** "La plata ya está", "el sinpe está listo": a statement only (Verifier r5: "¿El sinpe está habilitado?" is a question). */
+const EARLIER_STATEMENT_DONE_RE = /(?<![\p{L}])(?:la|el)\s+(?:plata|dinero|transfe|depo|sinpe|simpe)\s+(?:ya(?![\p{L}])|est[aá]\s+(?:list[oa]|hech[oa]|puest[oa]|ah[ií]))/iu
+/** A glued / oddly spelled paid verb (not a bare "listo"): counts in any context ("yapague", "lohice"). */
+const EARLIER_GLUED_PAID_RE = /^(?:ok)?(?:yapague|yapage|yalohice|lohice|yalehice|yalepase|yasinpe\p{L}*|yatransferi|yadeposite|yacancele)$/u
 /** A bare done word, only as a short standalone row ("Listo", "Ya", "Ya está", "Listo ✅"). */
 const EARLIER_BARE_DONE_RE = /^(?:ok\s+)?(?:ya|yast[aá]|ya\s+est[aá]|list[oa]|hech[oa]|ya\s+qued[oó])(?:\s+(?:ya|list[oa]|hech[oa]|est[aá]))?[\s.!,🙌🙏😊👍✅✔]*$/iu
 
@@ -936,8 +942,19 @@ export function earlierRowMayBeClaim(text: string, opts: { afterStorePaymentTalk
   const value = stripFormatChars((text || '').normalize('NFKC'))
   const folded = foldChoice(value).replace(/(\p{L})\1+/gu, '$1')
   if (EARLIER_SPECIFIC_DONE_RE.test(value) || EARLIER_SPECIFIC_DONE_RE.test(folded)) return true
+  if (!/[?¿]/u.test(value) && (EARLIER_STATEMENT_DONE_RE.test(value) || EARLIER_STATEMENT_DONE_RE.test(folded))) return true
+  const gluedPlain = foldChoice(value.replace(/[^\p{L}\d]/gu, '')).replace(/(\p{L})\1+/gu, '$1')
+  if (gluedPlain.length <= 14 && EARLIER_GLUED_PAID_RE.test(gluedPlain)) return true
+  // Verifier r5 N2: a bare done word with a check / like ("Listo ✅", "Ya está ✔") counts even with no store payment talk.
+  if (/[✅✔☑👍]/u.test(value) && !/[?¿]/u.test(value) && (EARLIER_BARE_DONE_RE.test(value.trim()) || EARLIER_BARE_DONE_RE.test(folded.trim()))) return true
   if (!opts.afterStorePaymentTalk || /[?¿]/u.test(value)) return false
-  return EARLIER_BARE_DONE_RE.test(value.trim()) || EARLIER_BARE_DONE_RE.test(folded.trim())
+  if (EARLIER_BARE_DONE_RE.test(value.trim()) || EARLIER_BARE_DONE_RE.test(folded.trim())) return true
+  // Verifier r5 F4: a short row spelled oddly ("l is t o", "l,i,s,t,o", "yapague", "lısto", "L1STO") counts too.
+  const letters = value.replace(/[^\p{L}\d]/gu, '')
+  if (letters.length > 12) return false
+  if (DATA_LATIN_LOOKALIKE_RE.test(value) || DATA_ODD_BREAK_RE.test(text || '')) return true
+  const plain = foldChoice(letters.replace(/1/g, 'i').replace(/0/g, 'o').replace(/3/g, 'e').replace(/4/g, 'a')).replace(/(\p{L})\1+/gu, '$1')
+  return /^(?:ok)?(?:ya|yasta|yaesta|listo|lista|hecho|hecha|yaquedo|pague|yapague|yalohice|lohice)$/u.test(plain)
 }
 
 /** Verifier r3 F4: a done / paid word split in two or three chunks ("lis to", "li s to", "pa gué"). */
@@ -961,7 +978,8 @@ export const DATA_ODD_BREAK_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-
 // SecureDog r4 INT-O: any separator ("l,i,s,t,o", "l/i/s/t/o", "l(i)s(t)o").
 const DATA_SPACED_LETTERS_RE = /(?<![\p{L}])\p{L}(?:[^\p{L}\d\n]+\p{L}(?![\p{L}])){2,}/u
 /** SecureDog r4 INT-O: a claim glued into one token ("yapague", "lepuse", "lohice", "selopague", "yacancele"). */
-const DATA_GLUED_CLAIM_RE = /(?:yapag|yalo|yaest|yales|yale|yacancel|yatransf|yadeposit|yasinp|yahic|lepuse|lepase|letire|lohice|lapague|selopag|selomand|selopas|seloenvi)/u
+const DATA_GLUED_CLAIM_RE = /(?:yapag|yalo(?!r)|yaest|yalep|yalet|yalem|yalen|yacancel|yatransf|yadeposit|yasinp|yahic|lepuse|lepase|letire|lohice|lapague|selopag|selomand|selopas|seloenvi)/u
+const GLUED_NAME_OK = new Set(['calisto', 'callisto'])
 /** SecureDog r4 INT-O: a run of short chunks spelling a claim ("l is t o", "p ag u e", "tr an sf er i"). */
 const DATA_CHUNKED_CLAIM_RE = /^(?:ya|yasta|yaesta|listo|lista|hecho|hecha|pague|pagado|pagada|sinpe\p{L}*|cancel\p{L}*|deposit\p{L}*|transfer\p{L}*|envie|mande|pase|hice|lohice|abon\p{L}*)$/u
 /** A data message that carries a choice: short enough to read whole (a delivery-data block, not an essay). */
@@ -1012,16 +1030,20 @@ function isOrderDataPart(raw: string): boolean {
   if (words.length > (/^(?:nombre|apellido)/u.test(label) ? DATA_NAME_MAX_WORDS : DATA_VALUE_MAX_WORDS)) return false
   const tokens = foldChoice(v).split(/[^a-z]+/u).filter(Boolean)
   if (tokens.some((t) => t.length >= 5 && DATA_GLUED_CLAIM_RE.test(t))) return false
+  // Verifier r5 F3: a done stem glued to another word ("listoya", "hechoya", "sinpelisto"); "Calisto" is a name.
+  if (tokens.some((t) => t.length >= 6 && !GLUED_NAME_OK.has(t) && /(?:listo|hecho|pague|pagad|yasta|yaesta)/u.test(t))) return false
   // Every maximal run of ≤ 2-letter chunks, joined ("l is t o" → "listo").
   for (let i = 0; i < tokens.length; ) {
     let j = i
     let joined = ''
     while (j < tokens.length && (tokens[j].length <= 2 || (j > i && tokens[j].length <= 3))) joined += tokens[j++]
-    if (j - i >= 2 && DATA_CHUNKED_CLAIM_RE.test(joined)) return false
+    if (j - i >= 2 && joined !== 'ya' && DATA_CHUNKED_CLAIM_RE.test(joined)) return false
     i = j > i ? j : i + 1
   }
   for (let i = 0; i < tokens.length; i++) {
-    if (DATA_SPLIT_CLAIM_RE.test(tokens.slice(i, i + 2).join('')) && i + 1 < tokens.length) return false
+    // Verifier r5 N1: "y a mano derecha", "y a la par" are directions, not "ya".
+    const yA = tokens[i] === 'y' && tokens[i + 1] === 'a'
+    if (!yA && DATA_SPLIT_CLAIM_RE.test(tokens.slice(i, i + 2).join('')) && i + 1 < tokens.length) return false
     if (i + 2 < tokens.length && DATA_SPLIT_CLAIM_RE.test(tokens.slice(i, i + 3).join(''))) return false
   }
   return DATA_FREE_VALUE_RE.test(v)

@@ -960,11 +960,11 @@ const STORE_PAID_OR_ELSEWHERE_RE = new RegExp(
     // "cuando pagués / lo hagás me avisás", "apenas me caiga", "me pasás la evidencia / el respaldo".
     // Verifier r4: only the STORE's number / SINPE (not "tu número de WhatsApp", "número de guía / talla").
     String.raw`(?<![\p{L}])(?:mi|nuestro|el|al|este)\s+(?:n[uú]mero|sinpe|simpe)(?!\s+de\s+(?:la\s+|el\s+|su\s+|tu\s+)?(?:tel[eé]fono|gu[ií]a|pedido|talla|orden|zapatilla|producto|modelo|serie|casa))(?![\p{L}])[^\n]{0,40}(?<![\p{L}])(?:este|mismo|aqu[ií]|chat|whats\p{L}*|siempre|descripci[oó]n|destacad\p{L}*|post|publicaci[oó]n|estado)(?![\p{L}])`,
-    String.raw`(?<![\p{L}])(?:sinpe|simpe)(?![\p{L}])[^\n]{0,20}(?<![\p{L}])(?:a|al)\s+(?:este|mismo)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:sinpe|simpe)(?:\s+m[oó]vil)?\s+(?:a|al)\s+(?:este|mismo)(?![\p{L}])`,
     String.raw`(?<![\p{L}])(?:a\s+este|al\s+mismo|el\s+mismo|a\s+este\s+mismo)\s+(?:n[uú]mero|sinpe|simpe|cuenta|de\s+whats\p{L}*)(?![\p{L}])`,
     String.raw`(?<![\p{L}])(?:hacelo|pagalo|depositalo|transferilo)\s+(?:a|al)\s+(?:este|mismo)(?![\p{L}])`,
     String.raw`(?<![\p{L}])(?:al\s+de\s+siempre|ya\s+ten[eé]s\s+los\s+datos|ya\s+sab[eé]s\s+el\s+n[uú]mero)(?![\p{L}])`,
-    String.raw`(?<![\p{L}])(?:escane\p{L}*\s+(?:el\s+)?qr|qr\s+(?:del?\s+)?(?:sinpe|simpe|pago)|(?:te\s+)?dejo\s+el\s+qr)(?![\p{L}])(?!\s+(?:del?|de\s+nuestro|de\s+mi)\s+(?:men[uú]|instagram|perfil|cat[aá]logo|whats\p{L}*|p[aá]gina|web|local))`,
+    String.raw`(?<![\p{L}])(?:escane\p{L}*\s+(?:el\s+)?qr|qr\s+(?:del?\s+)?(?:sinpe|simpe|pago)|(?:te\s+)?dejo\s+el\s+qr)(?![\p{L}])(?!\s+(?:(?:del?|de\s+(?:nuestro|mi|la))\s+(?:men[uú]|instagram|perfil|cat[aá]logo|whats\p{L}*|p[aá]gina|web|local|tienda|etiqueta|producto)|para\s+(?:ver|seguir|entrar)|est[aá]\s+en\s+la\s+etiqueta))`,
     String.raw`(?<![\p{L}])(?:evidencia|respaldo)\s+(?:del?\s+)?(?:pago|sinpe|simpe|transferencia|dep[oó]sito)(?![\p{L}])|(?:me\s+)?(?:pas[aá]s|mand[aá]s)\s+(?:la\s+|el\s+)(?:evidencia|respaldo)(?![\p{L}])`,
     String.raw`(?<![\p{L}])(?:cuando|apenas)\s+(?:pagu\p{L}*|lo\s+hag\p{L}*|(?:me|te)\s+(?:caiga|entre)(?!\s+(?:stock|mercader\p{L}*|producto|pedido|talla|el\s+pedido|la\s+mercader\p{L}*))|me\s+llegue\s+(?:el|la|tu|su)\s+(?:pago|sinpe|simpe|plata|transferencia|dep[oó]sito))(?![\p{L}])`,
     String.raw`(?<![\p{L}])pag[aá]s\s+y\s+te\s+lo\s+mando(?![\p{L}])`,
@@ -972,7 +972,7 @@ const STORE_PAID_OR_ELSEWHERE_RE = new RegExp(
     String.raw`(?<![\p{L}])te\s+l[oa]\s+(?:paso|mando|env[ií]o)\s+por\s+(?:privado|interno|dm|inbox|mensaje)(?![\p{L}])`,
     // Only as the whole answer ("Está en la bio 😊"), not "la talla está en la descripción" (Verifier r4 balance).
     String.raw`^\s*(?:(?:el|mi)\s+(?:n[uú]mero|sinpe|simpe)\s+)?est[aá]\s+en\s+(?:la\s+bio\p{L}*|el\s+perfil|los\s+destacados|la\s+descripci[oó]n)(?![\p{L}])[\s.!😊🙌🙏]*$`,
-    String.raw`(?<![\p{L}])qr(?![\p{L}])(?!\s+(?:del?|de\s+nuestro|de\s+mi)\s+(?:men[uú]|instagram|perfil|cat[aá]logo|whats\p{L}*|p[aá]gina|web|local))`,
+    String.raw`(?<![\p{L}])qr(?![\p{L}])(?!\s+(?:(?:del?|de\s+(?:nuestro|mi|la))\s+(?:men[uú]|instagram|perfil|cat[aá]logo|whats\p{L}*|p[aá]gina|web|local|tienda|etiqueta|producto)|para\s+(?:ver|seguir|entrar)|est[aá]\s+en\s+la\s+etiqueta))`,
   ]
     .map((p) => `(?:${p})`)
     .join('|'),

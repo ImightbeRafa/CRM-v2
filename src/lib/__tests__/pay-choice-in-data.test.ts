@@ -537,7 +537,7 @@ describe('round 4 (SecureDog r4)', () => {
     }
   })
   it('INT-P: more claim wording is not order data', () => {
-    for (const w of ['ahí lo tenés', 'ahí tenés', 'ahí lo tienes', 'le dejo', 'le tiro', 'se lo envío', 'les cae', 'les va', 'consignado', 'ingresado', 'finiquitado', 'lysto', 'lito', 'exo', 'tranferi', 'trasferi', 'cansele', 'simpee', 'lo ise', 'completed', 'payed', 'received', 'feito', 'pronto', '12.9', '12,9', '9.9', 'ahí el respaldo', 'la evidencia', 'la prueba']) {
+    for (const w of ['ahí lo tenés', 'ahí tenés', 'ahí lo tienes', 'le dejo', 'le tiro', 'se lo envío', 'les cae', 'les va', 'consignado', 'ingresado', 'finiquitado', 'lysto', 'exo', 'tranferi', 'trasferi', 'cansele', 'simpee', 'lo ise', 'completed', 'payed', 'received', 'feito', 'pronto', '12.9', '12,9', '9.9', 'ahí el respaldo', 'la evidencia', 'la prueba']) {
       assert.equal(embeddedPaymentChoice(D(w)), null, w)
     }
   })
@@ -564,5 +564,58 @@ describe('round 4 (SecureDog r4)', () => {
       else process.env.SOFT_AI_ORDER_DATA_CHOICE = prev
     }
     assert.equal(orderDataChoice(rows(SALES_HISTORY, SHOPPER)), 'sinpe')
+  })
+})
+
+describe('round 5 (Verifier r5)', () => {
+  const N = 'Nombre: Ana Mora\n'
+  it('F1 / N3: usted-form notes and "líquido" products keep the feature on', () => {
+    for (const x of ['Le dejé un mensaje ayer', 'Le dejé mi número arriba', 'Ya le dejé mis datos arriba', 'Le puse like a la foto', 'Les dejé una reseña', '¿Tienen algo en liquidación?', 'Quiero el labial líquido rojo', 'Me interesa el jabón líquido']) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', x), msg('outbound', 'Perfecto 😊')], SHOPPER)), true, x)
+    }
+    for (const x of ['Ya le puse', 'Se lo tiramos', 'Le puse la plata']) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', x), msg('outbound', 'Perfecto 😊')], SHOPPER)), false, x)
+    }
+    assert.equal(embeddedPaymentChoice(`${N}Producto: labial líquido rojo\nPago por SINPE`), 'sinpe')
+  })
+  it('F2 / F5 / N1: half sizes, km, real names and "y a" directions are order data', () => {
+    for (const t of [
+      `${N}Producto: tenis Nike talla 7.5\nPago por SINPE`, `${N}Producto: zapatilla talla 8,5\nPago por SINPE`, `${N}Producto: colágeno 1.5 kg\nPago por SINPE`,
+      `${N}Dirección: Km 3.5 carretera a Guápiles\nPago por SINPE`, 'Nombre: Carlos Ayales Rojas\nPago por SINPE', 'Nombre: Yaleska Chaves\nPago por SINPE',
+      'Nombre: Lito Vargas\nPago por SINPE', `${N}Dirección: de la iglesia 200 m sur y a mano derecha\nPago por SINPE`, `${N}Dirección: frente al parque y a media cuadra\nPago por SINPE`,
+    ]) {
+      assert.equal(embeddedPaymentChoice(t), 'sinpe', t)
+    }
+    // Money-like decimals stay out.
+    for (const w of ['12.9', '12,9', '9.9']) assert.equal(embeddedPaymentChoice(`${N}Dirección: Heredia, ${w}\nPago por SINPE`), null, w)
+  })
+  it('F3: done stems glued after another word are not order data', () => {
+    for (const w of ['listoya', 'hechoya', 'sinpelisto', 'listolisto']) assert.equal(embeddedPaymentChoice(`${N}Dirección: Heredia, ${w}\nPago por SINPE`), null, w)
+    assert.equal(embeddedPaymentChoice('Nombre: Ana Calisto\nPago por SINPE'), 'sinpe')
+  })
+  it('F4: an oddly spelled bare "listo" after store payment talk closes the gate', () => {
+    const payTalk = [...SALES_HISTORY, msg('outbound', 'Aceptamos SINPE o tarjeta 😊')]
+    for (const x of ['l is t o', 'l,i,s,t,o', 'lis to', 'yapague', 'yaesta', '\u029F\u026As\u1D1B\u1D0F', 'l\u0131sto', 'L1STO']) {
+      assert.equal(nothingPaidYet(rows([...payTalk, msg('inbound', x), msg('outbound', 'Pasame tus datos')], SHOPPER)), false, x)
+    }
+  })
+  it('N2: "Listo ✅" / "Ya está ✔" close the gate even before store payment talk', () => {
+    for (const x of ['Listo ✅', 'Ya ✅', 'Listo 👍', 'Ya está ✔']) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', x), msg('outbound', 'Perfecto 😊')], SHOPPER)), false, x)
+    }
+  })
+  it('earlier-row balance: method questions stay open, glued paid verbs close in any context', () => {
+    // ("¿El sinpe está habilitado?" is closed by the live classifier itself — base behaviour.)
+    for (const x of ['¿La transfe está bien si es del BAC?', '¿Aceptan SINPE?']) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', x), msg('outbound', 'Sí 😊')], SHOPPER)), true, x)
+    }
+    for (const x of ['yapague', 'ya lo hice', 'lohice', 'La plata ya está', 'El sinpe ya llegó?']) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', x), msg('outbound', 'Perfecto 😊')], SHOPPER)), false, x)
+    }
+  })
+  it('F6: product QR and price talk next to the methods keep the gate open', () => {
+    for (const out of ['Escaneá el QR para ver el catálogo', 'El código QR está en la etiqueta del producto', 'Escaneá el QR de la tienda para seguirnos', 'Aceptamos SINPE o tarjeta, a este precio solo hoy', 'Podés pagar por SINPE o tarjeta, al mismo precio']) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('outbound', out)], SHOPPER)), true, out)
+    }
   })
 })

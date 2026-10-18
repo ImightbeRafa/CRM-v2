@@ -1,3 +1,19 @@
+## 2026-10-18 — Payment choice inside the order data, round 5 notes (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
+
+- Verifier r5 (Fable, on 1d6f8b6): **PASS WITH NOTES** (r4 F1–F5 fixed; 32/33 attacks blocked end-to-end, the 1 routed is
+  the announced standalone "Y4"; numbers confirmed: flows 4/30, earlier 7/90, store 1/67, legit 8/65). Notes applied:
+  - F1 / N3: "liquid…" narrowed to liquidado / liquidé ("labial líquido", "en liquidación" are products); "le dejé /
+    le puse / se lo tiré" close the gate only as the whole row ("Le dejé un mensaje ayer" stays open).
+  - F2: decimals are money-like only — not after talla / km / kg / tamaño, not before a unit ("talla 7.5", "1.5 kg").
+  - F3: done stems glued after another word ("listoya", "sinpelisto") are rejected ("Calisto" allowed).
+  - F4: after store payment talk, an oddly spelled short "listo" ("l is t o", "lısto", "L1STO") closes the gate; glued
+    paid verbs ("yapague", "lohice") close it in any context; "la plata ya está" only as a statement.
+  - F5: "lito", bare "tenés / tienes" and "yale" dropped from the reject list ("Lito Vargas", "Ayales", "Yaleska").
+  - F6: QR exclusions add "de la tienda / etiqueta / producto", "para ver / seguir"; "SINPE … a este" must be adjacent.
+  - N1: "y a mano derecha" / "y a la par" are directions, not "ya". N2: "Listo ✅" / "Ya está ✔" close the gate always.
+- Tests: pay-choice-in-data 51/51; test:soft-ai 1353/1353; test:security 288/289 (the 100 ms perf guard flake, 289/289
+  on the previous idle run); tsc and eslint clean. Probes: flows 4/30, earlier 7/90, store 1/67, attacks 32/33 blocked.
+
 ## 2026-10-18 — Payment choice inside the order data, round 4 security (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
 
 - SecureDog r4 (Fable): **PASS** (no High / Medium; the mandatory model check is airtight at the wiring level: both

@@ -1,3 +1,7 @@
+## 2026-10-18 — Chats the token cap had skipped are answered again
+
+- Those skips were stored as budget_blocked with reason flag_off, so the waiting sweep refused to retry them. The sweep now retries that case. Sixteen still-waiting chats were put back in the queue; the live worker is sending them.
+
 ## 2026-10-18 — Live AI replies are not stopped by the daily token cap
 
 - DeepSleep crossed its 5M live token cap, so every chat on those lines showed "Sin IA" and new replies were dropped. Answering is no longer capped. Probar still stops at testDailyTokenCap. Chats already blocked for budget are picked up again by the waiting sweep. The agents page shows this business's reply cost, average, and test spend separately.

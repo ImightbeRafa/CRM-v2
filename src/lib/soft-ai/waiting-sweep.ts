@@ -125,9 +125,10 @@ export function turnAllowsRearm(
   if (turn.skipReason === 'human_replied') return false
   if (mode === 'periodic') {
     // A live cap used to mark the whole line "Sin IA". Those turns get another try. A flag or terms skip does not.
+    // Cap blocks were saved as budget_blocked with skipReason flag_off (the persist default when the
+    // gate sent no reason). A real flag-off is status skipped, so those stay out. Kill switch and terms stay out.
     if (
       turn.status === 'budget_blocked' &&
-      turn.skipReason !== 'flag_off' &&
       turn.skipReason !== 'kill_switch' &&
       turn.skipReason !== 'ai_terms_not_accepted'
     ) {

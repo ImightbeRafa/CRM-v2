@@ -519,6 +519,10 @@ export function isHowPayShipQuestion(text: string): boolean {
   return v.length > 0 && v.length <= 80 && HOW_PAY_SHIP_RE.test(v)
 }
 
+// Only bare ("¿Les llegó?", "¿Lo recibieron?") or with a payment noun — "¿Les llegó mercadería nueva?" is stock.
+const NARROW_STATUS_QUESTION_RE =
+  /(?<![\p{L}])(?:(?:ya\s+)?(?:les|le|te|nos)\s+(?:lleg|cay|entr)[oó]|(?:ya\s+)?(?:lo|la)\s+(?:recibieron|recibi[oó]))(?:\s*(?:[?¿!.,…]|$)|\s+(?:el|la|mi|lo)\s+(?:pago|sinpe|simpe|plata|dinero|platica|transferencia|dep[oó]sito|comprobante))/iu
+
 export function classifyPaymentText(
   text: string,
   /**
@@ -545,6 +549,8 @@ export function classifyPaymentText(
   // "desde la cuenta / al número / a nombre de", "verifiquen", "ahí le va", "me avisa" next to a payment noun.
   // SecureDog INT-139: checked BEFORE the contra-entrega shortcut ("contra entrega? el sinpe salió ayer" is a claim).
   if (hasPaymentStatusClaim(value)) return 'payment_proof_or_risk'
+  // SecureDog r4 INT-167: "¿Les llegó?", "¿Le cayó?", "¿Lo recibieron?" — a payment status question (never "¿lo tienen?").
+  if (NARROW_STATUS_QUESTION_RE.test(value)) return 'payment_proof_or_risk'
   // INT-115: "Transferencia realizada", "tarjeta aprobada", "Listo, transferencia", ✅ — a claim, not an info question.
   if (isPaymentCompletionClaim(value)) {
     return 'payment_proof_or_risk'

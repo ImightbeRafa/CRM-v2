@@ -810,7 +810,9 @@ const STORE_PAYMENT_TALK_RE =
  */
 const NO_PAYMENT_YET_MAX_MESSAGES = 20
 /** The store's greeting / intro: it starts with a greeting ("¡Hola!", "Buenas", "Bienvenid@", "Pura vida"). */
-const STORE_GREETING_RE = /^[¡!\s]*(?:hol+a|buen[oa]s|buen\s+d[ií]a|bienvenid\p{L}*|pura\s+vida|saludos)(?![\p{L}])/iu
+/** SecureDog r4 INT-169: a store line waiting on the customer or handing data elsewhere ("te paso los datos por privado"). */
+const STORE_PENDING_RE = /(?<![\p{L}])(?:privado|av[ií]s\p{L}*|esper\p{L}*|te\s+paso|le\s+paso|datos|cuando\s+(?:est[eé]|puedas|lo\s+hagas|tengas))(?![\p{L}])/iu
+const STORE_GREETING_RE = /^[¡!\s]*(?:hol+a|buen[oa]s|buen\s+d[ií]a|bienvenid\p{L}*|pura\s+vida|saludos|soy\s+\p{L}+)(?![\p{L}])/iu
 
 /** SecureDog r1 INT-161: "ya compré", "compré por Instagram", "mi número de orden es 4521", "ahí les va", "ya está". */
 const ALREADY_BOUGHT_RE =
@@ -825,9 +827,14 @@ export function noPaymentYet(history: ReadonlyArray<{ direction: string; content
   if (history.length >= NO_PAYMENT_YET_MAX_MESSAGES) return false
   // SecureDog r3 INT-169: the store side is an allowlist too — nothing written yet, or only its one greeting / intro
   // ("¡Hola! Soy Vale de … ¿En qué te ayudo?"). "¿Ya lo hiciste?", "Te paso los datos por privado" end it.
-  const outbound = history.filter((m) => m.direction === 'outbound')
-  if (outbound.length > 1) return false
-  if (outbound.length === 1 && !STORE_GREETING_RE.test(stripFormatChars((outbound[0].content || '').normalize('NFKC')).trim())) return false
+  const outIdx = history.map((m, i) => (m.direction === 'outbound' ? i : -1)).filter((i) => i >= 0)
+  // Verifier r6 #2: the first store turn may be several parts (rows) with no customer message between them.
+  if (outIdx.length > 3 || (outIdx.length > 0 && outIdx[outIdx.length - 1] - outIdx[0] !== outIdx.length - 1)) return false
+  if (outIdx.length > 0 && !STORE_GREETING_RE.test(stripFormatChars((history[outIdx[0]].content || '').normalize('NFKC')).trim())) return false
+  for (const i of outIdx) {
+    const t = stripFormatChars((history[i].content || '').normalize('NFKC'))
+    if (hasPaymentStatusHint(t) || METHOD_QUESTION_DONE_RE.test(t) || STORE_PENDING_RE.test(t)) return false
+  }
   for (const m of history) {
     const text = stripFormatChars((m.content || '').normalize('NFKC'))
     // Any bubble that is not plain text, from either side (SecureDog r2 MEDIA-17: 'unsupported', 'share', 'unknown' too).

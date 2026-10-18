@@ -748,7 +748,8 @@ describe('Verifier r3 (2026-10-18): every reported input pinned', () => {
   })
   it('#3: replies to a bare confirm ask may be ordinary sales answers; only "it arrived / it is done" is held', () => {
     const customerText = 'Para confirmar el pedido!?'
-    for (const t of ['¡Claro, sin problema! ¿Cuántas bolsas querés?', '¡Sí, lo tenemos disponible!', 'Es correcto, la bolsa cuesta ₡9 900', '¡Sí, ya está disponible!']) {
+    // SecureDog r4: a reply to a confirm ask must ask something — these sales answers do.
+    for (const t of ['¡Claro, sin problema! ¿Cuántas bolsas querés?', '¡Sí, lo tenemos disponible! ¿Cuántas querés?', 'Es correcto, la bolsa cuesta ₡9 900. ¿Te la aparto?', '¡Sí, ya está disponible! ¿Te la mando?']) {
       const v = validateAgentOutput({ text: t, citedToolNames: [], quoteAmounts: [9900], customerText })
       assert.equal(v.ok, true, `${t} → ${v.reasons}`)
     }
@@ -1010,8 +1011,9 @@ describe('SecureDog r3 (2026-10-18): every reported input pinned', () => {
     assert.equal(check('Pedidos desde ₡25 000 con envío gratis. Ya entraste').ok, false)
     assert.equal(check('Envío gratis desde ₡25 000 a todo el país.').ok, true)
   })
-  it('INT-167 residual: "¿Lo vio?", "¿Ya lo vio?", "¿Ya está?", "¿Lo tienen?" get the reply backstop', () => {
-    for (const [c, r] of [['¿Lo vio?', 'Sí, ya lo vi'], ['¿Ya lo vio?', 'Sí, ya lo vi'], ['¿Ya está?', '¡Sí, ya está!'], ['¿Lo tienen?', 'Sí, ya lo tenemos']]) {
+  // "¿Lo tienen?" is a stock question (Verifier r6 #1), so it is not in this list any more.
+  it('INT-167 residual: "¿Lo vio?", "¿Ya lo vio?", "¿Ya está?" get the reply backstop', () => {
+    for (const [c, r] of [['¿Lo vio?', 'Sí, ya lo vi'], ['¿Ya lo vio?', 'Sí, ya lo vi'], ['¿Ya está?', '¡Sí, ya está!']]) {
       assert.ok(validateAgentOutput({ text: r, citedToolNames: [], customerText: c }).reasons.includes('payment_status_claim'), c)
     }
   })
@@ -1036,5 +1038,76 @@ describe('SecureDog r3 (2026-10-18): every reported input pinned', () => {
     const lock = await acquireTestLock(db, { tenantId: 't1', label: 'exam', cap: 1 })
     assert.equal(await forceReleaseTestLock(db, { tenantId: 't1', expectToken: 'someone-else' }), null)
     assert.equal((await forceReleaseTestLock(db, { tenantId: 't1', expectToken: lock.token }))?.token, lock.token)
+  })
+})
+
+describe('Verifier r6 + SecureDog r4 (2026-10-18): every reported input pinned', () => {
+  it('Verifier r6 #1: ordinary stock / shipping turns are never a payment hold (live Sofi)', () => {
+    for (const [c, r] of [
+      ['¿Lo tienen en stock?', '¡Sí, lo tenemos! 🙌 Te confirmo que sale por Correos y llega en 2 a 3 días.'],
+      ['¿La tienen en talla M?', '¡Sí! Está lista para enviarse 😊 ¿Te la aparto?'],
+      ['¿Lo tienen?', '¡Sí! 🙌'],
+      ['Listo, lo quiero. ¿Hacen envíos a Limón?', '¡Sí! Te confirmo que enviamos a Limón por Correos 🙌'],
+      ['Ya vi los precios, quiero el pack de 3', '¡Genial! El pack de 3 está listo para enviarse. ¿A qué zona te lo mando?'],
+      ['Ya me decidí, quiero 2 bolsas', '¡Perfecto! Todo listo para tu pedido 🙌 Pasame tus datos.'],
+      ['Hola, ya llegué a la casa, ¿me cuentan del producto?', '¡Hola! Todo bien 😊 Los parches se usan de noche.'],
+      ['Hecho, ¿cuánto es el envío?', 'El envío es ₡3 000 por Correos, todo bien 🙌'],
+    ]) {
+      const v = validateAgentOutput({ text: r, citedToolNames: [], quoteAmounts: [3000], customerText: c })
+      assert.ok(!v.reasons.includes('payment_status_claim'), `${c} → ${r} → ${v.reasons}`)
+    }
+  })
+  it('Verifier r6 #2: the store greeting may go out as several parts, or name-first', () => {
+    assert.equal(noPaymentYet([msg('inbound', 'Hola'), msg('outbound', '¡Hola! Soy Vale de Sleeping Patches CR 🌙'), msg('outbound', '¿De qué parte del país nos escribís?'), msg('inbound', '¿Me confirmás?')]), true)
+    assert.equal(noPaymentYet([msg('inbound', 'Hola'), msg('outbound', 'Soy Sofi de PatchHouse 😊 ¿En qué te ayudo?'), msg('inbound', '¿Me confirmás?')]), true)
+    // Two store turns (a customer message between them) end it.
+    assert.equal(noPaymentYet([msg('outbound', '¡Hola! Soy Vale'), msg('inbound', 'Hola'), msg('outbound', '¿En qué te ayudo?'), msg('inbound', '¿Me confirmás?')]), false)
+  })
+  it('Verifier r6 #3: a trailing question next to the threshold rule is fine', async () => {
+    const { salesFreeShippingRule, salesAllowedAmounts } = await import('@/lib/soft-ai/sales-state')
+    const ctx: SalesContext = { ...CTX, catalog: [{ name: 'A', price: 9900, stockLabel: 'x' }, { name: 'B', price: 9900, stockLabel: 'x' }], bundles: [], freeShippingOver: 25000 }
+    const rule = salesFreeShippingRule(ctx)!
+    for (const t of ['Tenemos envío gratis en compras desde ₡25 000. ¿Querés que te cotice?', 'Envío gratis desde ₡25 000 🚚\n\n¿Cuántas cajas te gustaría?']) {
+      const v = validateAgentOutput({ text: t, citedToolNames: [], quoteAmounts: salesAllowedAmounts(ctx), freeShippingRule: rule })
+      assert.equal(v.ok, true, `${t} → ${v.reasons}`)
+    }
+  })
+  it('SecureDog r4 INT-166: no "enough / free" claim and no too-small count next to the threshold rule', async () => {
+    const { salesFreeShippingRule, salesAllowedAmounts } = await import('@/lib/soft-ai/sales-state')
+    const ctx: SalesContext = {
+      ...CTX,
+      catalog: [
+        { name: 'Pura Sonrisa Menta', price: 9900, stockLabel: 'x' },
+        { name: 'Pura Sonrisa Fresa', price: 9900, stockLabel: 'x' },
+      ],
+      bundles: [],
+      freeShippingOver: 25000,
+    }
+    const rule = salesFreeShippingRule(ctx)!
+    for (const tail of ['Con dos cajas queda gratis.', 'Dos cajas son suficientes.', 'Dos cajas bastan.', 'Este pedido entra.', 'Con 2 Menta queda cubierto.', 'El pedido de dos sale sin envío.', 'Llevá 2 cajas.']) {
+      const v = validateAgentOutput({ text: `Envío gratis desde ₡25 000. ${tail}`, citedToolNames: [], quoteAmounts: salesAllowedAmounts(ctx), freeShippingRule: rule })
+      assert.equal(v.ok, false, tail)
+    }
+  })
+  it('SecureDog r4 INT-167: "¿Les llegó?" / "¿Lo recibieron?" are payment cues; bare "yes" replies are held', () => {
+    for (const c of ['¿Les llegó?', '¿Le cayó?', '¿Lo recibieron?', '¿Ya lo recibió?']) assert.equal(classifyPaymentText(c), 'payment_proof_or_risk', c)
+    assert.equal(classifyPaymentText('¿Lo tienen en azul?'), 'non_payment')
+    for (const [c, r] of [['¿Les llegó?', '¡Claro que sí! 🙌'], ['¿Les llegó?', '¡Por supuesto!'], ['¿Lo recibieron?', 'Correcto 👍'], ['¿Ya está?', '¡Hecho! 🙌']]) {
+      assert.ok(validateAgentOutput({ text: r, citedToolNames: [], customerText: c }).reasons.includes('payment_status_claim'), `${c} → ${r}`)
+    }
+  })
+  it('SecureDog r4 INT-169: a greeting-led store message that waits on the customer ends "no payment yet"', () => {
+    for (const [store, reply] of [['¡Hola! ¿Ya lo hiciste?', 'Sí'], ['Hola, ¿pudiste?', 'Sí'], ['Hola, te paso los datos por privado', 'Gracias'], ['Buenas, avisame cuando esté', 'Dale'], ['¡Hola! Te espero 😊', 'Ok']]) {
+      assert.equal(noPaymentYet([msg('outbound', store), msg('inbound', reply), msg('inbound', '¿Me confirmás?')]), false, store)
+    }
+  })
+  it('SecureDog r4 #4: a reply to a confirm ask with no question is held', () => {
+    for (const r of ['¡Así es!', '¡Afirmativo!', '¡Efectivamente!', '¡Obvio!', '¡Seguro!', '¡Sí, gracias!', '¡Sí, con gusto!', '¡Claro que sí! Gracias por tu compra', '¡Sí! Tu pedido sale hoy']) {
+      assert.ok(validateAgentOutput({ text: r, citedToolNames: [], customerText: '¿Me confirmás?' }).reasons.includes('payment_status_claim'), r)
+    }
+    assert.equal(validateAgentOutput({ text: '¡Claro! ¿Qué pedido querés confirmar?', citedToolNames: [], customerText: '¿Me confirmás?' }).ok, true)
+  })
+  it('SecureDog r4 Info: --unlock with no lock held frees nothing', () => {
+    assert.match(readFileSync('scripts/agent-pack/test-cap.ts', 'utf8'), /const freed = held \? await forceReleaseTestLock\(lockDb, \{ tenantId, expectToken: held\.token \}\) : null/)
   })
 })

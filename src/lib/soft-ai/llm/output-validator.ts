@@ -286,7 +286,8 @@ function maskIncludedPriceParentheticals(text: string, includedPrices: ReadonlyA
 }
 
 /** The clause before ", y" states a shipping cost ("Con 1 bolsa el envío cuesta ₡3 000", "son ₡3 000 de envío"). */
-const SHIPPING_COST_TAIL_RE = /env[ií]o\s+(?:cuesta|sale|es|vale|queda)\s+(?:en\s+)?[₡¢]\s?[\d.,\s\u00a0]+$|[₡¢]\s?[\d.,\s\u00a0]+\s+de\s+env[ií]o\s*$/iu
+// SecureDog r2 (INT-186 hardening): never "₡0" — a zero shipping cost is a free-shipping claim, not a cost statement.
+const SHIPPING_COST_TAIL_RE = /env[ií]o\s+(?:cuesta|sale|es|vale|queda)\s+(?:en\s+)?[₡¢]\s?[1-9][\d.,\s\u00a0]*$|[₡¢]\s?[1-9][\d.,\s\u00a0]*\s+de\s+env[ií]o\s*$/iu
 
 function clauseSpans(text: string, splitAtCommaY = true): Array<[number, number]> {
   const spans: Array<[number, number]> = []

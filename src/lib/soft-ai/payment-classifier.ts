@@ -432,8 +432,35 @@ function confirmCueCounts(value: string, noPaymentYet: boolean): boolean {
  * completion, a done-verb about money) — never the "payment word and no question" fallback, so "Sinpe" + "gracias"
  * after "¿Cómo preferís pagar?" or "No tengo sinpe" + "¿aceptan tarjeta?" stay answers.
  */
+/**
+ * Pura Sonrisa P4: two phrases that are never about paying the store — "(para) no pagar (el) envío" (the customer picks
+ * it up) and a delivery person / the order arriving ("El Uber ya llegó", "Ya llegó el mensajero", "ya el paquete
+ * llegó"). Blanked out before the checks, ONLY when the message names no payment noun ("Ya pagué, el Uber ya llegó"
+ * stays a claim). Pure.
+ */
+const DELIVERY_SUBJECT = String.raw`(?:(?:el|la|mi)\s+)?(?:uber|didi|indriver|mensajer[oa]|motorizad[oa]|repartidor(?:a)?|chofer|taxi|paquete|pedido|encomienda|env[ií]o)`
+const NO_PAY_SHIPPING_RE = /(?<![\p{L}])(?:para\s+)?no\s+pagar(?:\s+(?:el|lo\s+del))?\s+env[ií]o(?![\p{L}])/giu
+const DELIVERY_ARRIVAL_RE = new RegExp(
+  String.raw`(?<![\p{L}])(?:${DELIVERY_SUBJECT}\s+ya\s+lleg[oó]|ya\s+lleg[oó]\s+${DELIVERY_SUBJECT}|ya\s+${DELIVERY_SUBJECT}\s+lleg[oó])(?![\p{L}])`,
+  'giu',
+)
+/** Money / payment / done words (Verifier b3: cash to the courier — "le di los 15 mil", "le dejé el efectivo", "ya quedó"). */
+const PAYMENT_NOUN_ANY_RE =
+  /(?<![\p{L}])(?:sinpe|simpe|pag\p{L}*|plata|platica|dinero|efectivo|cash|transfer\p{L}*|dep[oó]sit\p{L}*|comprobante|monto|tarjeta|cuenta|cancel\p{L}*|abon\p{L}*|mil|rojos|colones|di|dimos|entregu[eé]|entregamos|dej[eé]|dejamos|listo|hecho|qued[oó]|ya\s+est[aá]|revis\p{L}*|confirm\p{L}*)(?![\p{L}])|[₡¢]|\d{3,}|[✅✔☑👍]/iu
+export function maskNonPaymentPhrases(value: string): string {
+  let out = value
+  // "(para) no pagar (el) envío": blanked only when no money / done word is left ("Mejor lo retiro para no pagar envío").
+  const noPay = out.replace(NO_PAY_SHIPPING_RE, ' ')
+  if (noPay !== out && !PAYMENT_NOUN_ANY_RE.test(noPay) && !hasPaymentStatusHint(noPay)) out = noPay
+  // A delivery person / the order arriving: blanked only when nothing but courtesy is left ("Ya llegó el Uber, gracias").
+  // Verifier b3: "Ya llegó el mensajero, le di los 15 mil" is a cash-on-delivery claim and keeps its hand-off.
+  const arrival = out.replace(DELIVERY_ARRIVAL_RE, ' ')
+  if (arrival !== out && (!arrival.replace(FRIENDLY_RE, '').replace(/[\s,.!¡¿?…]+/gu, '') || isCourtesyText(arrival))) out = arrival
+  return out
+}
+
 export function hasHardPaymentClaim(text: string, opts: { noPaymentYet?: boolean } = {}): boolean {
-  const value = stripFormatChars((text || '').normalize('NFKC'))
+  const value = maskNonPaymentPhrases(stripFormatChars((text || '').normalize('NFKC')))
   return (
     SENT_AMOUNT_CLAIM_RE.test(value) ||
     PROOF_CUE_RE.test(value) ||
@@ -519,6 +546,29 @@ export function isHowPayShipQuestion(text: string): boolean {
   return v.length > 0 && v.length <= 80 && HOW_PAY_SHIP_RE.test(v)
 }
 
+/**
+ * Prototipo shoppers (2026-10-18): closed pre-purchase questions that name a method — "¿Cómo hago para pedirlo y pagar
+ * por SINPE?", "Me sirve SINPE, pero ¿cuánto sería con envío?". The WHOLE message (after a greeting) must be one of these
+ * shapes; checked only after every claim check. Pure.
+ */
+const PRE_METHOD = String.raw`(?:sinpe(?:\s+m[oó]vil)?|simpe|transferencia|tarjeta|efectivo|contra\s?entrega)`
+const PRE_PURCHASE_RE = new RegExp(
+  String.raw`^(?:` +
+    String.raw`c[oó]mo\s+(?:hago|le\s+hago|puedo\s+hacer)\s+para\s+(?:pedir|comprar|ordenar|encargar)(?:lo|la|los|las)?\s+y\s+pagar(?:lo|la)?\s+(?:por|con|en)\s+${PRE_METHOD}` +
+    String.raw`|(?:me\s+sirve|prefiero|mejor|puedo\s+pagar\s+(?:por|con))\s+(?:por\s+|con\s+)?${PRE_METHOD}\s*,?\s*(?:pero\s+|y\s+)?cu[aá]nto\s+(?:ser[ií]a|es|queda|sale|saldr[ií]a|quedar[ií]a)\s+(?:con|el|con\s+el)\s+env[ií]o` +
+    String.raw`)\s*[?!.]*$`,
+  'iu',
+)
+export function isPrePurchaseMethodQuestion(text: string): boolean {
+  const v = clean(stripFormatChars(text || ''))
+    .replace(/[¿¡]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(LEADING_GREETING_RE, '')
+    .trim()
+  return v.length > 0 && v.length <= 100 && PRE_PURCHASE_RE.test(v)
+}
+
 // Only bare ("¿Les llegó?", "¿Lo recibieron?") or with a payment noun — "¿Les llegó mercadería nueva?" is stock.
 // Verifier r7 #1: never "nos" ("Nos llegó, gracias" = the customer got the order); "le" and "recibió" only as a question.
 const PAY_NOUN_AFTER = String.raw`\s+(?:el|la|mi|lo)\s+(?:pago|sinpe|simpe|plata|dinero|platica|transferencia|dep[oó]sito|comprobante)`
@@ -541,7 +591,8 @@ export function classifyPaymentText(
   opts: { awaitingPaymentMethod?: boolean; noPaymentYet?: boolean } = {},
 ): PaymentClassification {
   // SecureDog: full-width / invisible-character spellings ("ＳＩＮＰＥ ✅", "he\u200Bcho") are read as plain text.
-  const value = stripFormatChars((text || '').normalize('NFKC'))
+  const value = maskNonPaymentPhrases(stripFormatChars((text || '').normalize('NFKC')))
+  if (!value.trim()) return 'non_payment'
   if (SENT_AMOUNT_CLAIM_RE.test(value)) return 'payment_proof_or_risk'
   if (
     PROOF_CUE_RE.test(value) ||
@@ -613,6 +664,8 @@ export function classifyPaymentText(
   // Pura Sonrisa exam P4: "¿cómo sería el envío y el pago?" / "y el pago como sería" — the WHOLE message (after a
   // greeting) is this closed how-does-it-work question: the agent answers with the method list.
   if (isHowPayShipQuestion(value)) return 'payment_info_safe'
+  // Prototipo shoppers: closed pre-purchase questions naming a method (how to order / how much with shipping).
+  if (isPrePurchaseMethodQuestion(value)) return 'payment_info_safe'
   if (PAYMENT_RE.test(value)) {
     return 'payment_proof_or_risk'
   }
@@ -757,7 +810,8 @@ function foldChoice(text: string): string {
 const METHOD = String.raw`(sinpe(?: movil)?|transferencia(?: bancaria)?|tarjeta(?: de (?:credito|debito))?|contra ?entrega|al recibir(?:lo|la)?|efectivo)`
 const LEAD = String.raw`(?:(?:prefiero pagar|prefiero|mejor|quiero pagar|voy a pagar|quisiera pagar|(?:te|le|les) pago|pago)\s+)?(?:(?:por|con|en)\s+)?(?:el\s+|la\s+)?`
 const TAIL = String.raw`(?:\s*,?\s*(?:porfa|por favor|gracias|pls|esta bien|mejor|entonces|por la web|por la pagina|en la web|en la pagina)){0,3}[\s.!🙏😊🙌]*`
-const ASK_HEAD = String.raw`¿?\s*(?:me\s+(?:pasas|pasa|das|da)|cual\s+es|a\s+que)\s+(?:el\s+|los\s+|la\s+)?(?:numero|cuenta|link|datos)`
+// Pura Sonrisa P4: the imperative ask too ("Por SINPE, pasame el número", "mandame los datos").
+const ASK_HEAD = String.raw`¿?\s*(?:me\s+(?:pasas|pasa|das|da)|pasame|mandame|dame|regalame|enviame|cual\s+es|a\s+que)\s+(?:el\s+|los\s+|la\s+)?(?:numero|cuenta|link|datos)`
 const ASK_TAIL = String.raw`\s*\?*${TAIL}`
 /** "SINPE", "por sinpe porfa", "Prefiero SINPE 🙏", "pago al recibirlo", "en efectivo". */
 const CHOICE_RE = new RegExp(String.raw`^${LEAD}${METHOD}${TAIL}$`, 'u')

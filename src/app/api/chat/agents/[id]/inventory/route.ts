@@ -1,6 +1,7 @@
 /**
  * GET/PUT /api/chat/agents/[id]/inventory — which products this agent may quote (SQL 046).
- * tenantId from the session; the agent and every product must belong to it; PUT needs update_config and is audited.
+ * PATCH — the out-of-stock switch of ONE of those products (SQL 055; store-level: every agent of the store sees it).
+ * tenantId from the session; the agent and every product must belong to it; PUT/PATCH need update_config and are audited.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { isSameOriginRequest } from '@/lib/same-origin'
@@ -16,8 +17,12 @@ import {
 } from '@/lib/soft-ai/agent-inventory-map'
 import { recordAgentVersionSnapshot } from '@/lib/soft-ai/agent-improvement'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
+import { z } from 'zod'
+import { AvailabilityNotReadyError, availabilityReady, loadAvailability, saveAvailability } from '@/lib/soft-ai/product-availability'
+import { backDateExpired, backText, checkBackDate, sanitizeBackNote, tracksStock } from '@/lib/soft-ai/product-availability-core'
 
 const inventoryRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 20, identifier: 'chat-agent-inventory' })
+const availabilityRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 60, identifier: 'chat-agent-availability' })
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -29,6 +34,39 @@ async function ownedAgent(tenantId: string, id: string) {
   })
 }
 
+/** Out-of-stock switch (SQL 055) per mapped product: the owner's switch, the stock-0 rule and the "vuelve aprox.". */
+async function withAvailability(tenantId: string, result: Awaited<ReturnType<typeof listMappedInventory>>) {
+  const ready = result.available && (await availabilityReady())
+  const rows = ready ? await loadAvailability(tenantId, result.items.map((i) => i.id)) : new Map()
+  const tracks = tracksStock(result.items.filter((i) => i.isActive))
+  return {
+    ...result,
+    availabilityReady: ready,
+    tracksStock: tracks,
+    items: result.items.map((i) => {
+      const row = rows.get(i.id) ?? null
+      return {
+        ...i,
+        soldOut: row?.soldOut === true,
+        autoSoldOut: tracks && i.isActive && i.currentStock <= 0,
+        backDate: row?.backDate ?? null,
+        backNote: row?.backNote ?? null,
+        backExpired: Boolean(row?.backDate && backDateExpired(row.backDate)),
+        backText: backText(row),
+      }
+    }),
+  }
+}
+
+const availabilityBody = z
+  .object({
+    itemId: z.string().min(1).max(80),
+    soldOut: z.boolean(),
+    backDate: z.string().max(10).nullable().optional(),
+    backNote: z.string().max(200).nullable().optional(),
+  })
+  .strict()
+
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const auth = await authenticateAPIWithPermission(request, 'view_config')
@@ -37,7 +75,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     if (!(await ownedAgent(auth.tenantId, id))) {
       return NextResponse.json({ success: false, error: 'Agente no encontrado' }, { status: 404 })
     }
-    const result = await listMappedInventory(auth.tenantId, id)
+    const result = await withAvailability(auth.tenantId, await listMappedInventory(auth.tenantId, id))
     // ?catalog=1: this business's active products grouped by category, to pick a whole group (all sizes) at once.
     if (request.nextUrl.searchParams.get('catalog') === '1') {
       const all = await prisma.inventoryItem.findMany({
@@ -144,6 +182,69 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       )
     }
     console.error('[chat/agents/inventory PUT]', error instanceof Error ? error.name : 'unknown')
+    return NextResponse.json({ success: false, error: 'No se pudo guardar' }, { status: 500 })
+  }
+}
+
+export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  try {
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    if (!auth.ok) return auth.response
+    if (!isSameOriginRequest(request)) {
+      return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })
+    }
+    const rate = await availabilityRateLimit(`${auth.tenantId}:${auth.userId}`)
+    if (!rate.allowed) {
+      return NextResponse.json({ success: false, error: 'Demasiados cambios. Esperá un momento.' }, { status: 429, headers: rate.headers })
+    }
+    const { id } = await context.params
+    const agent = await ownedAgent(auth.tenantId, id)
+    if (!agent) return NextResponse.json({ success: false, error: 'Agente no encontrado' }, { status: 404 })
+    const parsed = availabilityBody.safeParse(await request.json().catch(() => null))
+    if (!parsed.success) return NextResponse.json({ success: false, error: 'Datos inválidos' }, { status: 400 })
+    const body = parsed.data
+    const backDate = checkBackDate(body.backDate)
+    if (backDate === 'invalid') {
+      return NextResponse.json({ success: false, error: 'La fecha de regreso tiene que ser de hoy a 6 meses.' }, { status: 400 })
+    }
+    // Only a product of THIS agent's list (fail closed: an agent with no list sells nothing) and of this business.
+    const mapped = await loadMappedInventoryIds(auth.tenantId, agent.id)
+    if (!mapped || !mapped.includes(body.itemId)) {
+      return NextResponse.json({ success: false, error: 'Ese producto no está en la lista de este agente.' }, { status: 404 })
+    }
+    const item = await prisma.inventoryItem.findFirst({
+      where: { id: body.itemId, tenantId: auth.tenantId },
+      select: { id: true, name: true },
+    })
+    if (!item) return NextResponse.json({ success: false, error: 'Producto no encontrado' }, { status: 404 })
+    // A date wins over the note (one "vuelve aprox." at a time); the note is cleaned again on every read.
+    const backNote = backDate ? null : sanitizeBackNote(body.backNote)
+    const before = await saveAvailability({
+      tenantId: auth.tenantId,
+      inventoryItemId: item.id,
+      soldOut: body.soldOut,
+      backDate,
+      backNote,
+      actorUserId: auth.userId,
+    })
+    await logAuditEvent({
+      action: 'UPDATE',
+      entityType: 'ChatAgent',
+      entityId: agent.id,
+      entityName: agent.name,
+      description: `${body.soldOut ? 'Agotado' : 'Disponible'}: ${item.name.slice(0, 80)}`,
+      oldValues: { inventoryItemId: item.id, soldOut: before?.soldOut ?? false, backDate: before?.backDate ?? null, backNote: before?.backNote ?? null },
+      newValues: { inventoryItemId: item.id, soldOut: body.soldOut, backDate, backNote, agentId: agent.id },
+      userId: auth.userId,
+      userRole: auth.role,
+      tenantId: auth.tenantId,
+    }).catch(() => {})
+    return NextResponse.json({ success: true, soldOut: body.soldOut, backDate, backNote })
+  } catch (error) {
+    if (error instanceof AvailabilityNotReadyError) {
+      return NextResponse.json({ success: false, error: 'El botón "Agotado" se activa con la próxima actualización.' }, { status: 503 })
+    }
+    console.error('[chat/agents/inventory PATCH]', error instanceof Error ? error.name : 'unknown')
     return NextResponse.json({ success: false, error: 'No se pudo guardar' }, { status: 500 })
   }
 }

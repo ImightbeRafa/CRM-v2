@@ -33,6 +33,7 @@ import {
   salesFreeShippingRule,
   salesNeedsHuman,
   salesPaymentOptions,
+  salesStockGuard,
   salesSystemBlock,
   type SalesContext,
 } from '@/lib/soft-ai/sales-state'
@@ -252,6 +253,7 @@ export function assembleAgentRuntimeInputs(input: {
     salesAllowedDeals: sales ? salesAllowedDeals(sales) : [],
     salesFreeShipping: Boolean(sales?.promo?.freeShipping),
     salesFreeShippingRule: sales ? salesFreeShippingRule(sales) : null,
+    salesStockGuard: sales ? salesStockGuard(sales, salesState ?? null) : null,
     // INT-112: same allowlist for live and Probar — brand site, map link, and links the owner wrote in ACTIVE saved
     // replies and APPROVED bound knowledge (PatchHouse ↔ sleep.shopping cross-links pass this way).
     linkAllowlist: brandFactsLinkAllowlist(

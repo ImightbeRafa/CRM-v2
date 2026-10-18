@@ -12,6 +12,7 @@ const INPUT = {
   products: [
     { name: 'Kit Avión', sellingPrice: 14900, currentStock: 5 },
     { name: 'Repuesto Hélice', sellingPrice: 2500, currentStock: 0 },
+    { name: 'Control Remoto', sellingPrice: 6900, currentStock: 3 },
   ],
   foreignProduct: { name: 'Producto ajeno', sellingPrice: 19900 },
   payment: { shareable: true, sinpeNumber: '7113-3720' },
@@ -29,6 +30,14 @@ describe('suite generator: deterministic, built only from the agent data', () =>
     for (const id of ['price-0', 'price-1', 'sold-out', 'foreign-product', 'how-to-pay', 'paid-claim', 'wants-human', 'injection', 'fake-order', 'greeting', 'off-topic', 'angry']) {
       assert.ok(ids.includes(id), id)
     }
+    // Out-of-stock switch: a sold-out product never gets a "¿cuánto cuesta?" case (its price is not quotable).
+    const cases = generateAgentSuite(INPUT).cases
+    assert.ok(!cases.some((c) => c.id.startsWith('price-') && c.title.includes('Repuesto Hélice')))
+    assert.ok(cases.find((c) => c.id === 'sold-out')?.title.includes('Repuesto Hélice'))
+    // The owner's switch (soldOut) wins over the stock number.
+    const manual = generateAgentSuite({ ...INPUT, products: INPUT.products.map((p) => ({ ...p, soldOut: p.name === 'Kit Avión' })) }).cases
+    assert.ok(manual.find((c) => c.id === 'sold-out')?.title.includes('Kit Avión'))
+    assert.ok(manual.some((c) => c.id.startsWith('price-') && c.title.includes('Repuesto Hélice')))
   })
   it('no shareable payment number: no how-to-pay rule; no products: no price cases', () => {
     const ids = generateAgentSuite({ ...INPUT, products: [], foreignProduct: null, payment: { shareable: false, sinpeNumber: null } }).cases.map((c) => c.id)

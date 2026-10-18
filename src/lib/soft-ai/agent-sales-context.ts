@@ -15,6 +15,8 @@ import { canSharePaymentFacts, paymentLabelOptions, paymentMethodsOf, type Brand
 import { shippingFromFacts, type SalesContext } from '@/lib/soft-ai/sales-state'
 import { promoInEffect } from '@/lib/soft-ai/promo'
 import { PICKUP_DATA_FIELDS, SHIPPING_DATA_FIELDS } from '@/lib/soft-ai/order-data-list'
+import { loadAgentStock } from '@/lib/soft-ai/product-availability'
+import { bundleHasSoldOut, buildStockGuard, soldOutLabel } from '@/lib/soft-ai/product-availability-core'
 
 const INLINE_CATALOG_MAX = 30
 /**
@@ -58,7 +60,7 @@ export async function loadAgentSalesContext(input: {
     if (input.strict) throw error
     return fallback
   }
-  const [setup, requirements, coverage, items] = await Promise.all([
+  const [setup, requirements, coverage, items, stock] = await Promise.all([
     loadSalesSetup(input.tenantId, input.agentId).catch(soft(null)),
     loadOrderRequirements(input.tenantId).catch(soft(null)),
     loadCoverage(input.tenantId).catch(soft([] as Awaited<ReturnType<typeof loadCoverage>>)),
@@ -71,6 +73,8 @@ export async function loadAgentSalesContext(input: {
           })
           .catch(soft(null))
       : Promise.resolve(null),
+    // Out-of-stock switch (SQL 055): all of the agent's products, not only the inline ones (search_inventory too).
+    loadAgentStock(input.tenantId, ids).catch(soft(buildStockGuard([], new Map()))),
   ])
 
   const offered = new Set(setup?.offeredShippingMethodIds ?? [])
@@ -111,14 +115,18 @@ export async function loadAgentSalesContext(input: {
       ? { freeShipping: promo.freeShipping, specialPrice: promo.specialPrices.length > 0, codHighlight: promo.codHighlight, headline: promo.headline }
       : null,
     catalog: items
-      ? items.map((i) => ({
-          name: i.name,
-          price: specialFor(i) ?? Number(i.sellingPrice),
-          stockLabel: i.currentStock <= 0 ? 'agotado' : i.currentStock < i.minStock ? 'pocas unidades' : 'disponible',
-        }))
+      ? items.map((i) => {
+          const price = specialFor(i) ?? Number(i.sellingPrice)
+          // Sold out (owner switch, or stock 0 in a store that tracks stock): its price is never shown or quotable.
+          if (stock.soldOutIds.has(i.id)) return { name: i.name, price, soldOut: true, stockLabel: soldOutLabel(stock.backById.get(i.id) ?? null) }
+          // Stock 0 in a store that does not track stock is just the default value: not "agotado".
+          return { name: i.name, price, stockLabel: i.currentStock > 0 && i.currentStock < i.minStock ? 'pocas unidades' : 'disponible' }
+        })
       : null,
+    stock: stock.guard,
     shippingMethods,
-    bundles: (setup?.salesRules.bundles ?? []).map((b) => ({
+    // A combo whose name contains a sold-out product's whole name is not offered (combos have no product link).
+    bundles: (setup?.salesRules.bundles ?? []).filter((b) => !bundleHasSoldOut(b.name, stock.guard.soldOut.map((x) => x.name))).map((b) => ({
       name: b.name,
       price: b.price,
       // The owner's own flag; a promo counts only when it frees EVERY method (a GAM-only promo is not "included").

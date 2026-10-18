@@ -23,6 +23,7 @@ import {
 import { softAiToolDefinitions } from '@/lib/soft-ai/llm/tool-definitions'
 import { runA1Tool, type SoftAiToolRunContext } from '@/lib/soft-ai/llm/tool-runner'
 import { validateAgentOutput, type FreeShippingRule } from '@/lib/soft-ai/llm/output-validator'
+import type { StockGuard } from '@/lib/soft-ai/product-availability-core'
 import type { LinkAllowlist } from '@/lib/soft-ai/links'
 import { runAgentFallback } from '@/lib/soft-ai/llm/fallback'
 import { redactToolTrace } from '@/lib/soft-ai/llm/redact'
@@ -85,6 +86,8 @@ export type SoftAiLlmRuntimeInput = {
   salesFreeShipping?: boolean
   /** Store rule "envío gratis desde ₡X": the words pass only next to that amount (output-validator). */
   salesFreeShippingRule?: FreeShippingRule | null
+  /** Out-of-stock switch (SQL 055): sold-out products + names on sale for the stock checks (null = none sold out). */
+  salesStockGuard?: StockGuard | null
   /** INT-109 / INT-112: links a reply may carry (brandFactsLinkAllowlist) — any other is 'foreign_link'. */
   linkAllowlist?: LinkAllowlist
   /** Sales flow: contra entrega offered by a shipping method, for [[PAGO_CONTRA_ENTREGA]] (agents2-format). */
@@ -441,6 +444,7 @@ export async function runSoftAiLlmRuntime(
         customerText: burstCustomerText(input.history, input.inboundText),
         linkAllowlist: input.linkAllowlist,
         paymentContext: conversationPaymentContext(input.history, input.inboundText),
+        stockGuard: input.salesStockGuard,
       })
     let validation = validate(finalText)
     // B7: a reply that breaks a rule (made-up amount, a deal, "ya quedó pagado"…) gets ONE rewrite with the reasons
@@ -724,6 +728,8 @@ export const REPAIRABLE_REASONS: ReadonlySet<string> = new Set([
   'style_too_long',
   'results_claim',
   'foreign_link',
+  'sold_out_offered',
+  'restock_date_invented',
 ])
 
 const REPAIR_REASON_TEXT: Record<string, string> = {
@@ -735,6 +741,9 @@ const REPAIR_REASON_TEXT: Record<string, string> = {
   unit_cost_leak: 'mencionaste un costo interno',
   style_too_long: 'quedó muy largo',
   foreign_link: 'pusiste un enlace que no es del sitio del negocio (no pongas enlaces)',
+  sold_out_offered:
+    'cerraste la venta de un producto AGOTADO (pediste datos o preguntaste cómo pagar); decí que está agotado, el "vuelve aprox." solo si la lista lo trae, y ofrecé un producto disponible sin pedir datos ni pago',
+  restock_date_invented: 'diste una fecha de regreso que no está en la lista; usá solo el "vuelve aprox." de la lista o decí que todavía no hay fecha',
   results_claim:
     'prometiste un resultado o efecto (cambios, en cuántos días, lo que notan otras personas, curar o bajar de peso) o aseguraste que es seguro / sin efectos secundarios; decí solo los ingredientes y el modo de uso de los datos del negocio, que cada organismo responde diferente y que ante embarazo, lactancia, una condición o medicamentos consulte a su médico',
 }

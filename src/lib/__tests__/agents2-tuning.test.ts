@@ -710,7 +710,7 @@ describe('round 2 · INT-109: links', () => {
     const turn = read('src/lib/soft-ai/agent-turn.ts')
     assert.equal((turn.match(/shortenLongReply: true,\r?\n\s*linkAllowlist: runtimeInput\.linkAllowlist,/g) || []).length, 2)
     assert.match(read('src/lib/soft-ai/llm/runtime.ts'), /linkAllowlist: input\.linkAllowlist,/)
-    assert.match(read('src/lib/soft-ai/llm/runtime.ts'), /'foreign_link',\r?\n\]\)/)
+    assert.match(read('src/lib/soft-ai/llm/runtime.ts'), /'foreign_link',\r?\n(?:\s*'[a-z_]+',\r?\n)*\]\)/)
     // Round 4: the owner texts come through linkSourceTexts (corrections docs: "R:" answers only).
     assert.match(read('src/lib/soft-ai/agent-turn-inputs.ts'), /linkAllowlist: brandFactsLinkAllowlist\(\s*input\.agent\.brandFacts,\s*linkSourceTexts\(\{/)
   })

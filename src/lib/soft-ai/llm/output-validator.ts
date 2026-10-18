@@ -18,6 +18,7 @@ import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
 import { buildLinkAllowlist, foreignLinks, type LinkAllowlist } from '@/lib/soft-ai/links'
 import { canonicalizeOrderDataList, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
 import { MAX_REPLY_PARTS, splitReplyParts } from '@/lib/soft-ai/reply-parts'
+import { stockProblems, type StockGuard } from '@/lib/soft-ai/product-availability-core'
 
 /**
  * Backstop for short payment confirmations the confirmation-wording check misses ("Sí, ya se acreditó", "Sí, lo
@@ -509,8 +510,11 @@ export function validateAgentOutput(input: {
   linkText?: string
   /** N3: the contra-entrega / efectivo closing turn — the order-confirmation wording check applies. */
   orderClosing?: boolean
+  /** Out-of-stock switch (SQL 055): no close for a sold-out product, no invented "vuelve" date. */
+  stockGuard?: StockGuard | null
 }): OutputValidationResult {
-  const reasons: string[] = []
+  // Judged before payment tokens were filled (styleText): a [[PAGO_…]] token is a close.
+  const reasons: string[] = stockProblems(input.styleText ?? input.text ?? '', input.stockGuard)
   const text = input.text || ''
   const cited = new Set(input.citedToolNames)
   const highlighted: number[] = []
@@ -746,6 +750,8 @@ export function applyFinalOutputPolicy(input: {
   linkAllowlist?: LinkAllowlist | null
   /** Sales flow: contra entrega offered by a shipping method (agent-sales-context) for [[PAGO_CONTRA_ENTREGA]]. */
   paymentOptions?: PaymentFillOptions
+  /** Out-of-stock switch (SQL 055): same stock checks as the runtime (live turn + Probar). */
+  stockGuard?: StockGuard | null
 }): FinalOutputPolicy {
   const facts = input.brandFacts || { schemaVersion: 1 }
   const style = input.replyStyle || DEFAULT_REPLY_STYLE
@@ -846,6 +852,7 @@ export function applyFinalOutputPolicy(input: {
     linkAllowlist: input.linkAllowlist ?? undefined,
     styleText,
     linkText: styleText,
+    stockGuard: input.stockGuard,
     orderClosing:
       filled.methods.some((m) => m === 'contra_entrega' || m === 'efectivo') ||
       input.paymentOptions?.chosenMethod === 'contra_entrega' ||

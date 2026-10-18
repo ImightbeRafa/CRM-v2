@@ -5,7 +5,7 @@
 
 import { AGENT_INTENTS, type AgentIntent } from '@/lib/soft-ai/agent-intents'
 import { brandFactTemplateValues, type BrandFacts } from '@/lib/soft-ai/brand-facts'
-import { fenceDataText } from '@/lib/soft-ai/prompt-fence'
+import { fenceDataText, stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import { SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
 
 /** Saved replies the owner made with "Corregir" (agent-tuning.ts): listed first in the prompt catalog. */
@@ -38,7 +38,33 @@ export const VERBATIM_ONLY_KINDS: readonly ShortcutKind[] = [
 
 // Accent-safe word edges (JS \b fails after á/ó) and the first-person forms a seller would use (INT-70, 2026-10-09).
 const CONFIRMATION_WORDING_RE =
-  /(?<![\p{L}\p{N}_])(confirmad[oa]|verificad[oa]|recib(?:í|i|imos)\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|plata|dinero)|recibido|pago\s+(?:recibido|aplicado|acreditado|aprobado|confirmado)|(?:ya\s+)?(?:me\s+|nos\s+)?(?:lleg[oó]|cay[oó]|entr[oó])\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|plata|dinero)|(?:ya\s+)?(?:est[aá]|qued[oó])\s+(?:pagad[oa]|acreditad[oa]|aplicad[oa]|confirmad[oa])|te\s+confirmo\s+que\s+(?:el|tu|su|la)\s+(?:pago|plata|transferencia|sinpe)|todo\s+bien\s+con\s+(?:el|tu|su)\s+pago|ya\s+qued[oó]|gracias\s+por\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia)|(?:ya\s+)?tenemos\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia)|ya\s+(?:te\s+|le\s+)?(?:lo\s+|la\s+)?(?:preparamos|enviamos|despachamos|mandamos)(?:\s+(?:tu|su|el)\s+pedido)?|(?:tu|el|su)\s+pedido\s+ya\s+(?:est[aá]|va)\s+(?:en\s+camino|en\s+proceso\s+de\s+env[ií]o|listo))(?=$|[^\p{L}\p{N}_])/iu
+  /(?<![\p{L}\p{N}_])(confirmad[oa]|verificad[oa]|recib(?:í|i|imos)\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|plata|dinero)|recibido|pago\s+(?:recibido|aplicado|acreditado|aprobado|confirmado)|(?:ya\s+)?(?:me\s+|nos\s+)?(?:lleg[oó]|cay[oó]|entr[oó])\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|plata|dinero)|(?:ya\s+)?(?:est[aá]|qued[oó])\s+(?:pagad[oa]|acreditad[oa]|aplicad[oa]|confirmad[oa])|te\s+confirmo\s+que\s+(?:el|tu|su|la)\s+(?:pago|plata|transferencia|sinpe)|todo\s+bien\s+con\s+(?:el|tu|su)\s+pago|ya\s+qued[oó]|gracias\s+por\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia)|(?:ya\s+)?tenemos\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia)|ya\s+(?:te\s+|le\s+)?(?:lo\s+|la\s+)?(?:preparamos|enviamos|despachamos|mandamos)(?:\s+(?:tu|su|el)\s+pedido)?|(?:tu|el|su)\s+pedido\s+ya\s+(?:est[aá]|va)\s+(?:en\s+camino|en\s+proceso\s+de\s+env[ií]o|listo)|(?:confirm[éó]|verifiqué|verificó|aprob[éó]|registr[éó]|te\s+confirmo|ya\s+(?:confirmamos|verificamos|aprobamos|registramos))\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante|pedido|compra|orden)|recibi[oó]\s+(?:tu|el|su|la|los)\s+(?:pago|sinpe|dep[oó]sito|transferencia|plata|dinero)|(?<=^|[.!?¡¿\n]\s{0,3})(?:pedido|orden|compra)\s+(?:ya\s+)?pagad[oa]|(?:tu|su)\s+(?:pedido|orden|compra)\s+(?:ya\s+)?(?:est[aá]\s+)?pagad[oa]|(?:tu|el|su)\s+pedido\s+(?:ya\s+)?(?:va|est[aá]|sali[oó])\s+(?:en\s+camino|en\s+ruta|de\s+camino)|(?:tu|el|su)\s+(?:pedido|compra|orden)\s+ya\s+sali[oó]|ya\s+sali[oó]\s+(?:tu|el|su)\s+(?:pedido|compra|paquete)|(?:tu|el|su)\s+(?:pedido|compra|orden|pago)\s+(?:ya\s+)?(?:fue|ha\s+sido|est[aá])\s+(?:enviad|despachad|entregad|aprobad|registrad)[oa]|ya\s+(?:te\s+|le\s+)?(?:lo\s+|la\s+)?(?:despach[éó]|envi[éó]|mand[éó]|prepar[éó]))(?=$|[^\p{L}\p{N}_])/iu
+
+/**
+ * INT-158: Cyrillic / Greek letters that look like Latin ones ("cоnfirmado" with a Cyrillic о) are read as Latin.
+ * NFKC (stripFormatChars) already folds full-width / compatibility forms and drops invisible format characters.
+ */
+const LOOKALIKES: Record<string, string> = {
+  а: 'a', е: 'e', о: 'o', р: 'p', с: 'c', у: 'y', х: 'x', і: 'i', ј: 'j', ѕ: 's', ԁ: 'd', һ: 'h', ӏ: 'l', ԝ: 'w',
+  А: 'A', В: 'B', Е: 'E', К: 'K', М: 'M', Н: 'H', О: 'O', Р: 'P', С: 'C', Т: 'T', Х: 'X', І: 'I', Ј: 'J', Ѕ: 'S',
+  α: 'a', ε: 'e', ι: 'i', ο: 'o', ρ: 'p', ν: 'v', τ: 't', κ: 'k',
+  Α: 'A', Β: 'B', Ε: 'E', Ι: 'I', Κ: 'K', Μ: 'M', Ν: 'N', Ο: 'O', Ρ: 'P', Τ: 'T', Χ: 'X',
+}
+const LOOKALIKE_RE = new RegExp(`[${Object.keys(LOOKALIKES).join('')}]`, 'gu')
+
+/** NFKC, no invisible format characters, look-alikes as Latin, one space between words (INT-158). */
+export function normalizeForConfirmationCheck(text: string): string {
+  return (
+    stripFormatChars(text || '')
+      // Blank-looking fillers used as a space ("vaㅤen camino") stay a space; every other ignorable goes.
+      .replace(/[\u{115F}\u{1160}\u{3164}\u{FFA0}\u{2800}]/gu, ' ')
+      .replace(/\p{Default_Ignorable_Code_Point}/gu, '')
+      .replace(LOOKALIKE_RE, (ch) => LOOKALIKES[ch] || ch)
+      .replace(/[^\S\n]+/gu, ' ')
+      // A folded letter + a combining accent ("о" + U+0301) becomes one letter again.
+      .normalize('NFC')
+  )
+}
 
 export type ShortcutDraft = {
   key: string
@@ -334,7 +360,8 @@ export function reservedShortcutBody(key: ReservedShortcutKey): string {
 }
 
 export function hasConfirmationWording(text: string): boolean {
-  return CONFIRMATION_WORDING_RE.test(text || '')
+  const raw = text || ''
+  return CONFIRMATION_WORDING_RE.test(raw) || CONFIRMATION_WORDING_RE.test(normalizeForConfirmationCheck(raw))
 }
 
 /**
@@ -388,7 +415,7 @@ export function maskConditionalConfirmation(text: string): string {
     return sentence.slice(0, at) + '·'.repeat(participle.length) + sentence.slice(at + participle.length)
   })
   // SecureDog round 3: invisible format characters ("Ya​ salió") never hide a done cue.
-  return masked && !DONE_CUE_RE.test(rest.replace(/\p{Cf}/gu, '')) ? out : src
+  return masked && !DONE_CUE_RE.test(normalizeForConfirmationCheck(rest)) ? out : src
 }
 
 /** The agent's own reply claims a payment / order happened (a conditional next-step participle excluded). */

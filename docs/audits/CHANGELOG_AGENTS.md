@@ -1,3 +1,22 @@
+## 2026-10-18 — INT-158 payment/order claim check + per-store exam grader (claudio/luna-10-d2, NOT deployed)
+
+- INT-158: CONFIRMATION_WORDING_RE now also catches "ya confirmé / el equipo confirmó / verifiqué / verificó / aprobé /
+  registré / te confirmo + tu pago|pedido|compra", "pedido pagado" (sentence start or tu/su), "tu pedido va / está en
+  camino|en ruta", "tu pedido ya salió / ya salió tu pedido", "tu pedido|compra|pago fue / ha sido / está enviado,
+  despachado, entregado, aprobado, registrado", "ya despaché / envié / mandé / preparé". Accent required on é/ó so the
+  subjunctive / present ("cuando el equipo verifique tu pago", "verifico tu pedido") stays allowed.
+- hasConfirmationWording also tests normalizeForConfirmationCheck(text): NFKC, Default_Ignorable code points removed
+  (zero-width, variation selectors, CGJ), blank fillers (Hangul, Braille) as a space, Cyrillic/Greek look-alikes as
+  Latin, NFC. The mask's done-cue check uses the same normaliser.
+- Verifier round 1 PASS WITH NOTES; all 6 notes folded in (subjunctive false positive, variation selectors, NFC,
+  done-cue normalising, policy "pedido pagado" false positive, "recibió tu comprobante"). Pack scan (7 983 strings incl.
+  ~2 450 recorded model replies): zero changed results. SecureDog review pending at commit time.
+- exam.ts: the grader no longer hardcodes PatchHouse rules; it reads pack.exam.graderNotes / allowedPhrases (PatchHouse
+  pack carries its old text, so its exams are unchanged). Needed for the new store agents.
+- Proof: test:soft-ai 1135/1135, tsc clean, eslint clean on touched files.
+- New store agents (drafts, not activated): Sleeping "Vale", Pura Sonrisa "Laura", Prototipo "Dani"; Forge "Andrés" and
+  DeepClean "Caro" ON HOLD. Open owner items: Notion "Agents — waiting on Rafael (2026-10-18)".
+
 ## 2026-10-18 — v53 test fixes: hand-off lines, conditional confirmations, reactions, "me atiende alguien" (branch claudio/inbox-handoff-lines, NOT deployed)
 
 - From the v53 exam + mystery shoppers + silent trial (live 43e6fc27; 0 serious in bursts / silent trial, 7 in the exam,

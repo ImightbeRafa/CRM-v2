@@ -65,8 +65,9 @@ export async function withExamSession<T>(
   const releaseLock = async () => {
     if (lockReleased) return
     lockReleased = true
-    await releaseTestLock(lockDb, { tenantId, token: lock.token }).catch(() => undefined)
-    await auditLock('liberado')
+    // SecureDog r1 INFRA-23: "liberado" is written only when the release really happened.
+    const ok = await releaseTestLock(lockDb, { tenantId, token: lock.token }).catch(() => false)
+    await auditLock(ok ? 'liberado' : 'no se pudo liberar (vence solo; o test-cap --unlock)')
   }
   let before = 0
   let restored = false
@@ -75,7 +76,8 @@ export async function withExamSession<T>(
     if (restored || !raised) return
     restored = true
     // Only our own raise is undone: an admin's change during the run is kept.
-    await mutateChatAgentLayerConfig(tenantId, (c) => (c.testDailyTokenCap === input.cap ? { ...c, testDailyTokenCap: before } : c))
+    const res = await mutateChatAgentLayerConfig(tenantId, (c) => (c.testDailyTokenCap === input.cap ? { ...c, testDailyTokenCap: before } : c))
+    if (res.after.testDailyTokenCap === res.before.testDailyTokenCap) return
     await audit(input.cap, before, why)
     console.log(`Tope de pruebas restaurado: ${before.toLocaleString('es-CR')}`)
   }
@@ -91,9 +93,10 @@ export async function withExamSession<T>(
     await auditLock('tomado')
     before = parseChatAgentLayerConfig((await readChatAgentLayerConfig(tenantId)).config).testDailyTokenCap
     if (before >= input.cap) throw new Error(`El tope de pruebas ya está en ${before.toLocaleString('es-CR')}: otra prueba está corriendo (o quedó subido: bajalo desde Agentes).`)
-    // A failed raise still restores (only our own value) and releases the lock.
-    await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: Math.max(c.testDailyTokenCap, input.cap) }))
+    // SecureDog r1 INFRA-23: marked BEFORE the raise, so a Ctrl+C or error while it is in flight still restores (the
+    // restore only resets a value equal to our own cap, so a raise that never landed changes nothing).
     raised = true
+    await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: Math.max(c.testDailyTokenCap, input.cap) }))
     await audit(before, input.cap, 'inicio')
     console.log(`Tope de pruebas: ${before.toLocaleString('es-CR')} → ${input.cap.toLocaleString('es-CR')} (se restaura al final)`)
     return await fn(actor)

@@ -15,6 +15,7 @@ import {
   isPaymentMethodQuestion,
   noPaymentYet,
   salesDataListFirst,
+  salesUnitRates,
   type SalesContext,
 } from '@/lib/soft-ai/sales-state'
 import { classifyPaymentText, hasHardPaymentClaim, isBareOrderConfirmAsk, isHowPayShipQuestion } from '@/lib/soft-ai/payment-classifier'
@@ -189,49 +190,71 @@ describe('C2: bare order-confirm asks are not payment claims when nothing about 
   })
 })
 
-describe('C3: per-night amounts derived from a known price are sourced', () => {
-  const quote = [9900, 19800, 28500, 12900]
-  it('price ÷ the nights / patches the reply states', () => {
+describe('C3: per-night amounts come only from the store\'s own rates (names like "Pack 3 bolsas (90 noches)")', () => {
+  const quote = [9900, 19800, 28500, 12900, 3000]
+  const SLEEP: SalesContext = {
+    ...CTX,
+    catalog: [{ name: 'Sleeping Patches (30 noches)', price: 9900, stockLabel: 'disponible' }],
+    bundles: [
+      { name: 'Pack 2 bolsas (60 noches)', price: 19800, shippingIncluded: true },
+      { name: 'Pack 3 bolsas (90 noches)', price: 28500, shippingIncluded: true },
+    ],
+  }
+  const rates = salesUnitRates(SLEEP)
+  const check = (text: string, customerText = '') => validateAgentOutput({ text, citedToolNames: [], quoteAmounts: quote, unitRates: rates, customerText })
+  it('salesUnitRates reads the counts from the owner\'s names only', () => {
+    assert.deepEqual(rates, [
+      { price: 9900, count: 30, unit: 'noches' },
+      { price: 19800, count: 60, unit: 'noches' },
+      { price: 28500, count: 90, unit: 'noches' },
+    ])
+    assert.deepEqual(salesUnitRates(CTX), [])
+  })
+  it('a store rate, right before "por / cada / al / la" + the same unit, passes', () => {
     for (const text of [
       'El pack de 3 trae 90 noches y cuesta ₡28 500: sale a unos ₡317 por noche 🌙',
-      'La bolsa de 30 parches cuesta ₡9 900, o sea ₡330 por parche.',
-      'Con 90 noches por ₡28 500, cada noche te sale en ₡317.',
-      'El pack de 2 cuesta ₡19 800 (60 noches): queda en ₡330 la noche.',
+      'El pack de 3 cuesta ₡28 500. Trae 90 noches, o sea unos ₡317 por noche 🌙',
+      'La bolsa sale a ₡330 por noche.',
+      'Con el pack de 2 te queda en ₡330 por noche.',
+      'Sí, exacto: unos ₡317 por noche 🌙',
     ]) {
-      const v = validateAgentOutput({ text, citedToolNames: [], quoteAmounts: quote })
+      const v = check(text)
       assert.equal(v.ok, true, `${text} → ${v.reasons}`)
     }
   })
-  it('the count may come from the customer ("si trae 90 noches, ¿serían ₡317 por noche?")', () => {
-    const v = validateAgentOutput({ text: 'Sí, exacto: unos ₡317 por noche 🌙', citedToolNames: [], quoteAmounts: quote, customerText: 'Pero si el pack cuesta ₡28 500 y trae 90 noches, serían como ₡317 por noche, cierto?' })
-    assert.equal(v.ok, true, String(v.reasons))
-  })
-  it('still blocked: no count, not derived, per bag, or the same amount used as a price', () => {
+  it('blocked: not a store rate, wrong unit, not right before the unit, no rates, other money forms, made-up counts (SecureDog INT-162, Verifier r2 #6)', () => {
     for (const [text, customer] of [
-      ['Sale a ₡317 por noche', ''],
-      ['El pack trae 80 noches, ₡317 por noche', ''],
+      ['El pack trae 80 noches, ₡356 por noche', ''],
       ['El pack de 3 bolsas sale a ₡9 500 por bolsa', ''],
       ['El pack de 3 trae 90 noches: ₡317 por noche. Total ₡317.', ''],
-      ['Te lo dejo en ₡317', 'si trae 90 noches?'],
-      // Verifier r1 #5: wrong base, delivery days as a count, shipping as a base, unit mismatch, per-bag.
+      ['Te lo dejo en ₡317', ''],
       ['El pack de 2 (60 noches) sale a ₡475 la noche.', ''],
       ['La bolsa cuesta ₡9 900 y llega en 3 días. Cada parche ₡3 300.', ''],
-      ['Llega en 2 días hábiles. El parche te sale a ₡4 950.', ''],
       ['Te sale a ₡1 000 por noche', '3 noches por semana'],
       ['El envío tarda 3 días; el pack de 3 te sale en ₡9 500 el día', ''],
-      ['El envío ₡3 000 y son 3 noches: ₡1 000 por noche', ''],
-      ['La bolsa de 30 parches cuesta ₡9 900, o sea ₡330 por noche.', ''],
-      ['El pack de 3 trae 90 noches: unos ₡317 por noche', ''],
+      ['La bolsa cuesta ₡9 900 y el pack de 3 trae 90 noches, o sea ₡110 por noche.', ''],
+      ['El pack de 3 cuesta ₡28 500 y el de 2 trae 60 noches: ₡475 por noche.', ''],
+      ['Te llega en 3 días. El pack de 3 te queda en ₡9 500 el día que lo recibás', ''],
+      ['Pagás ₡9 500 al día siguiente de recibirlo.', ''],
+      ['Para la noche del viernes, son ₡9 500.', ''],
+      ['Por día de envío extra son ₡1 500.', ''],
+      ['El precio es ₡4 950 cada día de promo', ''],
+      ['₡317 por parche', ''],
+      ['₡317 por noche. Total 317 colones.', ''],
+      ['₡14 250 por noche', 'si lo uso 2 noches'],
     ]) {
-      const v = validateAgentOutput({ text, citedToolNames: [], quoteAmounts: quote, customerText: customer })
+      const v = check(text, customer)
       assert.equal(v.ok, false, text)
       assert.ok(v.reasons.includes('unsourced_amount'), text)
     }
-    assert.equal(unitDerivedAmount(317, '90 noches, ₡317 por noche', null, []), false)
+    assert.equal(unitDerivedAmount(317, '₡317 por noche', []), false)
+    assert.equal(unitDerivedAmount(317, '₡317 por noche', null), false)
   })
-  it('the final policy (live path) passes it too', () => {
-    const p = applyFinalOutputPolicy({ text: 'El pack de 3 cuesta ₡28 500 y trae 90 noches: unos ₡317 por noche 🌙', brandFacts: FACTS, quoteAmounts: quote, skipPurchaseSummary: true })
+  it('the final policy (live path) passes it too, and both live and Probar pass the rates', () => {
+    const p = applyFinalOutputPolicy({ text: 'El pack de 3 trae 90 noches: unos ₡317 por noche 🌙', brandFacts: FACTS, quoteAmounts: quote, unitRates: rates, skipPurchaseSummary: true })
     assert.equal(p.ok, true, String(p.reasons))
+    assert.equal(readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8').match(/unitRates: runtimeInput\.salesUnitRates/g)?.length, 2)
+    assert.match(readFileSync('src/lib/soft-ai/llm/runtime.ts', 'utf8'), /unitRates: input\.salesUnitRates/)
   })
 })
 
@@ -529,5 +552,144 @@ describe('Pura Sonrisa P2 keeps INT-84: the threshold amount is only valid insid
       'Envío gratis a partir de 2 cajas.',
       'Envío gratis desde ₡20 000',
     ]) assert.equal(check(t).ok, false, t)
+  })
+})
+
+describe('SecureDog r1 + Verifier r2 (2026-10-18): every reported input pinned', () => {
+  const base = { brandFacts: FACTS, shortcuts: SHORTCUTS }
+  it('MEDIA-16: a photo / file / voice note as the newest bubble ends "no payment yet" (live and Probar pass the trigger)', () => {
+    for (const type of ['image', 'document', 'audio', 'voice']) {
+      assert.equal(noPaymentYet([msg('inbound', 'Para confirmar el pedido!?'), msg('inbound', '', type)]), false, type)
+    }
+    assert.equal(noPaymentYet([msg('outbound', 'Datos para el SINPE', 'image')]), false, 'store media')
+    const src = readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
+    assert.match(src, /\{ direction: 'inbound', content: payload\.content \|\| '', messageType: trigger\.messageType \}/)
+    assert.match(src, /\{ direction: 'inbound', content: probarTrigger\.content, messageType: probarTrigger\.messageType \}/)
+  })
+  it('INT-159: a claim split across bubbles stays a payment hand-off', () => {
+    for (const [a, b] of [
+      ['¿Me confirmás?', '¿Les llegó?'],
+      ['¿Les llegó?', '¿Me confirmás?'],
+      ['Me confirmás porfa', 'ya'],
+      ['Me confirman?', 'lo recibieron?'],
+    ]) {
+      const d = decideInbound({ ...base, inboundText: b, earlierCustomerTexts: [a], noPaymentYet: true })
+      assert.equal(d.paymentClass, 'payment_proof_or_risk', `${a} + ${b}`)
+    }
+  })
+  it('INT-159: a reply to a confirm ask gets the payment-status backstop', () => {
+    for (const reply of ['¡Perfecto, ya está!', '¡Sí, nos llegó!', 'Sí, nos llegó perfecto', '¡Sí, ya está! Gracias']) {
+      const v = validateAgentOutput({ text: reply, citedToolNames: [], customerText: '¿Me confirmás?' })
+      assert.ok(v.reasons.includes('payment_status_claim'), reply)
+    }
+  })
+  it('INT-160: statements, past forms and symbols are never a bare ask', () => {
+    for (const t of [
+      'Confirmé el pedido', 'Confirmé', 'si confirmé', 'Pedido confirmado', 'Confirmado?', '¿Me confirmaron el pedido?', 'Me confirmaste?',
+      'no me confirmaron la compra', 'Mi compra confirmada?', 'Confirmación del pedido porfa', 'no me confirmás?',
+      'Confirmen porfa 🧾', '💰 me confirmás?', '💳 confirmame?', 'Me confirmás 💵', 'confirmame la compra 🏦', 'Confirmen ✓', 'Confirmen 👌', 'Confirmen 📷',
+    ]) {
+      assert.equal(isBareOrderConfirmAsk(t), false, t)
+      assert.equal(classifyPaymentText(t, { noPaymentYet: true }), 'payment_proof_or_risk', t)
+    }
+    assert.equal(isBareOrderConfirmAsk('Pura vida, me confirmás entonces? 😊'), true)
+  })
+  it('INT-161: "already bought", full-width / zero-width payment words, store media end "no payment yet"', () => {
+    for (const t of ['ya compré', 'compré por Instagram ayer', 'compré online', 'mi número de orden es 4521', 'ahí les va', 'listo, ya está', 'ＳＩＮＰＥ', 'si​npe', 'lo pedí en la ｗｅｂ']) {
+      assert.equal(noPaymentYet([msg('inbound', t)]), false, t)
+    }
+  })
+  it('INT-163: the reorder never turns a held "pedido pagado" reply into a sendable one', () => {
+    for (const text of ['Listo\nPedido ya pagado\n¿Cómo preferís pagar? Tenemos SINPE y tarjeta.', 'Total ₡12 900\nPedido pagado\n¿Cómo preferís pagar? Tenemos SINPE y tarjeta.', 'Perfecto\nCompra pagada\n¿SINPE o tarjeta?']) {
+      const p = applyFinalOutputPolicy({ text, brandFacts: FACTS, quoteAmounts: [12900], skipPurchaseSummary: true, shortenLongReply: true, paymentOptions: { dataListFirst: 'shipping' } })
+      assert.equal(p.ok, false, text)
+      assert.ok(p.reasons.includes('confirmation_wording'), `${text} → ${p.reasons}`)
+    }
+  })
+  it('INT-164 / Verifier r2 #8: store messages about a payment it saw are not the method question; "Ya te lo aparto" is fine', () => {
+    for (const t of [
+      'Gracias por el comprobante. ¿Por SINPE o transferencia?',
+      'Vi un depósito a tu nombre. ¿SINPE o transferencia?',
+      'Me aparece un pago de 19 800. ¿SINPE o transferencia?',
+      '¿SINPE o transferencia? Para registrar tu pago',
+      '¿Pagás por SINPE? Es que no veo tu pago todavía. Ya lo recibí?',
+    ]) {
+      assert.equal(isPaymentMethodQuestion(t), false, t)
+    }
+    for (const t of ['¡Listo! Ya te lo aparto. ¿Querés pagar por SINPE o tarjeta?', '¿Querés pagar por SINPE? Ya te paso el número.']) {
+      assert.equal(isPaymentMethodQuestion(t), true, t)
+    }
+  })
+  it('INFRA-23: the cap is marked raised before the raise; "liberado" only on a real release', () => {
+    const src = readFileSync('scripts/agent-pack/test-session.ts', 'utf8')
+    assert.ok(src.indexOf('raised = true') < src.indexOf('testDailyTokenCap: Math.max('))
+    assert.match(src, /auditLock\(ok \? 'liberado' : /)
+  })
+  it('Verifier r2 #1: the threshold amount is never a second copy (INT-84)', async () => {
+    const { salesFreeShippingRule, salesAllowedAmounts } = await import('@/lib/soft-ai/sales-state')
+    const ctx: SalesContext = {
+      ...CTX,
+      catalog: [
+        { name: 'Pura Sonrisa Menta', price: 11900, stockLabel: 'x' },
+        { name: 'Pura Sonrisa Fresa', price: 11900, stockLabel: 'x' },
+      ],
+      bundles: [],
+      freeShippingOver: 25000,
+    }
+    const rule = salesFreeShippingRule(ctx)!
+    for (const text of [
+      'Envío gratis desde ₡25 000, los 3 te quedan en ₡25 000',
+      'Envío gratis desde ₡25 000: los 3 en ₡25 000',
+      'Envío gratis llevando 3 cajas, te quedan en ₡25 000',
+      'Con envío gratis desde ₡25 000 las 3 cajas salen en ₡25 000 🙌',
+      'Envío gratis en compras desde ₡25 000 y el total de tus 3 cajas es ₡25 000',
+      'Envío gratis desde ₡25 000. Son 25000 colones.',
+    ]) {
+      assert.equal(validateAgentOutput({ text, citedToolNames: [], quoteAmounts: salesAllowedAmounts(ctx), freeShippingRule: rule }).ok, false, text)
+    }
+  })
+  it('Verifier r2 #2: payment-status questions are never the "how does it work" info question', () => {
+    for (const t of ['¿Qué tal va el pago?', 'y el pago cómo va', 'el pago qué tal va?', 'Hola, ¿cómo va lo del pago?', '¿Cómo va el envío y el pago?', 'Pura vida, ¿cómo queda lo del pago?']) {
+      assert.equal(isHowPayShipQuestion(t), false, t)
+    }
+  })
+  it('Verifier r2 #3: payment-method bullets are not the data list', () => {
+    const out = dataListBeforePaymentQuestion('¡Genial! 🙌\n\nTotal ₡12 900.\n\n¿Cómo preferís pagar?\n- SINPE Móvil\n- Tarjeta (te mando el link a tu correo)\n- Contra entrega (pagás al mensajero en tu dirección)', 'shipping')
+    const parts = splitReplyParts(out)
+    const all = parts.join('\n\n')
+    assert.ok(all.includes(SHIPPING_DATA_LIST))
+    assert.ok(all.indexOf(SHIPPING_DATA_LIST) < all.indexOf('¿Cómo preferís pagar?'))
+    assert.match(all, /¿Cómo preferís pagar\?\n- SINPE Móvil\n- Tarjeta \(te mando el link a tu correo\)\n- Contra entrega/)
+  })
+  it('Verifier r2 #4 / #5: never blocked by the reorder; answer + total + question → the question gets its own message', () => {
+    const style = { ...DEFAULT_REPLY_STYLE, maxLines: 4 }
+    const four = 'a1\na2\na3\na4\n\nb1\nb2\nb3\nb4\n\nc1\nc2\nc3\nc4\n\n¿Cómo preferís pagar? Tenemos SINPE y tarjeta.'
+    const plain = applyFinalOutputPolicy({ text: four, brandFacts: FACTS, replyStyle: style, skipPurchaseSummary: true, shortenLongReply: true })
+    const ordered = applyFinalOutputPolicy({ text: four, brandFacts: FACTS, replyStyle: style, skipPurchaseSummary: true, shortenLongReply: true, paymentOptions: { dataListFirst: 'shipping' } })
+    assert.equal(ordered.ok, plain.ok, String(ordered.reasons))
+    const short = applyFinalOutputPolicy({
+      text: 'Sí, llega en 2 a 5 días hábiles.\n\nLa bolsa cuesta ₡9 900 y el envío ₡3 000: total ₡12 900.\n\n¿Cómo preferís pagar? Tenemos SINPE y tarjeta.',
+      brandFacts: FACTS,
+      replyStyle: style,
+      quoteAmounts: [9900, 3000, 12900],
+      skipPurchaseSummary: true,
+      shortenLongReply: true,
+      paymentOptions: { dataListFirst: 'shipping' },
+    })
+    assert.equal(short.ok, true, String(short.reasons))
+    assert.equal(short.parts.length, 3)
+    assert.ok(short.parts[1].includes('Nombre completo'))
+    assert.match(short.parts[2], /^¿Cómo preferís pagar\?/)
+  })
+  it('Verifier r2 #7: someone only looking at prices gets no data list', () => {
+    const t = 'Buenas, solo estoy viendo precios, ¿cómo funciona el pago?'
+    const s = deriveSalesState({ history: [], inboundText: t, ctx: CTX })
+    assert.equal(salesDataListFirst(s, [], t, CTX), null)
+  })
+  it('Verifier r2 #9: with a two-line question, the total stays in front', () => {
+    const parts = splitReplyParts(dataListBeforePaymentQuestion('Total ₡12 900. ¿Querés que te lo enviemos? Tenemos SINPE y tarjeta.\n¿Cuál preferís?', 'shipping'))
+    assert.match(parts[0], /^Total ₡12 900\./)
+    assert.ok(parts[1].includes('Nombre completo'))
+    assert.match(parts[parts.length - 1], /¿Cuál preferís\?$/)
   })
 })

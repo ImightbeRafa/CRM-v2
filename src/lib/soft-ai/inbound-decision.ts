@@ -13,6 +13,7 @@ import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
 import {
   classifyPaymentText,
   hasHardPaymentClaim,
+  hasPaymentStatusHint,
   isCueFreePaymentChoiceText,
   isPlainPaymentLinkQuestion,
   paymentHandoffReason,
@@ -161,10 +162,14 @@ export function decideInbound(input: {
    */
   noPaymentYet?: boolean
 }): InboundDecision {
-  const noPaymentYet = input.noPaymentYet === true
+  // SecureDog r1 INT-159: the relaxation needs a text message AND no bubble of the burst (this one included) hinting at
+  // a payment's state ("¿Me confirmás?" + "¿Les llegó?" stays a payment hand-off).
+  const isText = !input.messageType || input.messageType === 'text'
+  const noPaymentYet =
+    input.noPaymentYet === true && isText && ![input.inboundText, ...(input.earlierCustomerTexts || [])].some((t) => hasPaymentStatusHint(t || ''))
   const latestClass = classifyPaymentText(input.inboundText, {
-    awaitingPaymentMethod: input.awaitingPaymentMethod === true && (!input.messageType || input.messageType === 'text'),
-    noPaymentYet: noPaymentYet && (!input.messageType || input.messageType === 'text'),
+    awaitingPaymentMethod: input.awaitingPaymentMethod === true && isText,
+    noPaymentYet,
   })
   // Verifier round 10: only a real claim in an earlier bubble counts ("Sinpe" + "gracias" is an answer).
   const burstClaim = (input.earlierCustomerTexts || []).some((t) => hasHardPaymentClaim(t, { noPaymentYet }))

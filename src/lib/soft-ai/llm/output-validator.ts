@@ -14,7 +14,7 @@ import {
 import { hasOutboundConfirmationClaim, maskConditionalConfirmation, renderShortcutTemplate, shortcutByKey, type RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
 import { fillPaymentToken, paymentNumberProblems, type PaymentFillOptions, type TokenPaymentMethod } from '@/lib/soft-ai/payment-guard'
-import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
+import { hasPaymentWord, mentionsConfirmVerb } from '@/lib/soft-ai/payment-classifier'
 import { buildLinkAllowlist, foreignLinks, type LinkAllowlist } from '@/lib/soft-ai/links'
 import { canonicalizeOrderDataList, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
 import { MAX_REPLY_PARTS, splitReplyParts } from '@/lib/soft-ai/reply-parts'
@@ -135,6 +135,17 @@ const THRESHOLD_RE =
   /(?<![\p{L}])(?:desde|a\s+partir\s+de|en\s+compras?\s+(?:de|desde|mayores\s+a|sobre|de\s+m[aá]s\s+de)|por\s+compras?\s+(?:de|desde|mayores\s+a|sobre|de\s+m[aá]s\s+de)|comprando|llevando)\s+(?:(?:[₡¢]\s?(\d{1,3}(?:[.,\s ]\d{3})+|\d{4,7}))|(\d{1,2}|dos|tres|cuatro|cinco|seis)\s+(?:cajas?|unidades|productos?|paquetes?|bolsas?|frascos?|art[ií]culos?|piezas?)(?:\s+o\s+m[aá]s)?)(?![\p{L}\d])/giu
 const COUNT_WORDS: Record<string, number> = { dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6 }
 
+/** Where each threshold amount the rule phrase captured starts and ends ("desde ₡25 000" → the "₡25 000" span). */
+function thresholdCaptures(text: string): Array<[number, number]> {
+  const out: Array<[number, number]> = []
+  for (const m of text.matchAll(THRESHOLD_RE)) {
+    if (!m[1]) continue
+    const at = (m.index ?? 0) + m[0].search(/[₡¢]/u)
+    out.push([at, (m.index ?? 0) + m[0].length])
+  }
+  return out
+}
+
 function thresholdClauseOk(clause: string, rule: FreeShippingRule): boolean {
   const over = rule.freeOver
   if (!over || FREE_SHIPPING_EXCEPTION_RE.test(clause)) return false
@@ -150,9 +161,11 @@ function thresholdClauseOk(clause: string, rule: FreeShippingRule): boolean {
     any = true
   }
   if (!any) return false
-  // Any other amount in that clause must be the threshold itself or an included combo's price.
-  const amounts = [...extractMoneyAmounts(clause).map((a) => Math.round(a)), ...[...clause.matchAll(BARE_AMOUNT_RE)].map((x) => Number(x[0].replace(/\D/g, '')))].filter((a) => a >= 100)
-  return amounts.every((a) => Math.abs(a - over) <= 1 || rule.includedPrices.some((p) => Math.abs(a - p) <= 1))
+  // Verifier r2 #1 (INT-84 kept): no other amount at all in a threshold clause — only the captured threshold itself
+  // ("Envío gratis desde ₡25 000, los 3 te quedan en ₡25 000" is refused).
+  let rest = clause
+  for (const [s, e] of thresholdCaptures(clause)) rest = rest.slice(0, s) + ' '.repeat(e - s) + rest.slice(e)
+  return extractMoneyAmounts(rest).every((a) => Math.round(a) < 100) && [...rest.matchAll(BARE_AMOUNT_RE)].length === 0
 }
 
 const foldNote = (s: string) => s.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim()
@@ -240,17 +253,22 @@ export function thresholdAmountOk(amount: number, rawText: string, rule: FreeShi
   if (!rule?.freeOver || Math.abs(Math.round(amount) - rule.freeOver) > 1) return false
   const text = maskNameParentheticals(rawText, rule.nameNotes ?? [])
   const spans = clauseSpans(text)
+  const captures = thresholdCaptures(text)
   let seen = false
   for (const m of text.matchAll(COLON_AMOUNT_RE)) {
     if (Math.abs(Number(m[1].replace(/\D/g, '')) - rule.freeOver) > 1) continue
     seen = true
     const at = m.index ?? 0
+    // Verifier r2 #1: each written threshold amount must BE a captured one ("desde ₡25 000"), never a second copy.
+    if (!captures.some(([s]) => s === at)) return false
     const span = spans.find(([s, e]) => at >= s && at < e)
     if (!span) return false
     const clause = text.slice(span[0], span[1])
     if (freeShippingWording(clause).length === 0 || !thresholdClauseOk(clause, rule)) return false
   }
-  return seen
+  // The amount in any other money form ("25 000 colones", "25 mil") is never the threshold rule.
+  const otherForms = extractMoneyAmounts(text.replace(COLON_AMOUNT_RE, ' ')).some((a) => Math.abs(Math.round(a) - rule.freeOver!) <= 1)
+  return seen && !otherForms
 }
 /** Deal check with the narrower included-combo rule on top of the promo kinds. */
 function dealProblemWithRule(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>, rule: FreeShippingRule | null | undefined): boolean {
@@ -349,62 +367,39 @@ function amountAllowed(amount: number, allowed: number[]): boolean {
 }
 
 /**
- * Sleeping exam C3 (2026-10-18): a per-night / per-patch amount ("₡317 por noche") is sourced when it IS a known price
- * divided by a count of the SAME unit, both written in one sentence — of the reply or of the customer's message ("el
- * pack de 3 cuesta ₡28 500 y trae 90 noches": ₡28 500 ÷ 90 = ₡317 por noche). Verifier r1 #5: the unit of the count
- * and of the per-unit wording must match (noches ↔ noche); a delivery time ("llega en 3 días", "2 días hábiles") is no
- * count; a shipping amount ("envío ₡3 000", "con envío ₡12 900") is no base. Only consumption units (noche, día,
- * parche, uso, aplicación, dosis) — never "por bolsa / unidad / paquete", so a pack's per-bag figure cannot read as a
- * single-bag price. Every place the amount is written must be that per-unit mention.
+ * Sleeping exam C3 (2026-10-18): a per-night / per-patch amount ("₡317 por noche") is sourced only as a STORE rate:
+ * the price of a product / combo whose own name carries the count ("Pack 3 bolsas (90 noches)" ₡28 500 → ₡317 por
+ * noche; sales-state salesUnitRates). SecureDog r1 INT-162: never a count the customer or the model wrote, never a
+ * shipping amount. Every place the amount is written must be directly followed by "por / cada / x / / / al / a la" + the
+ * SAME unit (noche ↔ noches); written in any other money form ("317 colones", "317 mil") it is refused.
  */
+export type UnitRate = { price: number; count: number; unit: string }
 const UNIT_WORD = String.raw`(noches?|d[ií]as?|parches?|usos?|aplicaci[oó]n(?:es)?|dosis)`
-const UNIT_COUNT_RE = new RegExp(String.raw`(?<![\d.,])(\d{1,4})\s*${UNIT_WORD}(?![\p{L}])`, 'giu')
-const PER_UNIT_AFTER_RE = new RegExp(String.raw`^\s*(?:colones\s*)?(?:por|al|a\s+la|la|el|cada|\/|x)\s*${UNIT_WORD}(?![\p{L}])`, 'iu')
-const PER_UNIT_BEFORE_RE = new RegExp(String.raw`(?:por|cada|la|el)\s+${UNIT_WORD}[^₡\n.!?]{0,25}$`, 'iu')
+const PER_UNIT_AFTER_RE = new RegExp(String.raw`^\s*(?:colones\s*)?(?:por|cada|x|\/|al|a\s+la)\s*${UNIT_WORD}(?![\p{L}])`, 'iu')
 const COLON_AMOUNT_RE = /[₡¢]\s?(\d{1,3}(?:[.,\s ]\d{3})+|\d+)(?![\d])/gu
-const NOT_A_COUNT_BEFORE_RE = /(?:(?<![\p{L}])(?:en|entre|tarda\p{L}*|llega\p{L}*|demora\p{L}*|dura\s+el\s+env[ií]o|hace|hasta)\s+)$/iu
-const NOT_A_COUNT_AFTER_RE = /^\s*(?:h[aá]biles|naturales|de\s+(?:entrega|env[ií]o))/iu
-const SHIPPING_BEFORE_RE = /env[ií]o[^₡\n.!?]{0,12}$/iu
 
-function unitFamily(word: string): string {
+export function unitFamily(word: string): string {
   const w = word.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
   return w.startsWith('noche') ? 'noche' : w.startsWith('dia') ? 'dia' : w.startsWith('parche') ? 'parche' : w.startsWith('uso') ? 'uso' : w.startsWith('aplicacion') ? 'aplicacion' : 'dosis'
 }
-/** Sentences (a period between digits — ₡28.500 — is not an end). */
-const sentencesOf = (t: string) => t.split(/(?:(?<!\d)\.|\.(?!\d)|[!?;\n])+/u).filter((s) => s.trim())
 
-export function unitDerivedAmount(amount: number, text: string, customerText: string | null | undefined, bases: number[]): boolean {
+export function unitDerivedAmount(amount: number, text: string, rates: ReadonlyArray<UnitRate> | null | undefined): boolean {
   const rounded = Math.round(amount)
-  const priceBases = bases.filter((b) => b > 0)
-  if (!priceBases.length) return false
-  // (family, base ÷ count) pairs, from sentences that state both a known price and a count.
-  const derived: Array<{ family: string; value: number }> = []
-  for (const s of [...sentencesOf(text), ...sentencesOf(customerText || '')]) {
-    const stated = [...s.matchAll(COLON_AMOUNT_RE)]
-      .filter((m) => !SHIPPING_BEFORE_RE.test(s.slice(0, m.index ?? 0)))
-      .map((m) => Number(m[1].replace(/\D/g, '')))
-      .filter((v) => priceBases.some((b) => Math.abs(b - v) <= 1))
-    if (!stated.length) continue
-    for (const c of s.matchAll(UNIT_COUNT_RE)) {
-      const at = c.index ?? 0
-      const n = Number(c[1])
-      if (n < 2 || n > 1000) continue
-      if (NOT_A_COUNT_BEFORE_RE.test(s.slice(0, at)) || NOT_A_COUNT_AFTER_RE.test(s.slice(at + c[0].length))) continue
-      for (const b of stated) derived.push({ family: unitFamily(c[2]), value: Math.round(b / n) })
-    }
-  }
-  if (!derived.length) return false
+  const valid = (rates ?? []).filter((r) => r.price > 0 && r.count >= 2)
+  if (!valid.length) return false
   let seen = false
   for (const m of text.matchAll(COLON_AMOUNT_RE)) {
-    if (Math.abs(Number(m[1].replace(/\D/g, '')) - rounded) > 0) continue
+    if (Number(m[1].replace(/\D/g, '')) !== rounded) continue
     seen = true
     const at = m.index ?? 0
     const after = PER_UNIT_AFTER_RE.exec(text.slice(at + m[0].length, at + m[0].length + 30))
-    const before = PER_UNIT_BEFORE_RE.exec(text.slice(Math.max(0, at - 40), at))
-    const family = after ? unitFamily(after[1]) : before ? unitFamily(before[1]) : null
-    if (!family || !derived.some((d) => d.family === family && Math.abs(d.value - rounded) <= 1)) return false
+    if (!after) return false
+    const family = unitFamily(after[1])
+    if (!valid.some((r) => unitFamily(r.unit) === family && Math.abs(Math.round(r.price / r.count) - rounded) <= 1)) return false
   }
-  return seen
+  if (!seen) return false
+  // The same amount written without ₡ ("317 colones", "317 mil") is not a per-unit mention.
+  return !extractMoneyAmounts(text.replace(COLON_AMOUNT_RE, ' ')).some((a) => Math.round(a) === rounded)
 }
 
 /**
@@ -638,6 +633,8 @@ export function validateAgentOutput(input: {
   linkText?: string
   /** N3: the contra-entrega / efectivo closing turn — the order-confirmation wording check applies. */
   orderClosing?: boolean
+  /** Sleeping C3: the store's own per-unit rates (sales-state salesUnitRates). */
+  unitRates?: UnitRate[] | null
 }): OutputValidationResult {
   const reasons: string[] = []
   const text = input.text || ''
@@ -664,7 +661,11 @@ export function validateAgentOutput(input: {
   // Advisor (luna-10): the unmistakable "payment received" wordings are held on EVERY reply, payment words or not.
   if (ALWAYS_PAYMENT_STATUS_REPLY_RE.test(claimText)) {
     reasons.push('payment_status_claim')
-  } else if ((input.paymentContext || (input.customerText && hasPaymentWord(input.customerText))) && PAYMENT_STATUS_REPLY_RE.test(claimText)) {
+  } else if (
+    // SecureDog r1 INT-159: a reply to a confirm ask ("¿me confirmás?") gets the same backstop as one to a payment word.
+    (input.paymentContext || (input.customerText && (hasPaymentWord(input.customerText) || mentionsConfirmVerb(input.customerText)))) &&
+    PAYMENT_STATUS_REPLY_RE.test(claimText)
+  ) {
     reasons.push('payment_status_claim')
   }
 
@@ -684,7 +685,7 @@ export function validateAgentOutput(input: {
   for (const amount of amounts) {
     if (amountAllowed(amount, allowed)) continue
     // Sleeping C3: a per-night / per-patch amount that is a known price ÷ a stated count.
-    if (unitDerivedAmount(amount, text, input.customerText, [...inventory, ...quote])) continue
+    if (unitDerivedAmount(amount, text, input.unitRates)) continue
     // Pura Sonrisa P2 (INT-84 kept): the store's threshold amount only inside its own threshold-rule clause.
     if (thresholdAmountOk(amount, text, input.freeShippingRule)) continue
     highlighted.push(Math.round(amount))
@@ -879,6 +880,8 @@ export function applyFinalOutputPolicy(input: {
   linkAllowlist?: LinkAllowlist | null
   /** Sales flow: contra entrega offered by a shipping method (agent-sales-context) for [[PAGO_CONTRA_ENTREGA]]. */
   paymentOptions?: PaymentFillOptions
+  /** Sleeping C3: the store's own per-unit rates (sales-state salesUnitRates). */
+  unitRates?: UnitRate[] | null
 }): FinalOutputPolicy {
   const facts = input.brandFacts || { schemaVersion: 1 }
   const style = input.replyStyle || DEFAULT_REPLY_STYLE
@@ -911,8 +914,13 @@ export function applyFinalOutputPolicy(input: {
   // Sleeping C6 (Rafael's rule): at the close the data list goes before the payment question, each in its own message.
   // Before shortening (Verifier r1 #2): the reordered messages are then shortened like any reply.
   if (input.paymentOptions?.dataListFirst) {
-    const ordered = dataListBeforePaymentQuestion(text, input.paymentOptions.dataListFirst)
-    if (ordered !== text) {
+    const fits = (message: string) => messageLineCount(message) <= style.maxLines + 2
+    const ordered = dataListBeforePaymentQuestion(text, input.paymentOptions.dataListFirst, fits)
+    // Verifier r2 #4: never turn a sendable reply into a too-long one — keep the original when the reorder cannot fit.
+    const shortened = input.shortenLongReply ? shortenToMaxLines(ordered, style.maxLines) : ordered
+    if (ordered !== text && splitReplyParts(shortened).every(fits)) {
+      // SecureDog r1 INT-163: the claim wording is also judged on the text as the model wrote it (line breaks and all).
+      if (hasOutboundConfirmationClaim(text)) reasons.push('confirmation_wording')
       text = ordered
       reasons.push('data_list_first')
     }
@@ -988,6 +996,7 @@ export function applyFinalOutputPolicy(input: {
     linkAllowlist: input.linkAllowlist ?? undefined,
     styleText,
     linkText: styleText,
+    unitRates: input.unitRates,
     orderClosing:
       filled.methods.some((m) => m === 'contra_entrega' || m === 'efectivo') ||
       input.paymentOptions?.chosenMethod === 'contra_entrega' ||

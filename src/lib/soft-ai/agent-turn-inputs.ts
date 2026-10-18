@@ -29,6 +29,7 @@ import {
   formatSalesTurnBlock,
   salesAllowedAmounts,
   salesDataListFirst,
+  salesUnitRates,
   salesAllowedDeals,
   salesCloseWithoutPaymentData,
   salesFreeShippingRule,
@@ -253,6 +254,7 @@ export function assembleAgentRuntimeInputs(input: {
     salesAllowedDeals: sales ? salesAllowedDeals(sales) : [],
     salesFreeShipping: Boolean(sales?.promo?.freeShipping),
     salesFreeShippingRule: sales ? salesFreeShippingRule(sales) : null,
+    salesUnitRates: sales ? salesUnitRates(sales) : undefined,
     // INT-112: same allowlist for live and Probar — brand site, map link, and links the owner wrote in ACTIVE saved
     // replies and APPROVED bound knowledge (PatchHouse ↔ sleep.shopping cross-links pass this way).
     linkAllowlist: brandFactsLinkAllowlist(

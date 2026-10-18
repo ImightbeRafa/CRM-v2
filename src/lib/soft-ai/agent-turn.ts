@@ -1086,7 +1086,12 @@ export async function executeAgentLayerTurn(
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !liveImageReplyIds.has(id))),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // Sleeping C2: nothing about paying in this chat yet (no payment details, receipt photo, payment words, web order).
-    noPaymentYet: noPaymentYet([...history.map((m) => ({ ...m, messageType: messageTypeOf.get(m.id) ?? null })), ...burstEarlier]),
+    // SecureDog r1 MEDIA-16: the trigger too (a receipt photo sent as the newest bubble ends "no payment yet").
+    noPaymentYet: noPaymentYet([
+      ...history.map((m) => ({ ...m, messageType: messageTypeOf.get(m.id) ?? null })),
+      ...burstEarlier,
+      { direction: 'inbound', content: payload.content || '', messageType: trigger.messageType },
+    ]),
   }
   const burstTurn = decideBurstTurn({
     burst,
@@ -1276,6 +1281,7 @@ export async function executeAgentLayerTurn(
     allowedDeals: runtimeInput.salesAllowedDeals,
     freeShipping: runtimeInput.salesFreeShipping,
     freeShippingRule: runtimeInput.salesFreeShippingRule,
+    unitRates: runtimeInput.salesUnitRates,
     brandFacts: resolved.agent.brandFacts,
     replyStyle: resolved.agent.replyStyle,
     shortcuts,
@@ -2274,7 +2280,7 @@ async function runAgentTestTurnInner(input: {
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !probarImageReplyIds.has(id))),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // Sleeping C2: nothing about paying in this chat yet (photos / files counted from their type, like live).
-    noPaymentYet: noPaymentYet([...history, ...probarBurstEarlier]),
+    noPaymentYet: noPaymentYet([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }]),
   }
   const probarBurstTurn = decideBurstTurn({
     burst: probarBurst,
@@ -2391,6 +2397,7 @@ async function runAgentTestTurnInner(input: {
       allowedDeals: runtimeInput.salesAllowedDeals,
       freeShipping: runtimeInput.salesFreeShipping,
       freeShippingRule: runtimeInput.salesFreeShippingRule,
+      unitRates: runtimeInput.salesUnitRates,
       brandFacts: runtimeAgent.brandFacts,
       replyStyle: runtimeAgent.replyStyle,
       shortcuts,

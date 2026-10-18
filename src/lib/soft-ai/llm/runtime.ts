@@ -85,6 +85,8 @@ export type SoftAiLlmRuntimeInput = {
   salesFreeShipping?: boolean
   /** Store rule "envío gratis desde ₡X": the words pass only next to that amount (output-validator). */
   salesFreeShippingRule?: FreeShippingRule | null
+  /** Sleeping C3: the store's own per-unit rates ("Pack 3 bolsas (90 noches)"), the only source of a per-night amount. */
+  salesUnitRates?: Array<{ price: number; count: number; unit: string }>
   /** INT-109 / INT-112: links a reply may carry (brandFactsLinkAllowlist) — any other is 'foreign_link'. */
   linkAllowlist?: LinkAllowlist
   /** Sales flow: contra entrega offered by a shipping method, for [[PAGO_CONTRA_ENTREGA]] (agents2-format). */
@@ -437,6 +439,7 @@ export async function runSoftAiLlmRuntime(
         quoteAmounts: input.salesAllowedAmounts,
         allowedDeals: input.salesAllowedDeals,
         freeShippingRule: input.salesFreeShippingRule,
+        unitRates: input.salesUnitRates,
         // SecureDog round 6: the whole burst since the store last wrote, not only the newest message.
         customerText: burstCustomerText(input.history, input.inboundText),
         linkAllowlist: input.linkAllowlist,

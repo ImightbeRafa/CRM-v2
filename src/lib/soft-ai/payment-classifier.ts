@@ -359,12 +359,15 @@ const BARE_CONFIRM_FILLER = new Set(
   (
     'hola holi buenas buen dia dias tardes noches pura vida disculpe disculpa disculpá una consulta ok okay dale bueno perfecto ' +
     'gracias muchas porfa por favor para quisiera quiero queria quería deseo me gustaria gustaría podes podés podrias podrías puede ' +
-    'pueden podria podría lo la le me nos el mi la los mis entonces no si sí y e de del pedido orden compra porfis'
+    'pueden podria podría lo la le me nos el mi la los mis entonces si sí y e de del pedido orden compra porfis'
   ).split(/\s+/),
 )
 export function isBareOrderConfirmAsk(text: string): boolean {
   const value = stripFormatChars((text || '').normalize('NFKC')).trim()
-  if (!value || value.length > 120 || /[\d₡¢$#✅✔☑👍💸@]/u.test(value)) return false
+  if (!value || value.length > 120) return false
+  // SecureDog r1 INT-160: an allowlist of characters — letters, spaces, plain punctuation and the friendly emoji only
+  // (no 🧾 💰 💳 💵 🏦 ✓ 👌 📷, no digits or money signs can ride along).
+  if (!/^[\p{L}\s¿?¡!.,…]+$/u.test(value.replace(FRIENDLY_RE, ' '))) return false
   if (!BARE_CONFIRM_VERB_RE.test(value)) return false
   if (
     PAYMENT_RE.test(value) ||
@@ -387,6 +390,21 @@ export function isBareOrderConfirmAsk(text: string): boolean {
     .split(/[^\p{L}]+/u)
     .filter(Boolean)
   return rest.every((w) => BARE_CONFIRM_FILLER.has(w))
+}
+
+/**
+ * SecureDog r1 INT-159: words that hint at a payment's STATE with no payment noun — "¿les llegó?", "lo recibieron?",
+ * "ya", "listo", "ahí va", "revisen". A burst with one of these never gets the bare-ask relaxation.
+ */
+const PAYMENT_STATUS_HINT_RE =
+  /(?<![\p{L}])(?:ya|lleg[oó]|llegaron|recib\p{L}*|entr[oó]|cay[oó]|qued[oó]|list[oa]|hech[oa]|enviad[oa]|mandad[oa]|pagad[oa]|revis\p{L}*|verific\p{L}*|ah[ií]\s+(?:les|le|te)\s+va|ah[ií]\s+va|acredit\p{L}*|reflej\p{L}*|aparec\p{L}*)(?![\p{L}])|[✅✔☑✓👌🧾💰💳💵🏦📷📸]/iu
+export function hasPaymentStatusHint(text: string): boolean {
+  return PAYMENT_STATUS_HINT_RE.test(stripFormatChars((text || '').normalize('NFKC')))
+}
+
+/** The customer used a confirm / review verb (any form): replies to it get the payment-status backstop (INT-159). */
+export function mentionsConfirmVerb(text: string): boolean {
+  return CONFIRM_CUE_RE.test(stripFormatChars((text || '').normalize('NFKC')))
 }
 
 /**
@@ -468,9 +486,10 @@ function agentExit(value: string, cls: PaymentClassification): PaymentClassifica
 }
 /* ---- end live-equivalence gate ---- */
 
-const HOW_VERB = String.raw`(?:c[oó]mo|qu[eé]\s+tal)\s+(?:ser[ií]a|es|funciona|va|queda|se\s+hace|se\s+maneja)`
-const PAY_THE = String.raw`(?:el|lo\s+del?)\s+pago`
-const SHIP_THE = String.raw`(?:el|lo\s+del?|la)\s+(?:env[ií]o|entrega)`
+// Verifier r2 #2: only "how does it work" verbs — never "va / queda / qué tal" ("¿Qué tal va el pago?" is a status).
+const HOW_VERB = String.raw`c[oó]mo\s+(?:ser[ií]a|es|funciona|se\s+hace|se\s+maneja)`
+const PAY_THE = String.raw`el\s+pago`
+const SHIP_THE = String.raw`(?:el|la)\s+(?:env[ií]o|entrega)`
 const HOW_PAY_SHIP_RE = new RegExp(
   String.raw`^(?:y\s+)?(?:` +
     String.raw`${HOW_VERB}\s+(?:${SHIP_THE}\s+y\s+)?${PAY_THE}(?:\s+y\s+${SHIP_THE})?` +

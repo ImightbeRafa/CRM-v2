@@ -5,7 +5,8 @@
  *  - the actor must be an active OWNER / ADMIN of the business;
  *  - the daily TEST token cap is raised only for the run, both changes are written to the audit log, and it is
  *    restored in `finally` AND on Ctrl+C / SIGTERM (a stuck raise would let admins spend more on Betsy's key);
- *  - never stacks with another run (the cap is already raised → refuse).
+ *  - never stacks with another run: a real lock row (test-lock.ts, Sleeping exam C4) is taken first, atomically, and
+ *    released at the end (expires on its own after 6 h if the process died); the "cap already raised" refusal stays.
  */
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/auditLogger'
@@ -14,6 +15,7 @@ import { readChatAgentLayerConfig } from '@/lib/feature-flags'
 import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
 import { isPlatformAiPaused, readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
+import { acquireTestLock, releaseTestLock, type LockDb } from './test-lock'
 
 export type ExamActor = { id: string; name: string; role: string }
 
@@ -31,8 +33,37 @@ export async function withExamSession<T>(
   if (!user || !member || !['OWNER', 'ADMIN'].includes(String(member.role))) throw new Error(`${input.actorEmail} debe ser OWNER o ADMIN activo del negocio`)
   const actor: ExamActor = { id: user.id, name: `${user.name || 'Owner'} (${input.label} script)`, role: String(member.role) }
 
-  const before = parseChatAgentLayerConfig((await readChatAgentLayerConfig(tenantId)).config).testDailyTokenCap
-  if (before >= input.cap) throw new Error(`El tope de pruebas ya está en ${before.toLocaleString('es-CR')}: otra prueba está corriendo (o quedó subido: bajalo desde Agentes).`)
+  const lockDb = prisma as unknown as LockDb
+  const lock = await acquireTestLock(lockDb, { tenantId, label: input.label, cap: input.cap })
+  let lockReleased = false
+  const releaseLock = async () => {
+    if (lockReleased) return
+    lockReleased = true
+    await releaseTestLock(lockDb, { tenantId, token: lock.token }).catch(() => undefined)
+    await auditLock('liberado')
+  }
+  const auditLock = (why: string) =>
+    logAudit({
+      action: 'UPDATE',
+      entityType: 'ChatAgentLayerConfig',
+      entityId: tenantId,
+      description: `test lock ${why} (${input.label}, pid ${process.pid}, hasta ${lock.expiresAt})`,
+      newValues: { testLock: why, label: input.label, startedAt: lock.startedAt, expiresAt: lock.expiresAt },
+      userId: actor.id,
+      userName: actor.name,
+      userRole: actor.role,
+      tenantId,
+    }).catch(() => undefined)
+  await auditLock('tomado')
+
+  let before: number
+  try {
+    before = parseChatAgentLayerConfig((await readChatAgentLayerConfig(tenantId)).config).testDailyTokenCap
+    if (before >= input.cap) throw new Error(`El tope de pruebas ya está en ${before.toLocaleString('es-CR')}: otra prueba está corriendo (o quedó subido: bajalo desde Agentes).`)
+  } catch (error) {
+    await releaseLock()
+    throw error
+  }
   const audit = (from: number, to: number, why: string) =>
     logAudit({
       action: 'UPDATE',
@@ -48,8 +79,9 @@ export async function withExamSession<T>(
     }).catch(() => undefined)
 
   let restored = false
+  let raised = false
   const restore = async (why: string) => {
-    if (restored) return
+    if (restored || !raised) return
     restored = true
     // Only our own raise is undone: an admin's change during the run is kept.
     await mutateChatAgentLayerConfig(tenantId, (c) => (c.testDailyTokenCap === input.cap ? { ...c, testDailyTokenCap: before } : c))
@@ -57,18 +89,26 @@ export async function withExamSession<T>(
     console.log(`Tope de pruebas restaurado: ${before.toLocaleString('es-CR')}`)
   }
   const onSignal = (sig: string) => {
-    void restore(`interrumpido (${sig})`).finally(() => process.exit(130))
+    void restore(`interrumpido (${sig})`)
+      .finally(() => releaseLock())
+      .finally(() => process.exit(130))
   }
   process.once('SIGINT', onSignal)
   process.once('SIGTERM', onSignal)
-  await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: Math.max(c.testDailyTokenCap, input.cap) }))
-  await audit(before, input.cap, 'inicio')
-  console.log(`Tope de pruebas: ${before.toLocaleString('es-CR')} → ${input.cap.toLocaleString('es-CR')} (se restaura al final)`)
   try {
+    // Inside the try: a failed raise still restores (only our own value) and releases the lock.
+    await mutateChatAgentLayerConfig(tenantId, (c) => ({ ...c, testDailyTokenCap: Math.max(c.testDailyTokenCap, input.cap) }))
+    raised = true
+    await audit(before, input.cap, 'inicio')
+    console.log(`Tope de pruebas: ${before.toLocaleString('es-CR')} → ${input.cap.toLocaleString('es-CR')} (se restaura al final)`)
     return await fn(actor)
   } finally {
     process.removeListener('SIGINT', onSignal)
     process.removeListener('SIGTERM', onSignal)
-    await restore('fin')
+    try {
+      await restore('fin')
+    } finally {
+      await releaseLock()
+    }
   }
 }

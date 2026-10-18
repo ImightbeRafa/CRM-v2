@@ -448,7 +448,8 @@ describe('3b. sales state: metodo_pago', () => {
   it('contra entrega from the sales context fills its token (zone note from the shipping methods)', () => {
     assert.deepEqual(salesPaymentOptions(CTX), { codAvailable: true, codNote: 'Solo dentro del GAM.' })
     assert.deepEqual(salesPaymentOptions({ ...CTX, paymentMethods: [], shippingMethods: [{ name: 'x', price: 1, coverage: 'y', cod: 'no' }] }), { codAvailable: false, codNote: null })
-    assert.match(read('src/lib/soft-ai/agent-turn-inputs.ts'), /salesPaymentOptions: sales \? \{ \.\.\.salesPaymentOptions\(sales\), chosenMethod: salesState\?\.chosenMethod \?\? null \} : undefined,/)
+    // Sleeping C6 adds dataListFirst next to chosenMethod (same object, same options from the sales context).
+    assert.match(read('src/lib/soft-ai/agent-turn-inputs.ts'), /salesPaymentOptions: sales\s*\?\s*\{\s*\.\.\.salesPaymentOptions\(sales\),\s*chosenMethod: salesState\?\.chosenMethod \?\? null,\s*dataListFirst: [^}]*\}\s*: undefined,/)
   })
 })
 

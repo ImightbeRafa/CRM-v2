@@ -18,6 +18,7 @@ import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
 import { buildLinkAllowlist, foreignLinks, type LinkAllowlist } from '@/lib/soft-ai/links'
 import { canonicalizeOrderDataList, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
 import { MAX_REPLY_PARTS, splitReplyParts } from '@/lib/soft-ai/reply-parts'
+import { dataListBeforePaymentQuestion } from '@/lib/soft-ai/sales-state'
 
 /**
  * Backstop for short payment confirmations the confirmation-wording check misses ("Sí, ya se acreditó", "Sí, lo
@@ -276,6 +277,37 @@ const MONEY_AMOUNT_RE =
 function amountAllowed(amount: number, allowed: number[]): boolean {
   const rounded = Math.round(amount)
   return allowed.some((candidate) => Math.abs(Math.round(candidate) - rounded) <= 1)
+}
+
+/**
+ * Sleeping exam C3 (2026-10-18): a per-night / per-patch amount ("₡317 por noche") is sourced when it IS a known price
+ * divided by a night / patch count written in the reply or by the customer ("el pack de 3 trae 90 noches": ₡28 500 ÷ 90
+ * = ₡317). Only consumption units (noche, día, parche, uso, aplicación, dosis) — never "por bolsa / unidad / paquete", so
+ * a pack's per-bag figure cannot read as a single-bag price. The amount must sit next to that per-unit wording.
+ */
+const UNIT_WORD = String.raw`(?:noches?|d[ií]as?|parches?|usos?|aplicaci[oó]n(?:es)?|dosis)`
+const UNIT_COUNT_RE = new RegExp(String.raw`(?<![\d.,])(\d{1,4})\s*${UNIT_WORD}(?![\p{L}])`, 'giu')
+const PER_UNIT_AFTER_RE = new RegExp(String.raw`^\s*(?:colones\s*)?(?:por|al|a\s+la|al\s+d[ií]a|la|el|cada|\/|x)\s*${UNIT_WORD}(?![\p{L}])`, 'iu')
+const PER_UNIT_BEFORE_RE = new RegExp(String.raw`(?:por|cada|la|el)\s+${UNIT_WORD}[^₡\n.!?]{0,25}$`, 'iu')
+const COLON_AMOUNT_RE = /[₡¢]\s?(\d{1,3}(?:[.,\s ]\d{3})+|\d+)(?![\d])/gu
+
+export function unitDerivedAmount(amount: number, text: string, customerText: string | null | undefined, bases: number[]): boolean {
+  const rounded = Math.round(amount)
+  const counts = [...`${text}\n${customerText || ''}`.matchAll(UNIT_COUNT_RE)].map((m) => Number(m[1])).filter((n) => n >= 2 && n <= 1000)
+  if (!counts.length || !bases.length) return false
+  const derived = bases.some((b) => b > 0 && counts.some((n) => Math.abs(Math.round(b / n) - rounded) <= 1))
+  if (!derived) return false
+  // Every place this amount is written must be a per-unit mention.
+  let seen = false
+  for (const m of text.matchAll(COLON_AMOUNT_RE)) {
+    if (Number(m[1].replace(/\D/g, '')) !== rounded) continue
+    seen = true
+    const at = m.index ?? 0
+    const after = text.slice(at + m[0].length, at + m[0].length + 30)
+    const before = text.slice(Math.max(0, at - 40), at)
+    if (!PER_UNIT_AFTER_RE.test(after) && !PER_UNIT_BEFORE_RE.test(before)) return false
+  }
+  return seen
 }
 
 /**
@@ -554,6 +586,8 @@ export function validateAgentOutput(input: {
 
   for (const amount of amounts) {
     if (amountAllowed(amount, allowed)) continue
+    // Sleeping C3: a per-night / per-patch amount that is a known price ÷ a stated count.
+    if (unitDerivedAmount(amount, text, input.customerText, [...inventory, ...quote])) continue
     highlighted.push(Math.round(amount))
     if (!cited.has('search_inventory') && shipping.length === 0 && quote.length === 0) {
       reasons.push('unsourced_money')
@@ -782,6 +816,14 @@ export function applyFinalOutputPolicy(input: {
       reasons.push('shortened')
     }
   }
+  // Sleeping C6 (Rafael's rule): at the close the data list goes before the payment question, each in its own message.
+  if (input.paymentOptions?.dataListFirst) {
+    const ordered = dataListBeforePaymentQuestion(text, input.paymentOptions.dataListFirst)
+    if (ordered !== text) {
+      text = ordered
+      reasons.push('data_list_first')
+    }
+  }
   // Anything still spelling the internal tag (case-sensitive) is never sent.
   if (/ATAJO/.test(text)) reasons.push('tag_leak')
   // Nothing left to send = no reply (never an empty WhatsApp message).
@@ -853,7 +895,7 @@ export function applyFinalOutputPolicy(input: {
   })
 
   const merged = [...new Set([...reasons, ...validated.reasons])]
-  const blocking = merged.filter((reason) => reason !== 'purchase_summary_appended' && reason !== 'shortened' && reason !== 'unjoined' && reason !== 'data_list')
+  const blocking = merged.filter((reason) => reason !== 'purchase_summary_appended' && reason !== 'shortened' && reason !== 'unjoined' && reason !== 'data_list' && reason !== 'data_list_first')
   return {
     text,
     ok: blocking.length === 0,

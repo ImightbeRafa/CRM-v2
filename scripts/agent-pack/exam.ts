@@ -23,7 +23,7 @@ import { softAiResponsesCreate, parseSoftAiResponseText } from '@/lib/soft-ai/ll
 import { LUNA_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
 import { arg, flag, loadPack, type AgentPack } from './pack'
 import { withExamSession } from './test-session'
-import { redactCustomerText } from './exam-bank'
+import { examHistoryTimes, redactCustomerText } from './exam-bank'
 import type { ExamBank, ExamItem } from './exam-bank'
 
 type Finding = { cls: string; serious: boolean; why: string }
@@ -203,7 +203,10 @@ async function main() {
     for (let run = 1; run <= runs; run++) {
       for (const [n, item] of items.entries()) {
         const session = randomUUID()
-        const history = item.history.map((h, i) => ({ direction: h.direction, content: h.content, sentAt: new Date(started - (item.history.length - i) * 60_000).toISOString() }))
+        // C5: realistic gaps (real ones from the bank, else the answered history outside the 10-min look-back).
+        const stepAt = Date.now()
+        const times = examHistoryTimes(item.history, stepAt)
+        const history = item.history.map((h, i) => ({ direction: h.direction, content: h.content, sentAt: new Date(times[i]).toISOString() }))
         let sentImageIds: string[] = []
         for (const [s, step] of item.steps.entries()) {
           const t0 = Date.now()

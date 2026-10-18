@@ -154,12 +154,20 @@ export function decideInbound(input: {
    * a regex payment claim (same hand-off, same notification). Can only force toward a person.
    */
   forcePaymentRisk?: true
+  /**
+   * Sleeping exam C2: nothing about paying happened in this chat yet (sales-state noPaymentYet — no payment details
+   * sent, no photo / file from the customer, no payment words or web order from them). A bare "Para confirmar el
+   * pedido" / "¿me confirmás?" is then an ordinary sales message, not a payment claim. Undefined = old behaviour.
+   */
+  noPaymentYet?: boolean
 }): InboundDecision {
+  const noPaymentYet = input.noPaymentYet === true
   const latestClass = classifyPaymentText(input.inboundText, {
     awaitingPaymentMethod: input.awaitingPaymentMethod === true && (!input.messageType || input.messageType === 'text'),
+    noPaymentYet: noPaymentYet && (!input.messageType || input.messageType === 'text'),
   })
   // Verifier round 10: only a real claim in an earlier bubble counts ("Sinpe" + "gracias" is an answer).
-  const burstClaim = (input.earlierCustomerTexts || []).some((t) => hasHardPaymentClaim(t))
+  const burstClaim = (input.earlierCustomerTexts || []).some((t) => hasHardPaymentClaim(t, { noPaymentYet }))
   const forced = input.forcePaymentRisk === true
   const paymentClass: PaymentClassification = burstClaim || forced ? 'payment_proof_or_risk' : latestClass
   const why = forced ? `payment_llm_check (regex: ${latestClass})` : burstClaim ? `earlier_message (latest: ${latestClass})` : null

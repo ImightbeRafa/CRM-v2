@@ -28,6 +28,7 @@ import {
   deriveSalesState,
   formatSalesTurnBlock,
   salesAllowedAmounts,
+  salesDataListFirst,
   salesAllowedDeals,
   salesCloseWithoutPaymentData,
   salesFreeShippingRule,
@@ -264,7 +265,14 @@ export function assembleAgentRuntimeInputs(input: {
       }),
     ),
     // chosenMethod: a contra-entrega / efectivo block is an order for a person only when the customer chose it (#9).
-    salesPaymentOptions: sales ? { ...salesPaymentOptions(sales), chosenMethod: salesState?.chosenMethod ?? null } : undefined,
+    // Sleeping C6: at the close, the data list goes before the payment question (code orders the reply).
+    salesPaymentOptions: sales
+      ? {
+          ...salesPaymentOptions(sales),
+          chosenMethod: salesState?.chosenMethod ?? null,
+          dataListFirst: salesState ? salesDataListFirst(salesState, input.history, input.inboundText) : null,
+        }
+      : undefined,
     salesTrace: salesState ? { stage: salesState.stage, said: salesState.said, chosenMethod: salesState.chosenMethod ?? null } : null,
     toolCtx: {
       ...input.toolCtxBase,

@@ -5,6 +5,8 @@
  */
 import {
   hasPaymentClaimCue,
+  hasHardPaymentClaim,
+  hasPaymentWord,
   hasChoiceClaimOrStatusWord,
   hasPaymentStatusClaim,
   isPaymentCompletionClaim,
@@ -16,6 +18,7 @@ import {
 } from '@/lib/soft-ai/payment-classifier'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
+import { PICKUP_DATA_LIST, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
 import {
   paymentMethodLabels,
   paymentMethodQuestion,
@@ -97,6 +100,50 @@ export const PAYMENT_METHOD_ASKED_RE =
   /c[oó]mo\s+(prefer[ií]s|quer[eé]s|prefiere|quiere|te\s+gustar[ií]a)\s+pagar|qu[eé]\s+m[eé]todo\s+de\s+pago|con\s+qu[eé]\s+(prefer[ií]s|quer[eé]s)\s+pagar|cu[aá]l\s+m[eé]todo\s+(de\s+pago\s+)?prefer[ií]s/iu
 
 /**
+ * Sleeping exam C1 (2026-10-18): the store's method question in other wordings, as a QUESTION (the "?" ends the same
+ * sentence): "¿Querés pagar por SINPE o tarjeta?", "¿Preferís pagar con SINPE?", "¿Pagás por SINPE o en la web?",
+ * "¿SINPE o transferencia?", "Tenemos SINPE y tarjeta, ¿cuál preferís?". Never a question about a payment already made
+ * ("¿Ya pudiste pagar por SINPE?", "¿Hiciste el SINPE o la transferencia?"): the next "sinpe" there stays a claim.
+ */
+const METHOD_WORD = String.raw`(?:sinpe(?:\s+m[oó]vil)?|simpe|transferencias?|tarjetas?|efectivo|contra\s?entrega)`
+const METHOD_QUESTION_EXTRA_RES = [
+  new RegExp(
+    String.raw`(?<![\p{L}])(?:prefer[ií]s|prefiere|prefieren|quer[eé]s|quiere|quieren|te\s+gustar[ií]a|le\s+gustar[ií]a|vas\s+a|va\s+a)\s+pagar(?:lo|la|los|las)?\s+(?:por|con|mediante|v[ií]a|en)(?![\p{L}])[^?¿.!\n]{0,100}\?`,
+    'iu',
+  ),
+  new RegExp(String.raw`(?<![\p{L}])pag[aá]s\s+(?:por|con|en)(?![\p{L}])[^?¿.!\n]{0,100}\?`, 'iu'),
+  new RegExp(String.raw`¿\s*(?:(?:y\s+)?(?:por|con|en)\s+)?${METHOD_WORD}[^?¿.!\n]{0,60}(?<![\p{L}])o(?![\p{L}])[^?¿.!\n]{0,60}\?`, 'iu'),
+]
+/** "¿Cuál preferís?" counts only in a message that names at least two methods. */
+const WHICH_ONE_RE = /¿\s*(?:y\s+)?cu[aá]l\s+(?:prefer[ií]s|prefiere|prefieren|te\s+sirve|le\s+sirve|te\s+queda\s+mejor|le\s+queda\s+mejor)[^?¿.!\n]{0,40}\?/iu
+const METHOD_WORD_G = new RegExp(String.raw`(?<![\p{L}])${METHOD_WORD}(?![\p{L}])`, 'giu')
+/** Done / sent words: a question about a payment already made, never the method question. */
+const METHOD_QUESTION_DONE_RE =
+  /(?<![\p{L}])(?:ya|hiciste|hizo|pagaste|pag[oó]|mandaste|enviaste|realizaste|pudiste|pudo|transferiste|depositaste|comprobante|lleg[oó]|entr[oó]|cay[oó]|qued[oó])(?![\p{L}])/iu
+
+/** The question sentence around a match: from the sentence start (or its "¿") to the end of the match. */
+function questionSentence(t: string, m: RegExpExecArray): string {
+  const start = Math.max(0, t.lastIndexOf('¿', m.index), ...['.', '!', '\n', '?'].map((c) => t.lastIndexOf(c, m.index - 1) + 1))
+  return t.slice(Math.min(start, m.index), m.index + m[0].length)
+}
+
+/** The store asked HOW the customer wants to pay (the original wordings, or C1's other question shapes). Pure. */
+export function isPaymentMethodQuestion(text: string): boolean {
+  const t = text || ''
+  if (PAYMENT_METHOD_ASKED_RE.test(t)) return true
+  for (const re of METHOD_QUESTION_EXTRA_RES) {
+    const m = re.exec(t)
+    if (m && !METHOD_QUESTION_DONE_RE.test(questionSentence(t, m))) return true
+  }
+  const which = WHICH_ONE_RE.exec(t)
+  if (which && !METHOD_QUESTION_DONE_RE.test(t)) {
+    const named = new Set([...t.matchAll(METHOD_WORD_G)].map((x) => x[0].toLowerCase().slice(0, 5)))
+    if (named.size >= 2) return true
+  }
+  return false
+}
+
+/**
  * efectivo is its own method when the store offers it; otherwise, when contra entrega is offered, it means paying the
  * courier (contra entrega). Pure.
  */
@@ -153,7 +200,7 @@ export function carriedOrderMethod(history: SoftAiHistoryMessage[], inboundText:
   let at = -1
   for (let i = history.length - 1; i >= 0; i -= 1) {
     const m = history[i]
-    if (m.direction === 'outbound' && PAYMENT_METHOD_ASKED_RE.test(m.content || '')) {
+    if (m.direction === 'outbound' && isPaymentMethodQuestion(m.content || '')) {
       at = i
       break
     }
@@ -172,7 +219,7 @@ export function carriedOrderMethod(history: SoftAiHistoryMessage[], inboundText:
 export function methodQuestionPending(outbound: readonly string[]): boolean {
   // Only the store's last 3 messages (one reply = up to 3 parts): an old question is not pending anymore.
   const recent = outbound.slice(-3)
-  const at = recent.map((m) => PAYMENT_METHOD_ASKED_RE.test(m)).lastIndexOf(true)
+  const at = recent.map((m) => isPaymentMethodQuestion(m)).lastIndexOf(true)
   return at >= 0 && !recent.slice(at).some((m) => paymentDetailsIn(m) || ORDER_BLOCK_RE.test(m))
 }
 
@@ -301,7 +348,7 @@ const NEXT_STEP: Record<SalesStage, string> = {
   pedido_en_revision:
     'Ya pasaste el pedido a la tienda para que lo revise (contra entrega / efectivo): no pidas comprobante ni datos de pago. Respondé breve lo que pregunte y decí que enseguida lo revisamos.',
   cierre:
-    'Respondé primero lo que preguntó (breve). Después CERRÁ: dá el total (precio + envío) en un mensaje, pedí los datos del pedido con la lista fija de "Datos que necesita un pedido" (un dato por renglón), y preguntá cómo prefiere pagar ofreciendo los métodos configurados (la pregunta de pago de abajo). Todavía no des datos de pago. No repitas precio/envío salvo el total final una vez.',
+    'Respondé primero lo que preguntó (breve). Después CERRÁ en este orden, cada cosa en su propio mensaje: 1) el total (precio + envío); 2) pedí los datos del pedido con la lista fija de "Datos que necesita un pedido" (un dato por renglón); 3) AL FINAL, en su propio mensaje, preguntá cómo prefiere pagar con la pregunta de pago de abajo, nunca antes de la lista de datos (aunque pregunte cómo comprar o cómo pagar). Si ya te mandó los datos, solo la pregunta de pago. Todavía no des datos de pago. No repitas precio/envío salvo el total final una vez.',
   metodo_pago:
     'Esperá que elija el método de pago; si preguntó otra cosa, respondé y volvé a preguntar (la pregunta de pago de abajo). No des datos de pago hasta que elija.',
   esperando_comprobante:
@@ -712,4 +759,89 @@ export function mediaAwaitingReceipt(messageType: string | null | undefined, his
 
 export function isMediaLikeMessageType(messageType: string | null | undefined): boolean {
   return MEDIA_LIKE_TYPES.has(messageType || '')
+}
+
+/** A web order or an order / reference number the customer wrote ("ORD-1234", "pedido #55", "pedí en la web"). */
+const WEB_ORDER_RE = /(?<![\p{L}])(?:ord-?\s?\d|pedido\s*#?\s*\d|#\s?\d{3,}|(?:p[aá]gina|web|sitio|tienda\s+en\s+l[ií]nea))/iu
+
+/**
+ * Sleeping exam C2: nothing about paying happened in this chat yet — the store sent no payment details / order block,
+ * the customer sent no photo / file / audio (a receipt), wrote no payment word, no payment claim and no web order or
+ * order number. Only then is a bare "Para confirmar el pedido" / "¿me confirmás?" an ordinary sales message. Pure;
+ * live and Probar pass the same history (with messageType where known).
+ */
+export function noPaymentYet(history: ReadonlyArray<{ direction: string; content?: string | null; messageType?: string | null }>): boolean {
+  for (const m of history) {
+    const text = m.content || ''
+    if (m.direction === 'outbound') {
+      if (paymentDetailsIn(text) || ORDER_BLOCK_RE.test(text)) return false
+      continue
+    }
+    if (MEDIA_LIKE_TYPES.has(m.messageType || '') || /^\s*\[(?:imagen|image|foto|archivo|document|audio|video|voice|sticker)[^\]]*\]\s*$/iu.test(text)) return false
+    // A bare order-confirm ask in the history does not count by itself (it is what this check exists for).
+    if (hasPaymentWord(text) || hasHardPaymentClaim(text, { noPaymentYet: true }) || WEB_ORDER_RE.test(text)) return false
+  }
+  return true
+}
+
+/** The store already asked for the order data (the fixed list or an inline "nombre completo … teléfono" request). */
+function orderDataAsked(outbound: readonly string[]): boolean {
+  return outbound.some((t) => /nombre\s+completo/iu.test(t) && /tel[eé]fono/iu.test(t))
+}
+
+/** The customer already sent order data: a phone number, or a message of 3+ lines (name / place / address). */
+function customerGaveOrderData(inbound: readonly string[]): boolean {
+  return inbound.some((t) => /(?<!\d)\d{4}[\s.-]?\d{4}(?!\d)/.test(t) || t.split('\n').filter((l) => l.trim()).length >= 3)
+}
+
+const PICKUP_CUE_RE = /(?<![\p{L}])(?:retir\p{L}*|recog\p{L}*|paso\s+(?:a\s+)?(?:por\s+)?(?:él|el|ella|la|lo)|pickup)(?![\p{L}])/iu
+
+/**
+ * Sleeping exam C6 (Rafael 2026-10-16: total + data list first, the payment question after, in its own message): at the
+ * close, before any payment details, when the store has not asked for the order data yet and the customer has not sent
+ * it, the reply must carry the data list BEFORE the method question. Which list: pickup when the customer talks about
+ * picking it up, else shipping. Null = nothing to order. Pure.
+ */
+export function salesDataListFirst(state: SalesState, history: SoftAiHistoryMessage[], inboundText: string): 'shipping' | 'pickup' | null {
+  if (state.stage !== 'cierre' || state.said.payment || state.said.order || state.said.howToBuy) return null
+  const outbound = history.filter((m) => m.direction === 'outbound').map((m) => m.content || '')
+  if (orderDataAsked(outbound)) return null
+  const inbound = [...history.filter((m) => m.direction === 'inbound').map((m) => m.content || ''), inboundText || '']
+  if (customerGaveOrderData(inbound)) return null
+  return inbound.slice(-4).some((t) => PICKUP_CUE_RE.test(t)) ? 'pickup' : 'shipping'
+}
+
+const DATA_LIST_LEAD = { shipping: 'Para coordinar el envío, pasame estos datos:', pickup: 'Para el retiro, pasame estos datos:' } as const
+
+/**
+ * C6: reorder (or complete) a closing reply so the data list comes before the payment-method question: the text before
+ * the question stays first, then the list (moved, or the fixed one added), then the question in its own message. A reply
+ * with no method question, or with payment details / tokens in it, is left as written. Pure.
+ */
+export function dataListBeforePaymentQuestion(text: string, kind: 'shipping' | 'pickup'): string {
+  const value = (text || '').replace(/\r\n?/g, '\n').trim()
+  if (!value || /\[\[?\s*(?:DATOS|PAGO)/iu.test(value) || paymentDetailsIn(value)) return text
+  const paras = value.split(/\n[ \t]*\n+/).map((p) => p.trim()).filter(Boolean)
+  const isList = (p: string) => /nombre\s+completo/iu.test(p) && /tel[eé]fono/iu.test(p)
+  const q = paras.findIndex((p) => isPaymentMethodQuestion(p))
+  if (q < 0) return text
+  const listIdx = paras.findIndex(isList)
+  if (listIdx >= 0 && listIdx < q) return text
+  // Split the question's paragraph at the question: the sentences before it stay in front.
+  const sentences = paras[q].split(/(?<=[.!?…])\s+|\n/u).filter((s) => s.trim())
+  let j = 0
+  for (let i = sentences.length - 1; i >= 0; i -= 1) {
+    if (isPaymentMethodQuestion(sentences.slice(i).join(' '))) {
+      j = i
+      break
+    }
+  }
+  const head = sentences.slice(0, j).join(' ').trim()
+  const tail = sentences.slice(j).join(' ').trim()
+  if (listIdx === q || isList(tail)) return text
+  const others = (from: number, to: number) => paras.slice(from, to).filter((_, k) => from + k !== listIdx)
+  const front = [...others(0, q), head].filter(Boolean).join('\n')
+  const list = listIdx >= 0 ? paras[listIdx] : `${DATA_LIST_LEAD[kind]}\n${kind === 'pickup' ? PICKUP_DATA_LIST : SHIPPING_DATA_LIST}`
+  const back = [tail, ...others(q + 1, paras.length)].filter(Boolean).join('\n')
+  return [front, list, back].filter(Boolean).join('\n\n')
 }

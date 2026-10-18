@@ -347,17 +347,68 @@ const SENT_AMOUNT_CLAIM_RE =
   /(?<![\p{L}])(envi[eé]|mand[eé]|pas[eé]|deposit[eé]|transfer[ií]|pagu[eé]|hice|pasamos|mandamos|enviamos|depositamos|pasaron|mandaron|enviaron|depositaron|pas[oó]|mand[oó]|envi[oó]|deposit[oó]|transfiri[oó])(?:\s+\p{L}+){0,2}?\s+(?:₡\s?\d|\d{1,3}(?:[.,\s]\d{3})+|\d+(?:[.,\s]\d{3})*\s*(?:mil|k|colones|rojos)(?![\p{L}])|\d{4,})/iu
 
 /**
+ * Sleeping exam C2 (2026-10-18): a bare "confirm" ask with nothing about money — "Para confirmar el pedido!?",
+ * "Quisiera confirmar el pedido", "Pura vida, me confirmás entonces?". Every other word must be on this short list
+ * (greetings, "para / quisiera / me", the order itself), so nothing about a payment, a receipt or "lo recibieron" can
+ * ride along. Only used when the chat has no payment yet (see confirmCueCounts).
+ */
+const BARE_CONFIRM_VERB_RE = /(?<![\p{L}])(?:me\s+)?confirm[aáeé]\p{L}*/iu
+const BARE_CONFIRM_FILLER = new Set(
+  (
+    'hola holi buenas buen dia dias tardes noches pura vida disculpe disculpa disculpá una consulta ok okay dale bueno perfecto ' +
+    'gracias muchas porfa por favor para quisiera quiero queria quería deseo me gustaria gustaría podes podés podrias podrías puede ' +
+    'pueden podria podría lo la le me nos el mi la los mis entonces no si sí y e de del pedido orden compra porfis'
+  ).split(/\s+/),
+)
+export function isBareOrderConfirmAsk(text: string): boolean {
+  const value = stripFormatChars((text || '').normalize('NFKC')).trim()
+  if (!value || value.length > 120 || /[\d₡¢$#✅✔☑👍💸@]/u.test(value)) return false
+  if (!BARE_CONFIRM_VERB_RE.test(value)) return false
+  if (
+    PAYMENT_RE.test(value) ||
+    PAYMENT_STATUS_CUE_RE.test(value) ||
+    PROOF_CUE_RE.test(value) ||
+    hasPaymentClaimCue(value) ||
+    CONFIRM_PAYMENT_RE.test(value) ||
+    RISK_CUE_RE.test(value) ||
+    SENT_AMOUNT_CLAIM_RE.test(value) ||
+    isPaymentCompletionClaim(value) ||
+    /(?<![\p{L}])(?:revis\p{L}*|ya)(?![\p{L}])/iu.test(value)
+  ) {
+    return false
+  }
+  const rest = value
+    .replace(new RegExp(BARE_CONFIRM_VERB_RE.source, 'giu'), ' ')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .split(/[^\p{L}]+/u)
+    .filter(Boolean)
+  return rest.every((w) => BARE_CONFIRM_FILLER.has(w))
+}
+
+/**
+ * A bare confirm / review verb stays a payment cue (SecureDog INT-93) — except a bare order-confirm ask in a chat where
+ * nothing about paying happened yet (no payment details sent, no receipt photo, no payment words from the customer,
+ * no web order): then it is an ordinary sales message.
+ */
+function confirmCueCounts(value: string, noPaymentYet: boolean): boolean {
+  if (!CONFIRM_CUE_RE.test(value)) return false
+  return !(noPaymentYet && isBareOrderConfirmAsk(value))
+}
+
+/**
  * Verifier round 10: an EARLIER message of a burst counts only for a real claim (a receipt, "ya pagué", a status, a
  * completion, a done-verb about money) — never the "payment word and no question" fallback, so "Sinpe" + "gracias"
  * after "¿Cómo preferís pagar?" or "No tengo sinpe" + "¿aceptan tarjeta?" stay answers.
  */
-export function hasHardPaymentClaim(text: string): boolean {
+export function hasHardPaymentClaim(text: string, opts: { noPaymentYet?: boolean } = {}): boolean {
   const value = stripFormatChars((text || '').normalize('NFKC'))
   return (
     SENT_AMOUNT_CLAIM_RE.test(value) ||
     PROOF_CUE_RE.test(value) ||
     hasPaymentClaimCue(value) ||
-    CONFIRM_CUE_RE.test(value) ||
+    confirmCueCounts(value, opts.noPaymentYet === true) ||
     CONFIRM_PAYMENT_RE.test(value) ||
     RISK_CUE_RE.test(value) ||
     hasPaymentStatusClaim(value) ||
@@ -417,8 +468,11 @@ function agentExit(value: string, cls: PaymentClassification): PaymentClassifica
 
 export function classifyPaymentText(
   text: string,
-  /** The store's method question is pending (sales-state): an exact method choice is then a sales answer. */
-  opts: { awaitingPaymentMethod?: boolean } = {},
+  /**
+   * awaitingPaymentMethod: the store's method question is pending. noPaymentYet (Sleeping C2): nothing about paying happened
+   * in this chat yet (sales-state noPaymentYet) — a bare order-confirm ask is then not a payment cue.
+   */
+  opts: { awaitingPaymentMethod?: boolean; noPaymentYet?: boolean } = {},
 ): PaymentClassification {
   // SecureDog: full-width / invisible-character spellings ("ＳＩＮＰＥ ✅", "he\u200Bcho") are read as plain text.
   const value = stripFormatChars((text || '').normalize('NFKC'))
@@ -426,7 +480,7 @@ export function classifyPaymentText(
   if (
     PROOF_CUE_RE.test(value) ||
     hasPaymentClaimCue(value) ||
-    CONFIRM_CUE_RE.test(value) ||
+    confirmCueCounts(value, opts.noPaymentYet === true) ||
     CONFIRM_PAYMENT_RE.test(value) ||
     RISK_CUE_RE.test(value)
   ) {

@@ -910,12 +910,34 @@ const DATA_VALUE_MAX_WORDS = 40
  * SecureDog r3 INT-I: an earlier customer row (not a question, not an order-data choice) with done / money wording the
  * live classifier misses ("Le puse la plata", "pagao", "Ahí les cae", "Se lo tiramos", "Liquidado", "Listo", "Ya").
  */
-const EARLIER_DONE_LEXICON_RE =
-  /(?<![\p{L}])(?:ya|yast[aá]|list[oa]|hech[oa]|pus[eo]|pusimos|dej[eé]|dejamos|met[ií]|tir[eé]|tiramos|gir[eé]|liquid\p{L}*|pagao|cancelao|mandao|enviao|pasao|tirao|plata|platica|dinero|transfe|depo)(?![\p{L}])|(?<![\p{L}])ah[ií]\s+(?:le|les|te)\s+cae(?![\p{L}])/iu
-export function earlierRowMayBeClaim(text: string): boolean {
+/**
+ * Verifier r4: SPECIFIC done / money phrases close the gate even in a question ("Le puse la plata ¿ok?"); "plata"
+ * only with a verb or a done word ("color plata" is a product), dejé / puse / tiré only after le / les / se lo.
+ */
+const EARLIER_SPECIFIC_DONE_RE = new RegExp(
+  [
+    String.raw`(?:le|les|se\s+l[oa]s?)\s+(?:pus[eo]|pusimos|dej[eé]|dejamos|met[ií]|metimos|tir[eé]|tiramos|gir[eé]|giramos|complet[eé]|adelant[eé]|adelantamos|cubr[ií]|cubrimos)`,
+    String.raw`(?:pus[eo]|pusimos|dej[eé]|dejamos|met[ií]|tir[eé]|tiramos|gir[eé]|mand[eé]|pas[eé]|envi[eé])\s+(?:la|el|mi|los)?\s*(?:plata|platica|dinero|harina|transfe|depo|sinpe|simpe)`,
+    String.raw`(?:la|el)\s+(?:plata|dinero|transfe|depo|sinpe|simpe)\s+(?:ya|est[aá]|qued[oó]|lleg[oó]|cay[oó]|entr[oó])`,
+    String.raw`liquid\p{L}*|pagao|cancelao|mandao|enviao|pasao|tirao|depositao|ah[ií]\s+(?:le|les|te)\s+cae`,
+  ]
+    .map((p) => `(?:${p})`)
+    .join('|'),
+  'iu',
+)
+/** A bare done word, only as a short standalone row ("Listo", "Ya", "Ya está", "Listo ✅"). */
+const EARLIER_BARE_DONE_RE = /^(?:ok\s+)?(?:ya|yast[aá]|ya\s+est[aá]|list[oa]|hech[oa]|ya\s+qued[oó])(?:\s+(?:ya|list[oa]|hech[oa]|est[aá]))?[\s.!,🙌🙏😊👍✅✔]*$/iu
+
+/**
+ * SecureDog r3 INT-I / Verifier r4: an earlier customer row the live classifier misses that may mean "I paid". The bare
+ * form counts only after the store talked about payment (`afterStorePaymentTalk`: the only context where "Listo" = paid).
+ */
+export function earlierRowMayBeClaim(text: string, opts: { afterStorePaymentTalk?: boolean } = {}): boolean {
   const value = stripFormatChars((text || '').normalize('NFKC'))
-  if (/[?¿]/u.test(value)) return false
-  return EARLIER_DONE_LEXICON_RE.test(value) || EARLIER_DONE_LEXICON_RE.test(foldChoice(value).replace(/(\p{L})\1+/gu, '$1'))
+  const folded = foldChoice(value).replace(/(\p{L})\1+/gu, '$1')
+  if (EARLIER_SPECIFIC_DONE_RE.test(value) || EARLIER_SPECIFIC_DONE_RE.test(folded)) return true
+  if (!opts.afterStorePaymentTalk || /[?¿]/u.test(value)) return false
+  return EARLIER_BARE_DONE_RE.test(value.trim()) || EARLIER_BARE_DONE_RE.test(folded.trim())
 }
 
 /** Verifier r3 F4: a done / paid word split in two or three chunks ("lis to", "li s to", "pa gué"). */
@@ -925,7 +947,8 @@ const DATA_SPLIT_CLAIM_RE =
  * SecureDog r2 INT-D / r3 INT-J: an ALPHABET allowlist — Spanish letters only ("lısto" with a dotless i, "łisto", small
  * caps and every other look-alike fall out); emoji are checked separately.
  */
-const DATA_LATIN_LOOKALIKE_RE = /(?=\p{L})[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/u
+// Verifier r4: ASCII + Latin-1 letters ("Zoë", "João", "François"); dotless ı (U+0131) and ł (U+0142) stay out.
+const DATA_LATIN_LOOKALIKE_RE = /(?=\p{L})[^A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u00FF]/u
 /**
  * SecureDog r2 INT-D / r3 INT-G: line breaks other than \n / \r and every invisible / format character. They would be
  * deleted before the checks and glue a claim into one unknown token ("ya\u200Bpague"); order data never needs them.
@@ -953,7 +976,8 @@ const DATA_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/iu
 const DATA_DELIVERY_RE = /^(?:con\s+)?(?:env[ií]o\s+(?:a\s+(?:domicilio|la\s+casa|mi\s+casa)|por\s+correos)|a\s+domicilio|retiro\s+en\s+(?:la\s+)?tienda|paso\s+a\s+retirar(?:lo|la)?)$/iu
 /** A free value (name / place / address): Latin letters, spaces, basic punctuation, numbers of up to 3 digits. */
 // SecureDog r3 INT-J: a number never glued after a letter ("l1sto", "pagu3"); "casa 25", "2da entrada" stay valid.
-const DATA_FREE_VALUE_RE = /^[\p{L}\s,.'()\-/]*(?:(?<![\p{L}\d])\d{1,3}(?!\d)[\p{L}\s,.'()\-/]*)*$/u
+// Verifier r4: an apartment code ("apto B4", "casa C3") is one capital letter + 1–2 digits, alone — never "L1sto".
+const DATA_FREE_VALUE_RE = /^[\p{L}\s,.'()\-/]*(?:(?:(?<![\p{L}\d])\d{1,3}(?!\d)|(?<=(?:^|[^\p{L}])[A-Z])\d{1,2}(?![\p{L}\d]))[\p{L}\s,.'()\-/]*)*$/u
 
 /** A data part with no payment word and no method word. */
 function noPaymentTalk(part: string): boolean {

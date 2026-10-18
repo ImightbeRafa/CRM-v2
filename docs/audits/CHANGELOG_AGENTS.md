@@ -1,3 +1,17 @@
+## 2026-10-18 — Payment choice inside the order data, round 4 (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
+
+- Verifier r4 (Fable) FAIL on 957c681: safe, but the new conversation gates turned the feature off in 20/30 realistic
+  chats (base 4/30). Narrowed, now that the model check is a mandatory backstop:
+  - `earlierRowMayBeClaim`: specific done / money phrases ("le puse", "puse la plata", "la plata ya está", liquidado,
+    pagao, "ahí les cae") close the gate even in a question (r4 F4); a bare "Listo" / "Ya" only as a short standalone row
+    AFTER the store talked about payment; "plata" only with a verb ("Quiero la plata" = colour).
+  - Store gate: only the STORE's number / SINPE ("a este número", "el mismo de WhatsApp", "mi número … en la bio /
+    descripción"), not "tu número de WhatsApp", "número de guía", "el mismo día"; QR / evidencia / respaldo / "cuando me
+    llegue" only with a payment word.
+  - Latin-1 letters allowed in names ("Zoë", "João", "François"; ı / ł still out); apartment codes "B4", "A2" allowed
+    (one capital + 1–2 digits, alone — so a standalone "Y4" passes too; the model check backstops it).
+- Tests: pay-choice-in-data 38/38 (3 new + INT-I updated); test:soft-ai 1340/1340; test:security 289/289; tsc, eslint clean.
+
 ## 2026-10-18 — Payment choice inside the order data, round 3 security (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
 
 - SecureDog r3 (Fable, on 9e110b6): INT-A..F closed; new INT-G High (invisible-character glue), INT-H High (plain CR

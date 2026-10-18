@@ -446,8 +446,17 @@ describe('round 3 (SecureDog r3)', () => {
     }
   })
   it('INT-I: an earlier done / money row the live classifier misses closes the gate', () => {
-    for (const x of ['Le puse la plata', 'pagao', 'Ahí les cae', 'Ahí le cae', 'Se lo tiramos', 'Liquidado', 'Listo', 'Ya', 'ya está', 'Ya le puse']) {
+    for (const x of ['Le puse la plata', 'pagao', 'Ahí les cae', 'Ahí le cae', 'Se lo tiramos', 'Liquidado', 'Ya le puse']) {
       assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', x), msg('outbound', 'Perfecto 😊')], SHOPPER)), false, x)
+    }
+    // Verifier r4 F4: the specific phrases close it in a question too.
+    for (const x of ['Le puse la plata ¿ok?', 'pagao?', 'Le tiramos la plata, sirve?', 'Liquidado, ¿verdad?', 'Ahí les cae, ok?']) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', x), msg('outbound', 'Perfecto 😊')], SHOPPER)), false, x)
+    }
+    // A bare "Listo" / "Ya" counts only after the store talked about payment.
+    const payTalk = [...SALES_HISTORY, msg('outbound', 'Aceptamos SINPE o tarjeta 😊')]
+    for (const x of ['Listo', 'Ya', 'ya está', 'Listo ✅']) {
+      assert.equal(nothingPaidYet(rows([...payTalk, msg('inbound', x), msg('outbound', 'Perfecto 😊')], SHOPPER)), false, x)
     }
     // Questions keep it open.
     for (const x of ['¿Aceptan SINPE?', '¿Cuánto es?', '¿Ya tienen la talla M?']) {
@@ -482,5 +491,34 @@ describe('round 3 (SecureDog r3)', () => {
     assert.match(src, /const dataChoicePath = decisionOrderDataChoice\(decision\) !== null/)
     assert.match(src, /const mode = dataChoicePath \? 'enforce' : paymentCheckMode\(\)/)
     assert.match(src, /if \(!dataChoicePath && !paymentCheckGate\(/)
+  })
+})
+
+describe('round 4 (Verifier r4)', () => {
+  it('F1: ordinary customer chat keeps the gate open', () => {
+    for (const x of [
+      'Ya vi el precio', 'Listo, lo quiero', 'Ya', 'Ok listo', 'Ya me decidí, quiero la negra', 'Quiero la plata', 'ya les escribí por whatsapp',
+      'Lo necesito para ya', 'Ya se lo mostré a mi esposo y lo quiere', 'Te dejé un mensaje ayer', 'Listo 🙌',
+    ]) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', x), msg('outbound', 'Perfecto 😊')], SHOPPER)), true, x)
+    }
+    // "¿te lo aparto?" → "Listo" → data + method still routes as a choice.
+    const flow = [msg('inbound', '¿Tienen talla M?'), msg('outbound', 'Sí 😊 ¿te lo aparto?'), msg('inbound', 'Listo'), msg('outbound', 'Pasame tus datos para el envío')]
+    assert.equal(orderDataChoice(rows(flow, SHOPPER)), 'sinpe')
+  })
+  it('F2: everyday store copy keeps the gate open', () => {
+    for (const out of [
+      'Hacemos envíos el mismo día 🚚', 'A este precio no le dura', 'El mismo precio para todas las tallas', 'Te lo envío a este mismo nombre',
+      'Pasame tu número de WhatsApp y te escribo', 'El número de guía te lo paso por aquí', 'El número de la zapatilla viene en la descripción',
+      'Tiene respaldo de garantía por 6 meses', 'Cuando me llegue la mercadería te aviso',
+    ]) {
+      assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('outbound', out)], SHOPPER)), true, out)
+    }
+  })
+  it('F5: Latin-1 names and apartment codes are order data; "L1sto" is not', () => {
+    for (const t of ['Nombre: Zoë Mora\nPago por SINPE', 'Nombre: João Silva\nPago por SINPE', 'Nombre: François Dupont\nPago por SINPE', 'Nombre: Ana Mora\nDirección: Torre B, apto B4\nPago por SINPE', 'Nombre: Ana Mora\nDirección: Edificio A2, 3er piso\nPago por SINPE']) {
+      assert.equal(embeddedPaymentChoice(t), 'sinpe', t)
+    }
+    for (const w of ['L1sto', 'y4', 'L1STO', 'l\u0131sto', '\u0142isto']) assert.equal(embeddedPaymentChoice(`Nombre: Ana Mora\nDirección: Heredia, ${w}\nPago por SINPE`), null, w)
   })
 })

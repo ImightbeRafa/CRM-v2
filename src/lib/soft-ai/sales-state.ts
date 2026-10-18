@@ -958,10 +958,15 @@ const STORE_PAID_OR_ELSEWHERE_RE = new RegExp(
     String.raw`(?<![\p{L}])(?:sinpe|simpe|pag\p{L}*|transfer\p{L}*|dep[oó]sit\p{L}*)(?![\p{L}])[^\n]{0,60}(?<![\p{L}])(?:foto|imagen|captura|print)(?![\p{L}])`,
     // SecureDog r3 INT-K: "a este número", "al mismo de WhatsApp", the QR, "en la descripción / destacados / el post",
     // "cuando pagués / lo hagás me avisás", "apenas me caiga", "me pasás la evidencia / el respaldo".
-    String.raw`(?<![\p{L}])(?:n[uú]mero|sinpe|simpe)(?![\p{L}])[^\n]{0,40}(?<![\p{L}])(?:este|mismo|aqu[ií]|chat|whats\p{L}*|siempre|descripci[oó]n|destacad\p{L}*|post|publicaci[oó]n|estado)(?![\p{L}])`,
-    String.raw`(?<![\p{L}])(?:a\s+este|al\s+mismo|el\s+mismo|al\s+de\s+siempre|ya\s+ten[eé]s\s+los\s+datos|ya\s+sab[eé]s\s+el\s+n[uú]mero)(?![\p{L}])`,
-    String.raw`(?<![\p{L}])(?:qr|evidencia|respaldo)(?![\p{L}])`,
-    String.raw`(?<![\p{L}])(?:cuando|apenas)\s+(?:pagu\p{L}*|lo\s+hag\p{L}*|me\s+(?:caiga|entre|llegue)|te\s+(?:caiga|entre))(?![\p{L}])`,
+    // Verifier r4: only the STORE's number / SINPE (not "tu número de WhatsApp", "número de guía / talla").
+    String.raw`(?<![\p{L}])(?:mi|nuestro|el|al|este)\s+(?:n[uú]mero|sinpe|simpe)(?!\s+de\s+(?:la\s+|el\s+|su\s+|tu\s+)?(?:tel[eé]fono|gu[ií]a|pedido|talla|orden|zapatilla|producto|modelo|serie|casa))(?![\p{L}])[^\n]{0,40}(?<![\p{L}])(?:este|mismo|aqu[ií]|chat|whats\p{L}*|siempre|descripci[oó]n|destacad\p{L}*|post|publicaci[oó]n|estado)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:sinpe|simpe)(?![\p{L}])[^\n]{0,20}(?<![\p{L}])(?:a|al)\s+(?:este|mismo)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:a\s+este|al\s+mismo|el\s+mismo|a\s+este\s+mismo)\s+(?:n[uú]mero|sinpe|simpe|cuenta|de\s+whats\p{L}*)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:hacelo|pagalo|depositalo|transferilo)\s+(?:a|al)\s+(?:este|mismo)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:al\s+de\s+siempre|ya\s+ten[eé]s\s+los\s+datos|ya\s+sab[eé]s\s+el\s+n[uú]mero)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:escane\p{L}*\s+(?:el\s+)?qr|qr\s+(?:del?\s+)?(?:sinpe|simpe|pago)|(?:te\s+)?dejo\s+el\s+qr)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:evidencia|respaldo)\s+(?:del?\s+)?(?:pago|sinpe|simpe|transferencia|dep[oó]sito)(?![\p{L}])|(?:me\s+)?(?:pas[aá]s|mand[aá]s)\s+(?:la\s+|el\s+)(?:evidencia|respaldo)(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:cuando|apenas)\s+(?:pagu\p{L}*|lo\s+hag\p{L}*|me\s+(?:caiga|entre)|te\s+(?:caiga|entre)|me\s+llegue\s+(?:el|la|tu|su)\s+(?:pago|sinpe|simpe|plata|transferencia|dep[oó]sito))(?![\p{L}])`,
     String.raw`(?<![\p{L}])pag[aá]s\s+y\s+te\s+lo\s+mando(?![\p{L}])`,
   ]
     .map((p) => `(?:${p})`)
@@ -990,6 +995,7 @@ type PaidRow = { direction: string; content?: string | null; messageType?: strin
 export function nothingPaidYet(rows: ReadonlyArray<PaidRow>, opts: { windowFull?: boolean; paymentDigits?: readonly string[] } = {}): boolean {
   if (opts.windowFull) return false
   const payDigits = (opts.paymentDigits || []).map((d) => d.replace(/\D/g, '')).filter((d) => d.length >= 8).map((d) => d.slice(-8))
+  let storePaymentTalk = false
   for (const m of rows) {
     const raw = (m.content || '').normalize('NFKC')
     const text = stripFormatChars(raw).replace(/[ \t]+/gu, ' ').replace(/\n\s*\n+/gu, '\n')
@@ -1000,6 +1006,7 @@ export function nothingPaidYet(rows: ReadonlyArray<PaidRow>, opts: { windowFull?
     // Verifier r2 F3: the store's own payment number, from either side (a customer echoing it is paying / has paid).
     if (payDigits.length && payDigits.some((d) => text.replace(/\D/g, '').includes(d))) return false
     if (m.direction === 'outbound') {
+      if (hasPaymentWord(text)) storePaymentTalk = true
       if (paymentDetailsIn(text) || PAYMENT_BLOCK_RE.test(text) || ORDER_BLOCK_RE.test(text) || STORE_RECEIPT_TALK_RE.test(text)) return false
       // Verifier r1 #4: only words about a payment already made ("ya pagaste", "vi el depósito"), not "¡Listo!" / "✅ envíos".
       if (METHOD_QUESTION_DONE_RE.test(text) || STORE_HAND_DETAILS_RE.test(text) || STORE_PAID_OR_ELSEWHERE_RE.test(text)) return false
@@ -1010,8 +1017,9 @@ export function nothingPaidYet(rows: ReadonlyArray<PaidRow>, opts: { windowFull?
     const choiceRow = embeddedPaymentChoice(raw) !== null
     if (choiceRow ? hasHardPaymentClaimLabelMasked(text) : hasHardPaymentClaim(text)) return false
     if (choiceRow) continue
-    // SecureDog r3 INT-I: the allowlist's done / money lexicon applies to earlier rows too, so the gates agree.
-    if (classifyPaymentText(text) === 'payment_proof_or_risk' || earlierRowMayBeClaim(text)) return false
+    // SecureDog r3 INT-I / Verifier r4: done / money wording the live classifier misses; a bare "Listo" / "Ya" only
+    // after the store talked about payment ("¿te lo aparto?" → "Listo" is buying, not paying).
+    if (classifyPaymentText(text) === 'payment_proof_or_risk' || earlierRowMayBeClaim(text, { afterStorePaymentTalk: storePaymentTalk })) return false
   }
   return true
 }

@@ -1,3 +1,17 @@
+## 2026-10-17 — Claude Code cloud setup + shared-branch rules (claudio/agents2-pace)
+
+- Committed the Claude Code setup so cloud sessions get it: `CLAUDE.md` (model map + "Always" rules),
+  `.claude/agents/` (advisor, verifier, securedog, scout), `.claude/skills/executor-advisor-loop/`, and the
+  AGENTS.md scope line (grok-4.7 lock = Cursor only).
+- Repo guard: `.claude/settings.json` deny rules + `.claude/hooks/guard.mjs` (runs before every Bash call). Blocks
+  pushes to dev/main/master (any refspec form, --all/--mirror), `gh pr merge`, local merges on dev/main, Cloudflare /
+  Railway / Vercel deploys and secret changes, `gh workflow run`, `prisma db push` / `migrate`, `--accept-data-loss`,
+  `ALLOW_LM_DROP`. Works alongside the claude.ai cloud environment's own guard.
+- Shared-branch rule: one writer per branch. Grok (Cursor) works on `grok/agents2-pace`, cut from
+  `claudio/agents2-pace`, and never pushes to it directly. Every agent pulls and reads this changelog before
+  starting, and adds an entry (what changed, files, what's left) when done.
+- Proof: guard tested locally, 13/13 blocked, 7/7 allowed. No app code changed.
+
 ## 2026-10-16 — agents2-pace/hours: Verifier F1–F7 + SecureDog INT-120..124, DATA-55/56 (claudio/agents2-pace)
 
 - F1: automation-processor kicks the newest waiting job of the same conversation (tenant-scoped) once after a job

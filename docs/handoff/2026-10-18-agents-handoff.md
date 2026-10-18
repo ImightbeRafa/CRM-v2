@@ -34,7 +34,8 @@ For the next session (local or cloud). Owner's open items: Notion "Agents — wa
 - Never `prisma db push`/migrate; never process ChatAutomationJobs locally; no deploys/secrets/DNS without Rafael.
 
 ## Cloud sessions: what's missing
-- `D:\Coder\betsy-agent-packs` is not in git.
+- Agent packs are in the private repo https://github.com/ImightbeRafa/betsy-agent-packs (branch main). Exam banks,
+  run results and pack backups are gitignored: real customer chats never go to git.
 - The prod DB URL and the OpenAI test key are not cloud secrets.
-- Until both are set up, agent builds and exams must run on Rafael's PC; cloud sessions can do code-only work
+- Until they are set up, agent builds and exams must run on Rafael's PC; cloud sessions can do code-only work
   (fixes, tests, reviews) on the GitHub branches.

@@ -17,7 +17,6 @@ import {
   isBareOrderConfirmAsk,
   isCourtesyText,
   isCueFreePaymentChoiceText,
-  embeddedPaymentChoice,
   isPlainPaymentLinkQuestion,
   paymentHandoffReason,
   pendingMethodMention,
@@ -165,11 +164,11 @@ export function decideInbound(input: {
    */
   noPaymentYet?: boolean
   /**
-   * Rafael 2026-10-18: nothing about PAYING happened in this chat yet (sales-state nothingPaidYet — no payment details,
-   * receipt talk or order block from the store, no photo / file, no payment claim from the customer). A method choice
-   * inside the order data ("… Envío a domicilio. Pago por SINPE 🙌") is then a choice. Undefined = old behaviour.
+   * Rafael 2026-10-18: sales-state orderDataChoice — nothing about PAYING happened in this chat yet AND the whole
+   * unanswered burst is one order-data message with a method choice ("… Envío a domicilio. Pago por SINPE 🙌"). That
+   * choice is then a choice, not a payment claim. Undefined / null = old behaviour.
    */
-  nothingPaidYet?: boolean
+  orderDataChoice?: ChosenPaymentMethod | null
 }): InboundDecision {
   // SecureDog r1 INT-159: the relaxation needs a text message AND no bubble of the burst (this one included) hinting at
   // a payment's state ("¿Me confirmás?" + "¿Les llegó?" stays a payment hand-off).
@@ -179,8 +178,9 @@ export function decideInbound(input: {
     isText &&
     // SecureDog r2: every bubble of the burst is courtesy only or the bare ask itself (an allowlist, not a word list).
     [input.inboundText, ...(input.earlierCustomerTexts || [])].every((t) => !hasPaymentStatusHint(t || '') && (isCourtesyText(t || '') || isBareOrderConfirmAsk(t || '')))
-  // A text message only, and never while the store's method question is pending (that route already reads choices).
-  const nothingPaidYet = input.nothingPaidYet === true && isText && input.awaitingPaymentMethod !== true && input.awaitingReceipt !== true
+  // A text message only (also while the store's method question is pending: the close asks it with the data list).
+  const orderDataChoice = input.orderDataChoice && isText && input.awaitingReceipt !== true ? input.orderDataChoice : null
+  const nothingPaidYet = orderDataChoice !== null
   const latestClass = classifyPaymentText(input.inboundText, {
     awaitingPaymentMethod: input.awaitingPaymentMethod === true && isText,
     noPaymentYet,
@@ -306,8 +306,8 @@ export function decideInbound(input: {
     ? paymentMethodPick(input.inboundText, input.awaitingPaymentMethod === true, offeredMethods(input.brandFacts))
     : null
   // Rafael 2026-10-18: the choice written inside the order data (only when the classifier itself said choice).
-  const dataMethod = !pick && textMessage && nothingPaidYet && paymentClass === 'payment_info_safe' ? embeddedPaymentChoice(input.inboundText) : null
-  const dataChoice = dataMethod ? resolvePaymentChoice(dataMethod, offeredMethods(input.brandFacts)) : null
+  // (textMessage already excludes payment_proof_or_risk: the claim checks always win.)
+  const dataChoice = !pick && textMessage && orderDataChoice ? resolvePaymentChoice(orderDataChoice, offeredMethods(input.brandFacts)) : null
   const choice = pick ?? dataChoice
   if (choice === 'contra_entrega' || choice === 'efectivo') {
     // Contra entrega / efectivo: the model checks the zone and the order details, then a person takes the order.
@@ -490,6 +490,13 @@ export function continueBurstToModel(decision: InboundDecision, reason: string):
   // The code step that would have answered stays in the trace; the model step is added after it.
   const steps: DecisionStep[] = [...decision.decisionTrace.steps, { step: 'burst_model', outcome: 'continue', reason }]
   return continueToModel(decision.paymentClass, steps)
+}
+
+/** The method the decision routed as a choice inside the order data (sales-state nextStep reads it), else null. */
+export function decisionOrderDataChoice(decision: Pick<InboundDecision, 'decisionTrace'>): ChosenPaymentMethod | null {
+  const step = decision.decisionTrace.steps.find((s) => s.step === 'payment_choice' && typeof s.reason === 'string' && s.reason.startsWith('order_data_'))
+  const m = step?.reason?.slice('order_data_'.length)
+  return m === 'sinpe' || m === 'transferencia' || m === 'tarjeta' || m === 'contra_entrega' || m === 'efectivo' ? m : null
 }
 
 function continueToModel(paymentClass: PaymentClassification, steps: DecisionStep[]): InboundDecision {

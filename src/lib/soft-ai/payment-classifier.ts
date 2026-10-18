@@ -892,62 +892,123 @@ export function pendingMethodMention(text: string): PaymentChoiceMethod | null {
 
 /**
  * Anything in a data message that is more than order data + a choice: money (₡ $ ¢, "mil", "colones", 5–7 digit runs,
- * "25.000"), references, done / like emojis, receipts, "te llegó / lo vieron", past-tense sends. Checked on the WHOLE
- * message (raw and folded) — the choice part and the data parts alike.
+ * "25.000"), references, done / like emojis, receipts, "te llegó / lo vieron", past-tense sends, times, part payments,
+ * "revisen / verifiquen", errors. Checked on the WHOLE message (raw, folded and with stretched letters collapsed).
  */
 const DATA_CHOICE_REJECT_RE =
-  /[#₡¢$€✅✔☑👍💸🧾]|(?<!\d)\d{5,7}(?!\d)|\d{1,3}[.,]\d{3}(?!\d)|(?<![\p{L}])(?:ref\p{L}*|mil|k|colones|rojos|comprobante\p{L}*|recibo|captura|pantallazo|voucher|lleg\p{L}*|vieron|vio|cay[oó]|entr[oó]|pagu[eé]|hice|hicimos|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|cancel[eé]|pagamos|mandamos|enviamos|pasamos|ya|listo|lista|hecho|hecha)(?![\p{L}])/iu
+  /[#₡¢$€✅✔✓☑👍👌💸🧾📸📷]|(?<!\d)\d{5,7}(?!\d)|\d{1,3}[.,]\d{3}(?!\d)|\d{1,2}:\d{2}|\d{1,2}\/\d{1,2}|(?<![\p{L}])(?:ref\p{L}*|c[oó]digo|monto|total|mil|k|colones|rojos|comprobante\p{L}*|recibo|captura|pantallazo|screenshot|voucher|constancia|foto|lleg\p{L}*|vieron|vio|cay[oó]|entr[oó]|entra|pagu[eé]|hice|hicimos|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|cancel[eé]|pagamos|mandamos|enviamos|pasamos|ya|yast[aá]|listo|lista|hecho|hecha|sinpead\p{L}*|saldad\p{L}*|abon\p{L}*|chequ\p{L}*|f[ií]j\p{L}*|valid\p{L}*|revis\p{L}*|verific\p{L}*|confirm\p{L}*|av[ií]s\p{L}*|hace|antier|anteayer|ayer|anoche|hoy|reci[eé]n|ahorita|horita|ahora|temprano|rato|ratito|toque|minutos?|min|segundos?|horas?|fue|todo|efectu\p{L}*|realic\p{L}*|realiz\p{L}*|tir[eéó]|acab\p{L}*|di|dimos|error|doble|mitad|resto|adelanto|debo|debe|falta\p{L}*|pendiente|deja|problema)(?![\p{L}])/iu
 /** A data message that carries a choice: short enough to read whole (a delivery-data block, not an essay). */
 const DATA_CHOICE_MAX_CHARS = 600
 const DATA_CHOICE_MAX_PARTS = 12
 const DATA_STATUS_CUE_RE = new RegExp(String.raw`(?<![\p{L}])(?:${PAYMENT_STATUS_CUE_RE.source})`, 'iu')
+/** The friendly emoji a choice may carry (paymentChoiceGrammar's TAIL); any other symbol / emoji → not a data choice. */
+const DATA_CHOICE_EMOJI_RE = /[🙏😊🙌]/gu
+/** The store's own list labels, read as their short form ("Nombre completo" — "completo" is a status word elsewhere). */
+const DATA_LABEL_MASK_RE = /(?<![\p{L}])(?:nombre\s+completo|correo\s*\(opcional\)|direcci[oó]n\s+exacta(?:\s+con\s+se[nñ]as)?)(?![\p{L}])/giu
+/** ALLOWLIST: a labelled order-data line ("Nombre: Ana Mora", "Teléfono: 8888-8888", "Dirección: …"). */
+const DATA_LABEL_LINE_RE =
+  /^(nombre|apellidos?|tel[eé]fono|tel|cel(?:ular)?|whats(?:app)?|wsp|correo(?:\s+electr[oó]nico)?|e-?mail|c[eé]dula|provincia|cant[oó]n|distrito|barrio|direcci[oó]n|se[nñ]as|cantidad|producto|env[ií]o|entrega|retiro)\s*[:=\-–]\s*(.+)$/iu
+/** "Forma de pago: SINPE", "Método de pago: SINPE", "Pago: SINPE". */
+const PAY_LABEL_LINE_RE = /^(?:(?:forma|m[eé]todo|medio)\s+de\s+pago|pago)\s*[:=\-–]\s*(.+)$/iu
+const DATA_PHONE_RE = /^(?:\+?506[\s.-]?)?\d{4}[\s.-]?\d{4}$/u
+const DATA_CEDULA_RE = /^(?:\d[\s-]?\d{3,4}[\s-]?\d{4}|\d{9,12})$/u
+const DATA_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/iu
+/** Plain delivery phrases on their own: "Envío a domicilio", "Retiro en tienda", "A domicilio". */
+const DATA_DELIVERY_RE = /^(?:con\s+)?(?:env[ií]o\s+(?:a\s+(?:domicilio|la\s+casa|mi\s+casa)|por\s+correos)|a\s+domicilio|retiro\s+en\s+(?:la\s+)?tienda|paso\s+a\s+retirar(?:lo|la)?)$/iu
+/** A free value (name / place / address): Latin letters, spaces, basic punctuation, numbers of up to 3 digits. */
+const DATA_FREE_VALUE_RE = /^[\p{L}\s,.'()\-/]*(?:(?<!\d)\d{1,3}(?!\d)[\p{L}\s,.'()\-/]*)*$/u
+
+/** A data part with no payment word and no method word. */
+function noPaymentTalk(part: string): boolean {
+  const f = foldChoice(part)
+  return !hasPaymentWord(part) && !LOOSE_METHODS.some(([re]) => new RegExp(re.source, 'u').test(f))
+}
+
+/** One non-choice part, read against the ALLOWLIST (label + value, phone, delivery phrase, courtesy). */
+function isOrderDataPart(raw: string): boolean {
+  const part = raw.replace(/[\s.!,;]+$/u, '').trim()
+  if (!part) return true
+  if (!noPaymentTalk(part)) return false
+  if (DATA_PHONE_RE.test(part) || DATA_DELIVERY_RE.test(part) || isCourtesyText(part)) return true
+  const m = DATA_LABEL_LINE_RE.exec(part)
+  if (!m) return false
+  const label = foldChoice(m[1])
+  const v = m[2].trim()
+  if (/^(?:tel|cel|whats|wsp)/u.test(label)) return DATA_PHONE_RE.test(v)
+  if (label.startsWith('cedula')) return DATA_CEDULA_RE.test(v)
+  if (/^(?:correo|e-?mail)/u.test(label)) return DATA_EMAIL_RE.test(v)
+  if (label === 'cantidad') return /^\d{1,2}$/u.test(v)
+  return DATA_FREE_VALUE_RE.test(v)
+}
 
 /**
  * Rafael 2026-10-18 (getting customers to pay): a method CHOICE written inside the order message — "Nombre: Ana …
- * Dirección: … Envío a domicilio. Pago por SINPE 🙌". The message is split into lines / sentences; the parts that match
- * the choice allowlist grammar (no detail ask) name ONE method, and every other part is plain order data: no payment
- * word, no loose method word, non_payment on its own. The WHOLE message must also be free of every claim / proof /
- * status / risk cue. The caller adds the history gate (sales-state nothingPaidYet: nothing about paying happened in this
- * chat yet). Returns the method, or null (the normal classifier path). Pure.
+ * Dirección: … Envío a domicilio. Pago por SINPE 🙌". SecureDog / Verifier r1: an ALLOWLIST like INT-114 — the message is
+ * split into lines / sentences; the parts that match the choice grammar (no detail ask; "Forma de pago: SINPE"; a
+ * trailing ", pago por SINPE") name ONE method, and EVERY other part is order data (a known label + a plain value, a
+ * phone, a delivery phrase, a greeting). No "?", only Latin letters, only the friendly emoji, and the WHOLE message
+ * (raw, folded, stretched letters collapsed) free of every claim / proof / status / time / amount / dispute cue. The
+ * caller runs it on the whole unanswered burst and adds the history gate (sales-state nothingPaidYet). Returns the
+ * method, or null (the normal classifier path). Pure.
  */
 export function embeddedPaymentChoice(text: string): PaymentChoiceMethod | null {
-  const value = stripFormatChars((text || '').normalize('NFKC'))
+  const value = stripFormatChars((text || '').normalize('NFKC')).replace(/\p{Default_Ignorable_Code_Point}/gu, '')
   if (!value.trim() || value.length > DATA_CHOICE_MAX_CHARS) return null
-  const folded = foldChoice(value)
-  if (DATA_CHOICE_REJECT_RE.test(value) || DATA_CHOICE_REJECT_RE.test(folded) || CHOICE_CLAIM_WORD_RE.test(value) || PAYMENT_COMPLETION_RE.test(value)) return null
+  // Any question, any non-Latin letter (Cyrillic "Уа"), any symbol / emoji besides 🙏 😊 🙌.
+  if (/[?¿]/u.test(value) || /(?=\p{L})\P{Script=Latin}/u.test(value)) return null
+  if (/[\p{So}\p{Extended_Pictographic}]/u.test(value.replace(DATA_CHOICE_EMOJI_RE, ''))) return null
+  const masked = value.replace(DATA_LABEL_MASK_RE, (l) => l.split(/\s+/)[0])
+  const folded = foldChoice(masked)
+  const collapsed = folded.replace(/(\p{L})\1+/gu, '$1')
+  for (const v of [masked, folded, collapsed]) {
+    if (DATA_CHOICE_REJECT_RE.test(v) || CHOICE_CLAIM_WORD_RE.test(v) || PAYMENT_COMPLETION_RE.test(v) || STATUS_DISPUTE_RE.test(foldChoice(v))) return null
+    if (PARTIAL_STATE_RE.test(v) || DEBT_RE.test(v) || hasPaymentStatusHint(v) || hasChoiceClaimOrStatusWord(v)) return null
+  }
   if (
-    SENT_AMOUNT_CLAIM_RE.test(value) ||
-    PROOF_CUE_RE.test(value) ||
-    hasPaymentClaimCue(value) ||
-    CONFIRM_CUE_RE.test(value) ||
-    CONFIRM_PAYMENT_RE.test(value) ||
-    RISK_CUE_RE.test(value) ||
-    hasPaymentStatusClaim(value) ||
-    NARROW_STATUS_QUESTION_RE.test(value) ||
-    isPaymentCompletionClaim(value) ||
+    SENT_AMOUNT_CLAIM_RE.test(masked) ||
+    PROOF_CUE_RE.test(masked) ||
+    hasPaymentClaimCue(masked) ||
+    CONFIRM_CUE_RE.test(masked) ||
+    CONFIRM_PAYMENT_RE.test(masked) ||
+    RISK_CUE_RE.test(masked) ||
+    hasPaymentStatusClaim(masked) ||
+    NARROW_STATUS_QUESTION_RE.test(masked) ||
+    isPaymentCompletionClaim(masked) ||
     // Start-bounded here: an address has "centro" / "Concepción" (the plain list also matches inside words).
-    DATA_STATUS_CUE_RE.test(value)
+    DATA_STATUS_CUE_RE.test(masked)
   ) {
     return null
   }
-  const parts = value
+  const parts = masked
     .split(/\n+|(?<=[.!;])\s+/u)
     .map((p) => p.trim())
     .filter(Boolean)
   if (parts.length > DATA_CHOICE_MAX_PARTS) return null
   let method: PaymentChoiceMethod | null = null
+  const dataParts: string[] = []
   for (const part of parts) {
-    const g = paymentChoiceGrammar(part)
-    if (g) {
+    const label = PAY_LABEL_LINE_RE.exec(part.replace(/[\s.!,;]+$/u, ''))
+    const comma = part.lastIndexOf(',')
+    // The part itself, the value of "Forma de pago: …", or a trailing ", pago por SINPE" after order data.
+    const candidates: Array<[string, string]> = [[part, '']]
+    if (label) candidates.push([label[1], ''])
+    if (comma > 0) candidates.push([part.slice(comma + 1), part.slice(0, comma)])
+    let matched = false
+    for (const [choicePart, rest] of candidates) {
+      const g = paymentChoiceGrammar(choicePart.trim())
+      if (!g) continue
       if (g.ask || (method && method !== g.method)) return null
+      if (rest && !isOrderDataPart(rest)) continue
       method = g.method
-      continue
+      if (rest) dataParts.push(rest)
+      matched = true
+      break
     }
-    // Order data only: no payment word, no method word, nothing the classifier reads as payment.
-    const f = foldChoice(part)
-    if (hasPaymentWord(part) || LOOSE_METHODS.some(([re]) => new RegExp(re.source, 'u').test(f))) return null
-    if (classifyPaymentText(part) !== 'non_payment') return null
+    if (matched) continue
+    if (!isOrderDataPart(part)) return null
+    dataParts.push(part)
   }
+  if (method && dataParts.length && hasFreePayAct(dataParts.join('\n'))) return null
   return method
 }
 

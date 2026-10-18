@@ -37,6 +37,14 @@ import { dataListBeforePaymentQuestion } from '@/lib/soft-ai/sales-state'
 const PAYMENT_STATUS_REPLY_RE =
   /(acredit|se\s+aplic|aplicad[oa]|reflej|cay[oó]\s+(?:perfecto|bien)|entr[oó]\s+(?:perfecto|bien)|todo\s+correcto|(nos|me|les)\s+(lleg|entr|cay)[oó]|ya\s+(nos\s+|me\s+|les\s+)?(lleg|entr|cay)[oó]|recibimos|recibido|lo\s+vimos|la\s+vimos|lo\s+tenemos|todo\s+en\s+orden|est[aá]\s+en\s+orden|es\s+correct[oa]|est[aá]\s+confirmad[oa]|qued[oó]\s+(pagad|confirmad)|lleg[oó]\s+bien|todo\s+(bien|listo|sali[oó])|ya\s+est[aá](?![\p{L}])|ya\s+se\s+hizo|(ning[uú]n|sin)\s+problema|list[oa]\s+(tu|el|su)\s+pago|(?<![\p{L}])(?:est[aá]|qued[oó]|sali[oó]|todo)\s+(?:ok|okay|okey|oki)(?![\p{L}])|(?:tu|el|su)\s+pago\s+(?:\p{L}+\s+)?(?:ok|okay|okey)(?![\p{L}])|(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)\s+(?:\p{L}+\s+){0,2}(?:entr[oó]|cay[oó]|lleg[oó]|est[aá]\s+(?:bien|correct|list)|qued[oó]\s+list|fue\s+recibid)|(?:ya\s+(?:lo\s+|la\s+)?(?:vimos|revisamos|verificamos|confirmamos)|(?<![\p{L}])vimos)\s+(?:tu|el|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|est[aá]\s+correct[oa])/iu
 
+/**
+ * Verifier r3 #3: the "it arrived / it's done" subset, for replies to a bare confirm ask ("¿me confirmás?"): "¡Sí, nos
+ * llegó!", "¡Perfecto, ya está!", "todo en orden", "recibido", "lo vimos". Never "sin problema" / "lo tenemos" / "es
+ * correcto" (ordinary sales answers there). "ya está" only at the end of a sentence ("ya está disponible" is a stock fact).
+ */
+const CONFIRM_ASK_STATUS_REPLY_RE =
+  /(?<![\p{L}])(?:(?:nos|me|les|ya)\s+(?:lleg|entr|cay)[oó]|lleg[oó]\s+(?:bien|perfecto)|(?:entr|cay)[oó]\s+(?:bien|perfecto)|recibid[oa]s?|recibimos|acredit\p{L}*|reflej\p{L}*|(?:lo|la)\s+vimos|vimos\s+(?:tu|su|el)|todo\s+en\s+orden|est[aá]\s+en\s+orden|todo\s+(?:bien|listo|correcto)|qued[oó]\s+(?:pagad|confirmad|registrad)\p{L}*|est[aá]\s+confirmad[oa]|ya\s+se\s+hizo|ya\s+est[aá](?=\s*(?:[.!,🙌😊👍💚❤✨]|$)))(?![\p{L}])/iu
+
 /** Never said by the agent in any chat: it cannot see the bank ("acreditado", "recibimos tu sinpe", "pago verificado"). */
 const ALWAYS_PAYMENT_STATUS_REPLY_RE =
   /(?<![\p{L}])(?:(?:tu|su|el)\s+(?:sinpe|pago|dep[oó]sito|transferencia)\s+ya\s+(?:cay[oó]|lleg[oó]|entr[oó])|ya\s+nos\s+(?:lleg|cay|entr)[oó](?=\s*(?:[.!🙌😊👍💚❤✨]|$|,\s*(?:muchas\s+)?gracias))|acredit\p{L}*|(?:recibimos|ya\s+recibimos|verificamos|validamos|confirmamos|ya\s+vimos|vimos|ya\s+vi|vi)\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|(?:pago|sinpe|dep[oó]sito|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|validad[oa]|acreditad[oa]|aprobad[oa])|(?:tu|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia)\s+(?:ya\s+)?(?:est[aá]|qued[oó]|fue)\s+(?:recibid|confirmad|verificad|validad|acreditad|aprobad|procesad|registrad)\p{L}*)(?![\p{L}])/iu
@@ -155,9 +163,25 @@ function thresholdCaptures(text: string): Array<[number, number]> {
   return out
 }
 
+/**
+ * Verifier r3 #1 (INT-84): a clause that prices something ("Los 3 te quedan desde ₡25 000 con envío gratis", "Tenemos
+ * combos desde ₡25 000…", "Precio desde…") is never the threshold rule.
+ */
+const THRESHOLD_PRICE_WORD_RE =
+  /(?<![\p{L}])(?:quedan?|salen?|sale|cuestan?|cuesta|est[aá]n?|precios?|valen?|vale|cobr\p{L}*|combos?|kits?|packs?|paquetes?|tr[ií]os?|d[uú]os?|promo\p{L}*|llev[aá]s|te\s+(?:queda|quedan|sale|salen)|(?:los|las)\s+(?:\d+|dos|tres|cuatro|cinco|seis))(?![\p{L}])/iu
+
 function thresholdClauseOk(clause: string, rule: FreeShippingRule): boolean {
   const over = rule.freeOver
-  if (!over || FREE_SHIPPING_EXCEPTION_RE.test(clause)) return false
+  if (!over || FREE_SHIPPING_EXCEPTION_RE.test(clause) || THRESHOLD_PRICE_WORD_RE.test(clause)) return false
+  // The rule phrase must sit right next to the free-shipping words ("envío gratis desde …", "desde … el envío es gratis").
+  const near = freeShippingWording(clause).some((w) =>
+    [...clause.matchAll(THRESHOLD_RE)].some((m) => {
+      const s = m.index ?? 0
+      const e = s + m[0].length
+      return (s >= w.end && s - w.end <= 25) || (w.index >= e && w.index - e <= 25)
+    }),
+  )
+  if (!near) return false
   const cheapest = Math.min(...(rule.unitPrices ?? []).filter((p) => p > 0))
   let any = false
   for (const m of clause.matchAll(THRESHOLD_RE)) {
@@ -382,14 +406,30 @@ function amountAllowed(amount: number, allowed: number[]): boolean {
  * shipping amount. Every place the amount is written must be directly followed by "por / cada / x / / / al / a la" + the
  * SAME unit (noche ↔ noches); written in any other money form ("317 colones", "317 mil") it is refused.
  */
-export type UnitRate = { price: number; count: number; unit: string }
+/** name: the owner's product / combo name the rate comes from ("Pack 3 bolsas (90 noches)"). */
+export type UnitRate = { price: number; count: number; unit: string; name?: string }
 const UNIT_WORD = String.raw`(noches?|d[ií]as?|parches?|usos?|aplicaci[oó]n(?:es)?|dosis)`
-const PER_UNIT_AFTER_RE = new RegExp(String.raw`^\s*(?:colones\s*)?(?:por|cada|x|\/|al|a\s+la)\s*${UNIT_WORD}(?![\p{L}])`, 'iu')
+const PER_UNIT_AFTER_RE = new RegExp(String.raw`^\s*(?:colones\s*)?(?:por|cada|x|\/|al|a\s+la|la|el)\s*${UNIT_WORD}(?![\p{L}])`, 'iu')
 const COLON_AMOUNT_RE = /[₡¢]\s?(\d{1,3}(?:[.,\s ]\d{3})+|\d+)(?![\d])/gu
 
 export function unitFamily(word: string): string {
   const w = word.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
   return w.startsWith('noche') ? 'noche' : w.startsWith('dia') ? 'dia' : w.startsWith('parche') ? 'parche' : w.startsWith('uso') ? 'uso' : w.startsWith('aplicacion') ? 'aplicacion' : 'dosis'
+}
+
+const NUMBER_WORDS: Record<string, number> = { una: 1, un: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6 }
+const SMALL_NUMBER_RE = /(?<![\d.,₡¢])(\d{1,4})(?![\d.,])|(?<![\p{L}])(una|un|uno|dos|tres|cuatro|cinco|seis)(?![\p{L}])/giu
+function nameNumbers(name: string): number[] {
+  return [...name.matchAll(SMALL_NUMBER_RE)].map((m) => (m[1] ? Number(m[1]) : NUMBER_WORDS[m[2].toLowerCase()]))
+}
+/** Plain numbers (not money) in the sentence around position `at` of the amount. */
+function sentenceNumbers(raw: string, at: number, len: number): number[] {
+  // A period between digits (₡28.500) is not a sentence end.
+  const text = raw.replace(/(?<=\d)\.(?=\d)/g, ',')
+  const start = Math.max(...['.', '!', '?', '\n'].map((c) => text.lastIndexOf(c, at - 1) + 1), 0)
+  const ends = ['.', '!', '?', '\n'].map((c) => text.indexOf(c, at + len)).filter((i) => i >= 0)
+  const sentence = text.slice(start, ends.length ? Math.min(...ends) : text.length).replace(COLON_AMOUNT_RE, ' ')
+  return [...sentence.matchAll(SMALL_NUMBER_RE)].map((m) => (m[1] ? Number(m[1]) : NUMBER_WORDS[m[2].toLowerCase()])).filter((n) => n > 1)
 }
 
 export function unitDerivedAmount(amount: number, text: string, rates: ReadonlyArray<UnitRate> | null | undefined): boolean {
@@ -404,7 +444,11 @@ export function unitDerivedAmount(amount: number, text: string, rates: ReadonlyA
     const after = PER_UNIT_AFTER_RE.exec(text.slice(at + m[0].length, at + m[0].length + 30))
     if (!after) return false
     const family = unitFamily(after[1])
-    if (!valid.some((r) => unitFamily(r.unit) === family && Math.abs(Math.round(r.price / r.count) - rounded) <= 1)) return false
+    // Verifier r3 #4: the numbers the sentence names ("el pack de 2", "3 bolsas", "90 noches") must belong to the rate's
+    // own product — "El pack de 2 sale a ₡317 por noche" (the pack-of-3 rate) is refused.
+    const named = sentenceNumbers(text, at, m[0].length)
+    const fitsProduct = (r: UnitRate) => named.every((n) => n === r.count || nameNumbers(r.name || '').includes(n))
+    if (!valid.some((r) => unitFamily(r.unit) === family && Math.abs(Math.round(r.price / r.count) - rounded) <= 1 && fitsProduct(r))) return false
   }
   if (!seen) return false
   // The same amount written without ₡ ("317 colones", "317 mil") is not a per-unit mention.
@@ -699,10 +743,13 @@ export function validateAgentOutput(input: {
   if (anyForm(ALWAYS_PAYMENT_STATUS_REPLY_RE, claimForms)) {
     reasons.push('payment_status_claim')
   } else if (
-    // SecureDog r1 INT-159: a reply to a confirm ask ("¿me confirmás?") gets the same backstop as one to a payment word.
-    (input.paymentContext || (input.customerText && (hasPaymentWord(input.customerText) || mentionsConfirmVerb(input.customerText)))) &&
+    (input.paymentContext || (input.customerText && hasPaymentWord(input.customerText))) &&
     anyForm(PAYMENT_STATUS_REPLY_RE, claimForms)
   ) {
+    reasons.push('payment_status_claim')
+  } else if (input.customerText && mentionsConfirmVerb(input.customerText) && anyForm(CONFIRM_ASK_STATUS_REPLY_RE, claimForms)) {
+    // SecureDog r1 INT-159 / Verifier r3 #3: a reply to a confirm ask ("¿me confirmás?") may not say a payment arrived
+    // ("¡Sí, nos llegó!", "¡Perfecto, ya está!", "todo en orden") — but "¡Claro, sin problema!" stays a sales answer.
     reasons.push('payment_status_claim')
   }
 

@@ -131,7 +131,7 @@ const METHOD_WORD_G = new RegExp(String.raw`(?<![\p{L}])${METHOD_WORD}(?![\p{L}]
 // "Me aparece un pago de…", "para registrar tu pago"). Verifier r2 #8: "ya" only with a done verb ("ya pagaste", "ya lo
 // hiciste"), so "¡Listo! Ya te lo aparto. ¿Querés pagar por SINPE?" still counts.
 const METHOD_QUESTION_DONE_RE =
-  /(?<![\p{L}])(?:ya\s+(?:(?:lo|la|los|las|le|les|te|me|se|nos)\s+)?(?:pag|hic|hiz|mand|envi|deposit|transfer|realiz|pud|us|cancel|abon)\p{L}*|hiciste|hicieron|hizo|pagaste|pagaron|pag[oó]|mandaste|mandaron|enviaste|enviaron|realizaste|pudiste|pudo|transferiste|depositaste|usaste|us[oó]|usaron|fue|comprobantes?|captura|pantallazo|dep[oó]sitos?|pago\s+de|aparec\p{L}*|registr\p{L}*|recib(?:í|i|iste|ió|io|imos|ieron|ido|ida)|vi|vimos|lleg[oó]|entr[oó]|cay[oó]|qued[oó])(?![\p{L}])/iu
+  /(?<![\p{L}])(?:ya\s+(?:(?:me|te|se|nos|le|les)\s+)?(?:(?:lo|la|los|las)\s+)?(?:pag|hic|hiz|mand|envi|deposit|transfer|realiz|pud|us|cancel|abon|tir|descont)\p{L}*|ya\s+(?:(?:me|te|se|nos|le|les)\s+)?(?:(?:lo|la|los|las)\s+)?pas(?:aste|[oó]|aron|amos)|pasaste|pasaron|tiraste|tir[oó]|tiraron|descontaron|descont[oó]|deposit[oó]|mand[oó]|envi[oó]|transfiri[oó]|¿\s*(?:ya\s+est[aá]|list[oa])\s*\?|hiciste|hicieron|hizo|pagaste|pagaron|pag[oó]|mandaste|mandaron|enviaste|enviaron|realizaste|pudiste|pudo|transferiste|depositaste|usaste|us[oó]|usaron|fue|comprobantes?|captura|pantallazo|dep[oó]sitos?|pago\s+de|aparec\p{L}*|registr\p{L}*|recib(?:í|i|iste|ió|io|imos|ieron|ido|ida)|vi|vimos|lleg[oó]|entr[oó]|cay[oó]|qued[oó])(?![\p{L}])/iu
 
 /** The store asked HOW the customer wants to pay (the original wordings, or C1's other question shapes). Pure. */
 export function isPaymentMethodQuestion(text: string): boolean {
@@ -970,12 +970,12 @@ const NAME_UNIT_COUNT_RE = /(?<![\d.,])(\d{1,4})\s*(noches?|d[ií]as?|parches?|u
  * Sleeping exam C3 (SecureDog r1 INT-162): the store's own per-unit rates — a product / combo price with the count its
  * NAME carries ("Pack 3 bolsas (90 noches)" ₡28 500). The only source of a per-night amount the agent may say. Pure.
  */
-export function salesUnitRates(ctx: SalesContext): Array<{ price: number; count: number; unit: string }> {
-  const out: Array<{ price: number; count: number; unit: string }> = []
+export function salesUnitRates(ctx: SalesContext): Array<{ price: number; count: number; unit: string; name: string }> {
+  const out: Array<{ price: number; count: number; unit: string; name: string }> = []
   for (const item of [...(ctx.catalog ?? []), ...(ctx.bundles ?? [])]) {
     const m = NAME_UNIT_COUNT_RE.exec(item.name || '')
     const price = Math.round(item.price)
-    if (m && price > 0 && Number(m[1]) >= 2) out.push({ price, count: Number(m[1]), unit: m[2].toLowerCase() })
+    if (m && price > 0 && Number(m[1]) >= 2) out.push({ price, count: Number(m[1]), unit: m[2].toLowerCase(), name: item.name })
   }
   return out
 }

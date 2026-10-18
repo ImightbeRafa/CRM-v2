@@ -3,7 +3,18 @@ import { prisma } from '@/lib/db'
 import { encryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { encodeInstagramRefreshToken } from '@/lib/social-account-meta'
 import { identityPersistPayload } from '@/lib/social-account-identity'
-import { reconnectLifecycleData } from '@/lib/social-account-token-health'
+import { reconnectLifecycleData, softUnlinkUpdateData } from '@/lib/social-account-token-health'
+
+/**
+ * What the connecting user may do about another tenant's active row for the
+ * same IG asset. Resolved by the route from the user's own membership there.
+ */
+export type InstagramForeignOwnerAccess = {
+  /** User is OWNER/ADMIN (update_config) in that tenant: move the asset here. */
+  canTransfer: boolean
+  /** Only set when the user is a member there, so the name is already visible to them. */
+  workspaceName?: string | null
+}
 
 export type UpsertInstagramSocialAccountParams = {
   tenantId: string
@@ -17,6 +28,11 @@ export type UpsertInstagramSocialAccountParams = {
   isActive?: boolean
   /** Real Meta TTL; null = non-expiring. When omitted, keep existing expiresAt on update. */
   expiresAt?: Date | null
+  /**
+   * Called when another tenant holds the asset active. Omitted = always conflict.
+   * When it returns canTransfer, that tenant's row is soft-unlinked first.
+   */
+  resolveForeignOwner?: (foreignTenantId: string) => Promise<InstagramForeignOwnerAccess>
 }
 
 /**
@@ -26,23 +42,40 @@ export type UpsertInstagramSocialAccountParams = {
  */
 export class InstagramSocialAccountConflictError extends Error {
   readonly code = 'INSTAGRAM_ACCOUNT_OWNED_ELSEWHERE' as const
+  /** Owning workspace name, only when the connecting user is a member there. */
+  readonly workspaceName: string | null
 
-  constructor() {
+  constructor(workspaceName: string | null = null) {
     super('Esta cuenta de Instagram ya está conectada en otro espacio de trabajo.')
     this.name = 'InstagramSocialAccountConflictError'
+    this.workspaceName = workspaceName
   }
 }
 
-export function instagramAccountOwnedElsewhereHtml(): string {
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+export function instagramAccountOwnedElsewhereHtml(workspaceName?: string | null): string {
+  const where = workspaceName
+    ? `<p>Está activa en el espacio <strong>${escapeHtml(workspaceName)}</strong>. Cambiá a ese espacio, desconectala en Configuración → Canales y volvé a vincularla aquí, o pedile a un Owner/Admin de ese espacio que lo haga.</p>`
+    : '<p>Si administrás ese espacio, cambiá a él y desconectala ahí. Si no, pedile a su Owner/Admin que la desconecte.</p>'
   return `<html><body>
           <h2>Instagram ya está conectado en otro espacio</h2>
           <p>Esta cuenta de Instagram ya está conectada en otro espacio de trabajo. Desconectala ahí antes de vincularla aquí.</p>
+          ${where}
           <p><a href="/config/social">Volver a configuración</a></p>
         </body></html>`
 }
 
 type InstagramSocialAccountRow = {
   id: string
+  tenantId?: string | null
   displayName?: string | null
   expiresAt?: Date | null
 }
@@ -135,11 +168,11 @@ async function findSameTenant(
   }
 }
 
-async function foreignActiveExists(
+async function findForeignActive(
   socialAccounts: InstagramSocialAccountDelegate,
   tenantId: string,
   accountId: string,
-): Promise<boolean> {
+): Promise<{ id: string; tenantId: string | null } | null> {
   const foreign = await socialAccounts.findFirst({
     where: {
       platform: 'instagram',
@@ -147,9 +180,50 @@ async function foreignActiveExists(
       isActive: true,
       tenantId: { not: tenantId },
     },
-    select: { id: true },
+    select: { id: true, tenantId: true },
   })
-  return Boolean(foreign?.id)
+  return foreign?.id ? { id: foreign.id, tenantId: foreign.tenantId ?? null } : null
+}
+
+/** Partial unique 025 allows one active row; the bound only covers pre-025 duplicates. */
+const MAX_FOREIGN_TRANSFERS = 5
+
+/**
+ * Clears every other tenant's active row for this asset, or throws the conflict.
+ * A row is moved only when resolveForeignOwner says the connecting user
+ * administers that tenant; it is soft-unlinked (history kept, tokens cleared).
+ */
+async function releaseForeignActive(
+  socialAccounts: InstagramSocialAccountDelegate,
+  params: UpsertInstagramSocialAccountParams,
+  accountId: string,
+): Promise<void> {
+  for (let i = 0; i <= MAX_FOREIGN_TRANSFERS; i++) {
+    const foreign = await findForeignActive(socialAccounts, params.tenantId, accountId)
+    if (!foreign) return
+    if (i === MAX_FOREIGN_TRANSFERS) break
+
+    const access =
+      foreign.tenantId && params.resolveForeignOwner
+        ? await params.resolveForeignOwner(foreign.tenantId)
+        : null
+    if (!access?.canTransfer) {
+      console.warn('[instagram-social-account] Asset active on another tenant', {
+        foreignSocialAccountId: foreign.id,
+        userIsMember: Boolean(access?.workspaceName),
+      })
+      throw new InstagramSocialAccountConflictError(access?.workspaceName ?? null)
+    }
+
+    await socialAccounts.update({
+      where: { id: foreign.id },
+      data: softUnlinkUpdateData(),
+    })
+    console.warn('[instagram-social-account] Moved asset from another tenant the user administers', {
+      foreignSocialAccountId: foreign.id,
+    })
+  }
+  throw new InstagramSocialAccountConflictError()
 }
 
 async function updateSameTenant(
@@ -180,7 +254,9 @@ async function updateSameTenant(
  * - partial unique (platform, accountId) WHERE isActive (migration 025), and/or
  * - a legacy unique on (platform, accountId) alone.
  * Same-tenant rows are updated. An active owner on another tenant is a
- * user-facing conflict, never a P2002 500, and that row is not modified.
+ * user-facing conflict, never a P2002 500, and that row is not modified —
+ * unless resolveForeignOwner reports the user administers that tenant, in
+ * which case its row is soft-unlinked and the asset moves here.
  */
 export async function upsertInstagramSocialAccount(
   params: UpsertInstagramSocialAccountParams,
@@ -190,8 +266,8 @@ export async function upsertInstagramSocialAccount(
   const isActive = params.isActive !== false
   const existing = await findSameTenant(socialAccounts, params.tenantId, accountId)
 
-  if (isActive && (await foreignActiveExists(socialAccounts, params.tenantId, accountId))) {
-    throw new InstagramSocialAccountConflictError()
+  if (isActive) {
+    await releaseForeignActive(socialAccounts, params, accountId)
   }
 
   if (existing) {
@@ -214,8 +290,8 @@ export async function upsertInstagramSocialAccount(
     if (!raced) {
       throw new InstagramSocialAccountConflictError()
     }
-    if (isActive && (await foreignActiveExists(socialAccounts, params.tenantId, accountId))) {
-      throw new InstagramSocialAccountConflictError()
+    if (isActive) {
+      await releaseForeignActive(socialAccounts, params, accountId)
     }
     return updateSameTenant(socialAccounts, params, raced)
   }

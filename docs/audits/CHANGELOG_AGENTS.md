@@ -1,3 +1,15 @@
+## 2026-10-18 — Instagram reconnect: move the asset from a workspace you administer (claude/sharp-hawking-wgee33, NOT deployed)
+
+- Symptom: reconnecting `@betsy_crm` (shown as "Desvinculada") always returned "Instagram ya está conectado en otro
+  espacio". `upsertInstagramSocialAccount` refused because another tenant still holds an active row for the same IG
+  business account (025 partial unique: one active tenant per asset), and the page didn't say which workspace.
+- Fix: callback + complete pass `resolveForeignOwner` (`src/lib/instagram-foreign-owner.ts`). If the connecting user is
+  an active OWNER/ADMIN (`update_config`) of the holding tenant, that row is soft-unlinked (`softUnlinkUpdateData`:
+  history kept, tokens cleared) and the asset reconnects here. Otherwise it is still a 409 and the original row is not
+  touched. The page names the workspace only to its members (escaped); non-members learn nothing.
+- Saving an inactive row (subscribe failed) never asks or moves anything.
+- Tests: 4 new cases in `instagram-social-account.test.ts` (move, member-not-admin, non-member, inactive save) + HTML escape.
+
 ## 2026-10-18 — Claude setup on the live line + cloud push guard (claudio/luna-10-d2)
 
 - Cherry-picked a7f137a (CLAUDE.md, .claude/agents, .claude/skills, .claude/settings.json + hooks/guard.mjs, AGENTS.md

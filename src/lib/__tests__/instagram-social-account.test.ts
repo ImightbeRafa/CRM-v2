@@ -273,6 +273,125 @@ describe('upsertInstagramSocialAccount', () => {
     assert.equal(foreign.isActive, false)
   })
 
+  it('moves the asset when the user administers the tenant that holds it', async () => {
+    let foreignActive = true
+    const asked: string[] = []
+    const db = delegateFrom({
+      findFirst: async ({ where }) => {
+        if (isSameTenantWhere(where)) {
+          return { id: 'row-ours-unlinked', displayName: null, expiresAt: null }
+        }
+        if (isForeignActiveWhere(where) && foreignActive) {
+          return { id: 'row-foreign-active', tenantId: OTHER }
+        }
+        return null
+      },
+      update: async (args) => {
+        if (args.where.id === 'row-foreign-active') foreignActive = false
+        return { id: args.where.id }
+      },
+    })
+
+    await upsertInstagramSocialAccount(
+      baseParams({
+        resolveForeignOwner: async (tenantId) => {
+          asked.push(tenantId)
+          return { canTransfer: true, workspaceName: 'Betsy Pruebas' }
+        },
+      }),
+      db,
+    )
+
+    assert.deepEqual(asked, [OTHER])
+    assert.equal(db.creates.length, 0)
+    assert.equal(db.updates.length, 2)
+    assert.equal(db.updates[0].id, 'row-foreign-active')
+    assert.equal(db.updates[0].data.isActive, false)
+    assert.equal(db.updates[0].data.accessToken, null)
+    assert.ok(db.updates[0].data.disconnectedAt instanceof Date)
+    assert.equal(db.updates[1].id, 'row-ours-unlinked')
+    assert.equal(db.updates[1].data.isActive, true)
+    assert.equal(db.updates[1].data.disconnectedAt, null)
+  })
+
+  it('names the workspace for a non-admin member and leaves its row alone', async () => {
+    const db = delegateFrom({
+      findFirst: async ({ where }) => {
+        if (isSameTenantWhere(where)) {
+          return { id: 'row-ours-unlinked', displayName: null, expiresAt: null }
+        }
+        if (isForeignActiveWhere(where)) return { id: 'row-foreign-active', tenantId: OTHER }
+        return null
+      },
+    })
+
+    await assert.rejects(
+      () =>
+        upsertInstagramSocialAccount(
+          baseParams({
+            resolveForeignOwner: async () => ({ canTransfer: false, workspaceName: 'Betsy Pruebas' }),
+          }),
+          db,
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof InstagramSocialAccountConflictError)
+        assert.equal(error.workspaceName, 'Betsy Pruebas')
+        return true
+      },
+    )
+    assert.equal(db.updates.length, 0)
+    assert.equal(db.creates.length, 0)
+  })
+
+  it('reveals nothing about a tenant the user is not a member of', async () => {
+    const db = delegateFrom({
+      findFirst: async ({ where }) => {
+        if (isForeignActiveWhere(where)) return { id: 'row-foreign-active', tenantId: OTHER }
+        return null
+      },
+    })
+
+    await assert.rejects(
+      () =>
+        upsertInstagramSocialAccount(
+          baseParams({ resolveForeignOwner: async () => ({ canTransfer: false }) }),
+          db,
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof InstagramSocialAccountConflictError)
+        assert.equal(error.workspaceName, null)
+        return true
+      },
+    )
+    assert.equal(db.updates.length, 0)
+  })
+
+  it('does not ask about foreign owners when saving an inactive row', async () => {
+    let asked = false
+    const db = delegateFrom({
+      findFirst: async ({ where }) => {
+        if (isSameTenantWhere(where)) return { id: 'row-ours', displayName: null, expiresAt: null }
+        if (isForeignActiveWhere(where)) return { id: 'row-foreign-active', tenantId: OTHER }
+        return null
+      },
+    })
+
+    await upsertInstagramSocialAccount(
+      baseParams({
+        isActive: false,
+        resolveForeignOwner: async () => {
+          asked = true
+          return { canTransfer: true }
+        },
+      }),
+      db,
+    )
+
+    assert.equal(asked, false)
+    assert.equal(db.updates.length, 1)
+    assert.equal(db.updates[0].id, 'row-ours')
+  })
+
   it('rethrows unrelated P2002 and non-Prisma errors', async () => {
     const unrelated = delegateFrom({
       findFirst: async () => null,
@@ -309,6 +428,10 @@ describe('instagram connect conflict responses', () => {
     assert.match(html, /Desconectala/)
     assert.doesNotMatch(html, /P2002|Prisma|tenantId|accountId/)
 
+    const named = instagramAccountOwnedElsewhereHtml('<b>Betsy & "Co"</b>')
+    assert.match(named, /&lt;b&gt;Betsy &amp; &quot;Co&quot;&lt;\/b&gt;/)
+    assert.doesNotMatch(named, /<b>Betsy/)
+
     const callback = readFileSync(
       resolve('src/app/api/auth/instagram/callback/route.ts'),
       'utf8',
@@ -319,7 +442,8 @@ describe('instagram connect conflict responses', () => {
     )
     for (const src of [callback, complete]) {
       assert.match(src, /InstagramSocialAccountConflictError/)
-      assert.match(src, /instagramAccountOwnedElsewhereHtml/)
+      assert.match(src, /instagramAccountOwnedElsewhereHtml\(error\.workspaceName\)/)
+      assert.match(src, /resolveForeignOwner: instagramForeignOwnerResolver\(/)
       assert.match(src, /409/)
     }
   })

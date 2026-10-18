@@ -1,3 +1,28 @@
+## 2026-10-18 — Out-of-stock switch for the inbox sales agents (branch claudio/agent-out-of-stock off claudio/luna-10-d2, NOT deployed, SQL 055 NOT applied)
+
+- Rafael 2026-10-18: Configuración › Agentes › ② Productos que vende → new "¿Hay stock?" list: per product
+  «Disponible / Agotado» + optional "Vuelve aprox." (date, today..+180 days, Costa Rica) or a short note without numbers.
+  Store-level (one row per InventoryItem, every agent of the store sees it). Stock 0 also counts as sold out, but only
+  when the agent's products track stock (some product > 0) — a store left at the default 0 is not "all sold out".
+- SQL 055 `InventoryItemAvailability` (new table, RLS on, no FKs, UNIQUE tenantId+inventoryItemId, note ≤60) — gated
+  BETSY_V2_APPLY_FILES=055; until applied the code behaves exactly as before and the list is hidden.
+- Agent: sold-out lines carry no price (prompt, search_inventory: price omitted, stock 0) and their prices (+ shipping
+  pairs) are not allowed amounts; combos whose name contains a sold-out product are dropped; fixed rule 17 (say it,
+  owner's "vuelve aprox." only, offer an on-sale alternative, never close it, never promise an automatic notice).
+  Code: when the newest product the customer names is sold out (walk stops at a store offer of an on-sale product),
+  the close step is replaced (no total / data / payment question). Validator: `sold_out_offered` (a close for a
+  sold-out product) and `restock_date_invented` (a restock date that is not the owner's) — both repairable.
+- PATCH /api/chat/agents/[id]/inventory: update_config, same-origin, 60/min, zod strict, item must be in THIS agent's
+  list and tenant, audited (before/after). A spent "vuelve aprox." (stock back, no manual switch) is cleared by the
+  system (optimistic on updatedAt, audited, userRole system). Activation suite: no price case for sold-out products.
+- Reviews: advisor GO-with-changes (all applied); verifier r1 FAIL (accepted alternative could not close + 4) → r2
+  FAIL (restock dates) → r3 PASS; SecureDog r1 PASS, 0 C/H/M, L1–L5 folded in.
+- Proof: tsc 0, lint clean, test:soft-ai 1155/0 (new agent-out-of-stock 20), chat-harden 680/0, soft-ai-agent 321/0,
+  agentes-ui 34/0, security 272/0. Not verified: real model replies, the card in a browser (needs SQL 055).
+- Open for Rafael: apply SQL 055; AGENT_RULES_VERSION not bumped for rule 17 (bumping forces a re-test of live agents).
+  Known gaps (prompt-only): "lo vamos a tener de nuevo el lunes" without a sold-out word; a sold-out product named
+  only by photo / SKU / nickname. Follow-up: an explicit product link for combos.
+
 ## 2026-10-18 — INT-158 payment/order claim check + per-store exam grader (claudio/luna-10-d2, NOT deployed)
 
 - INT-158: CONFIRMATION_WORDING_RE now also catches "ya confirmé / el equipo confirmó / verifiqué / verificó / aprobé /

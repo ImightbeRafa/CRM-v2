@@ -68,6 +68,8 @@ export interface SoftSocialAccount {
   tokenStatus?: string | null
   expiresAt?: string | Date | null
   disconnectedAt?: string | Date | null
+  /** Dead-line alarm: a busy line went quiet at this time (null = fine). */
+  silentSince?: string | null
 }
 
 /** Short display label for a connected social account (§7.2 fallback chain). */

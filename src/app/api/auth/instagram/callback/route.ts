@@ -12,7 +12,9 @@ import {
   findInstagramBusinessOnPages,
   listFacebookPages,
   logInstagramPageDiscovery,
+  lostInstagramLinesHtml,
 } from '@/lib/instagram-connect'
+import { recheckOtherInstagramLines } from '@/lib/instagram-sibling-recheck'
 import {
   getInstagramPendingCookieName,
   INSTAGRAM_PENDING_COOKIE_MAX_AGE,
@@ -285,11 +287,16 @@ export async function GET(request: NextRequest) {
       resolveForeignOwner: instagramForeignOwnerResolver(userId),
     })
 
+    // Dead-line alarm: the Facebook page picker may have dropped this business's other pages.
+    const lostLines = await recheckOtherInstagramLines({ tenantId, keepIgAccountId: match.igBusinessAccountId })
+    const connectedLabel = match.igUsername ? `@${match.igUsername}` : match.pageName || 'esta cuenta'
+
     if (!subscribeOk) {
       return html(
         `<html><body>
           <h2>Instagram conectado sin webhooks</h2>
           <p>La cuenta se guardó pero la suscripción a mensajes falló.</p>
+          ${lostInstagramLinesHtml(connectedLabel, lostLines)}
           <p>Usá <strong>Re-suscribir</strong> en Configuración → Cuentas sociales.</p>
           <p><a href="/config/social">Volver</a></p>
         </body></html>`,
@@ -301,6 +308,7 @@ export async function GET(request: NextRequest) {
       buildInstagramSuccessHtml({
         pageName: match.pageName,
         igUsername: match.igUsername,
+        lostLines,
       }),
     )
   } catch (error) {

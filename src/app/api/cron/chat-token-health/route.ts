@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { timingSafeEqualString } from '@/lib/security'
 import { probeSocialAccountToken } from '@/lib/social-account-token-health'
+import { tokenCheckErrorFields } from '@/lib/channel-silence-core'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,6 +35,8 @@ async function runTokenHealthCheck() {
       refreshToken: true,
       expiresAt: true,
       tokenStatus: true,
+      lastErrorCode: true,
+      lastErrorAt: true,
     },
     take: 500,
     orderBy: [{ tokenLastCheckedAt: 'asc' }, { linkedAt: 'asc' }],
@@ -59,8 +62,8 @@ async function runTokenHealthCheck() {
             // (flipping to 'error' also pauses the line's AI agent).
             ...(probe.transient ? {} : { tokenStatus: probe.tokenStatus }),
             tokenLastCheckedAt: now,
-            lastErrorCode: probe.lastErrorCode,
-            lastErrorAt: probe.lastErrorCode ? now : null,
+            // Dead-line alarm: keep an open incident's start (no nightly re-alert) and its silence marker.
+            ...tokenCheckErrorFields(account, probe, now),
           },
         })
         return probe.transient ? 'transient' : probe.tokenStatus

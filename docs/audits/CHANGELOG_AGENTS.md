@@ -1,3 +1,27 @@
+## 2026-10-18 — Dead-line alarm: a silent / token-dead WhatsApp or Instagram line can't go unnoticed (claudio/dead-line-alarm, NOT deployed)
+
+- Trigger: 09:02 UTC Rafael connected @prototipo.cr via Facebook Login; 09:03 @patchhouse.cr stopped (page picker
+  dropped the unticked page), tokenStatus still "valid" until the daily probe, ~8 h of missed DMs.
+- `src/lib/channel-silence{,-core}.ts` + `/api/cron/channel-silence` (CF `*/5` slot, CRON_SECRET): a line with ≥ 30
+  inbound in 7 days is a suspect when it is silent for 4× its usual gap in CR business minutes (07–21, floor 75 min,
+  cap 6 h), or has ≥ 2 SOFT_AI_OUTBOUND_AMBIGUOUS jobs in 2 h. Only suspects get one Graph probe: revoked / expired /
+  error → tokenStatus; probe OK but silent → `lastErrorCode='silent_line'` (cleared once a webhook arrives later).
+  A reconnect / re-subscribe restarts the clock; busy = also ≥ 5 distinct chats; probe writes only if the stored
+  token is still the probed one. Webhook path untouched. The daily token probe keeps an open incident's start and the
+  silence marker (no nightly re-alert).
+- Alerts (one per incident, any path that flips a line down within 15 min): bell to the business's chat members
+  (kind `ai_no_reply`, key `line_down:<id>:<reason>:<minute>`, no SQL needed), ops email, red banner in /chats +
+  Canales ("No llegan mensajes desde 18/10 09:03 · Reconectá y marcá TODAS tus páginas en Facebook").
+  `/api/chat/accounts` exposes only `silentSince` (never the raw code).
+- IG connect (`callback` + `complete`): after saving, re-probe the tenant's OTHER IG lines; any that lost access are
+  marked and named on the result page ("Al conectar X se desconectó Y: volvé a conectar marcando todas las páginas"),
+  which then stays open. Connect card + reconnect modal: "marcá todas tus páginas, no solo la nueva".
+- Proof: tsc 0, lint clean, test:security 285/285 (new `channel-silence.test.ts` 14/14), channels-ui + neighbours green.
+- Reviews: Verifier r1 FAIL → 6 findings fixed (re-alert after recovery, nightly re-alert, re-flag after reconnect,
+  banner "since", sibling blame for already-dead lines, email dedupe). SecureDog OK (nothing above Low); L1–L5 fixed:
+  Meta 10/200 stay `error` (not `revoked`, sends not blocked), tenant text sanitized in the ops email, distinct-chat
+  gate, token-conditional writes, cron runs after ai-budget.
+
 ## 2026-10-18 — Sleeping final report batch 2 (PR #106) + Pura Sonrisa batch 3 slim (PR #107) (NOT deployed)
 
 - Stacked: #107 → #106 → #104 → claudio/luna-10-d2. Draft PRs; Rafael's GO to merge / deploy.

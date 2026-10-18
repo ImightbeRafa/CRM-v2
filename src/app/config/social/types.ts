@@ -16,4 +16,6 @@ export interface SocialAccount {
   wabaId?: string | null
   disconnectedAt?: string | null
   lastWebhookAt?: string | null
+  /** Dead-line alarm: the line normally gets traffic and went quiet at this time. */
+  silentSince?: string | null
 }

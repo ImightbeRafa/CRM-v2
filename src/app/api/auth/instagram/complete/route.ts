@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { subscribePageToInstagramMessages } from '@/lib/meta-api'
-import { buildInstagramSuccessHtml } from '@/lib/instagram-connect'
+import { buildInstagramSuccessHtml, lostInstagramLinesHtml } from '@/lib/instagram-connect'
+import { recheckOtherInstagramLines } from '@/lib/instagram-sibling-recheck'
 import {
   clearInstagramPending,
   getInstagramPendingCookieName,
@@ -110,11 +111,18 @@ export async function POST(request: NextRequest) {
 
     await clearInstagramPending(loaded.cookie.pendingId)
 
+    // Dead-line alarm: the Facebook page picker may have dropped this business's other pages.
+    const lostLines = await recheckOtherInstagramLines({
+      tenantId: loaded.record.tenantId,
+      keepIgAccountId: match.igBusinessAccountId,
+    })
+
     if (!subscribeOk) {
       const response = new NextResponse(
         `<html><body>
           <h2>Instagram conectado sin webhooks</h2>
           <p>La cuenta se guardó pero la suscripción a mensajes falló.</p>
+          ${lostInstagramLinesHtml(match.igUsername ? `@${match.igUsername}` : match.pageName || 'esta cuenta', lostLines)}
           <p>Usá <strong>Re-suscribir</strong> en Configuración → Cuentas sociales.</p>
         </body></html>`,
         { status: 422, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
@@ -133,6 +141,7 @@ export async function POST(request: NextRequest) {
       buildInstagramSuccessHtml({
         pageName: match.pageName,
         igUsername: match.igUsername,
+        lostLines,
       }),
       { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
     )

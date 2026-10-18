@@ -14,6 +14,7 @@ import { staffDisplayName } from '@/lib/display-name'
 import { hasPermission, type Role } from '@/lib/rbac'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import { quietUntilFromKey, stripNightSuffix } from '@/lib/soft-ai/business-hours'
+import { lineDownLabel, lineDownNotificationText, parseLineDownKey, type LineDownKey } from '@/lib/channel-silence-core'
 
 export const MENTION_MAX = 10
 export type NotificationKind =
@@ -266,12 +267,20 @@ export async function listNotifications(tenantId: string, userId: string, limit 
     const taskIds = rows.map((r) => r.taskId).filter((x): x is string => Boolean(x))
     const actorIds = [...new Set(rows.map((r) => r.actorUserId).filter((x): x is string => Boolean(x)))]
     const convIds = [...new Set(rows.map((r) => r.conversationId).filter((x): x is string => Boolean(x)))]
-    const [notes, tasks, actors, convs] = await Promise.all([
+    const lineIds = [...new Set(rows.map((r) => parseLineDownKey(r.dedupeKey)?.socialAccountId).filter((x): x is string => Boolean(x)))]
+    const [notes, tasks, actors, convs, lines] = await Promise.all([
       noteIds.length ? prisma.crmNote.findMany({ where: { tenantId, id: { in: noteIds } }, select: { id: true, body: true, deletedAt: true } }) : [],
       taskIds.length ? prisma.crmTask.findMany({ where: { tenantId, id: { in: taskIds } }, select: { id: true, title: true, status: true } }) : [],
       actorIds.length ? prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true, username: true } }) : [],
       convIds.length ? prisma.chatConversation.findMany({ where: { tenantId, id: { in: convIds } }, select: { id: true, peerName: true, peerId: true } }) : [],
+      lineIds.length
+        ? prisma.socialAccount.findMany({
+            where: { tenantId, id: { in: lineIds } },
+            select: { id: true, platform: true, accountId: true, displayName: true, providerDisplayName: true, providerUsername: true, displayPhoneNumber: true },
+          })
+        : [],
     ])
+    const lineLabel = new Map(lines.map((l) => [l.id, lineDownLabel(l)]))
     const noteById = new Map(notes.map((n) => [n.id, n]))
     const taskById = new Map(tasks.map((t) => [t.id, t]))
     const actorName = new Map(actors.map((a) => [a.id, staffDisplayName(a.name, a.username) || 'Alguien del equipo']))
@@ -346,6 +355,15 @@ export async function listNotifications(tenantId: string, userId: string, limit 
           snippet: text.snippet,
           href: chatHref(r.conversationId, r.clientId),
         })
+      } else if (r.kind === 'ai_no_reply' && parseLineDownKey(r.dedupeKey)) {
+        const key = parseLineDownKey(r.dedupeKey) as LineDownKey
+        const label = lineLabel.get(key.socialAccountId)
+        // The line was deleted (or belongs to another business): never shown.
+        if (!label) {
+          if (!r.readAt) hidden.push(r.id)
+          continue
+        }
+        items.push({ id: r.id, kind: 'ai_no_reply', read: Boolean(r.readAt), createdAt: r.createdAt.toISOString(), ...lineDownNotificationText(label, key), href: '/config?tab=social' })
       } else if (r.kind === 'ai_no_reply' && handoffNotificationText(r.dedupeKey, where)) {
         const text = handoffNotificationText(r.dedupeKey, where) as { title: string; snippet: string }
         items.push({

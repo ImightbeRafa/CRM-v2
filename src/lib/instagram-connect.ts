@@ -1,4 +1,5 @@
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
+import { lostSiblingsSentence } from '@/lib/channel-silence-core'
 
 /** Nested IG account shape returned by Graph on Page nodes. */
 export type InstagramAccountRef = {
@@ -436,15 +437,28 @@ export function buildInstagramPickerHtml(
 </html>`
 }
 
+/** Red warning block for a connect result page ('' when nothing was lost). Escaped. */
+export function lostInstagramLinesHtml(connected: string, lostLines?: string[]): string {
+  const sentence = lostSiblingsSentence(connected, lostLines ?? [])
+  if (!sentence) return ''
+  return `<p role="alert" data-testid="ig-lost-lines" style="background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:12px;font-weight:600">${escHtml(sentence)}</p>`
+}
+
 export function buildInstagramSuccessHtml(params: {
   pageName?: string | null
   igUsername?: string | null
+  /** Dead-line alarm: other Instagram lines of this business that lost access with this connect. */
+  lostLines?: string[]
 }): string {
   const detail = params.igUsername
     ? `@${escHtml(params.igUsername)}`
     : params.pageName
       ? escHtml(params.pageName)
       : 'tu cuenta'
+  const lostHtml = lostInstagramLinesHtml(
+    params.igUsername ? `@${params.igUsername}` : params.pageName || 'esta cuenta',
+    params.lostLines,
+  )
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -458,6 +472,7 @@ export function buildInstagramSuccessHtml(params: {
 <body>
   <h1>Instagram conectado</h1>
   <p>${detail} quedó vinculada a Betsy.</p>
+  ${lostHtml}
   <p>Puedes cerrar esta ventana. La lista de cuentas en /config/social se actualizará sola.</p>
   <p><a href="/config/social">Ir a configuración social</a> · <a href="/chats">Ir a chats</a></p>
   <script>
@@ -465,7 +480,7 @@ export function buildInstagramSuccessHtml(params: {
       if (window.opener) {
         window.opener.postMessage({ type: 'ig_oauth_complete', success: true }, window.location.origin);
       }
-      setTimeout(function () { window.close(); }, 1200);
+      ${lostHtml ? '' : 'setTimeout(function () { window.close(); }, 1200);'}
     } catch (e) {}
   </script>
 </body>

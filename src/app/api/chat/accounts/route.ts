@@ -4,6 +4,7 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { toChatAccountDto } from '@/lib/social-account-identity'
 import { refreshMissingAccountIdentities } from '@/lib/social-account-identity-refresh'
+import { SILENT_LINE_CODE } from '@/lib/channel-silence-core'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -27,6 +28,8 @@ const ACCOUNT_SELECT = {
   expiresAt: true,
   disconnectedAt: true,
   lastWebhookAt: true,
+  lastErrorCode: true,
+  lastErrorAt: true,
 } as const
 
 function mapAccountRow(row: {
@@ -44,6 +47,8 @@ function mapAccountRow(row: {
   pageId: string | null
   tokenStatus: string | null
   lastWebhookAt?: Date | null
+  lastErrorCode?: string | null
+  lastErrorAt?: Date | null
 }) {
   const meta = parseSocialRefreshToken(row.refreshToken)
   return {
@@ -53,6 +58,8 @@ function mapAccountRow(row: {
       pageId: row.pageId || meta.pageId,
     }),
     lastWebhookAt: row.lastWebhookAt ?? null,
+    // Dead-line alarm: only the fact + since, never the raw error code.
+    silentSince: row.lastErrorCode === SILENT_LINE_CODE && row.lastErrorAt ? row.lastErrorAt : null,
   }
 }
 

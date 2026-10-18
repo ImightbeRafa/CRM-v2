@@ -121,7 +121,8 @@ export function classifyTokenStatus(params: {
   const now = params.now ?? new Date()
   const code = params.graphErrorCode != null ? String(params.graphErrorCode) : null
 
-  if (code === '190' || code === '102' || code === '463' || code === '467') {
+  // 10 / 200: permission lost (e.g. the page was unticked in a later Facebook Login): reconnect.
+  if (code === '190' || code === '102' || code === '463' || code === '467' || code === '10' || code === '200') {
     return 'revoked'
   }
 

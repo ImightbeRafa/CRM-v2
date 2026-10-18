@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { enrichConversationDtosWithLinkedOrders } from '@/lib/chat-linked-orders'
 import { attachSnoozeState } from '@/lib/chat-work-state-server'
+import { attachFollowUpFlag } from '@/lib/chat-inbox-views-server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { parsePageLimit } from '@/lib/cursor-pagination'
@@ -136,7 +137,7 @@ export async function GET(request: NextRequest) {
 
     // Only when something changed (most 5 s polls return no rows).
     const chatStages = rows.length ? (await loadStages(auth.tenantId, 'chat')).stages : []
-    const conversations = await attachSnoozeState(auth.tenantId, await enrichConversationDtosWithLinkedOrders(
+    const conversations = await attachFollowUpFlag(auth.tenantId, await attachSnoozeState(auth.tenantId, await enrichConversationDtosWithLinkedOrders(
       auth.tenantId,
       await enrichConversationDtosWithAgents(
       auth.tenantId,
@@ -147,7 +148,7 @@ export async function GET(request: NextRequest) {
         ),
       ),
       ),
-    ))
+    )))
 
     // Advance only to last delivered row — never jump to tenant max (skips queued revisions).
     const lastRowRevision =

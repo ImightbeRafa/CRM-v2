@@ -21,6 +21,8 @@ import {
   resolveListPlatformIds,
 } from '@/lib/chat-conversation-route-helpers'
 import { loadStages } from '@/lib/crm-stages-server'
+import { attachFollowUpFlag, closedStageKeys, listFollowUpOnlyIds, viewWhere } from '@/lib/chat-inbox-views-server'
+import { aiOnLineIds } from '@/lib/soft-ai/agent-inbox-enrich'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -32,9 +34,12 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const input = parseConversationListQuery(searchParams)
-    const limit = parsePageLimit(searchParams.get('limit'), 30, 50)
+    // A quick view is one page (up to 100, no cursor): its tab count says how many there are.
+    const limit = input.view
+      ? parsePageLimit(searchParams.get('limit'), 50, 100)
+      : parsePageLimit(searchParams.get('limit'), 30, 50)
     const scope = conversationListCursorScope(auth.tenantId, input)
-    const cursor = decodeTimestampCursor(searchParams.get('cursor'), scope)
+    const cursor = input.view ? null : decodeTimestampCursor(searchParams.get('cursor'), scope)
 
     const platformAccountIds = await resolveListPlatformIds(auth.tenantId, input)
     if (input.platform && platformAccountIds && platformAccountIds.length === 0) {
@@ -42,18 +47,34 @@ export async function GET(request: NextRequest) {
     }
 
     // Pospuestos: only this business's chats snoozed right now (they can be far down the list).
-    const restrictIds = input.snoozed ? await listSnoozedConversationIds(auth.tenantId) : null
+    // Quick views: open chats only (closed = the tenant's won / lost stages).
+    const viewClosedKeys = input.view ? closedStageKeys((await loadStages(auth.tenantId, 'chat')).stages) : []
+    const restrictIds = input.snoozed
+      ? await listSnoozedConversationIds(auth.tenantId)
+      : input.view === 'seguimientos'
+        ? await listFollowUpOnlyIds(auth.tenantId, viewClosedKeys, limit)
+        : null
     if (restrictIds && restrictIds.length === 0) {
       return NextResponse.json({ success: true, conversations: [], nextCursor: null, maxRevision: '0', snoozeAvailable: !workStateKnownMissing() })
     }
 
-    const baseWhere = buildConversationListWhere({
+    const listWhere = buildConversationListWhere({
       tenantId: auth.tenantId,
       input,
       viewerUserId: auth.userId,
       platformAccountIds,
       restrictIds,
     })
+    const aiLineIds =
+      input.view === 'ia'
+        ? await aiOnLineIds(
+            auth.tenantId,
+            (await prisma.socialAccount.findMany({ where: { tenantId: auth.tenantId }, select: { id: true } })).map((a) => a.id),
+          )
+        : []
+    const baseWhere = input.view
+      ? { AND: [listWhere, viewWhere(input.view, viewClosedKeys, aiLineIds)] }
+      : listWhere
 
     const where = cursor
       ? {
@@ -81,7 +102,10 @@ export async function GET(request: NextRequest) {
     const [rows, { stages: chatStages }] = await Promise.all([
       prisma.chatConversation.findMany({
         where,
-        orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
+        orderBy: input.view === 'persona'
+          ? // "Persona": who waits longest first.
+            [{ lastInboundAt: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }]
+          : [{ lastMessageAt: 'desc' }, { id: 'desc' }],
         take: limit + 1,
         select: {
           ...listSelect,
@@ -91,8 +115,8 @@ export async function GET(request: NextRequest) {
       loadStages(auth.tenantId, 'chat'),
     ])
 
-    const hasMore = rows.length > limit
-    const page = hasMore ? rows.slice(0, limit) : rows
+    const hasMore = !input.view && rows.length > limit
+    const page = rows.slice(0, limit)
     const base = page.map((row) =>
       mapConversationToListDto(
         mapRawConversationRow(row as Parameters<typeof mapRawConversationRow>[0]),
@@ -100,15 +124,17 @@ export async function GET(request: NextRequest) {
       ),
     )
     // Each enrichment only adds its own fields to the same rows (same order): run them together.
-    const [withAgents, withOrders, withSnooze] = await Promise.all([
+    const [withAgents, withOrders, withSnooze, withFollowUp] = await Promise.all([
       enrichConversationDtosWithAgents(auth.tenantId, base),
       enrichConversationDtosWithLinkedOrders(auth.tenantId, base),
       attachSnoozeState(auth.tenantId, base),
+      attachFollowUpFlag(auth.tenantId, base),
     ])
     const conversations = base.map((_, i) => ({
       ...withAgents[i],
       ...('linkedOrder' in withOrders[i] ? { linkedOrder: withOrders[i].linkedOrder } : {}),
       ...(withSnooze[i].snooze ? { snooze: withSnooze[i].snooze } : {}),
+      ...(withFollowUp[i].lastIsFollowUp ? { lastIsFollowUp: true } : {}),
     }))
 
     const last = page[page.length - 1]

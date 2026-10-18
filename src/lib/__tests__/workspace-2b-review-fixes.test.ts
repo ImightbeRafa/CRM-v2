@@ -34,7 +34,8 @@ test('M2 / S5: list can fetch one chat by id or the snoozed set — always insid
   const where = buildConversationListWhere({ tenantId: 't1', input: q, viewerUserId: 'u', restrictIds: ['a', 'b'] })
   assert.deepEqual(where, { AND: [{ tenantId: 't1' }, { id: 'cmudui36a0001gt04md09vd55' }, { id: { in: ['a', 'b'] } }] })
   const route = read('src/app/api/chat/conversations/route.ts')
-  assert.match(route, /const restrictIds = input\.snoozed \? await listSnoozedConversationIds\(auth\.tenantId\) : null/)
+  // Snoozed set, or the "Seguimientos" quick view's ids — both resolved for the session tenant only.
+  assert.match(route, /const restrictIds = input\.snoozed\s+\? await listSnoozedConversationIds\(auth\.tenantId\)\s+: input\.view === 'seguimientos'\s+\? await listFollowUpOnlyIds\(auth\.tenantId, /)
   const inbox = read('src/components/chats/SoftCopilotInboxV2.tsx')
   assert.match(inbox, /const searchParams = useSearchParams\(\)/, 'reactive: works when already on /chats')
   assert.match(inbox, /pinRows\(new URLSearchParams\(\{ id: deepLinkId, limit: '1' \}\)\.toString\(\)\)/)

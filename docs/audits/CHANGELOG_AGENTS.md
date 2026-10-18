@@ -34,7 +34,10 @@
 - Reviews: Verifier r1–r4 FAIL, r5 PASS WITH NOTES (notes fixed); SecureDog r1 FAIL, r2 FAIL, r3 FIX BEFORE PROD
   (INT-169, INT-166 / INT-167 / INT-164 residuals — fixed after r3). Earlier: SecureDog r1 (MEDIA-16, INT-159 High;
   INT-160–164, INFRA-23), r2 (INT-159 / INT-161 reopened High; INT-166, MEDIA-17, INFRA-24 new) — all fixed and pinned in
-  `src/lib/__tests__/sleeping-exam-fixes.test.ts`. Final rounds: see the PR. Security Register IDs are proposals.
+  `src/lib/__tests__/sleeping-exam-fixes.test.ts`. FINAL: Verifier r7 PASS WITH NOTES (notes fixed, 220cfffd);
+  SecureDog r5 PASS (delta 220cfffd confirmed). Security Register (renumbered, the proposed INT IDs were taken):
+  MEDIA-16, MEDIA-17, INT-170…179, INFRA-23, INFRA-24 Verified/Fixed; open: INT-180, INT-182, INT-183 (Low), INT-181
+  (Medium, pre-existing on live: bare "¿Llegó?" / "¿Listo?" after payment details — schedule soon).
 
 ## 2026-10-18 — Claude setup on the live line + cloud push guard (claudio/luna-10-d2)
 

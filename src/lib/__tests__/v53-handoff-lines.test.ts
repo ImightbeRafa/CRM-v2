@@ -55,9 +55,11 @@ describe('2 · a conditional next-step participle is not a confirmation claim', 
   // Blocked at the base (the bare participle), allowed now — with or without a payment conversation.
   const nowAllowed = [
     'Si pagás antes de las 5 p. m., una vez confirmado el pago sale ese mismo día hábil 📦',
-    'Una vez recibido el comprobante, preparamos tu pedido.',
+    'Una vez recibido el comprobante, se prepara tu pedido.',
     'Después de verificado el pago, sale en 2 a 5 días hábiles.',
-    'Luego de confirmado tu pago, te enviamos el número de guía.',
+    'Luego de confirmado tu pago, te enviaremos el número de guía.',
+    'Una vez recibido el comprobante, vamos a preparar tu pedido 😊',
+    'Una vez confirmado el pago, te llega en 2 a 5 días hábiles.',
   ]
   for (const t of nowAllowed) {
     it(`allows: ${t}`, () => {
@@ -98,6 +100,10 @@ describe('2 · a conditional next-step participle is not a confirmation claim', 
     'Una vez confirmado tu pago, preparamos el pedido. Salió hoy con Correos 📦',
     'Una vez confirmado tu pago, tu pedido se despacho hoy',
     'Una vez confirmado el pago, ya sale ese mismo día 📦',
+    // Present = preterite in Spanish ("enviamos" = "we sent"): never excused.
+    'Una vez recibido el comprobante, enviamos tu pedido.',
+    'Luego de confirmado tu pago, te enviamos el número de guía.',
+    'Una vez verificado el pago, despachamos tu pedido por Correos.',
   ]
   for (const t of blocked) {
     it(`still blocks: ${JSON.stringify(t)}`, () => {

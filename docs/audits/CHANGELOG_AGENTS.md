@@ -6,8 +6,9 @@
   line ("¡Gracias! … ya lo reviso") only for a payment / refund-complaint hand-off. Anything else ("¿de verdad funciona?",
   "¿dónde retiro?", "¿cuándo vuelve el NAD+?") gets the neutral "Dame un momento y te confirmo 😊".
 - (2) ALLOW-LIST: the participle in "una vez / luego de / después de + confirmado / recibido / verificado + (el)
-  pago / comprobante" is masked only when its WHOLE sentence is one known next-step line (sale … / se envía / preparamos
-  tu pedido / te llega en N a N días hábiles / te enviamos la guía / te aviso), and no other sentence of the reply
+  pago / comprobante" is masked only when its WHOLE sentence is one known next-step line (sale … / se envía, se prepara
+  … / vamos a preparar, te enviaremos … / te llega en N a N días hábiles / te aviso; never "enviamos / preparamos",
+  which also read as past), and no other sentence of the reply
   reports something done (ya, fue, sido, -ó, he/ha/hemos …, está …ado, te confirmo, en camino). Both claim checks
   (confirmation wording + payment status) read the masked text; live output check, Probar and the unlock canary share
   the rule. CONFIRMATION_WORDING_RE is unchanged (INT-70 / INT-93); owner-written texts keep the strict check.
@@ -22,8 +23,8 @@
   sweep undid. Every bypass is pinned as a test.
 - Verifier round 2 FAIL (deny-list tail still let "Tu pedido ya salió, una vez verificado tu pago" / "hemos despachado" /
   next-sentence claims through) → the allow-list above; every round-2 bypass pinned.
-- Tests: `v53-handoff-lines.test.ts` (64). Source asserts updated in agents2-b-sales, instagram-media and
-  luna10-hard-blocks (same intent). test:soft-ai 1120/1120, test:chat-harden 680/680, test:security 271/271,
+- Tests: `v53-handoff-lines.test.ts` (69). Source asserts updated in agents2-b-sales, instagram-media and
+  luna10-hard-blocks (same intent). test:soft-ai 1125/1125, test:chat-harden 680/680, test:security 271/271,
   tsc + lint clean.
 
 ## 2026-10-18 00:10Z — CF 8d94e714: staff bot on Luna, follow-up A/B (off), Simpe, Sofi v53

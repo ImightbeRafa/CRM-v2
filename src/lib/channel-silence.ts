@@ -16,7 +16,11 @@ import { sendOpsAlert } from '@/lib/ops/alert-email'
 import { filterChatMembers, notifyUsers } from '@/lib/workspace-notifications'
 import { probeSocialAccountToken } from '@/lib/social-account-token-health'
 import {
-  LINE_DOWN_FIX_TEXT,
+  latestOf,
+  emailSafeText,
+  MIN_WEEKLY_CHATS,
+  MIN_WEEKLY_INBOUND,
+  lineDownFixText,
   SILENT_LINE_CODE,
   businessMinutesBetween,
   inBusinessHours,
@@ -57,6 +61,7 @@ type Row = {
   providerDisplayName: string | null
   providerUsername: string | null
   displayPhoneNumber: string | null
+  subscribedAt: Date | null
 }
 
 export type SilenceRunSummary = {
@@ -68,15 +73,23 @@ export type SilenceRunSummary = {
   announced: number
 }
 
+/** Inbound messages last week, or 0 when they came from too few chats (one stranger can't make a line "busy"). */
 async function inboundLastWeek(row: Row, now: Date): Promise<number> {
-  return prisma.chatMessage.count({
-    where: {
-      tenantId: row.tenantId,
-      socialAccountId: row.id,
-      direction: 'inbound',
-      sentAt: { gte: new Date(now.getTime() - WEEK_MS) },
-    },
+  const where = {
+    tenantId: row.tenantId,
+    socialAccountId: row.id,
+    direction: 'inbound',
+    sentAt: { gte: new Date(now.getTime() - WEEK_MS) },
+  }
+  const count = await prisma.chatMessage.count({ where })
+  if (count < MIN_WEEKLY_INBOUND) return count
+  const chats = await prisma.chatMessage.groupBy({
+    by: ['conversationId'],
+    where: { ...where, conversationId: { not: null } },
+    orderBy: { conversationId: 'asc' },
+    take: MIN_WEEKLY_CHATS,
   })
+  return chats.length >= MIN_WEEKLY_CHATS ? count : 0
 }
 
 async function announce(row: Row, reason: LineDownReason, since: Date): Promise<boolean> {
@@ -98,20 +111,21 @@ async function announce(row: Row, reason: LineDownReason, since: Date): Promise<
         dedupeKey: () => `line_down:${row.id}:${reason}:${sinceKey}`,
       }).catch(() => 0)
     : 0
-  // Email even when the business has no chat members; the 30-min cooldown and the 15-min announce
-  // window keep it to one per incident.
-  {
+  // Email once per incident: when the bell rows were actually inserted (the DB unique key is the
+  // dedupe across runs and containers), or when the business has no chat members to bell.
+  if (created > 0 || userIds.length === 0) {
     const tenant = await prisma.tenant.findUnique({ where: { id: row.tenantId }, select: { name: true } }).catch(() => null)
     await sendOpsAlert({
       key: `line-down:${row.id}:${sinceKey}`,
-      subject: `Canal caído: ${label}`,
+      // Business / line names are tenant-chosen text: no URLs, plain characters, short.
+      subject: `Canal caído: ${emailSafeText(label, 60)}`,
       lines: [
-        `Negocio: ${tenant?.name || row.tenantId}`,
-        `Línea: ${label} (${row.platform})`,
+        `Negocio: ${emailSafeText(tenant?.name, 60)} (${row.tenantId})`,
+        `Línea: ${emailSafeText(label, 60)} (${row.platform})`,
         reason === 'silent'
           ? `No llegan mensajes desde ${since.toISOString()}.`
           : `El token dejó de funcionar (${row.lastErrorCode || row.tokenStatus || 'error'}) a las ${since.toISOString()}.`,
-        `Arreglo: ${LINE_DOWN_FIX_TEXT}`,
+        `Arreglo: ${lineDownFixText(row.platform)}`,
       ],
     })
   }
@@ -126,8 +140,9 @@ export async function runChannelSilenceCheck(now = new Date()): Promise<SilenceR
       id: true, tenantId: true, platform: true, accountId: true, accessToken: true, refreshToken: true,
       expiresAt: true, tokenStatus: true, tokenLastCheckedAt: true, lastWebhookAt: true, lastErrorCode: true,
       lastErrorAt: true, linkedAt: true, displayName: true, providerDisplayName: true, providerUsername: true,
-      displayPhoneNumber: true,
+      displayPhoneNumber: true, subscribedAt: true,
     },
+    orderBy: { linkedAt: 'asc' },
     take: 500,
   })
   summary.checked = rows.length
@@ -151,6 +166,7 @@ export async function runChannelSilenceCheck(now = new Date()): Promise<SilenceR
           where: { id: row.id, tenantId: row.tenantId, lastErrorCode: SILENT_LINE_CODE },
           data: { lastErrorCode: null, lastErrorAt: null },
         })
+        Object.assign(row, { lastErrorCode: null, lastErrorAt: null }) // not re-announced below
         summary.cleared += 1
       }
       continue
@@ -162,7 +178,8 @@ export async function runChannelSilenceCheck(now = new Date()): Promise<SilenceR
       continue
     }
     if (!businessNow) continue
-    const lastIn = row.lastWebhookAt ?? row.linkedAt
+    // A reconnect / re-subscribe restarts the clock (lastWebhookAt still holds the pre-outage time).
+    const lastIn = latestOf(row.lastWebhookAt, row.subscribedAt, row.linkedAt)
     const quietMinutes = businessMinutesBetween(lastIn, now)
     if (quietMinutes < SILENCE_FLOOR_MINUTES) continue // cheap filter before counting
     const threshold = silenceThresholdMinutes(await inboundLastWeek(row, now))
@@ -173,18 +190,24 @@ export async function runChannelSilenceCheck(now = new Date()): Promise<SilenceR
     const probe = await probeSocialAccountToken(row)
     summary.probed += 1
     if (probe.transient) continue // Meta hiccup: says nothing, try next run
+    // Only while the probed token is still the stored one (a reconnect may have landed during the probe).
+    const probedWhere = { id: row.id, tenantId: row.tenantId, accessToken: row.accessToken }
     if (probe.tokenStatus === 'revoked' || probe.tokenStatus === 'expired' || probe.tokenStatus === 'error') {
       const data = { tokenStatus: probe.tokenStatus, tokenLastCheckedAt: now, lastErrorCode: probe.lastErrorCode, lastErrorAt: now }
-      await prisma.socialAccount.updateMany({ where: { id: row.id, tenantId: row.tenantId }, data })
-      Object.assign(row, data)
-      summary.markedToken += 1
+      const res = await prisma.socialAccount.updateMany({ where: probedWhere, data })
+      if (res.count > 0) {
+        Object.assign(row, data)
+        summary.markedToken += 1
+      }
     } else if (why === 'silent') {
       const data = { tokenLastCheckedAt: now, lastErrorCode: SILENT_LINE_CODE, lastErrorAt: now }
-      await prisma.socialAccount.updateMany({ where: { id: row.id, tenantId: row.tenantId }, data })
-      Object.assign(row, data)
-      summary.markedSilent += 1
+      const res = await prisma.socialAccount.updateMany({ where: probedWhere, data })
+      if (res.count > 0) {
+        Object.assign(row, data)
+        summary.markedSilent += 1
+      }
     } else {
-      await prisma.socialAccount.updateMany({ where: { id: row.id, tenantId: row.tenantId }, data: { tokenLastCheckedAt: now } })
+      await prisma.socialAccount.updateMany({ where: probedWhere, data: { tokenLastCheckedAt: now } })
     }
   }
 

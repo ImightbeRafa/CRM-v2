@@ -5,6 +5,11 @@ import {
   SILENT_LINE_CODE,
   businessMinutesBetween,
   formatSinceCr,
+  latestOf,
+  emailSafeText,
+  MIN_WEEKLY_CHATS,
+  lineDownFixText,
+  tokenCheckErrorFields,
   inBusinessHours,
   lineDownLabel,
   lineDownNotificationText,
@@ -56,10 +61,24 @@ test('line-down reason: token problems and silence; healthy lines are null', () 
   assert.equal(lineDownReason({ tokenStatus: 'expiring' }), null)
 })
 
-test('Meta permission errors 10 / 200 (page unticked) count as revoked', () => {
-  assert.equal(classifyTokenStatus({ graphOk: false, graphErrorCode: '10', graphHttpStatus: 400 }), 'revoked')
-  assert.equal(classifyTokenStatus({ graphOk: false, graphErrorCode: 200, graphHttpStatus: 400 }), 'revoked')
-  assert.equal(classifyTokenStatus({ graphOk: false, graphErrorCode: '100', graphHttpStatus: 400 }), 'error')
+test('SecureDog L1: Meta permission errors 10 / 200 stay "error" (line down, sends not blocked)', () => {
+  assert.equal(classifyTokenStatus({ graphOk: false, graphErrorCode: '10', graphHttpStatus: 400 }), 'error')
+  assert.equal(classifyTokenStatus({ graphOk: false, graphErrorCode: 200, graphHttpStatus: 400 }), 'error')
+  assert.equal(lineDownReason({ tokenStatus: 'error' }), 'token')
+  assert.equal(classifyTokenStatus({ graphOk: false, graphErrorCode: '190', graphHttpStatus: 400 }), 'revoked')
+})
+
+test('SecureDog L2–L4: safe email text, busy = enough distinct chats, probe write tied to the probed token', () => {
+  assert.equal(emailSafeText('Mi tienda https://evil.example/x <b>hola</b>', 80), 'Mi tienda [url] b hola b')
+  assert.equal(emailSafeText(null, 10), '-')
+  assert.equal(emailSafeText('a'.repeat(100), 60).length, 60)
+  assert.equal(MIN_WEEKLY_CHATS, 5)
+  const runner = read('src/lib/channel-silence.ts')
+  assert.match(runner, /by: \['conversationId'\]/)
+  assert.match(runner, /probedWhere = \{ id: row\.id, tenantId: row\.tenantId, accessToken: row\.accessToken \}/)
+  assert.doesNotMatch(runner, /`Negocio: \$\{tenant\?\.name/)
+  assert.match(read('src/lib/instagram-sibling-recheck.ts'), /tenantId: params\.tenantId, accessToken: row\.accessToken/)
+  assert.match(read('src/cf-container-worker.ts'), /"\/api\/cron\/ai-budget", "\/api\/cron\/channel-silence"\]/)
 })
 
 test('bell key round-trips and rejects junk; text names the line, the time and the fix', () => {
@@ -116,13 +135,13 @@ test('guards: cron-only, tenant-scoped writes, no webhook load, no token / raw c
   const runner = read('src/lib/channel-silence.ts')
   const updates = runner.match(/socialAccount\.updateMany\(\{[^]*?\}\)/g) ?? []
   assert.ok(updates.length >= 3)
-  for (const u of updates) assert.match(u, /where: \{ id: row\.id, tenantId: row\.tenantId/)
+  for (const u of updates) assert.match(u, /where: (\{ id: row\.id, tenantId: row\.tenantId|probedWhere,)/)
   assert.doesNotMatch(runner, /socialAccount\.update\(/)
   assert.match(runner, /probe\.transient\) continue/)
 
   const sib = read('src/lib/instagram-sibling-recheck.ts')
   assert.match(sib, /tenantId: params\.tenantId,\s+platform: 'instagram'/)
-  assert.match(sib, /where: \{ id: row\.id, tenantId: params\.tenantId \}/)
+  assert.match(sib, /where: \{ id: row\.id, tenantId: params\.tenantId, accessToken: row\.accessToken \}/)
 
   const route = read('src/app/api/cron/channel-silence/route.ts')
   assert.match(route, /requireCronBearer\(request\)/)
@@ -140,4 +159,40 @@ test('guards: cron-only, tenant-scoped writes, no webhook load, no token / raw c
     assert.match(read(p), /recheckOtherInstagramLines\(/)
   }
   assert.match(read('src/app/config/social/page.tsx'), /marcá todas tus páginas, no solo la nueva/)
+})
+
+test('verifier r1: daily token probe keeps an open incident and the silence marker', () => {
+  const now = new Date('2026-10-19T06:00:00Z')
+  const bad = { tokenStatus: 'revoked', lastErrorCode: '190' }
+  const ok = { tokenStatus: 'valid', lastErrorCode: null }
+  // Still revoked: code refreshed, incident start kept (no nightly re-alert).
+  assert.deepEqual(tokenCheckErrorFields({ tokenStatus: 'revoked' }, bad, now), { lastErrorCode: '190' })
+  // Newly revoked: a new incident.
+  assert.deepEqual(tokenCheckErrorFields({ tokenStatus: 'valid' }, bad, now), { lastErrorCode: '190', lastErrorAt: now })
+  // Silent line, token fine / transient: the marker survives.
+  assert.deepEqual(tokenCheckErrorFields({ tokenStatus: 'valid', lastErrorCode: SILENT_LINE_CODE }, ok, now), {})
+  assert.deepEqual(
+    tokenCheckErrorFields({ tokenStatus: 'valid', lastErrorCode: SILENT_LINE_CODE }, { tokenStatus: 'error', lastErrorCode: 'TimeoutError', transient: true }, now),
+    {},
+  )
+  // Silent line whose token is now dead: becomes a token incident.
+  assert.deepEqual(tokenCheckErrorFields({ tokenStatus: 'valid', lastErrorCode: SILENT_LINE_CODE }, bad, now), { lastErrorCode: '190', lastErrorAt: now })
+  // Healthy line, healthy probe: cleared as before.
+  assert.deepEqual(tokenCheckErrorFields({ tokenStatus: 'valid', lastErrorCode: '100' }, ok, now), { lastErrorCode: null, lastErrorAt: null })
+  assert.match(read('src/app/api/cron/chat-token-health/route.ts'), /\.\.\.tokenCheckErrorFields\(account, probe, now\)/)
+})
+
+test('verifier r1: reconnect restarts the silence clock; WA gets WA wording; one email per incident', () => {
+  const a = new Date('2026-10-18T09:00:00Z')
+  const b = new Date('2026-10-18T17:00:00Z')
+  assert.equal(latestOf(a, b, null).getTime(), b.getTime())
+  assert.equal(latestOf(null, undefined).getTime(), 0)
+  assert.match(lineDownFixText('instagram'), /TODAS tus páginas/)
+  assert.doesNotMatch(lineDownFixText('whatsapp'), /páginas/)
+  const runner = read('src/lib/channel-silence.ts')
+  assert.match(runner, /latestOf\(row\.lastWebhookAt, row\.subscribedAt, row\.linkedAt\)/)
+  assert.match(runner, /Object\.assign\(row, \{ lastErrorCode: null, lastErrorAt: null \}\)/, 'cleared line is not re-announced')
+  assert.match(runner, /if \(created > 0 \|\| userIds\.length === 0\)/)
+  assert.match(read('src/lib/instagram-sibling-recheck.ts'), /tokenStatus: \{ notIn: \['revoked', 'expired', 'error'\] \}/)
+  assert.match(read('src/app/api/chat/accounts/route.ts'), /row\.lastWebhookAt \?\? row\.lastErrorAt/)
 })

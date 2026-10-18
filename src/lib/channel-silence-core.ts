@@ -103,13 +103,59 @@ export function formatSinceCr(at: Date): string {
   return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`
 }
 
-export function lineDownNotificationText(label: string, key: Pick<LineDownKey, 'reason' | 'since'>): { title: string; snippet: string } {
+/** The fix in plain words: the page-picker advice is Facebook / Instagram only. */
+export function lineDownFixText(platform: string): string {
+  return platform === 'instagram' ? LINE_DOWN_FIX_TEXT : 'Reconectá la línea en Configuración › Canales'
+}
+
+/** Latest of several optional instants (epoch 0 when all are missing). */
+export function latestOf(...dates: Array<Date | null | undefined>): Date {
+  return new Date(Math.max(0, ...dates.map((d) => (d ? d.getTime() : 0))))
+}
+
+export function lineDownNotificationText(
+  label: string,
+  key: Pick<LineDownKey, 'reason' | 'since'>,
+  platform = 'instagram',
+): { title: string; snippet: string } {
   const since = formatSinceCr(key.since)
+  const fix = lineDownFixText(platform)
   return {
     title: `Canal caído · ${label}`,
     snippet:
       key.reason === 'silent'
-        ? `No llegan mensajes desde ${since}. ${LINE_DOWN_FIX_TEXT}.`
-        : `Perdió el acceso a Meta (${since}). ${LINE_DOWN_FIX_TEXT}.`,
+        ? `No llegan mensajes desde ${since}. ${fix}.`
+        : `Perdió el acceso a Meta (${since}). ${fix}.`,
   }
+}
+
+const TOKEN_DOWN = new Set(['revoked', 'expired', 'error'])
+
+/**
+ * lastErrorCode / lastErrorAt for the daily token probe. An incident that is already open keeps its
+ * start time (so it is not announced again every night), and a silence marker survives a probe that
+ * says nothing new about it. Keys left out = unchanged.
+ */
+export function tokenCheckErrorFields(
+  account: { tokenStatus?: string | null; lastErrorCode?: string | null },
+  probe: { tokenStatus: string; lastErrorCode: string | null; transient?: boolean },
+  now: Date,
+): { lastErrorCode?: string | null; lastErrorAt?: Date | null } {
+  const wasDown = TOKEN_DOWN.has((account.tokenStatus || '').toLowerCase())
+  const nowDown = !probe.transient && TOKEN_DOWN.has(probe.tokenStatus)
+  const silent = account.lastErrorCode === SILENT_LINE_CODE
+  if (probe.lastErrorCode) {
+    if (silent && !nowDown) return {}
+    return wasDown ? { lastErrorCode: probe.lastErrorCode } : { lastErrorCode: probe.lastErrorCode, lastErrorAt: now }
+  }
+  return silent ? {} : { lastErrorCode: null, lastErrorAt: null }
+}
+
+/** A busy line also needs this many distinct chats last week. */
+export const MIN_WEEKLY_CHATS = 5
+
+/** Tenant-chosen text for the operator email: URLs out, plain characters only, capped. */
+export function emailSafeText(value: string | null | undefined, max: number): string {
+  const clean = (value ?? '').replace(/https?:\/\/\S+|www\.\S+/gi, '[url]').replace(/[^\p{L}\p{N} @._()[\]-]/gu, ' ').replace(/\s+/g, ' ').trim()
+  return clean.slice(0, max) || '-'
 }

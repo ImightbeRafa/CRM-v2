@@ -26,6 +26,8 @@ export async function recheckOtherInstagramLines(params: {
         platform: 'instagram',
         isActive: true,
         disconnectedAt: null,
+        // Already-dead lines were not dropped by THIS connect (and are announced already).
+        tokenStatus: { notIn: ['revoked', 'expired', 'error'] },
         accountId: { not: params.keepIgAccountId },
       },
       select: {
@@ -42,11 +44,12 @@ export async function recheckOtherInstagramLines(params: {
           return null
         }
         // lastErrorAt = now also makes the channel-silence cron announce it (bell + ops email).
-        await prisma.socialAccount.updateMany({
-          where: { id: row.id, tenantId: params.tenantId },
+        // Only while the probed token is still the stored one (a reconnect may have landed meanwhile).
+        const res = await prisma.socialAccount.updateMany({
+          where: { id: row.id, tenantId: params.tenantId, accessToken: row.accessToken },
           data: { tokenStatus: probe.tokenStatus, tokenLastCheckedAt: now, lastErrorCode: probe.lastErrorCode, lastErrorAt: now },
         })
-        return lineDownLabel(row)
+        return res.count > 0 ? lineDownLabel(row) : null
       }),
     )
     return results.filter((x): x is string => Boolean(x))

@@ -280,7 +280,7 @@ export async function listNotifications(tenantId: string, userId: string, limit 
           })
         : [],
     ])
-    const lineLabel = new Map(lines.map((l) => [l.id, lineDownLabel(l)]))
+    const lineLabel = new Map(lines.map((l) => [l.id, { label: lineDownLabel(l), platform: l.platform }]))
     const noteById = new Map(notes.map((n) => [n.id, n]))
     const taskById = new Map(tasks.map((t) => [t.id, t]))
     const actorName = new Map(actors.map((a) => [a.id, staffDisplayName(a.name, a.username) || 'Alguien del equipo']))
@@ -357,13 +357,13 @@ export async function listNotifications(tenantId: string, userId: string, limit 
         })
       } else if (r.kind === 'ai_no_reply' && parseLineDownKey(r.dedupeKey)) {
         const key = parseLineDownKey(r.dedupeKey) as LineDownKey
-        const label = lineLabel.get(key.socialAccountId)
+        const line = lineLabel.get(key.socialAccountId)
         // The line was deleted (or belongs to another business): never shown.
-        if (!label) {
+        if (!line) {
           if (!r.readAt) hidden.push(r.id)
           continue
         }
-        items.push({ id: r.id, kind: 'ai_no_reply', read: Boolean(r.readAt), createdAt: r.createdAt.toISOString(), ...lineDownNotificationText(label, key), href: '/config?tab=social' })
+        items.push({ id: r.id, kind: 'ai_no_reply', read: Boolean(r.readAt), createdAt: r.createdAt.toISOString(), ...lineDownNotificationText(line.label, key, line.platform), href: '/config?tab=social' })
       } else if (r.kind === 'ai_no_reply' && handoffNotificationText(r.dedupeKey, where)) {
         const text = handoffNotificationText(r.dedupeKey, where) as { title: string; snippet: string }
         items.push({

@@ -59,7 +59,7 @@ function mapAccountRow(row: {
     }),
     lastWebhookAt: row.lastWebhookAt ?? null,
     // Dead-line alarm: only the fact + since, never the raw error code.
-    silentSince: row.lastErrorCode === SILENT_LINE_CODE && row.lastErrorAt ? row.lastErrorAt : null,
+    silentSince: row.lastErrorCode === SILENT_LINE_CODE ? row.lastWebhookAt ?? row.lastErrorAt ?? null : null,
   }
 }
 

@@ -123,7 +123,16 @@ export function freeShippingWording(text: string): Array<{ index: number; end: n
  * Deal wording is blocked unless the owner's active promo enables that exact kind (B1): free shipping and a special
  * price can be enabled; discounts, %, 2x1, "te lo dejo en", gifts are always blocked.
  */
-export function dealProblem(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
+/**
+ * Pura Sonrisa P3: the honest "no" ("No hay descuentos", "no manejamos rebajas", "por ahora no tenemos promociones") is
+ * not an offer — that exact negated phrase is blanked before the deal check. Anything else in the reply is still checked
+ * ("No hay descuentos, pero te lo dejo en ₡9 000" keeps "te lo dejo").
+ */
+const NEGATED_DEAL_RE =
+  /(?<![\p{L}])(?:(?:por\s+(?:ahora|el\s+momento)|ahorita|de\s+momento|actualmente)\s*,?\s*)?no\s+(?:hay|tenemos|manejamos|ofrecemos|hacemos|aplicamos|aplica|damos|contamos\s+con|existen|se\s+(?:hacen|aplican|dan|manejan))\s+(?:ning[uú]n(?:a)?\s+)?(?:descuentos?|rebajas?|promociones?|ofertas?)(?:\s+(?:por\s+(?:ahora|el\s+momento)|en\s+este\s+momento|ahorita|disponibles?|especiales?|activ[oa]s?))*(?![\p{L}])/giu
+
+export function dealProblem(rawText: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
+  const text = rawText.replace(NEGATED_DEAL_RE, (m) => ' '.repeat(m.length))
   for (const m of text.matchAll(DEAL_ALL_RE)) {
     const phrase = m[1].trim()
     // Free-shipping phrasing is judged below with the wider wording list.

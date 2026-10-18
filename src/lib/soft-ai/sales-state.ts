@@ -961,7 +961,16 @@ export function dataListBeforePaymentQuestion(text: string, kind: 'shipping' | '
     qEnd = q + 1
   }
   if (q < 0) return text
-  if (list.size && Math.min(...list) < q) return text
+  if (list.size && Math.min(...list) < q) {
+    // Pura Sonrisa P7: list first is right, but the question goes in its OWN message — when it shares the list's
+    // message (no blank line between the last list line and the question), split it there.
+    const lastList = Math.max(...[...list].filter((i) => i < q))
+    if (lines.slice(lastList + 1, q).some((l) => !l.trim())) return text
+    const { head, tail } = splitAtQuestion(lines[q], qEnd > q ? lines[qEnd] : null)
+    const before = [...lines.slice(0, q), head].filter((l, k, a) => k < a.length - 1 || l).join('\n').replace(/\n+$/u, '')
+    const after = [tail, ...lines.slice(qEnd + 1)].join('\n').trim()
+    return `${before}\n\n${after}`
+  }
   // Split the question's line at the question (Verifier r2 #9: also for a two-line question).
   const { head, tail } = splitAtQuestion(lines[q], qEnd > q ? lines[qEnd] : null)
   const keep = (from: number, to: number) => lines.slice(from, to).filter((l, k) => !list.has(from + k) && l.trim())

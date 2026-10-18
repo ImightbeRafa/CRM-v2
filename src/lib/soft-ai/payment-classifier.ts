@@ -432,8 +432,26 @@ function confirmCueCounts(value: string, noPaymentYet: boolean): boolean {
  * completion, a done-verb about money) — never the "payment word and no question" fallback, so "Sinpe" + "gracias"
  * after "¿Cómo preferís pagar?" or "No tengo sinpe" + "¿aceptan tarjeta?" stay answers.
  */
+/**
+ * Pura Sonrisa P4: two phrases that are never about paying the store — "(para) no pagar (el) envío" (the customer picks
+ * it up) and a delivery person / the order arriving ("El Uber ya llegó", "Ya llegó el mensajero", "ya el paquete
+ * llegó"). Blanked out before the checks, ONLY when the message names no payment noun ("Ya pagué, el Uber ya llegó"
+ * stays a claim). Pure.
+ */
+const DELIVERY_SUBJECT = String.raw`(?:(?:el|la|mi)\s+)?(?:uber|didi|indriver|mensajer[oa]|motorizad[oa]|repartidor(?:a)?|chofer|taxi|paquete|pedido|encomienda|env[ií]o)`
+const NON_PAYMENT_PHRASE_RE = new RegExp(
+  String.raw`(?<![\p{L}])(?:(?:para\s+)?no\s+pagar(?:\s+(?:el|lo\s+del))?\s+env[ií]o|${DELIVERY_SUBJECT}\s+ya\s+lleg[oó]|ya\s+lleg[oó]\s+${DELIVERY_SUBJECT}|ya\s+${DELIVERY_SUBJECT}\s+lleg[oó])(?![\p{L}])`,
+  'giu',
+)
+const PAYMENT_NOUN_ANY_RE = /(?<![\p{L}])(?:sinpe|simpe|pag(?:o|u[eé]|ad[oa]|amos|aron)|plata|dinero|transfer\p{L}*|dep[oó]sit\p{L}*|comprobante|monto|tarjeta|cuenta|cancel[eé]|abon\p{L}*)(?![\p{L}])|₡/iu
+export function maskNonPaymentPhrases(value: string): string {
+  const masked = value.replace(NON_PAYMENT_PHRASE_RE, ' ')
+  if (masked === value || PAYMENT_NOUN_ANY_RE.test(masked)) return value
+  return masked
+}
+
 export function hasHardPaymentClaim(text: string, opts: { noPaymentYet?: boolean } = {}): boolean {
-  const value = stripFormatChars((text || '').normalize('NFKC'))
+  const value = maskNonPaymentPhrases(stripFormatChars((text || '').normalize('NFKC')))
   return (
     SENT_AMOUNT_CLAIM_RE.test(value) ||
     PROOF_CUE_RE.test(value) ||
@@ -541,7 +559,8 @@ export function classifyPaymentText(
   opts: { awaitingPaymentMethod?: boolean; noPaymentYet?: boolean } = {},
 ): PaymentClassification {
   // SecureDog: full-width / invisible-character spellings ("ＳＩＮＰＥ ✅", "he\u200Bcho") are read as plain text.
-  const value = stripFormatChars((text || '').normalize('NFKC'))
+  const value = maskNonPaymentPhrases(stripFormatChars((text || '').normalize('NFKC')))
+  if (!value.trim()) return 'non_payment'
   if (SENT_AMOUNT_CLAIM_RE.test(value)) return 'payment_proof_or_risk'
   if (
     PROOF_CUE_RE.test(value) ||
@@ -757,7 +776,8 @@ function foldChoice(text: string): string {
 const METHOD = String.raw`(sinpe(?: movil)?|transferencia(?: bancaria)?|tarjeta(?: de (?:credito|debito))?|contra ?entrega|al recibir(?:lo|la)?|efectivo)`
 const LEAD = String.raw`(?:(?:prefiero pagar|prefiero|mejor|quiero pagar|voy a pagar|quisiera pagar|(?:te|le|les) pago|pago)\s+)?(?:(?:por|con|en)\s+)?(?:el\s+|la\s+)?`
 const TAIL = String.raw`(?:\s*,?\s*(?:porfa|por favor|gracias|pls|esta bien|mejor|entonces|por la web|por la pagina|en la web|en la pagina)){0,3}[\s.!🙏😊🙌]*`
-const ASK_HEAD = String.raw`¿?\s*(?:me\s+(?:pasas|pasa|das|da)|cual\s+es|a\s+que)\s+(?:el\s+|los\s+|la\s+)?(?:numero|cuenta|link|datos)`
+// Pura Sonrisa P4: the imperative ask too ("Por SINPE, pasame el número", "mandame los datos").
+const ASK_HEAD = String.raw`¿?\s*(?:me\s+(?:pasas|pasa|das|da)|pasame|mandame|dame|regalame|enviame|cual\s+es|a\s+que)\s+(?:el\s+|los\s+|la\s+)?(?:numero|cuenta|link|datos)`
 const ASK_TAIL = String.raw`\s*\?*${TAIL}`
 /** "SINPE", "por sinpe porfa", "Prefiero SINPE 🙏", "pago al recibirlo", "en efectivo". */
 const CHOICE_RE = new RegExp(String.raw`^${LEAD}${METHOD}${TAIL}$`, 'u')

@@ -1108,7 +1108,7 @@ export async function executeAgentLayerTurn(
   })
   const { burstReview } = burstTurn
   // D2: the "¿ya pagó?" check runs on the burst's decision, with the burst's text (same input decideBurstTurn used).
-  let decision = await withPaymentClaimCheck(
+  const decision = await withPaymentClaimCheck(
     {
       ...decisionBase,
       inboundText: burst.inboundText,
@@ -1135,18 +1135,15 @@ export async function executeAgentLayerTurn(
     },
   })
   if (settledSale?.duplicateReceipt && isPaymentHandoff(decision)) {
-    decision = {
-      ...decision,
-      handled: true,
-      text: duplicateReceiptReply(settledSale.orderNumber),
-      intent: 'other',
-      shortcutKey: null,
-      escalate: false,
-      needsHuman: false,
-      textOk: true,
-      handoff: null,
-      reasons: [...decision.reasons, 'duplicate_receipt'],
-    }
+    decision.handled = true
+    decision.text = duplicateReceiptReply(settledSale.orderNumber)
+    decision.intent = 'other'
+    decision.shortcutKey = null
+    decision.escalate = false
+    decision.needsHuman = false
+    decision.textOk = true
+    decision.handoff = null
+    decision.reasons = [...decision.reasons, 'duplicate_receipt']
   }
 
   if (decision.handled) {

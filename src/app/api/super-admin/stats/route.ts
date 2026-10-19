@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getLiveToken } from '@/lib/live-token';
 import { prisma as globalPrisma } from '@/lib/db';
 import { isSuperAdmin } from '@/lib/super-admin-helpers';
+import { costaRicaRangeStart } from '@/lib/statistics-aurora';
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Get global statistics across all tenants
+    const now = new Date();
     const [
       tenantsData,
       ordersToday,
@@ -57,7 +59,7 @@ export async function GET(req: NextRequest) {
       globalPrisma.order.count({
         where: {
           timestamp: {
-            gte: new Date(new Date().setHours(0, 0, 0, 0))
+            gte: costaRicaRangeStart('hoy', now)
           }
         }
       }),
@@ -66,7 +68,7 @@ export async function GET(req: NextRequest) {
       globalPrisma.order.count({
         where: {
           timestamp: {
-            gte: new Date(new Date().setDate(new Date().getDate() - 7))
+            gte: costaRicaRangeStart('semana', now)
           }
         }
       }),
@@ -75,7 +77,7 @@ export async function GET(req: NextRequest) {
       globalPrisma.order.count({
         where: {
           timestamp: {
-            gte: new Date(new Date().setDate(1))
+            gte: costaRicaRangeStart('mes', now)
           }
         }
       }),

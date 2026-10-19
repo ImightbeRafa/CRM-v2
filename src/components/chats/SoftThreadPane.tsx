@@ -184,7 +184,12 @@ function formatMessageTime(iso: string | undefined | null): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return d.toLocaleTimeString('es-CR', {
+    timeZone: 'America/Costa_Rica',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
 }
 
 function DeliveryTicks({ status }: { status?: string | null }) {
@@ -1010,6 +1015,7 @@ export function SoftThreadPane({
             const notice = showMedia ? null : describeChatMessage(msg)
             const humanSender = !softAi && outbound ? humanOutboundSender(msg.metadata) : null
             const humanLabel = humanSender ? humanOutboundLabel(msg.metadata) : null
+            const messageTime = formatMessageTime(msg.sentAt)
             return (
               <div
                 key={msg.id}
@@ -1055,6 +1061,14 @@ export function SoftThreadPane({
                     ) : null}
                     {showMedia && isPlaceholder && !mediaFetchable ? (
                       <p className="text-[11px] opacity-70">Adjunto no disponible</p>
+                    ) : null}
+                    {!compact && messageTime ? (
+                      <p
+                        className="mt-1 text-right text-[10px] font-medium tabular-nums leading-none text-slate-400"
+                        data-testid="soft-thread-message-time"
+                      >
+                        {messageTime}
+                      </p>
                     ) : null}
                     {compact ? (
                       <p

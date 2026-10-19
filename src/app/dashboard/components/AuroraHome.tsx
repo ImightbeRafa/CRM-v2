@@ -57,8 +57,22 @@ function crcAxis(n: number): string {
 
 const WEEKDAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
+const CR_TZ = 'America/Costa_Rica'
+
+function crHour(date: Date): number {
+  const part = new Intl.DateTimeFormat('en-US', {
+    timeZone: CR_TZ,
+    hour: '2-digit',
+    hourCycle: 'h23',
+  })
+    .formatToParts(date)
+    .find((p) => p.type === 'hour')?.value
+  const hour = Number(part)
+  return Number.isFinite(hour) ? hour % 24 : 0
+}
+
 function greetingFor(date: Date): string {
-  const h = date.getHours()
+  const h = crHour(date)
   if (h < 12) return 'Buenos días'
   if (h < 19) return 'Buenas tardes'
   return 'Buenas noches'
@@ -143,7 +157,12 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
 
   const dateLabel = now
     ? now
-        .toLocaleDateString('es-CR', { weekday: 'long', day: 'numeric', month: 'long' })
+        .toLocaleDateString('es-CR', {
+          timeZone: CR_TZ,
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+        })
         .replace(/^./, (c) => c.toUpperCase())
     : ''
   const subtitle = [dateLabel, tenantName].filter(Boolean).join(' · ')

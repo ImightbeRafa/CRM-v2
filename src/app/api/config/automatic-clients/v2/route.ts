@@ -5,6 +5,7 @@ import { readClientsServerReadiness } from '@/lib/feature-flags';
 import { buildClientWhere, clientCursorScope, parseClientQuery } from '@/lib/client-query';
 import { decodeTimestampCursor, encodeTimestampCursor, parsePageLimit } from '@/lib/cursor-pagination';
 import { PII_NO_STORE_HEADERS } from '@/lib/security';
+import { costaRicaRangeStart } from '@/lib/statistics-aurora';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,9 +38,7 @@ export async function GET(request: NextRequest) {
       ],
     } : baseWhere;
     const tenantPrisma = getTenantPrisma(auth.tenantId);
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
+    const monthStart = costaRicaRangeStart('mes');
     const facetWhere = buildClientWhere({ ...input, state: 'all' });
     const [rows, pageTotal, totalClients, active, newThisMonth, revenue, facets] = await Promise.all([
       tenantPrisma.client.findMany({

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import {
   auroraComparisonRange,
   auroraPeriodRange,
+  costaRicaRangeStart,
   auroraPreviousRange,
   resolveAuroraPeriodSpec,
   averageTicket,
@@ -120,6 +121,12 @@ describe('statistics-aurora calendar periods (Costa Rica, weeks start Monday)', 
     assert.deepEqual(auroraPeriodRange('semana', ny), { startDate: '2025-12-29', endDate: '2026-01-01' })
     assert.deepEqual(auroraPeriodRange('mes-pasado', ny), { startDate: '2025-12-01', endDate: '2025-12-31' })
     assert.deepEqual(auroraComparisonRange('mes', auroraPeriodRange('mes', ny)), { startDate: '2025-12-01', endDate: '2025-12-01' })
+    // Sunday 19:49 Costa Rica is Monday 01:49 UTC. The week still starts Monday 12 Oct 00:00 CR.
+    const sundayNight = new Date('2026-10-19T01:49:00Z')
+    assert.equal(costaRicaRangeStart('semana', sundayNight).toISOString(), '2026-10-12T06:00:00.000Z')
+    assert.equal(costaRicaRangeStart('semana-pasada', sundayNight).toISOString(), '2026-10-05T06:00:00.000Z')
+    assert.equal(costaRicaRangeStart('hoy', sundayNight).toISOString(), '2026-10-18T06:00:00.000Z')
+    assert.equal(costaRicaRangeStart('mes', sundayNight).toISOString(), '2026-10-01T06:00:00.000Z')
   })
 
   it('custom ranges: real dates, ordered, at most 366 days; compared with the adjacent range', () => {

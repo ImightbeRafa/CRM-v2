@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { authenticateAPI } from '@/lib/auth-helpers';
+import { costaRicaRangeStart } from '@/lib/statistics-aurora';
 
 const statsCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 30000;
@@ -53,17 +54,11 @@ export async function GET(request: NextRequest) {
     // SECURITY: Always use tenant-isolated client for dashboard stats
     const prisma = getTenantPrisma(tenantId);
 
-    // Calculate date for this week (Monday to Sunday)
+    // Monday 00:00 Costa Rica through now. The container clock is UTC, so Sunday night
+    // in Costa Rica must not open a new week.
     const now = new Date();
-    const startOfWeek = new Date(now);
-    const dayOfWeek = now.getDay();
-    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Adjust to Monday (1 = Monday, 0 = Sunday)
-    startOfWeek.setDate(now.getDate() + diff);
-    startOfWeek.setHours(0, 0, 0, 0);
-
-    // Get last week for comparison
-    const startOfLastWeek = new Date(startOfWeek);
-    startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
+    const startOfWeek = costaRicaRangeStart('semana', now);
+    const startOfLastWeek = costaRicaRangeStart('semana-pasada', now);
 
     // Build where clause (tenant filter auto-injected by middleware)
     const whereClause: any = {};

@@ -1,3 +1,7 @@
+## 2026-10-18 — Home "esta semana" uses Costa Rica, chat messages show the time
+
+- Inicio counted the week from the server's local midnight (UTC). Sunday night in Costa Rica was already Monday there, so Ventas/Pedidos semana was only the last few hours. The week now starts Monday 00:00 America/Costa_Rica, same as Estadísticas. Chat bubbles show the send time in that clock.
+
 ## 2026-10-18 — Chats the token cap had skipped are answered again
 
 - Those skips were stored as budget_blocked with reason flag_off, so the waiting sweep refused to retry them. The sweep now retries that case. Sixteen still-waiting chats were put back in the queue; the live worker is sending them.

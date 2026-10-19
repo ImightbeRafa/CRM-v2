@@ -6,6 +6,7 @@
 import { isCollectedRevenue } from '@/lib/order-payment-status'
 import {
   addDaysToStatsDateKey,
+  buildStatsDateRange,
   getCurrentStatsDateKey,
   getPreviousStatsPeriod,
 } from '@/lib/statistics-dates'
@@ -117,6 +118,17 @@ function toSpec(spec: AuroraPeriod | AuroraPeriodSpec): AuroraPeriodSpec {
 /** Days in the period's range (custom needs its dates). */
 export function auroraPeriodDays(spec: AuroraPeriod | AuroraPeriodSpec, now: Date = new Date()): number {
   return dayCount(auroraPeriodRange(spec, now))
+}
+
+/**
+ * UTC instant of 00:00 in Costa Rica for a calendar period.
+ * Sunday night in Costa Rica is still the week that started Monday, not the UTC week.
+ */
+export function costaRicaRangeStart(period: 'hoy' | 'semana' | 'semana-pasada' | 'mes', now: Date = new Date()): Date {
+  const range = auroraPeriodRange(period, now)
+  const start = buildStatsDateRange(range.startDate, range.endDate).start
+  if (!start) throw new Error('Costa Rica range start missing')
+  return start
 }
 
 /**

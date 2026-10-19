@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
+import { costaRicaRangeStart } from '@/lib/statistics-aurora';
 import {
     MANAGED_TENANT_IDS,
     resolveManagedTenantFilter,
@@ -20,8 +21,7 @@ export async function GET(req: NextRequest) {
         }
         const tenantFilter = { tenantId: resolved.tenantId };
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const today = costaRicaRangeStart('hoy');
 
         const [total, todayCount, byStatus, byTenant] = await Promise.all([
             // Total orders across managed tenants

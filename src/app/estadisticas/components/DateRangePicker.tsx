@@ -17,6 +17,7 @@ import {
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Calendar, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { getCurrentStatsDateKey } from '@/lib/statistics-dates';
 
 interface DateRangePickerProps {
   startDate: string;
@@ -56,7 +57,7 @@ export default function DateRangePicker({
   const [earliestDate, setEarliestDate] = useState<string | null>(null);
   const [loadingMax, setLoadingMax] = useState(false);
 
-  const today = new Date();
+  const today = parseDateKey(getCurrentStatsDateKey());
   const todayKey = formatDateKey(today);
   const yesterdayKey = formatDateKey(subDays(today, 1));
   const thisWeekStart = startOfWeek(today, { weekStartsOn: 1 });

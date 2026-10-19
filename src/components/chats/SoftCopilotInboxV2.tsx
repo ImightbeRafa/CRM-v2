@@ -44,6 +44,7 @@ import {
   type InboxViewCounts,
 } from '@/lib/chat-inbox-views'
 import { isBuiltinChatTag, isClosedCategory, ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
+import { matchesChatSearch } from '@/lib/chat-search'
 import {
   advanceRevisionCursor,
   buildChangesPollQuery,
@@ -206,6 +207,7 @@ export function SoftCopilotInboxV2() {
   const pendingFileRequestIds = useRef(new Map<string, string>())
   /** Server search hits for the active query; re-merged after a reconcile replaces the list. */
   const searchHitsRef = useRef<ChatConversationListItemDto[]>([])
+  const [searchHitKeys, setSearchHitKeys] = useState<ReadonlySet<string>>(() => new Set())
   /** Rows loaded outside the pages (deep link, Pospuestos): kept when the first page reloads. */
   const pinnedDtosRef = useRef<ChatConversationListItemDto[]>([])
   /** The open quick view, read by the full list refresh (see `inboxView` below). */
@@ -815,6 +817,7 @@ export function SoftCopilotInboxV2() {
     const q = search.trim()
     if (q.length < 2) {
       searchHitsRef.current = []
+      setSearchHitKeys(new Set())
       return
     }
     const controller = new AbortController()
@@ -827,8 +830,11 @@ export function SoftCopilotInboxV2() {
           signal: controller.signal,
         })
         const parsed = await parseApiJson<{ success?: boolean; conversations?: ChatConversationListItemDto[] }>(res)
-        if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.conversations?.length) return
-        searchHitsRef.current = parsed.data.conversations
+        if (!parsed.ok || !res.ok || !parsed.data.success) return
+        const hits = parsed.data.conversations ?? []
+        searchHitsRef.current = hits
+        setSearchHitKeys(new Set(hits.map((hit) => `${hit.socialAccountId}|${hit.peerId}`)))
+        if (!hits.length) return
         // Only add chats the list does not have yet — never overwrite a row the live
         // changes feed may have updated after this request started.
         setDtoMap((prev) => {
@@ -1109,9 +1115,24 @@ export function SoftCopilotInboxV2() {
           lastIsFollowUp: dto.lastIsFollowUp,
           lineAiOn: dto.aiLine?.state === 'on',
           closed: isConversationClosed(c),
+          hasOpenOrder: dto.hasOpenOrder === true,
         }
         if (!matchesInboxView(row, inboxView)) continue
-        if (q && !`${c.recipientName || ''} ${c.lastMessage || ''} ${c.accountLabel} ${c.recipientId}`.toLowerCase().includes(q)) continue
+        if (
+          q &&
+          !searchHitKeys.has(`${c.socialAccountId}|${c.recipientId}`) &&
+          !matchesChatSearch(q, {
+            name: c.recipientName,
+            username: c.recipientUsername,
+            preview: c.lastMessage,
+            peerId: c.recipientId,
+            accountLabel: c.accountLabel,
+            orderNumber: c.orderNumber,
+            phone: c.channelAddress,
+          })
+        ) {
+          continue
+        }
         rows.push({ c, lastInboundAt: dto.lastInboundAt ?? null, lastMessageAt: dto.lastMessageAt, lastMessageDirection: dto.lastMessageDirection })
       }
       return sortForInboxView(rows, inboxView).map((r) => r.c)
@@ -1123,6 +1144,7 @@ export function SoftCopilotInboxV2() {
       search,
       viewerUserId,
       tag: activeTag,
+      searchHitKeys,
     })
     if (bucket === 'ia_manejando' && !isBuiltinChatTag(activeTag)) {
       list = list.filter((c) => {
@@ -1136,7 +1158,7 @@ export function SoftCopilotInboxV2() {
     return list
     // snoozeTick: re-evaluate snoozes as time passes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversations, bucket, channelFilter, accountFilter, search, activeTag, dtoMap, dtoByKey, inboxView, viewerUserId, snoozeTick])
+  }, [conversations, bucket, channelFilter, accountFilter, search, activeTag, dtoMap, dtoByKey, inboxView, viewerUserId, snoozeTick, searchHitKeys])
 
   const openCount = useMemo(
     () => conversations.filter((c) => !isConversationClosed(c)).length,

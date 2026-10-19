@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import { hashCursorScope } from '@/lib/cursor-pagination'
 import { INBOX_COUNTED_VIEWS, type InboxCountedView } from '@/lib/chat-inbox-views'
+import { planChatSearch } from '@/lib/chat-search'
 
 /** A chat stage key (system or custom). */
 export type SoftConversationStatus = string
@@ -99,6 +100,8 @@ export function buildConversationListWhere(args: {
   platformAccountIds?: string[] | null
   /** Pre-resolved id set (e.g. snoozed chats of THIS tenant). */
   restrictIds?: string[] | null
+  /** Chats linked to an order that matches `q` (this tenant only). Empty stays out of the OR. */
+  searchConversationIds?: string[] | null
 }): Prisma.ChatConversationWhereInput {
   const and: Prisma.ChatConversationWhereInput[] = [{ tenantId: args.tenantId }]
   if (args.input.id) and.push({ id: args.input.id })
@@ -122,15 +125,30 @@ export function buildConversationListWhere(args: {
   }
 
   if (args.input.q) {
+    const plan = planChatSearch(args.input.q)
     const q = args.input.q
-    and.push({
-      OR: [
-        { peerName: { contains: q, mode: 'insensitive' } },
-        ...(q.replace(/^@/, '') ? [{ peerUsername: { contains: q.replace(/^@/, ''), mode: 'insensitive' as const } }] : []),
-        { peerId: { contains: q, mode: 'insensitive' } },
-        { lastMessagePreview: { contains: q, mode: 'insensitive' } },
-      ],
-    })
+    const text = plan?.customerText || q
+    const ors: Prisma.ChatConversationWhereInput[] = [
+      { peerName: { contains: text, mode: 'insensitive' } },
+      { peerId: { contains: q, mode: 'insensitive' } },
+      { lastMessagePreview: { contains: text, mode: 'insensitive' } },
+    ]
+    const handle = (plan?.handle || q.replace(/^@/, '')).trim()
+    if (handle) ors.push({ peerUsername: { contains: handle, mode: 'insensitive' } })
+    if (plan?.phoneDigits) ors.push({ peerId: { contains: plan.phoneDigits } })
+    if (plan?.phoneFull) ors.push({ peerId: { contains: plan.phoneFull } })
+    const clientOr: Prisma.ClientWhereInput[] = []
+    if (plan?.customerText) clientOr.push({ name: { contains: plan.customerText, mode: 'insensitive' } })
+    if (plan?.email) {
+      clientOr.push({ normalizedEmail: plan.email })
+      clientOr.push({ email: { equals: plan.email, mode: 'insensitive' } })
+    }
+    if (plan?.phoneDigits) clientOr.push({ normalizedPhone: { contains: plan.phoneDigits } })
+    if (clientOr.length > 0) ors.push({ client: { is: { tenantId: args.tenantId, OR: clientOr } } })
+    if (args.searchConversationIds && args.searchConversationIds.length > 0) {
+      ors.push({ id: { in: args.searchConversationIds } })
+    }
+    and.push({ OR: ors })
   }
 
   return and.length === 1 ? and[0]! : { AND: and }

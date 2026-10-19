@@ -16,6 +16,7 @@ import {
   lineDownReason,
   lostSiblingsSentence,
   parseLineDownKey,
+  silenceShouldAlert,
   silenceThresholdMinutes,
 } from '../channel-silence-core'
 import { buildInstagramSuccessHtml, lostInstagramLinesHtml } from '../instagram-connect'
@@ -47,9 +48,21 @@ test('threshold scales with the line’s usual traffic, quiet lines are never ju
   assert.equal(silenceThresholdMinutes(0), null)
   assert.equal(silenceThresholdMinutes(29), null)
   assert.equal(silenceThresholdMinutes(30), 360) // ~1 every 3 business hours → cap 6 h
-  assert.equal(silenceThresholdMinutes(200), 118) // ~1 every 29 min → ~2 h
-  assert.equal(silenceThresholdMinutes(2000), 75) // very busy → floor 75 min
+  assert.equal(silenceThresholdMinutes(200), 240) // 4× gap is ~2 h, floor is 4 h
+  assert.equal(silenceThresholdMinutes(2000), 240) // very busy → floor 4 h, not 75 min
   assert.equal(silenceThresholdMinutes(Number.NaN), null)
+})
+
+test('a busy line quiet for 2.5 business hours is not an alert; 4.5 hours is', () => {
+  assert.equal(silenceShouldAlert(2000, 150), false)
+  assert.equal(silenceShouldAlert(200, 150), false)
+  assert.equal(silenceShouldAlert(2000, 270), true)
+  assert.equal(silenceShouldAlert(200, 270), true)
+  assert.equal(silenceShouldAlert(10, 270), false)
+  const runner = read('src/lib/channel-silence.ts')
+  assert.match(runner, /Sin mensajes recientes:/)
+  assert.match(runner, /período tranquilo/)
+  assert.doesNotMatch(runner, /Canal caído/)
 })
 
 test('line-down reason: token problems and silence; healthy lines are null', () => {
@@ -91,10 +104,13 @@ test('bell key round-trips and rejects junk; text names the line, the time and t
   assert.equal(parseLineDownKey(null), null)
   assert.equal(formatSinceCr(since), '18/10 09:03')
   const text = lineDownNotificationText('@patchhouse.cr', { reason: 'silent', since })
-  assert.equal(text.title, 'Canal caído · @patchhouse.cr')
+  assert.equal(text.title, 'Sin mensajes recientes · @patchhouse.cr')
   assert.match(text.snippet, /18\/10 09:03/)
-  assert.match(text.snippet, /Reconectá y marcá TODAS tus páginas/)
+  assert.match(text.snippet, /período tranquilo/)
+  assert.match(text.snippet, /no necesariamente una desconexión/)
+  assert.doesNotMatch(text.snippet, /Canal caído/)
   assert.match(lineDownNotificationText('X', { reason: 'token', since }).snippet, /Perdió el acceso/)
+  assert.match(lineDownNotificationText('X', { reason: 'token', since }).title, /Perdió el acceso/)
 })
 
 test('line label is the owner’s own line name', () => {
@@ -126,7 +142,7 @@ test('Canales / chats banner: a silent line needs action', () => {
   const base = { id: 'a', platform: 'instagram', accountId: '1', linkedAt: '', isActive: true, tokenStatus: 'valid' }
   assert.equal(classifyChannelHealth(base).healthy, true)
   const silent = classifyChannelHealth({ ...base, silentSince: '2026-10-18T15:03:00Z' })
-  assert.equal(silent.label, 'No llegan mensajes')
+  assert.equal(silent.label, 'Sin mensajes recientes')
   assert.equal(silent.needsAction, true)
   assert.equal(silent.action, 'reconnect')
 })

@@ -101,6 +101,8 @@ import { decideWaitingAck, isOptOutText, waitingAckKey, waitingAckText, WAITING_
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { dropRepeatedParts, REPEAT_WINDOW_MS } from '@/lib/soft-ai/repeat-guard'
 import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet } from '@/lib/soft-ai/sales-state'
+import { duplicateReceiptReply, isPaymentHandoff } from '@/lib/soft-ai/repeat-order'
+import { loadSettledSale } from '@/lib/soft-ai/settled-sale'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
 import { decideInbound, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
@@ -411,6 +413,8 @@ async function loadTriggerMessage(messageId: string, tenantId: string, conversat
       direction: true,
       // agents2-pace: the WhatsApp message id (wamid) the "escribiendo…" indicator points at.
       providerMessageId: true,
+      providerMediaId: true,
+      mediaBlobPath: true,
     },
   })
 }
@@ -1121,6 +1125,26 @@ export async function executeAgentLayerTurn(
     },
   )
   decision.decisionTrace.historyCount = history.length
+  const settledSale = await loadSettledSale({
+    tenantId: row.tenantId,
+    conversationId: row.conversationId,
+    trigger: {
+      content: burst.inboundText || payload.content || '',
+      providerMediaId: trigger.providerMediaId,
+      mediaBlobPath: trigger.mediaBlobPath,
+    },
+  })
+  if (settledSale?.duplicateReceipt && isPaymentHandoff(decision)) {
+    decision.handled = true
+    decision.text = duplicateReceiptReply(settledSale.orderNumber)
+    decision.intent = 'other'
+    decision.shortcutKey = null
+    decision.escalate = false
+    decision.needsHuman = false
+    decision.textOk = true
+    decision.handoff = null
+    decision.reasons = [...decision.reasons, 'duplicate_receipt']
+  }
 
   if (decision.handled) {
     // B1: code plans what goes out (its own text, or the safe line when it failed a check) — never a silent draft.
@@ -1255,6 +1279,7 @@ export async function executeAgentLayerTurn(
       inventoryItemIds: liveInventoryIds,
       brandFacts: resolved.agent.brandFacts,
     }),
+    settledSale,
     toolCtxBase: {
       tenantId: row.tenantId,
       conversationId: row.conversationId,

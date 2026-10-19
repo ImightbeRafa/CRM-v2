@@ -24,6 +24,7 @@ import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import { guideShortcutCatalog, renderShortcutTemplate } from '@/lib/soft-ai/shortcuts'
 import { brandFactsLinkAllowlist } from '@/lib/soft-ai/llm/output-validator'
 import { linkSourceTexts } from '@/lib/soft-ai/agent-tuning-core'
+import { historyAfterSettledOrder } from '@/lib/soft-ai/repeat-order'
 import {
   deriveSalesState,
   formatSalesTurnBlock,
@@ -188,6 +189,11 @@ export function assembleAgentRuntimeInputs(input: {
   afterHoursLine?: string | null
   /** Sales flow context (same loader for live and test chat). Null = previous behaviour. */
   salesContext?: SalesContext | null
+  /**
+   * Live only: a collected order already linked in this chat. History before it is a finished sale.
+   * Probar leaves this null.
+   */
+  settledSale?: { settledAt: string; orderNumber: string; duplicateReceipt: boolean } | null
   toolCtxBase: Omit<
     SoftAiToolRunContext,
     'enabledTools' | 'inboundText' | 'agentId' | 'paymentClassification' | 'shortcuts' | 'brandFacts'
@@ -198,7 +204,18 @@ export function assembleAgentRuntimeInputs(input: {
   // With the sales flow, shipping comes only from Betsy's shipping list (promo applied); the store's own shipping
   // text would show a second, stale price (e.g. ₡3.000 during a free-shipping promo).
   const promptFacts = sales ? { ...input.agent.brandFacts, shipping: undefined } : input.agent.brandFacts
-  const salesState = sales ? deriveSalesState({ history: input.history, inboundText: input.inboundText, ctx: sales }) : null
+  const saleHistory = input.settledSale ? historyAfterSettledOrder(input.history, input.settledSale.settledAt) : input.history
+  const salesState = sales
+    ? deriveSalesState({
+        history: saleHistory,
+        inboundText: input.inboundText,
+        ctx: sales,
+        duplicateReceipt:
+          input.settledSale?.duplicateReceipt && input.settledSale.orderNumber
+            ? { orderNumber: input.settledSale.orderNumber }
+            : null,
+      })
+    : null
   return {
     tenantId: input.toolCtxBase.tenantId,
     agentId: input.agent.id,
@@ -217,7 +234,7 @@ export function assembleAgentRuntimeInputs(input: {
     }),
     knowledge: input.knowledge,
     enabledTools,
-    history: input.history,
+    history: saleHistory,
     inboundText: input.inboundText,
     clientName: input.clientName,
     linkedOrderId: null,
@@ -274,7 +291,7 @@ export function assembleAgentRuntimeInputs(input: {
       ? {
           ...salesPaymentOptions(sales),
           chosenMethod: salesState?.chosenMethod ?? null,
-          dataListFirst: salesState ? salesDataListFirst(salesState, input.history, input.inboundText, sales) : null,
+          dataListFirst: salesState ? salesDataListFirst(salesState, saleHistory, input.inboundText, sales) : null,
         }
       : undefined,
     salesTrace: salesState ? { stage: salesState.stage, said: salesState.said, chosenMethod: salesState.chosenMethod ?? null } : null,

@@ -135,6 +135,8 @@ export type ChatConversationListItemDto = {
   snooze?: { until: string; at: string } | null
   /** Latest order linked from this chat (internal id + human number); set by the list/changes routes. */
   linkedOrder?: { id: string; orderNumber: string } | null
+  /** True when this chat has an order that is not delivered or cancelled. Set by list/changes. */
+  hasOpenOrder?: boolean
   channel: {
     id: string
     platform: string

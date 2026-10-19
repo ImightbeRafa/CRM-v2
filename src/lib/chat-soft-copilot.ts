@@ -11,6 +11,7 @@ import {
   type ChannelLogoKey,
 } from '@/lib/social-account-identity'
 import { isBuiltinChatTag, ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
+import { matchesChatSearch } from '@/lib/chat-search'
 
 /** System keys plus any custom stage key from Config › Chats. */
 export type ConversationStatus = 'nuevo' | 'en_curso' | 'hecho' | (string & {})
@@ -374,19 +375,33 @@ export function filterSoftConversations(
      * Channel, line and search still apply. Other tags are filtered by the caller as before.
      */
     tag?: SoftTag | null
+    /** Server hits (`socialAccountId|peerId`) that match even when the text is only on the order or the client. */
+    searchHitKeys?: ReadonlySet<string>
   },
 ): SoftConversation[] {
-  const q = opts.search.trim().toLowerCase()
+  const q = opts.search.trim()
   const now = opts.nowMs ?? Date.now()
   const reviewTag = opts.tag && isBuiltinChatTag(opts.tag) ? opts.tag : null
+  const textHit = (c: SoftConversation) => {
+    if (!q) return true
+    if (opts.searchHitKeys?.has(`${c.socialAccountId}|${c.recipientId}`)) return true
+    return matchesChatSearch(q, {
+      name: c.recipientName,
+      username: c.recipientUsername,
+      preview: c.lastMessage,
+      peerId: c.recipientId,
+      accountLabel: c.accountLabel,
+      orderNumber: c.orderNumber,
+      phone: c.channelAddress,
+    })
+  }
   return conversations.filter((c) => {
     if (reviewTag) {
       if (!c.tags.includes(reviewTag) || isConversationClosed(c)) return false
       if (opts.channel === 'whatsapp' && c.platform !== 'whatsapp') return false
       if (opts.channel === 'instagram' && c.platform !== 'instagram') return false
       if (opts.accountId !== 'all' && c.socialAccountId !== opts.accountId) return false
-      if (!q) return true
-      return `${c.recipientName || ''} ${c.recipientUsername ? `@${c.recipientUsername}` : ''} ${c.lastMessage || ''} ${c.accountLabel} ${c.recipientId}`.toLowerCase().includes(q)
+      return textHit(c)
     }
     const snoozed = isSnoozedConversation(c, now)
     if (opts.bucket === 'pospuestos' && !snoozed) return false
@@ -409,9 +424,7 @@ export function filterSoftConversations(
     }
     // IA manejando filtered by SoftCopilotInbox via agentMode map (status still open)
     if (opts.bucket === 'ia_manejando' && isConversationClosed(c)) return false
-    if (!q) return true
-    const hay = `${c.recipientName || ''} ${c.recipientUsername ? `@${c.recipientUsername}` : ''} ${c.lastMessage || ''} ${c.accountLabel} ${c.recipientId}`.toLowerCase()
-    return hay.includes(q)
+    return textHit(c)
   })
 }
 

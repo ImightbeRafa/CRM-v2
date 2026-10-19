@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { isClosedCategory, ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG, type StageDef } from '@/lib/crm-stages'
 import { PERSON_AI_MODES, type InboxCountedView, type InboxViewCounts } from '@/lib/chat-inbox-views'
+import { closedOrderStatuses } from '@/lib/open-order'
 import { aiOnLineIds } from '@/lib/soft-ai/agent-inbox-enrich'
 
 /** Stage keys that close a chat (won / lost; 'hecho' unless the tenant redefined it). */
@@ -67,7 +68,60 @@ export async function listFollowUpOnlyIds(tenantId: string, closedKeys: string[]
   }
 }
 
-/** The list `where` part of a view (seguimientos is resolved to ids by the caller). */
+/** Open chats of this tenant that have an order which is not delivered or cancelled. */
+export async function listOpenOrderConversationIds(tenantId: string, closedKeys: string[], limit = 100): Promise<string[]> {
+  const closedOrders = [...closedOrderStatuses()]
+  try {
+    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT c.id
+      FROM "ChatConversation" c
+      WHERE c."tenantId" = ${tenantId}
+        AND NOT (c.status = ANY(${closedKeys}::text[]))
+        AND EXISTS (
+          SELECT 1
+          FROM "ChatMessage" om
+          JOIN "Order" o ON o.id = om."orderId" AND o."tenantId" = om."tenantId" AND o."deletedAt" IS NULL
+          WHERE om."conversationId" = c.id
+            AND om."tenantId" = c."tenantId"
+            AND NOT (lower(btrim(o.status)) = ANY(${closedOrders}::text[]))
+        )
+      ORDER BY c."lastMessageAt" DESC, c.id DESC
+      LIMIT ${limit}`
+    return rows.map((row) => row.id)
+  } catch (error) {
+    console.error('[chat views] open-order ids', { code: error instanceof Error ? error.name : 'error' })
+    return []
+  }
+}
+
+/** Which of `ids` (this tenant) currently have an open order. */
+export async function openOrderConversationIds(tenantId: string, ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set()
+  const closedOrders = [...closedOrderStatuses()]
+  try {
+    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT DISTINCT om."conversationId" AS id
+      FROM "ChatMessage" om
+      JOIN "Order" o ON o.id = om."orderId" AND o."tenantId" = om."tenantId" AND o."deletedAt" IS NULL
+      WHERE om."tenantId" = ${tenantId}
+        AND om."conversationId" = ANY(${ids}::text[])
+        AND NOT (lower(btrim(o.status)) = ANY(${closedOrders}::text[]))`
+    return new Set(rows.map((row) => row.id))
+  } catch (error) {
+    console.error('[chat views] open-order flag', { code: error instanceof Error ? error.name : 'error' })
+    return new Set()
+  }
+}
+
+export async function attachOpenOrderFlag<T extends { id: string }>(
+  tenantId: string,
+  rows: T[],
+): Promise<Array<T & { hasOpenOrder: boolean }>> {
+  const hits = await openOrderConversationIds(tenantId, rows.map((row) => row.id))
+  return rows.map((row) => ({ ...row, hasOpenOrder: hits.has(row.id) }))
+}
+
+/** The list `where` part of a view (seguimientos and pedido are resolved to ids by the caller). */
 export function viewWhere(
   view: InboxCountedView,
   closedKeys: string[],
@@ -83,7 +137,8 @@ export function viewWhere(
     case 'pago':
       return { AND: [open, { tags: { has: PAYMENT_REVIEW_TAG } }] }
     case 'pedido':
-      return { AND: [open, { tags: { has: ORDER_REVIEW_TAG } }] }
+      // The open-order id list is the real filter. This only drops closed chats.
+      return open
     case 'ia':
       return {
         AND: [
@@ -95,6 +150,10 @@ export function viewWhere(
       }
     case 'seguimientos':
       return open
+    default: {
+      const exhaustive: never = view
+      return exhaustive
+    }
   }
 }
 
@@ -133,7 +192,16 @@ async function queryInboxViewCounts(
     SELECT c."socialAccountId",
       COUNT(*) FILTER (WHERE c."aiMode" = ANY(${person}::text[])) AS persona,
       COUNT(*) FILTER (WHERE ${PAYMENT_REVIEW_TAG} = ANY(c.tags)) AS pago,
-      COUNT(*) FILTER (WHERE ${ORDER_REVIEW_TAG} = ANY(c.tags)) AS pedido,
+      COUNT(*) FILTER (
+        WHERE EXISTS (
+          SELECT 1
+          FROM "ChatMessage" om
+          JOIN "Order" o ON o.id = om."orderId" AND o."tenantId" = om."tenantId" AND o."deletedAt" IS NULL
+          WHERE om."conversationId" = c.id
+            AND om."tenantId" = c."tenantId"
+            AND NOT (lower(btrim(o.status)) = ANY(${[...closedOrderStatuses()]}::text[]))
+        )
+      ) AS pedido,
       COUNT(*) FILTER (
         WHERE c."socialAccountId" = ANY(${aiLines}::text[])
           AND (c."aiMode" IS NULL OR NOT (c."aiMode" = ANY(${person}::text[])))

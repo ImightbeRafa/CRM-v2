@@ -39,9 +39,9 @@ export function classifyChannelHealth(acc: SocialAccount): ChannelHealth {
   if (status === 'expired' || status === 'revoked') {
     return { label: 'Token vencido', tone: 'warn', action: 'reconnect', healthy: false, needsAction: true }
   }
-  // Dead-line alarm: a busy line stopped receiving messages (e.g. dropped from the Facebook page picker).
+  // Busy line with no recent messages. Often just a quiet stretch, not a dropped token.
   if (acc.silentSince) {
-    return { label: 'No llegan mensajes', tone: 'bad', action: 'reconnect', healthy: false, needsAction: true }
+    return { label: 'Sin mensajes recientes', tone: 'bad', action: 'reconnect', healthy: false, needsAction: true }
   }
   if (status === 'expiring' || accountNeedsReconnect(acc)) {
     return { label: 'Token por vencer', tone: 'warn', action: 'reconnect', healthy: false, needsAction: true }

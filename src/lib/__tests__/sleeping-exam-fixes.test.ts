@@ -449,7 +449,7 @@ describe('C6: the delivery data list comes before the payment question', () => {
   it('the close instruction tells the model the order (list first, payment question last)', () => {
     const s = deriveSalesState({ history: quoted, inboundText: 'lo quiero', ctx: CTX })
     assert.match(formatSalesTurnBlock(CTX, s), /AL FINAL, en su propio mensaje, preguntá cómo prefiere pagar con la pregunta de pago de abajo, nunca antes de la lista de datos/)
-    assert.match(readFileSync('src/lib/soft-ai/agent-turn-inputs.ts', 'utf8'), /dataListFirst: salesState \? salesDataListFirst\(salesState, input\.history, input\.inboundText, sales\) : null/)
+    assert.match(readFileSync('src/lib/soft-ai/agent-turn-inputs.ts', 'utf8'), /dataListFirst: salesState \? salesDataListFirst\(salesState, saleHistory, input\.inboundText, sales\) : null/)
   })
 })
 

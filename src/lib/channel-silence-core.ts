@@ -10,8 +10,12 @@ export const LINE_DOWN_FIX_TEXT = 'Reconectá y marcá TODAS tus páginas'
 
 /** Lines with fewer inbound messages in the last 7 days are never flagged as silent. */
 export const MIN_WEEKLY_INBOUND = 30
-/** Shortest / longest silence (business minutes) before a busy line is flagged. */
-export const SILENCE_FLOOR_MINUTES = 75
+/**
+ * Shortest / longest silence (business minutes) before a busy line is flagged.
+ * The floor is 4 business hours: a bursty line's 4× gap can be ~2 h, and that
+ * was flagging healthy lines (Patch House) while webhooks were still 200.
+ */
+export const SILENCE_FLOOR_MINUTES = 240
 export const SILENCE_CAP_MINUTES = 360
 /** Silence of this many "usual gaps" (~2% chance on a healthy line). */
 const GAP_MULTIPLIER = 4
@@ -53,6 +57,13 @@ export function silenceThresholdMinutes(inbound7d: number): number | null {
   if (!Number.isFinite(inbound7d) || inbound7d < MIN_WEEKLY_INBOUND) return null
   const usualGap = BUSINESS_MINUTES_PER_WEEK / inbound7d
   return Math.min(SILENCE_CAP_MINUTES, Math.max(SILENCE_FLOOR_MINUTES, Math.round(GAP_MULTIPLIER * usualGap)))
+}
+
+/** True when this much business-hour silence should flag the line. Quiet lines (under 30 msgs) never alert. */
+export function silenceShouldAlert(inbound7d: number, quietBusinessMinutes: number): boolean {
+  if (!Number.isFinite(quietBusinessMinutes) || quietBusinessMinutes < SILENCE_FLOOR_MINUTES) return false
+  const threshold = silenceThresholdMinutes(inbound7d)
+  return threshold != null && quietBusinessMinutes >= threshold
 }
 
 export type LineDownReason = 'token' | 'silent'
@@ -121,10 +132,10 @@ export function lineDownNotificationText(
   const since = formatSinceCr(key.since)
   const fix = lineDownFixText(platform)
   return {
-    title: `Canal caído · ${label}`,
+    title: key.reason === 'silent' ? `Sin mensajes recientes · ${label}` : `Perdió el acceso · ${label}`,
     snippet:
       key.reason === 'silent'
-        ? `No llegan mensajes desde ${since}. ${fix}.`
+        ? `No llegan mensajes desde ${since}. Puede ser un período tranquilo, no necesariamente una desconexión.`
         : `Perdió el acceso a Meta (${since}). ${fix}.`,
   }
 }

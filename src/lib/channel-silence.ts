@@ -26,7 +26,7 @@ import {
   inBusinessHours,
   lineDownLabel,
   lineDownReason,
-  silenceThresholdMinutes,
+  silenceShouldAlert,
   SILENCE_FLOOR_MINUTES,
   type LineDownReason,
 } from '@/lib/channel-silence-core'
@@ -118,12 +118,15 @@ async function announce(row: Row, reason: LineDownReason, since: Date): Promise<
     await sendOpsAlert({
       key: `line-down:${row.id}:${sinceKey}`,
       // Business / line names are tenant-chosen text: no URLs, plain characters, short.
-      subject: `Canal caído: ${emailSafeText(label, 60)}`,
+      subject:
+        reason === 'silent'
+          ? `Sin mensajes recientes: ${emailSafeText(label, 60)}`
+          : `Perdió el acceso: ${emailSafeText(label, 60)}`,
       lines: [
         `Negocio: ${emailSafeText(tenant?.name, 60)} (${row.tenantId})`,
         `Línea: ${emailSafeText(label, 60)} (${row.platform})`,
         reason === 'silent'
-          ? `No llegan mensajes desde ${since.toISOString()}.`
+          ? `No llegan mensajes desde ${since.toISOString()}. Puede ser un período tranquilo, no necesariamente una desconexión.`
           : `El token dejó de funcionar (${row.lastErrorCode || row.tokenStatus || 'error'}) a las ${since.toISOString()}.`,
         `Arreglo: ${lineDownFixText(row.platform)}`,
       ],
@@ -182,8 +185,7 @@ export async function runChannelSilenceCheck(now = new Date()): Promise<SilenceR
     const lastIn = latestOf(row.lastWebhookAt, row.subscribedAt, row.linkedAt)
     const quietMinutes = businessMinutesBetween(lastIn, now)
     if (quietMinutes < SILENCE_FLOOR_MINUTES) continue // cheap filter before counting
-    const threshold = silenceThresholdMinutes(await inboundLastWeek(row, now))
-    if (threshold != null && quietMinutes >= threshold) suspects.push({ row, why: 'silent' })
+    if (silenceShouldAlert(await inboundLastWeek(row, now), quietMinutes)) suspects.push({ row, why: 'silent' })
   }
 
   for (const { row, why } of suspects.slice(0, MAX_PROBES_PER_RUN)) {

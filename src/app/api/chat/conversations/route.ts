@@ -21,7 +21,8 @@ import {
   resolveListPlatformIds,
 } from '@/lib/chat-conversation-route-helpers'
 import { loadStages } from '@/lib/crm-stages-server'
-import { attachFollowUpFlag, closedStageKeys, listFollowUpOnlyIds, viewWhere } from '@/lib/chat-inbox-views-server'
+import { attachFollowUpFlag, attachOpenOrderFlag, closedStageKeys, listFollowUpOnlyIds, listOpenOrderConversationIds, viewWhere } from '@/lib/chat-inbox-views-server'
+import { searchConversationIds } from '@/lib/chat-search-server'
 import { aiOnLineIds } from '@/lib/soft-ai/agent-inbox-enrich'
 
 export const runtime = 'nodejs'
@@ -53,7 +54,10 @@ export async function GET(request: NextRequest) {
       ? await listSnoozedConversationIds(auth.tenantId)
       : input.view === 'seguimientos'
         ? await listFollowUpOnlyIds(auth.tenantId, viewClosedKeys, limit)
-        : null
+        : input.view === 'pedido'
+          ? await listOpenOrderConversationIds(auth.tenantId, viewClosedKeys, limit)
+          : null
+    const searchConversationIdsForQuery = input.q ? await searchConversationIds(auth.tenantId, input.q) : null
     if (restrictIds && restrictIds.length === 0) {
       return NextResponse.json({ success: true, conversations: [], nextCursor: null, maxRevision: '0', snoozeAvailable: !workStateKnownMissing() })
     }
@@ -64,6 +68,7 @@ export async function GET(request: NextRequest) {
       viewerUserId: auth.userId,
       platformAccountIds,
       restrictIds,
+      searchConversationIds: searchConversationIdsForQuery,
     })
     const aiLineIds =
       input.view === 'ia'
@@ -124,17 +129,19 @@ export async function GET(request: NextRequest) {
       ),
     )
     // Each enrichment only adds its own fields to the same rows (same order): run them together.
-    const [withAgents, withOrders, withSnooze, withFollowUp] = await Promise.all([
+    const [withAgents, withOrders, withSnooze, withFollowUp, withOpen] = await Promise.all([
       enrichConversationDtosWithAgents(auth.tenantId, base),
       enrichConversationDtosWithLinkedOrders(auth.tenantId, base),
       attachSnoozeState(auth.tenantId, base),
       attachFollowUpFlag(auth.tenantId, base),
+      attachOpenOrderFlag(auth.tenantId, base),
     ])
     const conversations = base.map((_, i) => ({
       ...withAgents[i],
       ...('linkedOrder' in withOrders[i] ? { linkedOrder: withOrders[i].linkedOrder } : {}),
       ...(withSnooze[i].snooze ? { snooze: withSnooze[i].snooze } : {}),
       ...(withFollowUp[i].lastIsFollowUp ? { lastIsFollowUp: true } : {}),
+      hasOpenOrder: withOpen[i].hasOpenOrder === true,
     }))
 
     const last = page[page.length - 1]

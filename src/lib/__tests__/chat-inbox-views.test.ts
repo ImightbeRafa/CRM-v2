@@ -34,10 +34,13 @@ describe('chat views · rules', () => {
     for (const aiMode of [null, 'ai_active']) assert.equal(matchesInboxView(row({ aiMode }), 'persona'), false)
   })
 
-  it('Revisar pago / Pedido por confirmar follow the built-in tags', () => {
+  it('Revisar pago follows the tag; Pedido is an open order, not the review tag', () => {
     assert.equal(matchesInboxView(row({ tags: [PAYMENT_REVIEW_TAG] }), 'pago'), true)
     assert.equal(matchesInboxView(row({ tags: [ORDER_REVIEW_TAG] }), 'pago'), false)
-    assert.equal(matchesInboxView(row({ tags: [ORDER_REVIEW_TAG] }), 'pedido'), true)
+    assert.equal(matchesInboxView(row({ tags: [ORDER_REVIEW_TAG] }), 'pedido'), false)
+    assert.equal(matchesInboxView(row({ hasOpenOrder: true }), 'pedido'), true)
+    assert.equal(matchesInboxView(row({ hasOpenOrder: true, tags: [ORDER_REVIEW_TAG] }), 'ia'), false)
+    assert.equal(matchesInboxView(row({ hasOpenOrder: true }), 'ia'), true)
   })
 
   it('IA atendiendo = line on, nobody took it, nothing waiting for review', () => {
@@ -73,7 +76,8 @@ describe('chat views · rules', () => {
 
   it('a list row maps to the same view fields (closed from the stage category)', () => {
     const dto = { aiMode: 'human', tags: [PAYMENT_REVIEW_TAG], lastMessageDirection: 'outbound', lastIsFollowUp: true, aiLine: { state: 'on' }, stageCategory: 'open' as const }
-    assert.deepEqual(inboxViewRowFromDto(dto), { aiMode: 'human', tags: [PAYMENT_REVIEW_TAG], lastMessageDirection: 'outbound', lastIsFollowUp: true, lineAiOn: true, closed: false })
+    assert.deepEqual(inboxViewRowFromDto(dto), { aiMode: 'human', tags: [PAYMENT_REVIEW_TAG], lastMessageDirection: 'outbound', lastIsFollowUp: true, lineAiOn: true, hasOpenOrder: false, closed: false })
+    assert.equal(inboxViewRowFromDto({ ...dto, hasOpenOrder: true }).hasOpenOrder, true)
     assert.equal(inboxViewRowFromDto({ ...dto, stageCategory: 'won' }).closed, true)
     assert.equal(inboxViewRowFromDto({ ...dto, aiLine: null }).lineAiOn, false)
   })
@@ -101,7 +105,7 @@ describe('chat views · server', () => {
 
   it('counts and flags are tenant-scoped SQL; the counts route needs the inbox permission', () => {
     const server = read('src/lib/chat-inbox-views-server.ts')
-    assert.equal((server.match(/WHERE c\."tenantId" = \$\{tenantId\}/g) || []).length, 3)
+    assert.equal((server.match(/WHERE c\."tenantId" = \$\{tenantId\}/g) || []).length, 4)
     assert.match(server, /m\."tenantId" = c\."tenantId"/)
     assert.match(server, /GROUP BY c\."socialAccountId"/)
     // SecureDog: the last message row itself must be ours; counts cached 15 s per tenant with one shared query.

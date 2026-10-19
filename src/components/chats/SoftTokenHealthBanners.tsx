@@ -12,9 +12,9 @@ type Props = {
 const MAX_VISIBLE = 2
 
 /**
- * Canal caído strip (STATE-01) for /chats: one banner per line that needs repair or
- * reconnect, reusing the same health classification as Canales. Renders outside the
- * bucket / list / rail chrome.
+ * Line health strip for /chats: one banner per line that needs repair or reconnect,
+ * reusing the same health classification as Canales. A silence flag says the line
+ * may simply be quiet. Renders outside the bucket / list / rail chrome.
  */
 export function SoftTokenHealthBanners({ accounts }: Props) {
   const down = accounts
@@ -30,11 +30,15 @@ export function SoftTokenHealthBanners({ accounts }: Props) {
       {visible.map(({ account, health }) => (
         <ChannelDownBanner
           key={account.id}
-          message={`${accountDisplayLabel(account)} · ${health.label.toLowerCase()}${account.silentSince ? ` desde ${formatSinceCr(new Date(account.silentSince))}` : ''}. ${
-            account.platform === 'instagram' && health.action === 'reconnect'
-              ? `${LINE_DOWN_FIX_TEXT} en Facebook.`
-              : 'Los mensajes de esta línea pueden no enviarse ni recibirse.'
-          }`}
+          message={
+            account.silentSince
+              ? `${accountDisplayLabel(account)} · sin mensajes recientes desde ${formatSinceCr(new Date(account.silentSince))}. Puede ser un período tranquilo, no necesariamente una desconexión.`
+              : `${accountDisplayLabel(account)} · ${health.label.toLowerCase()}. ${
+                  account.platform === 'instagram' && health.action === 'reconnect'
+                    ? `${LINE_DOWN_FIX_TEXT} en Facebook.`
+                    : 'Los mensajes de esta línea pueden no enviarse ni recibirse.'
+                }`
+          }
           actionLabel={health.action === 'repair' ? 'Reparar' : 'Reconectar'}
         />
       ))}

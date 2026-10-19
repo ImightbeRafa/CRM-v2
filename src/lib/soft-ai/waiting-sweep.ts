@@ -33,6 +33,7 @@ import {
   rearmFinishedJob,
   softAiInboundDeliveryKey,
 } from '@/lib/soft-ai/automation-queue'
+import { sweepShouldAnswer } from '@/lib/soft-ai/resume-reply'
 
 const DAY_MS = 24 * 60 * 60_000
 /** Most chats answered by one "line turned on" call (Rafael: newest first, cap 50). */
@@ -310,6 +311,10 @@ async function prepareConversation(
     opts,
   )
   if (decision.action === 'skip' || !latest) return { decision }
+  if (decision.action === 'enqueue' || decision.action === 'rearm') {
+    const gate = sweepShouldAnswer({ content: latest.content, messageType: latestRow?.messageType ?? null })
+    if (!gate.answer) return { decision: { action: 'skip', reason: gate.reason } }
+  }
 
   // Same payload shape the webhook writes (inbound-hook → persistJob).
   const payload = {

@@ -1,7 +1,8 @@
 /**
- * /chats quick views (Rafael 2026-10-18): "Persona", "Revisar pago", "Pedido por confirmar", "IA atendiendo" and
+ * /chats quick views: "Persona", "Revisar pago", "Pedido" (open orders), "IA atendiendo" and
  * "Seguimientos". Pure: the same rules decide the list (client, on the loaded rows) and the counts (server SQL in
  * chat-inbox-views-server.ts), so a tab's number and its rows agree. Every view is open chats only.
+ * Pedido uses `hasOpenOrder` from the list (an order that is not delivered or cancelled), not the review tag.
  */
 import { isClosedCategory, ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG, type StageCategory } from '@/lib/crm-stages'
 
@@ -14,7 +15,7 @@ export const INBOX_VIEW_DEFS: Array<{ id: InboxView; label: string; short: strin
   { id: 'todos', label: 'Bandeja', short: 'Bandeja', emoji: '' },
   { id: 'persona', label: 'Persona (chats con alguien del equipo)', short: 'Persona', emoji: '👤' },
   { id: 'pago', label: 'Revisar pago', short: 'Revisar pago', emoji: '💳' },
-  { id: 'pedido', label: 'Pedido por confirmar', short: 'Pedido', emoji: '📦' },
+  { id: 'pedido', label: 'Pedidos abiertos (no entregados ni cancelados)', short: 'Pedido', emoji: '📦' },
   { id: 'ia', label: 'IA atendiendo', short: 'IA', emoji: '✦' },
   { id: 'seguimientos', label: 'Seguimientos sin respuesta', short: 'Seguimientos', emoji: '↻' },
 ]
@@ -38,6 +39,8 @@ export type InboxViewRow = {
   /** The chat's line has the AI on (dto.aiLine.state === 'on'). */
   lineAiOn: boolean
   closed: boolean
+  /** This chat has an order that is still open (paid or waiting; not delivered or cancelled). */
+  hasOpenOrder?: boolean
 }
 
 export function isPersonAiMode(mode: string | null | undefined): boolean {
@@ -53,7 +56,7 @@ export function matchesInboxView(row: InboxViewRow, view: InboxView): boolean {
     case 'pago':
       return row.tags.includes(PAYMENT_REVIEW_TAG)
     case 'pedido':
-      return row.tags.includes(ORDER_REVIEW_TAG)
+      return row.hasOpenOrder === true
     case 'ia':
       return (
         row.lineAiOn &&
@@ -63,6 +66,10 @@ export function matchesInboxView(row: InboxViewRow, view: InboxView): boolean {
       )
     case 'seguimientos':
       return row.lastMessageDirection === 'outbound' && row.lastIsFollowUp === true
+    default: {
+      const exhaustive: never = view
+      return exhaustive
+    }
   }
 }
 
@@ -111,6 +118,7 @@ export function inboxViewRowFromDto(d: {
   lastIsFollowUp?: boolean
   aiLine?: { state: string } | null
   stageCategory?: StageCategory | null
+  hasOpenOrder?: boolean
 }): InboxViewRow {
   return {
     aiMode: d.aiMode,
@@ -118,6 +126,7 @@ export function inboxViewRowFromDto(d: {
     lastMessageDirection: d.lastMessageDirection,
     lastIsFollowUp: d.lastIsFollowUp,
     lineAiOn: d.aiLine?.state === 'on',
+    hasOpenOrder: d.hasOpenOrder === true,
     closed: isClosedCategory(d.stageCategory ?? 'open'),
   }
 }

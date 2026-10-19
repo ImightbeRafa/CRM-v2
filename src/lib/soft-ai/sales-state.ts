@@ -21,6 +21,7 @@ import {
 } from '@/lib/soft-ai/payment-classifier'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import { soldOutFocus, type StockGuard } from '@/lib/soft-ai/product-availability-core'
+import { productsNamedIn } from '@/lib/soft-ai/products-asked'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import { PICKUP_DATA_LIST, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
 import { MONEY_WORDS_RE } from '@/lib/soft-ai/payment-claim-check-core'
@@ -100,6 +101,8 @@ export type SalesState = {
   chosenMethod?: ChosenPaymentMethod | null
   /** Out-of-stock switch: the customer is asking for this sold-out product (newest message naming a product). */
   soldOutFocus?: string | null
+  /** Two or more catalog products named in this turn. Each one gets a short line. */
+  namedProducts?: string[]
 }
 
 /** A method the customer can pick (efectivo is its own method when configured; otherwise it means contra entrega). */
@@ -383,6 +386,8 @@ export function deriveSalesState(input: {
   ctx: SalesContext
   /** Burst = one reply: read the buy cue across the unanswered burst (default). False: the newest message only. */
   burstBuyCue?: boolean
+  /** A copy of a receipt already stored on a collected order. Not a new payment. */
+  duplicateReceipt?: { orderNumber: string } | null
 }): SalesState {
   const ours = input.history.filter((m) => m.direction === 'outbound').map((m) => m.content || '')
   const oursText = ours.join('\n')
@@ -423,7 +428,8 @@ export function deriveSalesState(input: {
     }
     if (RETRACT_BUY_RE.test(t)) break
   }
-  const receiptCue = (RECEIPT_RE.test(last) || hasPaymentClaimCue(last))
+  const duplicateOrder = input.duplicateReceipt?.orderNumber || null
+  const receiptCue = !duplicateOrder && (RECEIPT_RE.test(last) || hasPaymentClaimCue(last))
   // agents2-format: the store asked HOW to pay and gave no payment details after that question.
   const askedMethod = methodQuestionPending(ours)
   // A pick counts after the store's question, or when the customer names a method and asks for its details. N4: with
@@ -440,7 +446,7 @@ export function deriveSalesState(input: {
   if (receiptCue) stage = 'verificando'
   // N5: the order (contra entrega / efectivo) already went to a person: no receipt, no method question again.
   else if (said.order && !said.payment) stage = 'pedido_en_revision'
-  else if (said.payment) stage = 'esperando_comprobante'
+  else if (said.payment && !duplicateOrder) stage = 'esperando_comprobante'
   // A new buy cue after the question ("la quiero", another product) goes back to the close (Verifier F5).
   else if (chosenMethod || (askedMethod && !buyCue)) stage = 'metodo_pago'
   else if (buyCue) stage = 'cierre'
@@ -461,12 +467,23 @@ export function deriveSalesState(input: {
       )
     : null
   const closing = stage === 'cierre' || stage === 'metodo_pago'
-  const nextStep =
+  const catalogNames = [
+    ...(input.ctx.catalog ?? []).map((item) => item.name),
+    ...(input.ctx.bundles ?? []).map((item) => item.name),
+  ]
+  const named = productsNamedIn([last, ...recentInbound].join('\n'), catalogNames)
+  const namedProducts = named.length >= 2 ? named : undefined
+  let nextStep =
     focus && closing
       ? SOLD_OUT_STEP
       : stage === 'metodo_pago' && chosenMethod
         ? chosenMethodStep(input.ctx, chosenMethod)
         : NEXT_STEP[stage]
+  if (duplicateOrder && !buyCue) {
+    nextStep = `El comprobante ya está en el pedido ${duplicateOrder}. No lo cuentes otra vez ni abras un pago nuevo. Si pide otro producto, es un pedido nuevo.`
+  } else if (namedProducts && !focus && stage !== 'verificando' && stage !== 'pedido_en_revision') {
+    nextStep = `${nextStep} El cliente nombró varios productos (${namedProducts.join(', ')}). Respondé cada uno en una línea corta, con lo que sabés de ese producto. No elijas solo uno.`
+  }
   return {
     soldOutFocus: focus,
     stage,
@@ -477,6 +494,7 @@ export function deriveSalesState(input: {
     quantities,
     askedMethod,
     chosenMethod: stage === 'metodo_pago' ? chosenMethod : null,
+    namedProducts,
   }
 }
 
@@ -598,6 +616,11 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
     `Estado de la venta (calculado por Betsy): ya dijiste precio ${tick(state.said.price)} · envío ${tick(state.said.shipping)} · datos de pago ${tick(state.said.payment)} · contra entrega ${tick(state.said.cod)}.`,
     `Etapa: ${state.stage}. Siguiente paso: ${state.nextStep}`,
   )
+  if (state.namedProducts && state.namedProducts.length >= 2) {
+    lines.push(
+      `Productos que preguntó (respondé cada uno, una línea corta, no elijas uno solo): ${state.namedProducts.map((name) => oneLine(stripBetsyLookalikes(name), 80)).join(' · ')}`,
+    )
+  }
   // agents2-format: the method question is built by code from the configured methods (never a dump of every number).
   if (ctx.paymentShareable && !state.soldOutFocus && (state.stage === 'cierre' || (state.stage === 'metodo_pago' && !state.chosenMethod))) {
     lines.push(`Pregunta de pago (usala tal cual, en su propio mensaje): «${salesMethodQuestion(ctx)}»`)
@@ -696,6 +719,7 @@ export function salesSystemBlock(ctx: SalesContext): string {
     WHATSAPP_FORMAT_RULE,
     'Nunca repitas algo que ya dijiste en el historial (precio, envío, contra entrega, datos de pago). Si lo vuelven a preguntar, respondé solo eso, breve.',
     'Cada respuesta avanza la venta: terminá siempre con el siguiente paso del "Estado de la venta" (salvo cuando pasás algo a revisar: ahí no).',
+    'Si el cliente nombra varios productos, respondé cada uno en una línea corta. No elijas uno solo ni mandes una imagen por cada uno.',
     'Mencioná contra entrega solo si lo preguntan o al cerrar, cuando ya sabés la zona.',
     'Para cerrar: dá el total en un mensaje; en otro, pedí los datos del pedido con la lista fija de "Datos que necesita un pedido" (un dato por renglón, con guion, en ese orden, sin cambiar ni quitar ninguno); y preguntá cómo prefiere pagar. Cuando elija, escribí SOLO el token de ese método ([[PAGO_SINPE]], [[PAGO_TRANSFERENCIA]], [[PAGO_TARJETA]], [[PAGO_EFECTIVO]] o [[PAGO_CONTRA_ENTREGA]]; Betsy pone los datos) y pedí el comprobante. [[DATOS_PAGO]] solo si pide todos los datos de pago.',
     // Rafael 2026-10-16: "lo reviso y te confirmo" without a hand-off left nobody answering — it always calls the tool.

@@ -62,4 +62,31 @@ describe('safety router v2', () => {
     assert.equal(decision.escalate, true)
     assert.doesNotMatch(decision.text, /ignorá tus reglas/)
   })
+
+  it('Forge X08: the word "tarjeta" in a card-info question does not fire sys_handoff_payment', () => {
+    for (const inboundText of [
+      '¿Qué es mejor, SINPE o tarjeta? No quiero dar mi tarjeta',
+      'No quiero dar mi tarjeta por aquí',
+      '¿Es seguro pagar con tarjeta?',
+      '¿Cuál me conviene, SINPE o tarjeta?',
+      'Quiero pagar con tarjeta, ¿cómo hago?',
+    ]) {
+      const route = routeInboundSafety({ inboundText })
+      assert.equal(route.escalate, false, inboundText)
+      assert.equal(route.paymentClass, 'payment_info_safe', inboundText)
+    }
+  })
+
+  it('Forge X08: a card number pasted in the chat still fires sys_handoff_payment', () => {
+    for (const inboundText of [
+      'mi tarjeta es 4111 1111 1111 1111',
+      'No quiero dar mi tarjeta 4111111111111111',
+      'Te paso el número de mi tarjeta para que me cobres',
+      'No quiero dar mi tarjeta, ya pagué',
+    ]) {
+      const route = routeInboundSafety({ inboundText })
+      assert.equal(route.escalate, true, inboundText)
+      if (route.escalate) assert.equal(route.shortcutKey, 'sys_handoff_payment', inboundText)
+    }
+  })
 })

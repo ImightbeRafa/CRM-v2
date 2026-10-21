@@ -582,6 +582,31 @@ const NARROW_STATUS_QUESTION_RE = new RegExp(
   'iu',
 )
 
+/**
+ * Sales-agent exam 2026-10-19 (X08): "¿Qué es mejor, SINPE o tarjeta? No quiero dar mi tarjeta" handed off on the bare word
+ * "tarjeta". A CLOSED card-info message — every sentence is one of these questions / reluctance phrases, no digit at all
+ * (a pasted card number keeps the person path) and no past / done word — is answered by the agent with the payment
+ * facts (web Tilopay or a person sends the link; never card numbers by chat). Pure.
+ */
+const CARD_INFO_SEG_RE = new RegExp(
+  String.raw`^(?:y\s+|pero\s+|es\s+que\s+)?(?:` +
+    String.raw`(?:qu[eé]|cu[aá]l)\s+(?:es\s+)?(?:me\s+conviene\s+|mejor|m[aá]s\s+seguro|recomend[aá]s|recomiendan)(?:\s+pagar)?,?\s+(?:con\s+|por\s+)?(?:el\s+)?sinpe(?:\s+m[oó]vil)?\s+o\s+(?:con\s+)?(?:la\s+)?tarjeta` +
+    String.raw`|(?:yo\s+)?no\s+(?:quiero|quisiera|me\s+gusta|me\s+da\s+confianza)\s+(?:dar|pasar|mandar|poner)\s+(?:los\s+(?:datos|n[uú]meros)\s+de\s+)?(?:mi|la)\s+tarjeta(?:\s+por\s+(?:aqu[ií]|ac[aá]|(?:el\s+)?chat|whatsapp))?` +
+    String.raw`|(?:es|ser[aá]|ser[ií]a)\s+seguro\s+pagar\s+con\s+(?:la\s+)?tarjeta(?:\s+en\s+la\s+(?:p[aá]gina|web))?` +
+  String.raw`)$`,
+  'iu',
+)
+export function isCardInfoMessage(text: string): boolean {
+  const v = clean(stripFormatChars((text || '').normalize('NFKC')))
+  if (!v.trim() || v.length > 200 || /\d/.test(v)) return false
+  const segs = v
+    .replace(/¿/gu, '\u0001¿')
+    .split(/[.!?\n\u0001]+/u)
+    .map((x) => x.replace(/^[\s¿¡,]+/u, '').replace(/[\s,]+$/u, '').replace(LEADING_GREETING_RE, '').trim())
+    .filter(Boolean)
+  return segs.length > 0 && segs.every((t) => CARD_INFO_SEG_RE.test(t) && !hasPastOrDoneWord(t, true))
+}
+
 export function classifyPaymentText(
   text: string,
   /**
@@ -630,6 +655,7 @@ export function classifyPaymentText(
   // ("Quiero pagar con el link, el otro venció"). Only "link de pago" or a link next to a failure / used word; "¿tienen
   // link para comprar?" and "vi el link en la bio" are ordinary.
   if (isPlainPaymentLinkQuestion(value)) return 'payment_info_safe'
+  if (isCardInfoMessage(value)) return 'payment_info_safe'
   // Verifier round 8: "¿Puedo pagar con link de pago?" is a plain ask; only a failure word or a non-plain message hands off.
   if (PAYMENT_LINK_WORDS_RE.test(value) && (LINK_FAILURE_RE.test(value) || (PAY_LINK_PHRASE_RE.test(value) && !isPlainAskMessage(value)))) return 'payment_proof_or_risk'
   // SecureDog round 5: the intent path too answers only a plain ask (a leading "listo," is an acknowledgement).

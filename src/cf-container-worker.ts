@@ -95,6 +95,10 @@ interface Env {
   SOFT_AI_OPENAI_API_KEY?: string;
   SOFT_AI_OPENAI_REASONING?: string;
   SOFT_AI_PAYMENT_CHECK?: string;
+  /** Pay-choice-in-data ops switch ("off" turns the order-data payment choice off). */
+  SOFT_AI_ORDER_DATA_CHOICE?: string;
+  /** Comma-separated tenant ids never capped by the live AI allowance (src/lib/soft-ai/ai-allowance.ts). */
+  AI_ALLOWANCE_EXEMPT_TENANTS?: string;
   SOFT_AGENT_KILL?: string;
   CHAT_SSE?: string;
   GOOGLE_CLIENT_ID?: string;
@@ -185,6 +189,8 @@ const CONTAINER_ENV_KEYS = [
   "SOFT_AI_OPENAI_REASONING",
   // luna-10 D2: "¿ya pagó?" check mode (shadow by default; enforce / off).
   "SOFT_AI_PAYMENT_CHECK",
+  "SOFT_AI_ORDER_DATA_CHOICE",
+  "AI_ALLOWANCE_EXEMPT_TENANTS",
   "SOFT_AGENT_KILL",
   "CHAT_SSE",
   "GOOGLE_CLIENT_ID",

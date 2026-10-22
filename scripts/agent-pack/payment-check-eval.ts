@@ -28,6 +28,15 @@ export const CLAIMS: Case[] = [
   'me salio el sinpe dos veces', 'la tarjeta me la cobraron pero no me llego confirmacion', 'pague y no me llego nada',
   '¿ya les llego lo mio?', 'listo ya está, revisá porfa',
 ].map((text) => ({ text, history: [{ direction: 'inbound', content: 'quiero el de dormir' }, PAY_DETAILS] }))
+// SecureDog r4: claims hidden inside an order-data block (the order_data_* path always enforces this check).
+const DATA_BLOCK = (x: string) => `Nombre: Ana Mora\nTeléfono: 8888-8888\nDirección: Heredia, ${x}\nPago por SINPE 🙌`
+CLAIMS.push(
+  ...[
+    'ya le puse la plata', 'ahí les cae', 'ahí lo tenés', 'le tiramos', 'liquidado', 'pagao', 'la transfe ya está', 'el depo listo',
+    'l,i,s,t,o', 'yapague', 'lohice', 'ya lo hice', 'desde mi banco', 'ahí el respaldo', 'consignado', 'payed', '12.9 listo',
+  ].map((x) => ({ text: DATA_BLOCK(x), history: [{ direction: 'outbound', content: 'Para coordinar el envío, pasame tus datos' }] })),
+)
+
 
 export const ASKS: Case[] = [
   '¿Cómo puedo pagar?', '¿Aceptan tarjeta?', '¿Puedo hacerles un sinpe?', '¿Si pago hoy llega mañana?', '¿El pago es antes del envío?',
@@ -40,6 +49,14 @@ export const ASKS: Case[] = [
   '¿Me lo pueden tener para el sábado? pago en efectivo', 'Ok perfecto, ¿y para pagar?', '¿Puedo pagar la mitad ahora y la mitad al recibir?',
   'Voy a hacer el sinpe ahorita', 'ahorita le hago el sinpe', 'en la noche les pago', '¿y si la tarjeta sale rechazada?',
 ].map((text) => ({ text, history: [{ direction: 'inbound', content: 'quiero el de dormir' }, { direction: 'outbound', content: 'Tenemos SINPE Móvil y tarjeta. ¿Cómo preferís pagar?' }] }))
+// SecureDog r4: plain order-data blocks with the method chosen (must stay clear).
+ASKS.push(
+  ...[
+    'Nombre: Ana Mora\nTeléfono: 8888-8888\nDirección: Heredia centro, 200 m norte de la iglesia\nEnvío a domicilio. Pago por SINPE 🙌',
+    'Nombre completo: José Rodríguez\nTeléfono: 7012 3456\nProvincia: Alajuela\nDirección exacta con señas: de la escuela 300 m este, casa verde\nPago por SINPE',
+    'Nombre: María Castro. Tel: 88888888. Dirección: San José, Curridabat. Envío a domicilio, pago con tarjeta',
+  ].map((text) => ({ text, history: [{ direction: 'outbound', content: 'Para coordinar el envío, pasame tus datos' }] })),
+)
 
 /** Verifier round 9: plain follow-ups RIGHT AFTER the store sent the payment details (where the prompt leans to claim). */
 export const ASKS_AFTER_DETAILS: Case[] = [

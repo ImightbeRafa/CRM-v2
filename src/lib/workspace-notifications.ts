@@ -34,7 +34,7 @@ export const AI_NO_REPLY_REASONS: Record<string, string> = {
   escalate: 'El cliente pidió una persona o es un tema delicado.',
   not_activated: 'El agente de este canal no está activado.',
   window_closed: 'Pasaron más de 24 h desde el último mensaje del cliente.',
-  budget_blocked: 'Se alcanzó el límite diario de IA.',
+  budget_blocked: 'Se alcanzó el límite de gasto de IA.',
   token_unhealthy: 'La conexión del canal necesita revisión.',
   empty_output: 'La respuesta quedó vacía y no se envió.',
 }
@@ -57,6 +57,8 @@ export const HANDOFF_REASON_LABELS: Record<string, string> = {
   unknown_answer: 'La IA no tenía la respuesta — contestale vos',
   // luna-10 #4: the customer wrote again after the hand-off and nobody has answered yet.
   customer_waiting: 'El cliente sigue esperando — nadie le respondió',
+  // Lane D 2026-10-22: the business's AI allowance for the month is used up; the AI stops and people answer.
+  ai_allowance: 'Se acabó el saldo de IA del mes — contestale vos',
   review: 'Revisar respuesta de la IA',
 }
 

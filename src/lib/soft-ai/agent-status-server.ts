@@ -21,6 +21,7 @@ import { isTableReady } from '@/lib/soft-ai/table-ready'
 import { agentHasInventoryMap } from '@/lib/soft-ai/agent-inventory-map'
 import { isQuickRunCases, parseRunActivation } from '@/lib/soft-ai/test-engine/run'
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
+import { resolveAiAllowance } from '@/lib/soft-ai/ai-allowance'
 import { isUnexpectedTurnOutcome, lineAiStatus, type LineAiStatus, type LineRunInput } from '@/lib/soft-ai/agent-status'
 
 type ServingAgent = {
@@ -209,6 +210,8 @@ export async function loadLinesAiStatus(
 
   // Real outcomes: the latest AI turn of the last hour, but never one from before the line was (re)activated.
   const turnProblems = await lastTurnProblems(tenantId, ids, new Date(Date.now() - 3_600_000))
+  // The business's AI allowance (one read per call; never throws, fails open).
+  const allowanceExhausted = (await resolveAiAllowance(tenantId)).exhausted
 
   const viewing = opts?.viewingAgentId || null
   for (const account of accounts) {
@@ -244,7 +247,7 @@ export async function loadLinesAiStatus(
       viewingAgentId: viewing,
       allowlisted: config.accountAllowlist.includes(account.id),
       unlock: { unlocked: unlock.unlocked, reason: unlock.reason, versionWarning: unlock.versionWarning, agentId: unlock.record?.agentId ?? null },
-      budget: { tenantExhausted: false, agentExhausted: false },
+      budget: { tenantExhausted: allowanceExhausted, agentExhausted: false },
       run: run
         ? {
             status: run.status,

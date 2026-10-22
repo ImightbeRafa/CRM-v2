@@ -103,7 +103,7 @@ describe('F1 · isolation between businesses of one tenant (SQL 049)', () => {
     assert.match(gates, /exact\.agentId === input\.agentId/)
   })
 
-  it('live replies are not stopped by the daily token cap; tests still have their own cap', () => {
+  it('live replies are not stopped by the daily token cap (only the business AI allowance); tests still have their own cap', () => {
     const pre = gates.slice(gates.indexOf('export async function runPreModelGates'), gates.indexOf('export async function runPreSendGates'))
     const send = gates.slice(gates.indexOf('export async function runPreSendGates'))
     assert.doesNotMatch(pre, /agentBudgetExceeded|loadDailyBilledTokens/)

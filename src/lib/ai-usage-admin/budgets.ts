@@ -3,8 +3,10 @@
  * Months are Costa Rica calendar months. checkAiBudgets() (cron, every 5 min):
  *  - alerts the owner at 80% and 100% (email + bell), once per threshold per month; an alert only counts as done
  *    when it was delivered (a mail outage retries on the next tick);
- *  - for a business with autoPause, arms that business's agent kill switch at 100% and tells the business's team
- *    (bell) that the AI is paused and people must answer. The pause has its own marker: a failed pause is retried,
+ *  - for a business with autoPause, live replies stop at 100% (src/lib/soft-ai/ai-allowance.ts: each new chat goes to
+ *    a person with a note). The cron arms the business's agent kill switch only at 110% (the live check is not
+ *    holding) and tells the business's team (bell) that the AI is paused and people must answer. Exempt businesses
+ *    (AI_ALLOWANCE_EXEMPT_TENANTS) are never paused. The pause has its own marker: a failed pause is retried,
  *    and a pause the owner lifted is never re-armed in the same month.
  * Changing a budget (amount or auto-pause) resets that month's markers so the new limit is enforced.
  * Never throws to the cron.
@@ -18,6 +20,10 @@ import { killTenantKey, writeAgentKill } from '@/lib/soft-ai/agent-kill-switch'
 import { sendOpsAlert } from '@/lib/ops/alert-email'
 import { filterChatMembers, notifyUsers } from '@/lib/workspace-notifications'
 import { costaRicaMonthKey, loadMonthSpendByScope } from '@/lib/ai-usage-admin/summary'
+import { clearAllowanceCache, exemptTenantIds } from '@/lib/soft-ai/ai-allowance'
+
+/** The kill switch is a backstop: armed only this far past the limit (the live allowance check stops replies at 100%). */
+export const PAUSE_BACKSTOP_PCT = 110
 
 const TABLE = 'AiBudget'
 export const MAX_BUDGET_MICROS = 100_000 * 1_000_000 // US$100k sanity cap
@@ -64,6 +70,7 @@ export async function listAiBudgets(): Promise<{ available: boolean; budgets: Ai
 export async function deleteAiBudget(scope: string): Promise<void> {
   if (!(await isTableReady(TABLE))) throw new AiBudgetNotReadyError()
   await prisma.$executeRaw`DELETE FROM "AiBudget" WHERE "scope" = ${scope}`
+  clearAllowanceCache(scope)
 }
 
 /** Upsert (scope = 'global' or an existing tenant id; caller is a super admin). */
@@ -85,6 +92,7 @@ export async function saveAiBudget(input: { scope: string; monthlyUsd: number; a
       "autoPause" = EXCLUDED."autoPause",
       "updatedBy" = EXCLUDED."updatedBy",
       "updatedAt" = NOW()`
+  clearAllowanceCache(input.scope)
 }
 
 /** Pure: which threshold (0 / 80 / 100) to alert now, given spend and what was already alerted this month. */
@@ -103,13 +111,22 @@ export function budgetAlertLevel(input: {
   return 0
 }
 
-/** Pure: should the business's agents be paused now? (100% + auto-pause + not yet paused this month.) */
-export function shouldPause(input: { scope: string; autoPause: boolean; spentMicros: number; budgetMicros: number; pausedMonth: string | null; month: string }): boolean {
+/** Pure: should the business's agents be paused now? (110% backstop + auto-pause + not exempt + not yet paused this month.) */
+export function shouldPause(input: {
+  scope: string
+  autoPause: boolean
+  spentMicros: number
+  budgetMicros: number
+  pausedMonth: string | null
+  month: string
+  exempt?: boolean
+}): boolean {
   return (
     input.scope !== 'global' &&
+    input.exempt !== true &&
     input.autoPause &&
     input.budgetMicros > 0 &&
-    input.spentMicros >= input.budgetMicros &&
+    input.spentMicros * 100 >= input.budgetMicros * PAUSE_BACKSTOP_PCT &&
     input.pausedMonth !== input.month
   )
 }
@@ -139,6 +156,7 @@ export async function checkAiBudgets(now = new Date()): Promise<{ checked: numbe
     if (!available || budgets.length === 0) return summary
     const spend = await loadMonthSpendByScope(now)
     const month = costaRicaMonthKey(now)
+    const exempt = exemptTenantIds()
     const tenantNames = new Map(
       (
         await prisma.tenant.findMany({
@@ -155,7 +173,7 @@ export async function checkAiBudgets(now = new Date()): Promise<{ checked: numbe
 
         // 1) Pause (own marker; only marked when the switch really was armed).
         let pausedNow = false
-        if (shouldPause({ scope: b.scope, autoPause: b.autoPause, spentMicros: spent, budgetMicros: b.monthlyUsdMicros, pausedMonth: b.pausedMonth, month })) {
+        if (shouldPause({ scope: b.scope, autoPause: b.autoPause, spentMicros: spent, budgetMicros: b.monthlyUsdMicros, pausedMonth: b.pausedMonth, month, exempt: exempt.has(b.scope) })) {
           try {
             await writeAgentKill({
               key: killTenantKey(b.scope),
@@ -194,8 +212,8 @@ export async function checkAiBudgets(now = new Date()): Promise<{ checked: numbe
             `Gasto estimado del mes: US$${(spent / 1e6).toFixed(2)} de US$${(b.monthlyUsdMicros / 1e6).toFixed(2)}.`,
             pausedNow || b.pausedMonth === month
               ? 'Los agentes de IA de este negocio quedaron en pausa (las personas siguen atendiendo los chats y el equipo fue avisado). Reactivalos en Agent Ops.'
-              : level === 100 && b.autoPause && b.scope !== 'global'
-                ? 'No se pudo pausar los agentes; se reintenta en 5 minutos.'
+              : level === 100 && b.autoPause && b.scope !== 'global' && !exempt.has(b.scope)
+                ? 'La IA de este negocio dejó de responder: cada chat nuevo pasa al equipo con un aviso. Subí el presupuesto en /super-admin/ia para reactivarla.'
                 : 'Revisá el detalle en /super-admin/ia.',
           ],
         })

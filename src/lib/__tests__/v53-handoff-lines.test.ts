@@ -151,7 +151,9 @@ describe('2 · a conditional next-step participle is not a confirmation claim', 
     // INT-158 round 2: the masked text is read raw and normalised.
     assert.match(v, /const claimForms = confirmationCheckForms\(claimText\)/)
     assert.match(v, /anyForm\(ALWAYS_PAYMENT_STATUS_REPLY_RE, claimForms\)/)
-    assert.match(v, /anyForm\(PAYMENT_STATUS_REPLY_RE, claimForms\)/)
+    // Lane D: modelForms = claimForms, or the model's words only when the final policy passes paymentContextText.
+    assert.match(v, /anyForm\(PAYMENT_STATUS_REPLY_RE, (?:claimForms|modelForms)\)/)
+    assert.match(v, /const modelForms = input\.paymentContextText !== undefined \? confirmationCheckForms\(maskConditionalConfirmation\(input\.paymentContextText\)\) : claimForms/)
     assert.match(read('src/lib/soft-ai/probar-scenarios.ts'), /if \(hasOutboundConfirmationClaim\(reply\)\) failures\.push/)
     assert.match(read('src/lib/soft-ai/agent-replay.ts'), /if \(hasOutboundConfirmationClaim\(input\.text\)\) return \{ ok: false, reason: 'confirmation' \}/)
   })

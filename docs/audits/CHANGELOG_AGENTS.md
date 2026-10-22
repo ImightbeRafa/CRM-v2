@@ -6,6 +6,7 @@
   - businesses with an active OWNER who is an active super admin (an owner read error counts as owner: answer).
 - Nothing pauses before SQL 060, with enforcement off, or without a credit rate in force this month. A credit meter that can't be read answers and emails the platform owner once an hour; it never stops silently.
 - `ai-billing/allowance.ts` (small, additive): `failedOpen` on read errors, and "a rate in force this month" before enforcing.
+- Review fixes: the owner business is the sign-up OWNER only; one chat gets at most 30 AI turns an hour / 150 a day while a pause is possible (past that, only that chat goes to a person, reason `chat_limit`); read errors never serve a stale pause; the alert slot counts only a sent email. Register: AUTH-60, INT-233 to INT-236.
 - Tests: `ai-allowance.test.ts` covers the rules and the combined live decision with injected readers.
 ## 2026-10-22 — An AI provider outage never strands a chat; separate test budget; Lane C engine fixes (Lane D, claude/lane-d-provider-outage, PR #121; SQL 061 Rafael applies)
 

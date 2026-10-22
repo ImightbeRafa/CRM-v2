@@ -914,11 +914,21 @@ export async function executeAgentLayerTurn(
     return { status: 'skipped', reason: 'superseded' }
   }
 
-  const preModel = await runPreModelGates({
+  let preModel = await runPreModelGates({
     tenantId: row.tenantId,
     socialAccountId: row.socialAccountId,
     agentId: resolved.agent.id,
   })
+  // The AI allowance is the last pre-model gate, so every other gate passed. It only applies to a line that answers
+  // (not activated: the not_activated skip below keeps the chat's mode) and never to a reply already generated and
+  // paid for (a retried send / reclaimed lease finishes it: never a half reply).
+  if (!preModel.ok && preModel.skipReason === 'ai_allowance_exhausted') {
+    const lineAnswers = resolved.agent.operationMode === 'ai_full' && resolved.unlockedForSend
+    const generated = lineAnswers
+      ? await prisma.chatAgentTurn.findUnique({ where: { automationDeliveryKey: row.deliveryKey }, select: { status: true, outputText: true, outputHash: true } })
+      : null
+    if (!lineAnswers || (generated?.status === 'generated' && generated.outputText && generated.outputHash)) preModel = { ok: true }
+  }
   if (!preModel.ok) {
     await persistSkippedTurn({
       tenantId: row.tenantId,

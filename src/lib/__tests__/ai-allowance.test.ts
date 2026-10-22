@@ -97,6 +97,23 @@ describe('AI allowance: wiring', () => {
     assert.match(HANDOFF_REASON_LABELS.ai_allowance, /saldo de IA/)
   })
 
+  it('Verifier r1: only an answering line hands off; an already generated (paid) reply still goes out', () => {
+    const bypass = turn.slice(turn.indexOf("if (!preModel.ok && preModel.skipReason === 'ai_allowance_exhausted')"), turn.indexOf('if (!preModel.ok) {'))
+    assert.ok(bypass.includes("const lineAnswers = resolved.agent.operationMode === 'ai_full' && resolved.unlockedForSend"))
+    assert.ok(bypass.includes("if (!lineAnswers || (generated?.status === 'generated' && generated.outputText && generated.outputHash)) preModel = { ok: true }"))
+    // the not_activated skip and the generated-output reuse both come after it
+    assert.ok(turn.indexOf('const lineAnswers = resolved.agent.operationMode') < turn.indexOf("skipReason: 'not_activated'"))
+    assert.ok(turn.indexOf('const lineAnswers = resolved.agent.operationMode') < turn.indexOf("existing.status === 'generated' &&"))
+  })
+
+  it('Verifier r1: the exempt list and the order-data switch reach the Cloudflare container', () => {
+    const worker = read('src/cf-container-worker.ts')
+    for (const k of ['AI_ALLOWANCE_EXEMPT_TENANTS', 'SOFT_AI_ORDER_DATA_CHOICE']) {
+      assert.match(worker, new RegExp(`"${k}",`))
+      assert.match(worker, new RegExp(`${k}\\?: string;`))
+    }
+  })
+
   it('the periodic sweep does not re-queue it; the line-on check sees the allowance', () => {
     assert.equal(turnAllowsRearm({ status: 'budget_blocked', skipReason: 'ai_allowance_exhausted' }, 'periodic'), false)
     assert.match(read('src/lib/soft-ai/waiting-sweep.ts'), /if \(\(await resolveAiAllowance\(tenantId\)\)\.exhausted\) return false/)

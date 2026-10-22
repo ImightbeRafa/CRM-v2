@@ -463,7 +463,9 @@ export function hasHardPaymentClaim(text: string, opts: { noPaymentYet?: boolean
   const nfkc = (text || '').normalize('NFKC')
   // Stripping invisible characters glues words ("ya<tag>pague" → "yapague"), so they are also read as a gap. Either
   // reading that claims a payment counts (hand-off is the safe direction).
-  const gapped = nfkc.replace(/[\p{Default_Ignorable_Code_Point}\p{Cc}]/gu, (c) => (c === '\n' || c === '\t' || c === '\r' ? c : ' '))
+  const gapped = nfkc
+    .replace(/[\p{Zl}\p{Zp}]/gu, '\n')
+    .replace(/[\p{Default_Ignorable_Code_Point}\p{Cc}]/gu, (c) => (c === '\n' || c === '\t' || c === '\r' ? c : ' '))
   return hardClaimIn(stripFormatChars(nfkc), opts) || (gapped !== nfkc && hardClaimIn(stripFormatChars(gapped), opts))
 }
 

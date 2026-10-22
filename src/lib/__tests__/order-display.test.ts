@@ -56,6 +56,8 @@ describe('formatOrderItems', () => {
     // Same product, quantity edited.
     assert.deepEqual(formatOrderItems({ product: 'Parche Sleeping', quantity: 4, productDetails: details }).map((l) => l.label), ['4× Parche Sleeping']);
     assert.equal(orderItemLabels({ product: 'Parche Focus', quantity: 3, productDetails: details }), undefined);
+    // Renamed to a longer name that contains the old one, same quantity.
+    assert.deepEqual(formatOrderItems({ product: 'Parche Sleeping Focus', quantity: 1, productDetails: details }).map((l) => l.label), ['1× Parche Sleeping Focus']);
     // Staff-bot label style ("name xN") still matches its details.
     assert.deepEqual(
       orderItemLabels({

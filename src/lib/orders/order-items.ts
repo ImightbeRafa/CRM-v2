@@ -100,7 +100,18 @@ function linesFromDetails(details: unknown): OrderItemLine[] {
  */
 function detailsMatchOrder(lines: OrderItemLine[], order: OrderItemsInput): boolean {
   const product = fold(String(order.product ?? ''));
-  if (product && !lines.every((line) => product.includes(fold(line.name)))) return false;
+  if (product) {
+    // Remove each item name (longest first); only separators and "xN" counts
+    // may be left, so a rename "Parche" → "Parche Focus" is caught.
+    let rest = product;
+    const names = lines.map((line) => fold(line.name)).sort((a, b) => b.length - a.length);
+    for (const name of names) {
+      const at = rest.indexOf(name);
+      if (at < 0) return false;
+      rest = `${rest.slice(0, at)} ${rest.slice(at + name.length)}`;
+    }
+    if (rest.replace(/[x×]\s*\d+|\(\s*\d+\s*\)|[\s,;+&-]/g, '') !== '') return false;
+  }
   const total = positiveInt(order.quantity);
   if (total !== null) {
     const sum = lines.reduce((acc, line) => acc + (line.qty ?? 0), 0);
@@ -125,9 +136,12 @@ function parseQty(part: string): { name: string; qty: number | null } {
 
 function linesFromText(product: string, quantity: number | null | undefined): OrderItemLine[] {
   // Split on new lines, ";" and commas, but not a decimal comma ("Pack 3,5 kg").
+  // (No lookbehind: older Safari cannot parse it.)
+  const DECIMAL = '\u0000';
   const parts = product
-    .split(/\r?\n|;|(?<!\d),|,(?!\d)/)
-    .map((part) => part.replace(/^[-*•]\s*/, '').trim())
+    .replace(/(\d),(\d)/g, `$1${DECIMAL}$2`)
+    .split(/\r?\n|;|,/)
+    .map((part) => part.split(DECIMAL).join(',').replace(/^[-*•]\s*/, '').trim())
     .filter(Boolean);
   if (parts.length === 0) return [];
   const total = positiveInt(quantity);

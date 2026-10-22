@@ -1539,6 +1539,85 @@ model FeedbackTicket {
   @@index([createdAt])
 }
 
+// Support pipeline (docs/plans/support-pipeline/SPEC.md). Tables come from raw SQL
+// supabase/migrations/059_support_pipeline.sql — never prisma db push / migrate.
+// Scalar ids only (no relations) so Tenant/User stay untouched; FKs live in the SQL.
+// Only src/lib/support/** reads or writes these models.
+model SupportTicket {
+  id                     String    @id @default(cuid())
+  number                 BigInt    @unique @default(autoincrement())
+  tenantId               String?
+  userId                 String?
+  source                 String // contact_form|in_app|ai_chat|email|agent_request
+  category               String    @default("question")
+  priority               String    @default("normal")
+  status                 String    @default("open")
+  subject                String
+  contactName            String?
+  contactEmail           String
+  assignee               String    @default("grok_agent")
+  meta                   Json      @default("{}")
+  legacyFeedbackTicketId String?   @unique
+  lastCustomerMessageAt  DateTime?
+  lastAgentMessageAt     DateTime?
+  resolvedAt             DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  messages SupportTicketMessage[]
+  events   SupportTicketEvent[]
+
+  @@index([tenantId, status])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+}
+
+model SupportTicketMessage {
+  id             String   @id @default(cuid())
+  ticketId       String
+  author         String // customer|grok_agent|rafael|system
+  visibility     String   @default("public") // public|internal
+  body           String   @db.Text
+  isDraft        Boolean  @default(false)
+  emailMessageId String?
+  createdAt      DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+}
+
+model SupportTicketEvent {
+  id            String    @id @default(cuid())
+  ticketId      String
+  type          String // ticket.created|ticket.customer_replied|ticket.escalated
+  payload       Json
+  webhookStatus String    @default("pending")
+  emailStatus   String    @default("pending")
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lockedUntil   DateTime?
+  lastError     String?
+  createdAt     DateTime  @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([nextAttemptAt])
+  @@index([createdAt])
+  @@index([ticketId])
+}
+
+model SupportMcpAudit {
+  id        String   @id @default(cuid())
+  tool      String
+  ticketId  String?
+  ok        Boolean
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+}
+
 model ChangelogEntry {
   id          String   @id @default(cuid())
   tenantId    String?  // null = global (visible to all tenants)

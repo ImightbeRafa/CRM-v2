@@ -2,7 +2,7 @@
  * "Know what sells" (Lane E2) · per-agent performance. Pure (no DB).
  *
  * Inputs are live turns only (tests / Probar excluded upstream) and the chat-linked orders of the period.
- * - Chats handled: distinct chats where the agent produced a turn. Replies: turns delivered to the customer.
+ * - Chats handled: distinct chats where the agent replied (skipped turns do not count). Replies: turns delivered to the customer.
  * - Hand-offs: turns whose outcome markers say 'handoff' (a person takes the chat) or 'review'
  *   (the chat stays on IA, a person is asked to look), grouped by reason code.
  * - Sales: chat-linked orders where the agent replied in that chat before the order was created, counting
@@ -90,6 +90,8 @@ export const HANDOFF_REASON_LABELS: Record<string, string> = {
   review: 'Revisión del equipo',
   order_ready: 'Pedido listo (contra entrega)',
   order_ready_cash: 'Pedido listo (efectivo)',
+  unknown_answer: 'No tenía la respuesta',
+  ai_allowance: 'Se acabó el saldo de IA',
 }
 
 export function handoffReasonLabel(reason: string | null | undefined): string {
@@ -161,7 +163,7 @@ export function buildAgentPerformance(input: {
   for (const t of input.turns) {
     const row = get(t.agentId)
     row.costMicros += Number.isFinite(t.costMicros) && t.costMicros > 0 ? t.costMicros : 0
-    if (t.conversationId) {
+    if (t.conversationId && isDeliveredTurn(t.status)) {
       const set = chats.get(t.agentId) ?? new Set<string>()
       set.add(t.conversationId)
       chats.set(t.agentId, set)

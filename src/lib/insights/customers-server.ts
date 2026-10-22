@@ -3,8 +3,9 @@
  *
  * Tenant isolation: Prisma reads go through getTenantPrisma AND pass tenantId; raw SQL carries
  * `"tenantId" = ${tenantId}` on every table. Reorder rules live in Tenant.settings.reorderRules and are
- * written with jsonb_set under SELECT … FOR UPDATE, so concurrent writers of other settings keys
- * (config/settings, billing webhooks, quick replies) never lose or overwrite each other.
+ * written with jsonb_set under SELECT … FOR UPDATE, so this write never overwrites another key. (Known gap,
+ * outside this lane: POST /api/config/settings still reads the whole JSON and writes it back without a
+ * lock, so a rules save racing that exact request can be lost.)
  */
 import 'server-only'
 
@@ -68,9 +69,11 @@ export async function loadReorderProducts(tenantId: string): Promise<Array<{ id:
 
 // ── Chat links ───────────────────────────────────────────────────────────────────────────────────
 
+/** The 8-digit Costa Rica number (with or without 506), else null: never match foreign numbers by their tail. */
 function last8(phone: string | null | undefined): string | null {
-  const digits = String(phone ?? '').replace(/\D/g, '')
-  return digits.length >= 8 ? digits.slice(-8) : null
+  let digits = String(phone ?? '').replace(/\D/g, '')
+  if (digits.length === 11 && digits.startsWith('506')) digits = digits.slice(3)
+  return /^\d{8}$/.test(digits) ? digits : null
 }
 
 type ChatLinkCustomer = { clientId: string | null; phone: string | null; orderId?: string | null }
@@ -133,7 +136,12 @@ export async function loadChatLinks(tenantId: string, customers: ReadonlyArray<C
   if (phones.length) {
     const rows = await queryWithTimeout<Array<{ tail: string; id: string }>>(Prisma.sql`
       SELECT DISTINCT ON (tail) tail, id FROM (
-        SELECT right(regexp_replace(c."peerId", '\\D', '', 'g'), 8) AS tail, c."id" AS id, c."lastMessageAt"
+        -- Only CR numbers: exactly 8 digits or 506 + 8 digits (a foreign number sharing the tail never matches).
+        SELECT CASE
+                 WHEN regexp_replace(c."peerId", '\\D', '', 'g') ~ '^506[0-9]{8}$' THEN right(regexp_replace(c."peerId", '\\D', '', 'g'), 8)
+                 WHEN regexp_replace(c."peerId", '\\D', '', 'g') ~ '^[0-9]{8}$' THEN regexp_replace(c."peerId", '\\D', '', 'g')
+               END AS tail,
+               c."id" AS id, c."lastMessageAt"
           FROM public."ChatConversation" c
           JOIN public."SocialAccount" s ON s."id" = c."socialAccountId" AND s."tenantId" = ${tenantId}
          WHERE c."tenantId" = ${tenantId}
@@ -235,34 +243,57 @@ export async function loadReorderDue(input: {
   tenantId: string
   windowDays: number
   overdueDays: number
+  /** Already loaded by the caller (the route keys its cache on them). */
+  rules?: ReorderRule[]
   now?: Date
 }): Promise<{ rules: ReorderRule[]; rows: ReorderDueRow[]; todayKey: string; lookbackDays: number }> {
   const { tenantId } = input
-  const rules = await loadReorderRules(tenantId)
+  const rules = input.rules ?? (await loadReorderRules(tenantId))
   const todayKey = getCurrentStatsDateKey(input.now)
   const lookbackDays = reorderLookbackDays(rules, input.overdueDays)
   if (rules.length === 0) return { rules, rows: [], todayKey, lookbackDays }
 
   const since = buildStatsDateRange(addDaysToStatsDateKey(todayKey, -lookbackDays), todayKey).start
-  const orders = await getTenantPrisma(tenantId).order.findMany({
-    where: { tenantId, timestamp: { gte: since ?? undefined } },
-    select: {
-      id: true,
-      orderId: true,
-      clientId: true,
-      customerName: true,
-      phone: true,
-      product: true,
-      quantity: true,
-      saleDate: true,
-      timestamp: true,
-      status: true,
-      inventoryAllocations: { where: { tenantId }, select: { inventoryItemId: true, quantity: true } },
-    },
-    orderBy: { timestamp: 'desc' },
-    take: ORDER_CAP + 1,
-  })
+  if (!since) throw new Error('Invalid lookback')
+  // Raw (analytics slot + 8 s timeout); archived orders out, cancelled ones dropped below.
+  const orders = await queryWithTimeout<
+    Array<{
+      id: string
+      orderId: string
+      clientId: string | null
+      customerName: string
+      phone: string | null
+      product: string | null
+      quantity: number | null
+      saleDate: string | null
+      timestamp: Date
+      status: string | null
+    }>
+  >(Prisma.sql`
+    SELECT o."id", o."orderId", o."clientId", o."customerName", o."phone", o."product", o."quantity",
+           o."saleDate", o."timestamp", o."status"
+      FROM public."Order" o
+     WHERE o."tenantId" = ${tenantId}
+       AND o."deletedAt" IS NULL
+       AND o."timestamp" >= ${since}
+     ORDER BY o."timestamp" DESC
+     LIMIT ${ORDER_CAP + 1}`)
   if (orders.length > ORDER_CAP) throw new InsightsTooLargeError()
+  // Inventory allocations only when a rule points at an inventory product.
+  const allocations =
+    rules.some((r) => r.inventoryItemId) && orders.length
+      ? await queryWithTimeout<Array<{ orderId: string; inventoryItemId: string; quantity: number }>>(Prisma.sql`
+          SELECT a."orderId", a."inventoryItemId", a."quantity"
+            FROM public."OrderInventoryAllocation" a
+           WHERE a."tenantId" = ${tenantId}
+             AND a."orderId" = ANY(${orders.map((o) => o.id)}::text[])`)
+      : []
+  const allocByOrder = new Map<string, Array<{ inventoryItemId: string; quantity: number }>>()
+  for (const a of allocations) {
+    const list = allocByOrder.get(a.orderId) ?? []
+    list.push({ inventoryItemId: a.inventoryItemId, quantity: Number(a.quantity) })
+    allocByOrder.set(a.orderId, list)
+  }
 
   const due = buildReorderList({
     rules,
@@ -280,7 +311,7 @@ export async function loadReorderDue(input: {
         dateKey: getOrderStatsDateKey(o) || getCurrentStatsDateKey(o.timestamp),
         product: o.product,
         quantity: o.quantity,
-        allocations: o.inventoryAllocations,
+        allocations: allocByOrder.get(o.id) ?? [],
       })),
   })
   const customers = due.map((d) => ({ clientId: d.clientId, phone: d.phone, orderId: d.lastOrderId }))

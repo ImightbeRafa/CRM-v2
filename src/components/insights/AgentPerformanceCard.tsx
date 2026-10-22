@@ -32,9 +32,9 @@ function money(micros: number | null): string {
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="min-w-0">
-      <dt className="truncate text-[11px] text-slate-500">{label}</dt>
+      <dt className="text-[11px] leading-tight text-slate-500">{label}</dt>
       <dd className="text-[15px] font-semibold tabular-nums text-slate-900">{value}</dd>
-      {hint ? <dd className="truncate text-[10.5px] text-slate-400">{hint}</dd> : null}
+      {hint ? <dd className="text-[10.5px] leading-tight text-slate-400">{hint}</dd> : null}
     </div>
   )
 }
@@ -56,7 +56,7 @@ function AgentBlock({ row, symbol }: { row: Row; symbol: string }) {
       </dl>
       {row.handoffReasons.length > 0 ? (
         <div className="mt-3">
-          <p className="text-[11px] font-medium text-slate-500">Por qué pasó a una persona</p>
+          <p className="text-[11px] font-medium text-slate-500">Motivos de los pases y revisiones</p>
           <ul className="mt-1 flex flex-wrap gap-1.5">
             {row.handoffReasons.slice(0, 8).map((r) => (
               <li key={r.reason} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">

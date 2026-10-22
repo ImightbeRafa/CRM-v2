@@ -131,6 +131,7 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
   const collectedFirst = revenueMode === 'collected'
   const rows: AdSalesRow[] = [...report.rows, report.organic]
   const noChat = report.withoutChat
+  const cancelled = report.cancelled
   const adMoney = report.rows.reduce((s, r) => s + (collectedFirst ? r.collected : r.booked), 0)
   const totalMoney = collectedFirst ? report.totals.collected : report.totals.booked
 
@@ -190,6 +191,19 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
                 <td className="py-2.5 text-right">—</td>
               </tr>
             ) : null}
+            {cancelled.orders > 0 ? (
+              <tr className="border-t border-slate-100 align-top text-slate-400" data-testid="ad-row-cancelled">
+                <td className="py-2.5 pr-3">
+                  <p className="font-medium">Cancelados</p>
+                  <p className="text-[11px]">No se atribuyen a ningún anuncio; están para que el total cuadre con el Resumen</p>
+                </td>
+                <td className="py-2.5 pr-3 text-right">—</td>
+                <td className="py-2.5 pr-3 text-right tabular-nums">{nf.format(cancelled.orders)}</td>
+                <td className="py-2.5 pr-3 text-right tabular-nums">{nf.format(cancelled.paidOrders)}</td>
+                <td className="py-2.5 pr-3 text-right tabular-nums">{formatCompactMoney(collectedFirst ? cancelled.collected : cancelled.booked, symbol)}</td>
+                <td className="py-2.5 text-right">—</td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
@@ -206,7 +220,21 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
             </p>
           </li>
         ) : null}
+        {cancelled.orders > 0 ? (
+          <li className="rounded-xl border border-dashed border-slate-200 p-3 text-[12px] text-slate-400" data-testid="ad-card-cancelled">
+            <p className="font-medium">Cancelados (no se atribuyen)</p>
+            <p>
+              {nf.format(cancelled.orders)} pedidos · {formatCompactMoney(collectedFirst ? cancelled.collected : cancelled.booked, symbol)}
+            </p>
+          </li>
+        ) : null}
       </ul>
+
+      {report.hiddenAds > 0 ? (
+        <p className="mt-2 text-[11.5px] text-slate-400">
+          Y {nf.format(report.hiddenAds)} anuncios más con menos actividad (están sumados en los totales de arriba).
+        </p>
+      ) : null}
 
       <details className="mt-4 rounded-xl bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
         <summary className="cursor-pointer font-medium text-slate-700">¿Cómo se cuenta?</summary>
@@ -218,7 +246,8 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
           </li>
           <li>Solo se pueden atribuir los pedidos vinculados a un chat. Los demás aparecen como “Pedido sin chat”.</li>
           <li>Conversión = pedidos del período ÷ chats del período (aproximada: un pedido puede venir de un chat de antes).</li>
-          <li>Pagados y cobrado usan la misma regla que el Resumen (pagado o contra entrega confirmada). Los cancelados no cuentan.</li>
+          <li>Pagados y cobrado usan la misma regla que el Resumen (pagado o contra entrega confirmada). Los cancelados no se atribuyen a ningún anuncio; aparecen aparte para que el total cuadre con el Resumen.</li>
+          <li>Solo cuentan los chats que llegaron de un anuncio pagado; un post orgánico o un enlace de la biografía cuentan como “Sin anuncio”.</li>
           <li>El nombre de la campaña aparecerá cuando Meta nos dé permiso de leer tus anuncios; por ahora mostramos el título y el ID.</li>
         </ul>
       </details>
@@ -227,7 +256,7 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
 }
 
 function View() {
-  const { spec, setSpec, range, query } = useUrlPeriod('30d')
+  const { spec, setSpec, range, query } = useUrlPeriod()
   const { settings } = useTenantSettings()
   const symbol = settings.currencySymbol || '₡'
   const [canal, setCanal] = useState<string>('')

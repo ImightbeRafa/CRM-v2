@@ -22,7 +22,7 @@ type Payload = {
 const CHANNEL_LABEL = { whatsapp: 'WhatsApp', instagram: 'Instagram' } as const
 
 function View() {
-  const { spec, setSpec, range, query } = useUrlPeriod('30d')
+  const { spec, setSpec, range, query } = useUrlPeriod()
   const [res, reload] = useInsightsJson<Payload>(range ? `/api/estadisticas/equipo?${query}` : null)
   const data = res.data
   const report = data?.report
@@ -37,9 +37,9 @@ function View() {
           {report ? (
             <>
               <dl className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                <Tile label="Primera respuesta (mediana)" value={formatDurationEs(report.overall.firstResponseMedianMs)} hint={`${nf.format(report.overall.samples)} chats medidos`} />
-                <Tile label="Primera respuesta (9 de 10)" value={formatDurationEs(report.overall.firstResponseP90Ms)} hint="el 90 % respondió en menos" />
-                <Tile label="Esperando respuesta ahora" value={nf.format(report.overall.waiting)} hint={`${nf.format(report.overall.waitingUnassigned)} sin asignar`} />
+                <Tile label="1.ª respuesta (mediana)" value={formatDurationEs(report.overall.firstResponseMedianMs)} hint={`${nf.format(report.overall.samples)} chats medidos`} />
+                <Tile label="1.ª respuesta (9 de 10)" value={formatDurationEs(report.overall.firstResponseP90Ms)} hint="el 90 % respondió en menos" />
+                <Tile label="Esperando ahora" value={nf.format(report.overall.waiting)} hint={`${nf.format(report.overall.waitingUnassigned)} sin asignar`} />
                 <Tile label="Chats abiertos" value={nf.format(report.overall.open)} hint="con movimiento en 30 días" />
               </dl>
               {report.overall.waiting > 0 ? (

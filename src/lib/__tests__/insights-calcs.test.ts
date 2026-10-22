@@ -106,6 +106,7 @@ describe('ad → chat → sale', () => {
         { id: 'o1', conversationId: 'c1', platform: 'whatsapp', createdAt: d('2026-10-05T10:00:00Z'), total: 20000, collected: true, cancelled: false },
       ],
       withoutChat: { orders: 2, paidOrders: 1, booked: 1000, collected: 400 },
+      cancelled: { orders: 1, paidOrders: 0, booked: 9999, collected: 0 },
       range,
     })
     const a = report.rows.find((r) => r.adId === 'A')!
@@ -124,9 +125,10 @@ describe('ad → chat → sale', () => {
     assert.equal(report.organic.orders, 2)
     assert.equal(report.organic.booked, 12000)
     assert.equal(report.totals.adChatsDistinct, 3) // c1, c2, c3
-    // partition: ads + sin anuncio + sin chat = every non-cancelled order of the period
-    assert.equal(report.totals.orders, 2 + 1 + 2 + 2)
-    assert.equal(report.totals.booked, 13000 + 20000 + 12000 + 1000)
+    // partition: ads + sin anuncio + sin chat + cancelados = every order of the period (as the Resumen counts)
+    assert.equal(report.totals.orders, 2 + 1 + 2 + 2 + 1)
+    assert.equal(report.totals.booked, 13000 + 20000 + 12000 + 1000 + 9999)
+    assert.equal(report.cancelled.orders, 1)
     assert.equal(report.withoutChat.orders, 2)
   })
 
@@ -142,6 +144,7 @@ describe('ad → chat → sale', () => {
     assert.equal(report.rows[0].orders, 0)
     assert.equal(report.organic.orders, 0)
     assert.equal(report.withoutChat.orders, 0)
+    assert.equal(report.cancelled.orders, 0)
   })
 
   it('campaign names come from the adapter; only http(s) links render', () => {
@@ -150,6 +153,9 @@ describe('ad → chat → sale', () => {
     assert.equal(withCampaignNames(report, new Map([['A', 'Octubre']])).rows[0].campaignName, 'Octubre')
     assert.equal(safeAdLink('javascript:alert(1)'), null)
     assert.equal(safeAdLink('https://fb.me/x'), 'https://fb.me/x')
+    // forged referral links outside Meta stay plain text
+    assert.equal(safeAdLink('https://evil.example/fb.me'), null)
+    assert.equal(safeAdLink('http://facebook.com/x'), null)
     assert.equal(safeAdLink('not a url'), null)
   })
 
@@ -237,6 +243,7 @@ describe('reorder reminders', () => {
     assert.deepEqual(rules.map((r) => r.id), ['r1', 'r2'])
     assert.equal(parseReorderRules('nope').length, 0)
     assert.equal(parseReorderRules([{ id: 'a', label: '<b>Hi</b>', match: 'p', daysPerUnit: '15' }])[0].label, 'bHi/b')
+    assert.equal(parseReorderRules([{ id: 'a', label: 'Par‮ches​', match: 'p', daysPerUnit: 15 }])[0].label, 'Parches')
   })
 
   it('counts units by inventory item first, then by text', () => {
@@ -270,6 +277,10 @@ describe('reorder reminders', () => {
     assert.equal(daysBetweenKeys('2026-10-22', '2026-10-25'), 3)
     assert.equal(clampWindowDays('999'), 60)
     assert.equal(clampWindowDays('abc'), 7)
+    // a missing param is the fallback, not 0 (Verifier: "already ran out" rows were dropped)
+    assert.equal(clampWindowDays(null, 14), 14)
+    assert.equal(clampWindowDays('', 14), 14)
+    assert.equal(clampWindowDays('0', 14), 0)
     assert.ok(reorderLookbackDays(rules, 14) >= 180 * 2)
     assert.doesNotMatch(suggestedReorderMessage('@x', 'Parches', 2), /@x/)
     assert.equal(crWhatsAppHref('8888-7777'), 'https://wa.me/50688887777')
@@ -298,6 +309,8 @@ describe('agent performance', () => {
     assert.equal(isProviderError('partial_delivery'), false)
     assert.equal(handoffReasonLabel('payment'), 'Comprobante o pago')
     assert.equal(handoffReasonLabel('weird'), 'Otro motivo')
+    assert.equal(handoffReasonLabel('unknown_answer'), 'No tenía la respuesta')
+    assert.equal(handoffReasonLabel('ai_allowance'), 'Se acabó el saldo de IA')
   })
 
   it('classifies who closed the sale', () => {
@@ -336,7 +349,7 @@ describe('agent performance', () => {
     })
     const a1 = rows.find((r) => r.agentId === 'a1')!
     const a2 = rows.find((r) => r.agentId === 'a2')!
-    assert.equal(a1.chats, 2)
+    assert.equal(a1.chats, 2) // c1 + c2 (c2 has a delivered review turn; its failed turn alone would not count)
     assert.equal(a1.replies, 3)
     assert.equal(a1.handoffs, 1)
     assert.equal(a1.reviews, 1)

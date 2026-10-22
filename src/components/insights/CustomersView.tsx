@@ -81,7 +81,11 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-function ChatLink({ href, whatsappHref }: { href: string | null; whatsappHref?: string | null }) {
+function ChatLink({ href: rawHref, whatsappHref }: { href: string | null; whatsappHref?: string | null }) {
+  // /chats needs update_sales: other roles get no inbox link.
+  const { data: session } = useSession()
+  const href = rawHref && hasSessionPermission(session, 'update_sales') ? rawHref : null
+  if (!href && rawHref) return <span className="text-[11.5px] text-slate-400">Tiene chat en Betsy</span>
   if (!href && whatsappHref) {
     return (
       <a

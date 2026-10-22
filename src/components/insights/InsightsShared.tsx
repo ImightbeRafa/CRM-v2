@@ -13,6 +13,7 @@ import { PeriodPicker } from '@/components/aurora/estadisticas/StatsHeader'
 import type { CardLoad } from '@/components/aurora/estadisticas/StatsCard'
 import {
   auroraPeriodRange,
+  DEFAULT_AURORA_PERIOD,
   formatRangeLabel,
   normalizeAuroraPeriod,
   resolveAuroraPeriodSpec,
@@ -53,8 +54,8 @@ export function useInsightsJson<T>(url: string | null): [Loaded<T>, () => void] 
   return [result, useCallback(() => setNonce((n) => n + 1), [])]
 }
 
-/** Period from the URL; default "últimos 30 días" for these reports. */
-export function useUrlPeriod(defaultPeriod: AuroraPeriodSpec['period'] = '30d') {
+/** Period from the URL; same default as the Resumen, so moving between tabs keeps the same numbers' period. */
+export function useUrlPeriod(defaultPeriod: AuroraPeriodSpec['period'] = DEFAULT_AURORA_PERIOD) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -178,9 +179,9 @@ export function SourceNote({ children, range }: { children: ReactNode; range?: A
 export function Tile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="min-w-0 rounded-xl bg-slate-50 px-3 py-2.5">
-      <dt className="truncate text-[11px] text-slate-500">{label}</dt>
+      <dt className="text-[11px] leading-tight text-slate-500">{label}</dt>
       <dd className="mt-0.5 text-[17px] font-semibold tabular-nums text-au-ink-0e0d17">{value}</dd>
-      {hint ? <p className="mt-0.5 truncate text-[10.5px] text-slate-400">{hint}</p> : null}
+      {hint ? <p className="mt-0.5 text-[10.5px] leading-tight text-slate-400">{hint}</p> : null}
     </div>
   )
 }

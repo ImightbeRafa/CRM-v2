@@ -11,8 +11,7 @@ import 'server-only'
 
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { getTenantPrisma } from '@/lib/prisma-tenant'
-import { buildStatsDateRange, buildStatsOrderDateWhere } from '@/lib/statistics-dates'
+import { buildStatsDateRange } from '@/lib/statistics-dates'
 import { isCancelledFulfillment, isCollectedRevenue } from '@/lib/order-payment-status'
 import { isMissingTable } from '@/lib/meta-attribution/referral-store'
 import { queryWithTimeout } from '@/lib/soft-ai/safe-query'
@@ -92,14 +91,44 @@ export type PeriodOrder = {
   channel: ChatChannel | null
 }
 
-/** Same filter as /api/estadisticas/aurora-summary (sale date in the CR period, archived excluded by the extension). */
+type OrderRow = {
+  id: string
+  timestamp: Date
+  total: number | null
+  status: string | null
+  contraEntrega: boolean
+  cePaymentConfirmed: boolean
+  customFields: unknown
+}
+
+/**
+ * The SQL twin of buildStatsOrderDateWhere (what /api/estadisticas/aurora-summary uses): an ISO sale date
+ * in the instant range, a date-only sale date in the CR day keys, else the creation time. Archived orders
+ * out. Raw so it runs in the analytics slot with the 8 s statement timeout (parity checked on real data).
+ */
+export function periodOrdersSql(tenantId: string, range: DateKeyRange, limit: number): Prisma.Sql {
+  const r = buildStatsDateRange(range.startDate, range.endDate)
+  if (!r.start || !r.end || !r.startKey || !r.endKey) throw new Error('Invalid range')
+  const startIso = r.start.toISOString()
+  const endIso = r.end.toISOString()
+  const endKeyMax = `${r.endKey}￿`
+  return Prisma.sql`
+    SELECT o."id", o."timestamp", o."total", o."status", o."contraEntrega", o."cePaymentConfirmed", o."customFields"
+      FROM public."Order" o
+     WHERE o."tenantId" = ${tenantId}
+       AND o."deletedAt" IS NULL
+       AND (
+         (o."saleDate" IS NOT NULL AND o."saleDate" LIKE '%T%' AND o."saleDate" >= ${startIso} AND o."saleDate" <= ${endIso})
+         OR (o."saleDate" IS NOT NULL AND o."saleDate" <> '' AND o."saleDate" NOT LIKE '%T%'
+             AND o."saleDate" >= ${r.startKey} AND o."saleDate" <= ${endKeyMax})
+         OR ((o."saleDate" IS NULL OR o."saleDate" = '') AND o."timestamp" >= ${r.start} AND o."timestamp" <= ${r.end})
+       )
+     LIMIT ${limit}`
+}
+
+/** Same orders as /api/estadisticas/aurora-summary (sale date in the CR period, archived excluded). */
 export async function loadPeriodOrders(tenantId: string, range: DateKeyRange): Promise<PeriodOrder[]> {
-  const db = getTenantPrisma(tenantId)
-  const orders = await db.order.findMany({
-    where: { tenantId, ...buildStatsOrderDateWhere(range.startDate, range.endDate) },
-    select: { id: true, timestamp: true, total: true, status: true, contraEntrega: true, cePaymentConfirmed: true, customFields: true },
-    take: ORDER_CAP + 1,
-  })
+  const orders = await queryWithTimeout<OrderRow[]>(periodOrdersSql(tenantId, range, ORDER_CAP + 1))
   if (orders.length > ORDER_CAP) throw new InsightsTooLargeError()
   const links = orders.length
     ? await queryWithTimeout<Array<{ orderId: string; conversationId: string; platform: string }>>(Prisma.sql`
@@ -146,6 +175,12 @@ export async function loadAdSalesReport(input: {
           FROM public."ChatAdReferral" r
          WHERE r."tenantId" = ${tenantId}
            AND r."occurredAt" >= ${touchFrom} AND r."occurredAt" <= ${end}
+           -- Real ads only, same rule as the CAPI sweep (meta-attribution/sweep.ts): organic posts and
+           -- ig.me ?ref= links are referrals too, but not ads.
+           AND (
+             (r."platform" = 'whatsapp' AND r."ctwaClid" IS NOT NULL)
+             OR (r."platform" = 'instagram' AND r."sourceType" = 'ad' AND r."sourceId" IS NOT NULL)
+           )
          LIMIT ${ROW_CAP + 1}`),
     ),
     queryWithTimeout<Array<{ id: string; platform: string; createdAt: Date }>>(Prisma.sql`
@@ -159,9 +194,19 @@ export async function loadAdSalesReport(input: {
   if (touches.length > ROW_CAP || chats.length > ROW_CAP) throw new InsightsTooLargeError()
 
   const withoutChat: UnlinkedOrderTotals = { orders: 0, paidOrders: 0, booked: 0, collected: 0 }
+  const cancelled: UnlinkedOrderTotals = { orders: 0, paidOrders: 0, booked: 0, collected: 0 }
   const linked = []
   for (const o of orders) {
-    if (o.cancelled) continue
+    if (o.cancelled) {
+      // Counted like the Resumen does (orders + booked), never attributed to an ad.
+      cancelled.orders += 1
+      cancelled.booked += o.total
+      if (o.collected) {
+        cancelled.paidOrders += 1
+        cancelled.collected += o.total
+      }
+      continue
+    }
     if (o.conversationId && o.channel) {
       linked.push({ id: o.id, conversationId: o.conversationId, platform: o.channel, createdAt: o.timestamp, total: o.total, collected: o.collected, cancelled: false })
     } else {
@@ -185,6 +230,7 @@ export async function loadAdSalesReport(input: {
     }),
     orders: linked,
     withoutChat,
+    cancelled,
     range: { start, end },
     platform: input.platform,
   })
@@ -244,12 +290,14 @@ export async function loadTeamChatReport(input: {
          AND NOT (c."status" = ANY(${closed}::text[]))
          AND c."lastMessageAt" >= ${activeSince}
        LIMIT ${ROW_CAP}`),
+    // Who sent it: the promoted column when set, else metadata.senderUserId (what the send routes write
+    // today — on real data the column is empty while metadata has the sender).
     queryWithTimeout<Array<{ senderUserId: string; replies: number }>>(Prisma.sql`
-      SELECT m."senderUserId", count(*)::int AS "replies"
+      SELECT COALESCE(m."senderUserId", m."metadata" ->> 'senderUserId') AS "senderUserId", count(*)::int AS "replies"
         FROM public."ChatMessage" m
        WHERE m."tenantId" = ${tenantId}
          AND m."direction" = 'outbound'
-         AND m."senderUserId" IS NOT NULL
+         AND COALESCE(m."senderUserId", m."metadata" ->> 'senderUserId') IS NOT NULL
          AND m."sentAt" >= ${start} AND m."sentAt" <= ${end}
        GROUP BY 1`),
     queryWithTimeout<Array<{ platform: string; chats: number }>>(Prisma.sql`
@@ -341,10 +389,11 @@ export async function loadAgentPerformance(input: {
          AND m."direction" = 'outbound'
          AND m."sentAt" >= ${historyFrom} AND m."sentAt" <= ${new Date(end.getTime() + DAY_MS)}
          AND m."metadata" ->> 'turnId' IS NOT NULL
-       GROUP BY 1`),
+       GROUP BY 1
+       LIMIT ${ROW_CAP + 1}`),
     loadPeriodOrders(tenantId, input.range),
   ])
-  if (turnRows.length > ROW_CAP) throw new InsightsTooLargeError()
+  if (turnRows.length > ROW_CAP || sends.length > ROW_CAP) throw new InsightsTooLargeError()
 
   const sentAt = new Map(sends.map((s) => [s.turnId, s.sentAt]))
   const toFact = (row: TurnRow): AgentTurnFact => {

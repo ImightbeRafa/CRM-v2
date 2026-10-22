@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { readTenantUiReadiness } from '@/lib/feature-flags'
 import { loadAdSalesReport } from '@/lib/insights/insights-server'
-import { badPeriod, cached, insightsError, NO_STORE, readPeriod } from '@/lib/insights/route-helpers'
+import { badPeriod, cached, insightsError, limitInsights, NO_STORE, readPeriod } from '@/lib/insights/route-helpers'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,6 +15,8 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await authenticateAPIWithPermission(request, 'view_statistics')
     if (!auth.ok) return auth.response
+    const limited = await limitInsights(auth.tenantId)
+    if (limited) return limited
     const params = request.nextUrl.searchParams
     const period = readPeriod(params)
     if (!period) return badPeriod()

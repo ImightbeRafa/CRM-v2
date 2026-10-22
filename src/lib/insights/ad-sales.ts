@@ -15,6 +15,7 @@
  */
 
 import { money, rate } from '@/lib/insights/stats-math'
+import { isMetaAdUrl } from '@/lib/meta-attribution/referral'
 
 export type AdPlatform = 'whatsapp' | 'instagram'
 export const ORGANIC_KEY = 'organic'
@@ -68,9 +69,13 @@ export type UnlinkedOrderTotals = { orders: number; paidOrders: number; booked: 
 
 export type AdSalesReport = {
   rows: AdSalesRow[]
+  /** Ads with activity that are not listed (beyond AD_ROWS_SHOWN). */
+  hiddenAds: number
   organic: AdSalesRow
   /** Orders of the period that are not linked to any chat (only without a channel filter). */
   withoutChat: UnlinkedOrderTotals
+  /** Cancelled orders of the period (never attributed; listed so totals match the Resumen). */
+  cancelled: UnlinkedOrderTotals
   windowDays: number
   totals: {
     /** Distinct chats that came from any ad (a chat from two ads counts once here). */
@@ -149,6 +154,7 @@ export function buildAdSalesReport(input: {
   chats: readonly AdChatRow[]
   orders: readonly AdOrderRow[]
   withoutChat?: UnlinkedOrderTotals
+  cancelled?: UnlinkedOrderTotals
   range: { start: Date; end: Date }
   platform?: AdPlatform | null
   windowDays?: number
@@ -229,19 +235,23 @@ export function buildAdSalesReport(input: {
 
   // Orders without a chat have no channel: only part of the unfiltered view.
   const withoutChat = input.platform ? NO_ORDERS : (input.withoutChat ?? NO_ORDERS)
+  const cancelled = input.platform ? NO_ORDERS : (input.cancelled ?? NO_ORDERS)
   const adOrders = list.reduce((s, r) => s + r.orders, 0)
   return {
-    rows: list,
+    // Totals below use every ad; only the list is capped (forged referrals must not blow up the page).
+    rows: list.slice(0, AD_ROWS_SHOWN),
+    hiddenAds: Math.max(0, list.length - AD_ROWS_SHOWN),
     organic,
     withoutChat,
+    cancelled,
     windowDays,
     totals: {
       adChatsDistinct: adChats.size,
       organicChats: organic.chats,
-      orders: adOrders + organic.orders + withoutChat.orders,
+      orders: adOrders + organic.orders + withoutChat.orders + cancelled.orders,
       adOrders,
-      booked: list.reduce((s, r) => s + r.booked, 0) + organic.booked + withoutChat.booked,
-      collected: list.reduce((s, r) => s + r.collected, 0) + organic.collected + withoutChat.collected,
+      booked: list.reduce((s, r) => s + r.booked, 0) + organic.booked + withoutChat.booked + cancelled.booked,
+      collected: list.reduce((s, r) => s + r.collected, 0) + organic.collected + withoutChat.collected + cancelled.collected,
     },
   }
 }
@@ -255,13 +265,18 @@ export function withCampaignNames(report: AdSalesReport, names: ReadonlyMap<stri
   }
 }
 
-/** Only http(s) links are shown as a link (a referral URL is customer-side data from Meta). */
+/**
+ * Only https links on Meta's own domains are shown as a link: on WhatsApp the referral can be forged by a
+ * modified client (meta-attribution/referral.ts), so anything else stays plain text.
+ */
 export function safeAdLink(url: string | null | undefined): string | null {
-  if (!url) return null
+  if (!url || !isMetaAdUrl(url)) return null
   try {
-    const parsed = new URL(url)
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.toString() : null
+    return new URL(url).toString()
   } catch {
     return null
   }
 }
+
+/** The report lists at most this many ads (best sellers first); the rest are summed in the totals. */
+export const AD_ROWS_SHOWN = 100

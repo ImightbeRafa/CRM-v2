@@ -67,8 +67,9 @@ export function normalizeText(value: string | null | undefined): string {
 
 function cleanLabel(raw: unknown, max: number): string | null {
   if (typeof raw !== 'string') return null
-  // No control characters / angle brackets: the label ends up in a chat message the team sends.
-  const text = raw.replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, max)
+  // No control / zero-width / bidi characters or angle brackets: the label ends up in a chat message the
+  // team sends (same character set as meta-attribution/referral.ts).
+  const text = raw.replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁤⁦-⁩﻿<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, max)
   return text || null
 }
 
@@ -204,6 +205,8 @@ export function crWhatsAppHref(phone: string | null | undefined, text?: string):
 }
 
 export function clampWindowDays(raw: unknown, fallback = 7): number {
+  // Missing param → fallback (Number(null) / Number('') would be 0).
+  if (raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === '')) return fallback
   const n = Number(raw)
   if (!Number.isFinite(n)) return fallback
   return Math.min(REORDER_LIMITS.maxWindow, Math.max(0, Math.round(n)))

@@ -40,6 +40,12 @@ describe('D6: bundle with shipping included', () => {
     assert.ok(r('Hoy envío incluido en todo 😊', [32800]).includes('deal_offer'))
     assert.equal(maskIncludedShipping('Salen ₡32 800 con envío incluido.', []), 'Salen ₡32 800 con envío incluido.')
   })
+  it('SecureDog r2 F3 / Verifier r2 #7: excused only next to the bundle price alone', () => {
+    const r2 = (text: string) => validateAgentOutput({ text, citedToolNames: [], quoteAmounts: [18000, 32800], includedShippingAmounts: [32800] }).reasons
+    assert.ok(r2('El arnés sale ₡18 000 con envío incluido y el pack de 2 sale ₡32 800').includes('deal_offer'))
+    assert.ok(r2('El pack de 2 sale ₡32 800 con envío incluido, y todos los demás productos incluyen el envío').includes('deal_offer'))
+    assert.ok(!r2('El pack de 2 sale ₡32 800 con envío incluido.').includes('deal_offer'))
+  })
   it('runtime + final policy (live and Probar) get the bundle amounts', () => {
     assert.match(read('src/lib/soft-ai/agent-turn-inputs.ts'), /salesIncludedShippingAmounts: sales \? \(sales\.bundles \?\? \[\]\)\.filter\(\(b\) => b\.shippingIncluded\)/)
     assert.match(read('src/lib/soft-ai/llm/runtime.ts'), /includedShippingAmounts: input\.salesIncludedShippingAmounts,/)

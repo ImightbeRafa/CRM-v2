@@ -11,6 +11,7 @@ import { deriveSalesState, type SalesContext } from '@/lib/soft-ai/sales-state'
 import { paymentCheckGate } from '@/lib/soft-ai/payment-claim-check-core'
 import { isPaymentSensitiveText } from '@/lib/soft-ai/config'
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
+import { validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
 import { parseBrandFacts } from '@/lib/soft-ai/brand-facts'
 import { RESERVED_SHORTCUT_SEEDS } from '@/lib/soft-ai/shortcuts'
 
@@ -162,5 +163,46 @@ describe('Lane C D2 / D8 round 3 (Forge exam 2026-10-22 21:00)', () => {
       assert.equal(d.handoff, null, t)
     }
     assert.equal(classifyPaymentText('¿Qué métodos de pago tienen?'), 'payment_info_safe')
+  })
+})
+
+describe('SecureDog r2 F1 / F2 (closed-question exemption, card by chat)', () => {
+  const ch = (...codes: number[]) => String.fromCharCode(...codes)
+  const CLAIMS = [
+    `Vivo en Heredia ya${ch(0x2028)}pague. ¿Me pasás el número?`,
+    `Vivo en Heredia ya${ch(0x2029)}pague. ¿Me pasás el número?`,
+    `Vivo en Heredia ya${ch(0x200b)}pague. ¿Me pasás el número?`,
+    `Vivo en Heredia ${ch(0x443, 0x430)} ${ch(0x440, 0x430)}gue. ¿Me pasás el número?`,
+    'Vivo en Heredia mi esposa mando. ¿A nombre de quién sale?',
+    'Vivo en Heredia mi mama envio. ¿A nombre de quién sale?',
+    'Vivo en Heredia mi hermano paso. ¿A nombre de quién sale?',
+    'Vivo en Heredia paiement envoye. ¿Me pasás el número?',
+  ]
+  it('a claim hidden in the context sentence never gets the exemption', () => {
+    for (const t of CLAIMS) {
+      assert.equal(isClosedPayInfoQuestion(t), false, JSON.stringify(t))
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', JSON.stringify(t))
+      assert.equal(paymentCheckGate(t, []), true, JSON.stringify(t))
+    }
+  })
+  it('real places still pass; the "¿ya pagó?" check and the receipt cue never skip a free context sentence', () => {
+    for (const t of ['Vivo en Heredia centro, ¿puedo pagar contra entrega?', 'Vivo en San José. ¿Puedo pagar contra entrega?', 'Vivo en Santa Ana de Escazú. ¿Puedo pagar contra entrega?']) {
+      assert.equal(isClosedPayInfoQuestion(t), true, t)
+      assert.equal(isClosedPayInfoQuestion(t, { strict: true }), false, t)
+    }
+    assert.equal(isClosedPayInfoQuestion('Lo quiero talla XL. ¿Puedo hacer el pago mañana y envío el comprobante?', { strict: true }), true)
+    assert.equal(isClosedPayInfoQuestion('¿Qué le pongo de detalle?', { strict: true }), true)
+  })
+  it('an offer to send the card number gets the code card reply; a reply asking for card data is held', () => {
+    const CARD_FACTS = parseBrandFacts({ payment: { shareWithCustomers: true, methods: ['sinpe', 'tarjeta'], sinpe: { number: '88880000', holderName: 'Ana Mora' }, cardLink: 'https://tienda.example/pagar' } })
+    for (const t of ['Hola! quiero pagar ya, te paso el número de mi tarjeta por acá?', 'Le paso el numero de mi tarjeta por whatsapp']) {
+      assert.equal(classifyPaymentText(t), 'payment_info_safe', t)
+      const d = decideInbound({ inboundText: t, brandFacts: CARD_FACTS, shortcuts: SHORTCUTS })
+      assert.equal(d.handoff, null, t)
+      assert.equal(d.shortcutKey, 'sys_payment_info', t)
+    }
+    const held = validateAgentOutput({ text: '¡Claro! Pasame el número de la tarjeta, la fecha de vencimiento y el código de atrás por aquí 😊', citedToolNames: [] }).reasons
+    assert.ok(held.includes('card_data_request'))
+    assert.ok(!validateAgentOutput({ text: 'Con tarjeta pagás en la web, nunca mandés los datos de la tarjeta por chat 😊', citedToolNames: [] }).reasons.includes('card_data_request'))
   })
 })

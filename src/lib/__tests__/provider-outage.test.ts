@@ -139,8 +139,18 @@ describe('SecureDog r1 fixes', () => {
   })
   it('INT-217: with payment in play an outage hands the chat over as a payment at once', () => {
     const turn = read('src/lib/soft-ai/agent-turn.ts')
-    assert.ok(turn.includes('paymentInPlay: paymentCheckGate(burst.inboundText, history),'))
-    assert.ok(turn.includes("await sendOutageLine({ ...input, now, text: SAFE_LINE.payment })"))
+    // Verifier r2 #6: only the unanswered messages; the payment line only for a claim (else the review line).
+    assert.ok(turn.includes('paymentInPlay: paymentCheckGate(burst.inboundText, []),'))
+    assert.ok(turn.includes("paymentClaim: classifyPaymentText(burst.inboundText) === 'payment_proof_or_risk',"))
+    assert.ok(turn.includes('await sendOutageLine({ ...input, now, text: input.paymentClaim ? SAFE_LINE.payment : undefined })'))
+    // Verifier r2 #3: the 2 h clock is the conversation's (a new job continues the chat's outage).
+    assert.ok(turn.includes('previous: readProviderRetryState(row.payload) ?? (await conversationRetryState(row, now)),'))
+    assert.ok(turn.includes("skipReason: 'provider_retry', createdAt: { gte: new Date(now.getTime() - PROVIDER_RETRY_MAX_MS) }"))
+    // Verifier r2 #5: one alert per incident; a new incident re-alerts 10 min after the last recovery; "volvió" always follows a "down".
+    const o = read('src/lib/soft-ai/provider-outage.ts')
+    assert.ok(o.includes("await alertOwner('down', `${kind}:${new Date(claimed[0].downSince).toISOString()}`, kind!)"))
+    assert.ok(o.includes('AND ("recoveredAt" IS NULL OR "recoveredAt" <= ${new Date(now.getTime() - REALERT_AFTER_RECOVERY_MS)})'))
+    assert.ok(o.includes("if (closed[0]?.alertedAt) await alertOwner('up', new Date(closed[0].downSince).toISOString())"))
     assert.ok(turn.includes("await settleHandoff(row, { kind: 'handoff', reason: HANDOFF_REASON.payment }, input.hours)"))
   })
   it('INT-219: both code lines use the pre-send token rule; INT-216 alert keys per hour; F4 env reaches the container', () => {

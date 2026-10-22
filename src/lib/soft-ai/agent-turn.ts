@@ -56,7 +56,13 @@ import {
   type ResolvedChatAgent,
 } from '@/lib/soft-ai/agent-resolver'
 import { burstCustomerText, conversationPaymentContext, recentCustomerTexts, runSoftAiLlmRuntime } from '@/lib/soft-ai/llm/runtime'
-import { planProviderRetry, readProviderRetryState, type ProviderFailureKind } from '@/lib/soft-ai/provider-outage-core'
+import {
+  PROVIDER_RETRY_MAX_MS,
+  planProviderRetry,
+  readProviderRetryState,
+  type ProviderFailureKind,
+  type ProviderRetryState,
+} from '@/lib/soft-ai/provider-outage-core'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import {
   CHAT_AGENT_LAYER_V1_FLAG,
@@ -145,6 +151,7 @@ import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 import { readSoftTenantAiConfig } from '@/lib/feature-flags'
 import { turnWasCodeDecided } from '@/lib/soft-ai/turn-origin'
 import { withAiUsageContext } from '@/lib/ai-usage/context'
+import { classifyPaymentText } from '@/lib/soft-ai/payment-classifier'
 import { effectiveTestCap } from '@/lib/soft-ai/provider-outage'
 
 type JobPayload = {
@@ -770,6 +777,8 @@ async function handleProviderOutage(input: {
   triggerSentAt: Date
   hours: AfterHoursState
   paymentInPlay?: boolean
+  /** A claim / receipt among the unanswered messages: the payment line (else the review line). */
+  paymentClaim?: boolean
 }): Promise<AgentTurnDispatchResult> {
   const { row } = input
   const now = new Date()
@@ -785,12 +794,14 @@ async function handleProviderOutage(input: {
       deliveryKey: row.deliveryKey,
       skipReason: 'provider_down',
     })
-    await sendOutageLine({ ...input, now, text: SAFE_LINE.payment })
+    await sendOutageLine({ ...input, now, text: input.paymentClaim ? SAFE_LINE.payment : undefined })
     await settleHandoff(row, { kind: 'handoff', reason: HANDOFF_REASON.payment }, input.hours)
     return { status: 'skipped', reason: 'provider_down' }
   }
+  // Verifier r2 #3: the 2 h clock belongs to the conversation, not the job: a newer message (a new job) or a re-armed
+  // job continues the outage the chat is already in.
   const plan = planProviderRetry({
-    previous: readProviderRetryState(row.payload),
+    previous: readProviderRetryState(row.payload) ?? (await conversationRetryState(row, now)),
     kind: input.kind,
     now,
     windowClosesAt: new Date(input.triggerSentAt.getTime() + 24 * 3_600_000),
@@ -813,6 +824,21 @@ async function handleProviderOutage(input: {
   }
   await settleHandoff(row, { kind: 'handoff', reason: HANDOFF_REASON.aiUnavailable }, input.hours)
   return { status: 'skipped', reason: 'provider_down' }
+}
+
+/** The oldest provider retry of this chat in the last 2 h, as the retry state a new job continues from. Never throws. */
+async function conversationRetryState(row: ClaimedChatAutomationJob, now: Date): Promise<ProviderRetryState | null> {
+  try {
+    const agg = await prisma.chatAgentTurn.aggregate({
+      where: { tenantId: row.tenantId, conversationId: row.conversationId, skipReason: 'provider_retry', createdAt: { gte: new Date(now.getTime() - PROVIDER_RETRY_MAX_MS) } },
+      _min: { createdAt: true },
+      _count: { _all: true },
+    })
+    const first = agg._min.createdAt
+    return first ? { n: agg._count._all, firstAt: first.toISOString(), ackSent: false } : null
+  } catch {
+    return null
+  }
 }
 
 /** The one safe line of an outage ("Dame un momento y te confirmo 😊"), with the waiting ack's gates. Never throws. */
@@ -1542,8 +1568,10 @@ export async function executeAgentLayerTurn(
       kind: llm.providerFailure,
       triggerSentAt: trigger.sentAt,
       hours,
-      // SecureDog INT-217: with payment in play the "¿ya pagó?" check could not run either — a person, now.
-      paymentInPlay: paymentCheckGate(burst.inboundText, history),
+      // SecureDog INT-217: with payment in play the "¿ya pagó?" check could not run either — a person, now. Verifier r2
+      // #6: only the unanswered messages count (a store "¿Cómo preferís pagar?" earlier is not a payment in play).
+      paymentInPlay: paymentCheckGate(burst.inboundText, []),
+      paymentClaim: classifyPaymentText(burst.inboundText) === 'payment_proof_or_risk',
     })
   }
 

@@ -28,6 +28,7 @@ let localAlertedAt = 0
 const LOCAL_ALERT_COOLDOWN_MS = 60 * 60_000
 const OK_CHECK_INTERVAL_MS = 60_000
 const SUSTAINED_MS = 60_000
+const REALERT_AFTER_RECOVERY_MS = 10 * 60_000
 const FAILURE_WRITE_INTERVAL_MS = 30_000
 let lastFailureWriteAt = 0
 let lastOkCheckAt = 0
@@ -85,9 +86,11 @@ export async function noteProviderFailure(error: unknown, now = new Date()): Pro
       const claimed = await prisma.$queryRaw<Array<{ downSince: Date }>>`
         UPDATE "AiProviderStatus" SET "alertedAt" = ${now}
          WHERE "provider" = ${PROVIDER} AND "downSince" IS NOT NULL AND "downSince" <= ${sustainedSince} AND "alertedAt" IS NULL
+           AND ("recoveredAt" IS NULL OR "recoveredAt" <= ${new Date(now.getTime() - REALERT_AFTER_RECOVERY_MS)})
         RETURNING "downSince"`
-      // SecureDog INT-216: the alert key is per kind and hour, so a flapping provider mails at most once an hour.
-      if (claimed[0]) await alertOwner('down', `${kind}:${now.toISOString().slice(0, 13)}`, kind!)
+      // Verifier r2 #5: one alert per incident (keyed by its start); a new incident alerts again only 10 min after the
+      // last recovery (INT-216: a flapping provider never storms).
+      if (claimed[0]) await alertOwner('down', `${kind}:${new Date(claimed[0].downSince).toISOString()}`, kind!)
       return
     }
   } catch (dbError) {
@@ -113,10 +116,8 @@ export async function noteProviderOk(now = new Date()): Promise<void> {
         FROM (SELECT "alertedAt", "downSince" FROM "AiProviderStatus" WHERE "provider" = ${PROVIDER} FOR UPDATE) old
        WHERE s."provider" = ${PROVIDER} AND s."downSince" IS NOT NULL
       RETURNING old."alertedAt", old."downSince"`
-    // SecureDog INT-216: "volvió" only after a real incident (it lasted 2 min or more), once an hour.
-    if (closed[0]?.alertedAt && now.getTime() - new Date(closed[0].downSince).getTime() >= 2 * 60_000) {
-      await alertOwner('up', now.toISOString().slice(0, 13))
-    }
+    // Verifier r2 #5: "volvió" whenever the owner was told it was down (once per incident).
+    if (closed[0]?.alertedAt) await alertOwner('up', new Date(closed[0].downSince).toISOString())
   } catch (error) {
     console.error('[provider-outage] status close failed', error instanceof Error ? error.name : 'unknown')
   }

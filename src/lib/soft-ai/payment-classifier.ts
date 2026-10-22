@@ -798,6 +798,13 @@ const CLOSED_PAY_INFO_SEG_RE = new RegExp(
  */
 const CLOSED_PAY_CONTEXT_SEG_RE =
   /^(?:lo|la)\s+quiero(?:\s+(?:en\s+)?(?:talla|color)\s+[\p{L}]{1,12})?$|^vivo\s+en\s+[\p{L}]+(?:\s+[\p{L}]+){0,3}$/iu
+/** Strict context (the "¿ya pagó?" check and the receipt cue): only "Lo quiero" with a size from a closed list. */
+const CLOSED_PAY_STRICT_CONTEXT_SEG_RE = /^(?:lo|la)\s+quiero(?:\s+(?:en\s+)?talla\s+(?:xxs|xs|s|m|l|xl|xxl|xxxl|peque[nñ]a|mediana|grande))?$/iu
+/**
+ * SecureDog r2 F1: the free words after "vivo en" are a place — a capitalised name or a place word ("Vivo en Heredia
+ * centro", "Vivo en San José", "Vivo en Santa Ana de Escazú"), never a lowercase verb ("mi esposa mando").
+ */
+const PLACE_WORD_RE = /^(?:\p{Lu}\p{L}*|de|del|la|el|los|las|centro|cerca|norte|sur|este|oeste|barrio|residencial|condominio)$/u
 /** "Dale, pago por SINPE": the method choice, a fully anchored shape (no room for a claim). */
 const CLOSED_PAY_CHOICE_SEG_RE =
   /^(?:(?:dale|ok|okey|perfecto|bueno|va)\s*,?\s*)?(?:pago|pagar[eé]|voy\s+a\s+pagar|te\s+pago|le\s+pago|lo\s+pago)\s+(?:por|con)\s+(?:sinpe(?:\s+m[oó]vil)?|transferencia|tarjeta|efectivo)$/iu
@@ -816,9 +823,14 @@ export function normalizePaySpelling(v: string): string {
     .replace(/(?<![\p{L}])(?:s[iy]mpe|sinpi|simpi|cinpe)(?![\p{L}])/giu, 'sinpe')
     .replace(/(?<![\p{L}])(hacer|mandar|enviar|pasar|depositar|transferir)\s+(te|le|les)(?![\p{L}])/giu, '$1$2')
 }
-export function isClosedPayInfoQuestion(text: string): boolean {
-  const v = clean(normalizePaySpelling(stripFormatChars((text || '').normalize('NFKC'))))
+export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean } = {}): boolean {
+  const raw = text || ''
+  // SecureDog r2 F1: invisible / line-separator characters, look-alike letters and foreign payment words never get the
+  // exemption ("Vivo en Heredia ya<U+2028>pague", Cyrillic "уа раgue", "paiement envoyé"): the normal rules decide.
+  if (raw.length > 400) return false
+  const v = clean(normalizePaySpelling(stripFormatChars(raw.normalize('NFKC'))))
   if (!v.trim() || v.length > 200 || /\d/.test(v)) return false
+  if (invisibleAsGap(raw) !== null || hasMixedScriptWord(raw) || hasForeignPaymentState(raw)) return false
   const segs = v
     .replace(/¿/gu, '\u0001¿')
     .split(/[.!?\n\u0001]+/u)
@@ -827,13 +839,19 @@ export function isClosedPayInfoQuestion(text: string): boolean {
   // Lane C D2: a context sentence ("Lo quiero talla XL", "Vivo en Heredia centro") may sit next to the ask, never a done word.
   const isContext = (t: string) => {
     const s = t.replace(/\s+/gu, ' ')
-    if (CLOSED_PAY_CHOICE_SEG_RE.test(s)) return !hasPastOrDoneWord(t, false)
+    if (hasHardPaymentClaim(s) || hasPastOrDoneWord(t, false)) return false
+    if (opts.strict) return CLOSED_PAY_STRICT_CONTEXT_SEG_RE.test(s)
+    if (CLOSED_PAY_CHOICE_SEG_RE.test(s)) return true
     const bare = s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
-    return CLOSED_PAY_CONTEXT_SEG_RE.test(s) && !CONTEXT_FORBIDDEN_RE.test(bare) && !hasPastOrDoneWord(t, false)
+    if (!CLOSED_PAY_CONTEXT_SEG_RE.test(s) || CONTEXT_FORBIDDEN_RE.test(bare)) return false
+    const place = /^vivo\s+en\s+(.+)$/iu.exec(s)
+    return !place || place[1].split(' ').every((w) => PLACE_WORD_RE.test(w))
   }
   const asks = segs.filter((t) => !CLOSED_PAY_INFO_COURTESY_RE.test(t) && !isContext(t))
   return asks.length > 0 && asks.every((t) => CLOSED_PAY_INFO_SEG_RE.test(t.replace(/\s+/gu, ' ')))
 }
+/** An offer to send the card number by chat (one of the closed shapes above). */
+const CARD_BY_CHAT_RE = /(?:paso|mando|doy|env[ií]o|mandar|pasar|dar|enviar)\s+(?:el\s+)?n[uú]mero\s+de\s+(?:la\s+|mi\s+)?tarjeta/iu
 /** A sentence that is only a greeting / courtesy ("Hola,", "Disculpe", "Una consulta") around the question. */
 const CLOSED_PAY_INFO_COURTESY_RE =
   // Verifier r2 #3: "Perfecto, ¿qué le pongo de detalle?". Never sí / claro / listo / ya / hecho (they can answer "¿ya pagó?").
@@ -865,7 +883,11 @@ export function classifyPaymentText(
         : 'payment_proof_or_risk'
   // A closed before-paying question (every sentence one anchored shape, no digit) that a word rule would hand off is
   // answered by the agent instead, like any other sales question.
-  if (cls === 'payment_proof_or_risk' && isClosedPayInfoQuestion(text)) return 'non_payment'
+  if (cls === 'payment_proof_or_risk' && isClosedPayInfoQuestion(text)) {
+    // SecureDog r2 F2: "te paso el número de mi tarjeta por acá?" gets the code card reply (the store's card link), never
+    // a free model answer that could ask for the card data.
+    return CARD_BY_CHAT_RE.test(stripFormatChars((text || '').normalize('NFKC'))) ? 'payment_info_safe' : 'non_payment'
+  }
   return cls
 }
 

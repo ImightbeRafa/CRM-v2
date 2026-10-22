@@ -611,7 +611,13 @@ export function maskIncludedShipping(text: string, includedAmounts: readonly num
   const set = new Set(includedAmounts.map((n) => Math.round(n)))
   return text
     .split(/(?<=[.!?\n])/u)
-    .map((seg) => (extractMoneyAmounts(seg).some((a) => set.has(Math.round(a))) ? seg.replace(INCLUDED_SHIPPING_WORDING_RE, ' ') : seg))
+    .map((seg) => {
+      // SecureDog r2 F3 / Verifier r2 #7: only a sentence whose every amount is an included one, with one such phrase
+      // ("₡18 000 con envío incluido y el pack ₡32 800", "… y todos los demás incluyen el envío" are still judged).
+      const amounts = extractMoneyAmounts(seg)
+      const phrases = seg.match(INCLUDED_SHIPPING_WORDING_RE)?.length ?? 0
+      return amounts.length > 0 && amounts.every((a) => set.has(Math.round(a))) && phrases === 1 ? seg.replace(INCLUDED_SHIPPING_WORDING_RE, ' ') : seg
+    })
     .join('')
 }
 
@@ -633,6 +639,12 @@ const CREATED_CLAIM_RE =
 const ORDER_CLOSING_CLAIM_RE =
   /pedido\s+(?:ya\s+)?(?:qued[oó]\s+|est[aá]\s+)?(?:registrad|anotad|agendad|confirmad|list)[oa]|(?:orden|compra)\s+(?:ya\s+)?(?:qued[oó]\s+|est[aá]\s+)?(?:registrad|anotad|agendad|confirmad|list)[oa]|(?<![\p{L}])agend[eé](?![\p{L}])|anot[eé]\s+(?:tu|el|su)\s+pedido|sale\s+(?:hoy|ma[nñ]ana)|te\s+(?:lo|la|los|las)\s+mando\s+(?:hoy|ma[nñ]ana)|ma[nñ]ana\s+te\s+llega|(?:queda|qued[oó])\s+(?:programad|agendad)\p{L}*|te\s+(?:lo|la|los|las)\s+despachamos|va\s+en\s+camino|tu\s+entrega\s+(?:queda|est[aá])\s+(?:para|agendada)/iu
 const UNIT_COST_RE = /unitCost|costo\s+unitario|precio\s+de\s+costo/i
+/**
+ * SecureDog r2 F2: a reply that asks for card data by chat (number, CVV / security code, expiry). Never repairable: a
+ * card is paid only through the store's card link.
+ */
+const CARD_DATA_ASK_RE =
+  /(?:p[aá]s[aá]me|mand[aá]me|envi[aá]me|dame|escrib[ií]me|necesito|ocupo|me\s+(?:pas[aá]s|mand[aá]s|envi[aá]s|das|escrib[ií]s))[^.!?\n]{0,40}(?:n[uú]mero\s+de\s+(?:la\s+|tu\s+)?tarjeta|datos\s+de\s+(?:la\s+|tu\s+)?tarjeta|cvv|cvc|c[oó]digo\s+(?:de\s+seguridad|de\s+atr[aá]s)|fecha\s+de\s+(?:vencimiento|expiraci[oó]n))/iu
 
 /** Sleeping C7: "ya te lo compartí / dije / pasé / mencioné / indiqué" (refusing to repeat what the customer asks again). */
 const REPEAT_REFUSAL_RE =
@@ -1089,6 +1101,7 @@ export function validateAgentOutput(input: {
   // configuration needs no allowlist entry, and the allowlist never widens to a whole payment host (Verifier F2).
   if (input.linkAllowlist && foreignLinks(input.linkText ?? text, input.linkAllowlist).length > 0) reasons.push('foreign_link')
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
+  if (CARD_DATA_ASK_RE.test(input.styleText ?? text)) reasons.push('card_data_request')
   // Sleeping C9: a reply that is only a personal-data block (someone's name / phone / address copied from the chat).
   if (isPersonalDataEcho(input.styleText ?? text, input.ownText)) reasons.push('data_echo')
   // Sleeping C7: the customer asked again — "ya te lo compartí / ya te lo dije" refuses an answer it can give.

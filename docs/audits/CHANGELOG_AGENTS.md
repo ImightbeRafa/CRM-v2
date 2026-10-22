@@ -1,3 +1,12 @@
+## 2026-10-22 — Inbox feels solid: one send per message, background photos, quiet-line note, phone back button (Lane A; apply SQL 057 any time)
+
+- Sends: the (business, clientRequestId) id is claimed in the new `ChatSendClaim` table (SQL 057, additive, raw SQL) BEFORE the message goes to Meta. Retry / double click / second tab never send twice; a message Meta accepted is never shown as failed (echo stored first → that row gets our id; storage failure → success with persisted:false). Without 057 the routes behave as before. Same for files.
+- Files: the bubble shows at once with the photo and upload progress; photos shrink in the browser to 1600 px JPEG (8.4 MB → 1.2 MB in the proof); the composer never locks; files and texts keep one order per chat.
+- Fast sends: bubbles not stored yet always sort after stored ones; one list refresh per burst. Desktop: opening a chat puts the cursor in the composer (it was focusing the hidden phone textarea); phones never pop the keyboard by themselves.
+- Line health: silence alone no longer emails, bells or shows a red banner. A quiet busy line is checked (token + webhook subscription via GET subscribed_apps); only a dead token or a gone subscription alerts (new "Dejó de recibir mensajes" + Reparar). Quiet far beyond the line's own pattern = one grey note ("la línea está conectada").
+- Phone: back button / swipe goes thread → list (history entries, URL unchanged); thread + details follow the visual viewport so the composer stays above the keyboard. Proof: verify-betsy drive-chat-mobile.mjs (375×812, 412×915) and drive-chat-send-ux.mjs (sends intercepted, nothing reached Meta).
+- No Prisma schema change. Staff bot untouched.
+
 ## 2026-10-21 — Exam bank: delivery-time after a confirmed order is a handoff
 
 - `expectForRealMessage` now sees the 6-message history. If the team already confirmed a SINPE / entered the order, “¿cuándo llegaría?” / guía / estado is `handoff: true` (existing order), not a first-contact shipping question.

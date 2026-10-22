@@ -29,7 +29,7 @@ export function InboxMock() {
         <span className="h-2.5 w-2.5 rounded-full bg-[#14131a]/10" />
         <span className="h-2.5 w-2.5 rounded-full bg-[#14131a]/10" />
         <span className="h-2.5 w-2.5 rounded-full bg-[#14131a]/10" />
-        <span className="ml-3 text-[12px] font-medium text-[#14131a]/45">Chats · Bandeja unificada</span>
+        <span className="ml-3 text-[12px] font-medium text-[#14131a]/65">Chats · Bandeja unificada</span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
         <div className="border-[#14131a]/[0.07] sm:border-r">
@@ -59,9 +59,9 @@ export function InboxMock() {
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-[13px] font-semibold text-[#14131a]">{c.name}</span>
-                    <span className="shrink-0 text-[11px] text-[#14131a]/40">{c.time}</span>
+                    <span className="shrink-0 text-[11px] text-[#14131a]/65">{c.time}</span>
                   </span>
-                  <span className="block truncate text-[12px] text-[#14131a]/55">{c.text}</span>
+                  <span className="block truncate text-[12px] text-[#14131a]/65">{c.text}</span>
                   <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${c.tagClass}`}>{c.tag}</span>
                 </span>
               </li>
@@ -71,7 +71,7 @@ export function InboxMock() {
         <div className="hidden flex-col bg-[#fbfaf7] sm:flex">
           <div className="border-b border-[#14131a]/[0.07] px-4 py-3">
             <p className="text-[13px] font-semibold text-[#14131a]">Daniela R.</p>
-            <p className="text-[11px] text-[#14131a]/45">Instagram · Agente de ventas</p>
+            <p className="text-[11px] text-[#14131a]/65">Instagram · Agente de ventas</p>
           </div>
           <div className="flex flex-1 flex-col gap-2 px-4 py-4">
             <p className="max-w-[80%] self-start rounded-2xl rounded-bl-md border border-[#14131a]/[0.07] bg-white px-3 py-2 text-[12px] text-[#14131a]">
@@ -111,16 +111,16 @@ export function PipelineMock() {
           <div key={stage.name} className="rounded-2xl bg-[#f6f4ef] p-3">
             <p className="mb-2 flex items-center justify-between text-[12px] font-semibold text-[#14131a]">
               {stage.name}
-              <span className="rounded-full bg-white px-2 text-[11px] font-medium text-[#14131a]/50">{stage.items.length}</span>
+              <span className="rounded-full bg-white px-2 text-[11px] font-medium text-[#14131a]/65">{stage.items.length}</span>
             </p>
             <ul className="space-y-2">
               {stage.items.map((it) => (
                 <li key={it.id} className="rounded-xl border border-[#14131a]/[0.07] bg-white px-3 py-2">
                   <span className="flex items-baseline justify-between text-[12px]">
                     <span className="font-semibold text-[#14131a]">{it.who}</span>
-                    <span className="text-[11px] text-[#14131a]/40">{it.id}</span>
+                    <span className="text-[11px] text-[#14131a]/65">{it.id}</span>
                   </span>
-                  <span className="text-[11px] text-[#14131a]/55">{it.how}</span>
+                  <span className="text-[11px] text-[#14131a]/65">{it.how}</span>
                 </li>
               ))}
             </ul>

@@ -5,7 +5,8 @@
 - One price source: `src/lib/pricing/plan.ts` ($20 + IVA 13% = $22.60, integer cents). Used by the landing, BillingDashboard and the billing docs (`<PlanPrice/>` MDX component in DocRenderer). The Tilopay Repeat charge is unchanged (CRC 10,000, no IVA = `LEGACY_SUBSCRIPTION_CRC`); BillingDashboard now shows that charge next to the price. Mismatch flagged for Rafael.
 - "Quiero mi agente" → `/soporte?tema=agente`, which pre-fills the contact form subject (public form keeps category `question`; agent_request stays session-only).
 - Phones: `globals-mobile.css` shrinks every h1/h2/h3 with !important; the landing headings opt out with `landing-hero`/`landing-h2` + !-sizes (no global CSS touched).
-- Tests: `src/lib/__tests__/home-pricing.test.ts` (6) added to `test:site-ui`.
+- Tests: `src/lib/__tests__/home-pricing.test.ts` (8) added to `test:site-ui`.
+- Verifier fixes: plan copy says "hasta 25 usuarios" (PRO cap in plan-enforcement.ts), trial "para 1 usuario"; `<PlanPrice/>` is expanded to text in `src/lib/docs.ts` (`expandDocPlaceholders`) so the support agent's help-center search sees the real price, and every doc uses it (faq, managing-team, api-keys, api-integration); `/home` revalidates hourly (contact env); footer help link → `/docs` (public); small text ≥ 65 % ink and accent labels #4048d4 (WCAG AA); "Movés el pedido de etapa" (no drag & drop).
 ## 2026-10-22 — Support pipeline: tickets, /soporte, MCP for the support agent, custom-agent sales page (Lane G, claude/wave-support-pipeline-a09f20; SQL 059 Rafael applies; ships dark)
 
 - Rafael's spec `docs/plans/support-pipeline/SPEC.md` (added as-is). Everything behind `SUPPORT_PIPELINE_ENABLED` (only `true` turns it on); off = legacy behavior. Runbook with env/secrets, SQL, seed, smoke, rollback: `docs/runbooks/support-pipeline.md`.

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
+import { planPriceLabels } from '@/lib/pricing/plan';
 
 export interface DocHeading {
   depth: number;
@@ -92,6 +93,15 @@ export function getAllDocs(filter?: 'public' | 'private'): DocMeta[] {
   return filtered.sort((a, b) => a.order - b.order);
 }
 
+/**
+ * `<PlanPrice />` / `<PlanPrice show="math" />` in a doc becomes the price from src/lib/pricing/plan.ts as plain text,
+ * so the rendered page and the support agent's help-center search (raw content) both read the real price.
+ */
+export function expandDocPlaceholders(content: string): string {
+  const labels = planPriceLabels();
+  return content.replace(/<PlanPrice(?:\s+show="(base|iva|total|short|math)")?\s*\/>/g, (_m, show?: keyof typeof labels) => labels[show ?? 'short']);
+}
+
 export function getDocBySlug(slug: string): DocPage | null {
   ensureDocsDir();
 
@@ -103,7 +113,9 @@ export function getDocBySlug(slug: string): DocPage | null {
   if (!filePath) return null;
 
   const raw = fs.readFileSync(filePath, 'utf-8');
-  const { data, content } = matter(raw);
+  const parsed = matter(raw);
+  const data = parsed.data;
+  const content = expandDocPlaceholders(parsed.content);
 
   return {
     slug: safeName,

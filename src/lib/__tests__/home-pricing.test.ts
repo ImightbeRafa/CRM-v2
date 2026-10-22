@@ -53,10 +53,25 @@ test('landing, docs and BillingDashboard read the price from the one source', ()
   assert.doesNotMatch(billing, /\$20/)
   assert.match(billing, /from '@\/lib\/pricing\/plan'/)
   assert.doesNotMatch(billing, /basic: 10000|pro: 10000/)
-  const docs = read('src/content/docs/billing.mdx')
-  assert.doesNotMatch(docs, /\$20/)
-  assert.match(docs, /<PlanPrice/)
-  assert.match(read('src/app/components/DocRenderer.tsx'), /PlanPrice,/)
+  for (const file of fs.readdirSync('src/content/docs')) {
+    assert.doesNotMatch(read(`src/content/docs/${file}`), /\$\s?20\b/, `${file}: use <PlanPrice /> instead of a typed price`)
+  }
+  assert.match(read('src/content/docs/billing.mdx'), /<PlanPrice show="math" \/>/)
+})
+
+test('docs expand <PlanPrice/> to text on load (rendered page and support-agent search see the real price)', async () => {
+  const { expandDocPlaceholders, getDocBySlug } = await import('../docs')
+  assert.equal(expandDocPlaceholders('Pro (<PlanPrice />)'), 'Pro ($20/mes + IVA)')
+  assert.equal(expandDocPlaceholders('**<PlanPrice show="math" />**'), '**$20 + IVA (13%) = $22.60 al mes**')
+  assert.equal(expandDocPlaceholders('<PlanPrice show="total"/>'), '$22.60')
+  const billing = getDocBySlug('billing')
+  assert.ok(billing && !billing.content.includes('<PlanPrice') && billing.content.includes('$22.60'))
+})
+
+test('plan copy never promises unlimited users (PRO is capped at 25 in plan-enforcement)', () => {
+  assert.match(read('src/lib/plan-enforcement.ts'), /PRO: 25/)
+  const copy = read('src/app/home/content.ts') + read('src/content/docs/billing.mdx') + read('src/content/docs/managing-team.mdx') + read('src/content/docs/faq.mdx')
+  assert.doesNotMatch(copy, /usuarios ilimitados|Usuarios y pedidos ilimitados|\| Ilimitados \|\n?.*Usuarios|costos por usuario/i)
 })
 
 test('landing is honest: no fake testimonials, no raw payment link, real contact info, agent CTA', () => {

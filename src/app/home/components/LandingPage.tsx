@@ -14,7 +14,7 @@ const AGENT_CTA_HREF = '/soporte?tema=agente';
 // that and the !-sizes below win over the h3 rule and the landing-* defaults.
 const serif ='font-[family-name:var(--font-home-serif)] !font-normal !tracking-[-0.01em]';
 const h2 = `landing-h2 ${serif} !text-[40px] !leading-[1.05] text-[#14131a] sm:!text-[52px]`;
-const label = 'text-[12px] font-semibold uppercase tracking-[0.14em] text-[#5b6cff]';
+const label = 'text-[12px] font-semibold uppercase tracking-[0.14em] text-[#4048d4]';
 const lead = 'text-[17px] leading-relaxed text-[#14131a]/65 sm:text-[18px]';
 const primaryBtn =
   'inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#14131a] px-6 text-[15px] font-semibold text-white transition hover:bg-[#2a2833] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5b6cff]';
@@ -65,7 +65,7 @@ export default function LandingPage() {
                   Quiero mi agente de IA
                 </Link>
               </div>
-              <p className="mt-4 text-[13px] text-[#14131a]/50">
+              <p className="mt-4 text-[13px] text-[#14131a]/65">
                 {price.short} · sin tarjeta para la prueba
               </p>
             </div>
@@ -81,7 +81,7 @@ export default function LandingPage() {
               {INBOX.points.map((p, i) => (
                 <div key={p.title} className="border-t border-[#14131a]/15 pt-5">
                   <dt className="flex items-baseline gap-3 text-[16px] font-semibold">
-                    <span className={`${serif} text-[22px] text-[#5b6cff]`}>{String(i + 1).padStart(2, '0')}</span>
+                    <span className={`${serif} text-[22px] text-[#4048d4]`}>{String(i + 1).padStart(2, '0')}</span>
                     {p.title}
                   </dt>
                   <dd className="mt-2 text-[15px] leading-relaxed text-[#14131a]/60">{p.text}</dd>
@@ -160,7 +160,7 @@ export default function LandingPage() {
                 >
                   Quiero mi agente <ArrowRight className="h-4 w-4" aria-hidden />
                 </Link>
-                <p className="text-[13px] text-white/50">Funciona con modelos de OpenAI. Te contactamos para conocer tu negocio.</p>
+                <p className="text-[13px] text-white/60">Funciona con modelos de OpenAI. Te contactamos para conocer tu negocio.</p>
               </div>
             </div>
           </div>
@@ -192,7 +192,7 @@ export default function LandingPage() {
                   <span className={`${serif} text-[64px] leading-none`}>{price.base}</span>
                   <span className="text-[15px] text-[#14131a]/60">/mes + IVA</span>
                 </p>
-                <p className="mt-2 text-[13px] text-[#14131a]/55">
+                <p className="mt-2 text-[13px] text-[#14131a]/65">
                   {price.base} + IVA {price.ivaPercent} ({price.iva}) = <strong className="font-semibold text-[#14131a]">{price.total} al mes</strong>
                 </p>
                 <ul className="mt-6 space-y-2.5">
@@ -205,7 +205,7 @@ export default function LandingPage() {
                 </ul>
                 <div className="mt-auto pt-8">
                   <OpenAuthButton className={`${primaryBtn} w-full`}>Probar {BETSY_PLAN.trialDays} días gratis</OpenAuthButton>
-                  <p className="mt-3 text-center text-[12px] text-[#14131a]/50">Sin tarjeta para la prueba. Pagás con tarjeta por Tilopay.</p>
+                  <p className="mt-3 text-center text-[12px] text-[#14131a]/65">Sin tarjeta para la prueba. Pagás con tarjeta por Tilopay.</p>
                 </div>
               </div>
 
@@ -214,11 +214,11 @@ export default function LandingPage() {
                 <p className="mt-4 flex items-baseline gap-2">
                   <span className={`${serif} text-[44px] leading-none`}>Según uso</span>
                 </p>
-                <p className="mt-2 text-[13px] text-[#14131a]/55">{PRICING.aiLead}</p>
+                <p className="mt-2 text-[13px] text-[#14131a]/65">{PRICING.aiLead}</p>
                 <ul className="mt-6 space-y-2.5">
                   {PRICING.aiFeatures.map((f) => (
                     <li key={f} className="flex items-start gap-2.5 text-[15px] text-[#14131a]/80">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#5b6cff]" aria-hidden />
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#4048d4]" aria-hidden />
                       {f}
                     </li>
                   ))}
@@ -227,7 +227,7 @@ export default function LandingPage() {
                   <Link href={AGENT_CTA_HREF} className={`${secondaryBtn} w-full bg-white`}>
                     Quiero mi agente
                   </Link>
-                  <p className="mt-3 text-center text-[12px] text-[#14131a]/50">Si se acaba el saldo, la IA se pausa y tu equipo sigue atendiendo.</p>
+                  <p className="mt-3 text-center text-[12px] text-[#14131a]/65">Si se acaba el saldo, la IA se pausa y tu equipo sigue atendiendo.</p>
                 </div>
               </div>
             </div>
@@ -243,7 +243,7 @@ export default function LandingPage() {
                 <details key={f.q} className="group py-5">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-[16px] font-semibold [&::-webkit-details-marker]:hidden">
                     {f.q}
-                    <span aria-hidden className="text-[22px] font-light text-[#14131a]/40 transition group-open:rotate-45">+</span>
+                    <span aria-hidden className="text-[22px] font-light text-[#14131a]/65 transition group-open:rotate-45">+</span>
                   </summary>
                   <p className="mt-3 text-[15px] leading-relaxed text-[#14131a]/65">{f.a}</p>
                 </details>
@@ -299,14 +299,14 @@ export default function LandingPage() {
       </main>
 
       <footer className="border-t border-[#14131a]/10 px-4 py-10 sm:px-6">
-        <div className="mx-auto flex max-w-6xl flex-col gap-6 text-[13px] text-[#14131a]/55 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 text-[13px] text-[#14131a]/65 sm:flex-row sm:items-center sm:justify-between">
           <p>
             <span className="font-[family-name:var(--font-logo)] text-[16px] font-bold text-[#14131a]">Betsy</span>
             <span className="ml-3">Hecho en Costa Rica · © {new Date().getFullYear()}</span>
           </p>
           <nav aria-label="Legal y ayuda" className="flex flex-wrap gap-x-5 gap-y-2">
             <Link href="/soporte" className="hover:text-[#14131a]">Soporte</Link>
-            <Link href="/help" className="hover:text-[#14131a]">Centro de ayuda</Link>
+            <Link href="/docs" className="hover:text-[#14131a]">Centro de ayuda</Link>
             <Link href="/terms" className="hover:text-[#14131a]">Términos</Link>
             <Link href="/privacy" className="hover:text-[#14131a]">Privacidad</Link>
           </nav>

@@ -6,12 +6,7 @@ import { Clock } from 'lucide-react';
 import { Callout } from './mdx/Callout';
 import { Steps, Step } from './mdx/Steps';
 import { LinkCard } from './mdx/LinkCard';
-import { planPriceLabels } from '@/lib/pricing/plan';
 
-/** `<PlanPrice />` in docs: the plan price from src/lib/pricing/plan.ts, never typed by hand. */
-function PlanPrice({ show = 'short' }: { show?: 'base' | 'iva' | 'total' | 'short' | 'math' }) {
-  return <>{planPriceLabels()[show]}</>;
-}
 
 const CATEGORY_LABELS: Record<string, string> = {
   'getting-started': 'Primeros Pasos',
@@ -42,7 +37,6 @@ const mdxComponents = {
   Steps,
   Step,
   LinkCard,
-  PlanPrice,
   h2: ({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => {
     const text = getTextContent(children);
     const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');

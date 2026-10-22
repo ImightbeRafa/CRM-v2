@@ -1779,7 +1779,7 @@ export function SoftCopilotInboxV2() {
         [conversationId]: markOptimisticOutboundFailed(prev[conversationId] || [], clientRequestId),
       }))
       if (selectedConversationIdRef.current === conversationId) {
-        setSendError('No pudimos confirmar si salió. Tocá Reintentar: no se manda dos veces.')
+        setSendError('No pudimos confirmar si salió. Revisá el chat antes de tocar Reintentar.')
         setFailedOutboundId(`optimistic:${clientRequestId}`)
       }
       return
@@ -2168,6 +2168,8 @@ export function SoftCopilotInboxV2() {
       const row = (threadMessagesRef.current[selectedConversationId || ''] || []).find((m) => m.id === messageId)
       if (row?.content?.trim() && (row.messageType || 'text') === 'text') {
         void handleSendMessage({ preventDefault() {} } as FormEvent, { resendContent: row.content })
+      } else {
+        setSendError('Este archivo o plantilla no salió: volvé a adjuntarlo o elegí la plantilla de nuevo.')
       }
       return
     }

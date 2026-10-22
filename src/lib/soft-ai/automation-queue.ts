@@ -412,8 +412,24 @@ export async function rescheduleJob(row: ClaimedChatAutomationJob, retryAt: Date
       status: 'retry',
       availableAt: retryAt,
       payload: payload as Prisma.InputJsonValue,
+      // Verifier: outage retries never use up the general attempt limit (MAX_ATTEMPTS) the claim counted.
+      attempts: { decrement: 1 },
       leaseToken: null,
       leaseExpiresAt: null,
+      lastErrorCode: 'PROVIDER_OUTAGE',
+      lastErrorAt: new Date(),
+    },
+  })
+}
+
+/** Verifier: a provider_retry turn that finished after the processing timeout (failJob already set status retry). */
+export async function rescheduleLateJob(row: ClaimedChatAutomationJob, retryAt: Date, payload: Record<string, unknown>) {
+  await prisma.chatAutomationJob.updateMany({
+    where: { id: row.id, status: 'retry', attempts: row.attempts },
+    data: {
+      availableAt: retryAt,
+      payload: payload as Prisma.InputJsonValue,
+      attempts: { decrement: 1 },
       lastErrorCode: 'PROVIDER_OUTAGE',
       lastErrorAt: new Date(),
     },

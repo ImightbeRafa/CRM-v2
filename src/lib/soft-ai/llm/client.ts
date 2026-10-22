@@ -132,12 +132,19 @@ export function buildSoftAiResponsesBody(args: Omit<SoftAiResponsesCreateArgs, '
 export async function softAiResponsesCreate(args: SoftAiResponsesCreateArgs) {
   const model = resolveSoftAiModel(args.model)
   const timeoutMs = args.timeoutMs ?? SOFT_AI_FIRST_CALL_TIMEOUT_MS
-  const client = createSoftAiClient(model, timeoutMs)
+  let client: ReturnType<typeof createSoftAiClient>
+  try {
+    client = createSoftAiClient(model, timeoutMs)
+  } catch (error) {
+    // Verifier: a missing key (LLM_NOT_CONFIGURED) reaches the owner alert too.
+    void noteProviderFailure(error)
+    throw error
+  }
   const body = buildSoftAiResponsesBody({ ...args, model })
   const started = Date.now()
   const keyLabel = 'SOFT_AI_OPENAI_API_KEY'
-  // Lane D 2026-10-22: test calls (Probar / exams) stop at their own daily cap before spending live credit.
-  await assertTestBudget(args.usage?.feature)
+  // Lane D 2026-10-22: test calls (Probar / exams) stop at their business's daily test cap before spending live credit.
+  await assertTestBudget(args.usage?.feature, args.usage?.tenantId ?? null)
   try {
     const response = await client.responses.create(
       body as unknown as OpenAI.Responses.ResponseCreateParamsNonStreaming,

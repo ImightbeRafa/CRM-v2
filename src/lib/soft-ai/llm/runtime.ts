@@ -64,7 +64,7 @@ export type SoftAiLlmRuntimeInput = {
   linkedOrderId?: string | null
   toolCtx: SoftAiToolRunContext
   /** Meter label for sandbox turns: manual Probar vs automatic checks (quick check, unlock, test runs). */
-  usageFeature?: 'probar' | 'agent_test'
+  usageFeature?: 'probar' | 'agent_test' | 'agent_activation'
   pricingVersion: string
   brandFactsBlock?: string | null
   shortcutCatalog?: string | null
@@ -584,7 +584,9 @@ export async function runSoftAiLlmRuntime(
     const errorCode =
       error instanceof Error && error.message === 'LLM_NOT_CONFIGURED'
         ? 'LLM_NOT_CONFIGURED'
-        : authFailure
+        : error instanceof Error && error.message === 'TEST_BUDGET_EXCEEDED'
+          ? 'TEST_BUDGET_EXCEEDED'
+          : authFailure
           ? 'LLM_AUTH'
           : error instanceof Error && /timed? ?out|abort/i.test(error.message)
             ? 'LLM_TIMEOUT'

@@ -10,6 +10,7 @@ import {
   claimBatch,
   completeJob,
   rescheduleJob,
+  rescheduleLateJob,
   completeLateJob,
   failJob,
   NEWEST_BURST_JOB_ORDER,
@@ -198,7 +199,11 @@ export async function processClaimedJob(row: ClaimedChatAutomationJob, opts?: { 
     const timedOut = error instanceof Error && error.name === 'ChatAutomationTimeoutError'
     if (timedOut) {
       void work.then(
-        () => completeLateJob(row),
+        // Verifier: a late provider_retry keeps retrying (never 'completed' with its payload dropped).
+        (late) =>
+          late && typeof late === 'object' && 'status' in late && late.status === 'provider_retry'
+            ? rescheduleLateJob(row, late.retryAt, late.payload)
+            : completeLateJob(row),
         () => undefined,
       )
     }

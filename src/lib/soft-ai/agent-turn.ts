@@ -689,7 +689,8 @@ async function ackWaitingCustomer(input: {
     const accessToken = account?.accessToken ? decryptSocialAccessToken(account.accessToken) : null
     // SecureDog (INT): a disconnected / revoked / expired line never sends, like the main reply's token gate.
     const tokenStatus = String(account?.tokenStatus || '').toLowerCase()
-    const lineHealthy = Boolean(account && accessToken && account.isActive !== false && !account.disconnectedAt && tokenStatus !== 'revoked' && tokenStatus !== 'expired')
+    // SecureDog INT-219: the same token rule as the pre-send gate (valid / expiring only).
+    const lineHealthy = Boolean(account && accessToken && account.isActive !== false && !account.disconnectedAt && (tokenStatus === 'valid' || tokenStatus === 'expiring'))
     // Kill switch armed meanwhile (incident): re-checked right before the send.
     if (!lineHealthy || (await readAgentKillState(row.tenantId)).armed || (await isPlatformAiPaused())) {
       await prisma.chatAgentTurn.update({ where: { id: ackTurnId }, data: { status: 'skipped', skipReason: lineHealthy ? 'kill_switch' : 'token_unhealthy', completedAt: new Date() } })
@@ -766,14 +767,32 @@ async function handleProviderOutage(input: {
   kind: ProviderFailureKind
   triggerSentAt: Date
   hours: AfterHoursState
+  paymentInPlay?: boolean
 }): Promise<AgentTurnDispatchResult> {
   const { row } = input
   const now = new Date()
+  if (input.paymentInPlay) {
+    // SecureDog INT-217: a payment conversation never waits out an outage: the payment line, then a person (fail closed).
+    await persistSkippedTurn({
+      tenantId: row.tenantId,
+      conversationId: row.conversationId,
+      socialAccountId: row.socialAccountId,
+      agent: input.agent,
+      bindingId: input.bindingId,
+      triggerMessageId: row.messageId,
+      deliveryKey: row.deliveryKey,
+      skipReason: 'provider_down',
+    })
+    await sendOutageLine({ ...input, now, text: SAFE_LINE.payment })
+    await settleHandoff(row, { kind: 'handoff', reason: HANDOFF_REASON.payment }, input.hours)
+    return { status: 'skipped', reason: 'provider_down' }
+  }
   const plan = planProviderRetry({
     previous: readProviderRetryState(row.payload),
     kind: input.kind,
     now,
     windowClosesAt: new Date(input.triggerSentAt.getTime() + 24 * 3_600_000),
+    jitter: Math.random(),
   })
   await persistSkippedTurn({
     tenantId: row.tenantId,
@@ -801,7 +820,10 @@ async function sendOutageLine(input: {
   agent: ResolvedChatAgent
   bindingId: string | null
   triggerSentAt: Date
+  hours: AfterHoursState
   now: Date
+  /** The line to send (default: the review line, night wording after hours). */
+  text?: string
 }): Promise<void> {
   const { row } = input
   const platform = input.payload.platform || 'whatsapp'
@@ -811,7 +833,29 @@ async function sendOutageLine(input: {
     if (await hasHumanRepliedAfter({ conversationId: row.conversationId, triggerSentAt: input.triggerSentAt })) return
     const conv = await prisma.chatConversation.findFirst({ where: { id: row.conversationId, tenantId: row.tenantId }, select: { aiMode: true, peerName: true } })
     if (!conv || conv.aiMode === 'human' || conv.aiMode === 'paused') return
-    const text = SAFE_LINE.review
+    // Verifier: one safe line per chat, not one per customer message (the B1 loop cap, plus any outage line in 2 h).
+    if (await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey)) return
+    const recentOutageLine = await prisma.chatAgentTurn.findFirst({
+      where: { tenantId: row.tenantId, conversationId: row.conversationId, intent: 'outage_ack', status: 'delivered', completedAt: { gte: new Date(input.now.getTime() - 2 * 3_600_000) } },
+      select: { id: true },
+    })
+    if (recentOutageLine) return
+    // Verifier: at night the line says when the team is back (and the AI disclosure, transparent mode), like the review line.
+    const text = input.text ?? (input.hours.afterHours ? afterHoursReviewLine(input.hours.label, input.hours.transparent) : SAFE_LINE.review)
+    // The customer's message stays unanswered in the counts: the line "answers" only up to the message before it.
+    // SecureDog: the whole unanswered burst stays unanswered — only up to the last customer message the store answered.
+    const lastStoreReply = await prisma.chatMessage.findFirst({
+      where: { tenantId: row.tenantId, conversationId: row.conversationId, direction: 'outbound', sentAt: { lt: input.triggerSentAt } },
+      orderBy: { sentAt: 'desc' },
+      select: { sentAt: true },
+    })
+    const previousInbound = lastStoreReply
+      ? await prisma.chatMessage.findFirst({
+          where: { tenantId: row.tenantId, conversationId: row.conversationId, direction: 'inbound', sentAt: { lte: lastStoreReply.sentAt } },
+          orderBy: { sentAt: 'desc' },
+          select: { id: true },
+        })
+      : null
     let ackTurnId: string
     try {
       const created = await prisma.chatAgentTurn.create({
@@ -845,7 +889,8 @@ async function sendOutageLine(input: {
     })
     const accessToken = account?.accessToken ? decryptSocialAccessToken(account.accessToken) : null
     const tokenStatus = String(account?.tokenStatus || '').toLowerCase()
-    const lineHealthy = Boolean(account && accessToken && account.isActive !== false && !account.disconnectedAt && tokenStatus !== 'revoked' && tokenStatus !== 'expired')
+    // SecureDog INT-219: the same token rule as the pre-send gate (valid / expiring only).
+    const lineHealthy = Boolean(account && accessToken && account.isActive !== false && !account.disconnectedAt && (tokenStatus === 'valid' || tokenStatus === 'expiring'))
     if (!lineHealthy || (await readAgentKillState(row.tenantId)).armed || (await isPlatformAiPaused())) {
       await prisma.chatAgentTurn.update({ where: { id: ackTurnId }, data: { status: 'skipped', skipReason: lineHealthy ? 'kill_switch' : 'token_unhealthy', completedAt: new Date() } })
       return
@@ -875,6 +920,7 @@ async function sendOutageLine(input: {
       providerMessageId: providerMessageId || null,
       messageType: 'text',
       // Not an answer: the customer's message stays waiting for the real reply (or a person).
+      answersMessageId: previousInbound?.id ?? null,
       deliveryStatus: 'sent',
       platform,
       metadata: {
@@ -1494,6 +1540,8 @@ export async function executeAgentLayerTurn(
       kind: llm.providerFailure,
       triggerSentAt: trigger.sentAt,
       hours,
+      // SecureDog INT-217: with payment in play the "¿ya pagó?" check could not run either — a person, now.
+      paymentInPlay: paymentCheckGate(burst.inboundText, history),
     })
   }
 
@@ -2335,7 +2383,7 @@ async function runAgentTestTurnInner(input: {
   /** Images this test chat already showed (asset ids). */
   sentImageIds?: string[]
   /** Meter label: automatic checks pass 'agent_test' so they don't count as manual Probar. */
-  usageFeature?: 'probar' | 'agent_test'
+  usageFeature?: 'probar' | 'agent_test' | 'agent_activation'
   /** agents2-hours: "Simular fuera de horario" (Probar only). */
   simulateAfterHours?: boolean
   /**
@@ -2621,6 +2669,8 @@ async function runAgentTestTurnInner(input: {
     escalateReason = llm.escalateReason ?? null
     validationReasons = llm.validationReasons ?? []
     llmErrorCode = llm.errorCode ?? null
+    // Lane D: the business's daily test budget (US$) stopped the call — shown like the token cap.
+    if (llm.errorCode === 'TEST_BUDGET_EXCEEDED' && !blockedBy.includes('test_budget_blocked')) blockedBy.push('test_budget_blocked')
     salesTrace = runtimeInput.salesTrace ?? null
     const policy = applyFinalOutputPolicy({
       text: llm.text,

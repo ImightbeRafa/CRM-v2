@@ -71,6 +71,8 @@ export const PERIODIC_REARM_SKIP_REASONS: ReadonlySet<string> = new Set([
   'not_activated',
   'ai_full_not_unlocked',
   'stale_version',
+  // Lane D: a provider outage retry whose job ended without its reschedule (timeout / crash) is re-armed.
+  'provider_retry',
   // SecureDog INT-98: never 'kill_switch' / 'ai_terms_not_accepted' — lifting a kill switch must not answer the
   // incident's messages (up to 24 h old) automatically.
 ])
@@ -264,7 +266,11 @@ async function prepareConversation(
   // v53 tests 2026-10-18 (Verifier / SecureDog): an emoji reaction gets no turn from the webhook — the sweep skips it
   // too (else it re-created the job ~90 s later). An earlier unanswered question before it is still found.
   const latestRow =
-    recentRows.find((r) => (r.metadata as { waitingAck?: unknown } | null)?.waitingAck !== true && r.messageType !== 'reaction') ?? null
+    recentRows.find((r) => {
+      const meta = r.metadata as { waitingAck?: unknown; outageAck?: unknown } | null
+      // Lane D: the outage line ("Dame un momento" while OpenAI was down) is not an answer either.
+      return meta?.waitingAck !== true && meta?.outageAck !== true && r.messageType !== 'reaction'
+    }) ?? null
   const latest = latestRow
     ? {
         id: latestRow.id,

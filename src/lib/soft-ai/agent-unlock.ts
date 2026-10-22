@@ -217,7 +217,8 @@ async function defaultRunCanaryTurn(input: {
     windowOpen: true,
     conversationAiMode: 'ai_active',
     ignoreLayerFlag: true,
-    usageFeature: 'agent_test',
+    // Lane D: the activation canary is not a test run — the daily test cap never blocks turning a line on.
+    usageFeature: 'agent_activation',
   })
   return {
     text: turn.text,

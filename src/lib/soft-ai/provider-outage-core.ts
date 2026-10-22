@@ -26,9 +26,12 @@ export function classifyProviderFailure(error: unknown): ProviderFailureKind | n
   return null
 }
 
-/** The kinds the owner is alerted about ("OpenAI sin crédito / caído"): not a single slow call. */
+/**
+ * The kinds the owner is alerted about ("OpenAI sin crédito / caído"): not a single slow call, and not a plain rate limit
+ * (Verifier: intermittent 429s at peak traffic would flap the alert; a 429 for missing credit is 'quota').
+ */
 export function alertsOwner(kind: ProviderFailureKind | null): boolean {
-  return kind === 'quota' || kind === 'rate_limit' || kind === 'auth' || kind === 'server' || kind === 'not_configured'
+  return kind === 'quota' || kind === 'auth' || kind === 'server' || kind === 'not_configured'
 }
 
 /** Retry schedule for one customer message: silent at +2 min, then the safe line goes out once and retries continue. */
@@ -67,6 +70,8 @@ export function planProviderRetry(input: {
   now: Date
   /** When the 24 h customer-service window closes (last customer message + 24 h). */
   windowClosesAt: Date | null
+  /** 0..1, spreads retries ±20 % (SecureDog INT-222: jobs that failed together do not retry in one wave). Default 0.5. */
+  jitter?: number
 }): ProviderRetryPlan {
   const now = input.now.getTime()
   const prev = input.previous
@@ -77,12 +82,15 @@ export function planProviderRetry(input: {
     kind: input.kind,
   }
   const elapsed = now - Date.parse(state.firstAt)
-  const delayMin = PROVIDER_RETRY_DELAYS_MIN[state.n]
-  const retryAt = delayMin === undefined ? null : new Date(now + delayMin * 60_000)
+  // SecureDog INT-222: a timeout / network failure may just be a slow prompt — two retries, then a person.
+  const slowOnly = (input.kind === 'timeout' || input.kind === 'network') && state.n >= 2
+  const delayMin = slowOnly ? undefined : PROVIDER_RETRY_DELAYS_MIN[state.n]
+  const spread = 0.8 + 0.4 * Math.min(1, Math.max(0, input.jitter ?? 0.5))
+  const retryAt = delayMin === undefined ? null : new Date(now + Math.round(delayMin * 60_000 * spread))
   const fitsWindow =
     retryAt !== null &&
     (input.windowClosesAt === null || retryAt.getTime() <= input.windowClosesAt.getTime() - PROVIDER_RETRY_WINDOW_MARGIN_MS)
-  const canRetry = input.kind !== 'not_configured' && retryAt !== null && fitsWindow && elapsed + delayMin! * 60_000 <= PROVIDER_RETRY_MAX_MS
+  const canRetry = input.kind !== 'not_configured' && retryAt !== null && fitsWindow && retryAt.getTime() - Date.parse(state.firstAt) <= PROVIDER_RETRY_MAX_MS
   if (!canRetry) {
     return { action: 'handoff', sendAck: !state.ackSent, state: { ...state, ackSent: true } }
   }

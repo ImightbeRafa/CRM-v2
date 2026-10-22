@@ -17,7 +17,8 @@ import { csvCell } from '@/lib/csv-safe'
 export const AI_USAGE_FEATURE_LABELS: Record<string, string> = {
   inbox_agent: 'Agente del inbox',
   probar: 'Probar (pruebas manuales)',
-  agent_test: 'Probar y activar (pruebas automáticas)',
+  agent_test: 'Pruebas automáticas y exámenes',
+  agent_activation: 'Activar línea (prueba de encendido)',
   agent_import: 'Crear desde fuentes',
   shortcut_import: 'Importar atajos',
   vision: 'Visión (imágenes)',

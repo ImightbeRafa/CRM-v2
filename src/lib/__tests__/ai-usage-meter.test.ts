@@ -63,7 +63,7 @@ describe('AI usage meter (SQL 048)', () => {
     )
     // Automatic checks (quick check / test runs, unlock canaries) are metered as agent tests, not manual Probar.
     assert.match(read('src/lib/soft-ai/test-engine/run.ts'), /usageFeature: 'agent_test'/)
-    assert.match(read('src/lib/soft-ai/agent-unlock.ts'), /usageFeature: 'agent_test'/)
+    assert.match(read('src/lib/soft-ai/agent-unlock.ts'), /usageFeature: 'agent_activation'/)
     assert.match(read('src/lib/soft-ai/agent-turn.ts'), /runtimeInput\.usageFeature = input\.usageFeature \?\? 'probar'/)
     assert.match(read('src/lib/soft-ai/shortcut-import-server.ts'), /feature: 'shortcut_import'/)
     assert.match(read('src/lib/customer-paste-ai.ts'), /feature: 'customer_paste'/)

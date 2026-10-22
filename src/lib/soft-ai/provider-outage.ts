@@ -7,9 +7,10 @@
  * incident across containers via SQL 060 "AiProviderStatus" (claimed with a conditional UPDATE); without the table,
  * per process.
  *
- * Test budget: Probar / exam / shopper / test-engine calls (features 'probar', 'agent_test') stop at a hard platform
- * daily cap in USD (AI_TEST_DAILY_USD_CAP, default 15; Costa Rica day), so exam runs can never drain the credit live
- * replies need. Checked before every test call (cached a few seconds); the meter failing to read never blocks.
+ * Test budget: Probar / exam / shopper / test-engine calls (features 'probar', 'agent_test') of a business stop at a hard
+ * daily cap in USD per business (AI_TEST_DAILY_USD_CAP, default 15; Costa Rica day), so exam runs can never drain the
+ * credit live replies need. The line-activation canary ('agent_activation') is never capped. Checked before every test
+ * call (cached a few seconds); the meter failing to read never blocks.
  */
 import 'server-only'
 
@@ -24,6 +25,9 @@ let knownDownSince: number | null = null
 let localAlertedAt = 0
 const LOCAL_ALERT_COOLDOWN_MS = 60 * 60_000
 const OK_CHECK_INTERVAL_MS = 60_000
+const SUSTAINED_MS = 60_000
+const FAILURE_WRITE_INTERVAL_MS = 30_000
+let lastFailureWriteAt = 0
 let lastOkCheckAt = 0
 
 const KIND_TEXT: Record<string, string> = {
@@ -61,6 +65,9 @@ export async function noteProviderFailure(error: unknown, now = new Date()): Pro
   const kind = classifyProviderFailure(error)
   if (!alertsOwner(kind)) return
   if (knownDownSince === null) knownDownSince = now.getTime()
+  // SecureDog INT-216: this process already wrote the open incident in the last minute — no DB write per failure.
+  if (now.getTime() - lastFailureWriteAt < FAILURE_WRITE_INTERVAL_MS) return
+  lastFailureWriteAt = now.getTime()
   try {
     if (await isTableReady(TABLE)) {
       // Open (or keep) the incident, then claim the alert: only the container that flips alertedAt sends it.
@@ -71,16 +78,20 @@ export async function noteProviderFailure(error: unknown, now = new Date()): Pro
           "downSince" = COALESCE("AiProviderStatus"."downSince", EXCLUDED."downSince"),
           "lastKind" = EXCLUDED."lastKind",
           "updatedAt" = EXCLUDED."updatedAt"`
+      // Verifier: no flapping — quota / auth / missing key alert at once; 5xx only once the incident lasted 60 s.
+      const sustainedSince = new Date(now.getTime() - (kind === 'server' ? SUSTAINED_MS : 0))
       const claimed = await prisma.$queryRaw<Array<{ downSince: Date }>>`
         UPDATE "AiProviderStatus" SET "alertedAt" = ${now}
-         WHERE "provider" = ${PROVIDER} AND "downSince" IS NOT NULL AND "alertedAt" IS NULL
+         WHERE "provider" = ${PROVIDER} AND "downSince" IS NOT NULL AND "downSince" <= ${sustainedSince} AND "alertedAt" IS NULL
         RETURNING "downSince"`
-      if (claimed[0]) await alertOwner('down', new Date(claimed[0].downSince).toISOString(), kind!)
+      // SecureDog INT-216: the alert key is per kind and hour, so a flapping provider mails at most once an hour.
+      if (claimed[0]) await alertOwner('down', `${kind}:${now.toISOString().slice(0, 13)}`, kind!)
       return
     }
   } catch (dbError) {
     console.error('[provider-outage] status write failed', dbError instanceof Error ? dbError.name : 'unknown')
   }
+  if (kind === 'server' && knownDownSince !== null && now.getTime() - knownDownSince < SUSTAINED_MS) return
   if (now.getTime() - localAlertedAt >= LOCAL_ALERT_COOLDOWN_MS) {
     localAlertedAt = now.getTime()
     await alertOwner('down', now.toISOString().slice(0, 13), kind!)
@@ -100,7 +111,10 @@ export async function noteProviderOk(now = new Date()): Promise<void> {
         FROM (SELECT "alertedAt", "downSince" FROM "AiProviderStatus" WHERE "provider" = ${PROVIDER} FOR UPDATE) old
        WHERE s."provider" = ${PROVIDER} AND s."downSince" IS NOT NULL
       RETURNING old."alertedAt", old."downSince"`
-    if (closed[0]?.alertedAt) await alertOwner('up', new Date(closed[0].downSince).toISOString())
+    // SecureDog INT-216: "volvió" only after a real incident (it lasted 2 min or more), once an hour.
+    if (closed[0]?.alertedAt && now.getTime() - new Date(closed[0].downSince).getTime() >= 2 * 60_000) {
+      await alertOwner('up', now.toISOString().slice(0, 13))
+    }
   } catch (error) {
     console.error('[provider-outage] status close failed', error instanceof Error ? error.name : 'unknown')
   }
@@ -112,7 +126,7 @@ export async function noteProviderOk(now = new Date()): Promise<void> {
 export const TEST_AI_FEATURES = new Set(['probar', 'agent_test'])
 const DEFAULT_TEST_DAILY_USD = 15
 const TEST_SPEND_TTL_MS = 5_000
-let testSpendCache: { at: number; day: string; micros: number } | null = null
+const testSpendCache = new Map<string, { at: number; day: string; micros: number }>()
 
 export class TestBudgetExceededError extends Error {
   constructor() {
@@ -134,22 +148,24 @@ export function costaRicaDayStartUtc(now: Date): Date {
 }
 
 /** Throws TestBudgetExceededError when today's test spend reached the cap. Live features are never checked. */
-export async function assertTestBudget(feature: string | null | undefined, now = new Date()): Promise<void> {
-  if (!feature || !TEST_AI_FEATURES.has(feature)) return
+export async function assertTestBudget(feature: string | null | undefined, tenantId: string | null = null, now = new Date()): Promise<void> {
+  if (!feature || !TEST_AI_FEATURES.has(feature) || !tenantId) return
   const start = costaRicaDayStartUtc(now)
   const day = start.toISOString()
   let micros: number
-  if (testSpendCache && testSpendCache.day === day && now.getTime() - testSpendCache.at < TEST_SPEND_TTL_MS) {
-    micros = testSpendCache.micros
+  const hit = testSpendCache.get(tenantId)
+  if (hit && hit.day === day && now.getTime() - hit.at < TEST_SPEND_TTL_MS) {
+    micros = hit.micros
   } else {
     try {
       if (!(await isTableReady('AiUsageEvent'))) return
       const rows = await prisma.$queryRaw<Array<{ spent: bigint | number | null }>>`
         SELECT COALESCE(SUM("costMicros"), 0)::bigint AS "spent"
           FROM "AiUsageEvent"
-         WHERE "feature" IN ('probar', 'agent_test') AND "createdAt" >= ${start}`
+         WHERE "tenantId" = ${tenantId} AND "feature" IN ('probar', 'agent_test') AND "createdAt" >= ${start}`
       micros = Number(rows[0]?.spent ?? 0)
-      testSpendCache = { at: now.getTime(), day, micros }
+      if (testSpendCache.size > 500) testSpendCache.clear()
+      testSpendCache.set(tenantId, { at: now.getTime(), day, micros })
     } catch (error) {
       console.error('[provider-outage] test spend read failed', error instanceof Error ? error.name : 'unknown')
       return

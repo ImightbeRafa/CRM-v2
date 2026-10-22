@@ -321,9 +321,27 @@ export function freeShippingWording(text: string): Array<{ index: number; end: n
  * Deal wording is blocked unless the owner's active promo enables that exact kind (B1): free shipping and a special
  * price can be enabled; discounts, %, 2x1, "te lo dejo en", gifts are always blocked.
  */
+/**
+ * Lane C D6: the store saying it has NO discount ("No manejamos descuentos", "no tenemos promociones ni descuentos",
+ * "sin descuento") is not an offer. Closed shape: a negation, an optional "we have / there is" verb and an article right
+ * before the word, in the same clause — "no olvidés que hay descuento" is still an offer.
+ */
+const NEGATED_DEAL_BEFORE_RE =
+  /(?:^|[^\p{L}])(?:no|ni|tampoco|sin|nunca)\s+(?:(?:manejamos|tenemos|hay|ofrecemos|damos|aplicamos|hacemos|incluimos|contamos\s+con|existen?|est[aá]n\s+disponibles)\s+)?(?:(?:ning[uú]n|ninguna|ningunos|ningunas|el|la|los|las|un|una|unos|unas|otros?|otras?)\s+)?$/iu
+const NEGATABLE_DEAL_RE = /^(?:descuentos?|rebaj\p{L}*|promoci[oó]n(?:es)?\s+especial|oferta\s+especial|precio\s+especial)$/iu
+
+function negatedDeal(text: string, index: number, phrase: string): boolean {
+  if (!NEGATABLE_DEAL_RE.test(phrase)) return false
+  const before = text.slice(Math.max(0, index - 60), index)
+  const clause = before.slice(Math.max(before.lastIndexOf('.'), before.lastIndexOf('!'), before.lastIndexOf('?'), before.lastIndexOf('\n'), before.lastIndexOf(';')) + 1)
+  // "No tenemos promociones ni descuentos": the earlier listed deal sits between the verb and "ni".
+  return NEGATED_DEAL_BEFORE_RE.test(clause) || /(?:^|[^\p{L}])(?:no|sin|tampoco)\s+(?:\p{L}+\s+){1,4}ni\s+$/iu.test(clause)
+}
+
 export function dealProblem(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
   for (const m of text.matchAll(DEAL_ALL_RE)) {
     const phrase = m[1].trim()
+    if (negatedDeal(text, m.index ?? 0, phrase)) continue
     // Free-shipping phrasing is judged below with the wider wording list.
     if (FREE_SHIPPING_DEAL_RE.test(phrase)) continue
     if (allowed.includes('special_price') && SPECIAL_PRICE_DEAL_RE.test(phrase)) continue

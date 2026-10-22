@@ -270,6 +270,29 @@ export function afterHoursTeamLine(label: string): string {
   return `El equipo te escribe ${sentenceEnd(label)}`
 }
 
+/**
+ * Lane C D3 (2026-10-22): a complaint, a late order or a refund gets an empathetic hand-off line — never "¡Gracias!".
+ * In the agent's voice (fixed rule 10: no "te paso con otra persona").
+ */
+export const COMPLAINT_HANDOFF_LINE = 'Lamento mucho lo que pasó 🙏 Ya lo estoy revisando y te escribo en cuanto tenga noticias.'
+
+export function afterHoursComplaintLine(label: string, transparent = false): string {
+  return `Lamento mucho lo que pasó 🙏 ${afterHoursHandoffLine('person', label, transparent)}`
+}
+
+/** Lane C P8: a sentence that promises an answer right now ("en un momento te escribe alguien") — false after hours. */
+const IMMEDIATE_PROMISE_RE =
+  /(?<![\p{L}])(?:en\s+un\s+(?:momento|momentito|ratito|toque)|enseguida|en\s+seguida|ahorita|ahora\s+mismo|en\s+breve|ya\s+mismo|de\s+inmediato|inmediatamente)(?![\p{L}])/iu
+
+/** The text without its sentences that promise an immediate answer. */
+export function dropImmediatePromises(text: string): string {
+  return text
+    .split(/(?<=[.!?\n])\s*/u)
+    .filter((sentence) => !IMMEDIATE_PROMISE_RE.test(sentence))
+    .join(' ')
+    .trim()
+}
+
 export type AfterHoursTextOptions = {
   /** SAFE_LINE.review ("Dame un momento y te confirmo 😊"). */
   safeReview: string
@@ -301,9 +324,16 @@ export function applyAfterHoursText(
     const kind = afterHoursHandoffKind(plan.handoff.reason)
     if (!kind) return plan.text
     // A "no lo tengo" answer (unknown_answer) keeps what the agent did know, then says when the team writes.
-    if (kind === 'person' && (plan.handoff.reason === 'human_request' || plan.handoff.reason === 'unknown_answer') && text && text !== opts.safeReview.trim()) {
+    // Lane C D3: the empathetic complaint line keeps its empathy at night ("Lamento mucho… te escriben mañana").
+    const complaint = text === COMPLAINT_HANDOFF_LINE
+    // Lane C P8: "en un momento te escribe alguien" + "El equipo te escribe mañana" contradicted each other: the
+    // sentences that promise right now are dropped at night (the owner's other words are kept).
+    const kept = complaint ? '' : dropImmediatePromises(text)
+    if (complaint) {
+      body = afterHoursComplaintLine(state.label, state.transparent)
+    } else if (kind === 'person' && (plan.handoff.reason === 'human_request' || plan.handoff.reason === 'unknown_answer') && kept && text !== opts.safeReview.trim()) {
       // luna-10: the model already said when the team writes ("…hoy a las 8:00 a. m.") → never a second line.
-      body = text.includes(state.label.replace(/\.$/, '')) ? text : `${text}\n${afterHoursTeamLine(state.label)}`
+      body = kept.includes(state.label.replace(/\.$/, '')) ? kept : `${kept}\n${afterHoursTeamLine(state.label)}`
     } else {
       const line = afterHoursHandoffLine(kind, state.label, state.transparent)
       const keep = kind === 'order' && text && text !== opts.safeReview.trim()

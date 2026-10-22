@@ -6,6 +6,7 @@
 import type { EffectiveAgentBehavior } from '@/lib/soft-ai/agent-types'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 import { reservedShortcutBody } from '@/lib/soft-ai/shortcuts'
+import { COMPLAINT_HANDOFF_LINE } from '@/lib/soft-ai/business-hours'
 
 export type AgentTurnOutcomeName = 'send' | 'suggest' | 'skip'
 
@@ -176,7 +177,25 @@ export const SAFE_LINE = {
   payment: reservedShortcutBody('sys_handoff_payment'),
   /** Close with payment data not shared by chat: "Enseguida te paso cómo pagar 😊". */
   paymentSoon: reservedShortcutBody('sys_payment_soon'),
+  /** Lane C D3: complaint / late order / refund — empathy, never "¡Gracias!". */
+  complaint: COMPLAINT_HANDOFF_LINE,
 } as const
+
+/**
+ * Lane C D3: the customer is unhappy — a late order ("hace 10 días pagué y no me ha llegado"), a refund or a bad
+ * experience. Only chooses the hand-off LINE (empathy instead of "¡Gracias!"); it never decides whether a hand-off happens.
+ */
+const COMPLAINT_TEXT_RE =
+  /(?<![\p{L}])(?:no\s+(?:me\s+)?(?:ha|han|haya|hayan)\s+(?:llegado|enviado|mandado|entregado)|no\s+(?:me\s+)?(?:lleg[oó]|llega|llegan|llegaron)|nunca\s+(?:me\s+)?lleg\p{L}*|todav[ií]a\s+no\s+(?:me\s+)?lleg\p{L}*|a[uú]n\s+no\s+(?:me\s+)?lleg\p{L}*|y\s+nada|mal\s+servicio|p[eé]simo|p[eé]sima|qu[eé]\s+mal|estafa\p{L}*|me\s+(?:robaron|estafaron)|no\s+(?:me\s+)?(?:funcion\p{L}*|sirvi[oó]|sirvieron|sirve)|devuelv\p{L}*|devoluci[oó]n|reembols\p{L}*|reclamo|queja|molest[oa]s?|decepcion\p{L}*|enojad[oa]|vino\s+(?:mal|roto|da[nñ]ado|equivocado)|lleg[oó]\s+(?:mal|roto|da[nñ]ado|equivocado|incompleto))(?![\p{L}])/iu
+
+export function isComplaintText(text: string | null | undefined): boolean {
+  return COMPLAINT_TEXT_RE.test(String(text || '').normalize('NFKC'))
+}
+
+/** The customer line of a money hand-off: empathy for a complaint / refund, else the payment line. */
+export function moneyHandoffLine(reason: string | null | undefined, customerText?: string | null): string {
+  return reason === HANDOFF_REASON.refund || isComplaintText(customerText) ? SAFE_LINE.complaint : SAFE_LINE.payment
+}
 
 export type TurnDeliveryPlan = { text: string; handoff: TurnHandoff | null }
 
@@ -209,14 +228,17 @@ export function planModelTurnDelivery(input: {
   codOrderReady?: boolean
   /** N6: the order is paid in cash (a filled [[PAGO_EFECTIVO]] the customer chose) → reason 'order_ready_cash'. */
   orderReadyCash?: boolean
+  /** Lane C D3: the customer's unanswered text (picks the empathetic line for a complaint / late order / refund). */
+  customerText?: string
 }): TurnDeliveryPlan {
   const text = (input.text || '').trim()
   const usable = input.textOk && text.length > 0
-  if (input.receiptCue) return { text: SAFE_LINE.payment, handoff: { kind: 'handoff', reason: HANDOFF_REASON.payment } }
+  if (input.receiptCue) return { text: moneyHandoffLine(HANDOFF_REASON.payment, input.customerText), handoff: { kind: 'handoff', reason: HANDOFF_REASON.payment } }
   // INT-93: the reply sounded like a payment confirmation (or the model asked for a person about a payment): fixed text,
   // the chat goes to a person — whatever else is configured.
   if (input.llmEscalateReason === 'payment_claim') {
-    return { text: SAFE_LINE.payment, handoff: input.llmHandoff ?? { kind: 'handoff', reason: HANDOFF_REASON.payment } }
+    const handoff = input.llmHandoff ?? { kind: 'handoff' as const, reason: HANDOFF_REASON.payment }
+    return { text: moneyHandoffLine(handoff.reason, input.customerText), handoff }
   }
   const modelPaymentEscalate = input.llmEscalateReason === 'payment_or_sinpe'
   if (input.codOrderReady && !modelPaymentEscalate && input.llmHandoff?.kind !== 'review') {
@@ -233,7 +255,15 @@ export function planModelTurnDelivery(input: {
     // cannot go out ("¿de verdad funciona?", "¿dónde retiro?", "¿cuándo vuelve el NAD+?") gets the neutral safe line.
     const paymentHandoff = modelPaymentEscalate || isPaymentHandoffReason(input.llmHandoff.reason)
     return {
-      text: modelPaymentEscalate ? SAFE_LINE.payment : !usable ? (paymentHandoff ? SAFE_LINE.payment : SAFE_LINE.review) : cannotAnswer ? cutAfterCannotAnswer(text) : text,
+      text: modelPaymentEscalate
+        ? moneyHandoffLine(input.llmHandoff.reason, input.customerText)
+        : !usable
+          ? paymentHandoff
+            ? moneyHandoffLine(input.llmHandoff.reason, input.customerText)
+            : SAFE_LINE.review
+          : cannotAnswer
+            ? cutAfterCannotAnswer(text)
+            : text,
       handoff: input.llmHandoff,
     }
   }

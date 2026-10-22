@@ -70,6 +70,25 @@ describe('reviewer input (exam / shadow)', () => {
   })
 })
 
+describe('build-agent blocks what the engine would silently drop', () => {
+  it('a sales-rules field over its cap and knowledge over the prompt budget', async () => {
+    const { packLimitProblems } = await import('../../../scripts/agent-pack/build-agent')
+    const { parseSalesRules } = await import('@/lib/soft-ai/agent-sales-setup')
+    const salesRules = { voice: 'v', objections: 'x'.repeat(1300) }
+    const knowledge = [
+      { kind: 'brand_book' as const, name: 'a', body: 'y'.repeat(2500) },
+      { kind: 'policy' as const, name: 'b', body: 'z'.repeat(1600) },
+      { kind: 'faq' as const, name: 'c', body: 'q'.repeat(100) },
+    ]
+    const problems = packLimitProblems({ salesRules, knowledge }, parseSalesRules(salesRules))
+    assert.equal(problems.length, 2)
+    assert.match(problems[0], /objections: 1300 caracteres, el motor solo guarda 1200/)
+    assert.match(problems[1], /producto \+ políticas: 4100 de 4000/)
+    const ok = { voice: 'v', objections: 'x'.repeat(1200) }
+    assert.deepEqual(packLimitProblems({ salesRules: ok, knowledge: knowledge.slice(0, 1) }, parseSalesRules(ok)), [])
+  })
+})
+
 describe('export-chats helpers', () => {
   it('Costa Rica day window', () => {
     assert.equal(crDayStart('2026-10-21').toISOString(), '2026-10-21T06:00:00.000Z')

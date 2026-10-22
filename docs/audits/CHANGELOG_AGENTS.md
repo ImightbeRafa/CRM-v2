@@ -3,6 +3,8 @@
 - New `scripts/agent-pack/export-chats.ts` (`--accounts= --since= --until= [--out=]`): read-only export of the chats on some lines in a Costa Rica date window, every message tagged customer / teammate ("Equipo N") / agent, plus linked orders (ChatMessage.orderId, and orders of the chat's client in the window). Default output `test-results/chat-exports/` (gitignored); pack exports go to `betsy-agent-packs/<store>/results/` (gitignored there).
 - New `scripts/agent-pack/chat-scrub.ts`: names (contact, IG username, order customer, greeted "Hola Ana", "soy …"), links, @handles, emails, phones, accounts, tracking numbers, addresses, and data/order blocks (forwarded "#ORD-…" orders, multi-line name/phone/province blocks) are removed. `exam-bank.ts` uses the same extras, so exam banks no longer keep greeted names or forwarded-order names (DATA-65 / Pura Sonrisa P9).
 - Test: `src/lib/__tests__/chat-export-scrub.test.ts` (in `test:soft-ai`). No DB writes, no live path, no schema change.
+- Exam / shadow reviewer: the chat is scrubbed per message (a data list no longer wipes the whole history into the synthetic address); the night line is the pack's opening hour, not a fixed 8:00.
+- `build-agent.ts` now BLOCKS a pack the engine would silently cut: salesRules voice > 600, closing > 800, upsells / handoffWhen > 800, objections > 1 200, mustSay / neverSay > 10 × 200, brand_book + policy > 4 000 or faq > 3 000 (a doc is left out of the prompt). Forge and Pura Sonrisa had lost half their objections and Pura Sonrisa's SINPE closing step this way.
 
 ## 2026-10-21 — Exam bank: delivery-time after a confirmed order is a handoff
 

@@ -18,6 +18,7 @@ const PUBLIC_ROUTES = [
   '/api/auth',
   '/api/invites/accept',
   '/home',
+  '/home-preview',                               // Home v2 preview (noindex, no nav link)
   '/_next',
   '/favicon.ico',
   '/public',

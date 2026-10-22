@@ -472,14 +472,52 @@ const ODD_LATIN_RE = new RegExp(
     ']',
   'u',
 )
+const LOOKALIKE_SCRIPT_RES = [
+  /\p{Script=Latin}/u,
+  /\p{Script=Cyrillic}/u,
+  /\p{Script=Greek}/u,
+  /\p{Script=Armenian}/u,
+  /\p{Script=Cherokee}/u,
+  /\p{Script=Georgian}/u,
+  /\p{Script=Coptic}/u,
+]
 export function hasMixedScriptWord(text: string): boolean {
   // Verifier final: unit symbols are not look-alikes ("500µg", "10kΩ"; NFKC turns µ / Ω into Greek letters).
   const units = (text || '').normalize('NFKC').replace(/[μµ](?=[gmlsLVAFW])/gu, 'u').replace(/[ΩΩ]/gu, 'O')
-  for (const w of units.match(/[\p{L}\p{M}]+/gu) ?? []) {
+  const words = units.match(/[\p{L}\p{M}]+/gu) ?? []
+  const latinMessage = words.some((w) => /^[\p{Script=Latin}\p{M}]+$/u.test(w))
+  for (const w of words) {
     if (ODD_LATIN_RE.test(w)) return true
     if (/\p{Script=Latin}/u.test(w) && /[^\p{Script=Latin}\p{M}]/u.test(w)) return true
+    // SecureDog final (INT-209 residual): a word spelled entirely in look-alikes inside a Latin message ("Ya раցսе́"),
+    // or one word mixing two other scripts ("ѕіոре").
+    if (latinMessage && !/\p{Script=Latin}/u.test(w)) return true
+    if (LOOKALIKE_SCRIPT_RES.filter((re) => re.test(w)).length >= 2) return true
+    // Accent stuffing: a Latin word with two accented vowels ("págué") or a diacritic Spanish / Portuguese never uses
+    // ("pạgué"). NFC so á / é count as one letter each.
+    if (/\p{Script=Latin}/u.test(w)) {
+      const nfc = w.normalize('NFC')
+      // Spanish never puts two acute accents in one word (French "brûlée" / "Hélène" carry one acute at most).
+      if ((nfc.match(/[áéíóúÁÉÍÓÚ]/gu) ?? []).length >= 2) return true
+      // Latin-1 letters (Zoë, João, François, Crème) are names; Latin Extended diacritics (ạ, ǵ, ẹ) are not Spanish.
+      if (/[^\p{ASCII}À-ÖØ-öø-ÿ]/u.test(nfc)) return true
+    }
   }
   return false
+}
+
+/**
+ * SecureDog wave D final (INT-206 statement form): a short customer bubble (≤ 4 words, no question) carrying a done /
+ * payment word — "Listo", "Listo ✅", "Hecho", "Ya quedó", "Ahí va", "Ok listo", "ya pagúe". Only read after the store
+ * already sent its payment details (inbound-decision paymentDetailsSent), where it means "I paid".
+ */
+const SHORT_DONE_WORD_RE =
+  /(?<![\p{L}])(?:list[oa]|hecho|ya|qued[oó]|ah[ií]\s+va|enviad[oa]|mandad[oa]|pagad[oa]|pag\p{L}*|transfer\p{L}*|tranfer\p{L}*|deposit\p{L}*|sinpe|done|sent|paid)(?![\p{L}])|[✅✔☑]/iu
+export function isShortDoneBubble(text: string): boolean {
+  const v = stripFormatChars((text || '').normalize('NFKC'))
+  if (!v.trim() || /[?¿]/u.test(v) || v.length > 60) return false
+  const words = v.match(/\p{L}+/gu) ?? []
+  return words.length <= 4 && SHORT_DONE_WORD_RE.test(v)
 }
 
 /**

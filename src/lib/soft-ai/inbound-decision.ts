@@ -20,6 +20,7 @@ import {
   isCourtesyText,
   isCueFreePaymentChoiceText,
   isPlainPaymentLinkQuestion,
+  isShortDoneBubble,
   paymentHandoffReason,
   pendingMethodMention,
   type PaymentClassification,
@@ -171,6 +172,8 @@ export function decideInbound(input: {
    * choice is then a choice, not a payment claim. Undefined / null = old behaviour.
    */
   orderDataChoice?: ChosenPaymentMethod | null
+  /** SecureDog wave D final: the store already sent its payment details (sales-state paymentDetailsIn on its messages). */
+  paymentDetailsSent?: boolean
 }): InboundDecision {
   // SecureDog r1 INT-159: the relaxation needs a text message AND no bubble of the burst (this one included) hinting at
   // a payment's state ("¿Me confirmás?" + "¿Les llegó?" stays a payment hand-off).
@@ -191,7 +194,10 @@ export function decideInbound(input: {
   // Verifier round 10: only a real claim in an earlier bubble counts ("Sinpe" + "gracias" is an answer).
   // Verifier r2 (pay-choice-in-data F1) / SecureDog r3 INT-G: an earlier order-data bubble is forgiven only the store's
   // own list labels ("Nombre completo" ≠ "completo") — it must still pass every hard-claim check with those masked.
-  const burstClaim = (input.earlierCustomerTexts || []).some(
+  // SecureDog wave D final (INT-206 statement form): after the store's payment details, a short done-bubble with no
+  // question ("Listo", "Listo ✅", "Hecho", "Ya quedó", "Ahí va", "ya pagúe") is a payment message.
+  const doneAfterDetails = input.paymentDetailsSent === true && isText && isShortDoneBubble(input.inboundText)
+  const burstClaim = doneAfterDetails || (input.earlierCustomerTexts || []).some(
     (t) => hasHardPaymentClaim(t, { noPaymentYet }) && !(embeddedPaymentChoice(t) && !hasHardPaymentClaimLabelMasked(t)),
   )
   const forced = input.forcePaymentRisk === true

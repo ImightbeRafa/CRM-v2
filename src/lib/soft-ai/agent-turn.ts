@@ -100,7 +100,7 @@ import { notifyHandoff } from '@/lib/soft-ai/handoff-notify'
 import { decideWaitingAck, isOptOutText, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS, WAITING_ALERT_THROTTLE_MS } from '@/lib/soft-ai/waiting-ack'
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { dropRepeatedParts, REPEAT_WINDOW_MS } from '@/lib/soft-ai/repeat-guard'
-import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet, orderDataChoice } from '@/lib/soft-ai/sales-state'
+import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet, orderDataChoice, paymentDetailsIn } from '@/lib/soft-ai/sales-state'
 import { duplicateReceiptReply, isPaymentHandoff } from '@/lib/soft-ai/repeat-order'
 import { loadSettledSale } from '@/lib/soft-ai/settled-sale'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
@@ -1113,6 +1113,8 @@ export async function executeAgentLayerTurn(
     // A keyword reply WITH images whose image can't go out now ("Te paso la guía 👇" with nothing) → model answers.
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !liveImageReplyIds.has(id))),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
+    // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
+    paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),
     // Sleeping C2: nothing about paying in this chat yet (no payment details, receipt photo, payment words, web order).
     // SecureDog r1 MEDIA-16: the trigger too (a receipt photo sent as the newest bubble ends "no payment yet").
     noPaymentYet: noPaymentYet([
@@ -2342,6 +2344,8 @@ async function runAgentTestTurnInner(input: {
     shortcuts,
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !probarImageReplyIds.has(id))),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
+    // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
+    paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),
     // Sleeping C2: nothing about paying in this chat yet (photos / files counted from their type, like live).
     noPaymentYet: noPaymentYet([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }]),
     orderDataChoice: orderDataChoice([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }], {

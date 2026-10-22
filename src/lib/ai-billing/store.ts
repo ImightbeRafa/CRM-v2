@@ -379,6 +379,12 @@ export async function applyPurchaseWebhook(input: {
       return { result: 'refunded' as const, tenantId: p.tenantId }
     })
   }
+  if (action === 'mark_refunded') {
+    await prisma.$executeRaw`
+      UPDATE "AiCreditPurchase" SET "status" = 'refunded', "lastEvent" = 'refund before approval'
+       WHERE "id" = ${p.id} AND "status" IN ('pending', 'failed')`
+    return { result: 'ignored' }
+  }
   if (action === 'mark_failed') {
     await prisma.$executeRaw`UPDATE "AiCreditPurchase" SET "status" = 'failed' WHERE "id" = ${p.id} AND "status" = 'pending'`
     return { result: 'failed_marked' }

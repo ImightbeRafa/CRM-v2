@@ -188,7 +188,7 @@ export function formatMarkup(markupBps: number): string {
  * Pure webhook rule for a credit-pack payment (store.applyPurchaseWebhook runs it, then writes with
  * status-guarded UPDATE + UNIQUE ledger key so a replay or a race can never credit twice).
  */
-export type PurchaseWebhookAction = 'credit' | 'already_paid' | 'unknown_ref' | 'mismatch' | 'mark_failed' | 'refund' | 'ignore'
+export type PurchaseWebhookAction = 'credit' | 'already_paid' | 'unknown_ref' | 'mismatch' | 'mark_failed' | 'refund' | 'mark_refunded' | 'ignore'
 export function decidePurchaseWebhook(input: {
   purchase: { status: string; totalCents: number } | null
   approved: boolean
@@ -201,7 +201,8 @@ export function decidePurchaseWebhook(input: {
 }): PurchaseWebhookAction {
   const p = input.purchase
   if (!p) return 'unknown_ref'
-  if (input.refunded) return p.status === 'paid' ? 'refund' : 'ignore'
+  // A refund that beats the approval marks the purchase refunded, so a late (retried) approval never credits.
+  if (input.refunded) return p.status === 'paid' ? 'refund' : p.status === 'refunded' ? 'ignore' : 'mark_refunded'
   if (p.status === 'refunded') return 'ignore'
   if (p.status === 'paid') return 'already_paid'
   if (input.declined) return p.status === 'pending' ? 'mark_failed' : 'ignore'
@@ -223,13 +224,15 @@ export function creditPacksEnabled(env: Record<string, string | undefined> = pro
 
 /**
  * Credit payments only run in production: Railway preview shares the production database, so a preview webhook
- * (e.g. with a sandbox secret) must never credit the real ledger. APP_ENV 'production' or unset in a production
- * build passes; 'preview' / 'development' / any other value fails closed.
+ * (e.g. with a sandbox secret) must never credit the real ledger. Needs the production container marker
+ * (BACKUP_WRITER=1) and APP_ENV unset or 'production'; anything else fails closed.
  */
 export function creditPaymentsEnvAllowed(env: Record<string, string | undefined> = process.env): boolean {
   const appEnv = (env.APP_ENV || '').trim().toLowerCase()
-  if (appEnv) return appEnv === 'production'
-  return env.NODE_ENV === 'production'
+  if (appEnv && appEnv !== 'production') return false
+  // Only the Cloudflare production container: the Worker sets BACKUP_WRITER=1 (src/lib/ops/runtime.ts); Railway
+  // preview never does, whatever its APP_ENV says.
+  return (env.BACKUP_WRITER || '').trim() === '1'
 }
 
 /**

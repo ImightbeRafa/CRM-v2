@@ -66,7 +66,8 @@ describe('reviewer input (exam / shadow)', () => {
     assert.match(chat, /AGENTE: Pasame estos datos/)
     assert.match(chat, /mido 1\.77/)
     assert.doesNotMatch(chat, /Ana Solís|8888 7777/)
-    assert.match(chat, /CLIENTE: María Pérez Solís/) // the synthetic block, on that message only
+    assert.match(chat, /CLIENTE: \[el cliente mandó sus datos de envío/) // a neutral note on that message only (no fake address)
+    assert.doesNotMatch(chat, /Oreamuno/)
     // The store's own site stays in an agent reply; a customer's profile link never does.
     assert.match(redactCustomerText('Pagá en https://forge.shopping', null, { store: true }), /forge\.shopping/)
     assert.doesNotMatch(redactCustomerText('mi perfil https://instagram.com/ana.cr', null, { store: true }), /ana/)

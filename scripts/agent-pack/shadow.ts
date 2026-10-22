@@ -21,7 +21,7 @@ import { isWithinBusinessHours, parseBusinessHours } from '@/lib/soft-ai/busines
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { arg, loadPack } from './pack'
 import { codeChecks, reviewerKnowledge } from './exam'
-import { redactChatForReviewer, redactCustomerText } from './exam-bank'
+import { redactChatForReviewer, redactCustomerForReviewer, redactCustomerText } from './exam-bank'
 import { withExamSession } from './test-session'
 
 const BURST_MS = 90_000
@@ -49,7 +49,7 @@ async function compare(input: { tenantId: string; knowledge: string; history: st
         'Las frases del sitio ("apoya…", "ayuda a reducir antojos", "acompaña el ánimo") NO son promesas. Nombrar los métodos de pago para preguntar cuál prefiere es CORRECTO. De noche decir cuándo escribe el equipo es CORRECTO.',
         'Respondé solo el JSON; reason: una frase corta.',
       ].join('\n'),
-      input: [{ type: 'message', role: 'user', content: [`CONOCIMIENTO:\n${input.knowledge}`, `HORARIO: ${input.night ? 'de noche' : 'de día'}`, `CHAT ANTERIOR:\n${redactChatForReviewer(input.history) || '(nada)'}`, `CLIENTE: ${redactCustomerText(input.customer)}`, `AGENTE IA: ${redactCustomerText(input.agent, null, { store: true }) || '(no respondió)'}`, `EQUIPO: ${input.team ? redactCustomerText(input.team, null, { store: true }) : '(no respondió)'}`].join('\n\n') }],
+      input: [{ type: 'message', role: 'user', content: [`CONOCIMIENTO:\n${input.knowledge}`, `HORARIO: ${input.night ? 'de noche' : 'de día'}`, `CHAT ANTERIOR:\n${redactChatForReviewer(input.history) || '(nada)'}`, `CLIENTE: ${redactCustomerForReviewer(input.customer)}`, `AGENTE IA: ${redactCustomerText(input.agent, null, { store: true }) || '(no respondió)'}`, `EQUIPO: ${input.team ? redactCustomerText(input.team, null, { store: true }) : '(no respondió)'}`].join('\n\n') }],
       reasoningEffort: 'low',
       maxOutputTokens: 300,
       timeoutMs: 30_000,

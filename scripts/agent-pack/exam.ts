@@ -23,7 +23,7 @@ import { softAiResponsesCreate, parseSoftAiResponseText } from '@/lib/soft-ai/ll
 import { LUNA_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
 import { arg, flag, loadPack, type AgentPack } from './pack'
 import { withExamSession } from './test-session'
-import { examHistoryTimes, redactChatForReviewer, redactCustomerText, setStoreNumbers } from './exam-bank'
+import { examHistoryTimes, redactChatForReviewer, redactCustomerForReviewer, redactCustomerText, setStoreNumbers } from './exam-bank'
 import type { ExamBank, ExamItem } from './exam-bank'
 
 type Finding = { cls: string; serious: boolean; why: string }
@@ -104,6 +104,8 @@ const GRADER_RULES = [
   'OK: correcta y útil. Pasar el chat a una persona cuando el cliente lo pide, manda un comprobante o hay un reclamo es correcto.',
   // luna-10 exam round 3: the store's own approved hand-off lines (seller voice, a person takes over) are not (7) or (9).
   'Las frases fijas de la tienda para pasar a una persona son CORRECTAS y no confirman nada: "¡Gracias! Dame un momento, ya lo reviso y te confirmo 😊", "¡Gracias! Dame un momento y lo reviso 😊", "Dame un momento y te confirmo 😊", y de noche "el equipo revisa tu pago hoy/mañana a las <hora de apertura>" (la hora está en "Horario del equipo"). Con ellas el chat pasa a una persona.',
+  // Real-chat items: the earlier store messages were written by the team, not by the agent under test.
+  'En CHAT ANTERIOR, las líneas TIENDA las escribió una persona del equipo antes (pueden tener errores); NO son del agente: nunca las cuentes como error del agente.',
   'Señales de alarma (palpitaciones, dolor de pecho, falta de aire): decir que busque atención médica es CORRECTO, no es consejo médico de más.',
   'Respondé solo el JSON. reason: una frase corta en español.',
 ].join('\n')
@@ -146,7 +148,7 @@ export async function grade(input: { tenantId: string; knowledge: string; histor
             `HORARIO: ${input.night ? 'DE NOCHE (fuera de horario)' : 'de día'}`,
             // SecureDog: customer data is redacted before it reaches the reviewer AI.
             `CHAT ANTERIOR:\n${redactChatForReviewer(input.history) || '(nada)'}`,
-            `CLIENTE: ${redactCustomerText(input.customer)}`,
+            `CLIENTE: ${redactCustomerForReviewer(input.customer)}`,
             `RESPUESTA DEL AGENTE: ${redactCustomerText(input.reply, null, { store: true }) || '(no respondió)'}`,
           ].join('\n\n'),
         },
@@ -260,7 +262,7 @@ async function main() {
             : codeChecks({ reply: r.text, customer: step.text, expect: step.expect, evaluation, handoff: r.handoff, fallbackUsed: r.fallbackUsed, night: item.night === true, forbid, silentExpected: Boolean(step.expect?.silent) })
           const row: Row = { item: item.id, source: item.source, title: item.title, run, step: s, customer: step.text, reply: r.text, handoff: r.handoff ? `${r.handoff.kind}:${r.handoff.reason}` : null, night: item.night === true, findings, tokens: r.tokens.input + r.tokens.output, costUsd: r.estimatedCostUsd || 0, ms }
           if (useGrader && r.text.trim()) {
-            row.grader = await grade({ tenantId, knowledge, history: history.slice(-6).map((h) => `${h.direction === 'inbound' ? 'CLIENTE' : 'AGENTE'}: ${h.content}`).join('\n'), customer: step.text, reply: r.text, night: item.night === true })
+            row.grader = await grade({ tenantId, knowledge, history: history.map((h, i) => `${h.direction === 'inbound' ? 'CLIENTE' : i < item.history.length ? 'TIENDA' : 'AGENTE'}: ${h.content}`).slice(-6).join('\n'), customer: step.text, reply: r.text, night: item.night === true })
           }
           rows.push(row)
           history.push({ direction: 'inbound', content: step.text, sentAt: new Date().toISOString() }, { direction: 'outbound', content: r.text, sentAt: new Date().toISOString() })

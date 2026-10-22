@@ -113,6 +113,12 @@ function redactCustomerTextInner(text: string, peerName: string | null | undefin
   return t
 }
 
+/** The reviewer gets a neutral note instead of the synthetic address (it judged the agent against "Cartago, Oreamuno"). */
+export function redactCustomerForReviewer(text: string): string {
+  const t = redactCustomerText(text)
+  return t === SYNTHETIC_DATA ? '[el cliente mandó sus datos de envío: nombre, teléfono, provincia, cantón, distrito y dirección]' : t
+}
+
 /**
  * Reviewer input ("CLIENTE: …" / "AGENTE: …" / "TIENDA: …" lines): redacted line by line, so one customer data block
  * becomes the synthetic block on its own line instead of wiping the whole chat, and store lines keep their data list.
@@ -126,7 +132,7 @@ export function redactChatForReviewer(chat: string): string {
     else if (entries.length) entries[entries.length - 1].text += `\n${line}`
     else entries.push({ who: 'CLIENTE', text: line })
   }
-  return entries.map((e) => `${e.who}: ${e.who === 'CLIENTE' ? redactCustomerText(e.text) : redactCustomerText(e.text, null, { store: true })}`).join('\n')
+  return entries.map((e) => `${e.who}: ${e.who === 'CLIENTE' ? redactCustomerForReviewer(e.text) : redactCustomerText(e.text, null, { store: true })}`).join('\n')
 }
 
 const ASKS_PERSON = /\b(asesor|asesora|persona|humano|alguien que me atienda|hablar con alguien|agente)\b/iu

@@ -234,7 +234,7 @@ const PAY_STATEMENT_RE =
   /(?<![\p{L}])(?:pag\p{L}*|plata|platica|dinero|comprobante\p{L}*|sinpe\p{L}*|sinpi\p{L}*|transfer\p{L}*|transfi\p{L}*|dep[oó]sit\p{L}*|tarjeta\p{L}*|abon\p{L}*|cancel\p{L}*|cobr\p{L}*|cargo\p{L}*|recibo|monto|saldo|adelanto|resto|mitad|link|enlace|mand\p{L}*|pas[eéoó]|pasamos|pasaron|envi[eéoó]|enviamos|enviaron|encarg\p{L}*|di[oó]?|dimos|dieron|entreg\p{L}*|hic\p{L}*|hech\p{L}*|resolv\p{L}*|arregl\p{L}*|lleg\p{L}*|ca[ií]\p{L}*|cae|caer\p{L}*|todo|₡)(?![\p{L}])|(?<![\d-])\d{1,3}(?:[.,]\d{3})+(?![\d-])|\d+\s*(?:mil|k|rojos|colones)(?![\p{L}])/iu
 /** A payment noun or an amount (the per-sentence statement rule; never a bare "mandé / pasé / llegó"). */
 const PAY_NOUN_RE =
-  /(?<![\p{L}])(?:pag\p{L}*|plata|platica|dinero|sinpe\p{L}*|sinpi\p{L}*|transfer\p{L}*|transfi\p{L}*|dep[oó]sit\p{L}*|comprobante\p{L}*|abon\p{L}*|monto|mitad|resto|adelanto)(?![\p{L}])|₡|\d{3,}|\d+\s*(?:mil|rojos|k)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:pag\p{L}*|plata|platica|dinero|sinpe\p{L}*|sinpi\p{L}*|transfer\p{L}*|transfi\p{L}*|dep[oó]sit\p{L}*|comprobante\p{L}*|abon\p{L}*|monto|mitad|resto|adelanto)(?![\p{L}])|₡|(?<![\d-])\d{1,3}(?:[.,]\d{3})+(?![\d-])|\d+\s*(?:mil|rojos|colones|k)(?![\p{L}])/iu
 /** Opening words before the ask in a sentence ("Hola, …", "Pura vida, …", "Bueno, …"). */
 const LEADING_GREETING_RE = new RegExp(String.raw`^(?:(?:${GREETING})(?![\p{L}\d])[\s,]+)+`, 'iu')
 

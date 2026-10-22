@@ -131,7 +131,7 @@ export function readsAsForeignLanguage(text: string): boolean {
  */
 // SecureDog r3 #2: filler words before the yes ("Mmm sí", "Pues sí", "Jaja sí", "¡Gracias! Sí", "¡De una!").
 const AFFIRM_START_RE =
-  /^[\s¡!¿*_~"'«(\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Default_Ignorable_Code_Point}]*(?:(?:m+h*m+|pues|este|ja(?:ja)+|je(?:je)+|ay|bueno|mae|diay|gracias|muchas\s+gracias|hola|ok|okay)[\s,.!¡]+)*(?:s[ií]+p?|de\s+una|claro|aj[aá]|as[ií]\s+es|efectivamente|afirmativo|de\s+fijo|pura\s+vida|yes|yep|yeah|yup|correct[oa]|exact[oa]|perfecto|list[oa]|hecho|ok|okay|okey|dale|genial|excelente|confirmad[oa]|todo\s+bien|por\s+supuesto|got\s+it|sure)(?![\p{L}])/iu
+  /^[\s¡!¿*_~"'«(\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Default_Ignorable_Code_Point}]*(?:(?:m+h*m+|pues|este|ja(?:ja)+|je(?:je)+|ay|bueno|mae|diay|gracias|muchas\s+gracias|ok|okay)[\s,.!¡]+)*(?:s[ií]+p?|de\s+una|claro|aj[aá]|as[ií]\s+es|efectivamente|afirmativo|de\s+fijo|pura\s+vida|yes|yep|yeah|yup|correct[oa]|exact[oa]|perfecto|list[oa]|hecho|ok|okay|okey|dale|genial|excelente|confirmad[oa]|todo\s+bien|por\s+supuesto|got\s+it|sure)(?![\p{L}])/iu
 /**
  * A PENDING hand-over to the team ("el equipo lo revisa", "lo va a revisar", "te confirmo apenas lo vea", "un momento").
  * SecureDog r3 #2: never when the reply also says it is done ("el equipo ya lo confirmó", "ya lo verificamos").
@@ -177,17 +177,21 @@ const PAY_NOUN_IN_BUBBLE_RE = /(?<![\p{L}])(?:pag\p{L}*|plata|dinero|sinpe\p{L}*
  * question too. Judged on the question clause only; any product / price / other word keeps it a sales question.
  */
 const STATUS_WORDS = new Set(
-  'ya y o sí si se lo la le les me te nos todo bien así asi está esta estaba listo lista quedó quedo entró entro llegó llego cayó cayo pasó paso salió salio funcionó funciono reflejó reflejo tienen tiene recibieron recibió recibio vieron vio hola gracias ok okay porfa pura vida el pago sinpe plata dinero comprobante transferencia depósito deposito'.split(
+  'ya y o sí si se lo la le les me te nos todo bien está esta estaba listo lista quedó quedo entró entro llegó llego cayó cayo pasó paso salió salio funcionó funciono reflejó reflejo recibieron recibió recibio vieron vio gracias ok okay porfa el pago sinpe plata dinero comprobante transferencia depósito deposito'.split(
     ' ',
   ),
 )
+const STATE_VERBS = new Set('quedó quedo entró entro llegó llego cayó cayo pasó paso salió salio funcionó funciono reflejó reflejo recibieron recibió recibio vieron vio estaba'.split(' '))
 function isShortStatusClause(line: string): boolean {
   const q = line.lastIndexOf('?')
   if (q < 0) return false
   const head = line.slice(0, q)
   const clause = head.slice(Math.max(head.lastIndexOf('¿'), head.search(/[^.,!¡]*$/u), 0)).replace(/^¿/u, '')
   const words = (clause.toLowerCase().match(/\p{L}+/gu) ?? []).filter(Boolean)
-  return words.length > 0 && words.length <= 5 && words.every((w) => STATUS_WORDS.has(w))
+  // Verifier r4 #1: a state verb in the clause, or one of the exact short forms (never "¿Lo tienen?", "¿Hola?", "¿Así está bien?").
+  const joined = words.join(' ')
+  const stateVerb = words.some((w) => STATE_VERBS.has(w)) || /^(?:ya\s+)?(?:est[aá](?:\s+(?:list[oa]|todo\s+bien|bien))?|todo\s+bien|y|ya|list[oa])$/u.test(joined)
+  return words.length > 0 && words.length <= 5 && stateVerb && words.every((w) => STATUS_WORDS.has(w))
 }
 function isPaymentStatusQuestion(customerText: string, paymentInPlay = false): boolean {
   const gapped = invisibleAsGap(customerText)

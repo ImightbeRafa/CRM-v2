@@ -117,11 +117,36 @@ describe('r3 #5 / #6: owner payment blocks and policy lines', () => {
 const PAY = true
 describe('SecureDog r3: status questions, deferrals, look-alikes, third person, more verbs', () => {
   it('#1 short status questions with payment in play hold a yes', () => {
-    for (const q of ['Hola, ¿ya está?', 'Listo, ¿ya está?', '¿Ya está? 🙏', '¿Ya está? Gracias', '¿Ya está listo?', '¿Ya está todo bien?', '¿Ya quedó?', '¿Quedó?', '¿Todo bien?', '¿Está bien así?', '¿Entró?', '¿Llegó?', '¿Sí llegó?', '¿Ya pasó?', '¿Salió?', '¿Funcionó?', '¿Ya se reflejó?', '¿Lo tienen?', '¿Y?', '¿Ya?', '¿Listo?', 'Ya te lo envié, ¿todo bien?']) {
+    // "¿Lo tienen?" / "¿Está bien así?" are left out (Verifier r4: stock questions and data confirmations — recorded).
+    for (const q of ['Hola, ¿ya está?', 'Listo, ¿ya está?', '¿Ya está? 🙏', '¿Ya está? Gracias', '¿Ya está listo?', '¿Ya está todo bien?', '¿Ya quedó?', '¿Quedó?', '¿Todo bien?', '¿Entró?', '¿Llegó?', '¿Sí llegó?', '¿Ya pasó?', '¿Salió?', '¿Funcionó?', '¿Ya se reflejó?', '¿Y?', '¿Ya?', '¿Listo?', 'Ya te lo envié, ¿todo bien?']) {
       for (const r of ['¡Claro que sí!', '¡Sí!', '👍', '¡Sí! ¿Algo más?']) assert.equal(held(r, q, PAY), true, `${q} → ${r}`)
     }
     // without payment in play, a short question is a sales question
     assert.equal(held('¡Claro! ¿Qué talla buscás?', '¿Lo tienen?'), false)
+  })
+  it('Verifier r4: stock questions, pings and data confirmations in a payment chat are not held', () => {
+    for (const [q, r] of [
+      ['Quiero el de dormir. ¿Lo tienen?', '¡Claro! Está a ₡9.900 ¿Te lo aparto?'],
+      ['¿La tienen?', '¡Claro! ¿Te la aparto?'],
+      ['¿Tiene?', '¡Sí! ¿Cuántos querés?'],
+      ['¿Me lo tienen?', '¡Claro que sí! ¿Para cuándo lo ocupás?'],
+      ['¿Hola?', '¡Hola! Sí, acá estoy 😊 ¿Qué necesitás?'],
+      ['¿Hola?', '¡Hola! Disculpá la demora 😊'],
+      [lines('Nombre: Ana Mora', 'Dirección: Heredia', '¿Así está bien?'), '¡Perfecto, Ana! 😊 Total: ₡19.800 + envío ₡3.000. ¿Cómo preferís pagar?'],
+    ]) {
+      assert.equal(held(r, q, PAY), false, `${q} → ${r}`)
+    }
+  })
+  it('Verifier r4: a phone number or an address is not a payment amount', () => {
+    for (const [earlier, latest] of [
+      ['Ya les escribí, mi cel es 8888-1234. ¿Me ayudan?', 'Es para comprar el de dormir'],
+      ['Le escribí ayer al 8888-1234. ¿Siguen abiertos?', '¿Tienen el de dormir?'],
+      ['Pasé por la tienda, 200 m norte del parque. ¿Están abiertos?', 'Quiero el de dormir'],
+    ]) {
+      const d = decideInbound({ inboundText: latest, brandFacts: FACTS, shortcuts: SHORTCUTS, earlierCustomerTexts: [earlier] })
+      assert.notEqual(d.paymentClass, 'payment_proof_or_risk', earlier)
+    }
+    assert.equal(hasHardPaymentClaim('Ya les mandé 12.900. ¿Les llegó?'), true)
   })
   it('#2 a done deferral or a filler before the yes is still held', () => {
     for (const r of ['¡Sí! El equipo ya lo confirmó', '¡Sí! Ya lo verificamos', 'Sí, ya lo revisó el equipo', 'Sí, mi compañera ya lo verificó', 'Claro, el equipo ya lo revisó', 'Sí, el equipo ya revisó y está perfecto', 'Mmm sí, ¿algo más?', 'Pues sí', 'Jaja sí', 'Bueno sí', 'Mae sí', '¡Gracias! Sí ¿Algo más?', '¡De una! ¿Algo más?']) {

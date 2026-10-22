@@ -215,7 +215,7 @@ export function ConocimientoWizardInner({
                 Pegá texto, revisalo y aprobá. Solo lo aprobado entra al agente, como datos y no como instrucciones.
               </p>
             </div>
-            <ol className="flex shrink-0 gap-1.5 text-[11px] font-medium" aria-label="Pasos">
+            <ol className="flex shrink-0 gap-1.5 text-[12px] font-medium" aria-label="Pasos">
               {(['pegar', 'revisar', 'aprobar'] as Step[]).map((s, i) => (
                 <li
                   key={s}

@@ -1,5 +1,6 @@
 'use client'
 
+import { MobileCardTable } from '@/components/ui/MobileCardTable'
 import { useState } from 'react'
 import { AuroraErrorState } from '@/components/aurora/states'
 import { Bot, MoreHorizontal, RefreshCw, User } from 'lucide-react'
@@ -56,8 +57,8 @@ export function ChannelsTable(props: ChannelsTableProps) {
   const [menuId, setMenuId] = useState<string | null>(null)
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[820px] text-left" data-testid="channels-table">
+    <MobileCardTable className="overflow-x-auto">
+      <table className="m-cards w-full min-w-[820px] text-left" data-testid="channels-table">
         <thead>
           <tr className="border-b border-slate-100 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             <th className="px-5 py-3">Canal</th>
@@ -303,7 +304,7 @@ export function ChannelsTable(props: ChannelsTableProps) {
         </tbody>
       </table>
       {props.children}
-    </div>
+    </MobileCardTable>
   )
 }
 

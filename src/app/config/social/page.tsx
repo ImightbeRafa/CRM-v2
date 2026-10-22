@@ -913,7 +913,7 @@ export default function SocialConfigPage() {
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-[1200px] space-y-4 px-6 py-5">
+      <div className="mx-auto w-full max-w-[1200px] space-y-4 px-0 py-4 sm:px-6 sm:py-5">
         {statusMessage && !subscribeFailToast ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
             {statusMessage}

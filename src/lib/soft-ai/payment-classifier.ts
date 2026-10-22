@@ -10,7 +10,8 @@ export type PaymentClassification = 'non_payment' | 'payment_info_safe' | 'payme
 
 const PROOF_CUE_RE =
   // "ya te/les/lo pagué", "listo, ya lo pagué", "te mandé el sinpe" (accent-safe start: JS \b misses after á/é).
-  /(?<![\p{L}\p{N}_])(ya\s+((le|te|les|lo|la)\s+)?(pagu[eé]|hice|mand[eé]|transfer[ií]|deposit[eé])|comprobante|adjunto|captura|pantallazo|(le|te|les)\s+(envi[eé]|mand[eé])\s+(el\s+(sinpe|pago|comprobante)|la\s+plata|el\s+dinero)|pago\s+(realizado|hecho|listo)|listo\s+el\s+(pago|sinpe)|(ya\s+)?(est[aá]|qued[oó])\s+pagad[oa]|^\s*pagad[oa]\s*[!.✅👍]*\s*$|ref(?:erencia)?\s*\d)/iu
+  // SecureDog wave D r2 #7: two pronouns ("ya te la mandé", "ya se lo pasé") and a "Pagado." sentence before a question.
+  /(?<![\p{L}\p{N}_])(ya\s+(?:((le|te|les|lo|la|se)\s+){0,2}(pagu[eé]|hice|mand[eé]|transfer[ií]|deposit[eé])|((le|te|les|lo|la|se)\s+){1,2}pas[eé])(?![\p{L}])|(?:^|(?<=[\n.!,]))\s*pagad[oa]\s*[!.✅👍]*\s*(?=$|[\n.!?¿])|comprobante|adjunto|captura|pantallazo|(le|te|les)\s+(envi[eé]|mand[eé])\s+(el\s+(sinpe|pago|comprobante)|la\s+plata|el\s+dinero)|pago\s+(realizado|hecho|listo)|listo\s+el\s+(pago|sinpe)|(ya\s+)?(est[aá]|qued[oó])\s+pagad[oa]|^\s*pagad[oa]\s*[!.✅👍]*\s*$|ref(?:erencia)?\s*\d)/iu
 
 /**
  * Unicode-aware: JS \\b treats á/ó as non-word, so "llegó" and "confirman" would miss. Bare confirm / review verbs stay
@@ -422,9 +423,11 @@ export function mentionsConfirmVerb(text: string): boolean {
  * SecureDog INT-158 M1: a payment's state in English / Portuguese / French ("Did you receive my payment?", "Payment
  * done", "I paid yesterday", "Here is my transfer receipt", "pagamento feito", "paiement envoyé"). The prompt answers in
  * Spanish only, so any of these goes to a person. Both readings (invisible characters as gaps too).
+ * SecureDog wave D r2: deny by default — ANY English / PT / FR payment or money word (or "did it arrive / have you got
+ * it"), not a phrase list. An English "How can I pay?" goes to a person too (the agent answers in Spanish only).
  */
 const FOREIGN_PAYMENT_STATE_RE =
-  /(?<![\p{L}])(?:(?:i|we)\s+(?:already\s+|just\s+)?(?:paid|sent\s+(?:the\s+|my\s+)?(?:money|payment|transfer)|transferred|deposited|made\s+(?:the\s+)?payment)|payment\s+(?:is\s+|was\s+|has\s+been\s+)?(?:done|made|sent|completed|received|confirmed)|(?:did|have)\s+(?:you|u)\s+(?:get|got|receive|received|see|seen)\s+(?:my|the)\s+(?:payment|transfer|deposit|money|receipt)|(?:my|the)\s+(?:payment|transfer|deposit)\s+(?:went\s+through|arrived|is\s+done)|(?:transfer|payment|deposit)\s+receipt|refund|charged\s+(?:me|twice)|pagamento\s+(?:feito|enviado|realizado|recebido|confirmado)|j[aá]\s+paguei|paiement\s+(?:fait|envoy[eé]|effectu[eé]|re[cç]u|confirm[eé])|j['’]ai\s+pay[eé])(?![\p{L}])/iu
+  /(?<![\p{L}])(?:paid|pay|paying|payment|payments|transferred|transfer|transfers|wired|deposited|deposit|deposits|money|cash|receipt|receipts|refund\p{L}*|charged?|sent|done|pix|pagamento|pagamentos|paguei|pagou|pago\s+feito|virement|paiement|pay[eé]e?|re[cç]u|argent|(?:did|has|have)\s+(?:it|you|u)\s+(?:arrive[ds]?|got|get|gotten|receive[ds]?|seen|see)|went\s+through|recebe(?:u|ram|ste)|recebido)(?![\p{L}])/iu
 /** English / PT / FR payment-state wording in customer text (either reading). */
 export function hasForeignPaymentState(text: string): boolean {
   const gapped = invisibleAsGap(text)
@@ -483,6 +486,9 @@ export function invisibleAsGap(text: string): string | null {
   const gapped = nfkc
     .replace(/[\p{Zl}\p{Zp}]/gu, '\n')
     .replace(/[\p{Default_Ignorable_Code_Point}\p{Cc}]/gu, (c) => (c === '\n' || c === '\t' || c === '\r' ? c : ' '))
+    // SecureDog wave D r2 (INT-207): a visible blank that is not whitespace (U+2800 Braille blank, U+FFFC, symbols):
+    // anything that is not a letter, mark, number, punctuation, currency sign, emoji or whitespace is a gap too.
+    .replace(/[^\p{L}\p{M}\p{N}\p{P}\p{Sc}\p{Extended_Pictographic}\p{Emoji_Modifier}\s]/gu, ' ')
   return gapped === nfkc ? null : gapped
 }
 
@@ -506,7 +512,9 @@ function hardClaimIn(stripped: string, opts: { noPaymentYet?: boolean }): boolea
     RISK_CUE_RE.test(value) ||
     hasPaymentStatusClaim(value) ||
     isPaymentCompletionClaim(value) ||
-    (!/\?/.test(value) && PAY_STATEMENT_RE.test(value) && hasPastOrDoneWord(value, false))
+    (!/\?/.test(value) && PAY_STATEMENT_RE.test(value) && hasPastOrDoneWord(value, false)) ||
+    // SecureDog wave D r2 #7: also per sentence — one "?" elsewhere ("Ya se lo pasé, ¿me avisa?") does not excuse the rest.
+    value.split(/(?<=[.!?\n])/u).some((seg) => !/\?/.test(seg) && PAY_STATEMENT_RE.test(seg) && hasPastOrDoneWord(seg, false))
   )
 }
 
@@ -683,8 +691,8 @@ export function isClosedPayInfoQuestion(text: string): boolean {
 }
 /** A sentence that is only a greeting / courtesy ("Hola,", "Disculpe", "Una consulta") around the question. */
 const CLOSED_PAY_INFO_COURTESY_RE =
-  // Verifier r2 #3: "Perfecto, ¿qué le pongo de detalle?". Never sí / listo / ya / hecho (they can answer "¿ya pagó?").
-  /^(?:hola|holi|buenas|buenos\s+d[ií]as|buenas\s+(?:tardes|noches)|disculpe?|perd[oó]n|ok|oki|okey|gracias|muchas\s+gracias|una\s+consulta|consulta|pura\s+vida|(?:ok\s+|okey\s+)?(?:perfecto|dale|genial|excelente|bueno|claro|va))$/iu
+  // Verifier r2 #3: "Perfecto, ¿qué le pongo de detalle?". Never sí / claro / listo / ya / hecho (they can answer "¿ya pagó?").
+  /^(?:hola|holi|buenas|buenos\s+d[ií]as|buenas\s+(?:tardes|noches)|disculpe?|perd[oó]n|ok|oki|okey|gracias|muchas\s+gracias|una\s+consulta|consulta|pura\s+vida|(?:ok\s+|okey\s+)?(?:perfecto|dale|genial|excelente|bueno|va))$/iu
 
 export function classifyPaymentText(
   text: string,

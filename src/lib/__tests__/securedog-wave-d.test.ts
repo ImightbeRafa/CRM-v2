@@ -43,7 +43,7 @@ describe('INT-158 M1: English / Portuguese / French payment state', () => {
     for (const t of ['Did you receive my payment?', 'Payment done', 'I paid yesterday, did it arrive?', 'Here is my transfer receipt', 'pagamento feito', 'paiement envoyé']) {
       assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
     }
-    for (const t of ['Do you ship to Escazú?', 'How can I pay?', 'Hola, ¿tienen talla M?']) assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    for (const t of ['Do you ship to Escazú?', 'Hola, ¿tienen talla M?']) assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
   })
   it('reply side: held on every reply', () => {
     for (const r of ['Yes, we received your payment ✅', 'Payment received, thanks!', 'Your order has shipped 🚚', 'Payment confirmed', 'Pagamento recebido', 'Paiement reçu']) {

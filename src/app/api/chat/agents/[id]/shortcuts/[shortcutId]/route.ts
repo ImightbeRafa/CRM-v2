@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import { deleteShortcut, shortcutErrorStatus, updateShortcut } from '@/lib/soft-ai/shortcut-admin'
 import type { ShortcutDraft } from '@/lib/soft-ai/shortcuts'
 
@@ -16,7 +16,7 @@ export async function PATCH(
   context: { params: Promise<{ id: string; shortcutId: string }> },
 ) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config')
     if (!auth.ok) return auth.response
     const { id, shortcutId } = await context.params
     const patch = (await request.json().catch(() => null)) as Partial<ShortcutDraft> | null
@@ -48,7 +48,7 @@ export async function DELETE(
   context: { params: Promise<{ id: string; shortcutId: string }> },
 ) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config')
     if (!auth.ok) return auth.response
     const { id, shortcutId } = await context.params
     await deleteShortcut({

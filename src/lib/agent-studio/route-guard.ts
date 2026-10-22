@@ -5,7 +5,7 @@
 import 'server-only'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import { isSameOriginRequest } from '@/lib/same-origin'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
 import { prisma } from '@/lib/db'
@@ -36,7 +36,7 @@ export async function studioGuard(
   agentId: string,
   mode: 'read' | 'write' | 'heavy',
 ): Promise<{ ok: true; ctx: StudioCtx } | { ok: false; response: NextResponse }> {
-  const auth = await authenticateAPIWithPermission(request, mode === 'read' ? 'view_config' : 'update_config')
+  const auth = await authenticateAgentAPI(request, mode === 'read' ? 'view_config' : 'update_config')
   if (!auth.ok) return { ok: false, response: auth.response }
   if (mode !== 'read') {
     if (!isSameOriginRequest(request)) return { ok: false, response: json(403, 'Origen no permitido.') }

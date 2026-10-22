@@ -15,7 +15,7 @@
     "logs": { "enabled": true, "invocation_logs": true }
   },
   "triggers": {
-    // Unique schedules matching CRON_PATHS in src/cf-container-worker.ts (10 paths; "0 2 * * *" fans out to 2).
+    // Unique schedules matching CRON_PATHS in src/cf-container-worker.ts (16 paths; "0 2 * * *" fans out to 2).
     // Handler no-ops while DISABLE_CRONS=1 — safe to deploy before DNS flip.
     "crons": [
       "0 2 * * *",

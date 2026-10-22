@@ -81,7 +81,6 @@ CREATE TABLE IF NOT EXISTS public."SupportTicketEvent" (
   "emailStatus" text NOT NULL DEFAULT 'pending',
   "attempts" integer NOT NULL DEFAULT 0,
   "nextAttemptAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "lockedUntil" timestamp(3) without time zone NULL,
   "lastError" text NULL,
   "createdAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "SupportTicketEvent_type_check" CHECK (

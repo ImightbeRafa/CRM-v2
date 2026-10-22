@@ -1541,7 +1541,8 @@ model FeedbackTicket {
 
 // Support pipeline (docs/plans/support-pipeline/SPEC.md). Tables come from raw SQL
 // supabase/migrations/059_support_pipeline.sql — never prisma db push / migrate.
-// Scalar ids only (no relations) so Tenant/User stay untouched; FKs live in the SQL.
+// Scalar ids only, NO Prisma relations (even between these models: relations push the
+// tenant-scoped client types past TypeScript's depth limit, ~300 errors). FKs live in the SQL.
 // Only src/lib/support/** reads or writes these models.
 model SupportTicket {
   id                     String    @id @default(cuid())
@@ -1564,8 +1565,6 @@ model SupportTicket {
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
-  messages SupportTicketMessage[]
-  events   SupportTicketEvent[]
 
   @@index([tenantId, status])
   @@index([userId, createdAt(sort: Desc)])
@@ -1582,7 +1581,6 @@ model SupportTicketMessage {
   emailMessageId String?
   createdAt      DateTime @default(now())
 
-  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@index([ticketId, createdAt])
 }
@@ -1596,11 +1594,9 @@ model SupportTicketEvent {
   emailStatus   String    @default("pending")
   attempts      Int       @default(0)
   nextAttemptAt DateTime  @default(now())
-  lockedUntil   DateTime?
   lastError     String?
   createdAt     DateTime  @default(now())
 
-  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@index([nextAttemptAt])
   @@index([createdAt])

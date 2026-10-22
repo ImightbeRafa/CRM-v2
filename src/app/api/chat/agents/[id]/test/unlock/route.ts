@@ -5,13 +5,13 @@
  * Activar record, so this route only answers 410.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
-  const auth = await authenticateAPIWithPermission(request, 'update_config')
+  const auth = await authenticateAgentAPI(request, 'update_config')
   if (!auth.ok) return auth.response
   return NextResponse.json(
     { success: false, code: 'RETIRED', error: 'Usá "Probar y activar" en Probar para activar el agente en el canal.' },

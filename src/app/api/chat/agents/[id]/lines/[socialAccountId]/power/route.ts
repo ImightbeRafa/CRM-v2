@@ -10,7 +10,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { isSameOriginRequest } from '@/lib/same-origin'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import { prisma } from '@/lib/db'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
 import { ACTIVATION_REFUSAL_COPY, ActivationRefusal, powerOffLine, powerOnLine } from '@/lib/soft-ai/agent-activation'
@@ -37,7 +37,7 @@ const k = (n: number) => `${Math.round(n / 1000).toLocaleString('es-CR')} mil`
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string; socialAccountId: string }> }) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config')
     if (!auth.ok) return auth.response
     if (!isSameOriginRequest(request)) {
       return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })

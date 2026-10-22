@@ -119,7 +119,7 @@ export const EXPECTED_COLUMNS = {
   '056': [['ChatConversation', 'peerUsername'], ['ChatConversation', 'peerProfileCheckedAt']],
   '057': [['ChatSendClaim', 'clientRequestId'], ['ChatSendClaim', 'providerMessageId']],
   '058': [['SocialAccount', 'metaUserId'], ['MetaDataDeletionRequest', 'pendingPaths']],
-  '059': [['SupportTicket', 'number'], ['SupportTicket', 'contactEmail'], ['SupportTicketMessage', 'isDraft'], ['SupportTicketEvent', 'lockedUntil'], ['SupportMcpAudit', 'tool']],
+  '059': [['SupportTicket', 'number'], ['SupportTicket', 'contactEmail'], ['SupportTicketMessage', 'isDraft'], ['SupportTicketEvent', 'nextAttemptAt'], ['SupportMcpAudit', 'tool']],
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],
   '037': [['ChatConversation', 'repliedInboundCount']],

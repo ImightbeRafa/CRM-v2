@@ -3,7 +3,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import { probeAgent } from '@/lib/soft-ai/agent-admin'
 import { parseAgentTestRequest } from '@/lib/soft-ai/agent-test-schema'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
@@ -19,7 +19,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config')
     if (!auth.ok) return auth.response
     const rate = await probarRateLimit(`${auth.tenantId}:${auth.userId}`)
     if (!rate.allowed) {

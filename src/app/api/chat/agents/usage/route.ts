@@ -3,7 +3,7 @@
  * tenantId always comes from the session. Cost is this tenant's estimate only.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import {
   clampUsageDays,
   parseUsageMode,
@@ -23,7 +23,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'view_config')
+    const auth = await authenticateAgentAPI(request, 'view_config')
     if (!auth.ok) return auth.response
 
     const params = request.nextUrl.searchParams

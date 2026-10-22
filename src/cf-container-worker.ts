@@ -154,6 +154,21 @@ interface Env {
   OPS_ALERT_EMAIL?: string;
   // Meta sales attribution: sending stays off unless this is exactly "1" (never on Railway preview).
   META_SALES_CAPI_SENDER?: string;
+  // Support pipeline (off unless SUPPORT_PIPELINE_ENABLED=true).
+  SUPPORT_PIPELINE_ENABLED?: string;
+  SUPPORT_PUBLIC_BASE_URL?: string;
+  SUPPORT_AGENT_EMAIL?: string;
+  SUPPORT_ESCALATION_EMAIL?: string;
+  SUPPORT_FROM_EMAIL?: string;
+  SUPPORT_PUBLIC_EMAILS?: string;
+  SUPPORT_WHATSAPP?: string;
+  SUPPORT_INSTAGRAM?: string;
+  SUPPORT_HOURS?: string;
+  SUPPORT_AGENT_WEBHOOK_URL?: string;
+  SUPPORT_WEBHOOK_SECRET?: string;
+  SUPPORT_WEBHOOK_EVENTS?: string;
+  SUPPORT_AGENT_DRAFT_CATEGORIES?: string;
+  SUPPORT_MCP_TOKEN?: string;
   // NEXT_PUBLIC_* — client bundle is build-time; server process.env can still
   // read these at runtime for Embedded Signup / Meta helpers.
   NEXT_PUBLIC_FB_LOGIN_CONFIG_ID?: string;
@@ -242,6 +257,21 @@ const CONTAINER_ENV_KEYS = [
   "R2_SECRET_ACCESS_KEY",
   "OPS_ALERT_EMAIL",
   "META_SALES_CAPI_SENDER",
+  // Support pipeline (docs/runbooks/support-pipeline.md): off unless SUPPORT_PIPELINE_ENABLED=true.
+  "SUPPORT_PIPELINE_ENABLED",
+  "SUPPORT_PUBLIC_BASE_URL",
+  "SUPPORT_AGENT_EMAIL",
+  "SUPPORT_ESCALATION_EMAIL",
+  "SUPPORT_FROM_EMAIL",
+  "SUPPORT_PUBLIC_EMAILS",
+  "SUPPORT_WHATSAPP",
+  "SUPPORT_INSTAGRAM",
+  "SUPPORT_HOURS",
+  "SUPPORT_AGENT_WEBHOOK_URL",
+  "SUPPORT_WEBHOOK_SECRET",
+  "SUPPORT_WEBHOOK_EVENTS",
+  "SUPPORT_AGENT_DRAFT_CATEGORIES",
+  "SUPPORT_MCP_TOKEN",
   "NEXT_PUBLIC_FB_LOGIN_CONFIG_ID",
   "NEXT_PUBLIC_IG_LOGIN_CONFIG_ID",
   "NEXT_PUBLIC_META_APP_ID",
@@ -264,7 +294,8 @@ const CRON_PATHS: Record<string, readonly string[]> = {
   // meta-attribution: no-op unless META_SALES_CAPI_SENDER=1 and a business opted in.
   // ai-budget (F2): owner AI budget alerts / optional per-business auto-pause; no-op without budgets.
   // channel-silence (last: Graph probes can be slow): dead-line alarm, a busy WA / IG line went quiet or lost its token.
-  "*/5 * * * *": ["/api/cron/bot-inbox", "/api/cron/meta-attribution", "/api/cron/ai-budget", "/api/cron/channel-silence"],
+  // support-dispatch: support ticket outbox (webhook + emails); no-op unless SUPPORT_PIPELINE_ENABLED=true.
+  "*/5 * * * *": ["/api/cron/bot-inbox", "/api/cron/meta-attribution", "/api/cron/support-dispatch", "/api/cron/ai-budget", "/api/cron/channel-silence"],
   // chat-workspace (Phase 2b): assignment rules / auto-close / reopen; no-op unless a business turned them on.
   "*/1 * * * *": ["/api/cron/chat-automation", "/api/cron/chat-workspace"],
   "30 3 * * *": ["/api/cron/chat-agent-retention", "/api/cron/workspace-retention"],

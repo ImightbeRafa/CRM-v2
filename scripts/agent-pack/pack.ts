@@ -17,6 +17,8 @@ export type PackShortcut = {
   keywords: string[]
   body: string
   deliveryMode?: 'guide' | 'verbatim'
+  /** 'handoff': sent word for word and the chat goes to a person (must be verbatim, with keywords). Default 'playbook'. */
+  kind?: 'playbook' | 'handoff'
   /** File names under images/ (max 3). */
   images?: string[]
 }
@@ -77,7 +79,7 @@ export function loadPack(dir: string): { pack: AgentPack; dir: string } {
   const keys = new Set<string>()
   for (const s of pack.shortcuts) {
     if (s.key.startsWith('sys_')) problems.push(`atajo con clave reservada: ${s.key}`)
-    const v = validateShortcutForSave({ ...s, kind: 'playbook', deliveryMode: s.deliveryMode ?? 'guide' })
+    const v = validateShortcutForSave({ ...s, kind: s.kind ?? 'playbook', deliveryMode: s.deliveryMode ?? 'guide' })
     if (!v.ok) problems.push(`atajo ${s.key}: ${v.code}`)
     if (s.title !== s.title.trim() || s.body !== s.body.trim()) problems.push(`atajo ${s.key}: sin espacios al inicio o al final`)
     if (keys.has(s.key)) problems.push(`atajo repetido: ${s.key}`)

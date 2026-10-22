@@ -257,7 +257,7 @@ async function main() {
     const changedKeys = pack.shortcuts
       .filter((s) => {
         const row = shortcutsNow.get(s.key)
-        return row && !same([row.title, row.intents, row.keywords, row.body, row.deliveryMode, row.isActive], [s.title, s.intents ?? [], s.keywords ?? [], s.body, s.deliveryMode ?? 'guide', true])
+        return row && !same([row.title, row.kind, row.intents, row.keywords, row.body, row.deliveryMode, row.isActive], [s.title, s.kind ?? 'playbook', s.intents ?? [], s.keywords ?? [], s.body, s.deliveryMode ?? 'guide', true])
       })
       .map((s) => s.key)
     log(`  respuestas guardadas: ${newKeys.length} nuevas${newKeys.length ? ` (${newKeys.join(', ')})` : ''}, ${changedKeys.length} cambiadas${changedKeys.length ? ` (${changedKeys.join(', ')})` : ''}`)
@@ -328,7 +328,8 @@ async function main() {
     const draft = {
       key: s.key,
       title: s.title,
-      kind: 'playbook' as const,
+      // A 'handoff' reply is sent word for word AND passes the chat to a person (inbound-decision.ts, verbatim kind).
+      kind: s.kind ?? ('playbook' as const),
       intents: s.intents ?? [],
       keywords: s.keywords ?? [],
       body: s.body,
@@ -341,7 +342,7 @@ async function main() {
     if (!row) {
       id = (await createShortcut({ tenantId, agentId, ...actor, draft })).id
       log(`✔ respuesta ${s.key}`)
-    } else if (!same([row.title, row.intents, row.keywords, row.body, row.deliveryMode, row.isActive], [draft.title, draft.intents, draft.keywords, draft.body, draft.deliveryMode, true])) {
+    } else if (!same([row.title, row.kind, row.intents, row.keywords, row.body, row.deliveryMode, row.isActive], [draft.title, draft.kind, draft.intents, draft.keywords, draft.body, draft.deliveryMode, true])) {
       await updateShortcut({ tenantId, agentId, shortcutId: row.id, ...actor, patch: draft })
       log(`✔ respuesta ${s.key} (actualizada)`)
     }

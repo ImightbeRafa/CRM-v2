@@ -307,7 +307,7 @@ describe('quick replies with files', () => {
     })
     assert.equal(out.media.length, 1)
     const inbox = read('src/components/chats/SoftCopilotInboxV2.tsx')
-    assert.match(inbox, /caption: i === 0 && captionFits \? caption : ''/)
+    assert.match(inbox, /mediaJobBase\(i === 0 && captionFits \? caption : ''\)/)
   })
 })
 

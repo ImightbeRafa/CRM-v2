@@ -40,7 +40,7 @@ import {
 import { ChannelLogo } from '@/components/social/ChannelLogo'
 import { describeChatMessage, isPlaceholderToken, type ChatMessageNotice } from '@/lib/chat-message-display'
 import { ChatAssigneePicker, type ChatAssignee } from '@/components/chats/ChatAssigneePicker'
-import { ChatMediaBubble } from '@/components/chats/ChatMediaBubble'
+import { ChatMediaBubble, PendingMediaBubble } from '@/components/chats/ChatMediaBubble'
 import {
   EmojiPickerPopover,
   QuickRepliesManager,
@@ -1011,7 +1011,9 @@ export function SoftThreadPane({
             // Any stored `[type]` token (media, share, story_mention, ig_reel…) is never shown
             // as text next to the media (it stays after IG media gets cached).
             const isPlaceholder = showMedia && isPlaceholderToken(msg.content)
-            const mediaFetchable = showMedia && Boolean(msg.providerMediaId || msg.mediaBlobPath || hasInstagramAttachment(msg))
+            // A file still uploading (optimistic bubble) shows the picked file and its progress.
+            const pendingMedia = showMedia && msg.id.startsWith('optimistic:')
+            const mediaFetchable = showMedia && !pendingMedia && Boolean(msg.providerMediaId || msg.mediaBlobPath || hasInstagramAttachment(msg))
             const notice = showMedia ? null : describeChatMessage(msg)
             const humanSender = !softAi && outbound ? humanOutboundSender(msg.metadata) : null
             const humanLabel = humanSender ? humanOutboundLabel(msg.metadata) : null
@@ -1053,13 +1055,14 @@ export function SoftThreadPane({
                         : 'bg-white text-slate-900 ring-1 ring-slate-200/80'
                     }`}
                   >
+                    {pendingMedia ? <PendingMediaBubble msg={msg} /> : null}
                     {mediaFetchable ? <ChatMediaBubble msg={msg} outbound={outbound} /> : null}
                     {notice ? (
                       <SoftThreadNotice notice={notice} />
                     ) : !isPlaceholder ? (
                       <p className={`whitespace-pre-wrap break-words ${showMedia ? 'mt-1' : ''}`}>{msg.content}</p>
                     ) : null}
-                    {showMedia && isPlaceholder && !mediaFetchable ? (
+                    {showMedia && isPlaceholder && !mediaFetchable && !pendingMedia ? (
                       <p className="text-[11px] opacity-70">Adjunto no disponible</p>
                     ) : null}
                     {!compact && messageTime ? (

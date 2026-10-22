@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import type { ReactNode } from 'react'
 
 /** Fixed date of the current text. Change it (and the version) whenever the policy changes. */
@@ -326,9 +327,9 @@ export default function PrivacyPage() {
                 conversations, messages, media files, ad referrals and AI records received through it, and disconnect it. The
                 business keeps its own setup and the orders and customer records its team created. If a file cannot be deleted
                 at once, we retry automatically every night. You get a confirmation code and a status page at{' '}
-                <a href="/data-deletion" className="text-blue-600 hover:underline">
+                <Link href="/data-deletion" className="text-blue-600 hover:underline">
                   betsycrm.com/data-deletion
-                </a>
+                </Link>
                 . Backups roll over within 14 days. You can also ask by email at {mail('support@betsycrm.com')}.
               </p>
             </Sub>
@@ -417,9 +418,9 @@ export default function PrivacyPage() {
         </div>
 
         <div className="mt-8 pt-6 border-t">
-          <a href="/" className="text-blue-600 hover:underline">
+          <Link href="/" className="text-blue-600 hover:underline">
             ← Back to Betsy CRM
-          </a>
+          </Link>
         </div>
       </div>
 

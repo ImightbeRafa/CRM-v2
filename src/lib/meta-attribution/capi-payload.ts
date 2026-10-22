@@ -1,7 +1,9 @@
 /**
  * Conversions API for Business Messaging payload (pure; no token, no network).
- * WhatsApp: the click id (ctwa_clid) + the business's WhatsApp account id is all Meta needs —
- * no name, phone or email is ever sent (v1).
+ * WhatsApp: the click id (ctwa_clid) + the business's WhatsApp account id is all Meta needs.
+ * Instagram (no click id on IG): the business's Instagram account id + the customer's Instagram-scoped
+ * id (IGSID, the conversation peer from the messages webhook). No name, phone or email is ever sent.
+ * Meta doc: developers.facebook.com/docs/marketing-api/conversions-api/business-messaging.
  */
 export type PurchaseEventInput = {
   eventId: string
@@ -12,21 +14,45 @@ export type PurchaseEventInput = {
   currency: 'CRC' | 'USD'
 }
 
-export type CapiEvent = {
+export type InstagramPurchaseEventInput = {
+  eventId: string
+  eventTime: Date
+  /** The business's Instagram professional account id (= the IG user id the dataset hangs from). */
+  igAccountId: string
+  /** The customer's Instagram-scoped id (ChatConversation.peerId). */
+  igsid: string
+  value: number
+  currency: 'CRC' | 'USD'
+}
+
+type CapiEventBase = {
   event_name: 'Purchase'
   event_time: number
   event_id: string
   action_source: 'business_messaging'
-  messaging_channel: 'whatsapp'
-  user_data: { whatsapp_business_account_id: string; ctwa_clid: string }
   custom_data: { currency: 'CRC' | 'USD'; value: number }
 }
+
+export type WhatsAppCapiEvent = CapiEventBase & {
+  messaging_channel: 'whatsapp'
+  user_data: { whatsapp_business_account_id: string; ctwa_clid: string }
+}
+
+export type InstagramCapiEvent = CapiEventBase & {
+  messaging_channel: 'instagram'
+  user_data: { instagram_business_account_id: string; ig_sid: string }
+}
+
+export type CapiEvent = WhatsAppCapiEvent | InstagramCapiEvent
+
+/** Meta ids are numeric strings; anything else is never sent. */
+export const META_NUMERIC_ID = /^\d{5,30}$/
 
 export function purchaseEventId(orderId: string): string {
   return `betsy:order:${orderId}:Purchase`
 }
 
-export function buildPurchaseEvent(input: PurchaseEventInput): CapiEvent {
+export function buildPurchaseEvent(input: PurchaseEventInput): WhatsAppCapiEvent {
   return {
     event_name: 'Purchase',
     event_time: Math.floor(input.eventTime.getTime() / 1000),
@@ -34,6 +60,19 @@ export function buildPurchaseEvent(input: PurchaseEventInput): CapiEvent {
     action_source: 'business_messaging',
     messaging_channel: 'whatsapp',
     user_data: { whatsapp_business_account_id: input.wabaId, ctwa_clid: input.ctwaClid },
+    custom_data: { currency: input.currency, value: input.value },
+  }
+}
+
+export function buildInstagramPurchaseEvent(input: InstagramPurchaseEventInput): InstagramCapiEvent {
+  if (!META_NUMERIC_ID.test(input.igAccountId) || !META_NUMERIC_ID.test(input.igsid)) throw new Error('BAD_INSTAGRAM_ID')
+  return {
+    event_name: 'Purchase',
+    event_time: Math.floor(input.eventTime.getTime() / 1000),
+    event_id: input.eventId,
+    action_source: 'business_messaging',
+    messaging_channel: 'instagram',
+    user_data: { instagram_business_account_id: input.igAccountId, ig_sid: input.igsid },
     custom_data: { currency: input.currency, value: input.value },
   }
 }

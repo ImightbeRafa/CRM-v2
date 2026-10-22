@@ -4,10 +4,13 @@ import { prisma } from '@/lib/db'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { isMissingTable } from '@/lib/meta-attribution/referral-store'
-import { activeTestEventCode, readMetaSalesSettings, senderSwitchOn } from '@/lib/meta-attribution/settings'
+import { activeTestEventCode, instagramEventsAllowed, readMetaSalesSettings, senderSwitchOn } from '@/lib/meta-attribution/settings'
+import { datasetOwnerId } from '@/lib/meta-attribution/dataset'
 import {
   MAX_SEND_ATTEMPTS,
+  META_NUMERIC_ID,
   buildEventsBody,
+  buildInstagramPurchaseEvent,
   buildPurchaseEvent,
   classifyCapiError,
   retryDelayMs,
@@ -40,8 +43,10 @@ type Claimed = {
   id: string
   tenantId: string
   socialAccountId: string
+  conversationId: string | null
   orderId: string | null
   referralId: string | null
+  channel: string
   eventId: string
   eventTime: Date
   value: string | null
@@ -94,7 +99,8 @@ export async function sendPendingEvents(opts: { fetchImpl?: typeof fetch; now?: 
       SET "status" = 'processing', "attempts" = ev."attempts" + 1, "leaseToken" = ${leaseToken},
           "leaseExpiresAt" = ${leaseUntil}, "updatedAt" = ${now}
       FROM candidate WHERE ev."id" = candidate."id"
-      RETURNING ev."id", ev."tenantId", ev."socialAccountId", ev."orderId", ev."referralId", ev."eventId", ev."eventTime",
+      RETURNING ev."id", ev."tenantId", ev."socialAccountId", ev."conversationId", ev."orderId", ev."referralId", ev."channel",
+        ev."eventId", ev."eventTime",
         ev."value"::text AS "value", ev."currency", ev."attempts", ev."isTest", ev."leaseToken"`
   } catch (error) {
     if (isMissingTable(error)) return { ...result, disabled: 'tables_missing' }
@@ -149,8 +155,13 @@ async function sendLine(
   }
   const [dataset, account] = await Promise.all([
     prisma.metaCapiDataset.findFirst({ where: { socialAccountId, tenantId } }),
-    prisma.socialAccount.findFirst({ where: { id: socialAccountId, tenantId, isActive: true }, select: { wabaId: true, accessToken: true } }),
+    prisma.socialAccount.findFirst({
+      where: { id: socialAccountId, tenantId, isActive: true },
+      select: { wabaId: true, accessToken: true, platform: true, accountId: true },
+    }),
   ])
+  const isInstagram = account?.platform === 'instagram'
+  const ownerId = account ? datasetOwnerId(account) : null
   let token: string | null = null
   try {
     token = account?.accessToken ? decryptSocialAccessToken(account.accessToken) ?? null : null
@@ -158,10 +169,18 @@ async function sendLine(
     token = null
   }
   const datasetId = dataset?.datasetId && /^\d{5,30}$/.test(dataset.datasetId) ? dataset.datasetId : null
-  if (dataset?.status !== 'ready' || !datasetId || !account?.wabaId || !token) {
+  if (dataset?.status !== 'ready' || !datasetId || !ownerId || !token) {
     // Not sendable right now: keep the sales waiting (7-day expiry still applies).
     await reschedule(events, account ? 'line_not_ready' : 'line_gone', new Date(now.getTime() + LINE_NOT_READY_RETRY_MS), now)
     result.waiting += events.length
+    events.forEach((e) => done.add(e.id))
+    return
+  }
+
+  if (isInstagram && !instagramEventsAllowed(settings)) {
+    // The owner has not accepted the notice that names the Instagram id: nothing leaves for Instagram.
+    await finish(events, 'skipped', 'instagram_notice_not_accepted', now)
+    result.skipped += events.length
     events.forEach((e) => done.add(e.id))
     return
   }
@@ -194,13 +213,33 @@ async function sendLine(
       continue
     }
     const referral = row.referralId
-      ? await prisma.chatAdReferral.findFirst({ where: { id: row.referralId, tenantId }, select: { ctwaClid: true, occurredAt: true } })
+      ? await prisma.chatAdReferral.findFirst({
+          where: { id: row.referralId, tenantId },
+          select: { ctwaClid: true, occurredAt: true, platform: true, sourceType: true, conversationId: true },
+        })
       : null
     const value = row.value === null ? NaN : Number(row.value)
-    if (!referral?.ctwaClid || referral.occurredAt > row.eventTime || !Number.isFinite(value)) {
+    const fromAd = isInstagram
+      ? referral?.platform === 'instagram' && referral.sourceType === 'ad'
+      : Boolean(referral?.ctwaClid)
+    if (!referral || !fromAd || referral.occurredAt > row.eventTime || !Number.isFinite(value)) {
       await finish([row], 'expired', 'no_click', now)
       result.expired += 1
       continue
+    }
+    // Instagram: the customer's IGSID is the conversation peer, re-read now (a deleted chat sends nothing).
+    let igsid: string | null = null
+    if (isInstagram) {
+      const chat = await prisma.chatConversation.findFirst({
+        where: { id: referral.conversationId, tenantId, socialAccountId },
+        select: { peerId: true },
+      })
+      igsid = chat?.peerId && META_NUMERIC_ID.test(chat.peerId) ? chat.peerId : null
+      if (!igsid) {
+        await finish([row], 'expired', 'no_chat', now)
+        result.expired += 1
+        continue
+      }
     }
     // Test mode: each sale goes once as a test event, then for real after the code expires.
     if (testCode && row.isTest) {
@@ -208,8 +247,11 @@ async function sendLine(
       result.waiting += 1
       continue
     }
-    const event = buildPurchaseEvent({ eventId: row.eventId, eventTime: row.eventTime, wabaId: account.wabaId, ctwaClid: referral.ctwaClid, value, currency: row.currency })
-    const outcome = await postEvents(datasetId, token, buildEventsBody([event], testCode), fetchImpl)
+    const event =
+      isInstagram && igsid
+        ? buildInstagramPurchaseEvent({ eventId: row.eventId, eventTime: row.eventTime, igAccountId: ownerId, igsid, value, currency: row.currency })
+        : buildPurchaseEvent({ eventId: row.eventId, eventTime: row.eventTime, wabaId: ownerId, ctwaClid: referral.ctwaClid!, value, currency: row.currency })
+    const outcome = await postEvents(datasetId, token, buildEventsBody([event], testCode), fetchImpl, isInstagram ? 'instagram' : 'whatsapp')
     if (outcome.ok && testCode) {
       await prisma.metaConversionEvent.updateMany({
         where: { id: row.id, leaseToken: ctx.leaseToken },
@@ -286,9 +328,15 @@ async function postEvents(
   token: string,
   body: Record<string, unknown>,
   fetchImpl: typeof fetch,
+  channel: 'whatsapp' | 'instagram',
 ): Promise<{ ok: true; fbtraceId: string | null } | { ok: false; status: number; code: number | null }> {
   try {
-    const url = addAppSecretProofToUrl(buildMetaGraphUrl(`${datasetId}/events`), token, { purpose: 'whatsapp' })
+    // WhatsApp tokens are proofed with the WA secret; the IG Page token with the Inbox app's (default).
+    const url = addAppSecretProofToUrl(
+      buildMetaGraphUrl(`${datasetId}/events`),
+      token,
+      channel === 'whatsapp' ? { purpose: 'whatsapp' } : undefined,
+    )
     const res = await fetchImpl(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },

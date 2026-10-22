@@ -798,8 +798,17 @@ const CLOSED_PAY_INFO_SEG_RE = new RegExp(
  */
 const CLOSED_PAY_CONTEXT_SEG_RE =
   /^(?:lo|la)\s+quiero(?:\s+(?:en\s+)?(?:talla|color)\s+[\p{L}]{1,12})?$|^vivo\s+en\s+[\p{L}]+(?:\s+[\p{L}]+){0,3}$|^(?:(?:dale|ok|okey|perfecto|bueno|va)\s*,?\s*)?(?:pago|pagar[eé]|voy\s+a\s+pagar|te\s+pago|le\s+pago|lo\s+pago)\s+(?:por|con)\s+(?:sinpe(?:\s+m[oó]vil)?|transferencia|tarjeta|efectivo)$/iu
+/**
+ * Lane C D2 round 3: everyday spellings of SINPE ("simpe", "sinpi") and a split clitic ("hacer te un simpe") read as the
+ * clean form. Used for the closed shape and as an extra hand-off reading — never to clear a message the raw text flags.
+ */
+export function normalizePaySpelling(v: string): string {
+  return v
+    .replace(/(?<![\p{L}])(?:s[iy]mpe|sinpi|simpi|cinpe)(?![\p{L}])/giu, 'sinpe')
+    .replace(/(?<![\p{L}])(hacer|mandar|enviar|pasar|depositar|transferir)\s+(te|le|les)(?![\p{L}])/giu, '$1$2')
+}
 export function isClosedPayInfoQuestion(text: string): boolean {
-  const v = clean(stripFormatChars((text || '').normalize('NFKC')))
+  const v = clean(normalizePaySpelling(stripFormatChars((text || '').normalize('NFKC'))))
   if (!v.trim() || v.length > 200 || /\d/.test(v)) return false
   const segs = v
     .replace(/¿/gu, '\u0001¿')
@@ -816,9 +825,12 @@ const CLOSED_PAY_INFO_COURTESY_RE =
   // Verifier r2 #3: "Perfecto, ¿qué le pongo de detalle?". Never sí / claro / listo / ya / hecho (they can answer "¿ya pagó?").
   /^(?:hola|holi|buenas|buenos\s+d[ií]as|buenas\s+(?:tardes|noches)|disculpe?|perd[oó]n|ok|oki|okey|gracias|muchas\s+gracias|una\s+consulta|consulta|pura\s+vida|(?:ok\s+|okey\s+)?(?:perfecto|dale|genial|excelente|bueno|va))$/iu
 
-/** Lane C D8: price / total / size / shipping-to words — the message asks more than how to pay. */
+/**
+ * Lane C D8: price / total / size / shipping-to words, or an opinion / worry about paying ("¿qué es mejor, SINPE o
+ * tarjeta? No quiero dar mi tarjeta") — the message asks more than which methods there are.
+ */
 const ASKS_MORE_THAN_PAYMENT_RE =
-  /(?<![\p{L}])(?:cu[aá]nto|total|precio|cuesta|cuestan|vale|valen|talla|tallas|mido|peso|medida|medidas|env[ií]o\s+a|tama[nñ]o)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:cu[aá]nto|total|precio|cuesta|cuestan|vale|valen|talla|tallas|mido|peso|medida|medidas|env[ií]o\s+a|tama[nñ]o|mejor|conviene|recomend\p{L}*|segur[oa]s?|seguridad|confiable|confianza|miedo|no\s+quiero|prefiero\s+no)(?![\p{L}])/iu
 
 export function classifyPaymentText(
   text: string,
@@ -827,8 +839,11 @@ export function classifyPaymentText(
   // SecureDog INT-201: the latest message too is read with invisible characters as gaps; a hand-off in either wins.
   const gapped = invisibleAsGap(text)
   const plain = classifyPaymentTextRules(text, opts)
+  // Lane C D2 round 3: "ya te hice el simpe" is read as "sinpe" too (only ever adds a hand-off).
+  const spelled = normalizePaySpelling(text || '')
   const cls =
     (plain !== 'payment_proof_or_risk' && gapped !== null && classifyPaymentTextRules(gapped, opts) === 'payment_proof_or_risk') ||
+    (plain !== 'payment_proof_or_risk' && spelled !== text && classifyPaymentTextRules(spelled, opts) === 'payment_proof_or_risk') ||
     hasMixedScriptWord(text)
       ? 'payment_proof_or_risk'
       : plain === 'payment_proof_or_risk' || !hasForeignPaymentState(text)

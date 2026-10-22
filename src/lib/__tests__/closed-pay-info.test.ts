@@ -6,7 +6,8 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { classifyPaymentText, isClosedPayInfoQuestion } from '@/lib/soft-ai/payment-classifier'
+import { classifyPaymentText, isClosedPayInfoQuestion, normalizePaySpelling } from '@/lib/soft-ai/payment-classifier'
+import { deriveSalesState, type SalesContext } from '@/lib/soft-ai/sales-state'
 import { paymentCheckGate } from '@/lib/soft-ai/payment-claim-check-core'
 import { isPaymentSensitiveText } from '@/lib/soft-ai/config'
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
@@ -106,5 +107,47 @@ describe('closed before-paying questions (Forge real-49 / real-61)', () => {
     assert.equal(paymentCheckGate('Listo, ya está', hist), true)
     // an earlier unanswered bubble with a claim keeps the check
     assert.equal(paymentCheckGate('Que le pongo de detalle', [...hist, { direction: 'inbound', content: 'ya lo hice' }]), true)
+  })
+})
+
+describe('Lane C D2 / D8 round 3 (Forge exam 2026-10-22 21:00)', () => {
+  const CTX = {
+    catalog: [{ name: 'Arnés', price: 14900, stockLabel: 'disponible' }],
+    shippingMethods: [{ name: 'Correos', price: 2500, coverage: 'todo el país', cod: 'no' }],
+    orderFields: [],
+    salesScript: '',
+    aiDisclosure: 'discreet',
+    paymentShareable: true,
+    paymentDigits: [],
+    promo: null,
+    bundles: [],
+    paymentMethods: ['sinpe'],
+    stock: { soldOut: [], inStockNames: ['Arnés'] },
+  } as unknown as SalesContext
+  it('"simpe" and a split clitic read like the clean question', () => {
+    for (const t of ['Cual seria el número para hacer te un simpe', 'Cual seria el número para hacer te un sinpe', 'cual seria el numero para hacerle un sinpi']) {
+      assert.equal(isClosedPayInfoQuestion(t), true, t)
+      assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+    assert.equal(normalizePaySpelling('ya te hice el simpe'), 'ya te hice el sinpe')
+  })
+  it('a misspelled claim still hands off', () => {
+    for (const t of ['ya le hice el simpe', 'Listo, ya mandé el simpe', 'te hice el sinpi', 'ya pagué por simpe']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+      assert.equal(isClosedPayInfoQuestion(t), false, t)
+    }
+  })
+  it('"pago mañana y envío el comprobante" is not a receipt; a real receipt still is', () => {
+    const ask = deriveSalesState({ history: [], inboundText: 'Lo quiero talla XL. ¿Puedo hacer el pago mañana y envío el comprobante?', ctx: CTX })
+    assert.equal(ask.receiptCue, false)
+    assert.notEqual(ask.stage, 'verificando')
+    for (const t of ['Ahí te mando el comprobante', 'ya pagué, adjunto comprobante', 'comprobante']) {
+      assert.equal(deriveSalesState({ history: [], inboundText: t, ctx: CTX }).receiptCue, true, t)
+    }
+  })
+  it('an opinion / worry about paying goes to the model, not the method list', () => {
+    assert.equal(classifyPaymentText('¿Qué es mejor, SINPE o tarjeta? No quiero dar mi tarjeta'), 'non_payment')
+    assert.equal(classifyPaymentText('¿Es seguro pagar con tarjeta?'), 'non_payment')
+    assert.equal(classifyPaymentText('¿Qué métodos de pago tienen?'), 'payment_info_safe')
   })
 })

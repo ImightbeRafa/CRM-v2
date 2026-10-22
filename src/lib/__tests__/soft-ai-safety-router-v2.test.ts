@@ -73,7 +73,9 @@ describe('safety router v2', () => {
     ]) {
       const route = routeInboundSafety({ inboundText })
       assert.equal(route.escalate, false, inboundText)
-      assert.equal(route.paymentClass, 'payment_info_safe', inboundText)
+      // Lane C D8 round 3: an opinion / worry ("¿qué es mejor…?", "no quiero dar…") goes to the model (non_payment);
+      // never a hand-off either way.
+      assert.notEqual(route.paymentClass, 'payment_proof_or_risk', inboundText)
     }
   })
 

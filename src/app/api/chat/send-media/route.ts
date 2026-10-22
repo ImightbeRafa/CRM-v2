@@ -29,6 +29,8 @@ function toResponse(result: SendMediaResult, clientRequestId: string | null) {
   return NextResponse.json({
     success: true,
     ...(result.duplicate ? { duplicate: true } : {}),
+    ...(result.persisted === false ? { persisted: false } : {}),
+    ...(result.inFlight ? { inFlight: true } : {}),
     message: result.message,
     conversationId: result.conversationId,
     clientRequestId,

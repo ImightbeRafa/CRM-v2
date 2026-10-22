@@ -26,6 +26,10 @@ export interface ChatInboxMessage {
   deliveryStatus?: string | null
   /** Client-generated idempotency key for optimistic reconcile (metadata.clientRequestId). */
   clientRequestId?: string
+  /** Pending file bubble only: browser preview (blob: URL or an already stored file). */
+  localPreviewUrl?: string
+  /** Pending file bubble only: upload progress 0..1. */
+  uploadProgress?: number
 }
 
 export interface ChatConversation {
@@ -292,6 +296,34 @@ export function preferDeliveryStatus(
   return deliveryRank(b) >= deliveryRank(a) ? b : a
 }
 
+/**
+ * Thread order: stored rows by send time, then bubbles not stored yet (in typing order). A pending
+ * bubble never jumps above one already sent when the browser clock and the server clock differ
+ * (fast sends looked like they reordered).
+ */
+export function compareThreadMessages(
+  a: { id: string; sentAt: string },
+  b: { id: string; sentAt: string },
+): number {
+  const aPending = a.id.startsWith('optimistic:')
+  const bPending = b.id.startsWith('optimistic:')
+  if (aPending !== bPending) return aPending ? 1 : -1
+  return a.sentAt.localeCompare(b.sentAt) || a.id.localeCompare(b.id)
+}
+
+/**
+ * Opening a chat puts the cursor in the composer on a computer (Rafael 2026-10-22). Never on a phone
+ * or tablet: focusing there pops the keyboard over the thread; the agent taps the box when ready.
+ */
+export function shouldAutoFocusComposer(
+  matchMedia: ((query: string) => { matches: boolean }) | undefined = typeof window !== 'undefined'
+    ? window.matchMedia?.bind(window)
+    : undefined,
+): boolean {
+  if (!matchMedia) return false
+  return matchMedia('(min-width: 768px)').matches && matchMedia('(hover: hover) and (pointer: fine)').matches
+}
+
 export function newClientRequestId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
@@ -323,6 +355,48 @@ export function createOptimisticOutboundMessage(opts: {
       ...(opts.platform ? { platform: opts.platform } : {}),
     },
   }
+}
+
+/** Pending file bubble: shows the picked file (preview + progress) until the stored row replaces it. */
+export function createOptimisticOutboundMedia(opts: {
+  clientRequestId: string
+  messageType: string
+  mimeType: string
+  filename: string
+  caption?: string
+  localPreviewUrl?: string
+  to?: string
+  platform?: string
+}): ChatInboxMessage {
+  const base = createOptimisticOutboundMessage({
+    content: opts.caption?.trim() || `[${opts.messageType}]`,
+    clientRequestId: opts.clientRequestId,
+    to: opts.to,
+    platform: opts.platform,
+  })
+  return {
+    ...base,
+    messageType: opts.messageType,
+    mediaMimeType: opts.mimeType,
+    mediaFilename: opts.filename,
+    localPreviewUrl: opts.localPreviewUrl,
+    uploadProgress: 0,
+  }
+}
+
+/** Patch one pending bubble (progress, status) by its clientRequestId. */
+export function patchOptimisticOutbound(
+  messages: ChatInboxMessage[],
+  clientRequestId: string,
+  patch: Partial<Pick<ChatInboxMessage, 'uploadProgress' | 'deliveryStatus'>>,
+): ChatInboxMessage[] {
+  let changed = false
+  const next = messages.map((m) => {
+    if (m.id !== `optimistic:${clientRequestId}`) return m
+    changed = true
+    return { ...m, ...patch }
+  })
+  return changed ? next : messages
 }
 
 export function appendOptimisticOutbound(
@@ -365,7 +439,7 @@ export function reconcileOptimisticOutbound(
       deliveryStatus: persisted.deliveryStatus ?? 'sent',
     })
   }
-  return next.sort((a, b) => a.sentAt.localeCompare(b.sentAt) || a.id.localeCompare(b.id))
+  return next.sort(compareThreadMessages)
 }
 
 export function markOptimisticOutboundFailed(
@@ -377,6 +451,23 @@ export function markOptimisticOutboundFailed(
       return { ...m, deliveryStatus: 'failed' }
     }
     return m
+  })
+}
+
+/**
+ * The server answered success without a stored row: `persisted:false` means the customer got it
+ * (bubble shows "sent", never an error); `inFlight` means another request with this id is still
+ * sending it (bubble keeps "sending"). The next poll merges the real row by clientRequestId.
+ */
+export function settleOptimisticOutboundWithoutRow(
+  messages: ChatInboxMessage[],
+  clientRequestId: string,
+  outcome: { inFlight?: boolean },
+): ChatInboxMessage[] {
+  const status = outcome.inFlight ? 'pending' : 'sent'
+  return messages.map((m) => {
+    if (m.id !== `optimistic:${clientRequestId}`) return m
+    return { ...m, deliveryStatus: preferDeliveryStatus(m.deliveryStatus, status) ?? status }
   })
 }
 
@@ -439,9 +530,7 @@ export function mergeThreadMessagesPreferDelivery(
   for (const m of existing) upsert(m)
   for (const m of incoming) upsert(m)
 
-  return [...byId.values()].sort(
-    (a, b) => a.sentAt.localeCompare(b.sentAt) || a.id.localeCompare(b.id),
-  )
+  return [...byId.values()].sort(compareThreadMessages)
 }
 
 /** Patch list-row preview fields after an optimistic outbound send. */

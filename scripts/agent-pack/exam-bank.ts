@@ -91,12 +91,21 @@ const PAYMENT_WORDS = /\b(pagu[eé]|pag[oó]|comprobante|sinpe|transferencia|tra
 const COMPLAINT_WORDS = /\b(reclamo|devoluci|reembolso|no me lleg[oó]|estafa|queja|mal estado|roto)\b/iu
 // luna-10 exam round 2: alarm symptoms, partnership / event proposals and reseller pricing are rightly handed off.
 const HANDOFF_OK_WORDS =
-  /(?<![\p{L}])(?:palpitaci\p{L}*|dolor\s+de\s+pecho|desmay\p{L}*|falta\s+de\s+aire|convulsi\p{L}*|alergi\p{L}*|cofundador\p{L}*|fundador\p{L}*|colaboraci\p{L}*|alianza|propuesta|patrocin\p{L}*|evento|vendedor\p{L}*|revend\p{L}*|mayoreo|al\s+por\s+mayor|distribu\p{L}*)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:palpitaci\p{L}*|dolor\s+de\s+pecho|desmay\p{L}*|falta\s+de\s+aire|convulsi\p{L}*|alergi\p{L}*|cofundador\p{L}*|fundador\p{L}*|colaboraci\p{L}*|alianza|propuesta|patrocin\p{L}*|evento|vendedor\p{L}*|revend\p{L}*|mayoreo|al\s+por\s+mayor|distribu\p{L}*|expreso|expr[eé]s|express|urgente)(?![\p{L}])/iu
 const QUESTION_HINT = /\?|^(qu[eé]|c[oó]mo|cu[aá]nto|cu[aá]l|d[oó]nde|tienen|hacen|puedo|se puede|sirve|info|precio|me regala)/iu
 
+const ORDER_ALREADY_IN =
+  /pedido fue ingresado|sinpe fue confirmado|n[uú]mero de pedido|#ORD-|gu[ií]a\s*PY|su pedido/iu
+const ORDER_STATUS_ASK = /llegar[ií]a|cu[aá]ndo lleg|estado (del|de mi|de su)? ?pedido|gu[ií]a/iu
+
 /** What a real customer message must produce (only what is certain; the rest is judged by the grader). */
-export function expectForRealMessage(text: string): ScenarioStep['expect'] {
+export function expectForRealMessage(
+  text: string,
+  history: Array<{ direction: string; content: string }> = [],
+): ScenarioStep['expect'] {
   if (ASKS_PERSON.test(text)) return { handoff: true }
+  const prior = history.map((h) => h.content).join('\n')
+  if (ORDER_ALREADY_IN.test(prior) && ORDER_STATUS_ASK.test(text)) return { handoff: true }
   if (PAYMENT_WORDS.test(text) || COMPLAINT_WORDS.test(text) || text === SYNTHETIC_DATA) return {}
   if (HANDOFF_OK_WORDS.test(text)) return {}
   if (QUESTION_HINT.test(text.trim())) return { handoff: false }
@@ -140,7 +149,7 @@ async function main() {
         title: `Chat real: ${m.content.slice(0, 60).replace(/\n/g, ' ')}`,
         // C5: the real gaps (minutes before this message), so the replay sees the same 10-min look-back as live.
         history: lines.slice(Math.max(0, i - 6), i).map((h) => ({ direction: h.direction, content: h.content, agoMin: Math.max(0.1, Math.round((m.at - h.at) / 6_000) / 10) })),
-        steps: [{ text: m.content, expect: expectForRealMessage(m.content) }],
+        steps: [{ text: m.content, expect: expectForRealMessage(m.content, lines.slice(Math.max(0, i - 6), i)) }],
       })
     })
   }

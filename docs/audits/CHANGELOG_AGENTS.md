@@ -1,3 +1,8 @@
+## 2026-10-21 — Exam bank: delivery-time after a confirmed order is a handoff
+
+- `expectForRealMessage` now sees the 6-message history. If the team already confirmed a SINPE / entered the order, “¿cuándo llegaría?” / guía / estado is `handoff: true` (existing order), not a first-contact shipping question.
+- No live agent, schema, or customer-path change. Pack applies for Pura/Forge stay draft.
+
 ## 2026-10-19 — Inbox search, open orders, multi-product replies, silent handoff, repeat sales, 4h silence floor
 
 - /chats search finds a chat by order number (with or without #, partial), phone (+506, dashes, spaces), customer name, @handle and email. Order lookup is this tenant only, at most 30 orders and 50 chats. The inbox keeps a server hit even when the loaded row has no email.

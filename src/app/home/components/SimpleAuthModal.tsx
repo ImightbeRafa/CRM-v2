@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
@@ -16,6 +16,8 @@ import { loginErrorMessage } from '@/lib/login-error-message';
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Which form to show when the modal opens (default: sign in). */
+  mode?: 'signin' | 'signup';
 }
 
 // Costa Rica provinces
@@ -43,7 +45,7 @@ const COUNTRIES = [
   { code: 'OTHER', name: 'Otro', flag: '🌍', phoneCode: '' },
 ];
 
-export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
+export default function SimpleAuthModal({ isOpen, onClose, mode = 'signin' }: AuthModalProps) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [signUpStep, setSignUpStep] = useState(1); // 1 = account, 2 = business info
   const [showPassword, setShowPassword] = useState(false);
@@ -63,6 +65,13 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
     country: 'CR',
     province: '',
   });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setIsSignUp(mode === 'signup');
+    setSignUpStep(1);
+    setError('');
+  }, [isOpen, mode]);
 
   if (!isOpen) return null;
 
@@ -264,7 +273,7 @@ export default function SimpleAuthModal({ isOpen, onClose }: AuthModalProps) {
           <CardDescription className="text-center">
             {isSignUp 
               ? (signUpStep === 1 
-                  ? 'Únete a cientos de negocios usando Betsy' 
+                  ? '7 días gratis, sin tarjeta' 
                   : 'Completa tu perfil para comenzar')
               : 'Inicia sesión para continuar'
             }

@@ -1,3 +1,11 @@
+## 2026-10-22 — New home page + one plan-price source (Lane H part 1, claude/wave-home-pricing-4ad5c6; no SQL)
+
+- `/home` rewritten: server-rendered sections (metadata + OG, Spanish CR voseo), two small client islands (nav + one sign-in/sign-up modal, Meta pixel ViewContent kept). Sections: hero, unified WA+IG inbox, ventas → producción → envíos (Correos, mensajería, contra entrega), AI agents built per business on OpenAI models, "Cómo creamos tu agente" (5 steps), "Lo que hay detrás", pricing, FAQ, contact. Product mocks are plain HTML/CSS (no images). framer-motion and the Telegram-only demo are gone from the landing; the staff bot stays as one feature line.
+- Removed the invented testimonials ("ventas aumentaron 40%"), the "cientos de negocios" claim in the sign-up modal, the old contact details (now `getSupportContactConfig()`) and the raw `tp.cr` subscribe link from the landing (subscribing stays in Config › Facturación).
+- One price source: `src/lib/pricing/plan.ts` ($20 + IVA 13% = $22.60, integer cents). Used by the landing, BillingDashboard and the billing docs (`<PlanPrice/>` MDX component in DocRenderer). The Tilopay Repeat charge is unchanged (CRC 10,000, no IVA = `LEGACY_SUBSCRIPTION_CRC`); BillingDashboard now shows that charge next to the price. Mismatch flagged for Rafael.
+- "Quiero mi agente" → `/soporte?tema=agente`, which pre-fills the contact form subject (public form keeps category `question`; agent_request stays session-only).
+- Phones: `globals-mobile.css` shrinks every h1/h2/h3 with !important; the landing headings opt out with `landing-hero`/`landing-h2` + !-sizes (no global CSS touched).
+- Tests: `src/lib/__tests__/home-pricing.test.ts` (6) added to `test:site-ui`.
 ## 2026-10-22 — Support pipeline: tickets, /soporte, MCP for the support agent, custom-agent sales page (Lane G, claude/wave-support-pipeline-a09f20; SQL 059 Rafael applies; ships dark)
 
 - Rafael's spec `docs/plans/support-pipeline/SPEC.md` (added as-is). Everything behind `SUPPORT_PIPELINE_ENABLED` (only `true` turns it on); off = legacy behavior. Runbook with env/secrets, SQL, seed, smoke, rollback: `docs/runbooks/support-pipeline.md`.

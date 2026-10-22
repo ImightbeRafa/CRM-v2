@@ -34,6 +34,13 @@ const SAFE = [
   'Perfecto, ¿qué le pongo de detalle?',
   'Dale, ¿qué le pongo de detalle?',
   'Ok perfecto, que le pongo de detalle',
+  // Lane C D2 (real Forge / Pura Sonrisa chats, 2026-10-22)
+  'Cual sería el número para hacerte un SINPE',
+  'Lo quiero talla XL. ¿Puedo hacer el pago mañana y envío el comprobante?',
+  'Vivo en Heredia centro, ¿puedo pagar contra entrega?',
+  'Quiero pagar por SINPE, cuánto sería',
+  'te puedo mandar el número de la tarjeta por acá?',
+  'Y el envío y pago como sería?',
 ]
 
 const NOT_CLOSED = [
@@ -49,6 +56,9 @@ const NOT_CLOSED = [
   'Gracias. Ya pagué',
   'Listo, ¿qué le pongo de detalle?',
   'Sí. ¿Qué le pongo de detalle?',
+  'Vivo en Heredia ya pagué, ¿puedo pagar contra entrega?',
+  'Lo quiero. Ya pagué',
+  'Lo quiero',
 ]
 
 describe('closed before-paying questions (Forge real-49 / real-61)', () => {

@@ -87,6 +87,8 @@ export type SoftAiLlmRuntimeInput = {
   salesFreeShipping?: boolean
   /** Store rule "envío gratis desde ₡X": the words pass only next to that amount (output-validator). */
   salesFreeShippingRule?: FreeShippingRule | null
+  /** Lane C D6: prices of bundles with shipping included ('₡32 800 con envío incluido' is not a free-shipping offer). */
+  salesIncludedShippingAmounts?: number[]
   /** Sleeping C3: the store's own per-unit rates ("Pack 3 bolsas (90 noches)"), the only source of a per-night amount. */
   salesUnitRates?: Array<{ price: number; count: number; unit: string }>
   /** Out-of-stock switch (SQL 055): sold-out products + names on sale for the stock checks (null = none sold out). */
@@ -445,6 +447,7 @@ export async function runSoftAiLlmRuntime(
         quoteAmounts: input.salesAllowedAmounts,
         allowedDeals: input.salesAllowedDeals,
         freeShippingRule: input.salesFreeShippingRule,
+        includedShippingAmounts: input.salesIncludedShippingAmounts,
         unitRates: input.salesUnitRates,
         ownText: input.brandFactsBlock ?? null,
         // SecureDog round 6: the whole burst since the store last wrote, not only the newest message.

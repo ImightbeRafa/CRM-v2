@@ -94,6 +94,8 @@ function finish(input: {
   paymentClass: PaymentClassification
   steps: DecisionStep[]
   facts: BrandFacts
+  /** Lane C D1: the amounts the sales turn may say (bundle / catalog prices, shipping): a saved reply may say them too. */
+  allowedAmounts?: number[]
   replyStyle?: ReplyStyle | null
   shortcuts: RuntimeShortcut[]
   forceNeedsHuman?: boolean
@@ -107,6 +109,7 @@ function finish(input: {
     brandFacts: input.facts,
     replyStyle: input.replyStyle,
     shortcuts: input.shortcuts,
+    quoteAmounts: input.allowedAmounts,
   })
   const reasons = [...new Set([...(input.extraReasons || []), ...policy.reasons])]
   const needsHuman = input.forceNeedsHuman || policy.needsHuman || input.escalate
@@ -174,6 +177,8 @@ export function decideInbound(input: {
   orderDataChoice?: ChosenPaymentMethod | null
   /** SecureDog wave D final: the store already sent its payment details (sales-state paymentDetailsIn on its messages). */
   paymentDetailsSent?: boolean
+  /** Lane C D1: sales-state salesAllowedAmounts of this agent (live + Probar), for verbatim saved replies with a ₡ total. */
+  allowedAmounts?: number[]
 }): InboundDecision {
   // SecureDog r1 INT-159: the relaxation needs a text message AND no bubble of the burst (this one included) hinting at
   // a payment's state ("¿Me confirmás?" + "¿Les llegó?" stays a payment hand-off).
@@ -239,6 +244,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
+      allowedAmounts: input.allowedAmounts,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
@@ -256,6 +262,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
+      allowedAmounts: input.allowedAmounts,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       handoff: input.messageType === 'sticker' ? null : { kind: 'review', reason: HANDOFF_REASON.review },
@@ -272,6 +279,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
+      allowedAmounts: input.allowedAmounts,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
@@ -291,6 +299,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
+      allowedAmounts: input.allowedAmounts,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
@@ -353,6 +362,7 @@ export function decideInbound(input: {
         paymentClass,
         steps,
         facts: input.brandFacts,
+        allowedAmounts: input.allowedAmounts,
         replyStyle: input.replyStyle,
         shortcuts: input.shortcuts,
         forceNeedsHuman: true,
@@ -376,6 +386,7 @@ export function decideInbound(input: {
         paymentClass,
         steps,
         facts: input.brandFacts,
+        allowedAmounts: input.allowedAmounts,
         replyStyle: input.replyStyle,
         shortcuts: input.shortcuts,
       })
@@ -417,6 +428,7 @@ export function decideInbound(input: {
           paymentClass,
           steps,
           facts: input.brandFacts,
+          allowedAmounts: input.allowedAmounts,
           replyStyle: input.replyStyle,
           shortcuts: input.shortcuts,
         })
@@ -441,6 +453,7 @@ export function decideInbound(input: {
         paymentClass,
         steps,
         facts: input.brandFacts,
+        allowedAmounts: input.allowedAmounts,
         replyStyle: input.replyStyle,
         shortcuts: input.shortcuts,
       })
@@ -458,6 +471,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
+      allowedAmounts: input.allowedAmounts,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
@@ -483,6 +497,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
+      allowedAmounts: input.allowedAmounts,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: verbatim.kind === 'handoff',

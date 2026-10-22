@@ -102,7 +102,7 @@ import { notifyHandoff } from '@/lib/soft-ai/handoff-notify'
 import { decideWaitingAck, isOptOutText, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS, WAITING_ALERT_THROTTLE_MS } from '@/lib/soft-ai/waiting-ack'
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { dropRepeatedParts, REPEAT_WINDOW_MS } from '@/lib/soft-ai/repeat-guard'
-import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet, orderDataChoice, paymentDetailsIn } from '@/lib/soft-ai/sales-state'
+import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet, orderDataChoice, paymentDetailsIn, salesAllowedAmounts } from '@/lib/soft-ai/sales-state'
 import { duplicateReceiptReply, isPaymentHandoff } from '@/lib/soft-ai/repeat-order'
 import { loadSettledSale } from '@/lib/soft-ai/settled-sale'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
@@ -1238,16 +1238,16 @@ export async function executeAgentLayerTurn(
     })
     return { status: 'skipped', reason: 'superseded' }
   }
-  // B6: only a photo / file / audio (here or earlier in the burst) needs the sale's state before the decision.
+  // Lane C D1: the sale's context is loaded once, before the decision (saved replies may say the same amounts as the sales
+  // turn) and reused for the model input. B6: only a photo / file / audio reads it for the receipt check.
+  const turnSalesContext = await loadAgentSalesContext({
+    tenantId: row.tenantId,
+    agentId: resolved.agent.id,
+    inventoryItemIds: liveInventoryIds,
+    brandFacts: resolved.agent.brandFacts,
+  })
   const mediaSalesContext =
-    isMediaLikeMessageType(trigger.messageType) || burstEarlier.some((m) => isMediaLikeMessageType(m.messageType))
-    ? await loadAgentSalesContext({
-        tenantId: row.tenantId,
-        agentId: resolved.agent.id,
-        inventoryItemIds: liveInventoryIds,
-        brandFacts: resolved.agent.brandFacts,
-      })
-    : null
+    isMediaLikeMessageType(trigger.messageType) || burstEarlier.some((m) => isMediaLikeMessageType(m.messageType)) ? turnSalesContext : null
   const shortcuts = await listRuntimeShortcuts(row.tenantId, resolved.agent.id)
   const replyAssets = await loadReplyAssets(row.tenantId, resolved.agent.id)
   // Only replies whose image would really go out are marked "(va con imagen)" (WhatsApp / Instagram, not yet sent in this chat).
@@ -1272,6 +1272,8 @@ export async function executeAgentLayerTurn(
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
     paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),
+    // Lane C D1: a verbatim saved reply may state the totals the sales turn may state.
+    allowedAmounts: turnSalesContext ? salesAllowedAmounts(turnSalesContext) : undefined,
     // Sleeping C2: nothing about paying in this chat yet (no payment details, receipt photo, payment words, web order).
     // SecureDog r1 MEDIA-16: the trigger too (a receipt photo sent as the newest bubble ends "no payment yet").
     noPaymentYet: noPaymentYet([
@@ -1466,12 +1468,7 @@ export async function executeAgentLayerTurn(
     knowledge,
     decision,
     afterHoursLine: afterHoursPromptLine(hours),
-    salesContext: await loadAgentSalesContext({
-      tenantId: row.tenantId,
-      agentId: resolved.agent.id,
-      inventoryItemIds: liveInventoryIds,
-      brandFacts: resolved.agent.brandFacts,
-    }),
+    salesContext: turnSalesContext,
     settledSale,
     toolCtxBase: {
       tenantId: row.tenantId,
@@ -1514,6 +1511,7 @@ export async function executeAgentLayerTurn(
     allowedDeals: runtimeInput.salesAllowedDeals,
     freeShipping: runtimeInput.salesFreeShipping,
     freeShippingRule: runtimeInput.salesFreeShippingRule,
+    includedShippingAmounts: runtimeInput.salesIncludedShippingAmounts,
     unitRates: runtimeInput.salesUnitRates,
     stockGuard: runtimeInput.salesStockGuard,
     brandFacts: resolved.agent.brandFacts,
@@ -2492,15 +2490,15 @@ async function runAgentTestTurnInner(input: {
   const probarTrigger = { content: input.inboundText, messageType: input.messageType || 'text', sentAt: input.replaySentAt ?? new Date() }
   const probarBurstEarlier = unansweredBurst(history, probarTrigger)
   // Like live: a photo / file / audio here or earlier in the burst needs the sale's state before the decision.
+  // Lane C D1: loaded once (decision + model input), like the live turn.
+  const probarTurnSalesContext = await loadAgentSalesContext({
+    tenantId: input.tenantId,
+    agentId: runtimeAgent.id,
+    inventoryItemIds: probarInventoryIds,
+    brandFacts: runtimeAgent.brandFacts,
+  })
   const probarMediaSalesContext =
-    isMediaLikeMessageType(input.messageType) || probarBurstEarlier.some((m) => isMediaLikeMessageType(m.messageType))
-    ? await loadAgentSalesContext({
-        tenantId: input.tenantId,
-        agentId: runtimeAgent.id,
-        inventoryItemIds: probarInventoryIds,
-        brandFacts: runtimeAgent.brandFacts,
-      })
-    : null
+    isMediaLikeMessageType(input.messageType) || probarBurstEarlier.some((m) => isMediaLikeMessageType(m.messageType)) ? probarTurnSalesContext : null
   const probarImageReplyIds = imageChannel(account.platform) ? sendableImageReplyIds(replyAssets, input.sentImageIds) : new Set<string>()
   const probarBudgetStartedAt = Date.now()
   const probarBurst = planBurstInbound({
@@ -2516,6 +2514,8 @@ async function runAgentTestTurnInner(input: {
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
     paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),
+    // Lane C D1: a verbatim saved reply may state the totals the sales turn may state.
+    allowedAmounts: probarTurnSalesContext ? salesAllowedAmounts(probarTurnSalesContext) : undefined,
     // Sleeping C2: nothing about paying in this chat yet (photos / files counted from their type, like live).
     noPaymentYet: noPaymentYet([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }]),
     orderDataChoice: orderDataChoice([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }], {
@@ -2600,12 +2600,7 @@ async function runAgentTestTurnInner(input: {
       afterHoursLine: afterHoursPromptLine(probarHours),
       knowledge,
       decision,
-      salesContext: await loadAgentSalesContext({
-        tenantId: input.tenantId,
-        agentId: runtimeAgent.id,
-        inventoryItemIds: probarInventoryIds,
-        brandFacts: runtimeAgent.brandFacts,
-      }),
+      salesContext: probarTurnSalesContext,
       toolCtxBase: {
         tenantId: input.tenantId,
         conversationId: 'sandbox',
@@ -2639,6 +2634,7 @@ async function runAgentTestTurnInner(input: {
       allowedDeals: runtimeInput.salesAllowedDeals,
       freeShipping: runtimeInput.salesFreeShipping,
       freeShippingRule: runtimeInput.salesFreeShippingRule,
+    includedShippingAmounts: runtimeInput.salesIncludedShippingAmounts,
       unitRates: runtimeInput.salesUnitRates,
       stockGuard: runtimeInput.salesStockGuard,
       brandFacts: runtimeAgent.brandFacts,

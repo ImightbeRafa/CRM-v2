@@ -96,7 +96,9 @@ describe('sales state (code decides the step; the model only writes it)', () => 
 describe('wiring: same sales context in live and test chat; seller voice everywhere', () => {
   it('both paths load the sales context and pass its amounts to the final check', () => {
     const turn = read('src/lib/soft-ai/agent-turn.ts')
-    assert.equal((turn.match(/salesContext: await loadAgentSalesContext\(/g) || []).length, 2)
+    // Lane C D1: each path loads it once (before the decision) and reuses it for the model input.
+    assert.equal((turn.match(/const (?:turnSalesContext|probarTurnSalesContext) = await loadAgentSalesContext\(/g) || []).length, 2)
+    assert.equal((turn.match(/salesContext: (?:turnSalesContext|probarTurnSalesContext),/g) || []).length, 2)
     assert.equal((turn.match(/quoteAmounts: runtimeInput\.salesAllowedAmounts/g) || []).length, 2)
     assert.equal((turn.match(/skipPurchaseSummary: Boolean\(runtimeInput\.salesTurnBlock\)/g) || []).length, 2)
   })

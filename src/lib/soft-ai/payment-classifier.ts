@@ -776,9 +776,23 @@ const CLOSED_PAY_INFO_SEG_RE = new RegExp(
     String.raw`|(?:se\s+puede|puedo|podr[ií]a|ser[ií]a\s+posible|es\s+posible)\s+pagar(?:lo|la|le)?\s+(?:cuando|hasta\s+que)\s+${COD_WHEN}(?:\s+(?:ac[aá]|aqu[ií]|en\s+(?:mi\s+)?casa))?${COD_THING}` +
     String.raw`|(?:se\s+puede|puedo|podr[ií]a)\s+pagar(?:lo|la|le)?\s+(?:al\s+recibir(?:lo|la)?|contra\s*entrega|(?:en\s+efectivo\s+)?al\s+(?:recibir(?:lo|la)?|entregar(?:lo|la)?|llegar))${COD_THING}` +
     String.raw`|(?:tienen|manejan|hacen|aceptan)\s+(?:pago\s+)?contra\s*entrega` +
+    // Lane C D2 (real store chats): the SINPE number, paying later, shipping + payment, card by chat
+    String.raw`|(?:cu[aá]l|qu[eé])\s+(?:ser[ií]a|es)\s+el\s+n[uú]mero\s+(?:para|de|del)\s+(?:hacer(?:te|le|les)?\s+(?:un|el)\s+)?sinpe(?:\s+m[oó]vil)?` +
+    String.raw`|a\s+qu[eé]\s+n[uú]mero\s+(?:te\s+|le\s+|les\s+)?(?:hago|mando|paso)\s+el\s+sinpe` +
+    String.raw`|(?:puedo|se\s+puede|podr[ií]a)\s+(?:hacer\s+el\s+pago|pagar(?:lo|la|le)?)\s+(?:ma[nñ]ana|pasado\s+ma[nñ]ana|m[aá]s\s+tarde|despu[eé]s|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))(?:\s+y\s+(?:env[ií]o|mando|paso)\s+el\s+comprobante)?` +
+    String.raw`|(?:y\s+)?(?:el\s+)?(?:env[ií]o\s+y\s+(?:el\s+)?pago|pago\s+y\s+(?:el\s+)?env[ií]o)\s+c[oó]mo\s+(?:ser[ií]a|es|funciona)` +
+    String.raw`|c[oó]mo\s+(?:ser[ií]a|es|funciona)\s+(?:el\s+)?(?:env[ií]o\s+y\s+(?:el\s+)?pago|pago\s+y\s+(?:el\s+)?env[ií]o)` +
+    String.raw`|(?:te|le|les)\s+puedo\s+(?:mandar|pasar|dar|enviar)\s+(?:el\s+)?n[uú]mero\s+de\s+(?:la\s+|mi\s+)?tarjeta(?:\s+por\s+(?:ac[aá]|aqu[ií]|el\s+chat|whatsapp))?` +
+    String.raw`|(?:quiero|quisiera|me\s+gustar[ií]a)\s+pagar\s+(?:por|con)\s+(?:sinpe(?:\s+m[oó]vil)?|transferencia|tarjeta|efectivo)(?:\s*,?\s*(?:cu[aá]nto|c[oó]mo)\s+ser[ií]a)?` +
+    String.raw`|(?:puedo|se\s+puede)\s+pagar\s+contra\s*entrega` +
   String.raw`)$`,
   'iu',
 )
+/**
+ * Lane C D2: a context sentence around a closed question ("Lo quiero talla XL", "Vivo en Heredia centro") — never with
+ * a done / past word (checked by the caller), never a digit (checked for the whole message).
+ */
+const CLOSED_PAY_CONTEXT_SEG_RE = /^(?:lo|la)\s+quiero(?:\s+(?:en\s+)?(?:talla|color)\s+[\p{L}]{1,12})?$|^vivo\s+en\s+[\p{L}]+(?:\s+[\p{L}]+){0,3}$/iu
 export function isClosedPayInfoQuestion(text: string): boolean {
   const v = clean(stripFormatChars((text || '').normalize('NFKC')))
   if (!v.trim() || v.length > 200 || /\d/.test(v)) return false
@@ -787,7 +801,9 @@ export function isClosedPayInfoQuestion(text: string): boolean {
     .split(/[.!?\n\u0001]+/u)
     .map((x) => x.replace(/^[\s¿¡,]+/u, '').replace(/[\s,]+$/u, '').replace(LEADING_GREETING_RE, '').trim())
     .filter(Boolean)
-  const asks = segs.filter((t) => !CLOSED_PAY_INFO_COURTESY_RE.test(t))
+  // Lane C D2: a context sentence ("Lo quiero talla XL", "Vivo en Heredia centro") may sit next to the ask, never a done word.
+  const isContext = (t: string) => CLOSED_PAY_CONTEXT_SEG_RE.test(t.replace(/\s+/gu, ' ')) && !hasPastOrDoneWord(t, false)
+  const asks = segs.filter((t) => !CLOSED_PAY_INFO_COURTESY_RE.test(t) && !isContext(t))
   return asks.length > 0 && asks.every((t) => CLOSED_PAY_INFO_SEG_RE.test(t.replace(/\s+/gu, ' ')))
 }
 /** A sentence that is only a greeting / courtesy ("Hola,", "Disculpe", "Una consulta") around the question. */

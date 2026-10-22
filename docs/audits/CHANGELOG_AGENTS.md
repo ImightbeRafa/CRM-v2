@@ -26,6 +26,12 @@
 - New `scripts/agent-pack/export-chats.ts` (`--accounts= --since= --until= [--out=]`): read-only export of the chats on some lines in a Costa Rica date window, every message tagged customer / teammate ("Equipo N") / agent, plus linked orders (ChatMessage.orderId, and orders of the chat's client in the window). Default output `test-results/chat-exports/` (gitignored); pack exports go to `betsy-agent-packs/<store>/results/` (gitignored there).
 - New `scripts/agent-pack/chat-scrub.ts`: names (contact, IG username, order customer, greeted "Hola Ana", "soy …"), links, @handles, emails, phones, accounts, tracking numbers, addresses, and data/order blocks (forwarded "#ORD-…" orders, multi-line name/phone/province blocks) are removed. `exam-bank.ts` uses the same extras, so exam banks no longer keep greeted names or forwarded-order names (DATA-65 / Pura Sonrisa P9).
 - Test: `src/lib/__tests__/chat-export-scrub.test.ts` (in `test:soft-ai`). No DB writes, no live path, no schema change.
+## 2026-10-22 — Follow-up experiments for every agent (Lane E)
+
+- `scripts/agent-pack/follow-up-campaign.ts`: a pack's `follow-up.json` holds one agent's standing experiment (champion vs next challenger). New `--start`, `--rotate` (winner rule → next round), `--compare` (all agents side by side), `--eligible` (who can get one now and why not), `--dry-run` on every write, `--report --replies` with ₡ and opt-outs. A new round stops only the same agent's rounds and refuses a line another agent's round uses (the old script stopped every campaign in the tenant). Claims are re-read right before each write.
+- Winner rule `scripts/agent-pack/follow-up-rule.ts` (+ `follow-up-experiment.test.ts` in `test:soft-ai`): opt-out guardrail, 150 chats/text + 7 days, orders first (95 %), then replies if orders can't decide.
+- 2026-10-18 PatchHouse result: "duda" 10/48 replies (21 %) vs "combo" 2/50 (4 %); 0 vs 1 order (₡12 900); no opt-outs. "duda" is champion.
+- No engine change (`src/lib/soft-ai/**` untouched). Engine spec for standing rounds, per-text waits, holdout: `docs/handoff/2026-10-22-follow-up-experiments.md`. Rounds for Sofi and Vale are ready but not started (prod write needs Rafael).
 
 ## 2026-10-21 — Exam bank: delivery-time after a confirmed order is a handoff
 

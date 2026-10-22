@@ -71,3 +71,15 @@ Do these in order. Each step says where to click and how to check it worked. Not
   pauses live agents until each owner accepts again.
 - **Upstash region**: the policy says United States. Confirm in the Upstash console that the Redis database is in a US
   region; if not, tell Claude the region and the policy line changes.
+
+## D. Support runbook: manual deletion requests
+
+The status page tells people with "no automatic match" or "manual review" to email support@betsycrm.com with their
+code. **The code proves nothing about who owns an account.** Before erasing anything by hand:
+
+1. Confirm that the person controls the Instagram or WhatsApp account. For example, ask them to send a message from it to
+   the business line, or to write from the email registered on the Betsy account.
+2. If the line belongs to a business with other admins, get the business owner's confirmation by email.
+3. Erase within 30 days of the request, and reply with what was deleted. Backups roll over 14 days later.
+4. For a "manual review" request (the business reconnected during the 3-day wait), ask the owner first. If they keep
+   the line, delete only what came through the requester's connection, or record why nothing was deleted.

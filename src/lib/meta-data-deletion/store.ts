@@ -1,7 +1,7 @@
 /**
  * Prisma side of the Meta data-deletion flow (rules in ./core). The 058 column / table are read with raw SQL
- * only, never through the Prisma models, so this code is safe before 058 is applied: it then matches the old way
- * (Instagram account id) and records nothing.
+ * only, never through the Prisma models, so this code is safe before 058 is applied: it then matches nothing (the
+ * status page offers the manual route) and records nothing.
  */
 import 'server-only'
 import { Prisma } from '@prisma/client'
@@ -61,7 +61,8 @@ async function findLines(metaUserId: string): Promise<MetaLineRef[]> {
 async function findLinesByIds(ids: string[]): Promise<MetaLineRef[]> {
   if (!ids.length) return []
   return prisma.$queryRaw<MetaLineRef[]>`
-    SELECT id, "tenantId", platform, "isActive" FROM "SocialAccount" WHERE id = ANY(${ids}::text[])`
+    SELECT id, "tenantId", platform, "isActive", ("accessToken" IS NOT NULL) AS "hasToken", "metaUserId"
+    FROM "SocialAccount" WHERE id = ANY(${ids}::text[])`
 }
 
 /** Email each affected business's owner(s) and leave an activity record. Never throws. */
@@ -233,7 +234,7 @@ async function listOpenRequests(olderThan: Date, limit: number): Promise<Deletio
   try {
     const rows = await prisma.$queryRaw<RawRequest[]>`
       SELECT id, "confirmationCode", kind, status, "matchedAccounts", "accountIds", "pendingPaths", attempts,
-             "lastErrorCode", "createdAt", "updatedAt", "completedAt"
+             "lastErrorCode", "createdAt", "updatedAt", "completedAt", "metaUserKey"
       FROM "MetaDataDeletionRequest"
       WHERE status IN ('received', 'pending', 'pending_storage') AND "updatedAt" < ${olderThan}
       ORDER BY "updatedAt" ASC LIMIT ${limit}`

@@ -24,9 +24,10 @@ export async function GET(request: NextRequest) {
   if (cronsDisabled(process.env)) return NextResponse.json({ status: 'skipped', reason: 'DISABLE_CRONS' })
   try {
     const result = await purgeWorkspaceLogs({ budgetMs: 30_000 })
-    let metaDeletion: Awaited<ReturnType<typeof retryOpenDeletionRequests>> | { error: string }
+    // Production only (like the backfill below): the Railway preview shares the database.
+    let metaDeletion: Awaited<ReturnType<typeof retryOpenDeletionRequests>> | { error: string } | { skipped: string }
     try {
-      metaDeletion = await retryOpenDeletionRequests(prismaDeletionStore, removeChatPaths, {
+      metaDeletion = !isProductionContainer() ? { skipped: 'not_production' } : await retryOpenDeletionRequests(prismaDeletionStore, removeChatPaths, {
         budgetMs: 15_000,
         onFailure: reportDeletionFailure,
       })

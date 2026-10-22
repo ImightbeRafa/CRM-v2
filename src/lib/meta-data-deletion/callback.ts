@@ -15,6 +15,25 @@ import { checkCallbackPayload } from './core'
 
 export const MAX_CALLBACK_BODY_BYTES = 16_384
 
+/** The body as text, or null once it passes `max` bytes (the rest is never read). */
+export async function readCapped(request: Request, max: number): Promise<string | null> {
+  if (!request.body) return ''
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > max) {
+      await reader.cancel().catch(() => undefined)
+      return null
+    }
+    chunks.push(value)
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}
+
 export async function readMetaCallback(
   request: NextRequest,
   tag: string,
@@ -24,8 +43,9 @@ export async function readMetaCallback(
 
   const length = Number(request.headers.get('content-length') || '0')
   if (Number.isFinite(length) && length > MAX_CALLBACK_BODY_BYTES) return fail(413, 'Payload too large')
-  const rawBody = await request.text()
-  if (rawBody.length > MAX_CALLBACK_BODY_BYTES) return fail(413, 'Payload too large')
+  // Chunked bodies carry no Content-Length: count bytes while reading and stop at the cap.
+  const rawBody = await readCapped(request, MAX_CALLBACK_BODY_BYTES)
+  if (rawBody === null) return fail(413, 'Payload too large')
 
   const signedRequest = readSignedRequestFromBody(rawBody, request.headers.get('content-type'))
   if (!signedRequest) {

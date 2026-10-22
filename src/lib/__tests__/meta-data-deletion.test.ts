@@ -22,6 +22,7 @@ import {
 import { parseMetaSignedRequest } from '../meta-signed-request'
 
 const SECRET = 'test-secret'
+process.env.NEXTAUTH_SECRET = SECRET
 const read = (p: string) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
 const DAY = 24 * 60 * 60 * 1000
 
@@ -38,7 +39,7 @@ type Fake = DeletionStore & {
 
 function fakeStore(byUser: Record<string, MetaLineRef[]>, paths: Record<string, string[]> = {}): Fake {
   const lines = new Map<string, MetaLineRef>()
-  for (const l of Object.values(byUser).flat()) lines.set(l.id, { isActive: true, ...l })
+  for (const [user, ls] of Object.entries(byUser)) for (const l of ls) lines.set(l.id, { isActive: true, hasToken: true, metaUserId: user, ...l })
   const store: Fake = {
     rows: new Map(),
     lines,
@@ -71,7 +72,7 @@ function fakeStore(byUser: Record<string, MetaLineRef[]>, paths: Record<string, 
         throw Object.assign(new Error('db down'), { code: 'P1001' })
       }
       store.disconnected.push(line.id)
-      lines.set(line.id, { ...lines.get(line.id)!, isActive: false })
+      lines.set(line.id, { ...lines.get(line.id)!, isActive: false, hasToken: false })
     },
     async notifyScheduled(ls, eraseAfter) {
       store.notified.push({ ids: ls.map((l) => l.id), eraseAfter })
@@ -172,13 +173,32 @@ test('a line reconnected during the wait is never erased automatically: manual r
   const store = fakeStore({ '112': [lineA] })
   const failures: string[] = []
   await processMetaDataRequest({ metaUserId: '112', kind: 'deletion' }, store, opts)
-  store.lines.set('sa_ig', { ...store.lines.get('sa_ig')!, isActive: true }) // the owner reconnected
+  store.lines.set('sa_ig', { ...store.lines.get('sa_ig')!, isActive: true, hasToken: true }) // the owner reconnected
   const res = await retryOpenDeletionRequests(store, async () => {}, { now: after(4 * DAY), onFailure: (s, c) => failures.push(`${s}:${c}`) })
   assert.equal(res.failed, 1)
   assert.deepEqual(store.erased, [])
   assert.equal([...store.rows.values()][0]!.lastErrorCode, 'line_reconnected')
   assert.ok(failures.some((f) => f.startsWith('gave_up:') && f.endsWith(':line_reconnected')))
   assert.match(describeDeletionStatus('failed').body, /volvió a conectar/)
+})
+
+test('a reconnect whose subscribe failed (inactive, but a token again) is still a reconnect: no erase', async () => {
+  const store = fakeStore({ '113': [lineA] })
+  await processMetaDataRequest({ metaUserId: '113', kind: 'deletion' }, store, opts)
+  store.lines.set('sa_ig', { ...store.lines.get('sa_ig')!, isActive: false, hasToken: true })
+  const res = await retryOpenDeletionRequests(store, async () => {}, { now: after(4 * DAY) })
+  assert.equal(res.failed, 1)
+  assert.deepEqual(store.erased, [])
+})
+
+test('two overlapping requests: an older one never erases a line someone else connected meanwhile', async () => {
+  const store = fakeStore({ '114': [lineA] })
+  await processMetaDataRequest({ metaUserId: '114', kind: 'deletion' }, store, opts)
+  // A new admin reconnected, then asked for deletion too: the line is disconnected again, but names the new admin.
+  store.lines.set('sa_ig', { ...store.lines.get('sa_ig')!, isActive: false, hasToken: false, metaUserId: '115' })
+  const res = await retryOpenDeletionRequests(store, async () => {}, { now: after(3 * DAY + 60_000) })
+  assert.equal(res.failed, 1, 'the first request goes to manual review')
+  assert.deepEqual(store.erased, [])
 })
 
 test('deletion with no matching line answers no_data, and the page offers the manual route', async () => {
@@ -295,8 +315,8 @@ test('a deauthorize retried at night never disconnects a line someone reconnecte
   const row = [...store.rows.values()][0]!
   assert.equal(row.status, 'pending')
   store.rows.set(row.id, { ...row, updatedAt: new Date(0) })
-  store.lines.set('sa_ig', { ...store.lines.get('sa_ig')!, isActive: true }) // reconnected meanwhile
-  await retryOpenDeletionRequests(store, async () => {}, { now: after(DAY) })
+  store.lines.set('sa_ig', { ...store.lines.get('sa_ig')!, isActive: true, metaUserId: '99999' }) // another admin reconnected
+  await retryOpenDeletionRequests(store, async () => {}, { now: after(DAY / 2) })
   assert.deepEqual(store.disconnected, [])
   assert.equal(store.rows.get(row.id)!.status, 'completed')
 })
@@ -332,7 +352,8 @@ test('signed_request: a bad signature is refused before any work', () => {
 
 test('routes, store and status page are wired the safe way', () => {
   const front = read('src/lib/meta-data-deletion/callback.ts')
-  assert.ok(front.indexOf('isProductionContainer()') < front.indexOf('request.text()'), 'production only, before reading')
+  assert.ok(front.indexOf('if (!isProductionContainer())') < front.indexOf('await readCapped(request'), 'production only, before reading')
+  assert.doesNotMatch(front, /request.text()/, 'never reads an unbounded body')
   assert.ok(front.indexOf('Payload too large') < front.indexOf('parseMetaSignedRequest('))
   assert.ok(front.indexOf('parseMetaSignedRequest(signedRequest, secrets)') < front.indexOf('checkCallbackPayload(payload)'))
   for (const f of ['src/app/api/auth/instagram/data-deletion/route.ts', 'src/app/api/auth/meta/deauthorize/route.ts']) {
@@ -377,4 +398,19 @@ test('privacy page states the real retention and processors', () => {
   assert.match(page, /3 days/)
   assert.doesNotMatch(page, /within 24 hours/, 'old false promise is gone')
   assert.doesNotMatch(page, /new Date\(\)\.toLocaleDateString/, 'fixed date, not today’s date')
+})
+
+test('callback body reader stops at the cap even without Content-Length (chunked)', async () => {
+  const { readCapped } = await import('../meta-data-deletion/callback')
+  const stream = (n: number) =>
+    new ReadableStream<Uint8Array>({
+      start(c) {
+        for (let i = 0; i < n; i++) c.enqueue(new Uint8Array(1024).fill(97))
+        c.close()
+      },
+    })
+  const big = new Request('https://x.test/', { method: 'POST', body: stream(40), duplex: 'half' } as RequestInit)
+  assert.equal(await readCapped(big, 16_384), null)
+  const small = new Request('https://x.test/', { method: 'POST', body: 'signed_request=a.b' })
+  assert.equal(await readCapped(small, 16_384), 'signed_request=a.b')
 })

@@ -9,7 +9,7 @@
 --    Holds no raw Meta id (only an HMAC), no names and no tokens.
 --
 -- Both are read with raw SQL only and are NOT in prisma/schema.prisma, so code deployed before this file
--- keeps working (it falls back to the old match and shows a generic status). Safe to apply before or after.
+-- keeps working (deletion requests then match no line: they only get the manual route, by email). Apply first.
 -- Rollback: deploy previous code; the column and table can stay (ignored).
 BEGIN;
 SET LOCAL lock_timeout = '3s';

@@ -16,8 +16,18 @@ import crypto from 'crypto'
 export type DeletionKind = 'deletion' | 'deauthorize'
 export type DeletionStatus = 'received' | 'pending' | 'pending_storage' | 'completed' | 'no_data' | 'failed'
 
-/** `isActive` true = connected right now (a reconnect after the request shows up here). */
-export type MetaLineRef = { id: string; tenantId: string; platform: string; isActive?: boolean }
+/**
+ * `isActive` / `hasToken` / `metaUserId` are read at retry time to tell a line someone reconnected after the
+ * request (undefined isActive counts as active: never erase on missing information).
+ */
+export type MetaLineRef = {
+  id: string
+  tenantId: string
+  platform: string
+  isActive?: boolean
+  hasToken?: boolean
+  metaUserId?: string | null
+}
 
 export type DeletionRequestRow = {
   id: string
@@ -32,6 +42,8 @@ export type DeletionRequestRow = {
   createdAt: Date
   updatedAt: Date
   completedAt: Date | null
+  /** HMAC of the requester (read back by the nightly retry). */
+  metaUserKey?: string
 }
 
 export type DeletionRequestPatch = Partial<
@@ -60,11 +72,9 @@ export const CONFIRMATION_CODE_RE = /^BETSY-DEL-[A-F0-9]{12}$/
  * Meta may resend the same callback; within this window the first request is answered again. It matches the
  * signed_request age limit, so a captured request cannot be replayed into a second erase.
  */
-export const RESEND_WINDOW_MS = 24 * 60 * 60 * 1000
+export const RESEND_WINDOW_MS = (24 * 60 * 60 + 5 * 60) * 1000
 /** Time between the request (lines disconnected, owner told) and the erase. */
 export const ERASE_DELAY_MS = 72 * 60 * 60 * 1000
-/** How long a failed callback disconnect is retried on every line (see retryOpenDeletionRequests). */
-export const DISCONNECT_RETRY_WINDOW_MS = 24 * 60 * 60 * 1000
 export const STORAGE_BATCH = 200
 /** Cron attempts before a request is marked failed (then finished by hand, see /data-deletion). */
 export const MAX_RETRY_ATTEMPTS = 10
@@ -280,7 +290,7 @@ async function eraseRequest(
 export async function retryOpenDeletionRequests(
   store: DeletionStore,
   removePaths: RemovePaths,
-  options: { now?: () => Date; budgetMs?: number; limit?: number; onFailure?: FlowOptions['onFailure'] } = {},
+  options: { now?: () => Date; budgetMs?: number; limit?: number; secret?: string; onFailure?: FlowOptions['onFailure'] } = {},
 ): Promise<{ checked: number; completed: number; stillPending: number; failed: number; waiting: number }> {
   const now = options.now ?? (() => new Date())
   const startedAt = Date.now()
@@ -311,17 +321,22 @@ export async function retryOpenDeletionRequests(
     } else {
       await store.updateRequest(req.id, { attempts })
       const lines = await store.findLinesByIds(req.accountIds)
-      // Someone connected the line again after the request: never erase or disconnect a live connection here.
-      // Exception: in the first 24 h a live line is most likely one whose disconnect failed in the callback (a
-      // reconnect leaves no trace we can tell apart), so the disconnect is retried on every line.
-      const young = now().getTime() - new Date(req.createdAt).getTime() < DISCONNECT_RETRY_WINDOW_MS
-      const reconnected = young ? [] : lines.filter((l) => l.isActive)
-      const idle = young ? lines : lines.filter((l) => !l.isActive)
+      // Still the requester's connection = the line names no other connector. A reconnect by anyone else overwrites
+      // metaUserId, so this also separates two overlapping requests (SecureDog NEW-1).
+      const stillTheirs = (l: MetaLineRef) =>
+        !l.metaUserId || !req.metaUserKey || metaUserKey(l.metaUserId, options.secret) === req.metaUserKey
+      // Reconnected since our disconnect: live, a token again (our disconnect clears it, every reconnect sets
+      // one, even when its subscribe fails and the line stays inactive), or another connector.
+      const reconnectedLine = (l: MetaLineRef) => l.isActive !== false || l.hasToken === true || !stillTheirs(l)
+      const reconnected = lines.filter(reconnectedLine)
+      const idle = lines.filter((l) => !reconnectedLine(l))
+      // A disconnect that failed in the callback is retried on the lines that are still the requester's.
+      const toDisconnect = lines.filter(stillTheirs)
       if (req.kind === 'deauthorize') {
-        // A line live again after that is the business's new choice.
+        // A line connected by someone else since is the business's new choice.
         status = 'completed'
         try {
-          for (const line of idle) await store.disconnectLine(line)
+          for (const line of toDisconnect) await store.disconnectLine(line)
           await store.updateRequest(req.id, { status, completedAt: now(), lastErrorCode: null })
         } catch (error) {
           status = 'pending'
@@ -330,9 +345,9 @@ export async function retryOpenDeletionRequests(
       } else if (req.status === 'pending' && !waitOver) {
         // The callback's disconnect failed: do it now, then wait out the 72 hours.
         try {
-          for (const line of idle) await store.disconnectLine(line)
+          for (const line of toDisconnect) await store.disconnectLine(line)
           await store.updateRequest(req.id, { status: 'received', lastErrorCode: null })
-          await store.notifyScheduled(idle, eraseAfterFor(new Date(req.createdAt)), req.confirmationCode)
+          await store.notifyScheduled(toDisconnect, eraseAfterFor(new Date(req.createdAt)), req.confirmationCode)
           status = 'received'
         } catch (error) {
           status = 'pending'

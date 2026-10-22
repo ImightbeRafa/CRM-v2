@@ -44,11 +44,11 @@ test('the subscription charge stays the legacy CRC 10,000 (Rafael decides any ch
 })
 
 test('landing, docs and BillingDashboard read the price from the one source', () => {
-  const landing = ['src/app/home/page.tsx', 'src/app/home/components/LandingPage.tsx', 'src/app/home/content.ts']
+  const landing = ['src/app/home-preview/page.tsx', 'src/app/home-preview/components/LandingPage.tsx', 'src/app/home-preview/content.ts']
     .map(read)
     .join('\n')
   assert.doesNotMatch(landing, /\$\s?20\b/, 'no hand-typed $20 on the landing')
-  assert.match(read('src/app/home/components/LandingPage.tsx'), /planPriceLabels\(\)/)
+  assert.match(read('src/app/home-preview/components/LandingPage.tsx'), /planPriceLabels\(\)/)
   const billing = read('src/app/config/components/BillingDashboard.tsx')
   assert.doesNotMatch(billing, /\$20/)
   assert.match(billing, /from '@\/lib\/pricing\/plan'/)
@@ -70,13 +70,13 @@ test('docs expand <PlanPrice/> to text on load (rendered page and support-agent 
 
 test('plan copy never promises unlimited users (PRO is capped at 25 in plan-enforcement)', () => {
   assert.match(read('src/lib/plan-enforcement.ts'), /PRO: 25/)
-  const copy = read('src/app/home/content.ts') + read('src/content/docs/billing.mdx') + read('src/content/docs/managing-team.mdx') + read('src/content/docs/faq.mdx')
+  const copy = read('src/app/home-preview/content.ts') + read('src/content/docs/billing.mdx') + read('src/content/docs/managing-team.mdx') + read('src/content/docs/faq.mdx')
   assert.doesNotMatch(copy, /usuarios ilimitados|Usuarios y pedidos ilimitados|\| Ilimitados \|\n?.*Usuarios|costos por usuario/i)
 })
 
 test('landing is honest: no fake testimonials, no raw payment link, real contact info, agent CTA', () => {
-  const page = read('src/app/home/components/LandingPage.tsx')
-  const content = read('src/app/home/content.ts')
+  const page = read('src/app/home-preview/components/LandingPage.tsx')
+  const content = read('src/app/home-preview/content.ts')
   const all = page + content
   assert.doesNotMatch(all, /testimonials = |Boutique Luna|aumentaron 40%|rating: 5/i)
   assert.doesNotMatch(all, /tp\.cr\/l\//, 'subscribe happens in Facturación, not from a raw link on the landing')
@@ -90,8 +90,8 @@ test('landing is honest: no fake testimonials, no raw payment link, real contact
   assert.match(all, /contra entrega/i)
   // The landing is a server component; only the islands run on the client.
   assert.doesNotMatch(page, /^'use client'/)
-  assert.match(read('src/app/home/components/LandingIslands.tsx'), /^'use client'/)
-  assert.match(read('src/app/home/page.tsx'), /export const metadata/)
+  assert.match(read('src/app/home-preview/components/LandingIslands.tsx'), /^'use client'/)
+  assert.match(read('src/app/home-preview/page.tsx'), /export const metadata/)
 })
 
 test('/soporte?tema=agente starts the contact form as an agent lead', () => {

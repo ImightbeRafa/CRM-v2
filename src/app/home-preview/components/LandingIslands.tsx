@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Menu, X } from 'lucide-react';
 import { trackMetaEvent } from '@/app/components/MetaPixel';
-import SimpleAuthModal from './SimpleAuthModal';
+import SimpleAuthModal from '@/app/home/components/SimpleAuthModal';
 
 /** The landing's sections are server-rendered; these small islands only open the sign-in modal and run the nav. */
 const OPEN_AUTH_EVENT = 'betsy:open-auth';

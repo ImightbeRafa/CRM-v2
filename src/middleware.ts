@@ -18,6 +18,7 @@ const PUBLIC_ROUTES = [
   '/api/auth',
   '/api/invites/accept',
   '/home',
+  '/home-preview',                              // Lane H redesign preview (noindex, no nav)
   '/_next',
   '/favicon.ico',
   '/public',

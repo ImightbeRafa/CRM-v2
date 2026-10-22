@@ -7,7 +7,7 @@ const path = require('path')
 const { classifyHex } = require('../src/lib/theme/palette.cjs')
 
 const ROOT = path.join(__dirname, '..', 'src')
-const SKIP_DIRS = new Set(['logistics', 'home', '__tests__', 'node_modules'])
+const SKIP_DIRS = new Set(['logistics', 'home', 'home-preview', '__tests__', 'node_modules'])
 // Brand art drawn on always-dark panels keeps its literal colors.
 const SKIP_FILES = new Set(['ThemeChoice.tsx', 'BetsyWordmark.tsx'])
 const TOKENS_FILE = path.join(ROOT, 'lib', 'theme', 'aurora-hex-tokens.json')

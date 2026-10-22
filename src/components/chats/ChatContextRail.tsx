@@ -142,9 +142,13 @@ export function ChatContextRail({
           <div className="space-y-4">
             <div className="rounded-2xl bg-white p-3 ring-1 ring-slate-200/70">
               <p className="text-[11px] font-medium text-slate-400">Estado del agente</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">{agentModeLabel(agentMode)}</p>
+              <p className={`mt-1 text-sm font-semibold ${conversation.needsPerson ? 'text-amber-800' : 'text-slate-900'}`}>
+                {conversation.needsPerson ? 'Necesita persona' : agentModeLabel(agentMode)}
+              </p>
               <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-                El agente responde solo. Vos monitoreás, pausás o tomás el control.
+                {conversation.needsPerson
+                  ? 'El agente le pasó este chat a una persona: respondé vos o tomá el control.'
+                  : 'El agente responde solo. Vos monitoreás, pausás o tomás el control.'}
               </p>
               <div className="mt-3 flex flex-col gap-1.5">
                 <button

@@ -1047,7 +1047,8 @@ export function SoftCopilotInboxV2() {
     for (const dto of dtoMap.values()) {
       if (dto.stageCategory ? isClosedCategory(dto.stageCategory) : dto.status === 'hecho') continue
       const mode = dto.aiMode
-      if (mode === 'ai_active') aiActive += 1
+      // Left to a person by the agent: not "IA activa" (same rule as the IA list).
+      if (mode === 'ai_active' && !dto.needsPerson) aiActive += 1
       else if (mode === 'paused') paused += 1
       else human += 1
       const st = getConversationAgentState(agentStateMap, softConversationKeyFromDto(dto), false)
@@ -1424,6 +1425,9 @@ export function SoftCopilotInboxV2() {
               snooze: incoming.snooze !== undefined ? incoming.snooze : before.snooze,
               // Nor the last message: a chat stays under "Seguimientos".
               lastIsFollowUp: incoming.lastIsFollowUp ?? before.lastIsFollowUp,
+              // Nor who still has to answer (Sin responder / Necesita persona); the changes feed refreshes it.
+              needsPerson: incoming.needsPerson ?? before.needsPerson,
+              lastOutboundAt: incoming.lastOutboundAt ?? before.lastOutboundAt,
             }
           : incoming
         return mergeListDtoIntoMap(prev, [merged])

@@ -127,7 +127,7 @@ function WaitBadge({ since, small = false }: { since?: string | null; small?: bo
       data-tone={tone}
     >
       <Clock className={small ? 'h-2.5 w-2.5' : 'h-3 w-3'} aria-hidden />
-      espera {formatRelativeEs(since)}
+      {waitLabel(since)}
     </span>
   )
 }
@@ -148,7 +148,13 @@ function NeedsPersonChip({ small = false }: { small?: boolean }) {
 }
 
 /** Top of "Sin responder": how many wait, how many for long, and the oldest wait. */
-function UnansweredSummary({ conversations }: { conversations: SoftConversation[] }) {
+/** "espera 2h" / "espera desde ayer" / "espera desde 12 oct". */
+function waitLabel(since: string): string {
+  const rel = formatRelativeEs(since)
+  return /^\d+[smhd]$/.test(rel) ? `espera ${rel}` : `espera desde ${rel.toLowerCase()}`
+}
+
+function UnansweredSummary({ conversations, total }: { conversations: SoftConversation[]; total?: number }) {
   const since = conversations.map((c) => c.waitingSince).filter((s): s is string => Boolean(s))
   const oldest = since.length ? since.reduce((a, b) => (a < b ? a : b)) : null
   const late = since.filter((s) => waitTone(s) === 'late').length
@@ -157,7 +163,10 @@ function UnansweredSummary({ conversations }: { conversations: SoftConversation[
       <span className="font-semibold text-slate-900">{conversations.length}</span>{' '}
       {conversations.length === 1 ? 'cliente espera' : 'clientes esperan'} respuesta
       {late ? <span className="font-semibold text-red-700"> · {late} hace más de 4 h</span> : null}
-      {oldest ? <> · el que más espera: {formatRelativeEs(oldest)}</> : null}
+      {oldest ? <> · el que más: {waitLabel(oldest)}</> : null}
+      {typeof total === 'number' && total > conversations.length ? (
+        <span className="text-slate-500"> · mostrando los {conversations.length} más recientes de {total}</span>
+      ) : null}
     </p>
   )
 }
@@ -355,7 +364,9 @@ export function SoftConversationList({
       {inboxView && onInboxViewChange ? (
         <InboxViewTabs view={inboxView} counts={inboxViewCounts ?? null} onChange={onInboxViewChange} wrap={!compact} />
       ) : null}
-      {inboxView === 'sin_responder' && conversations.length ? <UnansweredSummary conversations={conversations} /> : null}
+      {inboxView === 'sin_responder' && conversations.length ? (
+        <UnansweredSummary conversations={conversations} total={inboxViewCounts?.sin_responder} />
+      ) : null}
 
       {compact && bucket && onBucketChange ? (
         <div
@@ -433,6 +444,13 @@ export function SoftConversationList({
                 ) : null}
               </>
             }
+          />
+        ) : emptyReason === 'no-results' && inboxView === 'sin_responder' ? (
+          <AuroraEmptyState
+            tone="neutral"
+            icon="✓"
+            title="Nadie espera respuesta"
+            description="Todos los clientes de esta línea ya tienen respuesta."
           />
         ) : emptyReason === 'no-results' ? (
           <AuroraEmptyState

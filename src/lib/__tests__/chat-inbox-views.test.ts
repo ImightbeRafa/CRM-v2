@@ -171,12 +171,23 @@ describe('Sin responder · server wiring (Lane A 2026-10-22)', () => {
     has(rule, "lt.om ->> 'fallbackUsed' = 'true'")
     has(rule, "lt.om ->> 'handoffKind' IN ('handoff', 'review')")
     has(rule, "COALESCE(hm.metadata ->> 'softAi', '') <> 'true'")
-    has(rule, 'WHERE t."conversationId" = c.id AND t."tenantId" = c."tenantId"')
+    has(rule, 'WHERE t."conversationId" = c.id\n        AND t."tenantId" = c."tenantId"')
+    // Verifier F1: the latest REAL turn (delivered, not Probar, not the "ya le avisé" ack) — a skipped turn or the
+    // ack after a hand-off never drops a waiting customer out of Sin responder.
+    has(rule, "AND t.status = 'delivered'")
+    has(rule, 'AND t."testSessionId" IS NULL')
+    has(rule, 'AND t."automationDeliveryKey" NOT LIKE ${WAITING_ACK_LIKE}')
+    has(rule, 'const WAITING_ACK_LIKE = `${WAITING_ACK_KEY_PREFIX}%`')
+    // F6: since the customer message the turn answered. F7: a failed person send is not an answer.
+    has(rule, 'COALESCE(tm."sentAt", t."createdAt") AS since')
+    has(rule, "AND COALESCE(hm.\"deliveryStatus\", '') <> 'failed'")
+    // F2: the line filter is applied inside the page query.
+    has(rule, 'AND c."socialAccountId" = ANY(${accountIds}::text[])')
     const views = read('src/lib/chat-inbox-views-server.ts')
     has(views, 'COUNT(*) FILTER (WHERE ${UNANSWERED_SQL}) AS sin_responder')
     assert.match(views, /AND NOT \$\{NEEDS_PERSON_SQL\}\r?\n\s*\) AS ia/)
     const route = read('src/app/api/chat/conversations/route.ts')
-    has(route, 'listUnansweredIds(auth.tenantId, viewClosedKeys, limit)')
+    assert.match(route, /listUnansweredIds\(\s*auth\.tenantId,\s*viewClosedKeys,\s*limit,\s*input\.socialAccountId \? \[input\.socialAccountId\] : platformAccountIds,/)
     has(route, 'attachNeedsPersonFlag(auth.tenantId, base)')
     assert.ok(!route.includes("lastInboundAt: { sort: 'asc'"))
     has(read('src/app/api/chat/conversations/changes/route.ts'), 'attachNeedsPersonFlag(auth.tenantId')

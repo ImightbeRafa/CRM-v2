@@ -1362,8 +1362,10 @@ export function SoftThreadPane({
           }`}
         >
           {!composerEnabled && !compact ? (
-            <p className="mb-2 text-[11px] text-slate-500">
-              El agente está respondiendo — usá Tomar control o Pausar para escribir vos.
+            <p className={`mb-2 text-[11px] ${needsPerson ? 'font-medium text-amber-800' : 'text-slate-500'}`}>
+              {needsPerson
+                ? 'El agente le pasó este chat a una persona — tocá Tomar control para responder.'
+                : 'El agente está respondiendo — usá Tomar control o Pausar para escribir vos.'}
             </p>
           ) : null}
 

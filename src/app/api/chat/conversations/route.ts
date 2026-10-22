@@ -58,7 +58,12 @@ export async function GET(request: NextRequest) {
         : input.view === 'pedido'
           ? await listOpenOrderConversationIds(auth.tenantId, viewClosedKeys, limit)
           : input.view === 'sin_responder'
-            ? await listUnansweredIds(auth.tenantId, viewClosedKeys, limit)
+            ? await listUnansweredIds(
+                auth.tenantId,
+                viewClosedKeys,
+                limit,
+                input.socialAccountId ? [input.socialAccountId] : platformAccountIds,
+              )
             : null
     const searchConversationIdsForQuery = input.q ? await searchConversationIds(auth.tenantId, input.q) : null
     if (restrictIds && restrictIds.length === 0) {

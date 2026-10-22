@@ -1,5 +1,6 @@
 "use client";
 
+import { MobileCardTable } from '@/components/ui/MobileCardTable';
 import { ConfigPanelHeader } from '@/components/aurora/config/panels/ConfigPanelHeader';
 import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton';
 import React, { useState, useEffect, useMemo } from 'react';
@@ -387,7 +388,7 @@ export function InventoryManagement() {
             </div>
 
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-full sm:w-[200px]">
                 <SelectValue placeholder="Categoría" />
               </SelectTrigger>
               <SelectContent>
@@ -399,7 +400,7 @@ export function InventoryManagement() {
             </Select>
 
             <Select value={stockFilter} onValueChange={setStockFilter}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Stock" />
               </SelectTrigger>
               <SelectContent>
@@ -417,8 +418,8 @@ export function InventoryManagement() {
       {filteredInventory.length > 0 ? (
         <Card>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <MobileCardTable className="overflow-x-auto">
+              <table className="m-cards w-full">
                 <thead>
                   <tr className="border-b bg-muted/50">
                     <th className="text-left p-3 text-sm font-medium text-muted-foreground">Producto</th>
@@ -442,7 +443,7 @@ export function InventoryManagement() {
                             <div className="min-w-0">
                               <p className="font-medium truncate">{item.name}</p>
                               <div className="flex items-center gap-1.5 mt-0.5">
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">{item.category}</Badge>
+                                <Badge variant="outline" className="text-[11px] px-1.5 py-0">{item.category}</Badge>
                                 <span className="text-xs text-muted-foreground md:hidden">{item.sku}</span>
                               </div>
                             </div>
@@ -454,7 +455,7 @@ export function InventoryManagement() {
                         <td className="p-3 text-center">
                           <div className="flex flex-col items-center gap-1">
                             <span className="font-semibold text-sm">{item.currentStock}</span>
-                            <Badge className={`${status.className} text-[10px] px-1.5 py-0`}>
+                            <Badge className={`${status.className} text-[11px] px-1.5 py-0`}>
                               <StatusIcon className="h-2.5 w-2.5 mr-0.5" />
                               {status.label}
                             </Badge>
@@ -467,7 +468,7 @@ export function InventoryManagement() {
                           <div className="flex flex-col items-end">
                             <span className="text-sm font-medium">₡{item.sellingPrice.toLocaleString()}</span>
                             {itemMargin !== null && (
-                              <span className={`text-[10px] ${itemMargin > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              <span className={`text-[11px] ${itemMargin > 0 ? 'text-green-600' : 'text-red-600'}`}>
                                 {itemMargin > 0 ? '+' : ''}{itemMargin}%
                               </span>
                             )}
@@ -475,14 +476,14 @@ export function InventoryManagement() {
                         </td>
                         <td className="p-3 text-right">
                           <div className="flex justify-end gap-1">
-                            <Button size="sm" variant="ghost" onClick={() => openEdit(item)} className="h-8 w-8 p-0">
+                            <Button size="sm" variant="ghost" onClick={() => openEdit(item)} className="h-11 w-11 md:h-8 md:w-8 p-0">
                               <Edit className="h-3.5 w-3.5" />
                             </Button>
                             <Button
                               size="sm"
                               variant="ghost"
                               onClick={() => setDeleteTarget(item)}
-                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              className="h-11 w-11 md:h-8 md:w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -493,7 +494,7 @@ export function InventoryManagement() {
                   })}
                 </tbody>
               </table>
-            </div>
+            </MobileCardTable>
             {/* Pagination controls: only shown when there is more than one page */}
             {totalPages > 1 && (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t bg-muted/20">
@@ -669,7 +670,7 @@ export function InventoryManagement() {
                 <div className="flex items-center justify-between">
                   <Label htmlFor="dlg-price">Precio de Venta *</Label>
                   {margin !== null && (
-                    <Badge variant="outline" className={`text-[10px] ${margin > 0 ? 'border-green-300 text-green-700' : 'border-red-300 text-red-700'}`}>
+                    <Badge variant="outline" className={`text-[11px] ${margin > 0 ? 'border-green-300 text-green-700' : 'border-red-300 text-red-700'}`}>
                       Margen: {margin > 0 ? '+' : ''}{margin}%
                     </Badge>
                   )}

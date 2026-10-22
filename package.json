@@ -29,6 +29,7 @@
     "test:site-ui": "npx tsx --test src/lib/__tests__/aurora-no-native-dialogs.test.ts src/lib/__tests__/aurora-remaining-pages.test.ts src/lib/__tests__/aurora-site-rest.test.ts src/lib/__tests__/order-channel-line.test.ts src/lib/__tests__/chat-order-link.test.ts src/lib/__tests__/aurora-alerts.test.ts src/lib/__tests__/pedido-url.test.ts",
     "test:pedidos-ui": "npx tsx --test src/lib/__tests__/pedidos-aurora.test.ts src/lib/__tests__/order-submit-flow.test.ts src/lib/__tests__/order-requirements.test.ts",
     "test:lifecycle": "npx tsx --test src/lib/__tests__/order-lifecycle.test.ts src/lib/__tests__/guia-service-parity.test.ts",
+    "test:mobile-ui": "npx tsx --test src/lib/__tests__/mobile-pass.test.ts",
     "test:order-display": "npx tsx --test src/lib/__tests__/order-display.test.ts",
     "test:pagination": "npx tsx --test src/lib/__tests__/server-pagination.test.ts",
     "test:bot-inbox": "npx tsx --test src/lib/__tests__/bot-inbox.test.ts",

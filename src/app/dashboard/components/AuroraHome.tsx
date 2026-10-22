@@ -264,14 +264,14 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
             type="button"
             onClick={() => refresh(true)}
             disabled={isLoading}
-            className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-[13px] font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-[13px] font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
           >
             <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} aria-hidden />
             Actualizar
           </button>
           <Link
             href="/ventas?nuevo=1"
-            className="inline-flex min-h-[40px] items-center gap-2 rounded-xl bg-gradient-to-r from-[#5B6CFF] to-[#7C4DFF] px-3.5 text-[13px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-[#5B6CFF] to-[#7C4DFF] px-3.5 text-[13px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
           >
             <Plus className="h-4 w-4" aria-hidden />
             Crear pedido
@@ -355,7 +355,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
                 const wd = WEEKDAYS[new Date(`${d.date}T12:00:00Z`).getUTCDay()]
                 return (
                   <div key={d.date} className="flex h-full min-w-0 flex-1 flex-col justify-end text-center">
-                    <span className={`mb-1 truncate text-[10px] ${last ? 'font-semibold text-au-ink-6d4aff' : 'text-slate-400'}`}>
+                    <span className={`mb-1 truncate text-[11px] ${last ? 'font-semibold text-au-ink-6d4aff' : 'text-slate-400'}`}>
                       {d.total > 0 ? crcAxis(d.total) : ''}
                     </span>
                     <div
@@ -363,7 +363,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
                       style={{ height: `${pct * 0.75}%` }}
                       title={`${wd} ${d.date}: ${crc(d.total)}`}
                     />
-                    <span className={`mt-2 text-[11px] ${last ? 'font-semibold text-slate-900' : 'text-slate-500'}`}>{wd}</span>
+                    <span className={`mt-2 text-[12px] ${last ? 'font-semibold text-slate-900' : 'text-slate-500'}`}>{wd}</span>
                   </div>
                 )
               })}
@@ -381,7 +381,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
             Agentes esta semana
           </CardTitle>
           <div className="mt-6 flex flex-col items-start gap-2">
-            <span className="rounded-md border border-slate-200 px-1.5 py-px text-[10px] font-medium text-slate-500">IA en pausa</span>
+            <span className="rounded-md border border-slate-200 px-1.5 py-px text-[11px] font-medium text-slate-500">IA en pausa</span>
             <p className="text-[13px] text-slate-500">
               Acá vas a ver las conversaciones resueltas, pedidos creados y traspasos a humano de tus agentes.
             </p>
@@ -430,10 +430,14 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[13px] font-semibold text-slate-900">{o.customerName}</p>
-                      <p className="line-clamp-2 break-words text-[11px] text-slate-500" title={o.product ? `${o.orderId} · ${o.product}` : o.orderId}>
+                      <p className="line-clamp-2 break-words text-[12px] text-slate-500" title={o.product ? `${o.orderId} · ${o.product}` : o.orderId}>
                         {o.orderId}
                         {o.product ? ` · ${o.product}` : ''}
                       </p>
+                      {/* Status under the order on phones (the right-hand pill is sm+ only). */}
+                      <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[12px] font-medium sm:hidden ${pill.className}`}>
+                        {pill.label}
+                      </span>
                     </div>
                     <span className="text-[13px] font-semibold tabular-nums text-slate-900">{crc(o.total)}</span>
                     <span className={`hidden shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium sm:inline-block ${pill.className}`}>

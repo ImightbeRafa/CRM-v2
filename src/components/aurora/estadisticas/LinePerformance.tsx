@@ -117,9 +117,9 @@ export function LinePerformanceBody({ lines, symbol = '₡' }: { lines: LineRow[
             <div className="flex items-center gap-2 text-[13px] font-medium text-au-ink-0e0d17">
               <PlatformDot platform={line.platform} />
               <span className="min-w-0 flex-1 truncate">{line.title}</span>
-              {!line.isActive ? <span className="text-[10px] text-slate-400">Inactiva</span> : null}
+              {!line.isActive ? <span className="text-[11px] text-slate-400">Inactiva</span> : null}
             </div>
-            <dl className="mt-2 grid grid-cols-4 gap-2 text-[11px]">
+            <dl className="mt-2 grid grid-cols-2 gap-2 text-[12px] sm:grid-cols-4">
               {[
                 ['Chats', String(line.chats)],
                 ['Pedidos', ordersCell(line)],

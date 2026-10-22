@@ -178,8 +178,8 @@ export function StatusManager({ statuses, loading = false, onRefresh }: StatusMa
 
         {/* Form Modal */}
         {showForm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <Card className="w-full max-w-md">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <Card className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto">
               <CardHeader>
                 <CardTitle>{editingStatus ? 'Editar Estado' : 'Nuevo Estado'}</CardTitle>
               </CardHeader>

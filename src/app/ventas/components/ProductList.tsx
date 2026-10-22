@@ -257,7 +257,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                         size="sm"
                         variant="outline"
                         onClick={() => startEditing(product.id)}
-                        className="h-8 w-8 p-0"
+                        className="h-11 w-11 md:h-8 md:w-8 p-0"
                       >
                         <Edit3 className="h-4 w-4" />
                       </Button>
@@ -266,7 +266,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                         size="sm"
                         variant="outline"
                         onClick={() => duplicateProduct(product.id)}
-                        className="h-8 w-8 p-0"
+                        className="h-11 w-11 md:h-8 md:w-8 p-0"
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
@@ -275,7 +275,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                         size="sm"
                         variant="outline"
                         onClick={() => removeProduct(product.id)}
-                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
+                        className="h-11 w-11 md:h-8 md:w-8 p-0 text-red-600 hover:text-red-700"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -328,7 +328,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                           size="sm"
                           variant="outline"
                           onClick={stopEditing}
-                          className="h-8 w-8 p-0"
+                          className="h-11 w-11 md:h-8 md:w-8 p-0"
                         >
                           <X className="h-4 w-4" />
                         </Button>
@@ -457,7 +457,7 @@ const ProductList: React.FC<ProductListProps> = React.memo(({
                     setShowAddModal(false);
                     setDraftProduct(null);
                   }}
-                  className="h-8 w-8 p-0"
+                  className="h-11 w-11 md:h-8 md:w-8 p-0"
                 >
                   <X className="h-4 w-4" />
                 </Button>

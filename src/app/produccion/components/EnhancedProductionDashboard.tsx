@@ -241,19 +241,19 @@ const EnhancedHeader = React.memo(({
 
       {/* Action Buttons */}
       <div className="flex flex-wrap gap-1.5">
-        <Button onClick={onBulkOperations} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-[36px]">
+        <Button onClick={onBulkOperations} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-11 md:min-h-[36px]">
           <Users className="h-4 w-4 mr-1" />
           Masivas
         </Button>
-        <Button onClick={onGenerateGuias} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-[36px]">
+        <Button onClick={onGenerateGuias} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-11 md:min-h-[36px]">
           <Truck className="h-4 w-4 mr-1" />
           Guías
         </Button>
-        <Button onClick={onGenerateInvoices} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-[36px] bg-purple-50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900">
+        <Button onClick={onGenerateInvoices} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-11 md:min-h-[36px] bg-purple-50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900">
           <FileText className="h-4 w-4 mr-1" />
           Facturas
         </Button>
-        <Button onClick={onExport} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-[36px]">
+        <Button onClick={onExport} variant="outline" size="sm" className="text-xs px-3 py-1.5 min-h-11 md:min-h-[36px]">
           <Download className="h-4 w-4 mr-1" />
           Exportar
         </Button>
@@ -264,7 +264,7 @@ const EnhancedHeader = React.memo(({
           size="sm"
           aria-pressed={contraEntregaOnly}
           title={contraEntregaOnly ? 'Ver todos los pedidos' : 'Ver solo contra entrega, incluyendo cobradas'}
-          className={`text-xs px-3 py-1.5 min-h-[36px] ${
+          className={`text-xs px-3 py-1.5 min-h-11 md:min-h-[36px] ${
             contraEntregaOnly
               ? 'bg-amber-500/20 border-amber-500/50 text-amber-800 dark:text-amber-200 hover:bg-amber-500/30'
               : ''
@@ -290,7 +290,7 @@ const EnhancedHeader = React.memo(({
 
       <StatusFilterSelect value={statusFilter} onValueChange={onStatusChange} statuses={statuses} />
 
-      <Button variant="outline" size="sm" className="justify-start h-9 text-xs min-h-[36px]" onClick={onAdvancedFilters}>
+      <Button variant="outline" size="sm" className="justify-start h-11 md:h-9 text-xs" onClick={onAdvancedFilters}>
         <Filter className="h-4 w-4 mr-1" />
         Filtros
       </Button>
@@ -298,7 +298,7 @@ const EnhancedHeader = React.memo(({
       <Button
         variant="outline"
         size="sm"
-        className="justify-start h-9 text-xs min-h-[36px]"
+        className="justify-start h-11 md:h-9 text-xs"
         onClick={onShowStats}
       >
         <TrendingUp className="h-4 w-4 mr-1" />
@@ -310,7 +310,7 @@ const EnhancedHeader = React.memo(({
         <Button
           variant={viewMode === 'table' ? 'default' : 'ghost'}
           size="sm"
-          className="px-2.5 h-7"
+          className="px-2.5 h-11 md:h-7"
           onClick={() => onViewModeChange('table')}
           title="Tabla"
         >
@@ -319,7 +319,7 @@ const EnhancedHeader = React.memo(({
         <Button
           variant={viewMode === 'kanban' ? 'default' : 'ghost'}
           size="sm"
-          className="px-2.5 h-7"
+          className="px-2.5 h-11 md:h-7"
           onClick={() => onViewModeChange('kanban')}
           title="Kanban"
         >
@@ -328,7 +328,7 @@ const EnhancedHeader = React.memo(({
         <Button
           variant={viewMode === 'mobile' ? 'default' : 'ghost'}
           size="sm"
-          className="px-2.5 h-7"
+          className="px-2.5 h-11 md:h-7"
           onClick={() => onViewModeChange('mobile')}
           title="Móvil"
         >
@@ -384,6 +384,10 @@ export function EnhancedProductionDashboard({
   const [showStats, setShowStats] = useState(false);
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'mobile' | 'kanban'>('table');
+  // Phones open the one-hand mobile workflow; a manual pick still wins.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) setViewMode('mobile');
+  }, []);
   const [orderTypeTab, setOrderTypeTab] = useState<'EA' | 'RA'>('EA');
   const [contraEntregaOnly, setContraEntregaOnly] = useState(false);
   const userPickedTypeTab = useRef(false);

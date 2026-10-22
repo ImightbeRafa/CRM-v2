@@ -990,8 +990,8 @@ function ConfigPageInner() {
 
       {/* Field Form Modal */}
       {showFieldForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-card rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card rounded-lg p-6 max-w-md w-full max-h-[calc(100dvh-2rem)] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-4">
               {editingField ? 'Editar Campo' : 'Nuevo Campo'}
             </h3>
@@ -1151,8 +1151,8 @@ function ConfigPageInner() {
 
       {/* Option Set Form Modal */}
       {showOptionSetForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-card rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card rounded-lg p-6 max-w-md w-full max-h-[calc(100dvh-2rem)] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-4">
               {editingOptionSet ? 'Editar Conjunto de Opciones' : 'Nuevo Conjunto de Opciones'}
             </h3>
@@ -1245,7 +1245,7 @@ function ConfigPageInner() {
                   ) : (
                     <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
                       {optionSetOptions.map((opt, idx) => (
-                        <div key={idx} className="grid grid-cols-6 gap-2 items-center">
+                        <div key={idx} className="grid grid-cols-2 gap-2 items-center sm:grid-cols-6">
                           <input
                             type="text"
                             placeholder="Etiqueta"
@@ -1254,7 +1254,7 @@ function ConfigPageInner() {
                               const v = e.target.value
                               setOptionSetOptions(prev => prev.map((o, i) => i === idx ? { ...o, label: v } : o))
                             }}
-                            className="col-span-2 p-2 border rounded"
+                            className="col-span-1 sm:col-span-2 p-2 border rounded"
                           />
                           <input
                             type="text"
@@ -1264,7 +1264,7 @@ function ConfigPageInner() {
                               const v = e.target.value
                               setOptionSetOptions(prev => prev.map((o, i) => i === idx ? { ...o, value: v } : o))
                             }}
-                            className="col-span-2 p-2 border rounded"
+                            className="col-span-1 sm:col-span-2 p-2 border rounded"
                           />
                           <input
                             type="number"
@@ -1279,7 +1279,7 @@ function ConfigPageInner() {
                           <button
                             type="button"
                             onClick={() => setOptionSetOptions(prev => prev.filter((_, i) => i !== idx))}
-                            className="col-span-1 text-red-600 hover:text-red-800 text-sm"
+                            className="col-span-1 min-h-11 text-red-600 hover:text-red-800 text-sm sm:min-h-0"
                           >
                             Quitar
                           </button>
@@ -1291,7 +1291,7 @@ function ConfigPageInner() {
                               const v = e.target.value
                               setOptionSetOptions(prev => prev.map((o, i) => i === idx ? { ...o, metadata: v } : o))
                             }}
-                            className="col-span-6 p-2 border rounded"
+                            className="col-span-2 sm:col-span-6 p-2 border rounded"
                           />
                         </div>
                       ))}
@@ -1325,8 +1325,8 @@ function ConfigPageInner() {
 
       {/* Shipping Form Modal */}
       {showShippingForm && (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-card rounded-lg p-6 max-w-md w-full mx-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card rounded-lg p-6 max-w-md w-full max-h-[calc(100dvh-2rem)] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-4">
               {editingShipping ? 'Editar Método de Envío' : 'Nuevo Método de Envío'}
             </h3>

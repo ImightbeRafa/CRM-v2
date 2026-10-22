@@ -25,7 +25,7 @@ const CANALES_HREF = '/config?tab=social'
 
 const FOCUS = 'outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#8F7BFF]/60'
 
-const TAB_BASE = `flex min-w-0 flex-1 flex-col items-center gap-0.5 pb-1 pt-1.5 text-[11px] font-medium transition-colors duration-150 ${FOCUS}`
+const TAB_BASE = `flex min-h-[52px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 pb-1 pt-1.5 text-[12px] font-medium transition-colors duration-150 ${FOCUS}`
 
 /**
  * CHAT-M01 bottom nav (< md only): Chats · Pedidos · Canales · Más.
@@ -187,7 +187,7 @@ export function AuroraMobileNav({ chatsBadge = 0, channelsAlert = false, configT
                 type="button"
                 onClick={() => setMoreOpen(false)}
                 aria-label="Cerrar"
-                className={`flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition-colors duration-150 hover:bg-slate-200 ${FOCUS}`}
+                className={`flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition-colors duration-150 hover:bg-slate-200 ${FOCUS}`}
               >
                 <X className="h-4 w-4" aria-hidden />
               </button>

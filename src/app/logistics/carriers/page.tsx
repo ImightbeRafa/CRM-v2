@@ -604,7 +604,9 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
     };
 
     const handlePanStart = (e: React.PointerEvent<HTMLDivElement>) => {
-        if (e.button !== 0 || shouldIgnorePan(e.target)) return;
+        // Mouse drag-to-pan only: on touch the browser scrolls natively, and
+        // capturing the pointer would swallow that scroll on phones.
+        if (e.pointerType !== 'mouse' || e.button !== 0 || shouldIgnorePan(e.target)) return;
         const el = scrollRef.current;
         if (!el || el.scrollWidth <= el.clientWidth) return;
         panRef.current = {
@@ -711,6 +713,7 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
                                 {query && (
                                     <button
                                         type="button"
+                                        className="lm-inline-btn"
                                         onClick={() => setColumnSearch(prev => ({ ...prev, [status]: '' }))}
                                         aria-label={`Limpiar busqueda de ${status}`}
                                         style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', width: 18, height: 18, borderRadius: 5, border: 'none', background: 'transparent', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}

@@ -10,6 +10,7 @@
   - D2: closed before-paying questions are answered by the agent (SINPE number / a nombre de quién, pagar mañana + comprobante, envío y pago, card number by chat, pagar por X cuánto, contra entrega). A done word or a digit keeps the person path.
   - D8: a payment question that also asks price/total/size goes to the model, not the code payment list.
   - D5 left to the packs: the replies use the same words as a real "no sé".
+- Review rounds 2 (Verifier + SecureDog): a claim can no longer hide in a context sentence of a closed question (invisible / look-alike / foreign text refused, "vivo en" only place words, the ¿ya pagó? check and the receipt cue use a strict form); a card number offered by chat gets the code card reply and a reply asking for card data is held (`card_data_request`); D8 only when the store shares payment data; the outage 2 h clock is per conversation and the outage line is not a store answer; one alert per incident; the activation canary keeps its own cap. Register: INT-216…INT-230 (open Lows: INT-221, INT-227, INT-229).
 - Tests: `provider-outage.test.ts`, `lane-c-engine.test.ts`, plus additions to `closed-pay-info.test.ts` (all in `test:soft-ai`). Staff bot untouched; no Prisma schema change.
 ## 2026-10-22 — Support pipeline: tickets, /soporte, MCP for the support agent, custom-agent sales page (Lane G, claude/wave-support-pipeline-a09f20; SQL 059 Rafael applies; ships dark)
 

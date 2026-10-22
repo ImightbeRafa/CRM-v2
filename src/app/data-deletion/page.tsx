@@ -50,7 +50,7 @@ export default async function DataDeletionPage({
             <h2 className="text-xl font-semibold mb-3">Desconectar o eliminar: no es lo mismo</h2>
             <ul className="list-disc ml-6 space-y-2">
               <li>
-                <strong>Desconectar</strong> (en Betsy: Configuración → Cuentas sociales → Desvincular, o quitando Betsy en
+                <strong>Desconectar</strong> (en Betsy: Configuración › Cuentas conectadas → Desvincular, o quitando Betsy en
                 la configuración de Facebook o Instagram): borramos los tokens de acceso de inmediato y dejamos de recibir y
                 enviar mensajes. El historial de conversaciones se queda en el espacio del negocio.
               </li>
@@ -108,7 +108,7 @@ export default async function DataDeletionPage({
             <h2 className="text-xl font-semibold mb-3">English</h2>
             <ul className="list-disc ml-6 space-y-2">
               <li>
-                <strong>Disconnect</strong> (in Betsy: Settings → Social accounts → Disconnect, or by removing Betsy in your
+                <strong>Disconnect</strong> (in Betsy: Configuración › Cuentas conectadas → Desvincular, or by removing Betsy in your
                 Facebook or Instagram settings): access tokens are deleted immediately and messages stop. Conversation history
                 stays in the business&apos;s workspace.
               </li>

@@ -315,7 +315,7 @@ export default function PrivacyPage() {
           <Section id="instagram-facebook" title="8. Disconnecting versus deleting">
             <Sub title="8.1 Disconnecting an account">
               <p>
-                In Betsy (Settings → Social → Disconnect), or by removing Betsy from your Facebook or Instagram settings
+                In Betsy (Configuración › Cuentas conectadas → Desvincular), or by removing Betsy from your Facebook or Instagram settings
                 (&quot;Business integrations&quot; / &quot;Apps and websites&quot;): we delete the access tokens immediately and
                 stop receiving and sending messages. The conversation history stays in the business&apos;s workspace.
               </p>

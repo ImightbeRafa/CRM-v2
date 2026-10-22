@@ -1,3 +1,11 @@
+## 2026-10-22 — Meta App Review compliance (Lane F): truthful privacy, real deletion, Instagram purchase events
+
+- /privacy rewritten (version 2026-10-22, fixed date): what is collected, every outside company with purpose and region, AI use (the inbox agent sends message text, name, recent context and order status to OpenAI; no customer photos or audio), real retention (tokens at disconnect, history kept, AI outputs 90 d, click id 90 d, backups 14 d), disconnect vs deletion, the 30-day manual account erase, data stored in the US, ad measurement for WhatsApp and Instagram. The old "history deleted within 24 hours" and "backups 90 days" claims are gone.
+- Meta deletion callback now finds lines by the Facebook user who connected them (new raw-SQL column, SQL 058); before, it matched the Instagram account id and so never found anything. It deletes that line's chats, messages, media files, ad referrals and AI records, then disconnects the line (the business keeps agents, saved replies, orders and customers). A file that fails to delete is kept on the request and retried nightly (workspace-retention cron); after 10 tries it is marked for manual review and reported. /data-deletion?code= shows the real state. New deauthorize callback /api/auth/meta/deauthorize only disconnects.
+- Instagram purchase events (instagram_manage_events): dataset per IG line on the IG account id with a scope check on the Page token, sweep accepts IG chats from an ad referral before the order (same paid + 7-day rules, IGSID = chat peer), IG payload + sender, the settings card lists IG lines. IG waits for the owner to accept the updated notice; WhatsApp keeps working on the old one. INSTAGRAM_OAUTH_SCOPES asks for the new permission.
+- Review package: docs/meta-review/2026-10-22/.
+- SQL 058 (additive, Rafael applies). Code works before it is applied.
+
 ## 2026-10-21 — Exam bank: delivery-time after a confirmed order is a handoff
 
 - `expectForRealMessage` now sees the 6-message history. If the team already confirmed a SINPE / entered the order, “¿cuándo llegaría?” / guía / estado is `handoff: true` (existing order), not a first-contact shipping question.

@@ -148,6 +148,9 @@ describe('C · which waiting chats get answered (pure)', () => {
     assert.equal(turnAllowsRearm({ status: 'budget_blocked', skipReason: null }, 'periodic'), true)
     assert.equal(turnAllowsRearm({ status: 'budget_blocked', skipReason: 'flag_off' }, 'periodic'), true)
     assert.equal(turnAllowsRearm({ status: 'budget_blocked', skipReason: 'kill_switch' }, 'periodic'), false)
+    // Out of AI allowance: handed to a person; the periodic sweep never re-queues it, an explicit resume may.
+    assert.equal(turnAllowsRearm({ status: 'budget_blocked', skipReason: 'ai_allowance_exhausted' }, 'periodic'), false)
+    assert.equal(turnAllowsRearm({ status: 'budget_blocked', skipReason: 'ai_allowance_exhausted' }, 'explicit'), true)
     assert.equal(turnAllowsRearm({ status: 'skipped', skipReason: 'flag_off' }, 'periodic'), false)
   })
 

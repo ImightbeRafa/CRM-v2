@@ -428,6 +428,13 @@ describe('round 3 (SecureDog r3)', () => {
     const d = decideInbound({ inboundText: 'Gracias 🙏', brandFacts: FACTS, shortcuts: SHORTCUTS, orderDataChoice: 'sinpe', earlierCustomerTexts: [glued] })
     assert.equal(d.paymentClass, 'payment_proof_or_risk')
     assert.equal(nothingPaidYet(rows([...SALES_HISTORY, msg('inbound', glued), msg('outbound', 'Perfecto 😊')], SHOPPER)), false)
+    // Lane D 2026-10-22: the base now strips tag characters, so the hard-claim check also reads every invisible
+    // character as a gap ("ya<invisible>pague" is "ya pague", not "yapague").
+    for (const c of ['​', '‌', '‍', '⁠', '﻿', '\u{E0020}', '\u{E0041}']) {
+      const g = D(`ya${c}pague`)
+      const dd = decideInbound({ inboundText: 'Gracias 🙏', brandFacts: FACTS, shortcuts: SHORTCUTS, orderDataChoice: 'sinpe', earlierCustomerTexts: [g] })
+      assert.equal(dd.paymentClass, 'payment_proof_or_risk', JSON.stringify(c))
+    }
   })
   it('INT-H: CR claim wording inside a free value is not order data', () => {
     for (const w of [

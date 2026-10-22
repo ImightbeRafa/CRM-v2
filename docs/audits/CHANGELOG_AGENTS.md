@@ -1,3 +1,12 @@
+## 2026-10-22 — Lane D: agent engine safety for the next deploy (claude/wave-engine-safety-7c09b4 → claudio/wave-2026-10-22, NOT deployed)
+
+- **INT-158 re-check.** SecureDog round-1 bypass lists (docs/handoff/int158-securedog c1–c7) re-run against this branch with the live call (`modelText: true`, bidi stripped): every H1–H4 and L1 input is held; what still sends is the documented M1/M2 wording list (English, "Pedido enviado ✅", "Pagado ✅", "Pago completado", …), kept for the Luna payment-check eval set per the luna-10 Advisor policy. Pins live in `int158-confirmation.test.ts`.
+- **PR #111 + #112 merged** (payment method inside the order data is a choice, r2–r6 review fixes). Conflicts with the base (settled-sale history, duplicate receipt, multi-product step) resolved by keeping both sides.
+- **Merge regression fixed:** the base now strips Unicode tag characters (IG profile fix), so an earlier bubble "ya<tag>pague" read as "yapague" and lost its payment hand-off. `hasHardPaymentClaim` also reads invisible characters as a gap; either reading that claims a payment counts (pinned for ZW*/WJ/BOM/tag chars).
+- **Live spend cap.** New `src/lib/soft-ai/ai-allowance.ts`: a business's monthly AI budget (SQL 051, only rows with "pausar" on) is checked once before the model on every live reply, follow-up and waiting ack. Used up → no model call, the chat goes to a person (aiMode human, assigned, bell "Se acabó el saldo de IA del mes — contestale vos"), the line shows "Sin saldo de IA este mes", and the periodic sweep does not re-queue it. Raising the budget or a new Costa Rica month turns replies back on within ~30 s for new messages. Exempt businesses: env `AI_ALLOWANCE_EXEMPT_TENANTS` (comma-separated tenant ids). Missing tables / unreadable meter = nothing capped (fail open). The budget cron arms the silent kill switch only at 110% (backstop). Credits can plug in later as another source in `decideAllowance`.
+- **dailyTokenCap** removed from Config › Agentes (it was never enforced on live replies); the settings API ignores it; the stored value is kept.
+- No SQL.
+
 ## 2026-10-21 — Exam bank: delivery-time after a confirmed order is a handoff
 
 - `expectForRealMessage` now sees the 6-message history. If the team already confirmed a SINPE / entered the order, “¿cuándo llegaría?” / guía / estado is `handoff: true` (existing order), not a first-contact shipping question.

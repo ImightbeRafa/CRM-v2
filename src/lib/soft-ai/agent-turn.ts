@@ -931,7 +931,13 @@ export async function executeAgentLayerTurn(
       skipReason: preModel.skipReason || 'flag_off',
       status: preModel.status,
     })
-    if (preModel.status === 'budget_blocked') {
+    if (preModel.skipReason === 'ai_allowance_exhausted') {
+      // Out of AI allowance: no model call, no reply. The chat goes to a person (aiMode human, assigned, bell with the
+      // reason), so the waiting sweep leaves it alone until someone sends it back to IA.
+      const hoursSetup = await loadHoursSetup(row.tenantId, resolved.agent.id).catch(() => null)
+      const hours = hoursSetup ? afterHoursState(hoursSetup.hours, new Date(), { aiDisclosure: hoursSetup.aiDisclosure }) : IN_HOURS
+      await settleHandoff(row, { kind: 'handoff', reason: HANDOFF_REASON.aiAllowance }, hours)
+    } else if (preModel.status === 'budget_blocked') {
       void notifyAiNoReply({ tenantId: row.tenantId, conversationId: row.conversationId, reason: 'budget_blocked' })
     }
     return { status: 'skipped', reason: preModel.skipReason || preModel.status }

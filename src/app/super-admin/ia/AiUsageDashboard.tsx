@@ -154,8 +154,9 @@ function BudgetEditor({
     <div className="rounded-xl border border-slate-200 bg-white p-4">
       <h3 className="text-[14px] font-semibold text-slate-900">Presupuestos del mes</h3>
       <p className="mt-0.5 text-[12px] text-slate-500">
-        Te avisamos (correo y campanita) al 80% y al 100%. Con “pausar”, los agentes de ese negocio se detienen al 100% y
-        su equipo recibe un aviso para atender a mano. La pausa sigue hasta que la quites en Agent Ops. Meses en hora de
+        Te avisamos (correo y campanita) al 80% y al 100%. Con la casilla marcada, al 100% la IA de ese negocio deja de
+        responder: cada chat nuevo pasa al equipo con un aviso. Vuelve sola al subir el presupuesto o al empezar el mes.
+        Si el gasto llega al 110%, además se activa la pausa de Agent Ops (sigue hasta que la quites). Meses en hora de
         Costa Rica.
       </p>
       {budgets.length ? (
@@ -163,7 +164,7 @@ function BudgetEditor({
           {budgets.map((b) => (
             <li key={b.scope} className="flex items-center justify-between gap-2">
               <span className="text-slate-800">
-                {name(b.scope)} · {usd(b.monthlyUsdMicros)}/mes{b.autoPause ? ' · pausa al 100%' : ''}
+                {name(b.scope)} · {usd(b.monthlyUsdMicros)}/mes{b.autoPause ? ' · la IA se detiene al 100%' : ''}
               </span>
               <button type="button" className="text-[12px] text-red-700 hover:underline" onClick={() => void save(null, b.scope, false)}>
                 Quitar
@@ -196,7 +197,7 @@ function BudgetEditor({
         />
         {scope !== 'global' ? (
           <label className="flex items-center gap-1 text-[12.5px] text-slate-700">
-            <input type="checkbox" checked={autoPause} onChange={(e) => setAutoPause(e.target.checked)} /> pausar al 100%
+            <input type="checkbox" checked={autoPause} onChange={(e) => setAutoPause(e.target.checked)} /> al 100%: la IA deja de responder y los chats pasan al equipo (puede pasarse unos centavos)
           </label>
         ) : null}
         <button

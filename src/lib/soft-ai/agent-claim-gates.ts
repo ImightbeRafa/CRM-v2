@@ -18,6 +18,7 @@ import type {
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
 import { agentsServingUnboundChannels } from '@/lib/soft-ai/agent-settings'
+import { resolveAiAllowance } from '@/lib/soft-ai/ai-allowance'
 
 const AGENT_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000
 
@@ -195,7 +196,11 @@ export async function runPreModelGates(input: {
   if (!aiTermsAccepted(config)) {
     return { ok: false, status: 'skipped', skipReason: 'ai_terms_not_accepted' }
   }
-  // Live replies are not capped. dailyTokenCap stays in config for later; only Probar uses testDailyTokenCap.
+  // Live spend cap: the business's AI allowance for the period (owner budget with auto-pause; credits later). Checked
+  // once, before the model: a started turn always finishes. Tokens per day are not a cap (dailyTokenCap is unused).
+  if ((await resolveAiAllowance(input.tenantId)).exhausted) {
+    return { ok: false, status: 'budget_blocked', skipReason: 'ai_allowance_exhausted' }
+  }
   return { ok: true }
 }
 

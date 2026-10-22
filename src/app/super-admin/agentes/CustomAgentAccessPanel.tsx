@@ -1,5 +1,6 @@
 'use client'
 
+import { MobileCardTable } from '@/components/ui/MobileCardTable'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
 
@@ -136,8 +137,8 @@ export default function CustomAgentAccessPanel() {
         </label>
       </div>
       {message && <p className="mt-2 text-[12px] text-slate-700" role="status">{message}</p>}
-      <div className="mt-3 overflow-x-auto">
-        <table className="w-full text-left text-[12px]">
+      <MobileCardTable className="mt-3 overflow-x-auto">
+        <table className="m-cards w-full text-left text-[12px]">
           <thead className="text-slate-500">
             <tr>
               <th className="py-1 pr-3 font-medium">Negocio</th>
@@ -206,7 +207,7 @@ export default function CustomAgentAccessPanel() {
           </tbody>
         </table>
         {visible.length === 0 && <p className="py-3 text-[12px] text-slate-500">Ningún negocio coincide.</p>}
-      </div>
+      </MobileCardTable>
     </div>
   )
 }

@@ -1,5 +1,6 @@
 'use client'
 
+import { MobileCardTable } from '@/components/ui/MobileCardTable'
 import { useEffect, useState } from 'react'
 
 type Row = {
@@ -54,8 +55,8 @@ export default function ScorecardPanel({ days }: { days: number }) {
       {!data || data.rows.length === 0 ? (
         <p className="px-4 py-3 text-[13px] text-slate-500">Sin datos todavía.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-[13px]">
+        <MobileCardTable className="overflow-x-auto">
+          <table className="m-cards w-full text-left text-[13px]">
             <thead className="text-[11px] uppercase text-slate-500">
               <tr>
                 <th className="px-4 py-2">Agente</th>
@@ -88,7 +89,7 @@ export default function ScorecardPanel({ days }: { days: number }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </MobileCardTable>
       )}
     </div>
   )

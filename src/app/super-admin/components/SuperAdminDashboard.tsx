@@ -1,5 +1,6 @@
 'use client';
 
+import { MobileCardTable } from '@/components/ui/MobileCardTable';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { RefreshCw, TrendingUp, Users, Building2, ShoppingCart, DollarSign } from 'lucide-react';
@@ -83,7 +84,7 @@ export default function SuperAdminDashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-[50dvh]">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
           <p className="mt-4 text-muted-foreground">Loading super admin dashboard...</p>
@@ -94,7 +95,7 @@ export default function SuperAdminDashboard() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-[50dvh]">
         <div className="text-center">
           <p className="text-red-600 text-lg">{error}</p>
         </div>
@@ -259,8 +260,8 @@ export default function SuperAdminDashboard() {
           <CardDescription>Complete list of all platform tenants</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full">
+          <MobileCardTable className="overflow-x-auto">
+            <table className="m-cards w-full">
               <thead>
                 <tr className="border-b border-border">
                   <th className="text-left py-3 px-4">Tenant</th>
@@ -307,7 +308,7 @@ export default function SuperAdminDashboard() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </MobileCardTable>
         </CardContent>
       </Card>
     </div>

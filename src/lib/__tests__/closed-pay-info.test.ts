@@ -41,6 +41,10 @@ const SAFE = [
   'Quiero pagar por SINPE, cuánto sería',
   'te puedo mandar el número de la tarjeta por acá?',
   'Y el envío y pago como sería?',
+  // Lane C D2 round 2
+  'Hola! quiero pagar ya, te paso el número de mi tarjeta por acá?',
+  'Hola buenas tardes quisiera saber como sería el envío y el pago?',
+  'Dale, pago por SINPE. Me pasás el número y a nombre de quién?',
 ]
 
 const NOT_CLOSED = [
@@ -59,7 +63,17 @@ const NOT_CLOSED = [
   'Vivo en Heredia ya pagué, ¿puedo pagar contra entrega?',
   'Lo quiero. Ya pagué',
   'Lo quiero',
+  'Ya pagué, me pasás el número?',
+  'Pagué por SINPE. Me pasás el número?',
 ]
+
+describe('Lane C D8: a payment-info question that asks more goes to the model', () => {
+  it('the code payment list answers only a plain how-to-pay question', () => {
+    assert.equal(classifyPaymentText('Hola! Quiero un arnés, mido 1.66 y peso 63 kg. Soy de Alajuela, cuánto sería el total con envío y cómo puedo pagar?'), 'non_payment')
+    assert.equal(classifyPaymentText('¿Cómo puedo pagar?'), 'payment_info_safe')
+    assert.equal(classifyPaymentText('¿Aceptan transferencia?'), 'payment_info_safe')
+  })
+})
 
 describe('closed before-paying questions (Forge real-49 / real-61)', () => {
   it('are answered by the agent (never a payment hand-off), also inside a whole decision', () => {

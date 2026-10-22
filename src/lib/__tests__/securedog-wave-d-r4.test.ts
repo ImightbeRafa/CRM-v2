@@ -24,8 +24,10 @@ describe('INT-209: mixed-script words', () => {
       assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
     }
   })
-  it('normal Spanish, accents, ñ, emoji and numbers are not mixed', () => {
-    for (const t of ['Jalapeño, cigüeña, pingüino 😊', '¿Tienen el combo Dúo a ₡22.800?', 'Crème brûlée', 'Hola! Quiero 2 👍🏽']) assert.equal(hasMixedScriptWord(t), false, t)
+  it('normal Spanish, accents, ñ, emoji, numbers and unit symbols are not mixed', () => {
+    for (const t of ['Jalapeño, cigüeña, pingüino 😊', '¿Tienen el combo Dúo a ₡22.800?', 'Crème brûlée', 'Hola! Quiero 2 👍🏽', '¿El colágeno es de 500µg?', 'Vitamina B12 1000 µg', '¿La resistencia es de 10kΩ?']) {
+      assert.equal(hasMixedScriptWord(t), false, t)
+    }
   })
 })
 
@@ -36,7 +38,9 @@ describe('M1 customer side: a bubble written in English / PT / FR with a state w
     }
   })
   it('Spanish with an English product name is not', () => {
-    for (const t of ['¿Tienen el Done Patch?', 'Quiero 2 Done Patch', '¿Aceptan cash?', '¿Tienen papel transfer?']) assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    for (const t of ['¿Tienen el Done Patch?', 'Quiero 2 Done Patch', '¿Aceptan cash?', '¿Tienen papel transfer?', '¿Son made in Korea?', 'Made in USA?', 'Done patch?', 'DONE patch', 'money clip?', 'Papel transfer']) {
+      assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
   })
   it('EN / PT / FR money words open the "¿ya pagó?" model check in a chat with no payment talk', () => {
     for (const t of ['Just sent', 'Did it go through?', 'Já foi', 'Fiz o pix']) assert.equal(paymentCheckGate(t, []), true, t)
@@ -48,6 +52,11 @@ describe('M1 reply side: Title Case and more single words in a payment chat', ()
   it('held with payment in play', () => {
     for (const r of ['Your Order Is Confirmed', 'Payment Went Through', 'Thank You For Your Payment', 'Order Confirmed', 'Approved', 'Verified', 'Completed', 'Success', 'Arrived', 'Perfect', 'Chegou', 'Recebi', 'Aprovado']) {
       assert.equal(sent(r, '¿Cómo va?', true), false, r)
+    }
+  })
+  it('Verifier final: product names with no English function word pass in a payment chat (catalog not in ownText)', () => {
+    for (const r of ['Tenemos el Done Patch a ₡9.900 😊', 'Tenemos Yes To Tomatoes a ₡9.900']) {
+      assert.ok(!reasons(r, 'hola', true, '{}').some((x) => x === 'payment_status_claim' || x === 'non_spanish_reply'), r)
     }
   })
   it("the store's own Title Case names are fine", () => {
@@ -65,6 +74,15 @@ describe('INT-206: in a payment chat, a yes first to any customer question is re
       for (const r of ['¡Claro que sí!', '¡Sí!', '👍', '¡Sí! ¿Algo más?', 'Hola, sí, ¿te ayudo con algo más?']) {
         assert.equal(sent(r, q, true), false, `${q} → ${r}`)
       }
+    }
+  })
+  it('Verifier final: sales questions and the payment-details step are not rewritten', () => {
+    for (const [q, r] of [
+      ['¿Cuánto cuesta el combo?', '¡Claro! El combo está en la lista de precios 😊'],
+      ['¿Tienen talla M?', '¡Sí! Tenemos la M 😊 ¿Te la aparto?'],
+      ['¿Por SINPE se puede?', '¡Perfecto! 🙌\n[[PAGO_SINPE]]'],
+    ]) {
+      assert.equal(reasons(r, q, true).includes('affirm_first'), false, `${q} → ${r}`)
     }
   })
   it('a direct answer, or no payment in play, goes out', () => {

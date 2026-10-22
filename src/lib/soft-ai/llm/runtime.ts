@@ -747,7 +747,7 @@ const REPAIR_REASON_TEXT: Record<string, string> = {
   // SecureDog wave D r2 (M1): a reply in English / PT / FR with no payment in play is rewritten in Spanish (repairable).
   non_spanish_reply: 'respondiste en otro idioma; respondé en español de Costa Rica',
   // SecureDog wave D r4 (INT-206): in a payment chat a reply may not open with a yes (it reads as "your payment is fine").
-  affirm_first: 'empezaste con un "sí / claro / perfecto" o solo con un emoji en un chat de pago; respondé directo con el dato o preguntá qué necesita, sin afirmar nada sobre un pago',
+  affirm_first: 'en un chat de pago no empieces con una palabra de acuerdo ni con un emoji solo (sí, claro, perfecto, listo, dale, genial, excelente, ok, exacto, de una, pura vida, por supuesto). Empezá directo con el dato o con una pregunta, sin afirmar nada sobre un pago',
   unsourced_money: 'pusiste un monto que no está en los precios / envíos de BETSY_DATOS ni en lo que consultaste',
   unsourced_amount: 'pusiste un número o monto que no sale de los datos',
   money_mismatch_inventory: 'el precio no coincide con el del producto',
@@ -771,7 +771,8 @@ export function repairInstruction(reasons: string[]): string {
   return [
     `Tu respuesta anterior no se puede enviar: ${why.length ? why.join('; ') : 'rompe una regla fija'}.`,
     'Reescribila para el cliente arreglando eso: usá solo precios y montos de BETSY_DATOS o de lo que consultaste (si no tenés el dato, preguntá o decí que lo confirmás), sin descuentos inventados y sin decir que un pago está confirmado.',
-    'Mismo tono y corta. Respondé solo el texto final para el cliente.',
+    // Verifier final: "mismo tono" kept the "¡Perfecto!" opener on an affirm_first rewrite.
+    reasons.includes('affirm_first') ? 'Corta, sin abrir con una palabra de acuerdo. Respondé solo el texto final para el cliente.' : 'Mismo tono y corta. Respondé solo el texto final para el cliente.',
   ].join(' ')
 }
 

@@ -117,11 +117,15 @@ const SPANISH_WORD_RE =
  * SecureDog r4 (M1 reply side): with payment in play a Title Case run is a name only when it is the store's own (it appears
  * in the brand facts / catalog text, `ownNames`) — "Your Order Is Confirmed" / "Payment Went Through" are not names.
  */
+const TITLE_FUNCTION_WORD_RE = /(?<![\p{L}])(?:your|you|is|was|has|been|for|thank|thanks|order|payment|went|through|the|we|our|it|confirmed|received)(?![\p{L}])/iu
 function languageWords(text: string, ownNames?: string | null): string {
   const noLinks = (text || '').replace(/\S*(?:https?:\/\/|www\.)\S*/giu, ' ')
   const own = ownNames == null ? null : ownNames.toLowerCase()
   return noLinks.replace(/(?<![\p{L}])\p{Lu}[\p{L}']*(?:\s+\p{Lu}[\p{L}']*)+/gu, (run) => {
     if (own === null) return ' '
+    // Verifier final: a product name ("Done Patch", "Yes To Tomatoes") has no English function word; a sentence written
+    // in Title Case ("Your Order Is Confirmed", "Payment Went Through", "Thank You For Your Payment") does.
+    if (!TITLE_FUNCTION_WORD_RE.test(run)) return ' '
     // A sentence-start article is not part of the name ("El Done Patch").
     const lower = run.toLowerCase().replace(/^(?:el|la|los|las|un|una|mi|tu|su|nuestro|nuestra)\s+/u, '')
     const lead = lower.split(/\s+/u).slice(0, 2).join(' ')
@@ -218,6 +222,24 @@ function isPaymentStatusQuestion(customerText: string, paymentInPlay = false): b
             (paymentInPlay && isShortStatusClause(line))),
       ),
   )
+}
+
+/**
+ * SecureDog r4 (INT-206) / Verifier final: a customer question clause of at most 6 words with no product / price /
+ * shipping / store word ("¿Ya se acreditó?", "¿Todo en orden?", "¿Novedades?", "¿Lo pudieron ver?") — the shape a
+ * payment-status question takes; "¿Cuánto cuesta el de dormir?" / "¿Tienen talla M?" are sales questions.
+ */
+const SALES_QUESTION_WORD_RE =
+  /(?<![\p{L}])(?:precio|cu[aá]nto|cuesta|cuestan|vale|valen|talla|tallas|color|colores|env[ií]o|env[ií]os|envían|tienen|tiene|hay|stock|disponible|producto|productos|combo|paquete|paquetes|modelo|tama[nñ]o|sabor|sabores|direcci[oó]n|ubicaci[oó]n|horario|tienda|retiro|retirar|garant[ií]a|devoluci[oó]n|usa|dosis|ingredientes|sirve|funciona\s+para|descuento|promo|oferta|llega\s+a|entregan|cuándo\s+llega|cu[aá]ndo\s+llega)(?![\p{L}])/iu
+function hasShortStatusShapedQuestion(customerText: string): boolean {
+  return customerText.split('\n').some((line) => {
+    const q = line.lastIndexOf('?')
+    if (q < 0) return false
+    const head = line.slice(0, q)
+    const clause = head.slice(Math.max(head.lastIndexOf('¿'), head.search(/[^.,!¡]*$/u), 0))
+    const words = clause.match(/\p{L}+/gu) ?? []
+    return words.length > 0 && words.length <= 6 && !SALES_QUESTION_WORD_RE.test(clause)
+  })
 }
 
 /**
@@ -1124,11 +1146,14 @@ export function validateAgentOutput(input: {
   // SecureDog r4 (INT-206, structural): with payment in play, to ANY customer question a reply that starts with a yes or
   // is only emoji is rewritten (repairable) — "¡Claro que sí!" to "¿Todo en orden?" / "¿Novedades?" never goes out as is.
   // A real payment status question is already a payment hold above.
+  // Verifier final: only to a short, status-shaped question (no product / price / shipping word), and never on the
+  // payment-details step ("¡Perfecto! 🙌\n[[PAGO_SINPE]]").
   if (
     input.modelText &&
     paymentInPlay &&
     input.customerText &&
-    /[?¿]/u.test(input.customerText) &&
+    hasShortStatusShapedQuestion(input.customerText) &&
+    !/\[\[\s*(?:PAGO|DATOS_PAGO)/iu.test(text) &&
     !reasons.includes('payment_status_claim') &&
     [input.paymentContextText ?? text].some(
       (t) => startsWithAffirmation(t) || startsWithAffirmation(t.replace(/^[\s¡!]*hola[\s,.!¡]*/iu, '')) || isAffirmOnly(t),

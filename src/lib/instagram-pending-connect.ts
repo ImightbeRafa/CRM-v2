@@ -19,6 +19,8 @@ export type InstagramPendingRecord = {
   userId: string
   matches: InstagramPageMatch[]
   createdAt: number
+  /** App-scoped Facebook user id of the person connecting (for Meta's deletion callback). */
+  metaUserId?: string | null
 }
 
 /** Cookie JWT payload — never includes page access tokens. */
@@ -160,12 +162,14 @@ export async function createInstagramPendingConnect(params: {
   tenantId: string
   userId: string
   matches: InstagramPageMatch[]
+  metaUserId?: string | null
 }): Promise<{ cookieToken: string; pendingId: string; publicMatches: InstagramPendingPublicMeta[] }> {
   const pendingId = randomBytes(24).toString('hex')
   const record: InstagramPendingRecord = {
     tenantId: params.tenantId,
     userId: params.userId,
     matches: params.matches,
+    metaUserId: params.metaUserId ?? null,
     createdAt: Date.now(),
   }
   await writeStore(pendingId, encryptPendingRecord(record))

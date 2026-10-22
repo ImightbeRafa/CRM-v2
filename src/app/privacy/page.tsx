@@ -1,263 +1,429 @@
+import type { ReactNode } from 'react'
+
+/** Fixed date of the current text. Change it (and the version) whenever the policy changes. */
+const PRIVACY_POLICY_VERSION = '2026-10-22'
+const PRIVACY_POLICY_UPDATED = 'October 22, 2026'
+
+type ProviderRow = { name: string; purpose: string; data: string; region: string }
+
+/** Every outside company that processes personal data for Betsy. Keep in sync with the code. */
+const SUB_PROCESSORS: ProviderRow[] = [
+  {
+    name: 'Supabase (on Amazon Web Services)',
+    purpose: 'Main database and private file storage for chat media',
+    data: 'All account, business, conversation and media data',
+    region: 'United States (AWS us-east-1)',
+  },
+  {
+    name: 'Cloudflare',
+    purpose: 'Hosting of the app (Workers and Containers), network protection, Turnstile bot check, private backups (R2)',
+    data: 'All data in transit; full database backups',
+    region: 'Global network; backups in the United States',
+  },
+  {
+    name: 'Railway',
+    purpose: 'Test (preview) copy of the app, connected to the same database',
+    data: 'Same data as the main app when the test copy is used',
+    region: 'United States',
+  },
+  {
+    name: 'OpenAI',
+    purpose: 'AI features described in section 4 (only when they are used or turned on)',
+    data: 'Message text and context, files the business uploads, staff assistant messages and voice notes',
+    region: 'United States',
+  },
+  {
+    name: 'Upstash',
+    purpose: 'Rate-limit counters, short-lived connection steps, staff assistant short-term memory',
+    data: 'IP addresses and user ids (counters), staff assistant messages (up to 7 days)',
+    region: 'United States',
+  },
+  {
+    name: 'Resend',
+    purpose: 'Service emails (verification, password reset, notices)',
+    data: 'Email address, name, email content',
+    region: 'United States',
+  },
+  {
+    name: 'Tilopay',
+    purpose: 'Payment of the Betsy subscription',
+    data: 'Billing name, email, amount (card details are entered on Tilopay and never stored by Betsy)',
+    region: 'Costa Rica',
+  },
+  {
+    name: 'Correos de Costa Rica',
+    purpose: 'Shipping labels and tracking, when the business ships with Correos',
+    data: 'Recipient name, phone number and delivery address',
+    region: 'Costa Rica',
+  },
+  {
+    name: 'Telegram',
+    purpose: 'Staff assistant for the business’s own team, if the business uses it on Telegram',
+    data: 'Messages between the team member and the assistant',
+    region: 'Global (Telegram data centers)',
+  },
+  {
+    name: 'Google',
+    purpose: 'Sign in with Google',
+    data: 'Name, email address, profile picture, Google account id',
+    region: 'United States',
+  },
+  {
+    name: 'Meta Platforms (Instagram, Facebook, WhatsApp)',
+    purpose: 'Receiving and sending the business’s messages; optional ad sales measurement (section 5)',
+    data: 'Message content, account ids; for measurement only the ids and amounts listed in section 5',
+    region: 'United States and Ireland',
+  },
+]
+
+type RetentionRow = { item: string; period: string }
+
+const RETENTION: RetentionRow[] = [
+  { item: 'Instagram, Facebook and WhatsApp access tokens', period: 'Deleted immediately when the business disconnects the account in Betsy or removes Betsy in its Facebook or Instagram settings.' },
+  { item: 'Conversations, messages and chat media (photos, voice notes, videos, documents)', period: 'Kept for the business while its Betsy account exists, including after a channel is disconnected, so it does not lose its history. Deleted by a deletion request (section 7) or an account erase.' },
+  { item: 'AI agent outputs (drafted replies, suggestions, decision records)', period: '90 days, then deleted automatically.' },
+  { item: 'Ad click identifier (WhatsApp “ctwa_clid”)', period: '90 days, then deleted automatically.' },
+  { item: 'Staff assistant short-term memory', period: 'Up to 7 days, then deleted automatically.' },
+  { item: 'In-app notifications', period: '90 days once read, 180 days if unread.' },
+  { item: 'Activity history inside the workspace', period: '395 days.' },
+  { item: 'Security logs (sign-ins, IP addresses)', period: 'Kept while the account exists, to investigate abuse; deleted with an account erase.' },
+  { item: 'Backups', period: 'Private full copies of the database, kept for 14 days and then overwritten.' },
+  { item: 'Data held by OpenAI for the API', period: 'Up to 30 days, only for abuse and security monitoring (OpenAI’s API policy).' },
+]
+
+function Section({ id, title, children }: { id?: string; title: string; children: ReactNode }) {
+  return (
+    <section id={id}>
+      <h2 className="text-xl font-semibold text-gray-900 mb-3">{title}</h2>
+      {children}
+    </section>
+  )
+}
+
+function Sub({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <>
+      <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">{title}</h3>
+      {children}
+    </>
+  )
+}
+
+const mail = (address: string) => (
+  <a href={`mailto:${address}`} className="text-blue-600 hover:underline">
+    {address}
+  </a>
+)
+
 export default function PrivacyPage() {
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-6">Privacy Policy</h1>
-        
+
         <p className="text-sm text-gray-500 mb-6">
-          Last updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+          Last updated: {PRIVACY_POLICY_UPDATED} · Version {PRIVACY_POLICY_VERSION}
         </p>
 
         <div className="space-y-6 text-gray-700">
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">1. Introduction</h2>
+          <Section title="1. Who we are and our role">
             <p>
-              Welcome to Betsy CRM (&quot;we,&quot; &quot;our,&quot; or &quot;us&quot;). We are committed to protecting your personal 
-              information and your right to privacy. This Privacy Policy explains how we collect, use, 
-              and share information when you use our CRM platform.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">2. Information We Collect</h2>
-            
-            <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">2.1 Information You Provide</h3>
-            <ul className="list-disc pl-6 space-y-2">
-              <li><strong>Account Information:</strong> Name, email address, username, and password when you create an account</li>
-              <li><strong>Business Data:</strong> Customer information, orders, inventory, invoices, and other business data you enter into the CRM</li>
-              <li><strong>Profile Information:</strong> Any additional information you choose to add to your profile</li>
-            </ul>
-
-            <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">2.2 Information from Google Sign-In</h3>
-            <p className="mb-2">When you sign in with Google, we collect:</p>
-            <ul className="list-disc pl-6 space-y-2">
-              <li><strong>Email address:</strong> Used to create and identify your account</li>
-              <li><strong>Profile information:</strong> Name and profile picture from your Google account</li>
-              <li><strong>Google account ID:</strong> To link your Google account with our service</li>
-            </ul>
-            <p className="mt-2 text-sm italic">
-              Note: We only access basic profile information. We do NOT access your Gmail, Drive, Calendar, or any other Google services.
-            </p>
-
-            <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">2.3 Automatically Collected Information</h3>
-            <ul className="list-disc pl-6 space-y-2">
-              <li><strong>Usage Data:</strong> How you interact with our platform (features used, time spent, etc.)</li>
-              <li><strong>Device Information:</strong> Browser type, operating system, IP address</li>
-              <li><strong>Cookies:</strong> For authentication and session management</li>
-            </ul>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">3. How We Use Your Information</h2>
-            <p className="mb-2">We use your information to:</p>
-            <ul className="list-disc pl-6 space-y-2">
-              <li>Provide and maintain the CRM service</li>
-              <li>Create and manage your account</li>
-              <li>Process and store your business data (orders, customers, inventory)</li>
-              <li>Send you service-related notifications</li>
-              <li>Improve our platform and user experience</li>
-              <li>Ensure security and prevent fraud</li>
-              <li>Comply with legal obligations</li>
-            </ul>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">4. How We Share Your Information</h2>
-            <p className="mb-2">We do NOT sell your personal information. We may share your information only in these situations:</p>
-            <ul className="list-disc pl-6 space-y-2">
-              <li><strong>With your team:</strong> Data you enter is shared with other users in your organization/tenant</li>
-              <li><strong>Service providers:</strong> Third-party services that help us operate (hosting, database, email)</li>
-              <li><strong>Legal requirements:</strong> When required by law or to protect rights and safety</li>
-              <li><strong>Business transfers:</strong> In case of merger, acquisition, or sale of assets</li>
-            </ul>
-          </section>
-
-          <section id="security">
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">5. Data Security</h2>
-            <p>
-              We implement appropriate security measures to protect your information:
+              Betsy CRM (&quot;Betsy&quot;, &quot;we&quot;) is a sales and customer-service platform for businesses, operated
+              from Costa Rica by Rafael Garcia Montoya. This policy explains what we collect, why, who processes it,
+              how long we keep it and how to delete it.
             </p>
             <ul className="list-disc pl-6 space-y-2 mt-2">
-              <li>Passwords are encrypted using industry-standard bcrypt hashing</li>
-              <li>Data transmission is secured with HTTPS/SSL encryption</li>
-              <li>Database access is restricted and monitored</li>
-              <li>Regular security audits and updates</li>
-              <li>Multi-tenant architecture ensures data isolation between organizations</li>
+              <li>
+                <strong>Account data</strong> (the people who use Betsy): Betsy decides how it is used and is responsible
+                for it.
+              </li>
+              <li>
+                <strong>Customer data</strong> (the business&apos;s customers, their messages and orders): the business is
+                responsible for it. Betsy processes it only to provide the service, on the business&apos;s instructions.
+              </li>
             </ul>
-          </section>
+          </Section>
 
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">6. Your Rights and Choices</h2>
-            <p className="mb-2">You have the right to:</p>
+          <Section title="2. Information we collect">
+            <Sub title="2.1 Account information">
+              <ul className="list-disc pl-6 space-y-2">
+                <li>Name, email address, username and password (stored only as a bcrypt hash).</li>
+                <li>Phone number, if you verify one.</li>
+                <li>
+                  With Google sign-in: your Google name, email address, profile picture and Google account id. We do not
+                  access Gmail, Drive, Calendar or any other Google service.
+                </li>
+              </ul>
+            </Sub>
+            <Sub title="2.2 Business data you enter">
+              <p>Customers, orders, products, inventory, invoices, deliveries, notes and tasks you create in Betsy.</p>
+            </Sub>
+            <Sub title="2.3 Connected Instagram, Facebook and WhatsApp accounts">
+              <ul className="list-disc pl-6 space-y-2">
+                <li>
+                  Instagram professional account id, username, name and profile picture; the linked Facebook Page id; the
+                  id of the Facebook user who connected it.
+                </li>
+                <li>WhatsApp Business account id, phone number id and display phone number.</li>
+                <li>Access tokens Meta gives us for these accounts, stored encrypted.</li>
+              </ul>
+            </Sub>
+            <Sub title="2.4 Customer conversations received through those accounts">
+              <ul className="list-disc pl-6 space-y-2">
+                <li>
+                  Messages and what they contain: text, photos, voice notes, videos, documents and stickers, sent and
+                  received, with their time.
+                </li>
+                <li>
+                  The customer&apos;s name, username and profile picture as shown by Instagram or WhatsApp, their
+                  Instagram-scoped id or WhatsApp phone number.
+                </li>
+                <li>
+                  When a conversation starts from a Facebook or Instagram ad: the ad id, the ad&apos;s headline and text,
+                  its link and, on WhatsApp, the ad click identifier (&quot;ctwa_clid&quot;).
+                </li>
+              </ul>
+            </Sub>
+            <Sub title="2.5 Technical information">
+              <ul className="list-disc pl-6 space-y-2">
+                <li>IP address and browser, in security logs and rate-limit counters.</li>
+                <li>Cookies only for signing in and keeping your session. Cloudflare Turnstile checks sign-up forms for bots.</li>
+                <li>We use no analytics, advertising trackers or third-party advertising cookies.</li>
+              </ul>
+            </Sub>
+          </Section>
+
+          <Section title="3. How we use information">
             <ul className="list-disc pl-6 space-y-2">
-              <li><strong>Access:</strong> Request a copy of your personal data</li>
-              <li><strong>Correction:</strong> Update or correct your information</li>
-              <li><strong>Deletion:</strong> Request deletion of your account and data</li>
-              <li><strong>Export:</strong> Download your data in a portable format</li>
-              <li><strong>Opt-out:</strong> Unsubscribe from marketing emails (service emails may still be sent)</li>
-              <li><strong>Revoke Google access:</strong> Disconnect your Google account at any time through your Google account settings</li>
-            </ul>
-            <p className="mt-3">
-              To exercise these rights, contact us at: <a href="mailto:support@betsycrm.com" className="text-blue-600 hover:underline">support@betsycrm.com</a>
-            </p>
-          </section>
-
-          <section id="instagram-facebook">
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">7. Instagram & Facebook Data Usage</h2>
-            <p className="mb-2">
-              When you connect your Instagram Business or WhatsApp Business account to Betsy CRM, we access and process the following data:
-            </p>
-            
-            <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">7.1 Data We Access</h3>
-            <ul className="list-disc pl-6 space-y-2">
-              <li><strong>Instagram Business Account:</strong> Account ID, username, profile information</li>
-              <li><strong>Instagram Messages:</strong> Direct messages sent to/from your business account for CRM management</li>
-              <li><strong>Facebook Page:</strong> Page ID and page access tokens (required for Instagram API access)</li>
-              <li><strong>WhatsApp Business:</strong> Phone number ID, business account information, and messages</li>
-            </ul>
-
-            <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">7.2 How We Use This Data</h3>
-            <ul className="list-disc pl-6 space-y-2">
-              <li>Display and manage customer conversations within Betsy CRM</li>
-              <li>Send responses to customer inquiries on your behalf</li>
-              <li>Link conversations to customer profiles and orders</li>
-              <li>Generate analytics about your customer communications</li>
-            </ul>
-
-            <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">7.3 Data Retention & Deletion</h3>
-            <ul className="list-disc pl-6 space-y-2">
-              <li>Messages are stored for as long as you maintain the connection</li>
-              <li>You can disconnect your account at any time from Settings → Social Accounts</li>
-              <li>Upon disconnection, we delete access tokens and message history within 24 hours</li>
-              <li>You can request full data deletion by emailing <a href="mailto:support@betsycrm.com" className="text-blue-600 hover:underline">support@betsycrm.com</a></li>
-            </ul>
-
-            <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">7.4 Data Sharing</h3>
-            <p>
-              We do NOT share, sell, or transfer your Instagram/Facebook/WhatsApp data to third parties.
-              Your data is only accessible to you and your authorized team members within Betsy CRM. The
-              only exception is the optional ad sales measurement described in 7.5, which a business must
-              turn on itself.
-            </p>
-
-            <h3 className="text-lg font-medium text-gray-900 mb-2 mt-4">7.5 Ad Sales Measurement (optional, off by default)</h3>
-            <p>
-              When a customer starts a WhatsApp conversation from a Meta (Facebook or Instagram) ad, Meta
-              includes an ad click identifier in the message. Betsy stores it with that conversation so the
-              business can see which ad brought the chat.
-            </p>
-            <p className="mt-2">
-              If the business owner turns on &quot;Ventas por anuncios (Meta)&quot; and accepts the notice, Betsy
-              reports to that business&apos;s own Meta account, on the business&apos;s behalf, only when an order
-              from that conversation is paid: the ad click identifier, the business&apos;s WhatsApp Business
-              account identifier, the amount and the currency. Betsy never sends names, phone numbers, email
-              addresses or message content for this purpose. The business is the controller of this data and is
-              responsible for informing its customers; Betsy acts as its processor. Ad click identifiers are
-              deleted from Betsy after 90 days, and the business can turn the feature off at any time.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">8. Google OAuth Disclosure</h2>
-            <p className="mb-2">
-              When you sign in with Google, we use Google&apos;s OAuth 2.0 service. Our use of Google user data is limited to:
-            </p>
-            <ul className="list-disc pl-6 space-y-2">
-              <li>Authenticating your identity</li>
-              <li>Retrieving your basic profile information (name, email, profile picture)</li>
+              <li>Provide the CRM: show and answer conversations, link them to customers and orders, run deliveries and billing.</li>
+              <li>Send replies on the business&apos;s behalf, written by its team or by its AI agent if it turned one on.</li>
+              <li>Show the business which ad brought a conversation and, if it turns it on, measure ad sales (section 5).</li>
+              <li>Send service emails, keep the service secure and prevent abuse, and meet legal duties.</li>
             </ul>
             <p className="mt-2">
-              <strong>We do NOT:</strong>
+              We do not sell personal data. We do not use Instagram, Facebook or WhatsApp data for advertising, profiling or
+              any purpose other than providing Betsy to the business that connected the account. We do not use it to train
+              AI models.
             </p>
-            <ul className="list-disc pl-6 space-y-2">
-              <li>Access your Gmail, emails, or messages</li>
-              <li>Access your Google Drive files</li>
-              <li>Access your Google Calendar</li>
-              <li>Access any other Google services beyond basic profile information</li>
-            </ul>
-            <p className="mt-3">
-              You can revoke our access to your Google account at any time through your 
-              <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline ml-1">
-                Google Account Permissions page
-              </a>.
-            </p>
-          </section>
+          </Section>
 
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">9. Data Retention</h2>
+          <Section id="ai" title="4. AI features (OpenAI)">
+            <p>Betsy uses OpenAI&apos;s API for the features below. OpenAI does not use API data to train its models and may keep it for up to 30 days only for abuse and security monitoring. Card, bank-account and ID numbers are masked before text is sent, as far as we can detect them.</p>
+            <ul className="list-disc pl-6 space-y-2 mt-2">
+              <li>
+                <strong>Inbox AI agent (off until the business turns it on).</strong> The business owner must accept AI
+                terms and turn on each agent. While an agent is on, the customer&apos;s message text, their display name,
+                recent conversation text and, when relevant, the status of their order are sent to OpenAI to write the
+                reply and to check whether the customer says they have paid (the payment check). The agent does not send
+                customer photos, voice notes, videos or documents to OpenAI; it sees only that a file arrived.
+              </li>
+              <li>
+                <strong>Agent knowledge.</strong> Product photos, documents, web pages and saved replies that the business
+                uploads to set up an agent are sent to OpenAI to read them (including image reading).
+              </li>
+              <li>
+                <strong>Order helper.</strong> Text a team member pastes into the order form is sent to OpenAI to fill in the
+                fields, when the business has accepted the AI terms.
+              </li>
+              <li>
+                <strong>Staff assistant.</strong> If the business uses Betsy&apos;s assistant for its own team (on Telegram or
+                WhatsApp), the team member&apos;s messages and voice notes (transcribed by OpenAI) and the order and customer
+                data the assistant looks up are sent to OpenAI to answer.
+              </li>
+            </ul>
+          </Section>
+
+          <Section id="ad-measurement" title="5. Ad sales measurement with Meta (optional, off by default)">
             <p>
-              We retain your information for as long as your account is active or as needed to provide services. 
-              When you delete your account, we will delete your personal information within 30 days, except for:
+              When a customer starts a WhatsApp or Instagram conversation from a Facebook or Instagram ad, Meta tells us which
+              ad it was. Betsy stores this with the conversation so the business can see which ad brought the chat.
+            </p>
+            <p className="mt-2">
+              If the business owner turns on &quot;Ventas por anuncios (Meta)&quot; and accepts the notice, Betsy reports a
+              purchase to the business&apos;s own Meta dataset, on the business&apos;s behalf, only when an order from a
+              conversation that came from an ad within the previous 7 days is marked paid. Each report contains only:
             </p>
             <ul className="list-disc pl-6 space-y-2 mt-2">
-              <li>Data required for legal or regulatory purposes</li>
-              <li>Anonymized data used for analytics</li>
-              <li>Backup copies (deleted within 90 days)</li>
+              <li>
+                <strong>WhatsApp:</strong> the business&apos;s WhatsApp Business account id and the ad click identifier
+                (ctwa_clid).
+              </li>
+              <li>
+                <strong>Instagram:</strong> the business&apos;s Instagram account id and the customer&apos;s Instagram-scoped
+                id (IGSID), an id Meta itself created for that conversation.
+              </li>
+              <li>The order&apos;s amount, currency and time.</li>
             </ul>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">10. International Data Transfers</h2>
-            <p>
-              Your data may be stored and processed in countries other than your own. We ensure appropriate 
-              safeguards are in place to protect your information in compliance with applicable data protection laws.
+            <p className="mt-2">
+              Betsy never sends names, phone numbers, email addresses, addresses or message content for this. The business is
+              responsible for informing its customers; Betsy acts on its behalf. Ad click identifiers are deleted from Betsy
+              after 90 days. The business can turn the feature off at any time, and reports stop at once.
             </p>
-          </section>
+          </Section>
 
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">11. Children&apos;s Privacy</h2>
-            <p>
-              Our service is not intended for children under 13 years of age. We do not knowingly collect 
-              personal information from children. If you believe a child has provided us with personal information, 
-              please contact us immediately.
+          <Section id="sub-processors" title="6. Who processes data for us (sub-processors)">
+            <p className="mb-3">
+              We share data only with the companies below, only for the purpose shown, and with the business&apos;s own team
+              members inside its workspace. We may also disclose data when the law requires it.
             </p>
-          </section>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm border border-gray-200">
+                <thead className="bg-gray-50 text-left">
+                  <tr>
+                    <th className="p-2 border-b">Company</th>
+                    <th className="p-2 border-b">Purpose</th>
+                    <th className="p-2 border-b">Data</th>
+                    <th className="p-2 border-b">Region</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {SUB_PROCESSORS.map((row) => (
+                    <tr key={row.name} className="align-top">
+                      <td className="p-2 border-b font-medium">{row.name}</td>
+                      <td className="p-2 border-b">{row.purpose}</td>
+                      <td className="p-2 border-b">{row.data}</td>
+                      <td className="p-2 border-b">{row.region}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
 
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">12. Changes to This Privacy Policy</h2>
-            <p>
-              We may update this Privacy Policy from time to time. We will notify you of significant changes 
-              by email or through a notice on our platform. The &quot;Last updated&quot; date at the top will reflect 
-              the most recent version.
-            </p>
-          </section>
+          <Section id="retention" title="7. How long we keep data">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm border border-gray-200">
+                <thead className="bg-gray-50 text-left">
+                  <tr>
+                    <th className="p-2 border-b">Data</th>
+                    <th className="p-2 border-b">How long</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {RETENTION.map((row) => (
+                    <tr key={row.item} className="align-top">
+                      <td className="p-2 border-b font-medium">{row.item}</td>
+                      <td className="p-2 border-b">{row.period}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
 
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">13. Contact Us</h2>
+          <Section id="instagram-facebook" title="8. Disconnecting versus deleting">
+            <Sub title="8.1 Disconnecting an account">
+              <p>
+                In Betsy (Settings → Social → Disconnect), or by removing Betsy from your Facebook or Instagram settings
+                (&quot;Business integrations&quot; / &quot;Apps and websites&quot;): we delete the access tokens immediately and
+                stop receiving and sending messages. The conversation history stays in the business&apos;s workspace.
+              </p>
+            </Sub>
+            <Sub title="8.2 Asking us to delete the data">
+              <p>
+                When you remove Betsy in your Facebook or Instagram settings and ask for your data to be deleted, Meta sends us
+                the request. For every Instagram or WhatsApp account you connected with that Facebook user, we delete all
+                conversations, messages, media files, ad referrals and AI records received through it, and disconnect it. The
+                business keeps its own setup and the orders and customer records its team created. If a file cannot be deleted
+                at once, we retry automatically every night. You get a confirmation code and a status page at{' '}
+                <a href="/data-deletion" className="text-blue-600 hover:underline">
+                  betsycrm.com/data-deletion
+                </a>
+                . Backups roll over within 14 days. You can also ask by email at {mail('support@betsycrm.com')}.
+              </p>
+            </Sub>
+            <Sub title="8.3 Erasing a whole Betsy account">
+              <p>
+                The account owner can ask {mail('support@betsycrm.com')} from the account&apos;s email address to erase the
+                whole workspace (users, customers, orders, conversations, media and logs). We do it by hand within 30 days and
+                confirm by email; backups roll over within 14 more days.
+              </p>
+            </Sub>
+            <Sub title="8.4 If you are a customer of a business that uses Betsy">
+              <p>
+                Contact the business first, since it is responsible for your data. You can also write to{' '}
+                {mail('support@betsycrm.com')}; we will help the business answer or act on your request.
+              </p>
+            </Sub>
+          </Section>
+
+          <Section title="9. Your rights">
             <p className="mb-2">
-              If you have questions or concerns about this Privacy Policy or our data practices, please contact us:
+              You can ask to access, correct, export or delete your personal data, or object to its use, by writing to{' '}
+              {mail('support@betsycrm.com')}. We answer within 10 business days. In Costa Rica you can also contact PRODHAB,
+              and in the European Economic Area your local data protection authority.
             </p>
+            <p>
+              You can revoke Google access at any time on your{' '}
+              <a
+                href="https://myaccount.google.com/permissions"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline"
+              >
+                Google Account permissions page
+              </a>
+              .
+            </p>
+          </Section>
+
+          <Section title="10. International transfers">
+            <p>
+              Betsy&apos;s data is stored in the United States (Supabase on AWS us-east-1, with backups on Cloudflare) and is
+              processed by the providers in section 6, most of them in the United States. If you are in Costa Rica or anywhere
+              else outside the United States, your data is transferred there. We use providers bound by contracts to protect
+              it and to use it only for the service.
+            </p>
+          </Section>
+
+          <Section id="security" title="11. Security">
+            <ul className="list-disc pl-6 space-y-2">
+              <li>HTTPS for all traffic; passwords hashed with bcrypt; Meta access tokens encrypted at rest.</li>
+              <li>Each business&apos;s data is separated from every other business&apos;s; database and file storage are private.</li>
+              <li>Access by our team is limited to what is needed to run and support the service.</li>
+            </ul>
+          </Section>
+
+          <Section title="12. Children">
+            <p>
+              Betsy is a tool for businesses and is not meant for children under 13. We do not knowingly collect their data;
+              if you believe a child has given us data, contact us and we will delete it.
+            </p>
+          </Section>
+
+          <Section title="13. Changes to this policy">
+            <p>
+              When we change this policy we update the date and version above and, for important changes, tell account owners
+              by email or inside Betsy before the change applies.
+            </p>
+          </Section>
+
+          <Section title="14. Contact">
             <ul className="list-none space-y-2">
-              <li><strong>Email:</strong> <a href="mailto:privacy@betsycrm.com" className="text-blue-600 hover:underline">privacy@betsycrm.com</a></li>
-              <li><strong>Website:</strong> <a href="https://www.betsycrm.com" className="text-blue-600 hover:underline">www.betsycrm.com</a></li>
+              <li>
+                <strong>Privacy and deletion:</strong> {mail('support@betsycrm.com')}
+              </li>
+              <li>
+                <strong>Other privacy questions:</strong> {mail('privacy@betsycrm.com')}
+              </li>
+              <li>
+                <strong>Website:</strong>{' '}
+                <a href="https://www.betsycrm.com" className="text-blue-600 hover:underline">
+                  www.betsycrm.com
+                </a>
+              </li>
             </ul>
-          </section>
-
-          <section id="gdpr" className="border-t pt-6 mt-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-3">GDPR Compliance (EU Users)</h2>
-            <p>
-              If you are located in the European Economic Area (EEA), you have additional rights under the 
-              General Data Protection Regulation (GDPR):
-            </p>
-            <ul className="list-disc pl-6 space-y-2 mt-2">
-              <li><strong>Legal basis:</strong> We process your data based on contract performance and legitimate interests</li>
-              <li><strong>Data controller:</strong> Betsy CRM is the data controller for your personal information</li>
-              <li><strong>Right to lodge a complaint:</strong> You can file a complaint with your local data protection authority</li>
-              <li><strong>Data portability:</strong> You can request your data in a structured, machine-readable format</li>
-            </ul>
-          </section>
+          </Section>
         </div>
 
         <div className="mt-8 pt-6 border-t">
-          <a href="/dashboard" className="text-blue-600 hover:underline">
-            ← Back to Home
+          <a href="/" className="text-blue-600 hover:underline">
+            ← Back to Betsy CRM
           </a>
         </div>
       </div>
 
-      <footer className="mt-8 text-center text-gray-500 text-sm">
-        © {new Date().getFullYear()} Rafael Garcia Montoya. All rights reserved.
-      </footer>
+      <footer className="mt-8 text-center text-gray-500 text-sm">© 2026 Rafael Garcia Montoya. All rights reserved.</footer>
     </div>
-  );
+  )
 }

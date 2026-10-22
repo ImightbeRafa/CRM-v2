@@ -50,8 +50,8 @@ test('DATA-12 / DATA-13: chat deletion never fails on a task and takes chat-only
   const purge = read('src/lib/workspace-purge.ts')
   assert.match(purge, /crmNote\.deleteMany\(\{ where: \{ conversationId: \{ in: ids \}, clientId: null \} \}\)/)
   assert.match(purge, /crmTask\.deleteMany\(\{ where: \{ conversationId: \{ in: ids \}, clientId: null \} \}\)/)
-  const del = read('src/app/api/auth/instagram/data-deletion/route.ts')
-  assert.ok(del.indexOf('purgeChatOnlyWorkspaceData(') < del.indexOf('socialAccount.deleteMany('), 'purge runs before the chats are deleted')
+  const del = read('src/lib/meta-data-deletion/store.ts')
+  assert.ok(del.indexOf('purgeChatOnlyWorkspaceData(') < del.indexOf('chatConversation.deleteMany('), 'purge runs before the chats are deleted')
 })
 
 test('DATA-14 / INFRA-13 / presence split / reopen backlog guard', () => {
@@ -78,5 +78,6 @@ test('re-verify round: S-B fail-safe reopen, S-C metric not settled early, N-1 s
   const inbox = read('src/components/chats/SoftCopilotInboxV2.tsx')
   assert.match(inbox, /router\.replace\('\/chats', \{ scroll: false \}\)/)
   assert.match(inbox, /if \(rows === null\) \{\n\s*deepLinkFetched\.current = null/)
-  assert.match(read('src/app/api/auth/instagram/data-deletion/route.ts'), /purgeChatOnlyWorkspaceData\(doomedChats\.map\(\(c\) => c\.id\)\)\.catch\(/)
+  // Lane F: a purge failure is no longer swallowed: the erase stops and the request stays pending for the cron.
+  assert.match(read('src/lib/meta-data-deletion/store.ts'), /await purgeChatOnlyWorkspaceData\(chatIds\)\r?\n/)
 })

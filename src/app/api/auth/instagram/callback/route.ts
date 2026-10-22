@@ -27,6 +27,7 @@ import {
 } from '@/lib/instagram-social-account'
 import { instagramForeignOwnerResolver } from '@/lib/instagram-foreign-owner'
 import { debugMetaTokenExpiry } from '@/lib/social-account-token-health'
+import { recordLineMetaUser } from '@/lib/meta-data-deletion/store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -233,6 +234,7 @@ export async function GET(request: NextRequest) {
         tenantId,
         userId,
         matches,
+        metaUserId: facebookUser.id,
       })
       const response = html(buildInstagramPickerHtml(pending.publicMatches))
       response.cookies.set(getInstagramPendingCookieName(), pending.cookieToken, {
@@ -286,6 +288,7 @@ export async function GET(request: NextRequest) {
       expiresAt,
       resolveForeignOwner: instagramForeignOwnerResolver(userId),
     })
+    await recordLineMetaUser({ tenantId, platform: 'instagram', accountId: match.igBusinessAccountId, metaUserId: facebookUser.id })
 
     // Dead-line alarm: the Facebook page picker may have dropped this business's other pages.
     const lostLines = await recheckOtherInstagramLines({ tenantId, keepIgAccountId: match.igBusinessAccountId })

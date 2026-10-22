@@ -26,6 +26,9 @@ export const metadata: Metadata = {
   },
 };
 
+// Static, refreshed hourly so contact details from env (getSupportContactConfig) follow the container's values.
+export const revalidate = 3600;
+
 export default function Landing() {
   // The landing keeps its own look in any theme.
   return (

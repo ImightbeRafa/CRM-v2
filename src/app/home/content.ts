@@ -28,7 +28,7 @@ export const OPERATIONS = {
   lead: 'Cada pedido pasa por las mismas etapas y todo el equipo ve en qué va. Sin hojas de Excel sueltas ni notas en el chat.',
   steps: [
     { title: 'Venta', text: 'Pedidos con cliente, productos, pago y método de envío. Campos a la medida de tu negocio e importación desde Excel.' },
-    { title: 'Producción', text: 'Tablero por etapas para lo que se fabrica, se empaca o se prepara. Arrastrás el pedido y todos lo ven.' },
+    { title: 'Producción', text: 'Tablero por etapas para lo que se fabrica, se empaca o se prepara. Movés el pedido de etapa y todos lo ven.' },
     { title: 'Envío', text: 'Guías de Correos de Costa Rica desde Betsy, mensajería propia y contra entrega con el cobro registrado.' },
     { title: 'Números', text: 'Ventas, productos, canales y cobros en reportes claros. Sabés qué se vendió y qué falta cobrar.' },
   ],
@@ -81,12 +81,12 @@ export const PROOF = {
 export const PRICING = {
   label: 'Precios',
   title: 'Un plan, todo incluido.',
-  lead: 'Sin planes escondidos ni costos por usuario. La IA se cobra por lo que se usa, y siempre ves la cuenta.',
+  lead: 'Sin planes escondidos ni cobros por pedido. La IA se cobra por lo que se usa, y siempre ves la cuenta.',
   planFeatures: [
     'Bandeja de WhatsApp e Instagram',
     'Pedidos, producción y envíos',
     'Correos de Costa Rica, mensajería y contra entrega',
-    'Usuarios y pedidos ilimitados',
+    'Pedidos ilimitados y hasta 25 usuarios',
     'Reportes, inventario y clientes',
     'Créditos de IA incluidos cada mes',
   ],
@@ -103,7 +103,7 @@ export const PRICING = {
 export const FAQ = [
   {
     q: '¿Qué incluye el plan?',
-    a: 'Todo Betsy: bandeja de WhatsApp e Instagram, pedidos, producción, envíos, reportes, usuarios ilimitados y unos créditos de IA al mes para las funciones de ayuda. Los agentes de ventas se contratan aparte.',
+    a: 'Todo Betsy: bandeja de WhatsApp e Instagram, pedidos, producción, envíos, reportes, hasta 25 usuarios y unos créditos de IA al mes para las funciones de ayuda. Los agentes de ventas se contratan aparte.',
   },
   {
     q: '¿Cómo se cobra la IA?',
@@ -115,7 +115,7 @@ export const FAQ = [
   },
   {
     q: '¿Puedo probar Betsy antes de pagar?',
-    a: 'Sí. Tenés 7 días de prueba con acceso completo, sin tarjeta.',
+    a: 'Sí. Tenés 7 días de prueba con todas las funciones para 1 usuario, sin tarjeta.',
   },
   {
     q: '¿Necesito cambiar mi número de WhatsApp?',

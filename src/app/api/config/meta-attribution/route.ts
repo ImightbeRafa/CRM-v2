@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { hasPermission } from '@/lib/rbac'
-import { readMetaSalesSettings, senderSwitchOn, writeMetaSalesSettings } from '@/lib/meta-attribution/settings'
+import { instagramEventsAllowed, readMetaSalesSettings, senderSwitchOn, writeMetaSalesSettings } from '@/lib/meta-attribution/settings'
 import { refreshTenantDatasets } from '@/lib/meta-attribution/dataset'
 import { tenantCurrency } from '@/lib/meta-attribution/payment'
 import { isMissingTable } from '@/lib/meta-attribution/referral-store'
@@ -19,8 +19,9 @@ async function snapshot(tenantId: string) {
     readMetaSalesSettings(tenantId),
     prisma.tenant.findUnique({ where: { id: tenantId }, select: { settings: true } }),
     prisma.socialAccount.findMany({
-      where: { tenantId, isActive: true, platform: 'whatsapp' },
-      select: { id: true, displayName: true, displayPhoneNumber: true },
+      where: { tenantId, isActive: true, platform: { in: ['whatsapp', 'instagram'] } },
+      select: { id: true, platform: true, displayName: true, displayPhoneNumber: true, providerUsername: true },
+      orderBy: [{ platform: 'desc' }, { linkedAt: 'asc' }],
       take: 20,
     }),
   ])
@@ -38,6 +39,8 @@ async function snapshot(tenantId: string) {
   return {
     enabled: settings.enabled,
     acknowledgedAt: settings.acknowledgedAt,
+    // false = the owner accepted only the first (WhatsApp-only) notice: Instagram waits for the new one.
+    instagramNoticeAccepted: instagramEventsAllowed(settings),
     testEventCode: settings.testEventCode,
     testEventCodeExpiresAt: settings.testEventCodeExpiresAt,
     currency: tenantCurrency(tenant?.settings),
@@ -45,7 +48,11 @@ async function snapshot(tenantId: string) {
     sentLast30Days: sent30d,
     lines: lines.map((l) => ({
       id: l.id,
-      name: l.displayName || l.displayPhoneNumber || 'WhatsApp',
+      platform: l.platform === 'instagram' ? 'instagram' : 'whatsapp',
+      name:
+        l.platform === 'instagram'
+          ? l.displayName || (l.providerUsername ? `@${l.providerUsername}` : 'Instagram')
+          : l.displayName || l.displayPhoneNumber || 'WhatsApp',
       status: byLine.get(l.id)?.status ?? 'unknown',
       checkedAt: byLine.get(l.id)?.checkedAt?.toISOString() ?? null,
     })),
@@ -66,7 +73,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * `{ action: 'save', enabled, acknowledge, testEventCode? }` — turning it on needs the notice
- * accepted (stored with who / when). `{ action: 'verify' }` — re-checks each WhatsApp line's
+ * accepted (stored with who / when / which notice). `{ action: 'verify' }` — re-checks each WhatsApp / Instagram line's
  * permission + dataset with Meta (read-only for messaging).
  */
 export async function PUT(request: NextRequest) {
@@ -104,8 +111,9 @@ export async function PUT(request: NextRequest) {
       userId: auth.userId,
       testEventCode,
     })
-    if (body.enabled && !wasEnabled) {
-      // Just turned on: prepare the lines now (creates the dataset in their own Meta account).
+    if (body.enabled && (!wasEnabled || body.acknowledge === true)) {
+      // Just turned on (or the new notice accepted, which adds Instagram lines): prepare the lines now
+      // (creates the dataset in their own Meta account).
       await refreshTenantDatasets(auth.tenantId, { createIfMissing: true }).catch(() => undefined)
     }
     return NextResponse.json({ success: true, data: await snapshot(auth.tenantId) }, { headers: NO_STORE })

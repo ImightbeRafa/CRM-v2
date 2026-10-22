@@ -15,6 +15,7 @@ import {
 } from '@/lib/instagram-social-account'
 import { instagramForeignOwnerResolver } from '@/lib/instagram-foreign-owner'
 import { debugMetaTokenExpiry } from '@/lib/social-account-token-health'
+import { recordLineMetaUser } from '@/lib/meta-data-deletion/store'
 import { getMetaWhatsAppAppId, getMetaWhatsAppAppSecret } from '@/lib/meta-api'
 
 export const runtime = 'nodejs'
@@ -107,6 +108,12 @@ export async function POST(request: NextRequest) {
       isActive: subscribeOk,
       expiresAt,
       resolveForeignOwner: instagramForeignOwnerResolver(loaded.record.userId),
+    })
+    await recordLineMetaUser({
+      tenantId: loaded.record.tenantId,
+      platform: 'instagram',
+      accountId: match.igBusinessAccountId,
+      metaUserId: loaded.record.metaUserId,
     })
 
     await clearInstagramPending(loaded.cookie.pendingId)

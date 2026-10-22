@@ -42,6 +42,7 @@ export const FILES = {
   '055': '055_inventory_item_availability.sql',
   '056': '056_chat_peer_profile.sql',
   '057': '057_chat_send_claim.sql',
+  '058': '058_meta_data_deletion.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -96,6 +97,7 @@ export const EXPECTED_TABLES = {
   '053': ['ShippingMethodCoverage'],
   '055': ['InventoryItemAvailability'],
   '057': ['ChatSendClaim'],
+  '058': ['MetaDataDeletionRequest'],
 };
 
 export const EXPECTED_COLUMNS = {
@@ -114,6 +116,7 @@ export const EXPECTED_COLUMNS = {
   '055': [['InventoryItemAvailability', 'soldOut'], ['InventoryItemAvailability', 'backDate'], ['InventoryItemAvailability', 'backNote']],
   '056': [['ChatConversation', 'peerUsername'], ['ChatConversation', 'peerProfileCheckedAt']],
   '057': [['ChatSendClaim', 'clientRequestId'], ['ChatSendClaim', 'providerMessageId']],
+  '058': [['SocialAccount', 'metaUserId'], ['MetaDataDeletionRequest', 'pendingPaths']],
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],
   '037': [['ChatConversation', 'repliedInboundCount']],

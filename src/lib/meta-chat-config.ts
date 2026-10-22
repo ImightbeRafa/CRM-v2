@@ -21,12 +21,18 @@ export const INSTAGRAM_OAUTH_SCOPES = [
   'pages_manage_metadata',
   'pages_messaging',
   'business_management',
+  // Ad sales measurement (optional, owner opt-in). Without a config_id this is sent as `scope`; with Facebook
+  // Login for Business the same permission must be added to the login configuration in the Meta dashboard.
+  // Connections made before keep working: the IG line simply shows "Falta permiso: reconectá Instagram".
+  'instagram_manage_events',
 ] as const
 
+/** What Embedded Signup must grant (set in the Meta dashboard configuration; shown on Config › Social). */
 export const WHATSAPP_OAUTH_SCOPES = [
   'whatsapp_business_management',
   'whatsapp_business_messaging',
   'business_management',
+  'whatsapp_business_manage_events',
 ] as const
 
 export type MetaChatEnvKey =

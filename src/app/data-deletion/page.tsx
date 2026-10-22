@@ -1,4 +1,16 @@
 import Link from 'next/link'
+import { describeDeletionStatus, eraseAfterFor, isConfirmationCode } from '@/lib/meta-data-deletion/core'
+import { readDeletionStatus } from '@/lib/meta-data-deletion/store'
+
+export const dynamic = 'force-dynamic'
+
+const dateFmt = new Intl.DateTimeFormat('es-CR', { dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Costa_Rica' })
+
+const toneClass = {
+  ok: 'border-green-200 bg-green-50 text-green-900',
+  wait: 'border-amber-200 bg-amber-50 text-amber-900',
+  warn: 'border-red-200 bg-red-50 text-red-900',
+} as const
 
 export default async function DataDeletionPage({
   searchParams,
@@ -7,107 +19,129 @@ export default async function DataDeletionPage({
 }) {
   const { code } = await searchParams
   // Status link returned to Meta by the data-deletion callback.
-  const confirmationCode = code && /^BETSY-DEL-[A-F0-9]{12}$/.test(code) ? code : null
+  const confirmationCode = isConfirmationCode(code) ? code : null
+  const request = confirmationCode ? await readDeletionStatus(confirmationCode).catch(() => null) : null
+  const status = describeDeletionStatus(request?.status ?? null, request?.kind)
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-md p-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-6">
-          Instrucciones para Eliminación de Datos
-        </h1>
-        
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Eliminación de datos</h1>
+        <p className="text-gray-500 mb-6">Data deletion · English below</p>
+
         <div className="space-y-6 text-gray-700">
           {confirmationCode && (
-            <section className="rounded-md border border-green-200 bg-green-50 p-4">
-              <h2 className="text-lg font-semibold text-green-900 mb-1">Solicitud de eliminación recibida</h2>
-              <p className="text-green-900">
-                Código de confirmación: <strong>{confirmationCode}</strong>
+            <section className={`rounded-md border p-4 ${toneClass[status.tone]}`}>
+              <h2 className="text-lg font-semibold mb-1">{status.title}</h2>
+              <p>
+                Código de confirmación / Confirmation code: <strong>{confirmationCode}</strong>
               </p>
-              <p className="text-sm text-green-800 mt-1">
-                Eliminamos los datos de Instagram asociados a tu cuenta. Si necesitás confirmar el estado,
-                escribí a support@betsycrm.com con este código.
-              </p>
+              {request && (
+                <p className="text-sm mt-1">
+                  Recibida / Received: {dateFmt.format(new Date(request.createdAt))}
+                  {request.completedAt ? ` · Completada / Completed: ${dateFmt.format(new Date(request.completedAt))}` : ''}
+                  {request.kind === 'deletion' && request.status === 'received'
+                    ? ` · Borrado desde / Erase from: ${dateFmt.format(eraseAfterFor(new Date(request.createdAt)))}`
+                    : ''}
+                </p>
+              )}
+              <p className="text-sm mt-2">{status.body}</p>
             </section>
           )}
+
           <section>
-            <h2 className="text-xl font-semibold mb-3">
-              Cómo solicitar la eliminación de tus datos de Betsy CRM
-            </h2>
-            <p className="mb-4">
-              Si has vinculado tu cuenta de Instagram o WhatsApp a Betsy CRM y deseas 
-              eliminar tus datos, sigue estos pasos:
-            </p>
+            <h2 className="text-xl font-semibold mb-3">Desconectar o eliminar: no es lo mismo</h2>
+            <ul className="list-disc ml-6 space-y-2">
+              <li>
+                <strong>Desconectar</strong> (en Betsy: Configuración › Cuentas conectadas → Desvincular, o quitando Betsy en
+                la configuración de Facebook o Instagram): borramos los tokens de acceso de inmediato y dejamos de recibir y
+                enviar mensajes. El historial de conversaciones se queda en el espacio del negocio.
+              </li>
+              <li>
+                <strong>Eliminar</strong>: desconectamos de inmediato las cuentas de Instagram o WhatsApp que conectaste y
+                avisamos al dueño del negocio. 3 días después borramos las conversaciones, mensajes, archivos (fotos, audios,
+                videos, documentos), referencias de anuncios y registros de IA recibidos por esas cuentas. Si el negocio las
+                vuelve a conectar en ese plazo, nuestro equipo revisa la solicitud a mano y la completa dentro de 30 días. Los
+                pedidos y clientes que el equipo del negocio creó siguen siendo del negocio. Las copias de seguridad se
+                renuevan en 14 días.
+              </li>
+            </ul>
           </section>
 
           <section>
-            <h3 className="text-lg font-semibold mb-2">Opción 1: Desde la aplicación</h3>
-            <ol className="list-decimal list-inside space-y-2 ml-4">
-              <li>Inicia sesión en tu cuenta de Betsy CRM</li>
-              <li>Ve a <strong>Configuración → Cuentas Sociales</strong></li>
-              <li>Haz clic en &quot;Desvincular&quot; en la cuenta que deseas eliminar</li>
-              <li>Tus datos serán eliminados inmediatamente</li>
+            <h3 className="text-lg font-semibold mb-2">Opción 1: desde Facebook o Instagram</h3>
+            <ol className="list-decimal ml-6 space-y-2">
+              <li>
+                Abrí la configuración de Facebook (Configuración y privacidad → Configuración → Integraciones comerciales) o
+                de Instagram (Configuración → Apps y sitios web).
+              </li>
+              <li>Buscá <strong>Betsy CRM</strong>, tocá <strong>Eliminar</strong> y marcá la opción para pedir que se borren tus datos.</li>
+              <li>Meta nos avisa y te da un código de confirmación con un enlace a esta página para ver el estado.</li>
             </ol>
           </section>
 
           <section>
-            <h3 className="text-lg font-semibold mb-2">Opción 2: Contacto directo</h3>
-            <p className="mb-2">
-              Si no puedes acceder a tu cuenta, envía un correo a:
-            </p>
-            <p className="ml-4">
-              <strong>Email:</strong>{' '}
-              <a 
-                href="mailto:support@betsycrm.com" 
-                className="text-blue-600 hover:underline"
-              >
-                support@betsycrm.com
-              </a>
-            </p>
-            <p className="ml-4 mt-2">
-              Incluye en tu correo:
-            </p>
-            <ul className="list-disc list-inside ml-8 space-y-1">
-              <li>Tu nombre de usuario o correo electrónico</li>
-              <li>La cuenta de Instagram o WhatsApp que vinculaste</li>
-              <li>Solicitud explícita de eliminación de datos</li>
-            </ul>
-          </section>
-
-          <section>
-            <h3 className="text-lg font-semibold mb-2">¿Qué datos eliminamos?</h3>
-            <p className="mb-2">
-              Cuando solicitas la eliminación, removemos:
-            </p>
-            <ul className="list-disc list-inside ml-4 space-y-1">
-              <li>Información de tu cuenta vinculada (ID, tokens de acceso)</li>
-              <li>Historial de mensajes enviados y recibidos</li>
-              <li>Metadatos asociados a tus conversaciones</li>
-            </ul>
-          </section>
-
-          <section>
-            <h3 className="text-lg font-semibold mb-2">Tiempo de procesamiento</h3>
+            <h3 className="text-lg font-semibold mb-2">Opción 2: por correo</h3>
             <p>
-              Las solicitudes de eliminación se procesan de forma inmediata. 
-              Si solicitas la eliminación por correo, responderemos en un plazo 
-              máximo de <strong>48 horas</strong>.
+              Escribí a{' '}
+              <a href="mailto:support@betsycrm.com" className="text-blue-600 hover:underline">
+                support@betsycrm.com
+              </a>{' '}
+              con tu usuario o correo de Betsy, la cuenta de Instagram o WhatsApp conectada y la solicitud de eliminación.
+              Respondemos en 10 días hábiles.
             </p>
           </section>
 
-          <section className="border-t pt-6 mt-6">
-            <p className="text-sm text-gray-600">
-              <strong>Nota:</strong> Esta página cumple con los requisitos de las 
-              Políticas de la Plataforma de Facebook para aplicaciones que acceden 
-              a datos de usuarios de Instagram y WhatsApp.
+          <section>
+            <h3 className="text-lg font-semibold mb-2">Borrar toda una cuenta de Betsy</h3>
+            <p>
+              La persona dueña de la cuenta puede pedirlo a support@betsycrm.com desde el correo de la cuenta. Lo hacemos a
+              mano dentro de 30 días (usuarios, clientes, pedidos, conversaciones, archivos y registros) y lo confirmamos por
+              correo; las copias de seguridad se renuevan en 14 días más.
+            </p>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-semibold mb-2">Si sos cliente de un negocio que usa Betsy</h3>
+            <p>
+              Escribile primero al negocio, que es responsable de tus datos. También podés escribirnos a support@betsycrm.com
+              y le ayudamos a atender tu solicitud.
+            </p>
+          </section>
+
+          <section className="border-t pt-6" lang="en">
+            <h2 className="text-xl font-semibold mb-3">English</h2>
+            <ul className="list-disc ml-6 space-y-2">
+              <li>
+                <strong>Disconnect</strong> (in Betsy: Configuración › Cuentas conectadas → Desvincular, or by removing Betsy in your
+                Facebook or Instagram settings): access tokens are deleted immediately and messages stop. Conversation history
+                stays in the business&apos;s workspace.
+              </li>
+              <li>
+                <strong>Delete</strong>: in Facebook (Settings &amp; privacy → Settings → Business integrations) or Instagram
+                (Settings → Apps and websites), remove <strong>Betsy CRM</strong> and choose to delete your data. Meta notifies
+                us. We disconnect the Instagram or WhatsApp accounts you connected at once and tell the business owner; 3 days
+                later we delete the conversations, messages, files, ad referrals and AI records received through them (if the
+                business reconnects them meanwhile, our team completes the request by hand within 30 days). You get a
+                confirmation code linking to this page. Backups roll over within 14 days.
+              </li>
+              <li>
+                <strong>By email</strong>: write to support@betsycrm.com. We answer within 10 business days. A whole Betsy
+                account is erased by hand within 30 days on the owner&apos;s request.
+              </li>
+            </ul>
+            <p className="mt-3 text-sm">
+              Full details:{' '}
+              <Link href="/privacy#instagram-facebook" className="text-blue-600 hover:underline">
+                Privacy Policy §8
+              </Link>
+              .
             </p>
           </section>
         </div>
 
         <div className="mt-8 pt-6 border-t">
-          <Link
-            href="/"
-            className="text-blue-600 hover:underline font-medium"
-          >
+          <Link href="/" className="text-blue-600 hover:underline font-medium">
             ← Volver a Betsy CRM
           </Link>
         </div>

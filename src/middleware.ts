@@ -36,6 +36,7 @@ const PUBLIC_ROUTES = [
   '/api/bot/telegram/health',                   // Telegram health check (diagnostic)
   '/api/bot/whatsapp/webhook',                  // WhatsApp bot webhook (must be public for Meta verification)
   '/api/auth/instagram/data-deletion',          // Meta data deletion callback (must be public)
+  '/api/auth/meta/deauthorize',                 // Meta deauthorize callback (signed_request, must be public)
   '/api/cron',                                  // Worker cron triggers (authenticated via CRON_SECRET in handler)
   '/privacy',                                   // Privacy policy (required for Meta verification)
   '/terms',                                     // Terms of service (required for Meta verification)

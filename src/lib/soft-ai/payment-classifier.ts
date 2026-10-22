@@ -617,7 +617,59 @@ export function isCardInfoMessage(text: string): boolean {
   return segs.length > 0 && segs.every((t) => CARD_INFO_SEG_RE.test(t) && !hasPastOrDoneWord(t, true))
 }
 
+/**
+ * Lane C store exam 2026-10-22 (real chats): two closed BEFORE-paying questions went to a person —
+ * "Que le pongo de detalle" (what to write in the SINPE note; the "¿ya pagó?" model check called it a claim) and
+ * "Como es el método de pago?? se puede pagar cuando ya está acá el producto??" (cash on delivery; "ya está" read as a
+ * done word). Each sentence must be WHOLE one of these shapes (anchored, no digit at all, ≤ 200 chars), so no claim can
+ * ride along: a pasted card / SINPE number, "ya pagué", "le puse …" all fail the shape and keep the person path.
+ */
+const PAY_NOTE_FIELD = String.raw`(?:detalle|descripci[oó]n|motivo|concepto|nota|comentario|mensaje)`
+const PAY_NOTE_OF = String.raw`(?:\s+(?:del|de\s+la|de|para\s+el|para\s+la)\s+(?:sinpe(?:\s+m[oó]vil)?|transferencia|pago|dep[oó]sito))?`
+const COD_WHEN = String.raw`(?:ya\s+)?(?:est[eé]|est[aá]|llegue|me\s+llegue|lo\s+tenga|la\s+tenga|lo\s+reciba|la\s+reciba|me\s+lo\s+entreguen|me\s+lo\s+traigan)`
+const COD_THING = String.raw`(?:\s+(?:el|mi)\s+(?:producto|pedido|paquete|arn[eé]s|env[ií]o))?`
+const CLOSED_PAY_INFO_SEG_RE = new RegExp(
+  String.raw`^(?:y\s+|pero\s+|entonces\s+|ok\s+|oki?\s+|disculpe?\s+|perd[oó]n\s+)?(?:` +
+    // what goes in the transfer note
+    String.raw`(?:qu[eé]|que)\s+(?:le\s+|les\s+|te\s+)?(?:pongo|escribo|tengo\s+que\s+poner|debo\s+poner|hay\s+que\s+poner|pongo\s+yo|va)\s+(?:de|en\s+(?:el|la))\s+${PAY_NOTE_FIELD}${PAY_NOTE_OF}` +
+    String.raw`|(?:en\s+(?:el|la)\s+)?${PAY_NOTE_FIELD}${PAY_NOTE_OF}\s+qu[eé]\s+(?:le\s+)?(?:pongo|escribo|va)` +
+    // how do I pay
+    String.raw`|(?:c[oó]mo|cu[aá]l)\s+(?:es|son|ser[ií]a|ser[ií]an)\s+(?:el|los|la|las)\s+(?:m[eé]todos?|formas?|medios?)\s+de\s+pago` +
+    String.raw`|qu[eé]\s+(?:m[eé]todos?|formas?|medios?)\s+de\s+pago\s+(?:tienen|hay|aceptan|manejan|usan)` +
+    String.raw`|c[oó]mo\s+(?:se\s+paga|(?:le\s+|les\s+)?pago|(?:les\s+|le\s+)?puedo\s+pagar|ser[ií]a\s+el\s+pago)` +
+    // can I pay when it arrives (cash on delivery)
+    String.raw`|(?:se\s+puede|puedo|podr[ií]a|ser[ií]a\s+posible|es\s+posible)\s+pagar(?:lo|la|le)?\s+(?:cuando|hasta\s+que)\s+${COD_WHEN}(?:\s+(?:ac[aá]|aqu[ií]|en\s+(?:mi\s+)?casa))?${COD_THING}` +
+    String.raw`|(?:se\s+puede|puedo|podr[ií]a)\s+pagar(?:lo|la|le)?\s+(?:al\s+recibir(?:lo|la)?|contra\s*entrega|(?:en\s+efectivo\s+)?al\s+(?:recibir(?:lo|la)?|entregar(?:lo|la)?|llegar))${COD_THING}` +
+    String.raw`|(?:tienen|manejan|hacen|aceptan)\s+(?:pago\s+)?contra\s*entrega` +
+  String.raw`)$`,
+  'iu',
+)
+export function isClosedPayInfoQuestion(text: string): boolean {
+  const v = clean(stripFormatChars((text || '').normalize('NFKC')))
+  if (!v.trim() || v.length > 200 || /\d/.test(v)) return false
+  const segs = v
+    .replace(/¿/gu, '\u0001¿')
+    .split(/[.!?\n\u0001]+/u)
+    .map((x) => x.replace(/^[\s¿¡,]+/u, '').replace(/[\s,]+$/u, '').replace(LEADING_GREETING_RE, '').trim())
+    .filter(Boolean)
+  const asks = segs.filter((t) => !CLOSED_PAY_INFO_COURTESY_RE.test(t))
+  return asks.length > 0 && asks.every((t) => CLOSED_PAY_INFO_SEG_RE.test(t.replace(/\s+/gu, ' ')))
+}
+/** A sentence that is only a greeting / courtesy ("Hola,", "Disculpe", "Una consulta") around the question. */
+const CLOSED_PAY_INFO_COURTESY_RE =
+  /^(?:hola|holi|buenas|buenos\s+d[ií]as|buenas\s+(?:tardes|noches)|disculpe?|perd[oó]n|ok|oki|okey|gracias|muchas\s+gracias|una\s+consulta|consulta|pura\s+vida)$/iu
+
 export function classifyPaymentText(
+  text: string,
+  opts: { awaitingPaymentMethod?: boolean; noPaymentYet?: boolean; nothingPaidYet?: boolean } = {},
+): PaymentClassification {
+  const cls = classifyPaymentTextRules(text, opts)
+  // A closed before-paying question (every sentence one anchored shape, no digit) that a word rule would hand off is
+  // answered by the agent instead, like any other sales question.
+  return cls === 'payment_proof_or_risk' && isClosedPayInfoQuestion(text) ? 'non_payment' : cls
+}
+
+function classifyPaymentTextRules(
   text: string,
   /**
    * awaitingPaymentMethod: the store's method question is pending. noPaymentYet (Sleeping C2): nothing about paying happened

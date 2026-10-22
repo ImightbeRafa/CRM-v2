@@ -2,7 +2,7 @@
  * Pure parts of the "¿ya pagó?" model check (llm/payment-claim-check.ts): when it runs, what it sees, how its answer
  * is read. No network, no server-only imports — unit-testable.
  */
-import { hasPaymentWord } from '@/lib/soft-ai/payment-classifier'
+import { hasPaymentWord, isClosedPayInfoQuestion } from '@/lib/soft-ai/payment-classifier'
 
 export type PaymentCheckMode = 'off' | 'shadow' | 'enforce'
 export type PaymentCheckVerdict = 'claim' | 'clear' | 'error'
@@ -51,8 +51,12 @@ function unansweredCustomerTexts(history: PaymentCheckHistory, now = Date.now())
 export function paymentCheckGate(inboundText: string, history: PaymentCheckHistory): boolean {
   const text = inboundText || ''
   if (!text.trim()) return false
+  const unanswered = [...unansweredCustomerTexts(history).burst, text]
+  // Lane C store exam 2026-10-22: when everything unanswered is a closed before-paying question ("¿Qué le pongo de
+  // detalle?", "¿se puede pagar cuando ya está acá?"), there is no claim to look for (no digit, anchored shapes).
+  if (unanswered.every((t) => !t.trim() || isClosedPayInfoQuestion(t))) return false
   // SecureDog round 6: the whole unanswered burst, not only the newest message.
-  for (const t of [...unansweredCustomerTexts(history).burst, text]) if (MONEY_WORDS_RE.test(t) || hasPaymentWord(t)) return true
+  for (const t of unanswered) if (MONEY_WORDS_RE.test(t) || hasPaymentWord(t)) return true
   const recentInbound = history.filter((m) => m.direction === 'inbound').slice(-3).map((m) => m.content || '')
   if (recentInbound.some((t) => hasPaymentWord(t))) return true
   return history.some((m) => m.direction === 'outbound' && hasPaymentWord(m.content || ''))

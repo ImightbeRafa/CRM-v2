@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { classifyPaymentText, hasMixedScriptWord, isShortDoneBubble } from '@/lib/soft-ai/payment-classifier'
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
+import { validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
 import { parseBrandFacts } from '@/lib/soft-ai/brand-facts'
 import { RESERVED_SHORTCUT_SEEDS } from '@/lib/soft-ai/shortcuts'
 
@@ -31,6 +32,30 @@ describe('INT-206 statement form: a short done-bubble after the payment details'
   it('live and Probar both pass paymentDetailsSent', () => {
     const turn = readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
     assert.equal(turn.match(/paymentDetailsSent: history\.some\(\(m\) => m\.direction === 'outbound' && paymentDetailsIn\(m\.content \|\| ''\)\)/g)?.length, 2)
+  })
+})
+
+describe('INT-206 (be753a28 follow-up): a done-bubble anywhere in the burst, courtesy words, "Ahí está", "Ready"', () => {
+  it('goes to a person', () => {
+    for (const t of ['Listo, ya quedó todo gracias', 'Ya quedó listo, muchas gracias', 'Ahí está', 'Ready']) {
+      assert.equal(decide(t, true).paymentClass, 'payment_proof_or_risk', t)
+    }
+    const d = decideInbound({ inboundText: 'Gracias', brandFacts: FACTS, shortcuts: SHORTCUTS, paymentDetailsSent: true, earlierCustomerTexts: ['Listo'] })
+    assert.equal(d.paymentClass, 'payment_proof_or_risk')
+  })
+  it('a fully Cyrillic look-alike message folds to Latin and hands off', () => {
+    assert.equal(classifyPaymentText('уа ӏе һісе еӏ ѕіпре'), 'payment_proof_or_risk')
+  })
+})
+
+describe('INT-206: longer status questions about what the customer sent (reopened by 77daecdf)', () => {
+  it('a yes first is rewritten in a payment chat', () => {
+    for (const q of ['¿Pudieron ver lo que les mandé hace rato?', '¿Será que ya les apareció lo que les mandé?', '¿Ya pudieron revisar lo que les envié hace rato?', '¿Ya hay algo?', '¿Ya sirve?']) {
+      for (const r of ['¡Claro que sí!', '¡Perfecto, gracias!', '👍']) {
+        const reasons = validateAgentOutput({ text: r, citedToolNames: [], modelText: true, customerText: q, paymentContext: true }).reasons
+        assert.ok(reasons.length > 0, `${q} → ${r}`)
+      }
+    }
   })
 })
 

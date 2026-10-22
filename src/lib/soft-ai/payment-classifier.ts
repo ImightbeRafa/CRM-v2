@@ -512,11 +512,12 @@ export function hasMixedScriptWord(text: string): boolean {
  * already sent its payment details (inbound-decision paymentDetailsSent), where it means "I paid".
  */
 const SHORT_DONE_WORD_RE =
-  /(?<![\p{L}])(?:list[oa]|hecho|ya|qued[oó]|ah[ií]\s+va|enviad[oa]|mandad[oa]|pagad[oa]|pag\p{L}*|transfer\p{L}*|tranfer\p{L}*|deposit\p{L}*|sinpe|done|sent|paid)(?![\p{L}])|[✅✔☑]/iu
+  /(?<![\p{L}])(?:list[oa]|hecho|ya|qued[oó]|ah[ií]\s+va|ah[ií]\s+est[aá]|ready|enviad[oa]|mandad[oa]|pagad[oa]|pag\p{L}*|transfer\p{L}*|tranfer\p{L}*|deposit\p{L}*|sinpe|done|sent|paid)(?![\p{L}])|[✅✔☑]/iu
 export function isShortDoneBubble(text: string): boolean {
   const v = stripFormatChars((text || '').normalize('NFKC'))
   if (!v.trim() || /[?¿]/u.test(v) || v.length > 60) return false
-  const words = v.match(/\p{L}+/gu) ?? []
+  // SecureDog final: courtesy words do not count toward the cap ("Listo, ya quedó todo gracias").
+  const words = (v.match(/\p{L}+/gu) ?? []).filter((w) => !/^(?:gracias|muchas|mil|mae|pura|vida|porfa|ok|okey|bueno|todo)$/iu.test(w))
   return words.length <= 4 && SHORT_DONE_WORD_RE.test(v)
 }
 
@@ -577,7 +578,7 @@ export function invisibleAsGap(text: string): string | null {
     // marks included (r3: U+16FE4; NFKC already composed Spanish accents).
     .replace(/[^\p{L}\p{N}\p{P}\p{Sc}\p{Extended_Pictographic}\p{Emoji_Modifier}\s]/gu, ' ')
     // SecureDog wave D r3 (INT-209): Cyrillic / Greek letters that look Latin ("Yа lе hicе еl sinpе") read as Latin.
-    .replace(/[аеорсхуіјѕԁһкмтвнАЕОРСХУІЈЅКМТВНΑΒΕΖΗΙΚΜΝΟΡΤΥΧοαειυνκρτ]/gu, (ch) => CUSTOMER_LOOKALIKE[ch] ?? ch)
+    .replace(CUSTOMER_LOOKALIKE_RE, (ch) => CUSTOMER_LOOKALIKE[ch] ?? ch)
   return gapped === nfkc ? null : gapped
 }
 const CUSTOMER_LOOKALIKE: Record<string, string> = {
@@ -585,7 +586,10 @@ const CUSTOMER_LOOKALIKE: Record<string, string> = {
   А: 'A', Е: 'E', О: 'O', Р: 'P', С: 'C', Х: 'X', У: 'Y', І: 'I', Ј: 'J', Ѕ: 'S', К: 'K', М: 'M', Т: 'T', В: 'B', Н: 'H',
   Α: 'A', Β: 'B', Ε: 'E', Ζ: 'Z', Η: 'H', Ι: 'I', Κ: 'K', Μ: 'M', Ν: 'N', Ο: 'O', Ρ: 'P', Τ: 'T', Υ: 'Y', Χ: 'X',
   ο: 'o', α: 'a', ε: 'e', ι: 'i', υ: 'u', ν: 'v', κ: 'k', ρ: 'p', τ: 't',
+  // SecureDog final: palochka, п, г, ь, ԛ, ԝ and Armenian look-alikes (a message written entirely in them folds to Latin).
+  ӏ: 'l', Ӏ: 'l', п: 'n', г: 'r', ь: 'b', ԛ: 'q', ԝ: 'w', օ: 'o', ս: 'u', ց: 'g', ո: 'n', հ: 'h', զ: 'q', ք: 'p', ա: 'w', Ս: 'U', Օ: 'O', Ԍ: 'G',
 }
+const CUSTOMER_LOOKALIKE_RE = new RegExp(`[${Object.keys(CUSTOMER_LOOKALIKE).join("")}]`, "gu")
 
 export function hasHardPaymentClaim(text: string, opts: { noPaymentYet?: boolean } = {}): boolean {
   const gapped = invisibleAsGap(text)

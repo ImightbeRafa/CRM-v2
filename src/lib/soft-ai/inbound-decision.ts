@@ -196,7 +196,11 @@ export function decideInbound(input: {
   // own list labels ("Nombre completo" ≠ "completo") — it must still pass every hard-claim check with those masked.
   // SecureDog wave D final (INT-206 statement form): after the store's payment details, a short done-bubble with no
   // question ("Listo", "Listo ✅", "Hecho", "Ya quedó", "Ahí va", "ya pagúe") is a payment message.
-  const doneAfterDetails = input.paymentDetailsSent === true && isText && isShortDoneBubble(input.inboundText)
+  // Every unanswered bubble counts ("Listo" then "Gracias").
+  const doneAfterDetails =
+    input.paymentDetailsSent === true &&
+    isText &&
+    [input.inboundText, ...(input.earlierCustomerTexts || [])].some((t) => isShortDoneBubble(t || ''))
   const burstClaim = doneAfterDetails || (input.earlierCustomerTexts || []).some(
     (t) => hasHardPaymentClaim(t, { noPaymentYet }) && !(embeddedPaymentChoice(t) && !hasHardPaymentClaimLabelMasked(t)),
   )

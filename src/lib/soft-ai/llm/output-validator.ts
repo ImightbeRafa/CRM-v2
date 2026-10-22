@@ -231,12 +231,20 @@ function isPaymentStatusQuestion(customerText: string, paymentInPlay = false): b
  */
 const SALES_QUESTION_WORD_RE =
   /(?<![\p{L}])(?:precio|cu[aá]nto|cuesta|cuestan|vale|valen|talla|tallas|color|colores|env[ií]o|env[ií]os|envían|tienen|tiene|hay|stock|disponible|producto|productos|combo|paquete|paquetes|modelo|tama[nñ]o|sabor|sabores|direcci[oó]n|ubicaci[oó]n|horario|tienda|retiro|retirar|garant[ií]a|devoluci[oó]n|usa|dosis|ingredientes|sirve|funciona\s+para|descuento|promo|oferta|llega\s+a|entregan|cuándo\s+llega|cu[aá]ndo\s+llega)(?![\p{L}])/iu
+/**
+ * SecureDog (on 77daecdf): at any length, a question about what the customer SENT ("¿Pudieron ver lo que les mandé hace
+ * rato?", "¿Será que ya les apareció lo que les mandé?") or a see / arrive / show-up verb about it is status-shaped;
+ * so are "¿Ya hay algo?" / "¿Ya sirve?".
+ */
+const SENT_THING_QUESTION_RE =
+  /(?<![\p{L}])(?:(?:lo|la)\s+que\s+(?:les?|te)\s+(?:mand[eé]|envi[eé]|pas[eé]|hice|deposit[eé]|transfer[ií])|(?:pudieron|pudiste|pudo|podr[ií]an|alcanzaron)\s+(?:ver|revisar|verificar|confirmar)|(?:ya\s+)?(?:les?|te)\s+(?:apareci[oó]|aparece|lleg[oó]|cay[oó]|entr[oó]|refleja|reflej[oó])|ya\s+(?:hay\s+algo|sirve|apareci[oó]|aparece|lo\s+vieron|lo\s+revisaron))(?![\p{L}])/iu
 function hasShortStatusShapedQuestion(customerText: string): boolean {
   return customerText.split('\n').some((line) => {
     const q = line.lastIndexOf('?')
     if (q < 0) return false
     const head = line.slice(0, q)
     const clause = head.slice(Math.max(head.lastIndexOf('¿'), head.search(/[^.,!¡]*$/u), 0))
+    if (SENT_THING_QUESTION_RE.test(clause)) return true
     const words = clause.match(/\p{L}+/gu) ?? []
     return words.length > 0 && words.length <= 6 && !SALES_QUESTION_WORD_RE.test(clause)
   })

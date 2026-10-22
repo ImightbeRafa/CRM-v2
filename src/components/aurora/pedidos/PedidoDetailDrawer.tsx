@@ -51,7 +51,7 @@ function Section({ title, children, action }: { title: string; children: ReactNo
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{title}</h3>
+        <h3 className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">{title}</h3>
         {action}
       </div>
       {children}
@@ -209,7 +209,7 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
           <div className="flex items-end justify-between gap-3">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total</p>
+              <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">Total</p>
               <p className="text-[26px] font-semibold leading-tight tracking-tight text-slate-900">
                 {formatCurrency(Number(sale.total) || 0)}
               </p>
@@ -337,8 +337,8 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
         <Section title="Pago">
           <div className="flex flex-wrap items-center gap-2">
             <PaymentPill chip={pay} />
-            {sinpe ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">SINPE</span> : null}
-            {sale.contraEntrega ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">Contra entrega</span> : null}
+            {sinpe ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[12px] font-medium text-slate-600">SINPE</span> : null}
+            {sale.contraEntrega ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[12px] font-medium text-slate-600">Contra entrega</span> : null}
           </div>
           {showConfirmSinpe ? (
             <button type="button" onClick={() => confirmPayment('sinpe')} disabled={confirming} className={`${auroraBtnPrimary} mt-3 w-full sm:w-auto`}>

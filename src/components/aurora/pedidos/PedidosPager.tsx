@@ -7,7 +7,7 @@ function pageWindow(page: number, totalPages: number): number[] {
   return Array.from({ length: size }, (_, i) => start + i)
 }
 
-const BTN = 'flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-[13px] transition-colors'
+const BTN = 'flex h-11 min-w-11 md:h-8 md:min-w-8 items-center justify-center rounded-lg px-2 text-[13px] transition-colors'
 
 export function PedidosPager({
   page,

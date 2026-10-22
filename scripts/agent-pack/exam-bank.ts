@@ -15,6 +15,7 @@ import type { ScenarioStep } from '@/lib/soft-ai/probar-scenarios'
 import { normalizeForRepeat } from '@/lib/soft-ai/repeat-guard'
 import { redactSensitiveForProvider } from '@/lib/soft-ai/llm/redact'
 import { arg, loadPack } from './pack'
+import { looksLikeDataBlock, scrubChatText } from './chat-scrub'
 
 /** agoMin (C5): minutes before the step's message it was sent (real chats keep their real gaps). */
 export type ExamHistoryLine = { direction: 'inbound' | 'outbound'; content: string; agoMin?: number }
@@ -78,11 +79,13 @@ export function redactCustomerText(text: string, peerName?: string | null): stri
     if (/^(de|del|la|el|una?|cliente|nuev[oa]|mayor|menor|estudiante|al[eé]rgic[oa])\b/iu.test(words)) return `${intro} ${words}`
     return `${intro} [nombre] `
   })
+  // DATA-65: greeted names, links and tracking numbers too (same scrubber as export-chats).
+  t = scrubChatText(t, { collapseDataBlocks: false, tidy: false })
   // Judged on the ORIGINAL text: the '[nombre]' placeholder must never count as a data-form label.
   const original = text || ''
   const addressHits = (original.match(ADDRESS_WORDS) || []).length
   const dataLabels = (original.match(/(?<![\p{L}\p{N}])(nombre( completo)?|tel[eé]fono|celular|provincia|cant[oó]n|distrito|direcci[oó]n|señas|correo)(?![\p{L}\p{N}])/giu) || []).length
-  if (dataLabels >= 2 || addressHits >= 2 || (addressHits >= 1 && /\[número\]/.test(t))) return SYNTHETIC_DATA
+  if (dataLabels >= 2 || addressHits >= 2 || (addressHits >= 1 && /\[número\]/.test(t)) || looksLikeDataBlock(original, t)) return SYNTHETIC_DATA
   return t
 }
 

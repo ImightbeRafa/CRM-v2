@@ -1,3 +1,9 @@
+## 2026-10-22 — Read-only real-chat export + one scrubber for exports and exam banks (DATA-65)
+
+- New `scripts/agent-pack/export-chats.ts` (`--accounts= --since= --until= [--out=]`): read-only export of the chats on some lines in a Costa Rica date window, every message tagged customer / teammate ("Equipo N") / agent, plus linked orders (ChatMessage.orderId, and orders of the chat's client in the window). Default output `test-results/chat-exports/` (gitignored); pack exports go to `betsy-agent-packs/<store>/results/` (gitignored there).
+- New `scripts/agent-pack/chat-scrub.ts`: names (contact, IG username, order customer, greeted "Hola Ana", "soy …"), links, @handles, emails, phones, accounts, tracking numbers, addresses, and data/order blocks (forwarded "#ORD-…" orders, multi-line name/phone/province blocks) are removed. `exam-bank.ts` uses the same extras, so exam banks no longer keep greeted names or forwarded-order names (DATA-65 / Pura Sonrisa P9).
+- Test: `src/lib/__tests__/chat-export-scrub.test.ts` (in `test:soft-ai`). No DB writes, no live path, no schema change.
+
 ## 2026-10-21 — Exam bank: delivery-time after a confirmed order is a handoff
 
 - `expectForRealMessage` now sees the 6-message history. If the team already confirmed a SINPE / entered the order, “¿cuándo llegaría?” / guía / estado is `handoff: true` (existing order), not a first-contact shipping question.

@@ -310,10 +310,8 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       return NextResponse.json({ success: true, businessHours: stored })
     }
     const patch: AgentSettingsPatch = {}
-    if ('dailyTokenCap' in body) {
-      const v = body.dailyTokenCap
-      patch.dailyTokenCap = typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
-    }
+    // dailyTokenCap is no longer set here (never enforced; spend is capped per business in ai-allowance.ts). An old
+    // client sending it is ignored, not refused; the stored value is kept.
     if ('orderOwnership' in body) patch.orderOwnership = body.orderOwnership as AgentSettingsPatch['orderOwnership']
     if ('orderDefaults' in body) {
       patch.orderDefaults = body.orderDefaults as AgentSettingsPatch['orderDefaults']

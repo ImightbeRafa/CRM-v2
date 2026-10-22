@@ -113,7 +113,7 @@ describe('lineAiStatus: one truth per line', () => {
     assert.equal(line({ binding: { ...ON.binding!, providerConfigured: false } }).code, 'PROVIDER')
     assert.equal(line({ binding: { ...ON.binding!, inventoryMapMissing: true } }).code, 'NO_PRODUCTS')
     const budget = line({ budget: { tenantExhausted: false, agentExhausted: true } })
-    assert.equal(budget.label, 'Sin presupuesto de IA hoy')
+    assert.equal(budget.label, 'Sin saldo de IA este mes')
     assert.equal(line({ budget: { tenantExhausted: true, agentExhausted: false } }).code, 'NO_BUDGET')
   })
   it('staleness: agent/model change silences ("volvé a encender"); a version bump stays on with a soft hint', () => {
@@ -176,7 +176,7 @@ describe('chats follow the line (effectiveConversationAiMode / chatAiStatus)', (
   it('chip says IA only when the line is on and the chat is the AI\'s', () => {
     const on = { state: 'on' as const, code: 'ON' as const, label: 'IA respondiendo', hint: '' }
     const off = { state: 'off' as const, code: 'OFF' as const, label: 'Sin IA', hint: '' }
-    const problem = { state: 'problem' as const, code: 'NO_BUDGET' as const, label: 'Sin presupuesto de IA hoy', hint: 'Se renueva…' }
+    const problem = { state: 'problem' as const, code: 'NO_BUDGET' as const, label: 'Sin saldo de IA este mes', hint: 'Se renueva…' }
     assert.equal(chatAiStatus({ line: on, conversationAiMode: null }).label, 'IA')
     assert.equal(chatAiStatus({ line: on, conversationAiMode: 'ai_active' }).state, 'ia')
     assert.equal(dotFromChatAiStatus(chatAiStatus({ line: on, conversationAiMode: null })), 'IA')
@@ -194,7 +194,7 @@ describe('chats follow the line (effectiveConversationAiMode / chatAiStatus)', (
     const sinIa = chatAiStatus({ line: off, conversationAiMode: 'ai_active' })
     assert.equal(sinIa.label, 'Sin IA')
     assert.equal(sinIa.canReturnToAi, false)
-    assert.match(chatAiStatus({ line: problem, conversationAiMode: 'ai_active' }).reason, /Sin presupuesto de IA hoy/)
+    assert.match(chatAiStatus({ line: problem, conversationAiMode: 'ai_active' }).reason, /Sin saldo de IA este mes/)
     assert.equal(chatAiStatus({ line: null, conversationAiMode: 'ai_active' }).state, 'off')
     assert.equal(chatAiStatus({ line: off, conversationAiMode: 'human', assignedUserName: 'Ana' }).canReturnToAi, false)
   })

@@ -52,6 +52,7 @@ describe('owner AI usage dashboard', () => {
     assert.match(read('src/app/api/cron/ai-budget/route.ts'), /requireCronBearer\(request\)/)
     const budgets = read('src/lib/ai-usage-admin/budgets.ts')
     assert.ok(budgets.includes('if (shouldPause({ scope: b.scope, autoPause: b.autoPause'))
+    assert.ok(budgets.includes('exempt: exempt.has(b.scope)'))
     assert.match(budgets, /key: killTenantKey\(b\.scope\)/)
   })
   it('SQL 051 is additive, RLS on, registered; backfill is idempotent and host-confirmed', () => {
@@ -74,10 +75,13 @@ describe('F2 review fixes', () => {
     assert.equal(costaRicaMonthKey(new Date('2026-11-01T02:00:00Z')), '2026-10')
     assert.equal(costaRicaMonthKey(new Date('2026-11-01T07:00:00Z')), '2026-11')
   })
-  it('pause: only at 100% with auto-pause, once per month, never for the global budget', () => {
-    const b = { scope: 't1', autoPause: true, spentMicros: 100, budgetMicros: 100, pausedMonth: null as string | null, month: '2026-10' }
+  it('pause (kill switch backstop): only at 110% with auto-pause, once per month, never global or exempt', () => {
+    const b = { scope: 't1', autoPause: true, spentMicros: 110, budgetMicros: 100, pausedMonth: null as string | null, month: '2026-10' }
     assert.equal(shouldPause(b), true)
-    assert.equal(shouldPause({ ...b, spentMicros: 99 }), false)
+    // 100% stops live replies through the allowance gate (handoff with a note), not through the silent kill switch.
+    assert.equal(shouldPause({ ...b, spentMicros: 100 }), false)
+    assert.equal(shouldPause({ ...b, spentMicros: 109 }), false)
+    assert.equal(shouldPause({ ...b, exempt: true }), false)
     assert.equal(shouldPause({ ...b, autoPause: false }), false)
     assert.equal(shouldPause({ ...b, pausedMonth: '2026-10' }), false)
     assert.equal(shouldPause({ ...b, scope: 'global' }), false)

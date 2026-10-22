@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react'
 
 type Ownership = { salesChannels: string[]; funnels: string[]; sources: string[] }
 type Settings = {
-  dailyTokenCap: number | null
   orderOwnership: Ownership
   servesUnboundChannels: boolean
 }
@@ -16,14 +15,14 @@ const KINDS: Array<{ key: keyof Ownership; label: string }> = [
 ]
 
 /**
- * Which orders belong to this agent's business (SQL 049) + its own daily budget.
+ * Which orders belong to this agent's business (SQL 049). AI spend is capped per business (monthly allowance), not
+ * per agent in tokens: the old "Límite diario" field was never enforced on live replies and is gone.
  * Without a choice the agent only talks about orders a person linked to the chat.
  */
 export function AgentBusinessCard({ agentId, canEdit }: { agentId: string; canEdit: boolean }) {
   const [available, setAvailable] = useState(true)
   const [settings, setSettings] = useState<Settings | null>(null)
   const [known, setKnown] = useState<Ownership>({ salesChannels: [], funnels: [], sources: [] })
-  const [cap, setCap] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -33,10 +32,7 @@ export function AgentBusinessCard({ agentId, canEdit }: { agentId: string; canEd
       if (!res.ok) return
       const json = (await res.json()) as { available?: boolean; settings?: Settings; knownStamps?: Ownership }
       setAvailable(json.available !== false)
-      if (json.settings) {
-        setSettings(json.settings)
-        setCap(json.settings.dailyTokenCap ? String(json.settings.dailyTokenCap) : '')
-      }
+      if (json.settings) setSettings(json.settings)
       if (json.knownStamps) setKnown(json.knownStamps)
     } catch {
       /* optional card */
@@ -117,32 +113,6 @@ export function AgentBusinessCard({ agentId, canEdit }: { agentId: string; canEd
               </div>
             )
           })}
-
-          <div className="mt-3 border-t border-slate-200 pt-3">
-            <p className="text-[12.5px] font-medium text-slate-800">Límite diario de este agente</p>
-            <p className="mt-0.5 text-[11.5px] text-slate-500">Tokens por día. Vacío = solo el límite del negocio.</p>
-            <div className="mt-1 flex gap-2">
-              <input
-                value={cap}
-                onChange={(e) => setCap(e.target.value.replace(/[^\d]/g, ''))}
-                disabled={!canEdit || busy}
-                inputMode="numeric"
-                placeholder="Sin límite propio"
-                aria-label="Límite diario de tokens"
-                className="w-40 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] text-slate-900"
-              />
-              {canEdit ? (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void save({ dailyTokenCap: cap ? Number(cap) : null })}
-                  className="rounded-lg bg-slate-900 px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-40"
-                >
-                  Guardar
-                </button>
-              ) : null}
-            </div>
-          </div>
 
           <label className="mt-3 flex items-start gap-2 text-[12.5px] text-slate-800">
             <input

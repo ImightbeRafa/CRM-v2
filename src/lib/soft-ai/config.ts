@@ -11,14 +11,15 @@ import {
   type SoftAiToolName,
 } from '@/lib/soft-ai/types'
 
-import { classifyPaymentText } from '@/lib/soft-ai/payment-classifier'
+import { classifyPaymentText, isClosedPayInfoQuestion } from '@/lib/soft-ai/payment-classifier'
 
 export { DEFAULT_SOFT_AI_CONFIG }
 export const SOFT_TENANT_AI_V1_FLAG = 'soft_tenant_ai_v1'
 
 /** Legacy worker gate: any payment class other than non_payment stays sensitive. */
 export function isPaymentSensitiveText(text: string): boolean {
-  return classifyPaymentText(text || '') !== 'non_payment'
+  // Verifier r2 #4: a closed before-paying question the agent layer answers stays sensitive here (legacy heuristic replies).
+  return classifyPaymentText(text || '') !== 'non_payment' || isClosedPayInfoQuestion(text || '')
 }
 
 export function parseSoftAiConfig(raw: unknown): SoftAiConfig {

@@ -47,6 +47,8 @@ export const HANDOFF_REASON = {
   orderReadyCash: 'order_ready_cash',
   /** Rafael 2026-10-16: the agent did not have the answer ("no lo tengo acá, lo confirmo") — a person answers. */
   unknownAnswer: 'unknown_answer',
+  /** The business's AI allowance for the period is used up (ai-allowance.ts): a person answers. */
+  aiAllowance: 'ai_allowance',
 } as const
 
 /**

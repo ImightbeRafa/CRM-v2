@@ -54,7 +54,7 @@ import {
   type AgentResolveResult,
   type ResolvedChatAgent,
 } from '@/lib/soft-ai/agent-resolver'
-import { burstCustomerText, recentCustomerTexts, runSoftAiLlmRuntime } from '@/lib/soft-ai/llm/runtime'
+import { burstCustomerText, conversationPaymentContext, recentCustomerTexts, runSoftAiLlmRuntime } from '@/lib/soft-ai/llm/runtime'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import {
   CHAT_AGENT_LAYER_V1_FLAG,
@@ -100,12 +100,12 @@ import { notifyHandoff } from '@/lib/soft-ai/handoff-notify'
 import { decideWaitingAck, isOptOutText, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS, WAITING_ALERT_THROTTLE_MS } from '@/lib/soft-ai/waiting-ack'
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { dropRepeatedParts, REPEAT_WINDOW_MS } from '@/lib/soft-ai/repeat-guard'
-import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet } from '@/lib/soft-ai/sales-state'
+import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet, orderDataChoice, paymentDetailsIn } from '@/lib/soft-ai/sales-state'
 import { duplicateReceiptReply, isPaymentHandoff } from '@/lib/soft-ai/repeat-order'
 import { loadSettledSale } from '@/lib/soft-ai/settled-sale'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
-import { decideInbound, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
+import { decideInbound, decisionOrderDataChoice, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import { paymentCheckGate, paymentCheckMode, runPaymentClaimCheck } from '@/lib/soft-ai/llm/payment-claim-check'
 import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
@@ -198,6 +198,11 @@ function customerTextSinceLastAnswer(history: Array<{ direction: string; content
  * The customer's earlier messages for the burst claim check: since the store last wrote, plus any from the last 10 min
  * (SecureDog round 7: a message typed while the store's reply was being written sorts before that reply).
  */
+/** The store's configured SINPE number / IBAN (digits): a message from the store carrying one = payment details. */
+function storePaymentDigits(facts: { payment?: { sinpe?: { number?: string | null } | null; transfer?: { iban?: string | null } | null } | null } | null | undefined): string[] {
+  return [facts?.payment?.sinpe?.number, facts?.payment?.transfer?.iban].map((n) => (n || '').replace(/\D/g, '')).filter((d) => d.length >= 8)
+}
+
 function earlierCustomerTexts(history: Array<{ direction: string; content?: string | null; sentAt?: string | Date | null }>): string[] {
   return recentCustomerTexts(history, 10 * 60_000, 6)
 }
@@ -253,12 +258,15 @@ async function withPaymentClaimCheck(
   decision: InboundDecision,
   ctx: { tenantId: string; agentId: string; conversationId: string | null; history: Array<{ direction: string; content?: string | null }> },
 ): Promise<InboundDecision> {
-  const mode = paymentCheckMode()
+  // SecureDog r3 INT-H: a choice inside the order data is a regex ALLOWLIST over free text; the model check is its
+  // mandatory backstop — always enforced on that path, whatever SOFT_AI_PAYMENT_CHECK says (error / timeout → hand-off).
+  const dataChoicePath = decisionOrderDataChoice(decision) !== null
+  const mode = dataChoicePath ? 'enforce' : paymentCheckMode()
   if (mode === 'off' || decision.escalate || decision.handoff) return decision
   // SecureDog r9 F1: only real media skips (it has its own receipt path). A reaction / share / location / story
   // mention that took the burst over still gets the check: the claim text is in the unanswered history it reads.
   if (input.messageType && isMediaLikeMessageType(input.messageType)) return decision
-  if (!paymentCheckGate(input.inboundText, ctx.history)) return decision
+  if (!dataChoicePath && !paymentCheckGate(input.inboundText, ctx.history)) return decision
   const result = await runPaymentClaimCheck({
     inboundText: input.inboundText,
     history: ctx.history,
@@ -906,11 +914,21 @@ export async function executeAgentLayerTurn(
     return { status: 'skipped', reason: 'superseded' }
   }
 
-  const preModel = await runPreModelGates({
+  let preModel = await runPreModelGates({
     tenantId: row.tenantId,
     socialAccountId: row.socialAccountId,
     agentId: resolved.agent.id,
   })
+  // The AI allowance is the last pre-model gate, so every other gate passed. It only applies to a line that answers
+  // (not activated: the not_activated skip below keeps the chat's mode) and never to a reply already generated and
+  // paid for (a retried send / reclaimed lease finishes it: never a half reply).
+  if (!preModel.ok && preModel.skipReason === 'ai_allowance_exhausted') {
+    const lineAnswers = resolved.agent.operationMode === 'ai_full' && resolved.unlockedForSend
+    const generated = lineAnswers
+      ? await prisma.chatAgentTurn.findUnique({ where: { automationDeliveryKey: row.deliveryKey }, select: { status: true, outputText: true, outputHash: true } })
+      : null
+    if (!lineAnswers || (generated?.status === 'generated' && generated.outputText && generated.outputHash)) preModel = { ok: true }
+  }
   if (!preModel.ok) {
     await persistSkippedTurn({
       tenantId: row.tenantId,
@@ -923,7 +941,13 @@ export async function executeAgentLayerTurn(
       skipReason: preModel.skipReason || 'flag_off',
       status: preModel.status,
     })
-    if (preModel.status === 'budget_blocked') {
+    if (preModel.skipReason === 'ai_allowance_exhausted') {
+      // Out of AI allowance: no model call, no reply. The chat goes to a person (aiMode human, assigned, bell with the
+      // reason), so the waiting sweep leaves it alone until someone sends it back to IA.
+      const hoursSetup = await loadHoursSetup(row.tenantId, resolved.agent.id).catch(() => null)
+      const hours = hoursSetup ? afterHoursState(hoursSetup.hours, new Date(), { aiDisclosure: hoursSetup.aiDisclosure }) : IN_HOURS
+      await settleHandoff(row, { kind: 'handoff', reason: HANDOFF_REASON.aiAllowance }, hours)
+    } else if (preModel.status === 'budget_blocked') {
       void notifyAiNoReply({ tenantId: row.tenantId, conversationId: row.conversationId, reason: 'budget_blocked' })
     }
     return { status: 'skipped', reason: preModel.skipReason || preModel.status }
@@ -1089,6 +1113,8 @@ export async function executeAgentLayerTurn(
     // A keyword reply WITH images whose image can't go out now ("Te paso la guía 👇" with nothing) → model answers.
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !liveImageReplyIds.has(id))),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
+    // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
+    paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),
     // Sleeping C2: nothing about paying in this chat yet (no payment details, receipt photo, payment words, web order).
     // SecureDog r1 MEDIA-16: the trigger too (a receipt photo sent as the newest bubble ends "no payment yet").
     noPaymentYet: noPaymentYet([
@@ -1096,6 +1122,16 @@ export async function executeAgentLayerTurn(
       ...burstEarlier,
       { direction: 'inbound', content: payload.content || '', messageType: trigger.messageType },
     ]),
+    // Rafael 2026-10-18: a choice inside the order data with nothing paid yet — same rows, same types. A full window
+    // (more rows than loaded) fails closed; the store's own payment numbers end it too.
+    orderDataChoice: orderDataChoice(
+      [
+        ...history.map((m) => ({ ...m, messageType: messageTypeOf.get(m.id) ?? null })),
+        ...burstEarlier,
+        { direction: 'inbound', content: payload.content || '', messageType: trigger.messageType },
+      ],
+      { windowFull: loadedRows >= HISTORY_WINDOW_MAX, paymentDigits: storePaymentDigits(resolved.agent.brandFacts) },
+    ),
   }
   const burstTurn = decideBurstTurn({
     burst,
@@ -1303,6 +1339,8 @@ export async function executeAgentLayerTurn(
     skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
     // SecureDog round 6: the whole burst since the store last wrote ("Estoy embarazada" + "¿Lo puedo usar?").
     customerText: burstCustomerText(history, burst.inboundText),
+    // SecureDog INT-205: the shortened (sent) text gets the payment-status checks the runtime ran on the full text.
+    paymentContext: conversationPaymentContext(history, burst.inboundText),
     allowedDeals: runtimeInput.salesAllowedDeals,
     freeShipping: runtimeInput.salesFreeShipping,
     freeShippingRule: runtimeInput.salesFreeShippingRule,
@@ -2306,8 +2344,14 @@ async function runAgentTestTurnInner(input: {
     shortcuts,
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !probarImageReplyIds.has(id))),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
+    // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
+    paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),
     // Sleeping C2: nothing about paying in this chat yet (photos / files counted from their type, like live).
     noPaymentYet: noPaymentYet([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }]),
+    orderDataChoice: orderDataChoice([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }], {
+      windowFull: (input.history || []).length >= HISTORY_WINDOW_MAX,
+      paymentDigits: storePaymentDigits(runtimeAgent.brandFacts),
+    }),
   }
   const probarBurstTurn = decideBurstTurn({
     burst: probarBurst,
@@ -2421,6 +2465,7 @@ async function runAgentTestTurnInner(input: {
       quoteAmounts: runtimeInput.salesAllowedAmounts,
       skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
       customerText: burstCustomerText(input.history ?? [], probarBurst.inboundText),
+      paymentContext: conversationPaymentContext(input.history ?? [], probarBurst.inboundText),
       allowedDeals: runtimeInput.salesAllowedDeals,
       freeShipping: runtimeInput.salesFreeShipping,
       freeShippingRule: runtimeInput.salesFreeShippingRule,

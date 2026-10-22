@@ -12,12 +12,15 @@ import {
 import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
 import {
   classifyPaymentText,
+  embeddedPaymentChoice,
   hasHardPaymentClaim,
+  hasHardPaymentClaimLabelMasked,
   hasPaymentStatusHint,
   isBareOrderConfirmAsk,
   isCourtesyText,
   isCueFreePaymentChoiceText,
   isPlainPaymentLinkQuestion,
+  isShortDoneBubble,
   paymentHandoffReason,
   pendingMethodMention,
   type PaymentClassification,
@@ -29,7 +32,7 @@ import {
   paymentMethodsQuestion,
   PAYMENT_METHOD_TOKENS,
 } from '@/lib/soft-ai/payment-guard'
-import { parsePaymentMethodChoice, paymentMethodPick, type ChosenPaymentMethod } from '@/lib/soft-ai/sales-state'
+import { parsePaymentMethodChoice, paymentMethodPick, resolvePaymentChoice, type ChosenPaymentMethod } from '@/lib/soft-ai/sales-state'
 import { isOptOutText, mediaInboundPlan, routeInboundSafety } from '@/lib/soft-ai/llm/safety-router'
 import { HANDOFF_REASON, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
 import {
@@ -163,6 +166,14 @@ export function decideInbound(input: {
    * pedido" / "¿me confirmás?" is then an ordinary sales message, not a payment claim. Undefined = old behaviour.
    */
   noPaymentYet?: boolean
+  /**
+   * Rafael 2026-10-18: sales-state orderDataChoice — nothing about PAYING happened in this chat yet AND the whole
+   * unanswered burst is one order-data message with a method choice ("… Envío a domicilio. Pago por SINPE 🙌"). That
+   * choice is then a choice, not a payment claim. Undefined / null = old behaviour.
+   */
+  orderDataChoice?: ChosenPaymentMethod | null
+  /** SecureDog wave D final: the store already sent its payment details (sales-state paymentDetailsIn on its messages). */
+  paymentDetailsSent?: boolean
 }): InboundDecision {
   // SecureDog r1 INT-159: the relaxation needs a text message AND no bubble of the burst (this one included) hinting at
   // a payment's state ("¿Me confirmás?" + "¿Les llegó?" stays a payment hand-off).
@@ -172,12 +183,27 @@ export function decideInbound(input: {
     isText &&
     // SecureDog r2: every bubble of the burst is courtesy only or the bare ask itself (an allowlist, not a word list).
     [input.inboundText, ...(input.earlierCustomerTexts || [])].every((t) => !hasPaymentStatusHint(t || '') && (isCourtesyText(t || '') || isBareOrderConfirmAsk(t || '')))
+  // A text message only (also while the store's method question is pending: the close asks it with the data list).
+  const orderDataChoice = input.orderDataChoice && isText && input.awaitingReceipt !== true ? input.orderDataChoice : null
+  const nothingPaidYet = orderDataChoice !== null
   const latestClass = classifyPaymentText(input.inboundText, {
     awaitingPaymentMethod: input.awaitingPaymentMethod === true && isText,
     noPaymentYet,
+    nothingPaidYet,
   })
   // Verifier round 10: only a real claim in an earlier bubble counts ("Sinpe" + "gracias" is an answer).
-  const burstClaim = (input.earlierCustomerTexts || []).some((t) => hasHardPaymentClaim(t, { noPaymentYet }))
+  // Verifier r2 (pay-choice-in-data F1) / SecureDog r3 INT-G: an earlier order-data bubble is forgiven only the store's
+  // own list labels ("Nombre completo" ≠ "completo") — it must still pass every hard-claim check with those masked.
+  // SecureDog wave D final (INT-206 statement form): after the store's payment details, a short done-bubble with no
+  // question ("Listo", "Listo ✅", "Hecho", "Ya quedó", "Ahí va", "ya pagúe") is a payment message.
+  // Every unanswered bubble counts ("Listo" then "Gracias").
+  const doneAfterDetails =
+    input.paymentDetailsSent === true &&
+    isText &&
+    [input.inboundText, ...(input.earlierCustomerTexts || [])].some((t) => isShortDoneBubble(t || ''))
+  const burstClaim = doneAfterDetails || (input.earlierCustomerTexts || []).some(
+    (t) => hasHardPaymentClaim(t, { noPaymentYet }) && !(embeddedPaymentChoice(t) && !hasHardPaymentClaimLabelMasked(t)),
+  )
   const forced = input.forcePaymentRisk === true
   const paymentClass: PaymentClassification = burstClaim || forced ? 'payment_proof_or_risk' : latestClass
   const why = forced ? `payment_llm_check (regex: ${latestClass})` : burstClaim ? `earlier_message (latest: ${latestClass})` : null
@@ -292,12 +318,17 @@ export function decideInbound(input: {
     (!input.messageType || input.messageType === 'text') &&
     !isOptOutText(input.inboundText || '') &&
     paymentClass !== 'payment_proof_or_risk'
-  const choice = textMessage
+  const pick = textMessage
     ? paymentMethodPick(input.inboundText, input.awaitingPaymentMethod === true, offeredMethods(input.brandFacts))
     : null
+  // Rafael 2026-10-18: the choice written inside the order data (only when the classifier itself said choice).
+  // (textMessage already excludes payment_proof_or_risk: the claim checks always win.)
+  const dataChoice = !pick && textMessage && orderDataChoice ? resolvePaymentChoice(orderDataChoice, offeredMethods(input.brandFacts)) : null
+  const choice = pick ?? dataChoice
   if (choice === 'contra_entrega' || choice === 'efectivo') {
     // Contra entrega / efectivo: the model checks the zone and the order details, then a person takes the order.
-    steps.push({ step: 'payment_choice', outcome: 'model', reason: choice })
+    // Verifier r2 F5 / SecureDog r2 INT-F: inside the order data it is tagged so sales-state learns the choice.
+    steps.push({ step: 'payment_choice', outcome: 'model', reason: dataChoice && !pick ? `order_data_${choice}` : choice })
     return continueToModel(paymentClass, steps)
   }
   if (!choice && textMessage && input.awaitingPaymentMethod) {
@@ -328,6 +359,11 @@ export function decideInbound(input: {
         extraReasons: ['payment_info_not_shared'],
         handoff: { kind: 'review', reason: HANDOFF_REASON.paymentData },
       })
+    }
+    // A choice inside the order data: the model answers (total with shipping, then the method's token — sales-state).
+    if (dataChoice && !pick) {
+      steps.push({ step: 'payment_choice', outcome: 'model', reason: `order_data_${choice}` })
+      return continueToModel(paymentClass, steps)
     }
     // A method the store does not offer (or without its data): the model answers.
     if (reply && paymentMethodBlock(input.brandFacts, choice)) {
@@ -471,6 +507,13 @@ export function continueBurstToModel(decision: InboundDecision, reason: string):
   // The code step that would have answered stays in the trace; the model step is added after it.
   const steps: DecisionStep[] = [...decision.decisionTrace.steps, { step: 'burst_model', outcome: 'continue', reason }]
   return continueToModel(decision.paymentClass, steps)
+}
+
+/** The method the decision routed as a choice inside the order data (sales-state nextStep reads it), else null. */
+export function decisionOrderDataChoice(decision: Pick<InboundDecision, 'decisionTrace'>): ChosenPaymentMethod | null {
+  const step = decision.decisionTrace.steps.find((s) => s.step === 'payment_choice' && typeof s.reason === 'string' && s.reason.startsWith('order_data_'))
+  const m = step?.reason?.slice('order_data_'.length)
+  return m === 'sinpe' || m === 'transferencia' || m === 'tarjeta' || m === 'contra_entrega' || m === 'efectivo' ? m : null
 }
 
 function continueToModel(paymentClass: PaymentClassification, steps: DecisionStep[]): InboundDecision {

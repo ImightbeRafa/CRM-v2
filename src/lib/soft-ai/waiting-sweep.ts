@@ -34,6 +34,7 @@ import {
   softAiInboundDeliveryKey,
 } from '@/lib/soft-ai/automation-queue'
 import { sweepShouldAnswer } from '@/lib/soft-ai/resume-reply'
+import { resolveAiAllowance } from '@/lib/soft-ai/ai-allowance'
 
 const DAY_MS = 24 * 60 * 60_000
 /** Most chats answered by one "line turned on" call (Rafael: newest first, cap 50). */
@@ -131,7 +132,9 @@ export function turnAllowsRearm(
     if (
       turn.status === 'budget_blocked' &&
       turn.skipReason !== 'kill_switch' &&
-      turn.skipReason !== 'ai_terms_not_accepted'
+      turn.skipReason !== 'ai_terms_not_accepted' &&
+      // Out of AI allowance: the chat was handed to a person; only an explicit Devolver a IA / line-on re-queues it.
+      turn.skipReason !== 'ai_allowance_exhausted'
     ) {
       return true
     }
@@ -184,6 +187,8 @@ function isHistorical(metadata: unknown): boolean {
  */
 export async function lineAnswersNow(tenantId: string, socialAccountId: string): Promise<boolean> {
   if ((await readAgentKillState(tenantId)).armed) return false
+  // Out of AI allowance: queuing would only hand the chat to a person again.
+  if ((await resolveAiAllowance(tenantId)).exhausted) return false
   const resolved = await resolveChatAgent({ tenantId, socialAccountId, conversationAiMode: 'ai_active' })
   return (
     resolved.kind === 'resolved' &&

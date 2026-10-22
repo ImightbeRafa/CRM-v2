@@ -108,6 +108,8 @@ export type ChatAgentSkipReason =
   | 'draft_agent'
   | 'kill_switch'
   | 'ai_terms_not_accepted'
+  /** The business's live AI allowance for the period is used up (ai-allowance.ts): the chat goes to a person. */
+  | 'ai_allowance_exhausted'
 
 export type EffectiveAgentBehavior =
   | 'skip'

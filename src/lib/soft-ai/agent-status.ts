@@ -139,7 +139,8 @@ const TURN_REASON_COPY: Record<string, string> = {
   ai_full_not_unlocked: 'la línea no estaba encendida para este agente',
   stale_version: 'el agente cambió mientras respondía',
   kill_switch: 'la IA estaba pausada',
-  budget_blocked: 'se acabó el presupuesto de IA de hoy',
+  budget_blocked: 'se alcanzó el límite de gasto de IA',
+  ai_allowance_exhausted: 'se acabó el saldo de IA del mes y el chat pasó al equipo',
   token_unhealthy: 'la línea perdió la conexión',
   ai_terms_not_accepted: 'faltan los términos de IA',
   flag_off: 'la IA no está habilitada para el negocio',
@@ -280,7 +281,7 @@ export function lineAiStatus(input: LineAiInput): LineAiStatus {
     }
   }
   if (input.budget.tenantExhausted || input.budget.agentExhausted) {
-    return st('problem', 'NO_BUDGET', 'Sin presupuesto de IA hoy', 'Se renueva a las 6:00 pm (hora de Costa Rica) o pedí subir el presupuesto.')
+    return st('problem', 'NO_BUDGET', 'Sin saldo de IA este mes', 'Los chats nuevos pasan al equipo. Se renueva el día 1 del mes (hora de Costa Rica) o pedí más saldo a Betsy.')
   }
   // Every switch above is fine, so the line answers: a recent odd skip is a warning, never "Sin IA" on every chat
   // (the line keeps answering — showing it off would break "if it says IA, it answers" the other way; Verifier F2).

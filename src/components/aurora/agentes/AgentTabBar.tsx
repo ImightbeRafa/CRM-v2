@@ -32,7 +32,7 @@ export function AgentTabBar({
             disabled={disabled}
             title={disabled ? 'Guardá el agente primero' : undefined}
             onClick={() => onSelect(t.key)}
-            className={`min-h-[40px] shrink-0 snap-start whitespace-nowrap border-b-2 px-0.5 pb-2.5 pt-1 text-[13px] font-medium transition-colors ${
+            className={`min-h-11 shrink-0 snap-start whitespace-nowrap border-b-2 px-0.5 pb-2.5 pt-1 text-[13px] font-medium transition-colors ${
               active
                 ? 'border-[#5B6CFF] text-au-ink-0e0d17'
                 : disabled

@@ -29,7 +29,7 @@ function resolveColor(color: string) {
 export function KanbanColumn(props: KanbanColumnProps) {
   const hex = resolveColor(props.status.color);
   return (
-    <section className="kanban-column flex-shrink-0 w-[310px] rounded-xl overflow-hidden glass-column shadow-premium">
+    <section className="kanban-column flex-shrink-0 w-[min(85vw,310px)] snap-start rounded-xl overflow-hidden glass-column shadow-premium">
       <div className="h-[2px]" style={{ background: `linear-gradient(90deg, ${hex}, ${hex}66)` }} />
       <header className="px-4 py-3.5 border-b border-white/[0.04] flex items-center justify-between" style={{ background: `linear-gradient(180deg, ${hex}08, transparent)` }}>
         <h3 className="text-sm font-semibold" style={{ color: hex }}>{props.status.label}</h3>

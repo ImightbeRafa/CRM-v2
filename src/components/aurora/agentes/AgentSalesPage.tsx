@@ -103,7 +103,7 @@ export function AgentSalesPage() {
       <div className="mb-8 grid grid-cols-1 gap-3 md:grid-cols-3">
         {VALUE_PROPS.map(({ icon: Icon, title, text }) => (
           <div key={title} className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-            <Icon className="mb-2 h-5 w-5 text-[#5B6CFF]" aria-hidden />
+            <Icon className="mb-2 h-5 w-5 text-au-ink-5b6cff" aria-hidden />
             <p className="mb-1 text-[14px] font-semibold text-slate-900">{title}</p>
             <p className="text-[13px] text-slate-500">{text}</p>
           </div>
@@ -149,7 +149,7 @@ export function AgentSalesPage() {
                   type="button"
                   aria-pressed={channels.includes(c.id)}
                   onClick={() => toggleChannel(c.id)}
-                  className={`rounded-full border px-3 py-1 text-[13px] ${channels.includes(c.id) ? 'border-[#7C5CFF] bg-[#7C5CFF]/10 text-[#5B3FE0]' : 'border-slate-200 bg-white text-slate-600'}`}
+                  className={`rounded-full border px-3 py-1 text-[13px] ${channels.includes(c.id) ? 'border-[#7C5CFF] bg-[#7C5CFF]/10 text-au-ink-5b3fe0' : 'border-slate-200 bg-white text-slate-600'}`}
                 >
                   {c.label}
                 </button>

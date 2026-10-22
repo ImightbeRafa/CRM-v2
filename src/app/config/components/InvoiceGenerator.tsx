@@ -603,8 +603,8 @@ export function InvoiceGenerator({
                   ) : (
                     <div className="space-y-3">
                       {currentInvoice.items.map((item, index) => (
-                        <div key={index} className="grid grid-cols-12 gap-2 items-center p-3 bg-muted rounded-lg">
-                          <div className="col-span-5">
+                        <div key={index} className="grid grid-cols-6 gap-2 items-center p-3 bg-muted rounded-lg sm:grid-cols-12">
+                          <div className="col-span-6 sm:col-span-5">
                             <input
                               type="text"
                               value={item.description}
@@ -637,7 +637,7 @@ export function InvoiceGenerator({
                           <div className="col-span-2 text-right font-semibold text-foreground">
                             {formatCurrency(item.total)}
                           </div>
-                          <div className="col-span-1">
+                          <div className="col-span-6 flex justify-end sm:col-span-1">
                             <Button
                               variant="ghost"
                               size="sm"

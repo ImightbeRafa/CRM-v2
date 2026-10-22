@@ -31,9 +31,12 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleString('es-CR', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-function ContactForm() {
+/** `/soporte?tema=agente` (landing "Quiero mi agente") starts the form as an agent lead. */
+const AGENT_LEAD = { subject: 'Quiero mi agente de IA', placeholder: 'Qué vendés, por dónde te escriben (WhatsApp, Instagram) y cuántos chats recibís más o menos.' };
+
+function ContactForm({ topic }: { topic: 'agent' | null }) {
   const startedAt = useRef(Date.now());
-  const [form, setForm] = useState({ name: '', email: '', subject: '', category: 'question', message: '', website: '' });
+  const [form, setForm] = useState({ name: '', email: '', subject: topic === 'agent' ? AGENT_LEAD.subject : '', category: 'question', message: '', website: '' });
   const [token, setToken] = useState<string | null>(null);
   const [resetKey, setResetKey] = useState(0);
   const [sending, setSending] = useState(false);
@@ -119,7 +122,7 @@ function ContactForm() {
       </div>
       <label className="block">
         <span className={auroraLabelClass}>Mensaje</span>
-        <textarea className={`${auroraInputClass} min-h-[140px]`} value={form.message} onChange={set('message')} maxLength={5000} required />
+        <textarea className={`${auroraInputClass} min-h-[140px]`} value={form.message} onChange={set('message')} maxLength={5000} required placeholder={topic === 'agent' ? AGENT_LEAD.placeholder : undefined} />
       </label>
       {/* Honeypot: hidden from people, bots fill it. */}
       <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
@@ -243,10 +246,10 @@ function MyTickets() {
   );
 }
 
-export function SoporteClient({ ticketsEnabled }: { ticketsEnabled: boolean }) {
+export function SoporteClient({ ticketsEnabled, topic = null }: { ticketsEnabled: boolean; topic?: 'agent' | null }) {
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <ContactForm />
+      <ContactForm topic={topic} />
       {ticketsEnabled && <MyTickets />}
     </div>
   );

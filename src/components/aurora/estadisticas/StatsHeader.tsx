@@ -21,7 +21,7 @@ const QUICK: AuroraPeriod[] = ['hoy', 'semana', 'semana-pasada', 'mes', 'mes-pas
 const MORE: AuroraPeriod[] = ['ayer', '7d', '30d', '90d']
 
 const chip = (active: boolean) =>
-  `min-h-[36px] shrink-0 snap-start whitespace-nowrap rounded-lg px-3 text-[13px] font-medium transition-colors ${
+  `min-h-11 md:min-h-[36px] shrink-0 snap-start whitespace-nowrap rounded-lg px-3 text-[13px] font-medium transition-colors ${
     active ? 'bg-white text-au-ink-0e0d17 shadow-sm' : 'text-slate-500 hover:text-slate-800'
   }`
 

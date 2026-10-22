@@ -1,5 +1,6 @@
 'use client'
 
+import { MobileCardTable } from '@/components/ui/MobileCardTable'
 import { useCallback, useEffect, useState } from 'react'
 
 type Row = {
@@ -90,8 +91,8 @@ export function AgentQualityCard({ agentId, canEdit }: { agentId: string; canEdi
       {rows.length === 0 ? (
         <p className="mt-1 text-[12px] text-slate-500">Todavía no hay suficientes conversaciones.</p>
       ) : (
-        <div className="mt-2 overflow-x-auto">
-          <table className="w-full text-left text-[12px]">
+        <MobileCardTable className="mt-2 overflow-x-auto">
+          <table className="m-cards w-full text-left text-[12px]">
             <thead className="text-[10px] uppercase text-slate-500">
               <tr>
                 <th className="py-1 pr-2">Versión</th>
@@ -121,7 +122,7 @@ export function AgentQualityCard({ agentId, canEdit }: { agentId: string; canEdi
               ))}
             </tbody>
           </table>
-        </div>
+        </MobileCardTable>
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">

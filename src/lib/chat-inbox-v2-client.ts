@@ -142,6 +142,10 @@ export function listDtoToSoftConversation(
     agentStateDot: dto.aiLine !== undefined ? dotForDto(dto) : dto.agentStateDot ?? null,
     pendingSuggestionText: dto.pendingSuggestionText ?? null,
     aiStatus: aiStatusFromDto(dto),
+    needsPerson: dto.needsPerson === true,
+    // "Sin responder" wait: since the customer's last message.
+    waitingSince: dto.lastInboundAt ?? null,
+    lastIsFollowUp: dto.lastIsFollowUp === true,
   }
 }
 
@@ -162,7 +166,9 @@ export function aiStatusFromDto(dto: ChatConversationListItemDto): ChatAiStatus 
 }
 
 function dotForDto(dto: ChatConversationListItemDto): 'IA' | 'Hum' | null {
-  // 'IA' only when the chat is really the AI's; otherwise 'Hum' where an agent is shown at all.
+  // 'IA' only when the chat is really the AI's; otherwise 'Hum' where an agent is shown at all. A chat the agent
+  // left to a person (safe line / hand-off) is never 'IA'.
+  if (dto.needsPerson) return 'Hum'
   if (aiStatusFromDto(dto)?.state === 'ia') return 'IA'
   return dto.agentStateDot ? 'Hum' : null
 }

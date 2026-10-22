@@ -203,7 +203,7 @@ function LocationRow({
       </div>
 
       {/* Provincia / Cantón / Distrito grid */}
-      <div className="grid grid-cols-3 gap-2.5 mb-2.5">
+      <div className="grid grid-cols-1 gap-2.5 mb-2.5 sm:grid-cols-3">
         {/* Provincia */}
         <div>
           <label className="text-[10px] font-semibold uppercase text-muted-foreground block mb-1">
@@ -775,7 +775,7 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
 
             {/* Order list */}
             <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-              <ScrollArea className="h-[350px] sm:h-[420px] px-5">
+              <ScrollArea className="h-[min(350px,50dvh)] sm:h-[420px] px-5">
                 <div className="space-y-2 py-2">
                   {orderGuias.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground">
@@ -940,7 +940,7 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
             </div>
 
             {/* Verification list */}
-            <ScrollArea className="h-[350px] sm:h-[400px] px-5 py-3">
+            <ScrollArea className="h-[min(350px,50dvh)] sm:h-[400px] px-5 py-3">
               {verifiedOrders.map((o, idx) => (
                 <LocationRow key={o.orderId} order={o} onChange={(updates) => updateVerifiedOrder(idx, updates)} />
               ))}
@@ -1033,7 +1033,7 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
         {/* ─── HISTORY TAB ───────────────────────────────── */}
         {activeTab === 'history' && (
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-            <ScrollArea className="h-[450px] sm:h-[550px] px-5 py-4">
+            <ScrollArea className="h-[min(450px,55dvh)] sm:h-[550px] px-5 py-4">
               {loadingHistory ? (
                 <div className="flex justify-center items-center h-48">
                   <Loader2 className="h-6 w-6 animate-spin text-primary" />

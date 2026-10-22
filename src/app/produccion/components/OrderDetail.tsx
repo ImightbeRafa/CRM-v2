@@ -402,7 +402,7 @@ export function OrderDetails({
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+      <DialogContent className="w-[95vw] max-w-4xl max-h-[90dvh] p-0">
         <DialogHeader className="px-6 py-4 border-b border-border bg-card sticky top-0 z-10">
           <DialogTitle className="flex justify-between items-center">
             <div className="flex items-center space-x-3">
@@ -421,7 +421,7 @@ export function OrderDetails({
               <Button
                 variant={isEditing ? "outline" : "ghost"}
                 size="sm"
-                className="h-8 px-3"
+                className="h-11 md:h-8 px-3"
                 onClick={() => {
                   if (isEditing) {
                     handleCancelEdit();
@@ -446,7 +446,7 @@ export function OrderDetails({
                 <Button
                   onClick={handleSave}
                   disabled={isSaving}
-                  className="h-8"
+                  className="h-11 md:h-8"
                 >
                   {isSaving ? (
                     <>
@@ -465,7 +465,7 @@ export function OrderDetails({
           </DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 h-full max-h-[calc(90vh-8rem)] bg-muted">
+        <ScrollArea className="flex-1 h-full max-h-[calc(90dvh-8rem)] bg-muted">
           <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-6">
               {renderSection('Información del Cliente', customerInfoFields)}

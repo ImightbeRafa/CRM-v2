@@ -47,6 +47,8 @@ export function DailySalesBars({ series, symbol }: { series: PairedDailyPoint[];
             <li key={p.date} className="group relative flex h-full min-w-0 flex-1 flex-col justify-end">
               <button
                 type="button"
+                // iOS Safari does not focus buttons on tap; focus explicitly so the tooltip shows.
+                onClick={(e) => e.currentTarget.focus()}
                 className="flex h-full w-full items-end justify-center gap-[2px] rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[#5B6CFF]/40"
                 aria-label={`${formatDayLabel(p.date)}: ${formatCompactMoney(p.revenue, symbol)}, anterior ${formatCompactMoney(p.prevRevenue, symbol)}`}
               >

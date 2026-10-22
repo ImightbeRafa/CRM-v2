@@ -50,7 +50,7 @@ export function KanbanCard({ order, statuses, onClick, onMove, moving }: KanbanC
           aria-label={`Nuevo estado para ${order.orderId}`}
           value={targetStatus}
           onChange={event => setTargetStatus(event.target.value)}
-          className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs"
+          className="h-11 md:h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs"
           disabled={moving}
         >
           {!statuses.some(status => status.label === order.status) && <option value={order.status}>{order.status}</option>}
@@ -59,6 +59,7 @@ export function KanbanCard({ order, statuses, onClick, onMove, moving }: KanbanC
         <Button
           type="button"
           size="sm"
+          className="h-11 w-11 md:h-9 md:w-auto"
           disabled={moving || targetStatus === order.status}
           onClick={() => void onMove(order, targetStatus)}
           aria-label={`Mover ${order.orderId} a ${targetStatus}`}

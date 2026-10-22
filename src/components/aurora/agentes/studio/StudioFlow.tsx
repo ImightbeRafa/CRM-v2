@@ -124,7 +124,7 @@ export function StudioFlow({
 
       {open ? (
         <div className="mt-4 space-y-4">
-          <ol className="flex gap-2 text-[11px] font-medium" aria-label="Pasos">
+          <ol className="flex gap-2 text-[12px] font-medium" aria-label="Pasos">
             {['Fuentes', 'Revisar', 'Probar'].map((label, i) => (
               <li key={label} className={`flex-1 rounded-full px-2 py-1 text-center ${step === i + 1 ? 'bg-[#5B6CFF] text-white' : step > i + 1 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                 {i + 1}. {label}

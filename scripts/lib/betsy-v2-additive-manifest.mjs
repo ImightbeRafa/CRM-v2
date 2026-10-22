@@ -44,6 +44,7 @@ export const FILES = {
   '057': '057_chat_send_claim.sql',
   '058': '058_meta_data_deletion.sql',
   '059': '059_support_pipeline.sql',
+  '060': '060_ai_credits.sql',
   '061': '061_ai_provider_status.sql',
 };
 
@@ -101,6 +102,7 @@ export const EXPECTED_TABLES = {
   '057': ['ChatSendClaim'],
   '058': ['MetaDataDeletionRequest'],
   '059': ['SupportTicket', 'SupportTicketMessage', 'SupportTicketEvent', 'SupportMcpAudit'],
+  '060': ['AiBillingRate', 'AiBillingSettings', 'AiCreditLedger', 'AiCreditPurchase', 'AiTenantSpendLimit'],
 };
 
 export const EXPECTED_COLUMNS = {
@@ -121,6 +123,7 @@ export const EXPECTED_COLUMNS = {
   '057': [['ChatSendClaim', 'clientRequestId'], ['ChatSendClaim', 'providerMessageId']],
   '058': [['SocialAccount', 'metaUserId'], ['MetaDataDeletionRequest', 'pendingPaths']],
   '059': [['SupportTicket', 'number'], ['SupportTicket', 'contactEmail'], ['SupportTicketMessage', 'isDraft'], ['SupportTicketEvent', 'nextAttemptAt'], ['SupportMcpAudit', 'tool']],
+  '060': [['AiBillingRate', 'markupBps'], ['AiCreditLedger', 'sourceKey'], ['AiCreditPurchase', 'ref'], ['AiCreditPurchase', 'lastEvent'], ['AiTenantSpendLimit', 'monthlyLimitMicros']],
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],
   '037': [['ChatConversation', 'repliedInboundCount']],

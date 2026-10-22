@@ -259,7 +259,7 @@ export const PedidosBoard = React.memo(function PedidosBoard({
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Buscar nombre, pedido o teléfono"
                 aria-label="Buscar pedidos"
-                className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 pl-9 pr-3 text-[13px] text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#5B6CFF] focus:bg-white"
+                className="h-11 md:h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 pl-9 pr-3 text-[13px] text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#5B6CFF] focus:bg-white"
               />
             </label>
             {lineOptions.length > 0 ? (
@@ -267,7 +267,7 @@ export const PedidosBoard = React.memo(function PedidosBoard({
                 value={lineFilter}
                 onChange={(e) => setLineFilter(e.target.value)}
                 aria-label="Filtrar por línea"
-                className="h-9 min-w-0 max-w-[170px] flex-1 rounded-lg sm:flex-none border border-slate-200 bg-white px-2.5 text-[13px] text-slate-700 outline-none focus:border-[#5B6CFF]"
+                className="h-11 md:h-9 min-w-0 max-w-[170px] flex-1 rounded-lg sm:flex-none border border-slate-200 bg-white px-2.5 text-[13px] text-slate-700 outline-none focus:border-[#5B6CFF]"
               >
                 <option value={LINE_FILTER_ALL}>Todas las líneas</option>
                 {lineOptions.map((line) => (
@@ -282,7 +282,7 @@ export const PedidosBoard = React.memo(function PedidosBoard({
               value={range}
               onChange={(e) => setRange(e.target.value as RangeKey)}
               aria-label="Rango de fechas"
-              className="h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] text-slate-700 outline-none focus:border-[#5B6CFF] sm:flex-none"
+              className="h-11 md:h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] text-slate-700 outline-none focus:border-[#5B6CFF] sm:flex-none"
             >
               {RANGES.map((r) => (
                 <option key={r.key} value={r.key}>
@@ -294,7 +294,7 @@ export const PedidosBoard = React.memo(function PedidosBoard({
               type="button"
               onClick={refresh}
               disabled={isLoading}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 disabled:opacity-50"
+              className="flex h-11 w-11 md:h-9 md:w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 disabled:opacity-50"
               aria-label="Actualizar pedidos"
               title="Actualizar"
             >
@@ -371,7 +371,7 @@ export const PedidosBoard = React.memo(function PedidosBoard({
                 <button
                   type="button"
                   onClick={() => openOrder(sale.orderId)}
-                  className="mt-1 ml-auto block px-1 py-1 text-[12px] font-medium text-au-ink-5b3fe0"
+                  className="mt-1 ml-auto flex min-h-11 items-center px-3 text-[13px] font-medium text-au-ink-5b3fe0"
                 >
                   Ver detalle
                 </button>

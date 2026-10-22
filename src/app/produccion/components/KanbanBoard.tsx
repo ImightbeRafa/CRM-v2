@@ -87,7 +87,7 @@ function KanbanBoardComponent({ orders, statuses: provided = [], serverDriven = 
   };
 
   if (serverDriven) {
-    return <div className="flex gap-4 overflow-x-auto pb-4 px-1">
+    return <div className="flex gap-4 overflow-x-auto pb-4 px-1 snap-x snap-proximity md:snap-none">
       {visibleStatuses.map(status => <ServerColumn key={status.key} status={status} statuses={configuredStatuses} filters={filters} onOrderClick={onOrderClick} onMove={onMove} movingOrderId={movingOrderId} />)}
     </div>;
   }
@@ -97,7 +97,7 @@ function KanbanBoardComponent({ orders, statuses: provided = [], serverDriven = 
     const match = configuredStatuses.find(status => status.label.toLowerCase() === order.status.toLowerCase());
     grouped.get(match?.key || '__unconfigured__')?.push(order);
   }
-  return <div className="flex gap-4 overflow-x-auto pb-4 px-1">
+  return <div className="flex gap-4 overflow-x-auto pb-4 px-1 snap-x snap-proximity md:snap-none">
     {visibleStatuses.map(status => {
       const columnOrders = (grouped.get(status.key) || []).sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime());
       return <KanbanColumn key={status.key} status={{ ...status, color: status.color || fallbackColor(status.label) }} statuses={configuredStatuses} orders={columnOrders} totalCount={columnOrders.length} onOrderClick={onOrderClick} onMove={onMove} movingOrderId={movingOrderId} />;

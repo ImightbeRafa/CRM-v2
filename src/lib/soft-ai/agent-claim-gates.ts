@@ -170,7 +170,9 @@ export const CHAT_MODEL_TURNS_PER_HOUR = 30
 export const CHAT_MODEL_TURNS_PER_DAY = 150
 
 async function chatOverModelCap(tenantId: string, conversationId: string, now = Date.now()): Promise<boolean> {
-  const live = { tenantId, conversationId, mode: { not: 'test' }, status: { notIn: ['skipped'] } }
+  // SecureDog #127 r2 B/D: real model runs (a row with tokens), whatever the turn ended as — a reply dropped as a
+  // repeat is still a paid run; acks and code-written replies (0 tokens) never count.
+  const live = { tenantId, conversationId, mode: { not: 'test' }, inputTokens: { gt: 0 } }
   const [hour, day] = await Promise.all([
     prisma.chatAgentTurn.count({ where: { ...live, createdAt: { gte: new Date(now - 3_600_000) } } }),
     prisma.chatAgentTurn.count({ where: { ...live, createdAt: { gte: new Date(now - 86_400_000) } } }),
@@ -223,7 +225,10 @@ export async function runPreModelGates(input: {
   }
   if (input.conversationId && allowance.guarded) {
     // A count that cannot be read answers (fail open): the business-wide pause stays the backstop.
-    const over = await chatOverModelCap(input.tenantId, input.conversationId).catch(() => false)
+    const over = await chatOverModelCap(input.tenantId, input.conversationId).catch((error) => {
+      console.error('[soft-ai/claim-gates] chat cap count failed', error instanceof Error ? error.name : 'unknown')
+      return false
+    })
     if (over) return { ok: false, status: 'skipped', skipReason: 'chat_rate_limited' }
   }
   return { ok: true }

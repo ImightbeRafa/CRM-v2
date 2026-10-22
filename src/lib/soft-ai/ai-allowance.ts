@@ -167,20 +167,25 @@ async function loadSpend(tenantId: string, now: Date, budget: AllowanceBudget): 
 }
 
 const OWNER_TTL_MS = 10 * 60_000
+const SIGNUP_ROW_WINDOW_MS = 5 * 60_000
 const ownerBusinessCache = new Map<string, { at: number; owner: boolean }>()
 /** A business with an active OWNER who is an active super admin. A read error counts as "owner" (answer, never a silent stop). */
 async function isOwnerBusiness(tenantId: string, nowMs: number): Promise<boolean> {
   const hit = ownerBusinessCache.get(tenantId)
   if (hit && nowMs - hit.at < OWNER_TTL_MS) return hit.owner
   try {
-    const row = await prisma.membership.findFirst({
+    const rows = await prisma.membership.findMany({
       // SecureDog #127-1: only the OWNER row created when the business was registered (not invited, not promoted — an
       // owner can promote any member to OWNER), so a business can never make itself "owned by a super admin".
       where: { tenantId, role: 'OWNER', isActive: true, invitedBy: null, invitedAt: null, user: { isSuperAdmin: true, active: true } },
-      select: { userId: true },
+      select: { joinedAt: true, tenant: { select: { createdAt: true } } },
+      take: 5,
     })
-    remember(ownerBusinessCache, tenantId, { at: nowMs, owner: row !== null })
-    return row !== null
+    // SecureDog #127 r2 A: rows written before invites recorded who invited (2026-09) also have empty invite fields, so
+    // the row must also be the one written with the business (sign-up writes both in one transaction).
+    const owner = rows.some((r) => Math.abs(r.joinedAt.getTime() - r.tenant.createdAt.getTime()) <= SIGNUP_ROW_WINDOW_MS)
+    remember(ownerBusinessCache, tenantId, { at: nowMs, owner })
+    return owner
   } catch (error) {
     console.error('[soft-ai/ai-allowance] owner read failed', error instanceof Error ? error.name : 'unknown')
     void alertCreditMeterDown(nowMs)
@@ -203,7 +208,9 @@ async function alertCreditMeterDown(nowMs: number): Promise<void> {
         'Revisá Logística › Admin › IA y los logs de "ai-billing/allowance".',
       ],
     })
+    // SecureDog #127 r2 C: a failed send retries in about 5 min (never on every read); a sent one waits the hour.
     if (result === 'sent') lastMeterAlertAt = nowMs
+    else if (result === 'failed') lastMeterAlertAt = nowMs - 55 * 60_000
   } catch (error) {
     console.error('[soft-ai/ai-allowance] meter alert failed', error instanceof Error ? error.name : 'unknown')
   }

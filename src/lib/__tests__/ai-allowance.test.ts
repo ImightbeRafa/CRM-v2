@@ -253,7 +253,7 @@ describe('SecureDog #127 fixes', () => {
     const gates = read('src/lib/soft-ai/agent-claim-gates.ts')
     assert.ok(gates.includes('export const CHAT_MODEL_TURNS_PER_HOUR = 30'))
     assert.ok(gates.includes("if (over) return { ok: false, status: 'skipped', skipReason: 'chat_rate_limited' }"))
-    assert.ok(gates.includes('.catch(() => false)'))
+    assert.match(gates, /chatOverModelCap\(input\.tenantId, input\.conversationId\)\.catch\(\(error\) => \{[\s\S]{0,200}return false/)
     const turn = read('src/lib/soft-ai/agent-turn.ts')
     assert.ok(turn.includes('    conversationId: row.conversationId,\n  })') || turn.includes('    conversationId: row.conversationId,\r\n  })'))
     assert.ok(turn.includes("preModel.skipReason === 'chat_rate_limited' ? HANDOFF_REASON.chatLimit : HANDOFF_REASON.aiAllowance"))
@@ -261,7 +261,18 @@ describe('SecureDog #127 fixes', () => {
     assert.match(HANDOFF_REASON_LABELS.chat_limit, /contestale vos/)
   })
   it('#1 only the OWNER row created at sign-up counts as a super admin\'s business', () => {
-    assert.ok(read('src/lib/soft-ai/ai-allowance.ts').includes("where: { tenantId, role: 'OWNER', isActive: true, invitedBy: null, invitedAt: null, user: { isSuperAdmin: true, active: true } },"))
+    const src = read('src/lib/soft-ai/ai-allowance.ts')
+    assert.ok(src.includes("where: { tenantId, role: 'OWNER', isActive: true, invitedBy: null, invitedAt: null, user: { isSuperAdmin: true, active: true } },"))
+    // r2 A: old rows (before invites were recorded) must also have been written with the business.
+    assert.ok(src.includes('Math.abs(r.joinedAt.getTime() - r.tenant.createdAt.getTime()) <= SIGNUP_ROW_WINDOW_MS'))
+    assert.ok(src.includes('const SIGNUP_ROW_WINDOW_MS = 5 * 60_000'))
+  })
+  it('r2 B/D: the per-chat cap counts real model runs (tokens), also a reply dropped as a repeat; r2 C: a failed alert retries in ~5 min', () => {
+    const gates = read('src/lib/soft-ai/agent-claim-gates.ts')
+    assert.ok(gates.includes("const live = { tenantId, conversationId, mode: { not: 'test' }, inputTokens: { gt: 0 } }"))
+    assert.ok(!gates.includes("status: { notIn: ['skipped'] } }\n  const [hour"))
+    assert.ok(gates.includes("chat cap count failed"))
+    assert.ok(read('src/lib/soft-ai/ai-allowance.ts').includes("else if (result === 'failed') lastMeterAlertAt = nowMs - 55 * 60_000"))
   })
   it('#4 a stale "used up" is not served on a read error; #5 the alert slot is used only when sent', () => {
     const billing = read('src/lib/ai-billing/allowance.ts')

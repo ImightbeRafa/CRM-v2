@@ -456,9 +456,13 @@ export function PendingMediaBubble({ msg }: { msg: ChatInboxMessage }) {
           className={`max-h-72 max-w-full object-contain ${uploading ? 'opacity-80' : ''}`}
           decoding="async"
         />
-        {uploading ? (
-          <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-medium text-white">
-            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+        {uploading || failed ? (
+          <span
+            className={`absolute left-2 top-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${
+              failed ? 'bg-red-600/90' : 'bg-black/55'
+            }`}
+          >
+            {uploading ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
             {label}
           </span>
         ) : null}

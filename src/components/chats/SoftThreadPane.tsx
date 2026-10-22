@@ -620,7 +620,7 @@ export function SoftThreadPane({
       ) : null}
       {channelDownMessage ? <ChannelDownBanner message={channelDownMessage} /> : null}
       {compact ? (
-        <header className="flex shrink-0 items-center gap-3 border-b border-slate-200/70 bg-white px-3 py-2.5">
+        <header className="flex shrink-0 items-center gap-3 border-b border-slate-200/70 bg-white px-3 py-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
           <button
             type="button"
             onClick={onBack ?? onClose}

@@ -122,6 +122,16 @@ const CrearPedidoDrawer = dynamic(
 )
 
 
+/** Phone thread / details: below the global banners, as tall as the visible area above the keyboard. */
+const MOBILE_THREAD_STYLE = {
+  top: 'calc(var(--app-top-offset, 0px) + var(--chat-vv-top, 0px))',
+  height: 'calc(var(--chat-vv-height, 100dvh) - var(--app-top-offset, 0px))',
+} as const
+
+function isPhoneViewport(): boolean {
+  return typeof window !== 'undefined' && Boolean(window.matchMedia?.('(max-width: 767px)').matches)
+}
+
 /** A queued file send (captured when picked; Reintentar re-runs it with the same clientRequestId). */
 type MediaSendJob = {
   conversationId: string
@@ -203,6 +213,8 @@ export function SoftCopilotInboxV2() {
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null)
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list')
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false)
+  /** Phone: which of thread / details we pushed as a history entry (the phone's back goes there). */
+  const mobileHistoryRef = useRef({ thread: false, details: false })
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [threadBeforeCursor, setThreadBeforeCursor] = useState<Record<string, string | null>>({})
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
@@ -1239,26 +1251,115 @@ export function SoftCopilotInboxV2() {
     setFailedOutboundId(null)
     setMessageInput(composerDrafts.current.get(id) ?? '')
     setTemplatePickerOpen(false)
+    if (mobileHistoryRef.current.details) closeMobileEntry('details')
     setMobileDetailsOpen(false)
     nearBottomRef.current = true
     setMobileView('thread')
+    pushMobileEntry('thread')
     void loadThreadMessages(id).then(() => {
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
         // The thread finished loading: the composer may have just been enabled / mounted.
         if (selectedConversationIdRef.current === id && shouldAutoFocusComposer()) {
-          composerRef.current?.focus({ preventScroll: true })
+          focusComposer({ preventScroll: true })
         }
       })
     })
   }
 
-  // Opening a chat (click, keyboard, deep link) puts the cursor in the composer on a computer.
+  /**
+   * Phone: opening a chat / its details adds a history entry, so the phone's back button or swipe
+   * goes thread → list (Rafael 2026-10-22) instead of leaving Chats. The URL does not change.
+   */
+  function pushMobileEntry(kind: 'thread' | 'details') {
+    if (typeof window === 'undefined' || !isPhoneViewport() || mobileHistoryRef.current[kind]) return
+    mobileHistoryRef.current[kind] = true
+    window.history.pushState({ ...(window.history.state ?? {}), betsyChat: kind }, '')
+  }
+
+  /** In-app back / Cerrar: pop our own entries (popstate closes the view), else close directly. */
+  function closeMobileEntry(kind: 'thread' | 'details') {
+    const entries = kind === 'thread'
+      ? Number(mobileHistoryRef.current.thread) + Number(mobileHistoryRef.current.details)
+      : Number(mobileHistoryRef.current.details)
+    const atOurs = typeof window !== 'undefined' && Boolean((window.history.state as { betsyChat?: string } | null)?.betsyChat)
+    if (entries > 0 && atOurs) {
+      window.history.go(-entries)
+      return
+    }
+    mobileHistoryRef.current = kind === 'thread' ? { thread: false, details: false } : { ...mobileHistoryRef.current, details: false }
+    setMobileDetailsOpen(false)
+    if (kind === 'thread') setMobileView('list')
+  }
+
+  useEffect(() => {
+    const onPop = (event: PopStateEvent) => {
+      const at = (event.state as { betsyChat?: string } | null)?.betsyChat
+      const open = mobileHistoryRef.current
+      if (open.details && at !== 'details') {
+        open.details = false
+        setMobileDetailsOpen(false)
+      }
+      if (open.thread && at !== 'thread' && at !== 'details') {
+        open.thread = false
+        setMobileDetailsOpen(false)
+        setMobileView('list')
+      }
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  // Phone keyboard: iOS / Android shrink only the visual viewport, so the open thread follows it and
+  // the composer stays right above the keyboard (header stays on screen).
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const root = document.documentElement
+    const apply = () => {
+      root.style.setProperty('--chat-vv-height', `${Math.round(vv.height)}px`)
+      root.style.setProperty('--chat-vv-top', `${Math.round(vv.offsetTop)}px`)
+    }
+    apply()
+    vv.addEventListener('resize', apply)
+    vv.addEventListener('scroll', apply)
+    return () => {
+      vv.removeEventListener('resize', apply)
+      vv.removeEventListener('scroll', apply)
+      root.style.removeProperty('--chat-vv-height')
+      root.style.removeProperty('--chat-vv-top')
+    }
+  }, [])
+
+  // Opening a chat (click, keyboard, deep link) puts the cursor in the composer on a computer. The
+  // composer can turn on a moment later (agent state loads), so it tries again while nothing else
+  // took the focus (the agent clicking the search box or a button wins).
   useEffect(() => {
     if (!selectedConversationId || !shouldAutoFocusComposer()) return
-    const raf = requestAnimationFrame(() => composerRef.current?.focus({ preventScroll: true }))
-    return () => cancelAnimationFrame(raf)
+    const tryFocus = () => {
+      const active = document.activeElement as HTMLElement | null
+      const idle = !active || active === document.body || Boolean(active.closest('[data-soft-conv-key]'))
+      if (idle) focusComposer({ preventScroll: true })
+    }
+    const raf = requestAnimationFrame(tryFocus)
+    const timers = [400, 1200].map((ms) => window.setTimeout(tryFocus, ms))
+    return () => {
+      cancelAnimationFrame(raf)
+      timers.forEach((t) => window.clearTimeout(t))
+    }
   }, [selectedConversationId])
+
+  /**
+   * Focus the composer on screen. Desktop and phone thread panes are both mounted (one hidden by
+   * CSS) and share `composerRef`, which holds whichever mounted last, so look for the visible one.
+   */
+  function focusComposer(opts?: FocusOptions) {
+    const candidates = [
+      composerRef.current,
+      ...Array.from(document.querySelectorAll<HTMLTextAreaElement>('textarea[data-testid="composer-textarea"]')),
+    ]
+    candidates.find((el) => el && !el.disabled && el.getClientRects().length > 0)?.focus(opts)
+  }
 
   async function patchConversation(partial: {
     status?: ConversationStatus
@@ -1626,7 +1727,7 @@ export function SoftCopilotInboxV2() {
       nearBottomRef.current = true
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-        composerRef.current?.focus()
+        focusComposer()
       })
     } else {
       setThreadMessages((prev) => ({
@@ -1936,7 +2037,7 @@ export function SoftCopilotInboxV2() {
       { messageType: kind, mimeType: file.type || 'application/octet-stream', filename: file.name },
     )
     setMessageInput('')
-    requestAnimationFrame(() => composerRef.current?.focus())
+    requestAnimationFrame(() => focusComposer())
     return true
   }
 
@@ -1997,7 +2098,7 @@ export function SoftCopilotInboxV2() {
       { messageType: 'image', mimeType: 'image/jpeg', filename: 'Imagen reciente' },
     )
     setMessageInput('')
-    requestAnimationFrame(() => composerRef.current?.focus())
+    requestAnimationFrame(() => focusComposer())
     return true
   }
 
@@ -2368,30 +2469,34 @@ export function SoftCopilotInboxV2() {
               onInboxViewChange={setInboxView}
             />
           ) : (
-            <SoftThreadPane
-              {...threadSharedProps}
-              onClose={() => setMobileView('list')}
-              onBack={() => {
-                setMobileDetailsOpen(false)
-                setMobileView('list')
-              }}
-              onOpenDetails={() => setMobileDetailsOpen(true)}
-              agentActionsToday={agentActionsToday}
-              compact
-            />
+            // Pinned to the visual viewport: the composer sits right above the phone keyboard.
+            <div className="fixed inset-x-0 z-30 flex flex-col bg-white md:hidden" style={MOBILE_THREAD_STYLE} data-testid="mobile-thread">
+              <SoftThreadPane
+                {...threadSharedProps}
+                onClose={() => closeMobileEntry('thread')}
+                onBack={() => closeMobileEntry('thread')}
+                onOpenDetails={() => {
+                  setMobileDetailsOpen(true)
+                  pushMobileEntry('details')
+                }}
+                agentActionsToday={agentActionsToday}
+                compact
+              />
+            </div>
           )}
           {mobileView === 'thread' && mobileDetailsOpen && railConversation ? (
             <div
-              className="fixed inset-0 z-40 flex flex-col bg-white md:hidden"
+              className="fixed inset-x-0 z-40 flex flex-col bg-white md:hidden"
+              style={MOBILE_THREAD_STYLE}
               role="dialog"
               aria-modal="true"
               aria-label="Detalles del chat"
             >
-              <div className="flex shrink-0 items-center justify-between border-b border-slate-200/70 px-4 py-3">
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-200/70 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
                 <h2 className="text-[16px] font-bold text-slate-900">Detalles</h2>
                 <button
                   type="button"
-                  onClick={() => setMobileDetailsOpen(false)}
+                  onClick={() => closeMobileEntry('details')}
                   className="rounded-full bg-slate-100 px-3.5 py-1.5 text-[13px] font-semibold text-slate-700"
                 >
                   Cerrar

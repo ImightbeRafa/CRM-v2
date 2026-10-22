@@ -39,9 +39,14 @@ export function classifyChannelHealth(acc: SocialAccount): ChannelHealth {
   if (status === 'expired' || status === 'revoked') {
     return { label: 'Token vencido', tone: 'warn', action: 'reconnect', healthy: false, needsAction: true }
   }
-  // Busy line with no recent messages. Often just a quiet stretch, not a dropped token.
+  // Real evidence: Meta stopped sending this line's messages (webhook subscription gone).
+  if (acc.webhookGoneSince) {
+    return { label: 'No recibe mensajes', tone: 'bad', action: 'repair', healthy: false, needsAction: true }
+  }
+  // Busy line quiet far longer than usual, token and subscription fine: a note, never an alarm
+  // (Rafael 2026-10-22). It is not "down": no red banner, no count in "Requieren acción".
   if (acc.silentSince) {
-    return { label: 'Sin mensajes recientes', tone: 'bad', action: 'reconnect', healthy: false, needsAction: true }
+    return { label: 'Sin mensajes recientes', tone: 'neutral', action: 'diagnose', healthy: false, needsAction: false }
   }
   if (status === 'expiring' || accountNeedsReconnect(acc)) {
     return { label: 'Token por vencer', tone: 'warn', action: 'reconnect', healthy: false, needsAction: true }

@@ -2,8 +2,14 @@
  * Dead-line alarm — pure helpers (no DB, no network). See `channel-silence.ts`.
  */
 
-/** Marker in SocialAccount.lastErrorCode: the line normally gets traffic and went quiet. */
+/**
+ * Marker in SocialAccount.lastErrorCode: the line normally gets traffic and has been quiet far longer
+ * than usual, while its token AND its webhook subscription check out. A quiet note only — never an
+ * email, a bell or a red banner (Rafael 2026-10-22: "Sin mensajes recientes" emails for a fine line).
+ */
 export const SILENT_LINE_CODE = 'silent_line'
+/** Marker in SocialAccount.lastErrorCode: Meta no longer sends this line's messages to Betsy (real evidence). */
+export const WEBHOOK_GONE_CODE = 'webhook_unsubscribed'
 
 /** The fix for the usual cause (Facebook Login page picker dropped the page). */
 export const LINE_DOWN_FIX_TEXT = 'Reconectá y marcá TODAS tus páginas'
@@ -19,6 +25,12 @@ export const SILENCE_FLOOR_MINUTES = 240
 export const SILENCE_CAP_MINUTES = 360
 /** Silence of this many "usual gaps" (~2% chance on a healthy line). */
 const GAP_MULTIPLIER = 4
+/**
+ * The quiet note needs much more: this many times the suspect threshold, and at least a full
+ * business day. Below that a silent line with a good token and subscription is just a calm day.
+ */
+const QUIET_NOTE_MULTIPLIER = 3
+export const QUIET_NOTE_FLOOR_MINUTES = 14 * 60
 
 /** Costa Rica (UTC-6, no DST) business window, local hours [start, end). */
 const TZ_OFFSET_MS = -6 * 60 * 60_000
@@ -66,14 +78,57 @@ export function silenceShouldAlert(inbound7d: number, quietBusinessMinutes: numb
   return threshold != null && quietBusinessMinutes >= threshold
 }
 
-export type LineDownReason = 'token' | 'silent'
+/**
+ * Silence far beyond this line's own pattern (after the token and the webhook subscription checked
+ * out): the only silence that shows anything, and then only a quiet note.
+ */
+export function silenceIsFarBeyondPattern(inbound7d: number, quietBusinessMinutes: number): boolean {
+  const threshold = silenceThresholdMinutes(inbound7d)
+  if (threshold == null || !Number.isFinite(quietBusinessMinutes)) return false
+  return quietBusinessMinutes >= Math.max(QUIET_NOTE_FLOOR_MINUTES, threshold * QUIET_NOTE_MULTIPLIER)
+}
 
-/** Why a connected line is down right now (null = fine). */
+export type LineDownReason = 'token' | 'webhook' | 'silent'
+
+/** Why a connected line is down / quiet right now (null = fine). Only 'token' and 'webhook' alert. */
 export function lineDownReason(row: { tokenStatus?: string | null; lastErrorCode?: string | null }): LineDownReason | null {
   const status = (row.tokenStatus || '').toLowerCase()
   if (status === 'revoked' || status === 'expired' || status === 'error') return 'token'
+  if (row.lastErrorCode === WEBHOOK_GONE_CODE) return 'webhook'
   if (row.lastErrorCode === SILENT_LINE_CODE) return 'silent'
   return null
+}
+
+/** Email + bell only on real evidence (token dead, webhook subscription gone). Silence alone never. */
+export function lineDownAlerts(reason: LineDownReason | null): boolean {
+  return reason === 'token' || reason === 'webhook'
+}
+
+/**
+ * GET /{target}/subscribed_apps answer → is this app still subscribed? 'unknown' when the answer
+ * proves nothing (error, odd shape): never an alert on 'unknown'.
+ */
+export function webhookSubscriptionState(
+  data: unknown,
+  opts: { appId?: string | null; platform: string },
+): 'subscribed' | 'missing' | 'unknown' {
+  const list = (data as { data?: unknown } | null)?.data
+  if (!Array.isArray(list)) return 'unknown'
+  if (list.length === 0) return 'missing'
+  const appId = opts.appId?.trim()
+  const entries = list.map((raw) => {
+    const e = (raw ?? {}) as { id?: unknown; whatsapp_business_api_data?: { id?: unknown }; subscribed_fields?: unknown }
+    return {
+      id: String(e.whatsapp_business_api_data?.id ?? e.id ?? ''),
+      fields: Array.isArray(e.subscribed_fields) ? e.subscribed_fields.map(String) : null,
+    }
+  })
+  const ours = appId ? entries.filter((e) => e.id === appId) : entries
+  // Other apps only: could be a stale app id in env — proves nothing, so never an alert.
+  if (ours.length === 0) return 'unknown'
+  // Instagram: the Page must still send 'messages' to the app.
+  if (opts.platform === 'instagram' && ours.every((e) => e.fields && !e.fields.includes('messages'))) return 'missing'
+  return 'subscribed'
 }
 
 /** "@patchhouse.cr" / "Forge" / phone / id — the owner's own line name, never customer data. */
@@ -103,8 +158,9 @@ export function parseLineDownKey(dedupeKey: string | null | undefined): LineDown
   const parts = String(dedupeKey || '').split(':')
   if (parts[0] !== 'line_down' || parts.length !== 4) return null
   const minute = Number(parts[3])
-  if (!parts[1] || (parts[2] !== 'token' && parts[2] !== 'silent') || !Number.isFinite(minute)) return null
-  return { socialAccountId: parts[1], reason: parts[2], since: new Date(minute * 60_000) }
+  const reason = parts[2]
+  if (!parts[1] || (reason !== 'token' && reason !== 'silent' && reason !== 'webhook') || !Number.isFinite(minute)) return null
+  return { socialAccountId: parts[1], reason, since: new Date(minute * 60_000) }
 }
 
 /** "18/10 09:03" in Costa Rica time. */
@@ -113,6 +169,8 @@ export function formatSinceCr(at: Date): string {
   const p = (n: number) => String(n).padStart(2, '0')
   return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`
 }
+
+export const WEBHOOK_GONE_FIX_TEXT = 'Tocá Reparar en Configuración › Canales'
 
 /** The fix in plain words: the page-picker advice is Facebook / Instagram only. */
 export function lineDownFixText(platform: string): string {
@@ -131,6 +189,12 @@ export function lineDownNotificationText(
 ): { title: string; snippet: string } {
   const since = formatSinceCr(key.since)
   const fix = lineDownFixText(platform)
+  if (key.reason === 'webhook') {
+    return {
+      title: `Dejó de recibir mensajes · ${label}`,
+      snippet: `Meta dejó de mandar a Betsy los mensajes de esta línea (${since}). ${WEBHOOK_GONE_FIX_TEXT}.`,
+    }
+  }
   return {
     title: key.reason === 'silent' ? `Sin mensajes recientes · ${label}` : `Perdió el acceso · ${label}`,
     snippet:
@@ -154,7 +218,8 @@ export function tokenCheckErrorFields(
 ): { lastErrorCode?: string | null; lastErrorAt?: Date | null } {
   const wasDown = TOKEN_DOWN.has((account.tokenStatus || '').toLowerCase())
   const nowDown = !probe.transient && TOKEN_DOWN.has(probe.tokenStatus)
-  const silent = account.lastErrorCode === SILENT_LINE_CODE
+  // The silence / webhook markers are owned by the silence cron (cleared when a webhook arrives).
+  const silent = account.lastErrorCode === SILENT_LINE_CODE || account.lastErrorCode === WEBHOOK_GONE_CODE
   if (probe.lastErrorCode) {
     if (silent && !nowDown) return {}
     return wasDown ? { lastErrorCode: probe.lastErrorCode } : { lastErrorCode: probe.lastErrorCode, lastErrorAt: now }

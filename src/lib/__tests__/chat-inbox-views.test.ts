@@ -171,13 +171,13 @@ describe('Sin responder · server wiring (Lane A 2026-10-22)', () => {
     has(rule, "lt.om ->> 'fallbackUsed' = 'true'")
     has(rule, "lt.om ->> 'handoffKind' IN ('handoff', 'review')")
     has(rule, "COALESCE(hm.metadata ->> 'softAi', '') <> 'true'")
-    has(rule, 'WHERE t."conversationId" = c.id\n        AND t."tenantId" = c."tenantId"')
+    assert.match(rule, /WHERE t\."conversationId" = c\.id\r?\n\s*AND t\."tenantId" = c\."tenantId"/)
     // Verifier F1: the latest REAL turn (delivered, not Probar, not the "ya le avisé" ack) — a skipped turn or the
     // ack after a hand-off never drops a waiting customer out of Sin responder.
     has(rule, "AND t.status = 'delivered'")
     has(rule, 'AND t."testSessionId" IS NULL')
     has(rule, 'AND t."automationDeliveryKey" NOT LIKE ${WAITING_ACK_LIKE}')
-    has(rule, 'const WAITING_ACK_LIKE = `${WAITING_ACK_KEY_PREFIX}%`')
+    has(rule, 'const WAITING_ACK_LIKE = `${WAITING_ACK_KEY_PREFIX.replace(')
     // F6: since the customer message the turn answered. F7: a failed person send is not an answer.
     has(rule, 'COALESCE(tm."sentAt", t."createdAt") AS since')
     has(rule, "AND COALESCE(hm.\"deliveryStatus\", '') <> 'failed'")

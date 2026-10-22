@@ -12,7 +12,8 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { WAITING_ACK_KEY_PREFIX } from '@/lib/soft-ai/waiting-ack'
 
-const WAITING_ACK_LIKE = `${WAITING_ACK_KEY_PREFIX}%`
+// LIKE pattern: '_' escaped so only the literal prefix matches.
+const WAITING_ACK_LIKE = `${WAITING_ACK_KEY_PREFIX.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`
 
 /**
  * True for conversation alias `c` whose latest real agent turn left it to a person and no person (desk, phone app)

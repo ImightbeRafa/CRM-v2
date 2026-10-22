@@ -445,12 +445,13 @@ export function SoftConversationList({
               </>
             }
           />
-        ) : emptyReason === 'no-results' && inboxView === 'sin_responder' ? (
+        ) : emptyReason === 'no-results' && inboxView === 'sin_responder' && inboxViewCounts?.sin_responder === 0 && !search?.trim() ? (
+          // All clear only when the server count agrees (never while the view is loading or failed).
           <AuroraEmptyState
             tone="neutral"
             icon="✓"
             title="Nadie espera respuesta"
-            description="Todos los clientes de esta línea ya tienen respuesta."
+            description="Todos los clientes ya tienen respuesta."
           />
         ) : emptyReason === 'no-results' ? (
           <AuroraEmptyState

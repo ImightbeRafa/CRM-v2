@@ -8,7 +8,9 @@ import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { chatSendRateLimit } from '@/lib/rate-limit'
 import { dualWriteChatMessage, finalizeOutboundDelivery } from '@/lib/chat-conversation-write'
+import { isSameOriginJson } from '@/lib/same-origin'
 import {
+  browserClientRequestId,
   claimChatSend,
   findOutboundByClientRequestId,
   markChatSendDelivered,
@@ -74,6 +76,9 @@ export async function POST(request: NextRequest) {
       return auth.response
     }
 
+    // SecureDog AUTH-SEND-2: browser JSON from this origin only (a sibling subdomain is same-site).
+    if (!isSameOriginJson(request)) return jsonError('Origen no permitido.', 403)
+
     const db = prisma as any
     const { tenantId, userId } = auth
 
@@ -99,13 +104,7 @@ export async function POST(request: NextRequest) {
     const content = body.content ? String(body.content) : ''
     const orderId = body.orderId ? String(body.orderId) : null
     const clientId = body.clientId ? String(body.clientId) : null
-    const rawClientRequestId = body.clientRequestId ? String(body.clientRequestId).trim() : ''
-    const clientRequestId =
-      rawClientRequestId &&
-      rawClientRequestId.length <= 80 &&
-      /^[A-Za-z0-9._:-]+$/.test(rawClientRequestId)
-        ? rawClientRequestId
-        : null
+    const clientRequestId = browserClientRequestId(body.clientRequestId)
     const messageType = body.type ? String(body.type).toLowerCase() : 'text'
     const templateName = body.templateName ? String(body.templateName).trim() : ''
     const templateLanguage = body.templateLanguage
@@ -577,7 +576,7 @@ async function findDeliveredRow(
   claim: { providerMessageId: string | null; messageId: string | null },
 ) {
   if (claim.messageId) {
-    const row = await db.chatMessage.findFirst({ where: { id: claim.messageId, tenantId } })
+    const row = await db.chatMessage.findFirst({ where: { id: claim.messageId, tenantId, socialAccountId } })
     if (row) return row
   }
   if (!claim.providerMessageId) return null

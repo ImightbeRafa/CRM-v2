@@ -136,7 +136,9 @@ export async function sendWhatsAppMediaBytes(opts: {
   // The id is taken in the database before anything goes to Meta: a retry / second tab never sends twice.
   const claim = await claimChatSend(tenantId, clientRequestId)
   if (claim.kind === 'delivered') {
-    const row = claim.messageId ? await db.chatMessage.findFirst({ where: { id: claim.messageId, tenantId } }) : null
+    const row = claim.messageId
+      ? await db.chatMessage.findFirst({ where: { id: claim.messageId, tenantId, socialAccountId: found.id } })
+      : null
     return { ok: true, duplicate: true, persisted: Boolean(row), message: row ? mapMessageToDto(row) : null, conversationId: row?.conversationId ?? null }
   }
   if (claim.kind === 'in_flight') {

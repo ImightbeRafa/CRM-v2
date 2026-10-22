@@ -236,3 +236,27 @@ describe('send routes: claim before Meta, success after delivery', () => {
     assert.doesNotMatch(media, /\{ sent: true \}/)
   })
 })
+
+describe('SecureDog fixes (DATA-CLAIM-1, AUTH-SEND-2)', () => {
+  it('a browser cannot pre-claim a server-only guía id', async () => {
+    const { browserClientRequestId } = await import('../chat-send-claim')
+    assert.equal(browserClientRequestId('8d2c6a6e-1f3b-4b2a-9e1e-1234567890ab'), '8d2c6a6e-1f3b-4b2a-9e1e-1234567890ab')
+    assert.equal(browserClientRequestId('guia:g1:c1'), null)
+    assert.equal(browserClientRequestId('GUIA:g1:c1'), null)
+    assert.equal(browserClientRequestId('bad id'), null)
+    assert.equal(browserClientRequestId(undefined), null)
+    for (const p of ['src/app/api/chat/send/route.ts', 'src/app/api/chat/send-media/route.ts']) {
+      assert.match(readFileSync(p, 'utf8'), /browserClientRequestId/, p)
+    }
+  })
+
+  it('both send routes refuse other origins; delivered lookups stay on the line', () => {
+    const route = readFileSync('src/app/api/chat/send/route.ts', 'utf8')
+    const mediaRoute = readFileSync('src/app/api/chat/send-media/route.ts', 'utf8')
+    assert.match(route, /if \(!isSameOriginJson\(request\)\) return jsonError\('Origen no permitido\.', 403\)/)
+    assert.match(mediaRoute, /if \(!isSameOriginRequest\(request\)\) return jsonError\('Origen no permitido\.', 403\)/)
+    assert.match(route, /where: \{ id: claim\.messageId, tenantId, socialAccountId \}/)
+    assert.match(readFileSync('src/lib/chat-send-media-core.ts', 'utf8'), /where: \{ id: claim\.messageId, tenantId, socialAccountId: found\.id \}/)
+    assert.doesNotMatch(readFileSync('src/lib/chat-outbound-upload.ts', 'utf8'), /withCredentials/)
+  })
+})

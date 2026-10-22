@@ -43,6 +43,17 @@ export function isValidClientRequestId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,80}$/.test(value)
 }
 
+/** Ids only the server builds (guía sends: `guia:<guiaId>:<conversationId>`); a browser may not pre-claim them. */
+const SERVER_ONLY_ID_PREFIXES = ['guia:']
+
+/** A clientRequestId as sent by the browser: valid shape and not a server-reserved prefix (SecureDog DATA-CLAIM-1). */
+export function browserClientRequestId(raw: unknown): string | null {
+  const value = String(raw ?? '').trim()
+  if (!isValidClientRequestId(value)) return null
+  const lower = value.toLowerCase()
+  return SERVER_ONLY_ID_PREFIXES.some((p) => lower.startsWith(p)) ? null : value
+}
+
 export async function claimChatSend(
   tenantId: string,
   clientRequestId: string | null | undefined,

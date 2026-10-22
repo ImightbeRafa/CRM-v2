@@ -72,8 +72,12 @@ export function postFormWithProgress(
 ): Promise<Response> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
+    // Same-origin paths only (the session cookie goes along by itself).
+    if (!url.startsWith('/')) {
+      reject(new Error('Solo rutas de Betsy.'))
+      return
+    }
     xhr.open('POST', url)
-    xhr.withCredentials = true
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && e.total > 0) onProgress(Math.min(1, e.loaded / e.total))
     }

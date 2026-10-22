@@ -28,6 +28,7 @@ import { StatusBreakdownBody, type StatusRow } from './StatusBreakdownCard'
 import { LinePerformanceBody, type LineRow } from './LinePerformance'
 import { FunnelBody } from './FunnelCard'
 import { StatsHeader } from './StatsHeader'
+import { InsightsTabs } from '@/components/insights/InsightsShared'
 
 // The legacy report (custom range, day report, top customers) stays reachable, lazily loaded.
 const EstadisticasDashboard = dynamic(
@@ -147,6 +148,7 @@ function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="stats-dashboard">
       <StatsHeader spec={spec} range={range} onPeriod={setPeriod} />
+      <InsightsTabs className="shrink-0 border-b border-slate-200/70 bg-white px-4 py-2 md:px-8" />
       <div className="mx-auto w-full max-w-[1200px] space-y-4 px-4 pb-6 pt-5 md:px-7">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <KpiCard

@@ -37,6 +37,7 @@ import { OrderDetails } from '@/app/produccion/components/OrderDetail';
 import type { Sale } from '@/app/produccion/types/sales';
 import { PaymentStatusBadge } from '@/app/components/orders/PaymentStatusBadge';
 import { useToast } from '@/app/hooks/use-toast';
+import OrderItemsList from '@/components/orders/OrderItemsList';
 
 const CR_TZ = 'America/Costa_Rica';
 const getTodayRangeCR = () => {
@@ -345,9 +346,12 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="text-sm text-foreground max-w-[200px] truncate" title={sale.product}>
-                          {sale.product}
-                        </div>
+                        <OrderItemsList
+                          order={sale}
+                          maxItems={2}
+                          style={{ minWidth: 160, maxWidth: 260, fontSize: 14 }}
+                          itemStyle={{ color: 'hsl(var(--foreground))' }}
+                        />
                       </TableCell>
                       <TableCell>
                         <div className="font-bold text-green-600">

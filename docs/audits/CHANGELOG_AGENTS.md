@@ -1,3 +1,12 @@
+## 2026-10-22 — Order cards say how they ship and show full product names (Lane B, claude/wave-orders-names-2356c0)
+
+- One rule for "how does this order ship" (`src/lib/orders/shipping-method.ts`): pickup (RA) is Retiro; otherwise the logistics carrier (Correos / Mensajería) wins; otherwise the sales courier text (anything with "correos" is Correos, retiro/recoge is Retiro, any other real name is Mensajería privada; "manual", "n/a", "por definir" and similar count as empty). COD adds "· Contra entrega". The `retiro` carrier the contra-entrega route writes by default only counts for non-COD orders.
+- Badge on the carriers board (cards, unassigned list, archive), logistics orders table (column "Envío"), accounting, Pedidos table (under the status chip), Producción Kanban / grid / mobile cards and the mobile order card. Logistics overview and accounting no longer show `retiro` as "Correos".
+- Product names are never cut to one line on cards: one line per item ("2× Parche …"), names wrap, each item is clamped to 2 rows with the full text in the tooltip and a "Ver completo" / "+N más" toggle (phones have no tooltip). Logistics tables (guías, mensajería, reports, mensajería privada, overview), Pedidos table and Ventas table wrap instead of 100–200px ellipsis cells.
+- `GET /api/orders` and `GET /api/logistics/orders` read `productDetails` server-side and send only short `itemLines` labels (the JSON itself is still not sent). Read-only, no schema change, PDFs/guías untouched. `import-helpers.ts` `.substring(0,100)` is the catalog product-name fallback, not orders: left alone.
+- `productDetails` is only trusted while it still matches the order: every item name appears in `product` and the counts add up to `quantity`. Editing an order (Pedidos › Editar, staff bot) changes product/quantity but not productDetails, so stale details fall back to the product text. A single text item keeps its name as written ("Parches x30" is a pack size); multi-item counts only when they sum to the quantity; decimal commas are not split. `/api/production/orders` also sends `itemLines`; `/api/orders/update` never stores `itemLines` in customFields.
+- Tests: `npm run test:order-display` (new).
+
 ## 2026-10-21 — Exam bank: delivery-time after a confirmed order is a handoff
 
 - `expectForRealMessage` now sees the 6-message history. If the team already confirmed a SINPE / entered the order, “¿cuándo llegaría?” / guía / estado is `handoff: true` (existing order), not a first-contact shipping question.

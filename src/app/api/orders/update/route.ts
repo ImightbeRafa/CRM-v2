@@ -167,6 +167,8 @@ export async function POST(request: NextRequest) {
     // Merge unknown keys into customFields
     const knownKeys = new Set([
       'orderId','orderType','status','delivery','timestamp','customerName','username','phone','email','business','product','quantity','size','color','packaging','customization','comments','total','iva','shippingCost','productCost','funnel','address','province','canton','district','courier','expectedDate','saleDate','agreedDate','pickupDate','seller','productDetails','customFields','contraEntrega','cePaymentConfirmed',
+      // Display-only list field (GET /api/orders); never store it in customFields.
+      'itemLines',
       ...ORDER_COMMENT_FIELD_ALIASES
     ])
     const additions: Record<string, any> = {}

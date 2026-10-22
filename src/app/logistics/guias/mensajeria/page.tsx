@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Truck, Printer, CheckSquare, Square, Search, RefreshCw, Package } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
+import OrderItemsList from '@/components/orders/OrderItemsList';
 
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12 } as const;
 
@@ -121,7 +122,7 @@ export default function GuiaMensajeriaPage() {
                                             </td>
                                             <td style={{ padding: '9px 12px', color: '#F2F2F2', fontWeight: 600 }}>{o.customerName}<div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>#{o.orderId}</div></td>
                                             <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.45)', fontSize: 11 }}>{getTenantName(o.tenantId)}</td>
-                                            <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.5)', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.product || '—'}{o.quantity > 1 ? ` ×${o.quantity}` : ''}</td>
+                                            <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.5)', minWidth: 140, maxWidth: 240 }}><OrderItemsList order={o} maxItems={2} emptyLabel="—" /></td>
                                             <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.4)' }}>{o.province || '—'}</td>
                                             <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.4)' }}>{o.phone || '—'}</td>
                                             <td style={{ padding: '9px 12px', color: '#34d399', fontWeight: 700 }}>{fmt(o.total)}</td>

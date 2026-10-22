@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Package, Search, Filter, RefreshCw } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import { MANAGED_TENANT_IDS } from '@/lib/logistics-managed-tenants';
+import OrderItemsList from '@/components/orders/OrderItemsList';
+import ShippingMethodBadge from '@/components/orders/ShippingMethodBadge';
 
 interface Order {
     id: string; orderId: string; tenantId: string; status: string;
@@ -18,7 +20,6 @@ const STATUS_COLORS: Record<string, string> = {
     'Completado': '#34d399', 'Enviado': '#c084fc', 'Entregado': '#10b981', 'Devuelto': '#fbbf24',
     'En Tránsito': '#c084fc', 'Guía Creada': '#60a5fa', 'Impreso': '#22d3ee',
 };
-const CARRIER_COLORS: Record<string, string> = { 'mensajeria': '#8b87ff', 'correos': '#60a5fa' };
 
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14 } as const;
 const glassHi = { background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 14 } as const;
@@ -145,7 +146,7 @@ export default function LogisticsDashboardPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 900 }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-                            {['Cuenta', 'Cliente', 'Teléfono', 'Producto', 'Provincia', 'Estado CRM', 'Carrier', 'Estado LM', 'Total', 'Fecha'].map(h => (
+                            {['Cuenta', 'Cliente', 'Teléfono', 'Producto', 'Provincia', 'Estado CRM', 'Envío', 'Estado LM', 'Total', 'Fecha'].map(h => (
                                 <th key={h} style={{ padding: '11px 14px', textAlign: 'left', color: 'rgba(255,255,255,0.3)', fontWeight: 600, fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
                             ))}
                         </tr>
@@ -158,7 +159,6 @@ export default function LogisticsDashboardPage() {
                         ) : orders.map((o, idx) => {
                             const sc = STATUS_COLORS[o.status] || '#94a3b8';
                             const lmSc = STATUS_COLORS[o.lmStatus || ''] || null;
-                            const cc = o.lmCarrier ? CARRIER_COLORS[o.lmCarrier] : null;
                             const tc = getTenantColor(o.tenantId);
                             return (
                                 <tr key={o.id} style={{ borderBottom: idx < orders.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', transition: 'background 0.1s' }} className="lm-table-row">
@@ -169,14 +169,13 @@ export default function LogisticsDashboardPage() {
                                     </td>
                                     <td style={{ padding: '9px 14px', color: '#F2F2F2', fontWeight: 500 }}>{o.customerName}</td>
                                     <td style={{ padding: '9px 14px', color: 'rgba(255,255,255,0.4)' }}>{o.phone || '—'}</td>
-                                    <td style={{ padding: '9px 14px', color: 'rgba(255,255,255,0.4)', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.product || '—'}</td>
+                                    <td style={{ padding: '9px 14px', color: 'rgba(255,255,255,0.4)', minWidth: 140, maxWidth: 240 }}><OrderItemsList order={o} maxItems={2} emptyLabel="—" /></td>
                                     <td style={{ padding: '9px 14px', color: 'rgba(255,255,255,0.4)' }}>{o.province || '—'}</td>
                                     <td style={{ padding: '9px 14px' }}>
                                         <span style={{ padding: '2px 8px', borderRadius: 20, background: `${sc}18`, color: sc, fontSize: 11, fontWeight: 600 }}>{o.status}</span>
                                     </td>
                                     <td style={{ padding: '9px 14px' }}>
-                                        {cc ? <span style={{ padding: '2px 8px', borderRadius: 20, background: `${cc}18`, color: cc, fontSize: 11, fontWeight: 600 }}>{o.lmCarrier === 'mensajeria' ? 'Mensajería' : 'Correos'}</span>
-                                            : <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11 }}>—</span>}
+                                        <ShippingMethodBadge order={o} theme="dark" size="xs" />
                                     </td>
                                     <td style={{ padding: '9px 14px' }}>
                                         {lmSc ? <span style={{ padding: '2px 8px', borderRadius: 20, background: `${lmSc}18`, color: lmSc, fontSize: 11, fontWeight: 600 }}>{o.lmStatus}</span>

@@ -46,6 +46,7 @@ export function parseOrder(data: any): Sale | null {
     customFields: data.customFields ?? null,
     contraEntrega: data.contraEntrega === true,
     cePaymentConfirmed: data.cePaymentConfirmed === true,
+    itemLines: Array.isArray(data.itemLines) ? data.itemLines : null,
   };
 
   if (data.orderType === 'EA') {

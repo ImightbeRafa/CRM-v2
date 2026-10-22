@@ -420,7 +420,7 @@ export default function GuiasPage() {
                     </div>
 
                     {/* Filter tabs */}
-                    <div style={{ display: 'flex', gap: 4 }}>
+                    <div className="lm-chip-row" style={{ display: 'flex', gap: 4 }}>
                         {([['all', 'Todos', `${orders.length}`, 'rgba(255,255,255,0.4)'],
                         ['mensajeria', 'Mensajería', `${mensajeriaCount}`, '#8b87ff'],
                         ['correos', 'Correos', `${correosCount}`, '#60a5fa'],

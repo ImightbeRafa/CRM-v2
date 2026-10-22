@@ -369,6 +369,11 @@ export const LOGISTICS_CSS = `
                     /* Tables kept as tables scroll sideways inside their own box. */
                     .lm-main .lm-keep-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
+                    /* Filter chips wrap; underline tab bars scroll sideways. */
+                    .lm-main .lm-chip-row { flex-wrap: wrap; }
+                    .lm-main .lm-tab-row { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+                    .lm-main .lm-tab-row > * { flex-shrink: 0; }
+
                     /* Hard-coded 3/4-column grids. */
                     .lm-main .lm-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
                     .lm-main .lm-grid-1 { grid-template-columns: minmax(0, 1fr) !important; }

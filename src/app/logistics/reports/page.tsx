@@ -564,7 +564,7 @@ export default function ReportsPage() {
             </div>
 
             {/* Tabs */}
-            <div style={{ display: 'flex', gap: 2, marginBottom: 20 }}>
+            <div className="lm-tab-row" style={{ display: 'flex', gap: 2, marginBottom: 20 }}>
                 {([['reports', 'Reportes', <TrendingUp key="r" size={14} />], ['history', 'Historial', <History key="h" size={14} />]] as const).map(([key, label, icon]) => (
                     <button key={key} onClick={() => { setActiveTab(key); if (key === 'history') loadHistory(); }}
                         style={{

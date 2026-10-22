@@ -3,6 +3,7 @@
 import { MobileCardTable } from '@/components/ui/MobileCardTable'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Download, RefreshCw } from 'lucide-react'
+import { AiBillingSettingsCard } from './AiBillingSettingsCard'
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 type Bucket = {
@@ -493,6 +494,8 @@ export default function AiUsageDashboard() {
       ) : payload ? (
         <p className="text-[12px] text-slate-500">Los presupuestos se activan con la próxima actualización.</p>
       ) : null}
+
+      {payload ? <AiBillingSettingsCard tenants={payload.tenants} /> : null}
 
       {payload ? (
         <p className="text-[11px] text-slate-500">

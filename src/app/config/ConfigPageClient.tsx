@@ -34,6 +34,7 @@ const MasterConfigDashboard = lazy(() => import('./components/MasterConfigDashbo
 const SimpleFieldsManager = lazy(() => import('./components/SimpleFieldsManager').then(m => ({ default: m.SimpleFieldsManager })))
 const OptionSetsManager = lazy(() => import('./components/OptionSetsManager').then(m => ({ default: m.OptionSetsManager })))
 const BillingDashboard = lazy(() => import('./components/BillingDashboard').then(m => ({ default: m.BillingDashboard })))
+const AiUsagePanel = lazy(() => import('./components/AiUsagePanel').then(m => ({ default: m.AiUsagePanel })))
 const ExcelImporter = lazy(() => import('./components/ExcelImporter').then(m => ({ default: m.ExcelImporter })))
 const StatusManager = lazy(() => import('./components/StatusManager').then(m => ({ default: m.StatusManager })))
 const TenantSettingsPanel = lazy(() => import('../components/TenantSettingsPanel').then(m => ({ default: m.TenantSettingsPanel })))
@@ -612,6 +613,8 @@ function ConfigPageInner() {
           {activeTab === 'billing' && (
             <BillingDashboard />
           )}
+
+          {activeTab === 'ai-usage' && <AiUsagePanel />}
 
           {/* Bulk Delete Tab */}
           {activeTab === 'bulk-delete' && (

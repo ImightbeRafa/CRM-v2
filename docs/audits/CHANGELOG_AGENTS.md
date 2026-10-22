@@ -5,6 +5,7 @@
 - Test: `src/lib/__tests__/chat-export-scrub.test.ts` (in `test:soft-ai`). No DB writes, no live path, no schema change.
 - Exam / shadow reviewer: the chat is scrubbed per message (a data list no longer wipes the whole history into the synthetic address); the night line is the pack's opening hour, not a fixed 8:00.
 - `build-agent.ts` now BLOCKS a pack the engine would silently cut: salesRules voice > 600, closing > 800, upsells / handoffWhen > 800, objections > 1 200, mustSay / neverSay > 10 × 200, brand_book + policy > 4 000 or faq > 3 000 (a doc is left out of the prompt). Forge and Pura Sonrisa had lost half their objections and Pura Sonrisa's SINPE closing step this way.
+- Pack saved replies may be `kind: "handoff"` (verbatim + keywords): the line is sent and the chat goes to a person (the engine already supported it; build-agent always wrote `playbook`). The exam reviewer keeps the store's own SINPE / IBAN / website and price lists readable.
 
 ## 2026-10-21 — Exam bank: delivery-time after a confirmed order is a handoff
 

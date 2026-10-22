@@ -284,6 +284,9 @@
 .section {
   padding: 88px 0;
   position: relative;
+  /* Below-the-fold sections skip style/layout/paint until near the screen (auto keeps the measured height). */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1100px;
 }
 @media (min-width: 900px) {
   .section {
@@ -515,6 +518,7 @@
   background: rgba(11, 11, 18, 0.1);
 }
 .stage {
+  contain: layout paint;
   position: relative;
   border-radius: 16px;
   overflow: hidden;
@@ -1789,21 +1793,22 @@
   box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.6);
   animation: toast 5s var(--ease) infinite;
 }
+/* 0% is the visible state: paused (off-screen / no JS) the toast still reads */
 @keyframes toast {
   0%,
-  12% {
-    transform: translateY(-140%);
-    opacity: 0;
-  }
-  22%,
-  70% {
+  55% {
     transform: none;
     opacity: 1;
   }
-  82%,
-  100% {
+  65%,
+  85% {
     transform: translateY(-140%);
     opacity: 0;
+  }
+  95%,
+  100% {
+    transform: none;
+    opacity: 1;
   }
 }
 .terminal {

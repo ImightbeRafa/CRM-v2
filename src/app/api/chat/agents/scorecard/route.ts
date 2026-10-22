@@ -2,7 +2,7 @@
  * GET /api/chat/agents/scorecard — this business's agent quality by version (rates, never dollars).
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import { clampUsageDays } from '@/lib/soft-ai/agent-usage'
 import { loadAgentScorecard } from '@/lib/soft-ai/agent-improvement'
 import { loadAgentNames } from '@/lib/soft-ai/agent-usage-server'
@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'view_config')
+    const auth = await authenticateAgentAPI(request, 'view_config')
     if (!auth.ok) return auth.response
     const days = Math.min(30, clampUsageDays(request.nextUrl.searchParams.get('days')))
     const to = new Date()

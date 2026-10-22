@@ -3,7 +3,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import { isSameOriginRequest } from '@/lib/same-origin'
 import {
   listAgentChannels,
@@ -19,7 +19,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'view_config')
+    const auth = await authenticateAgentAPI(request, 'view_config')
     if (!auth.ok) return auth.response
     const { id } = await context.params
     const result = await listAgentChannels(auth.tenantId, id)
@@ -39,7 +39,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config')
     if (!auth.ok) return auth.response
     // Binding / allowlist writes change who answers customers: same-origin like the activation and power routes.
     if (!isSameOriginRequest(request)) {

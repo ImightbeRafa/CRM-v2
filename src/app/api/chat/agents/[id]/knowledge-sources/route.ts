@@ -3,7 +3,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import {
   bindKnowledgeToAgent,
   listKnowledgeSources,
@@ -20,7 +20,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'view_config')
+    const auth = await authenticateAgentAPI(request, 'view_config')
     if (!auth.ok) return auth.response
     const { id } = await context.params
     const sources = await listKnowledgeSources({
@@ -49,7 +49,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config')
     if (!auth.ok) return auth.response
     const { id } = await context.params
     const body = await request.json().catch(() => null)
@@ -83,7 +83,7 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config')
     if (!auth.ok) return auth.response
     const { id } = await context.params
     const url = new URL(request.url)

@@ -6,7 +6,7 @@
  * new spend beyond the run already started and budgeted).
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import { prisma } from '@/lib/db'
 import { listAgentChannels } from '@/lib/soft-ai/agent-admin'
 import { loadLinesAiStatus } from '@/lib/soft-ai/agent-status-server'
@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'view_config')
+    const auth = await authenticateAgentAPI(request, 'view_config')
     if (!auth.ok) return auth.response
     const { id } = await context.params
     const agent = await prisma.chatAgent.findFirst({ where: { id, tenantId: auth.tenantId }, select: { id: true } })

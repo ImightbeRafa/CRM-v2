@@ -204,7 +204,7 @@ describe('route + lib guards (source)', () => {
   const route = read(ROUTE)
   const lib = read(LIB)
   it('route: update_config, same-origin, per-user rate limit, tenant from session', () => {
-    assert.match(route, /authenticateAPIWithPermission\(request, 'update_config'\)/)
+    assert.match(route, /authenticateAgentAPI\(request, 'update_config'\)/)
     assert.match(route, /isSameOriginRequest\(request\)/)
     assert.match(route, /createIdentifierRateLimit\(/)
     assert.match(route, /\$\{auth\.tenantId\}:\$\{auth\.userId\}/)

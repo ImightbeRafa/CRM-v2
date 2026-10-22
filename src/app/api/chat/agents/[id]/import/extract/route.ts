@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import {
   runShortcutExtract,
   shortcutImportErrorStatus,
@@ -18,7 +18,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config')
     if (!auth.ok) return auth.response
     const { id } = await context.params
     const body = (await request.json().catch(() => null)) as { paste?: unknown } | null

@@ -20,6 +20,7 @@
     "test:channels-ui": "npx tsx --test src/lib/__tests__/channels-health.test.ts src/lib/__tests__/chat-line-filter.test.ts",
     "test:agentes-ui": "npx tsx --test src/lib/__tests__/agent-channel-bind.test.ts src/lib/__tests__/agent-url.test.ts src/lib/__tests__/agentes-detail.test.ts",
     "test:config-ui": "npx tsx --test src/lib/__tests__/config-hub.test.ts src/lib/__tests__/config-routes.test.ts src/lib/__tests__/aurora-nav.test.ts src/lib/__tests__/config-shell.test.ts",
+    "test:support": "npx tsx --import ./scripts/shim-server-only.mjs --test src/lib/__tests__/support-pure.test.ts src/lib/__tests__/support-access.test.ts src/lib/__tests__/support-mcp.test.ts src/lib/__tests__/support-dispatch.test.ts src/lib/__tests__/support-routes.test.ts",
     "test:stats-ui": "npx tsx --test src/lib/__tests__/statistics-aurora.test.ts src/lib/__tests__/stats-aurora.test.ts",
     "test:chat-mobile": "npx tsx --test src/lib/__tests__/chat-mobile-aurora.test.ts",
     "test:chat-feedback": "npx tsx --import ./scripts/shim-server-only.mjs --test src/lib/__tests__/chat-feedback-batch.test.ts src/lib/__tests__/chat-storage.test.ts",

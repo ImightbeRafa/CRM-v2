@@ -6,7 +6,7 @@
  * short time (SecureDog INT-127 / INT-128); `?fresh=1` (sent right after a knowledge change) skips the cache.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import { hasPermission } from '@/lib/rbac'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
 import { loadKnowledgeMap, type KnowledgeMapResult } from '@/lib/soft-ai/knowledge-map-server'
@@ -25,7 +25,7 @@ const cache = new Map<string, { at: number; map: KnowledgeMapResult }>()
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'view_config')
+    const auth = await authenticateAgentAPI(request, 'view_config')
     if (!auth.ok) return auth.response
     const rate = await mapRateLimit(`${auth.tenantId}:${auth.userId}`)
     if (!rate.allowed) {

@@ -119,8 +119,8 @@ describe('Activar', () => {
     assert.doesNotMatch(read('src/lib/soft-ai/agent-config.ts'), /record\.fixtureSetHash !== config\.fixtureSetHash/)
   })
   it('route: view_config to read, update_config + same-origin + rate limit to act', () => {
-    assert.match(route, /authenticateAPIWithPermission\(request, 'view_config'\)/)
-    assert.match(route, /authenticateAPIWithPermission\(request, 'update_config'\)/)
+    assert.match(route, /authenticateAgentAPI\(request, 'view_config'\)/)
+    assert.match(route, /authenticateAgentAPI\(request, 'update_config'[,)]/)
     assert.match(route, /isSameOriginRequest\(request\)/)
     assert.match(route, /activationRateLimit/)
   })

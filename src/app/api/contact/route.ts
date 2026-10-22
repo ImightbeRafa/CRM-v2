@@ -1,156 +1,37 @@
 import { NextResponse } from 'next/server';
-import { Resend } from 'resend';
+import { handleContactIntake } from '@/lib/support/contact-intake';
 
-function escapeHtml(str: string): string {
-  if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-}
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
+/**
+ * Legacy public contact endpoint, kept for old callers with its response shape.
+ * Same intake as /api/support/contact (rate limit, spam checks, ticket or the legacy email
+ * when SUPPORT_PIPELINE_ENABLED is off), see src/lib/support/contact-intake.ts.
+ */
 export async function POST(request: Request) {
-  try {
-    const { name, email, subject, message } = await request.json();
-
-    // Validate input
-    if (!name || !email || !subject || !message) {
-      return NextResponse.json(
-        { error: 'All fields are required' },
-        { status: 400 }
-      );
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        { error: 'Invalid email format' },
-        { status: 400 }
-      );
-    }
-
-    // Only log in development, and mask sensitive data
-    if (process.env.NODE_ENV === 'development') {
-      console.log('📧 Sending contact form email...');
-      console.log('Subject:', subject);
-    }
-
-    // Send email using Resend
-    const { data, error } = await resend.emails.send({
-      from: 'Betsy Contact Form <noreply@betsycrm.com>', // Use your verified domain
-      to: 'betsycrm.cr@gmail.com', // Your contact email
-      replyTo: email, // User's email for easy reply
-      subject: `Contact Form: ${subject}`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <style>
-              body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-                line-height: 1.6;
-                color: #333;
-                max-width: 600px;
-                margin: 0 auto;
-                padding: 20px;
-              }
-              .header {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 20px;
-                border-radius: 8px 8px 0 0;
-                margin-bottom: 20px;
-              }
-              .content {
-                background: #f9fafb;
-                padding: 20px;
-                border-radius: 0 0 8px 8px;
-              }
-              .field {
-                margin-bottom: 15px;
-              }
-              .label {
-                font-weight: 600;
-                color: #4b5563;
-                font-size: 14px;
-                margin-bottom: 5px;
-              }
-              .value {
-                color: #1f2937;
-                font-size: 16px;
-              }
-              .message-box {
-                background: white;
-                padding: 15px;
-                border-radius: 6px;
-                border-left: 4px solid #667eea;
-                margin-top: 10px;
-              }
-              .footer {
-                margin-top: 20px;
-                padding-top: 20px;
-                border-top: 1px solid #e5e7eb;
-                font-size: 12px;
-                color: #6b7280;
-                text-align: center;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="header">
-              <h2 style="margin: 0;">📨 New Contact Form Submission</h2>
-              <p style="margin: 5px 0 0 0; opacity: 0.9;">Betsy CRM - Contact Form</p>
-            </div>
-            <div class="content">
-              <div class="field">
-                <div class="label">Name:</div>
-                <div class="value">${escapeHtml(name)}</div>
-              </div>
-              <div class="field">
-                <div class="label">Email:</div>
-                <div class="value"><a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a></div>
-              </div>
-              <div class="field">
-                <div class="label">Subject:</div>
-                <div class="value">${escapeHtml(subject)}</div>
-              </div>
-              <div class="field">
-                <div class="label">Message:</div>
-                <div class="message-box">${escapeHtml(message).replace(/\n/g, '<br>')}</div>
-              </div>
-              <div class="footer">
-                This email was sent from the Betsy CRM contact form.<br>
-                Reply directly to this email to respond to ${escapeHtml(name)}.
-              </div>
-            </div>
-          </body>
-        </html>
-      `,
-    });
-
-    if (error) {
-      console.error('❌ Resend error:', error);
-      return NextResponse.json(
-        { error: 'Failed to send email. Please try again or contact us directly.' },
-        { status: 500 }
-      );
-    }
-
-    console.log('✅ Contact email sent successfully:', data?.id);
-
-    return NextResponse.json({
-      success: true,
-      message: 'Message sent successfully! We\'ll get back to you soon.',
-    });
-
-  } catch (error: any) {
-    console.error('❌ Contact form error:', error);
-    return NextResponse.json(
-      { 
-        error: 'An error occurred. Please try again later.',
-        details: process.env.NODE_ENV === 'development' ? error?.message : undefined 
-      },
-      { status: 500 }
-    );
+  const raw = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!raw || !raw.name || !raw.email || !raw.subject || !raw.message) {
+    return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
+  }
+  if (typeof raw.email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw.email)) {
+    return NextResponse.json({ error: 'Invalid email format' }, { status: 400 });
+  }
+  const result = await handleContactIntake(request, raw, { legacyRoute: true });
+  switch (result.kind) {
+    case 'invalid':
+      return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
+    case 'rate_limited':
+      return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+    case 'turnstile':
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    case 'failed':
+      return NextResponse.json({ error: 'Failed to send email. Please try again later.' }, { status: 500 });
+    case 'accepted':
+      return NextResponse.json({
+        success: true,
+        message: 'Message sent successfully! We\'ll get back to you soon.',
+        ...(result.ticketRef ? { ticketNumber: result.ticketRef } : {}),
+      });
   }
 }

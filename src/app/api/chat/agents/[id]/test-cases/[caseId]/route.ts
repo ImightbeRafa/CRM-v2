@@ -4,7 +4,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { isSameOriginRequest } from '@/lib/same-origin'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { TestCasesNotReadyError, deleteTestCase } from '@/lib/soft-ai/probar-test-cases'
 
@@ -16,7 +16,7 @@ export async function DELETE(
   context: { params: Promise<{ id: string; caseId: string }> },
 ) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config')
     if (!auth.ok) return auth.response
     if (!isSameOriginRequest(request)) {
       return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })

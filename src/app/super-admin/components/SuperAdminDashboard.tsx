@@ -128,6 +128,13 @@ export default function SuperAdminDashboard() {
             Agent Ops
           </Link>
           <Link
+            href="/super-admin/soporte"
+            className="px-4 py-2 rounded-md ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
+            data-testid="super-admin-soporte-link"
+          >
+            Soporte
+          </Link>
+          <Link
             href="/logistics/admin?tab=ia"
             className="px-4 py-2 rounded-md ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
             data-testid="super-admin-ia-link"

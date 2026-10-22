@@ -390,7 +390,7 @@ describe('route + server + UI contract (source)', () => {
   const server = readFileSync('src/lib/soft-ai/knowledge-map-server.ts', 'utf8')
   const card = readFileSync('src/components/aurora/agentes/KnowledgeMapCard.tsx', 'utf8')
   it('view_config, tenant from the session, no-store, rate limit + short bounded cache, gaps only for agent editors (update_config), read-only', () => {
-    assert.match(route, /authenticateAPIWithPermission\(request, 'view_config'\)/)
+    assert.match(route, /authenticateAgentAPI\(request, 'view_config'\)/)
     assert.match(route, /tenantId: auth\.tenantId/)
     assert.match(route, /'Cache-Control': 'no-store'/)
     assert.match(route, /const includeGaps = hasPermission\(auth\.role, 'update_config'\)/)

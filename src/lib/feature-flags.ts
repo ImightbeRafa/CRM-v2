@@ -17,6 +17,11 @@ export const SOFT_TENANT_AI_V1_FLAG = 'soft_tenant_ai_v1';
 export const CHAT_INBOX_V2_FLAG = 'chat_inbox_v2';
 /** Soft Agent Layer (A1) — default off; never preview-unlocked. */
 export const CHAT_AGENT_LAYER_V1_FLAG = 'chat_agent_layer_v1';
+/**
+ * Done-for-you AI agents (support pipeline): the tenant may see and edit its agents.
+ * Default off; only a super admin changes it (src/lib/support/agent-access.ts). Never preview-unlocked.
+ */
+export const CUSTOM_AGENTS_FLAG = 'custom_agents';
 
 const PREVIEW_UNLOCKED_KEYS = new Set([
   ORDER_LIFECYCLE_V2_FLAG,

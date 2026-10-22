@@ -12,7 +12,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { isSameOriginRequest } from '@/lib/same-origin'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
 import { parseTuneBody, TUNE_BODY_MAX_BYTES } from '@/lib/soft-ai/agent-tuning-core'
 import { tuneAgent, tunePanelSource, TuneRefusal } from '@/lib/soft-ai/agent-tuning'
@@ -47,7 +47,7 @@ async function readCappedJson(request: NextRequest): Promise<{ ok: true; value: 
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config')
     if (!auth.ok) return auth.response
     const rate = await tuneReadRateLimit(`${auth.tenantId}:${auth.userId}`)
     if (!rate.allowed) {
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config')
     if (!auth.ok) return auth.response
     if (!isSameOriginRequest(request)) {
       return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })

@@ -8,7 +8,7 @@ import { createIdentifierRateLimit } from '@/lib/rate-limit'
 
 const evalRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 10, identifier: 'chat-agent-eval' })
 import { isSameOriginRequest } from '@/lib/same-origin'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import { loadLatestEvalRuns, runAgentSafetyEval } from '@/lib/soft-ai/agent-improvement'
 
 export const runtime = 'nodejs'
@@ -19,7 +19,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'view_config')
+    const auth = await authenticateAgentAPI(request, 'view_config')
     if (!auth.ok) return auth.response
     const { id } = await context.params
     const runs = await loadLatestEvalRuns(auth.tenantId, id)
@@ -35,7 +35,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config')
     if (!auth.ok) return auth.response
     if (!isSameOriginRequest(request)) {
       return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })

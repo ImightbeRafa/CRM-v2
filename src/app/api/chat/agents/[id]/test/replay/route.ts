@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { authenticateAgentAPI } from '@/lib/support/agent-access'
 import { prisma } from '@/lib/db'
 import { canSharePaymentFacts, parseBrandFactsSafe, parseReplyStyleSafe } from '@/lib/soft-ai/brand-facts'
 import { replayAccountBinding, replayFixtures } from '@/lib/soft-ai/agent-replay'
@@ -30,7 +30,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await authenticateAPIWithPermission(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config')
     if (!auth.ok) return auth.response
     const { id } = await context.params
     const agent = await prisma.chatAgent.findFirst({

@@ -44,6 +44,11 @@ const PUBLIC_ROUTES = [
   '/docs',                                      // Public documentation (no auth required)
   '/api/health',                                // Uptime check (no data; DB ping only)
   '/api/client-errors',                         // Browser error reports (same-origin + rate limited in the handler)
+  '/soporte',                                   // Support / contact page (contact info + form; "Mis tickets" calls session APIs)
+  '/api/support/contact',                       // Public contact form (rate limit + spam checks in the handler)
+  '/api/support/contact-config',                // Public business contact info for /soporte (nothing secret)
+  '/api/support/events',                        // Support agent poll fallback (Bearer SUPPORT_WEBHOOK_SECRET or super admin, in the handler)
+  '/api/mcp',                                   // Support agent MCP (Bearer SUPPORT_MCP_TOKEN in the handler; cookies ignored)
 ];
 
 /**

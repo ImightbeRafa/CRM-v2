@@ -295,7 +295,7 @@ describe('source asserts: one switch, no SQL, no flag writes', () => {
   const power = read('src/app/api/chat/agents/[id]/lines/[socialAccountId]/power/route.ts')
   const lines = read('src/app/api/chat/agents/[id]/lines/route.ts')
   it('power route: update_config, same-origin, rate limits, tenant from the session, plain refusals', () => {
-    assert.match(power, /authenticateAPIWithPermission\(request, 'update_config'\)/)
+    assert.match(power, /authenticateAgentAPI\(request, 'update_config'[,)]/)
     assert.match(power, /isSameOriginRequest\(request\)/)
     assert.match(power, /powerRateLimit\(`\$\{auth\.tenantId\}:\$\{auth\.userId\}`\)/)
     assert.match(power, /testRunTenantLimit\(auth\.tenantId\)/)
@@ -304,7 +304,7 @@ describe('source asserts: one switch, no SQL, no flag writes', () => {
     for (const err of ['TestRunDailyLimitError', 'TestRunBudgetError', 'TestRunBusyElsewhereError', 'TestRunNoProductsError']) {
       assert.match(power, new RegExp(`error instanceof ${err}`))
     }
-    assert.match(lines, /authenticateAPIWithPermission\(request, 'view_config'\)/)
+    assert.match(lines, /authenticateAgentAPI\(request, 'view_config'\)/)
     assert.match(lines, /viewingAgentId: agent\.id/)
   })
   it('ON never writes tenant flags; refuses AI off / terms / paused / other agent; reuses a valid green run', () => {

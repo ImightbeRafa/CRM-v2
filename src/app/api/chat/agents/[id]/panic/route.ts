@@ -3,6 +3,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+// Not behind the custom_agents gate on purpose: every panic action stops the agent, and a business must
+// always be able to stop its own live agent (SecureDog AUTH-S4).
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import {
   panicHumanOnly,

@@ -239,7 +239,7 @@ describe('out-of-stock switch · route, SQL and wiring (source)', () => {
   const route = read('src/app/api/chat/agents/[id]/inventory/route.ts')
   const patch = route.slice(route.indexOf('export async function PATCH'))
   it('PATCH: update_config, same origin, rate limit, strict body, item of THIS agent and tenant, audited', () => {
-    assert.match(patch, /authenticateAPIWithPermission\(request, 'update_config'\)/)
+    assert.match(patch, /authenticateAgentAPI\(request, 'update_config'\)/)
     assert.match(patch, /isSameOriginRequest\(request\)/)
     assert.match(patch, /availabilityRateLimit\(/)
     assert.match(route, /\.strict\(\)/)

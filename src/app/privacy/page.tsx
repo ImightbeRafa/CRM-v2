@@ -81,7 +81,7 @@ type RetentionRow = { item: string; period: string }
 
 const RETENTION: RetentionRow[] = [
   { item: 'Instagram, Facebook and WhatsApp access tokens', period: 'Deleted immediately when the business disconnects the account in Betsy or removes Betsy in its Facebook or Instagram settings.' },
-  { item: 'Conversations, messages and chat media (photos, voice notes, videos, documents)', period: 'Kept for the business while its Betsy account exists, including after a channel is disconnected, so it does not lose its history. Deleted by a deletion request (section 7) or an account erase.' },
+  { item: 'Conversations, messages and chat media (photos, voice notes, videos, documents)', period: 'Kept for the business while its Betsy account exists, including after a channel is disconnected, so it does not lose its history. Deleted by a deletion request (section 8) or an account erase.' },
   { item: 'AI agent outputs (drafted replies, suggestions, decision records)', period: '90 days, then deleted automatically.' },
   { item: 'Ad click identifier (WhatsApp “ctwa_clid”)', period: '90 days, then deleted automatically.' },
   { item: 'Staff assistant short-term memory', period: 'Up to 7 days, then deleted automatically.' },
@@ -209,7 +209,7 @@ export default function PrivacyPage() {
           </Section>
 
           <Section id="ai" title="4. AI features (OpenAI)">
-            <p>Betsy uses OpenAI&apos;s API for the features below. OpenAI does not use API data to train its models and may keep it for up to 30 days only for abuse and security monitoring. Card, bank-account and ID numbers are masked before text is sent, as far as we can detect them.</p>
+            <p>Betsy uses OpenAI&apos;s API for the features below. OpenAI does not use API data to train its models and may keep it for up to 30 days only for abuse and security monitoring. For the inbox agent, the payment check and the order helper, card, bank-account and ID numbers are masked before text is sent, as far as we can detect them.</p>
             <ul className="list-disc pl-6 space-y-2 mt-2">
               <li>
                 <strong>Inbox AI agent (off until the business turns it on).</strong> The business owner must accept AI
@@ -330,7 +330,10 @@ export default function PrivacyPage() {
                 <Link href="/data-deletion" className="text-blue-600 hover:underline">
                   betsycrm.com/data-deletion
                 </Link>
-                . Backups roll over within 14 days. You can also ask by email at {mail('support@betsycrm.com')}.
+
+                . If we cannot match the request to an account automatically, the status page says so and we complete it by
+                hand within 30 days when you email us. Backups roll over within 14 days. You can also ask by email at{' '}
+                {mail('support@betsycrm.com')}.
               </p>
             </Sub>
             <Sub title="8.3 Erasing a whole Betsy account">

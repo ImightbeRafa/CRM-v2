@@ -12,6 +12,8 @@ import { purgeChatOnlyWorkspaceData } from '@/lib/workspace-purge'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { softUnlinkUpdateData } from '@/lib/social-account-token-health'
 import { reportError } from '@/lib/observability/report-error'
+import { addAppSecretProofToUrl, buildMetaGraphUrl, getMetaWhatsAppAppId, getMetaWhatsAppAppSecret } from '@/lib/meta-api'
+import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import {
   safeTenantChatPaths,
   type DeletionKind,
@@ -61,7 +63,7 @@ async function findLines(metaUserId: string): Promise<MetaLineRef[]> {
 async function findLinesByIds(ids: string[]): Promise<MetaLineRef[]> {
   if (!ids.length) return []
   return prisma.$queryRaw<MetaLineRef[]>`
-    SELECT id, "tenantId", platform FROM "SocialAccount" WHERE id = ANY(${ids}::text[])`
+    SELECT id, "tenantId", platform, "linkedAt" FROM "SocialAccount" WHERE id = ANY(${ids}::text[])`
 }
 
 /** Every stored file of the line's chats: message media (column + legacy metadata) and customer photos. */
@@ -240,16 +242,79 @@ export async function recordLineMetaUser(params: {
 }
 
 /** Fill metaUserId for lines connected before 058, from debug_token's user_id (only when still empty). */
-export async function backfillLineMetaUser(lineId: string, metaUserId: string | null | undefined): Promise<void> {
+export async function backfillLineMetaUser(
+  lineId: string,
+  metaUserId: string | null | undefined,
+  opts: { overwrite?: boolean } = {},
+): Promise<void> {
   const id = String(metaUserId || '').trim()
   if (!/^\d{1,30}$/.test(id)) return
   try {
-    await prisma.$executeRaw`UPDATE "SocialAccount" SET "metaUserId" = ${id} WHERE id = ${lineId} AND "metaUserId" IS NULL`
+    // A (re)connect overwrites: the person who connected last is who Meta will name.
+    if (opts.overwrite) await prisma.$executeRaw`UPDATE "SocialAccount" SET "metaUserId" = ${id} WHERE id = ${lineId}`
+    else await prisma.$executeRaw`UPDATE "SocialAccount" SET "metaUserId" = ${id} WHERE id = ${lineId} AND "metaUserId" IS NULL`
   } catch (error) {
     if (!isMissing058(error)) console.warn('[meta-data-deletion] metaUserId backfill failed', error instanceof Error ? error.name : 'unknown')
   }
 }
 
 export function reportDeletionFailure(stage: string, code: string): void {
-  reportError({ source: 'server', name: 'MetaDataDeletionError', message: `meta data deletion ${stage} failed: ${code}`, route: '/api/auth/instagram/data-deletion' })
+  // gave_up gets its own error group (and so its own alert) per request.
+  const name = stage === 'gave_up' ? 'MetaDataDeletionNeedsManualReview' : 'MetaDataDeletionError'
+  reportError({ source: 'server', name, message: `meta data deletion ${stage} failed: ${code}`, route: '/api/auth/instagram/data-deletion' })
+}
+
+/** debug_token → the id of who granted a stored line token (Page token for IG, Embedded Signup token for WA). */
+export async function tokenGrantedByUserId(token: string, fetchImpl: typeof fetch = fetch): Promise<string | null> {
+  const appId = getMetaWhatsAppAppId()
+  const appSecret = getMetaWhatsAppAppSecret()
+  if (!token || !appId || !appSecret) return null
+  const appToken = `${appId}|${appSecret}`
+  try {
+    const res = await fetchImpl(
+      addAppSecretProofToUrl(
+        buildMetaGraphUrl(`debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(appToken)}`),
+        appToken,
+        { purpose: 'whatsapp' },
+      ),
+      { method: 'GET', signal: AbortSignal.timeout(10_000), cache: 'no-store', redirect: 'error' },
+    )
+    const json = (await res.json().catch(() => ({}))) as { data?: { user_id?: unknown; is_valid?: unknown } }
+    const id = json.data?.user_id
+    return json.data?.is_valid !== false && typeof id === 'string' && /^\d{1,30}$/.test(id) ? id : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Nightly (production only): lines connected before 058, or whose connect could not save it, learn which Facebook
+ * user connected them, so a deletion request from that person finds them. Never touches messaging.
+ */
+export async function backfillMissingMetaUsers(limit = 50): Promise<{ checked: number; filled: number; skipped?: string }> {
+  let rows: Array<{ id: string; accessToken: string | null }>
+  try {
+    rows = await prisma.$queryRaw<Array<{ id: string; accessToken: string | null }>>`
+      SELECT id, "accessToken" FROM "SocialAccount"
+      WHERE "metaUserId" IS NULL AND "accessToken" IS NOT NULL AND platform IN ('instagram', 'whatsapp')
+      ORDER BY "linkedAt" DESC LIMIT ${limit}`
+  } catch (error) {
+    if (isMissing058(error)) return { checked: 0, filled: 0, skipped: 'sql_058_missing' }
+    throw error
+  }
+  let filled = 0
+  for (const row of rows) {
+    let token: string | null = null
+    try {
+      token = row.accessToken ? decryptSocialAccessToken(row.accessToken) ?? null : null
+    } catch {
+      token = null
+    }
+    const userId = token ? await tokenGrantedByUserId(token) : null
+    if (userId) {
+      await backfillLineMetaUser(row.id, userId)
+      filled += 1
+    }
+  }
+  return { checked: rows.length, filled }
 }

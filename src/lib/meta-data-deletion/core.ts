@@ -13,7 +13,7 @@ import crypto from 'crypto'
 export type DeletionKind = 'deletion' | 'deauthorize'
 export type DeletionStatus = 'received' | 'pending' | 'pending_storage' | 'completed' | 'no_data' | 'failed'
 
-export type MetaLineRef = { id: string; tenantId: string; platform: string }
+export type MetaLineRef = { id: string; tenantId: string; platform: string; linkedAt?: Date | null }
 
 export type DeletionRequestRow = {
   id: string
@@ -57,7 +57,6 @@ export const CALLBACK_STORAGE_BUDGET_MS = 8_000
 export const STORAGE_BATCH = 200
 /** Cron attempts before a request is marked failed (then finished by hand, see /data-deletion). */
 export const MAX_RETRY_ATTEMPTS = 10
-const PENDING_PATHS_CAP = 20_000
 
 export function newConfirmationCode(): string {
   return `BETSY-DEL-${crypto.randomBytes(6).toString('hex').toUpperCase()}`
@@ -186,7 +185,7 @@ export async function processMetaDataRequest(
 }
 
 async function runRequest(
-  row: Pick<DeletionRequestRow, 'id' | 'kind' | 'attempts'>,
+  row: Pick<DeletionRequestRow, 'id' | 'kind' | 'attempts'> & { pendingPaths?: string[] },
   lines: MetaLineRef[],
   store: DeletionStore,
   removePaths: RemovePaths,
@@ -209,10 +208,13 @@ async function runRequest(
     return 'completed'
   }
 
-  let paths: string[] = []
+  // Paths are saved on the row BEFORE each erase: once the messages are gone they cannot be found again, so a
+  // failure half-way must not lose them (the retry starts from what is saved).
+  const paths = new Set<string>(row.pendingPaths ?? [])
   try {
     for (const line of lines) {
-      paths.push(...(await store.collectPaths(line)))
+      for (const p of await store.collectPaths(line)) paths.add(p)
+      await update({ pendingPaths: [...paths] })
       await store.eraseLine(line)
     }
   } catch (error) {
@@ -221,16 +223,15 @@ async function runRequest(
     await update({ status: 'pending', lastErrorCode: code })
     return 'pending'
   }
-  paths = [...new Set(paths)]
 
   const { remaining, errorCode: storageError } = await removeWithinBudget(
-    paths,
+    [...paths],
     removePaths,
     options.storageBudgetMs ?? CALLBACK_STORAGE_BUDGET_MS,
   )
   if (remaining.length) {
     if (storageError && storageError !== 'time_budget') options.onFailure?.('storage', storageError)
-    await update({ status: 'pending_storage', pendingPaths: remaining.slice(0, PENDING_PATHS_CAP), lastErrorCode: storageError })
+    await update({ status: 'pending_storage', pendingPaths: remaining, lastErrorCode: storageError })
     return 'pending_storage'
   }
   await update({ status: 'completed', pendingPaths: [], completedAt: options.now(), lastErrorCode: null })
@@ -265,7 +266,10 @@ export async function retryOpenDeletionRequests(
         await store.updateRequest(req.id, { status, pendingPaths: [], attempts, completedAt: now(), lastErrorCode: null })
       }
     } else {
-      const lines = await store.findLinesByIds(req.accountIds)
+      // A line reconnected after the request is a new connection: the retry never touches it.
+      const lines = (await store.findLinesByIds(req.accountIds)).filter(
+        (l) => !l.linkedAt || new Date(l.linkedAt).getTime() <= new Date(req.createdAt).getTime(),
+      )
       await store.updateRequest(req.id, { attempts })
       status = await runRequest({ ...req, attempts }, lines, store, removePaths, {
         now,
@@ -278,7 +282,7 @@ export async function retryOpenDeletionRequests(
       out.completed += 1
     } else if (attempts >= MAX_RETRY_ATTEMPTS) {
       await store.updateRequest(req.id, { status: 'failed' })
-      options.onFailure?.('gave_up', req.lastErrorCode || 'unknown')
+      options.onFailure?.('gave_up', `${req.confirmationCode}:${req.lastErrorCode || 'unknown'}`)
       out.failed += 1
     } else {
       out.stillPending += 1
@@ -312,8 +316,8 @@ export function describeDeletionStatus(status: DeletionStatus | null): { title: 
     case 'no_data':
       return {
         tone: 'ok',
-        title: 'Sin datos · No data found',
-        body: 'No encontramos cuentas de Instagram ni WhatsApp conectadas a Betsy con ese usuario de Facebook, así que no había nada que borrar. / We found no Instagram or WhatsApp account connected to Betsy by that Facebook user, so there was nothing to delete.',
+        title: 'Sin coincidencia automática · No automatic match',
+        body: 'No encontramos automáticamente ninguna cuenta de Instagram o WhatsApp conectada a Betsy por ese usuario de Facebook. Si conectaste una cuenta, escribí a support@betsycrm.com con este código y la borramos a mano dentro de 30 días. / We could not automatically match an Instagram or WhatsApp account connected to Betsy by that Facebook user. If you connected one, email support@betsycrm.com with this code and we delete it by hand within 30 days.',
       }
     case 'failed':
       return {

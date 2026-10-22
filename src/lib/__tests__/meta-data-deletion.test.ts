@@ -178,6 +178,48 @@ test('a database failure leaves the request pending; the cron re-runs the erase'
   assert.deepEqual(store.erased, ['sa_ig'])
 })
 
+test('a failure half-way keeps the file paths already found (the retry deletes them, not "completed" with files left)', async () => {
+  const store = fakeStore({ '4441': [lineA, lineB] }, { sa_ig: ['chat-media/t1/ig1'], sa_wa: ['chat-media/t1/wa1'] })
+  const realErase = store.eraseLine
+  let n = 0
+  store.eraseLine = async (line) => {
+    n += 1
+    if (n === 2) throw Object.assign(new Error('db blip'), { code: 'P1001' })
+    return realErase(line)
+  }
+  const out = await processMetaDataRequest({ metaUserId: '4441', kind: 'deletion' }, store, async () => {}, { secret: SECRET })
+  assert.equal(out.status, 'pending')
+  const row = [...store.rows.values()][0]!
+  assert.deepEqual(row.pendingPaths.sort(), ['chat-media/t1/ig1', 'chat-media/t1/wa1'])
+  // Night: line A's messages are gone (collectPaths finds nothing for it), yet its file is still removed.
+  store.eraseLine = realErase
+  const removed: string[] = []
+  const later = { now: () => new Date(Date.now() + 600_000) }
+  const fresh = fakeStore({}, {})
+  store.collectPaths = fresh.collectPaths
+  await retryOpenDeletionRequests(store, async (p) => void removed.push(...p), later)
+  assert.deepEqual(removed.sort(), ['chat-media/t1/ig1', 'chat-media/t1/wa1'])
+  assert.equal(store.rows.get(row.id)!.status, 'completed')
+})
+
+test('the nightly retry never touches a line reconnected after the request', async () => {
+  const reconnected: MetaLineRef = { ...lineA, linkedAt: new Date(Date.now() + 60_000) }
+  const store = fakeStore({ '4442': [lineA] })
+  store.findLinesByIds = async () => [reconnected]
+  store.eraseFails = 1
+  await processMetaDataRequest({ metaUserId: '4442', kind: 'deauthorize' }, store, async () => {}, { secret: SECRET })
+  store.disconnectLine = async () => {
+    throw new Error('first disconnect fails')
+  }
+  const row = [...store.rows.values()][0]!
+  store.rows.set(row.id, { ...row, status: 'pending', updatedAt: new Date(0) })
+  const touched: string[] = []
+  store.disconnectLine = async (l) => void touched.push(l.id)
+  store.eraseLine = async (l) => void touched.push(l.id)
+  await retryOpenDeletionRequests(store, async () => {})
+  assert.deepEqual(touched, [])
+})
+
 test('after MAX attempts the request is marked failed and reported (status page says manual review)', async () => {
   const store = fakeStore({ '555': [lineA] }, { sa_ig: ['chat-media/t1/m1'] })
   const failures: string[] = []

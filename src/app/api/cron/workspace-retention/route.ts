@@ -8,7 +8,8 @@ import { timingSafeEqualString } from '@/lib/security'
 import { cronsDisabled } from '@/lib/cron-kill-switch'
 import { purgeWorkspaceLogs } from '@/lib/workspace-retention'
 import { retryOpenDeletionRequests } from '@/lib/meta-data-deletion/core'
-import { prismaDeletionStore, removeChatPaths, reportDeletionFailure } from '@/lib/meta-data-deletion/store'
+import { backfillMissingMetaUsers, prismaDeletionStore, removeChatPaths, reportDeletionFailure } from '@/lib/meta-data-deletion/store'
+import { isProductionContainer } from '@/lib/ops/runtime'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,7 +34,11 @@ export async function GET(request: NextRequest) {
       reportDeletionFailure('retry', error instanceof Error ? error.name : 'unknown')
       metaDeletion = { error: 'retry_failed' }
     }
-    return NextResponse.json({ status: 'ok', ...result, metaDeletion })
+    // Production only: the Railway preview shares the database and may lack the Meta app secret.
+    const metaUsers = isProductionContainer()
+      ? await backfillMissingMetaUsers().catch(() => ({ checked: 0, filled: 0, skipped: 'failed' }))
+      : { checked: 0, filled: 0, skipped: 'not_production' }
+    return NextResponse.json({ status: 'ok', ...result, metaDeletion, metaUsers })
   } catch (error) {
     console.error('[workspace-retention] failed', error instanceof Error ? error.name : 'unknown')
     return NextResponse.json({ error: 'Retention failed' }, { status: 500 })

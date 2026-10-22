@@ -48,7 +48,7 @@ No.
 - **Do you share Platform Data with other parties?** Only with the processors above, to run the service, and with Meta
   (the business's own dataset).
 - **How do users delete their data?** In Facebook/Instagram settings → remove Betsy → ask for deletion. Meta calls
-  https://www.betsycrm.com/api/auth/instagram/data-deletion; we delete the conversations, messages, media, ad referrals
+  https://www.betsycrm.com/api/auth/instagram/data-deletion; we disconnect that person's lines at once, tell the business owner, and 3 days later delete the conversations, messages, media, ad referrals
   and AI records of the lines that person connected, and return a status page
   (https://www.betsycrm.com/data-deletion?code=…). Or by email to support@betsycrm.com. A whole account is erased by
   hand within 30 days.

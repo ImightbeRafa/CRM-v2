@@ -323,14 +323,16 @@ export default function PrivacyPage() {
             <Sub title="8.2 Asking us to delete the data">
               <p>
                 When you remove Betsy in your Facebook or Instagram settings and ask for your data to be deleted, Meta sends us
-                the request. For every Instagram or WhatsApp account you connected with that Facebook user, we delete all
-                conversations, messages, media files, ad referrals and AI records received through it, and disconnect it. The
-                business keeps its own setup and the orders and customer records its team created. If a file cannot be deleted
-                at once, we retry automatically every night. You get a confirmation code and a status page at{' '}
+                the request. Every Instagram or WhatsApp account you connected with that Facebook user is disconnected at
+                once, and the business owner is told by email. 3 days later (at the first nightly run after that) we delete
+                all conversations, messages, media files, ad referrals and AI records received through those accounts. The
+                wait lets the business react if, for example, you were one of several admins; if the business connects the
+                account again in that time, our team reviews the request by hand and completes it within 30 days. The
+                business keeps its own setup and the orders and customer records its team created. If a file cannot be
+                deleted at once, we retry automatically every night. You get a confirmation code and a status page at{' '}
                 <Link href="/data-deletion" className="text-blue-600 hover:underline">
                   betsycrm.com/data-deletion
                 </Link>
-
                 . If we cannot match the request to an account automatically, the status page says so and we complete it by
                 hand within 30 days when you email us. Backups roll over within 14 days. You can also ask by email at{' '}
                 {mail('support@betsycrm.com')}.

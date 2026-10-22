@@ -215,12 +215,12 @@ async function sendLine(
     const referral = row.referralId
       ? await prisma.chatAdReferral.findFirst({
           where: { id: row.referralId, tenantId },
-          select: { ctwaClid: true, occurredAt: true, platform: true, sourceType: true, conversationId: true },
+          select: { ctwaClid: true, occurredAt: true, platform: true, sourceType: true, sourceId: true, conversationId: true },
         })
       : null
     const value = row.value === null ? NaN : Number(row.value)
     const fromAd = isInstagram
-      ? referral?.platform === 'instagram' && referral.sourceType === 'ad'
+      ? referral?.platform === 'instagram' && referral.sourceType === 'ad' && Boolean(referral.sourceId)
       : Boolean(referral?.ctwaClid)
     if (!referral || !fromAd || referral.occurredAt > row.eventTime || !Number.isFinite(value)) {
       await finish([row], 'expired', 'no_click', now)

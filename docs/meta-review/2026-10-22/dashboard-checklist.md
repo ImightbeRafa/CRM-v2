@@ -54,10 +54,13 @@ Do these in order. Each step says where to click and how to check it worked. Not
 ## C. Decisions only you can make
 
 - **A deletion request from one admin deletes the chats of the lines that admin connected**, even if the business has
-  other admins. Meta's rules require deleting the data obtained through that person, and the old code already aimed to
-  do this (it never matched). The business keeps its agents, saved replies, orders and customers. If you prefer "only
-  disconnect, then delete by hand after checking with the business", say so and the callback changes in one line.
-- **WhatsApp lines and the deletion callback.** Betsy now remembers which Facebook user connected each Instagram line.
+  other admins (Meta's rules: delete the data obtained through that person). SecureDog rated this High, so it is softened:
+  the lines are disconnected at once, the owner gets an email, and the erase runs only 3 days later. If the owner
+  reconnects in that time, nothing is erased automatically: the request goes to manual review (an alert reaches the ops
+  error list) and support finishes it within 30 days. The business always keeps its agents, saved replies, orders and
+  customers. Accept this, or say if you want a different wait.
+- **WhatsApp lines and the deletion callback.** Betsy remembers which Facebook user connected each line (at connect, and a
+  nightly backfill for older lines).
   For WhatsApp, Embedded Signup's token may belong to a system user rather than the person, so a deletion request might
   not find a WhatsApp line. Test once with a test WhatsApp signup (remove the app in Facebook settings, then check
   /data-deletion?code=…). If it says "Sin datos", WhatsApp deletion stays manual through support@betsycrm.com, which the

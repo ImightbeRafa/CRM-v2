@@ -19,8 +19,10 @@ approved.
   Instagram.
 - **/data-deletion** shows the real status of a deletion request and explains disconnect vs deletion (Spanish + English).
 - **Deletion callback** (`/api/auth/instagram/data-deletion`) now finds the lines by the Facebook user who connected them
-  (before, it matched the Instagram account id and found nothing). It deletes chats, messages, media files, ad referrals
-  and AI records, then disconnects the lines. Files that fail to delete are retried every night. New **deauthorize
+  (before, it matched the Instagram account id and found nothing). It disconnects them at once, emails the owner,
+  and 3 days later deletes chats, messages, media files, ad referrals and AI records. A line reconnected meanwhile goes to
+  manual review. Files that fail to delete are retried every night. The callbacks refuse stale or replayed requests and
+  run only on the production container. New **deauthorize
   callback** (`/api/auth/meta/deauthorize`) disconnects only.
 - **Instagram purchase events** through the Conversions API for Business Messaging, next to the WhatsApp ones.
 

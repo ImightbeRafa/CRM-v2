@@ -14,6 +14,7 @@ import { softUnlinkUpdateData } from '@/lib/social-account-token-health'
 import { reportError } from '@/lib/observability/report-error'
 import { addAppSecretProofToUrl, buildMetaGraphUrl, getMetaWhatsAppAppId, getMetaWhatsAppAppSecret } from '@/lib/meta-api'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
+import { recordActivity } from '@/lib/activity'
 import {
   safeTenantChatPaths,
   type DeletionKind,
@@ -43,27 +44,76 @@ function toRow(raw: RawRequest): DeletionRequestRow {
 }
 
 /**
- * Lines connected by this Facebook user (058 column), plus the old match on the Instagram account id kept for
- * accounts connected before 058.
+ * Lines connected by this Facebook user (058 column; filled at connect and by the nightly backfill). The old match
+ * on the Instagram account id is gone: Betsy has no Instagram-Login flow, so it could only ever match by accident
+ * (SecureDog 2026-10-22). Before 058 nothing matches and the status page offers the manual route.
  */
 async function findLines(metaUserId: string): Promise<MetaLineRef[]> {
   try {
     return await prisma.$queryRaw<MetaLineRef[]>`
-      SELECT id, "tenantId", platform FROM "SocialAccount"
-      WHERE "metaUserId" = ${metaUserId}
-         OR (platform = 'instagram' AND "accountId" = ${metaUserId})`
+      SELECT id, "tenantId", platform, "isActive" FROM "SocialAccount" WHERE "metaUserId" = ${metaUserId}`
   } catch (error) {
     if (!isMissing058(error)) throw error
-    return prisma.$queryRaw<MetaLineRef[]>`
-      SELECT id, "tenantId", platform FROM "SocialAccount"
-      WHERE platform = 'instagram' AND "accountId" = ${metaUserId}`
+    return []
   }
 }
 
 async function findLinesByIds(ids: string[]): Promise<MetaLineRef[]> {
   if (!ids.length) return []
   return prisma.$queryRaw<MetaLineRef[]>`
-    SELECT id, "tenantId", platform, "linkedAt" FROM "SocialAccount" WHERE id = ANY(${ids}::text[])`
+    SELECT id, "tenantId", platform, "isActive" FROM "SocialAccount" WHERE id = ANY(${ids}::text[])`
+}
+
+/** Email each affected business's owner(s) and leave an activity record. Never throws. */
+async function notifyScheduled(lines: MetaLineRef[], eraseAfter: Date, confirmationCode: string): Promise<void> {
+  const byTenant = new Map<string, MetaLineRef[]>()
+  for (const l of lines) byTenant.set(l.tenantId, [...(byTenant.get(l.tenantId) ?? []), l])
+  for (const [tenantId, tenantLines] of byTenant) {
+    try {
+      const [tenant, owners, labels] = await Promise.all([
+        prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }),
+        prisma.membership.findMany({
+          where: { tenantId, role: 'OWNER', isActive: true },
+          select: { user: { select: { email: true } } },
+          take: 5,
+        }),
+        prisma.socialAccount.findMany({
+          where: { tenantId, id: { in: tenantLines.map((l) => l.id) } },
+          select: { id: true, platform: true, displayName: true, displayPhoneNumber: true, providerUsername: true },
+        }),
+      ])
+      const names = labels.map((l) =>
+        l.platform === 'instagram'
+          ? `Instagram ${l.providerUsername ? `@${l.providerUsername}` : l.displayName || ''}`.trim()
+          : `WhatsApp ${l.displayName || l.displayPhoneNumber || ''}`.trim(),
+      )
+      for (const line of tenantLines) {
+        await recordActivity({
+          tenantId,
+          actorKind: 'system',
+          verb: 'meta.data_deletion.scheduled',
+          entityType: 'social_account',
+          entityId: line.id,
+          props: { eraseAfter: eraseAfter.toISOString(), confirmationCode },
+          dedupeKey: `meta-deletion:${confirmationCode}:${line.id}`,
+        })
+      }
+      // Lazy: email.ts builds the Resend client at import (throws without a key), and this module is imported widely.
+      const { sendMetaDataDeletionNoticeEmail: sendNotice } = await import('@/lib/email')
+      for (const owner of owners) {
+        if (!owner.user?.email) continue
+        await sendNotice({
+          email: owner.user.email,
+          tenantName: tenant?.name || 'tu negocio',
+          lines: names,
+          eraseAfter,
+          confirmationCode,
+        })
+      }
+    } catch (error) {
+      console.warn('[meta-data-deletion] owner notice failed', error instanceof Error ? error.name : 'unknown')
+    }
+  }
 }
 
 /** Every stored file of the line's chats: message media (column + legacy metadata) and customer photos. */
@@ -200,6 +250,7 @@ export const prismaDeletionStore: DeletionStore = {
   collectPaths,
   eraseLine,
   disconnectLine,
+  notifyScheduled,
   findRecentRequest,
   insertRequest,
   updateRequest,

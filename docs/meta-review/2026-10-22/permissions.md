@@ -17,7 +17,7 @@ orders.
 Betsy uses this permission to send Purchase events to the business's own dataset through the Conversions API for
 Business Messaging, and only after the business owner turns on "Ventas por anuncios (Meta)" in Configuración › Cuentas
 sociales and accepts a notice. When a customer starts a WhatsApp chat from a Click-to-WhatsApp ad, we store the ctwa_clid
-from the messages webhook referral. If an order from that chat is marked paid within 7 days of the click, Betsy calls
+from the messages webhook referral. If an order from that chat is created within 7 days of the click and marked paid, Betsy calls
 POST /{WABA_ID}/dataset (once, to get the business's dataset) and POST /{DATASET_ID}/events with action_source
 business_messaging, messaging_channel whatsapp, user_data { whatsapp_business_account_id, ctwa_clid } and custom_data
 { currency, value }. We send no names, phone numbers, emails or message content. Each order is sent once (an event id per
@@ -29,8 +29,8 @@ owner can turn it off at any time.
 Betsy uses this permission to report paid sales from Instagram Direct conversations that started from an Instagram ad, to
 the business's own dataset (Conversions API for Business Messaging), only after the owner turns on "Ventas por anuncios
 (Meta)" and accepts a notice that names the Instagram id. When a customer messages from an ad, the messages webhook gives
-a referral with the ad id; Betsy stores it with the conversation. If an order from that chat is marked paid within 7
-days, Betsy calls POST /{IG_USER_ID}/dataset (once) and POST /{DATASET_ID}/events with action_source business_messaging,
+a referral with the ad id; Betsy stores it with the conversation. If an order from that chat is created within 7
+days of that message and marked paid, Betsy calls POST /{IG_USER_ID}/dataset (once) and POST /{DATASET_ID}/events with action_source business_messaging,
 messaging_channel instagram, user_data { instagram_business_account_id, ig_sid } and custom_data { currency, value }.
 ig_sid is the Instagram-scoped id from the webhook; we send no name, username, phone, email or message content. One event
 per order. The business uses it to measure which Instagram ads bring real sales. The owner can turn it off at any time.
@@ -41,7 +41,7 @@ per order. The business uses it to measure which Instagram ads bring real sales.
 
 ### instagram_basic
 
-Betsy reads the connected Instagram professional account's id, username, name and profile picture, so the business can
+Betsy reads the connected Instagram professional account's id and username, so the business can
 choose which account to connect, see it in Configuración › Cuentas conectadas and in the inbox header, and so we can match
 incoming messages to the right account. We do not read or publish posts.
 
@@ -66,7 +66,7 @@ insights.
 ### pages_manage_metadata
 
 Betsy subscribes the selected Page to the messages webhook (POST /{PAGE_ID}/subscribed_apps) so new Instagram Direct
-messages reach the Betsy inbox in real time, and checks the subscription when the business presses "Re-suscribir". We
+messages reach the Betsy inbox in real time, and checks it again when the business presses "Reparar webhook" on the line. We
 change no other Page setting.
 
 ### pages_messaging

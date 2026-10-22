@@ -3,10 +3,13 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import crypto from 'node:crypto'
 import {
+  ERASE_DELAY_MS,
   MAX_RETRY_ATTEMPTS,
   STORAGE_BATCH,
+  checkCallbackPayload,
   describeDeletionStatus,
   isConfirmationCode,
+  isMetaUserId,
   metaUserKey,
   processMetaDataRequest,
   removeWithinBudget,
@@ -19,32 +22,40 @@ import {
 import { parseMetaSignedRequest } from '../meta-signed-request'
 
 const SECRET = 'test-secret'
-const read = (p: string) => readFileSync(p, 'utf8')
+const read = (p: string) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
+const DAY = 24 * 60 * 60 * 1000
 
 type Fake = DeletionStore & {
   rows: Map<string, DeletionRequestRow & { metaUserKey: string }>
+  lines: Map<string, MetaLineRef>
   erased: string[]
   disconnected: string[]
+  notified: Array<{ ids: string[]; eraseAfter: Date }>
   tableMissing: boolean
   eraseFails: number
+  disconnectFails: number
 }
 
-function fakeStore(lines: Record<string, MetaLineRef[]>, paths: Record<string, string[]> = {}): Fake {
-  const all = Object.values(lines).flat()
+function fakeStore(byUser: Record<string, MetaLineRef[]>, paths: Record<string, string[]> = {}): Fake {
+  const lines = new Map<string, MetaLineRef>()
+  for (const l of Object.values(byUser).flat()) lines.set(l.id, { isActive: true, ...l })
   const store: Fake = {
     rows: new Map(),
+    lines,
     erased: [],
     disconnected: [],
+    notified: [],
     tableMissing: false,
     eraseFails: 0,
+    disconnectFails: 0,
     async findLines(id) {
-      return lines[id] ?? []
+      return (byUser[id] ?? []).map((l) => ({ ...lines.get(l.id)! }))
     },
     async findLinesByIds(ids) {
-      return all.filter((l) => ids.includes(l.id))
+      return ids.filter((id) => lines.has(id)).map((id) => ({ ...lines.get(id)! }))
     },
     async collectPaths(line) {
-      return paths[line.id] ?? []
+      return store.erased.includes(line.id) ? [] : paths[line.id] ?? []
     },
     async eraseLine(line) {
       if (store.eraseFails > 0) {
@@ -52,9 +63,18 @@ function fakeStore(lines: Record<string, MetaLineRef[]>, paths: Record<string, s
         throw Object.assign(new Error('db down'), { code: 'P1001' })
       }
       store.erased.push(line.id)
+      lines.set(line.id, { ...lines.get(line.id)!, isActive: false })
     },
     async disconnectLine(line) {
+      if (store.disconnectFails > 0) {
+        store.disconnectFails -= 1
+        throw Object.assign(new Error('db down'), { code: 'P1001' })
+      }
       store.disconnected.push(line.id)
+      lines.set(line.id, { ...lines.get(line.id)!, isActive: false })
+    },
+    async notifyScheduled(ls, eraseAfter) {
+      store.notified.push({ ids: ls.map((l) => l.id), eraseAfter })
     },
     async findRecentRequest(key, kind, since) {
       if (store.tableMissing) return null
@@ -81,6 +101,8 @@ function fakeStore(lines: Record<string, MetaLineRef[]>, paths: Record<string, s
 
 const lineA: MetaLineRef = { id: 'sa_ig', tenantId: 't1', platform: 'instagram' }
 const lineB: MetaLineRef = { id: 'sa_wa', tenantId: 't1', platform: 'whatsapp' }
+const after = (ms: number) => () => new Date(Date.now() + ms)
+const opts = { secret: SECRET }
 
 test('confirmation codes and the HMAC user key (never the raw id, needs the secret)', () => {
   const key = metaUserKey('1234567890', SECRET)
@@ -91,6 +113,19 @@ test('confirmation codes and the HMAC user key (never the raw id, needs the secr
   assert.ok(isConfirmationCode('BETSY-DEL-0123456789AB'))
   assert.ok(!isConfirmationCode('BETSY-DEL-0123'))
   assert.ok(!isConfirmationCode("BETSY-DEL-0123456789AB' OR 1=1"))
+  assert.ok(isMetaUserId('123'))
+  assert.ok(!isMetaUserId(123), 'a JSON number (could be rounded past 2^53) is refused')
+})
+
+test('callback payload: fresh, a real callback (not a login signedRequest), string user id', () => {
+  const now = 1_800_000_000
+  assert.deepEqual(checkCallbackPayload({ algorithm: 'HMAC-SHA256', issued_at: now - 60, user_id: '42' }, now), { ok: true, userId: '42' })
+  assert.equal(checkCallbackPayload({ issued_at: now - 2 * 86_400, user_id: '42' }, now).ok, false, 'older than 24 h (replay)')
+  assert.equal(checkCallbackPayload({ issued_at: now + 3_600, user_id: '42' }, now).ok, false, 'from the future')
+  assert.equal(checkCallbackPayload({ user_id: '42' }, now).ok, false, 'no issued_at')
+  assert.equal(checkCallbackPayload({ issued_at: now, user_id: '42', code: 'abc' }, now).ok, false, 'JS SDK login signedRequest')
+  assert.equal(checkCallbackPayload({ issued_at: now, user_id: '42', oauth_token: 'x' }, now).ok, false)
+  assert.equal(checkCallbackPayload({ issued_at: now, user_id: 42 }, now).ok, false)
 })
 
 test('only this business’s chat files can be deleted', () => {
@@ -109,77 +144,82 @@ test('only this business’s chat files can be deleted', () => {
   assert.deepEqual(out, ['chat-media/t1/msg1', 'chat-media/t1/avatars/conv1'])
 })
 
-test('deletion: erases each line, removes its files, records completed', async () => {
+test('deletion: lines disconnected and owner told at once; erase only after 72 hours', async () => {
   const store = fakeStore({ '111': [lineA, lineB] }, { sa_ig: ['chat-media/t1/m1'], sa_wa: ['chat-media/t1/m2', 'chat-media/t1/m1'] })
-  const removed: string[][] = []
-  const out = await processMetaDataRequest({ metaUserId: '111', kind: 'deletion' }, store, async (p) => void removed.push(p), { secret: SECRET })
-  assert.equal(out.status, 'completed')
-  assert.equal(out.matchedAccounts, 2)
+  const out = await processMetaDataRequest({ metaUserId: '111', kind: 'deletion' }, store, opts)
+  assert.equal(out.status, 'received')
   assert.ok(isConfirmationCode(out.confirmationCode))
-  assert.deepEqual(store.erased, ['sa_ig', 'sa_wa'])
-  assert.deepEqual(store.disconnected, [])
-  assert.deepEqual(removed.flat(), ['chat-media/t1/m1', 'chat-media/t1/m2'])
+  assert.deepEqual(store.disconnected, ['sa_ig', 'sa_wa'])
+  assert.deepEqual(store.erased, [], 'nothing erased yet')
+  assert.equal(store.notified.length, 1)
   const row = [...store.rows.values()][0]!
-  assert.equal(row.status, 'completed')
-  assert.ok(row.completedAt)
+  assert.equal(store.notified[0]!.eraseAfter.getTime(), row.createdAt.getTime() + ERASE_DELAY_MS)
   assert.ok(!JSON.stringify(row).includes('"111"'), 'raw Meta id never stored')
+
+  const removed: string[] = []
+  const early = await retryOpenDeletionRequests(store, async (p) => void removed.push(...p), { now: after(DAY) })
+  assert.equal(early.waiting, 1)
+  assert.deepEqual(store.erased, [])
+
+  const res = await retryOpenDeletionRequests(store, async (p) => void removed.push(...p), { now: after(3 * DAY + 60_000) })
+  assert.equal(res.completed, 1)
+  assert.deepEqual(store.erased, ['sa_ig', 'sa_wa'])
+  assert.deepEqual(removed.sort(), ['chat-media/t1/m1', 'chat-media/t1/m2'])
+  assert.equal(store.rows.get(row.id)!.status, 'completed')
 })
 
-test('deletion with no matching line answers no_data (and still a code for Meta)', async () => {
+test('a line reconnected during the wait is never erased automatically: manual review, reported', async () => {
+  const store = fakeStore({ '112': [lineA] })
+  const failures: string[] = []
+  await processMetaDataRequest({ metaUserId: '112', kind: 'deletion' }, store, opts)
+  store.lines.set('sa_ig', { ...store.lines.get('sa_ig')!, isActive: true }) // the owner reconnected
+  const res = await retryOpenDeletionRequests(store, async () => {}, { now: after(4 * DAY), onFailure: (s, c) => failures.push(`${s}:${c}`) })
+  assert.equal(res.failed, 1)
+  assert.deepEqual(store.erased, [])
+  assert.equal([...store.rows.values()][0]!.lastErrorCode, 'line_reconnected')
+  assert.ok(failures.some((f) => f.startsWith('gave_up:') && f.endsWith(':line_reconnected')))
+  assert.match(describeDeletionStatus('failed').body, /volvió a conectar/)
+})
+
+test('deletion with no matching line answers no_data, and the page offers the manual route', async () => {
   const store = fakeStore({})
-  const out = await processMetaDataRequest({ metaUserId: '222', kind: 'deletion' }, store, async () => {}, { secret: SECRET })
+  const out = await processMetaDataRequest({ metaUserId: '222', kind: 'deletion' }, store, opts)
   assert.equal(out.status, 'no_data')
   assert.equal([...store.rows.values()][0]!.status, 'no_data')
+  assert.match(describeDeletionStatus('no_data').body, /support@betsycrm\.com.*30 días/)
 })
 
 test('a storage failure is not swallowed: pending_storage with the remaining paths, then the cron finishes it', async () => {
   const paths = Array.from({ length: STORAGE_BATCH + 5 }, (_, i) => `chat-media/t1/m${i}`)
   const store = fakeStore({ '333': [lineA] }, { sa_ig: paths })
+  await processMetaDataRequest({ metaUserId: '333', kind: 'deletion' }, store, opts)
   const failures: string[] = []
   let calls = 0
-  const out = await processMetaDataRequest(
-    { metaUserId: '333', kind: 'deletion' },
+  await retryOpenDeletionRequests(
     store,
     async () => {
       calls += 1
       if (calls === 2) throw Object.assign(new Error('storage 503'), { name: 'ChatStorageError' })
     },
-    { secret: SECRET, onFailure: (stage, code) => failures.push(`${stage}:${code}`) },
+    { now: after(3 * DAY + 60_000), onFailure: (stage, code) => failures.push(`${stage}:${code}`) },
   )
-  assert.equal(out.status, 'pending_storage')
-  assert.deepEqual(failures, ['storage:ChatStorageError'])
   const row = [...store.rows.values()][0]!
+  assert.equal(row.status, 'pending_storage')
+  assert.deepEqual(failures, ['storage:ChatStorageError'])
   assert.equal(row.pendingPaths.length, 5)
-  assert.equal(row.lastErrorCode, 'ChatStorageError')
   assert.deepEqual(store.erased, ['sa_ig'], 'the database part is already done')
 
-  // The cron only picks rows not touched in the last 5 minutes.
-  const later = () => new Date(Date.now() + 10 * 60 * 1000)
+  store.rows.set(row.id, { ...store.rows.get(row.id)!, updatedAt: new Date(0) })
   const removed: string[] = []
-  const res = await retryOpenDeletionRequests(store, async (p) => void removed.push(...p), { now: later })
-  assert.deepEqual(res, { checked: 1, completed: 1, stillPending: 0, failed: 0 })
+  const res = await retryOpenDeletionRequests(store, async (p) => void removed.push(...p), { now: after(4 * DAY) })
+  assert.equal(res.completed, 1)
   assert.equal(removed.length, 5)
-  assert.equal(store.rows.get(row.id)!.status, 'completed')
   assert.deepEqual(store.rows.get(row.id)!.pendingPaths, [])
 })
 
-test('a database failure leaves the request pending; the cron re-runs the erase', async () => {
-  const store = fakeStore({ '444': [lineA] }, { sa_ig: ['chat-media/t1/m1'] })
-  store.eraseFails = 1
-  const failures: string[] = []
-  const out = await processMetaDataRequest({ metaUserId: '444', kind: 'deletion' }, store, async () => {}, {
-    secret: SECRET,
-    onFailure: (stage, code) => failures.push(`${stage}:${code}`),
-  })
-  assert.equal(out.status, 'pending')
-  assert.deepEqual(failures, ['erase:P1001'])
-  const res = await retryOpenDeletionRequests(store, async () => {}, { now: () => new Date(Date.now() + 600_000) })
-  assert.equal(res.completed, 1)
-  assert.deepEqual(store.erased, ['sa_ig'])
-})
-
-test('a failure half-way keeps the file paths already found (the retry deletes them, not "completed" with files left)', async () => {
+test('a failure half-way keeps the file paths already found (no "completed" with files left)', async () => {
   const store = fakeStore({ '4441': [lineA, lineB] }, { sa_ig: ['chat-media/t1/ig1'], sa_wa: ['chat-media/t1/wa1'] })
+  await processMetaDataRequest({ metaUserId: '4441', kind: 'deletion' }, store, opts)
   const realErase = store.eraseLine
   let n = 0
   store.eraseLine = async (line) => {
@@ -187,90 +227,90 @@ test('a failure half-way keeps the file paths already found (the retry deletes t
     if (n === 2) throw Object.assign(new Error('db blip'), { code: 'P1001' })
     return realErase(line)
   }
-  const out = await processMetaDataRequest({ metaUserId: '4441', kind: 'deletion' }, store, async () => {}, { secret: SECRET })
-  assert.equal(out.status, 'pending')
+  await retryOpenDeletionRequests(store, async () => {}, { now: after(3 * DAY + 60_000) })
   const row = [...store.rows.values()][0]!
+  assert.equal(row.status, 'pending')
   assert.deepEqual(row.pendingPaths.sort(), ['chat-media/t1/ig1', 'chat-media/t1/wa1'])
-  // Night: line A's messages are gone (collectPaths finds nothing for it), yet its file is still removed.
   store.eraseLine = realErase
+  store.rows.set(row.id, { ...store.rows.get(row.id)!, updatedAt: new Date(0) })
   const removed: string[] = []
-  const later = { now: () => new Date(Date.now() + 600_000) }
-  const fresh = fakeStore({}, {})
-  store.collectPaths = fresh.collectPaths
-  await retryOpenDeletionRequests(store, async (p) => void removed.push(...p), later)
-  assert.deepEqual(removed.sort(), ['chat-media/t1/ig1', 'chat-media/t1/wa1'])
+  await retryOpenDeletionRequests(store, async (p) => void removed.push(...p), { now: after(4 * DAY) })
+  assert.deepEqual(removed.sort(), ['chat-media/t1/ig1', 'chat-media/t1/wa1'], 'line A’s file is removed although its messages are gone')
   assert.equal(store.rows.get(row.id)!.status, 'completed')
 })
 
-test('the nightly retry never touches a line reconnected after the request', async () => {
-  const reconnected: MetaLineRef = { ...lineA, linkedAt: new Date(Date.now() + 60_000) }
-  const store = fakeStore({ '4442': [lineA] })
-  store.findLinesByIds = async () => [reconnected]
-  store.eraseFails = 1
-  await processMetaDataRequest({ metaUserId: '4442', kind: 'deauthorize' }, store, async () => {}, { secret: SECRET })
-  store.disconnectLine = async () => {
-    throw new Error('first disconnect fails')
-  }
+test('a failed disconnect is retried and then the 72-hour wait applies', async () => {
+  const store = fakeStore({ '444': [lineA] })
+  store.disconnectFails = 1
+  const out = await processMetaDataRequest({ metaUserId: '444', kind: 'deletion' }, store, opts)
+  assert.equal(out.status, 'pending')
+  assert.equal(store.notified.length, 0)
   const row = [...store.rows.values()][0]!
-  store.rows.set(row.id, { ...row, status: 'pending', updatedAt: new Date(0) })
-  const touched: string[] = []
-  store.disconnectLine = async (l) => void touched.push(l.id)
-  store.eraseLine = async (l) => void touched.push(l.id)
-  await retryOpenDeletionRequests(store, async () => {})
-  assert.deepEqual(touched, [])
+  store.rows.set(row.id, { ...row, updatedAt: new Date(0) })
+  await retryOpenDeletionRequests(store, async () => {}, { now: after(DAY / 2) })
+  assert.deepEqual(store.disconnected, ['sa_ig'])
+  assert.equal(store.rows.get(row.id)!.status, 'received')
+  assert.equal(store.notified.length, 1)
+  assert.deepEqual(store.erased, [])
 })
 
 test('after MAX attempts the request is marked failed and reported (status page says manual review)', async () => {
   const store = fakeStore({ '555': [lineA] }, { sa_ig: ['chat-media/t1/m1'] })
-  const failures: string[] = []
-  await processMetaDataRequest({ metaUserId: '555', kind: 'deletion' }, store, async () => {
-    throw new Error('down')
-  }, { secret: SECRET })
+  await processMetaDataRequest({ metaUserId: '555', kind: 'deletion' }, store, opts)
   const row = [...store.rows.values()][0]!
-  store.rows.set(row.id, { ...row, attempts: MAX_RETRY_ATTEMPTS - 1, updatedAt: new Date(0) })
+  store.rows.set(row.id, { ...row, status: 'pending_storage', pendingPaths: ['chat-media/t1/m1'], attempts: MAX_RETRY_ATTEMPTS - 1, updatedAt: new Date(0) })
+  const failures: string[] = []
   const res = await retryOpenDeletionRequests(store, async () => {
     throw new Error('still down')
-  }, { onFailure: (stage) => failures.push(stage) })
+  }, { now: after(4 * DAY), onFailure: (stage) => failures.push(stage) })
   assert.equal(res.failed, 1)
   assert.equal(store.rows.get(row.id)!.status, 'failed')
   assert.ok(failures.includes('gave_up'))
   assert.match(describeDeletionStatus('failed').body, /support@betsycrm\.com/)
 })
 
-test('Meta resending the same request within minutes gets the same code (no second erase)', async () => {
+test('Meta resending (or a replay) within 24 h gets the same code: no second request', async () => {
   const store = fakeStore({ '666': [lineA] })
-  const first = await processMetaDataRequest({ metaUserId: '666', kind: 'deletion' }, store, async () => {}, { secret: SECRET })
-  const again = await processMetaDataRequest({ metaUserId: '666', kind: 'deletion' }, store, async () => {}, { secret: SECRET })
+  const first = await processMetaDataRequest({ metaUserId: '666', kind: 'deletion' }, store, opts)
+  const again = await processMetaDataRequest({ metaUserId: '666', kind: 'deletion' }, store, { ...opts, now: after(20 * 60 * 60 * 1000) })
   assert.equal(again.confirmationCode, first.confirmationCode)
   assert.ok(again.reused)
   assert.equal(store.rows.size, 1)
-  assert.deepEqual(store.erased, ['sa_ig'])
 })
 
 test('deauthorize only disconnects (history kept), never erases', async () => {
   const store = fakeStore({ '777': [lineA, lineB] }, { sa_ig: ['chat-media/t1/m1'] })
-  const removed: string[] = []
-  const out = await processMetaDataRequest({ metaUserId: '777', kind: 'deauthorize' }, store, async (p) => void removed.push(...p), {
-    secret: SECRET,
-  })
+  const out = await processMetaDataRequest({ metaUserId: '777', kind: 'deauthorize' }, store, opts)
   assert.equal(out.status, 'completed')
   assert.deepEqual(store.disconnected, ['sa_ig', 'sa_wa'])
   assert.deepEqual(store.erased, [])
-  assert.deepEqual(removed, [])
+  assert.equal(store.notified.length, 0)
+  assert.equal(describeDeletionStatus('completed', 'deauthorize').title, 'Desconectado · Disconnected')
 })
 
-test('before 058 is applied: the work is still done, nothing recorded', async () => {
+test('a deauthorize retried at night never disconnects a line someone reconnected', async () => {
+  const store = fakeStore({ '778': [lineA] })
+  store.disconnectFails = 1
+  await processMetaDataRequest({ metaUserId: '778', kind: 'deauthorize' }, store, opts)
+  const row = [...store.rows.values()][0]!
+  assert.equal(row.status, 'pending')
+  store.rows.set(row.id, { ...row, updatedAt: new Date(0) })
+  store.lines.set('sa_ig', { ...store.lines.get('sa_ig')!, isActive: true }) // reconnected meanwhile
+  await retryOpenDeletionRequests(store, async () => {}, { now: after(DAY) })
+  assert.deepEqual(store.disconnected, [])
+  assert.equal(store.rows.get(row.id)!.status, 'completed')
+})
+
+test('before 058 is applied: lines are disconnected, nothing is erased, support is alerted', async () => {
   const store = fakeStore({ '888': [lineA] }, { sa_ig: ['chat-media/t1/m1'] })
   store.tableMissing = true
-  const removed: string[] = []
-  const out = await processMetaDataRequest({ metaUserId: '888', kind: 'deletion' }, store, async (p) => void removed.push(...p), {
-    secret: SECRET,
-  })
+  const failures: string[] = []
+  const out = await processMetaDataRequest({ metaUserId: '888', kind: 'deletion' }, store, { ...opts, onFailure: (s) => failures.push(s) })
   assert.equal(out.recorded, false)
-  assert.equal(out.status, 'completed')
-  assert.deepEqual(store.erased, ['sa_ig'])
-  assert.deepEqual(removed, ['chat-media/t1/m1'])
-  assert.equal(describeDeletionStatus(null).title, 'Solicitud recibida · Request received')
+  assert.deepEqual(store.disconnected, ['sa_ig'])
+  assert.deepEqual(store.erased, [])
+  assert.deepEqual(failures, ['not_recorded'])
+  assert.match(describeDeletionStatus(null).body, /30 días/)
 })
 
 test('removeWithinBudget stops on time and hands back the rest', async () => {
@@ -291,29 +331,33 @@ test('signed_request: a bad signature is refused before any work', () => {
 })
 
 test('routes, store and status page are wired the safe way', () => {
-  const del = read('src/app/api/auth/instagram/data-deletion/route.ts')
-  const deauth = read('src/app/api/auth/meta/deauthorize/route.ts')
-  for (const src of [del, deauth]) {
-    assert.match(src, /parseMetaSignedRequest\(signedRequest, secrets\)/)
-    assert.ok(src.indexOf("status: 403") < src.indexOf('processMetaDataRequest('), 'signature checked before any work')
-    assert.doesNotMatch(src, /\.catch\(\(\) => \{\s*\}\)/)
+  const front = read('src/lib/meta-data-deletion/callback.ts')
+  assert.ok(front.indexOf('isProductionContainer()') < front.indexOf('request.text()'), 'production only, before reading')
+  assert.ok(front.indexOf('Payload too large') < front.indexOf('parseMetaSignedRequest('))
+  assert.ok(front.indexOf('parseMetaSignedRequest(signedRequest, secrets)') < front.indexOf('checkCallbackPayload(payload)'))
+  for (const f of ['src/app/api/auth/instagram/data-deletion/route.ts', 'src/app/api/auth/meta/deauthorize/route.ts']) {
+    const src = read(f)
+    assert.ok(src.indexOf('readMetaCallback(') < src.indexOf('processMetaDataRequest('), `${f}: checks before any work`)
+    assert.match(src, /if \(!callback\.ok\) return callback\.response/)
   }
-  assert.match(del, /kind: 'deletion'/)
-  assert.match(deauth, /kind: 'deauthorize'/)
-  const mw = read('src/middleware.ts')
-  assert.match(mw, /'\/api\/auth\/meta\/deauthorize',/)
+  assert.match(read('src/app/api/auth/instagram/data-deletion/route.ts'), /kind: 'deletion'/)
+  assert.match(read('src/app/api/auth/meta/deauthorize/route.ts'), /kind: 'deauthorize'/)
+  assert.match(read('src/middleware.ts'), /'\/api\/auth\/meta\/deauthorize',/)
   const store = read('src/lib/meta-data-deletion/store.ts')
   assert.doesNotMatch(store, /prisma\.socialAccount\.delete(Many)?\(/, 'lines are disconnected, never deleted (agent setup stays)')
+  assert.doesNotMatch(store, /"accountId" = \$\{metaUserId\}/, 'no legacy match on the Instagram account id')
   assert.match(store, /tx\.chatMessage\.deleteMany\(\{ where: \{ socialAccountId: line\.id, tenantId: line\.tenantId \} \}\)/)
   assert.match(store, /safeTenantChatPaths\(line\.tenantId/)
-  // 058 stays out of the Prisma models so code before the SQL keeps working.
+  assert.match(store, /role: 'OWNER', isActive: true/)
   const schema = read('prisma/schema.prisma')
-  assert.doesNotMatch(schema, /metaUserId|MetaDataDeletionRequest/)
+  assert.doesNotMatch(schema, /metaUserId|MetaDataDeletionRequest/, '058 stays out of the Prisma models')
   const page = read('src/app/data-deletion/page.tsx')
   assert.match(page, /readDeletionStatus\(confirmationCode\)/)
   assert.doesNotMatch(page, /tenantId|accountIds|metaUserKey/, 'status page shows status and dates only')
   const cron = read('src/app/api/cron/workspace-retention/route.ts')
   assert.match(cron, /retryOpenDeletionRequests\(prismaDeletionStore, removeChatPaths/)
+  assert.match(cron, /isProductionContainer\(\)\n?\s*\? await backfillMissingMetaUsers\(\)/)
+  assert.match(read('src/app/api/auth/whatsapp/exchange/route.ts'), /backfillLineMetaUser\(saved\.id, await tokenGrantedByUserId\(businessToken\), \{ overwrite: true \}\)/)
   const sql = read('supabase/migrations/058_meta_data_deletion.sql')
   assert.match(sql, /ENABLE ROW LEVEL SECURITY/)
   assert.doesNotMatch(sql.replace(/--[^\n]*/g, ''), /DROP |DELETE |TRUNCATE /i)
@@ -330,6 +374,7 @@ test('privacy page states the real retention and processors', () => {
   assert.match(page, /IGSID/)
   assert.match(page, /ctwa_clid/)
   assert.match(page, /within 30 days/)
+  assert.match(page, /3 days/)
   assert.doesNotMatch(page, /within 24 hours/, 'old false promise is gone')
   assert.doesNotMatch(page, /new Date\(\)\.toLocaleDateString/, 'fixed date, not today’s date')
 })

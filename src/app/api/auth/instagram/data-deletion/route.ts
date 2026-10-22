@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getMetaWebhookAppSecrets } from '@/lib/meta-api'
-import { parseMetaSignedRequest, readSignedRequestFromBody } from '@/lib/meta-signed-request'
-import { isMetaUserId, processMetaDataRequest } from '@/lib/meta-data-deletion/core'
-import { prismaDeletionStore, removeChatPaths, reportDeletionFailure } from '@/lib/meta-data-deletion/store'
+import { processMetaDataRequest } from '@/lib/meta-data-deletion/core'
+import { readMetaCallback } from '@/lib/meta-data-deletion/callback'
+import { prismaDeletionStore, reportDeletionFailure } from '@/lib/meta-data-deletion/store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,37 +21,16 @@ export async function GET() {
 
 /**
  * Meta Data Deletion Request callback (required for App Review; one URL for the whole app, so it covers the
- * Instagram and WhatsApp lines the person connected). Meta POSTs `signed_request` form-encoded. We verify it
- * against our Meta app secrets, delete what came through that person's lines (see meta-data-deletion/core) and
- * answer `{ url, confirmation_code }` — the url is the public status page that shows the real state.
+ * Instagram and WhatsApp lines the person connected). The signed_request is verified and checked in
+ * readMetaCallback. The lines are disconnected now, the owner is told, and the chats are erased 72 hours later
+ * (meta-data-deletion/core). We answer `{ url, confirmation_code }`; the url is the public status page.
  */
 export async function POST(request: NextRequest) {
   try {
-    const rawBody = (await request.text()).slice(0, 16_384)
-    const signedRequest = readSignedRequestFromBody(rawBody, request.headers.get('content-type'))
-    if (!signedRequest) {
-      console.error('[instagram/data-deletion] No signed_request provided')
-      return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
-    }
+    const callback = await readMetaCallback(request, 'instagram/data-deletion')
+    if (!callback.ok) return callback.response
 
-    const secrets = getMetaWebhookAppSecrets().map((s) => s.secret)
-    if (secrets.length === 0) {
-      console.error('[instagram/data-deletion] No Meta app secret configured')
-      return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
-    }
-
-    const payload = parseMetaSignedRequest(signedRequest, secrets)
-    if (!payload) {
-      console.error('[instagram/data-deletion] Signature verification failed')
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })
-    }
-
-    const userId = String(payload.user_id || '').trim()
-    if (!isMetaUserId(userId)) {
-      return NextResponse.json({ error: 'Invalid user' }, { status: 400 })
-    }
-
-    const outcome = await processMetaDataRequest({ metaUserId: userId, kind: 'deletion' }, prismaDeletionStore, removeChatPaths, {
+    const outcome = await processMetaDataRequest({ metaUserId: callback.userId, kind: 'deletion' }, prismaDeletionStore, {
       onFailure: reportDeletionFailure,
     })
 

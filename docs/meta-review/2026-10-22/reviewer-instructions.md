@@ -54,7 +54,7 @@ separate test business, never a customer's). §2 is the text to paste into App R
 > 3. Press "Crear pedido", add the product, choose "Retiro (RA)" and under "Estado de pago" choose "Pagado", then save.
 > 4. Within 5 minutes Betsy sends one Purchase event to the business's own dataset (Conversions API for Business
 >    Messaging): for WhatsApp with the ctwa_clid, for Instagram with the Instagram-scoped id. No name, phone or message is
->    sent. The card's counter "Ventas enviadas (30 días)" goes up, and the event appears in Events Manager → Test events.
+>    sent. With the test code saved, the event appears in Events Manager → Test events (test sends are not counted). Without a test code, the card's counter "Ventas enviadas (30 días)" goes up instead.
 >
 > **Data deletion:** remove the app in Facebook settings and request deletion; the callback returns a status link
 > (https://www.betsycrm.com/data-deletion?code=…). Privacy policy: https://www.betsycrm.com/privacy.

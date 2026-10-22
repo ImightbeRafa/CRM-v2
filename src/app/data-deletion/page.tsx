@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { describeDeletionStatus, isConfirmationCode } from '@/lib/meta-data-deletion/core'
+import { describeDeletionStatus, eraseAfterFor, isConfirmationCode } from '@/lib/meta-data-deletion/core'
 import { readDeletionStatus } from '@/lib/meta-data-deletion/store'
 
 export const dynamic = 'force-dynamic'
@@ -21,7 +21,7 @@ export default async function DataDeletionPage({
   // Status link returned to Meta by the data-deletion callback.
   const confirmationCode = isConfirmationCode(code) ? code : null
   const request = confirmationCode ? await readDeletionStatus(confirmationCode).catch(() => null) : null
-  const status = describeDeletionStatus(request?.status ?? null)
+  const status = describeDeletionStatus(request?.status ?? null, request?.kind)
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -40,6 +40,9 @@ export default async function DataDeletionPage({
                 <p className="text-sm mt-1">
                   Recibida / Received: {dateFmt.format(new Date(request.createdAt))}
                   {request.completedAt ? ` · Completada / Completed: ${dateFmt.format(new Date(request.completedAt))}` : ''}
+                  {request.kind === 'deletion' && request.status === 'received'
+                    ? ` · Borrado desde / Erase from: ${dateFmt.format(eraseAfterFor(new Date(request.createdAt)))}`
+                    : ''}
                 </p>
               )}
               <p className="text-sm mt-2">{status.body}</p>
@@ -55,10 +58,12 @@ export default async function DataDeletionPage({
                 enviar mensajes. El historial de conversaciones se queda en el espacio del negocio.
               </li>
               <li>
-                <strong>Eliminar</strong>: borramos las conversaciones, mensajes, archivos (fotos, audios, videos,
-                documentos), referencias de anuncios y registros de IA recibidos por las cuentas de Instagram o WhatsApp que
-                conectaste, y desconectamos esas cuentas. Los pedidos y clientes que el equipo del negocio creó siguen siendo
-                del negocio. Las copias de seguridad se renuevan en 14 días.
+                <strong>Eliminar</strong>: desconectamos de inmediato las cuentas de Instagram o WhatsApp que conectaste y
+                avisamos al dueño del negocio. 3 días después borramos las conversaciones, mensajes, archivos (fotos, audios,
+                videos, documentos), referencias de anuncios y registros de IA recibidos por esas cuentas. Si el negocio las
+                vuelve a conectar en ese plazo, nuestro equipo revisa la solicitud a mano y la completa dentro de 30 días. Los
+                pedidos y clientes que el equipo del negocio creó siguen siendo del negocio. Las copias de seguridad se
+                renuevan en 14 días.
               </li>
             </ul>
           </section>
@@ -71,7 +76,7 @@ export default async function DataDeletionPage({
                 de Instagram (Configuración → Apps y sitios web).
               </li>
               <li>Buscá <strong>Betsy CRM</strong>, tocá <strong>Eliminar</strong> y marcá la opción para pedir que se borren tus datos.</li>
-              <li>Meta nos avisa, borramos los datos y te da un código de confirmación con un enlace a esta página para ver el estado.</li>
+              <li>Meta nos avisa y te da un código de confirmación con un enlace a esta página para ver el estado.</li>
             </ol>
           </section>
 
@@ -115,9 +120,10 @@ export default async function DataDeletionPage({
               <li>
                 <strong>Delete</strong>: in Facebook (Settings &amp; privacy → Settings → Business integrations) or Instagram
                 (Settings → Apps and websites), remove <strong>Betsy CRM</strong> and choose to delete your data. Meta notifies
-                us; we delete the conversations, messages, files, ad referrals and AI records received through the Instagram or
-                WhatsApp accounts you connected, disconnect them, and give you a confirmation code linking to this page. Backups
-                roll over within 14 days.
+                us. We disconnect the Instagram or WhatsApp accounts you connected at once and tell the business owner; 3 days
+                later we delete the conversations, messages, files, ad referrals and AI records received through them (if the
+                business reconnects them meanwhile, our team completes the request by hand within 30 days). You get a
+                confirmation code linking to this page. Backups roll over within 14 days.
               </li>
               <li>
                 <strong>By email</strong>: write to support@betsycrm.com. We answer within 10 business days. A whole Betsy

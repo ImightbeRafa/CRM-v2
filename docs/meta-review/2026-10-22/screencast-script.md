@@ -17,7 +17,7 @@ instagram_manage_messages, pages_messaging, plus instagram_manage_events in the 
    permissions. pages_show_list lists the person's Pages; business_management finds the business portfolio they
    choose."*
 4. Choose the test Page / Instagram account and continue. Back in Betsy, the Instagram row shows *Conectado*.
-   *"pages_read_engagement reads the Page's linked Instagram account; instagram_basic shows its username and picture;
+   *"pages_read_engagement reads the Page's linked Instagram account; instagram_basic shows its username;
    pages_manage_metadata subscribes the Page to message webhooks."*
 5. On a phone, send a Direct message to the test account: "Hola, ¿tienen talla M?" Show the phone briefly.
 6. In Betsy open **Chats**. The message appears with the sender's name and photo. *"instagram_manage_messages: the
@@ -61,7 +61,7 @@ Permissions: whatsapp_business_manage_events, instagram_manage_events.
    anuncio**, create the order the same way with **Pagado**.
 7. In Events Manager show the Instagram Purchase event. *"For Instagram Betsy sends the Instagram account id and the
    Instagram-scoped id (IGSID) from the webhook, value and currency. Used for measurement and reporting."*
-8. Back in Betsy, show **Ventas enviadas (30 días)** went up by two.
+8. Note on camera: test sends do not raise **Ventas enviadas (30 días)**; that counter counts real sends (after the test code expires, each sale is sent once for real).
 
 ## Video 4 (short): deletion
 

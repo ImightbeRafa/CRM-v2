@@ -32,7 +32,7 @@ import {
   type SupportTicketMeta,
 } from '../types'
 import { ToolError, type McpTool } from './protocol'
-import { decidePublicReply } from './reply-policy'
+import { agentUpdateRefusal, decidePublicReply } from './reply-policy'
 
 const perTicketReplies = createIdentifierRateLimit({ windowMs: 60 * 60_000, maxRequests: 3, identifier: 'mcp-public-reply-ticket' })
 const dailyReplies = createIdentifierRateLimit({ windowMs: 24 * 60 * 60_000, maxRequests: 100, identifier: 'mcp-public-reply-day' })
@@ -291,6 +291,10 @@ export function supportMcpTools(): McpTool[] {
           }),
         )
         if (!t) throw NOT_FOUND()
+        if (a.set_status) {
+          const refusal = agentUpdateRefusal(t, { status: a.set_status }, agentDraftCategories())
+          if (refusal) throw new ToolError(refusal)
+        }
         if (a.visibility === 'internal') {
           await addStaffMessage({ ticketId: t.id, author: 'grok_agent', body: a.body, visibility: 'internal', setStatus: a.set_status })
           return { ticketId: t.id, result: { ok: true, delivered: 'internal_note' } }
@@ -340,6 +344,12 @@ export function supportMcpTools(): McpTool[] {
       },
       args: updateArgs,
       handler: async (a: z.infer<typeof updateArgs>) => {
+        const current = await withSupportTables(() =>
+          prisma.supportTicket.findUnique({ where: { id: a.ticket_id }, select: { status: true, category: true, assignee: true } }),
+        )
+        if (!current) throw NOT_FOUND()
+        const refusal = agentUpdateRefusal(current, a, agentDraftCategories())
+        if (refusal) throw new ToolError(refusal)
         const res = await updateSupportTicket(a.ticket_id, { status: a.status, priority: a.priority, category: a.category })
         if (!res) throw new ToolError('Ticket no encontrado o nada que cambiar.')
         return { ticketId: a.ticket_id, result: res }

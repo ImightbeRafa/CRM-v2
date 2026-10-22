@@ -118,6 +118,17 @@ async function claimEvents(limit: number): Promise<ClaimedEvent[]> {
     RETURNING e."id", e."ticketId", e."type", e."payload", e."webhookStatus", e."emailStatus", e."attempts"`
 }
 
+/** A mail send that never hangs the dispatcher (a timed-out send counts as failed and is retried). */
+export function withMailTimeout(send: MailSender, ms: number): MailSender {
+  return (msg) =>
+    new Promise((resolve) => {
+      const timer = setTimeout(() => resolve({ ok: false, error: 'mail_timeout' }), ms)
+      send(msg)
+        .then(resolve, () => resolve({ ok: false, error: 'mail_throw' }))
+        .finally(() => clearTimeout(timer))
+    })
+}
+
 export type DispatchSummary = {
   status: 'ok' | 'disabled' | 'tables_missing'
   claimed: number
@@ -127,12 +138,12 @@ export type DispatchSummary = {
 }
 
 export async function dispatchPendingSupportEvents(
-  opts: { limit?: number; env?: EnvLike; fetchImpl?: typeof fetch; send?: MailSender } = {},
+  opts: { limit?: number; budgetMs?: number; env?: EnvLike; fetchImpl?: typeof fetch; send?: MailSender } = {},
 ): Promise<DispatchSummary> {
   const env = opts.env ?? process.env
   const summary: DispatchSummary = { status: 'ok', claimed: 0, webhookSent: 0, emailSent: 0, failed: 0 }
   if (!supportDispatchAllowed(env)) return { ...summary, status: 'disabled' }
-  const send = opts.send ?? resendSender
+  const send = withMailTimeout(opts.send ?? resendSender, 10_000)
   const url = supportWebhookUrl(env)
   const secret = (env.SUPPORT_WEBHOOK_SECRET || '').trim()
   const pushed = parseWebhookEvents(env.SUPPORT_WEBHOOK_EVENTS)
@@ -144,8 +155,12 @@ export async function dispatchPendingSupportEvents(
     throw error
   }
   summary.claimed = events.length
+  const started = Date.now()
 
   for (const ev of events) {
+    // Stay well inside the 2-minute claim: worst case per event is ~28 s (8 s webhook + 2 × 10 s mail),
+    // so 45 s + 28 s < 120 s. Unprocessed claims simply become due again when the claim lapses.
+    if (Date.now() - started > (opts.budgetMs ?? 45_000)) break
     let webhook: LegResult = { status: ev.webhookStatus }
     if (ev.webhookStatus === 'pending') {
       webhook = !url || !pushed.has(ev.type)
@@ -158,10 +173,9 @@ export async function dispatchPendingSupportEvents(
       email = res.ok ? { status: 'sent' } : { status: 'failed', error: res.error }
       // Customer ack: once, best effort, only on the first try of a new ticket.
       if (res.ok && ev.type === 'ticket.created' && ev.attempts === 1) {
-        const t = await prisma.supportTicket.findUnique({
-          where: { id: ev.ticketId },
-          select: { contactEmail: true, status: true },
-        })
+        const t = await prisma.supportTicket
+          .findUnique({ where: { id: ev.ticketId }, select: { contactEmail: true, status: true } })
+          .catch(() => null)
         if (t && t.status !== 'spam') await send(buildCustomerAckEmail(t.contactEmail, ev.payload.betsy.ref, env))
       }
     }
@@ -169,7 +183,12 @@ export async function dispatchPendingSupportEvents(
     if (email.status === 'sent') summary.emailSent++
     const settled = settleEvent(ev, webhook, email)
     if (settled.webhookStatus === 'failed' || settled.emailStatus === 'failed') summary.failed++
-    await prisma.supportTicketEvent.update({ where: { id: ev.id }, data: settled })
+    try {
+      await prisma.supportTicketEvent.update({ where: { id: ev.id }, data: settled })
+    } catch (error) {
+      // Keep going: this row re-sends after its claim lapses (at-least-once; the agent dedupes on delivery_id).
+      console.error('[support-dispatch] settle failed', ev.id, (error as Error)?.name)
+    }
   }
   return summary
 }

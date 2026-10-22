@@ -72,9 +72,9 @@ npx tsx --import ./scripts/shim-server-only.mjs scripts/seed-custom-agents-flag.
 SEED_CUSTOM_AGENTS_APPLY=1 npx tsx --import ./scripts/shim-server-only.mjs scripts/seed-custom-agents-flag.ts --apply
 ```
 
-Picks: active channel binding to a non-`human_only` agent, or an agent turn in 30 days, plus DeepSleep.
+Picks: any active binding (channel or business-wide) to a non-`human_only` agent, or an agent turn in 30 days, plus DeepSleep.
 Existing rows (including an explicit OFF) are never changed. Check `/super-admin/agentes` →
-"Agente personalizado por negocio": any business marked "Apagado (tiene canales)" was missed.
+"Agente personalizado por negocio": any business marked "Apagado (tiene agente activo)" was missed.
 
 ## 5. Backfill old feedback tickets (optional, GO)
 

@@ -86,7 +86,8 @@ export default function CustomAgentAccessPanel() {
       const res = await fetch(`/api/super-admin/tenants/${encodeURIComponent(row.id)}/custom-agents`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled, agentIds: picked }),
+        // Agent ids only for the row whose list is open (else the server keeps the saved ones).
+        body: JSON.stringify(openId === row.id ? { enabled, agentIds: picked } : { enabled }),
       })
       const json = (await res.json().catch(() => ({}))) as { error?: string; ownerNotified?: boolean }
       if (!res.ok) setMessage(json.error || 'No se pudo guardar.')
@@ -141,7 +142,7 @@ export default function CustomAgentAccessPanel() {
             <tr>
               <th className="py-1 pr-3 font-medium">Negocio</th>
               <th className="py-1 pr-3 font-medium">Agentes</th>
-              <th className="py-1 pr-3 font-medium">Canales activos</th>
+              <th className="py-1 pr-3 font-medium">Bindings activos</th>
               <th className="py-1 pr-3 font-medium">Estado</th>
               <th className="py-1 font-medium" />
             </tr>
@@ -185,7 +186,7 @@ export default function CustomAgentAccessPanel() {
                       <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700">Encendido</span>
                     ) : (
                       <span className={`rounded-full px-2 py-0.5 ${atRisk ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
-                        {atRisk ? 'Apagado (tiene canales)' : 'Apagado'}
+                        {atRisk ? 'Apagado (tiene agente activo)' : 'Apagado'}
                       </span>
                     )}
                   </td>

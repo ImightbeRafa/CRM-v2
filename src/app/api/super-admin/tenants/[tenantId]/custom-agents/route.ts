@@ -60,7 +60,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const before = await readCustomAgentsFlag(tenantId)
   const now = new Date().toISOString()
   const config = {
-    agentIds: requested.length ? requested : before?.config.agentIds ?? [],
+    // Omitted = keep the saved list; [] clears it.
+    agentIds: parsed.data.agentIds !== undefined ? requested : before?.config.agentIds ?? [],
     enabledBy: guard.userId,
     enabledAt: parsed.data.enabled ? (before?.enabled ? before.config.enabledAt ?? now : now) : before?.config.enabledAt ?? null,
   }

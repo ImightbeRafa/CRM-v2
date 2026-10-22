@@ -40,10 +40,17 @@ export async function GET(request: NextRequest) {
       where: { createdAt: { gt: since } },
       orderBy: { createdAt: 'asc' },
       take: 50,
-      select: { payload: true },
+      select: { payload: true, createdAt: true },
     })
+    // next_since = the last event's own time (payload created_at is the ticket's); pass it back to page on.
+    const last = rows.at(-1)
     return NextResponse.json(
-      { since: since.toISOString(), events: rows.map((r) => r.payload) },
+      {
+        since: since.toISOString(),
+        next_since: last ? last.createdAt.toISOString() : since.toISOString(),
+        has_more: rows.length === 50,
+        events: rows.map((r) => r.payload),
+      },
       { headers: { 'Cache-Control': 'no-store' } },
     )
   } catch (error) {

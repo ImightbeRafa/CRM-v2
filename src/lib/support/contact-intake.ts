@@ -51,8 +51,15 @@ async function sessionContext(request: Request) {
   }
 }
 
-export async function handleContactIntake(request: Request, raw: unknown): Promise<ContactIntakeResult> {
-  const parsed = contactSchema.safeParse(raw)
+/** Old /api/contact callers could send any non-empty message: keep that for the legacy route. */
+const legacyContactSchema = contactSchema.extend({ message: z.string().trim().min(1).max(SUPPORT_LIMITS.messageMax) })
+
+export async function handleContactIntake(
+  request: Request,
+  raw: unknown,
+  opts: { legacyRoute?: boolean } = {},
+): Promise<ContactIntakeResult> {
+  const parsed = (opts.legacyRoute ? legacyContactSchema : contactSchema).safeParse(raw)
   if (!parsed.success) {
     return {
       kind: 'invalid',

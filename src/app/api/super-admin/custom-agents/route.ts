@@ -18,12 +18,18 @@ export async function GET(request: NextRequest) {
   const [tenants, flags, agents, bindings] = await Promise.all([
     prisma.tenant.findMany({ select: { id: true, name: true, plan: true, isActive: true }, orderBy: { name: 'asc' }, take: 1000 }),
     prisma.tenantFeatureFlag.findMany({ where: { key: CUSTOM_AGENTS_FLAG }, select: { scope: true, enabled: true, config: true, updatedAt: true } }),
-    prisma.chatAgent.groupBy({ by: ['tenantId'], _count: { _all: true } }),
-    prisma.chatAgentBinding.groupBy({ by: ['tenantId'], where: { isActive: true, scope: 'social_account' }, _count: { _all: true } }),
+    // AI agents only: the auto-created human_only default agent is not something to protect.
+    prisma.chatAgent.findMany({ where: { NOT: { operationMode: 'human_only' } }, select: { id: true, tenantId: true } }),
+    prisma.chatAgentBinding.findMany({ where: { isActive: true }, select: { tenantId: true, agentId: true } }),
   ])
   const flagBy = new Map(flags.map((f) => [f.scope, f]))
-  const agentsBy = new Map(agents.map((a) => [a.tenantId, a._count._all]))
-  const bindingsBy = new Map(bindings.map((b) => [b.tenantId, b._count._all]))
+  const aiAgentIds = new Set(agents.map((a) => a.id))
+  const agentsBy = new Map<string, number>()
+  for (const a of agents) agentsBy.set(a.tenantId, (agentsBy.get(a.tenantId) ?? 0) + 1)
+  const bindingsBy = new Map<string, number>()
+  for (const b of bindings) {
+    if (aiAgentIds.has(b.agentId)) bindingsBy.set(b.tenantId, (bindingsBy.get(b.tenantId) ?? 0) + 1)
+  }
   return NextResponse.json(
     {
       gateActive: supportPipelineEnabled(),

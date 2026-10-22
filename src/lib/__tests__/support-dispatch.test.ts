@@ -151,3 +151,13 @@ test('email config defaults and env overrides (no hardcoded addresses elsewhere)
   assert.equal(legacy.to, 'betsycrm.cr@gmail.com')
   assert.equal(legacy.subject, 'Contact Form: Hi Bcc: z@z.com')
 })
+
+test('mail sends are time-boxed (a hung Resend call never stalls the dispatcher)', async () => {
+  const { withMailTimeout } = await import('../support/dispatcher')
+  const hung = withMailTimeout(() => new Promise(() => undefined), 20)
+  assert.deepEqual(await hung({ from: 'a', to: 'b', subject: 's', html: '', text: '' }), { ok: false, error: 'mail_timeout' })
+  const thrower = withMailTimeout(async () => { throw new Error('x') }, 1000)
+  assert.deepEqual(await thrower({ from: 'a', to: 'b', subject: 's', html: '', text: '' }), { ok: false, error: 'mail_throw' })
+  const fine = withMailTimeout(async () => ({ ok: true as const, id: 'm1' }), 1000)
+  assert.deepEqual(await fine({ from: 'a', to: 'b', subject: 's', html: '', text: '' }), { ok: true, id: 'm1' })
+})

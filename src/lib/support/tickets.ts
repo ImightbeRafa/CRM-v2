@@ -72,9 +72,11 @@ function newEventId(): string {
   return `evt_${randomUUID().replace(/-/g, '')}`
 }
 
-async function tenantSummary(tenantId: string | null) {
+type TenantReader = { tenant: { findUnique: typeof prisma.tenant.findUnique } }
+
+async function tenantSummary(db: TenantReader, tenantId: string | null) {
   if (!tenantId) return null
-  const t = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, name: true, plan: true } })
+  const t = await db.tenant.findUnique({ where: { id: tenantId }, select: { id: true, name: true, plan: true } })
   return t ? { id: t.id, name: t.name, plan: t.plan ? String(t.plan) : null } : null
 }
 
@@ -123,7 +125,7 @@ export async function createSupportTicket(input: CreateSupportTicketInput): Prom
   const priority = isOneOf(SUPPORT_PRIORITIES, input.priority) ? input.priority : 'normal'
   const backfill = input.backfill && isOneOf(SUPPORT_STATUSES, input.backfill.status) ? input.backfill : null
   const status = backfill ? backfill.status : input.status === 'spam' ? 'spam' : 'open'
-  const tenant = await withSupportTables(() => tenantSummary(input.tenantId))
+  const tenant = await withSupportTables(() => tenantSummary(prisma, input.tenantId))
   const now = backfill ? backfill.createdAt : new Date()
 
   return withSupportTables(() =>
@@ -178,7 +180,8 @@ async function enqueueEvent(
 ) {
   const ticket = await tx.supportTicket.findUnique({ where: { id: ticketId } })
   if (!ticket || ticket.status === 'spam') return
-  const tenant = await tenantSummary(ticket.tenantId)
+  // Same transaction client: a second connection here deadlocks with connection_limit=1.
+  const tenant = await tenantSummary(tx, ticket.tenantId)
   const id = newEventId()
   const payload = buildTicketEventPayload(type, eventInput(ticket, description, tenant), {
     deliveryId: id,

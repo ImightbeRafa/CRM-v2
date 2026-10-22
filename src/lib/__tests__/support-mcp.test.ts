@@ -130,3 +130,16 @@ test('externalLinks lists only non-Betsy hosts', () => {
   assert.deepEqual(externalLinks('https://betsycrm.com/x https://www.instagram.com/betsy_crm/'), [])
   assert.equal(externalLinks('mirá https://betsycrm.com.evil.io/x').length, 1)
 })
+
+test('support_update_ticket / set_status cannot undo the draft rule', async () => {
+  const { agentUpdateRefusal } = await import('../support/mcp/reply-policy')
+  const drafts = new Set(['billing', 'agent_request'])
+  const open = { status: 'open', category: 'question', assignee: 'grok_agent' }
+  assert.equal(agentUpdateRefusal(open, { status: 'resolved', category: 'bug' }, drafts), null)
+  assert.match(agentUpdateRefusal({ ...open, category: 'billing' }, { category: 'question' }, drafts)!, /categoría/)
+  assert.equal(agentUpdateRefusal({ ...open, category: 'billing' }, { category: 'agent_request' }, drafts), null)
+  assert.match(agentUpdateRefusal({ ...open, status: 'spam' }, { status: 'open' }, drafts)!, /spam/)
+  assert.match(agentUpdateRefusal({ ...open, status: 'escalated' }, { status: 'resolved' }, drafts)!, /escalado/)
+  assert.match(agentUpdateRefusal({ ...open, assignee: 'rafael' }, { priority: 'low' } as never, drafts)!, /escalado/)
+  assert.match(agentUpdateRefusal(open, { status: 'escalated' }, drafts)!, /support_escalate/)
+})

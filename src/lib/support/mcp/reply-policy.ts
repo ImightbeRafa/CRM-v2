@@ -30,6 +30,29 @@ export function externalLinks(text: string): string[] {
   return out
 }
 
+/**
+ * support_update_ticket limits, so the agent cannot undo what makes a reply a draft:
+ * no moving a ticket out of a draft category, no un-spamming, no touching a ticket escalated to
+ * Rafael. Returns the refusal reason, or null when allowed.
+ */
+export function agentUpdateRefusal(
+  current: { status: string; category: string; assignee: string },
+  patch: { status?: string; category?: string },
+  draftCategories: Set<string>,
+): string | null {
+  if (current.assignee === 'rafael' || current.status === 'escalated') {
+    return 'Ticket escalado: solo Rafael lo cambia.'
+  }
+  if (current.status === 'spam' && patch.status && patch.status !== 'spam') {
+    return 'Solo Rafael saca un ticket de spam.'
+  }
+  if (patch.category && draftCategories.has(current.category) && !draftCategories.has(patch.category)) {
+    return `Solo Rafael cambia la categoría de un ticket ${current.category}.`
+  }
+  if (patch.status === 'escalated') return 'Usá support_escalate para escalar.'
+  return null
+}
+
 export type ReplyDecision =
   | { action: 'refuse'; reason: string }
   | { action: 'draft'; reason: string }

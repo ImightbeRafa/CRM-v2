@@ -78,7 +78,7 @@ test('routes never fetch the webhook inline; only the dispatcher posts to it', (
 
 test('contact intake order: validate → rate limit → Turnstile → spam → ticket/legacy', () => {
   const src = read('src/lib/support/contact-intake.ts')
-  const order = ['contactSchema.safeParse', 'ipLimiter(', 'emailLimiter(', 'verifyTurnstile(', 'checkSpam(', 'createSupportTicket(']
+  const order = ['contactSchema).safeParse', 'ipLimiter(', 'emailLimiter(', 'verifyTurnstile(', 'checkSpam(', 'createSupportTicket(']
   let last = -1
   for (const step of order) {
     const i = src.indexOf(step, last + 1)
@@ -180,4 +180,18 @@ test('/soporte renders contact info from config and never hardcodes addresses', 
   for (const f of [...walk('src/app/soporte'), ...walk('src/components/aurora/agentes').filter((p) => /Sales|CustomAgentGate/.test(p))]) {
     assert.doesNotMatch(read(f), /hola@betsycrm\.com|50662470831|betsycrm\.cr@gmail\.com/, f)
   }
+})
+
+test('review fixes: tx-only tenant lookup in transactions, dispatcher time budget, feedback rate limit', () => {
+  const tickets = read('src/lib/support/tickets.ts')
+  assert.match(tickets, /tenantSummary\(tx, ticket\.tenantId\)/)
+  assert.doesNotMatch(tickets.slice(tickets.indexOf('async function enqueueEvent')), /tenantSummary\(prisma/)
+  const d = read('src/lib/support/dispatcher.ts')
+  assert.match(d, /Date\.now\(\) - started > \(opts\.budgetMs \?\? 45_000\)/)
+  assert.match(d, /withMailTimeout\(opts\.send \?\? resendSender, 10_000\)/)
+  const fb = read('src/app/api/feedback/route.ts')
+  assert.match(fb, /feedbackLimiter\(`user:\$\{userId\}`\)/)
+  assert.match(fb, /identifier: 'support-ticket-user'/)
+  assert.match(read('src/app/api/contact/route.ts'), /handleContactIntake\(request, raw, \{ legacyRoute: true \}\)/)
+  assert.match(read('src/app/api/support/events/route.ts'), /next_since/)
 })

@@ -5,11 +5,15 @@ import { withTenantContext } from '@/lib/tenantContext';
 import { supportPipelineEnabled } from '@/lib/support/config';
 import { dispatchPendingSupportEvents } from '@/lib/support/dispatcher';
 import { viewerContact } from '@/lib/support/session';
+import { createIdentifierRateLimit } from '@/lib/rate-limit';
 import {
   SupportTablesMissingError,
   createSupportTicket,
   listFeedbackShapedTickets,
 } from '@/lib/support/tickets';
+
+// Shares its bucket with /api/support/tickets (same identifier): 10 tickets per person per hour.
+const feedbackLimiter = createIdentifierRateLimit({ windowMs: 60 * 60_000, maxRequests: 10, identifier: 'support-ticket-user' });
 
 /**
  * In-app feedback (FeedbackWidget). With SUPPORT_PIPELINE_ENABLED=true it goes through the support
@@ -79,6 +83,10 @@ export async function POST(request: NextRequest) {
     const safeCategory = validCategories.includes(category) ? category : 'other';
 
     if (supportPipelineEnabled()) {
+      // Each ticket mails the support inbox + the agent: same per-person cap as /api/support/tickets.
+      if (!(await feedbackLimiter(`user:${userId}`)).allowed) {
+        return NextResponse.json({ error: 'Demasiados tickets. Probá más tarde.' }, { status: 429 });
+      }
       const contact = await viewerContact(userId);
       if (contact) {
         try {

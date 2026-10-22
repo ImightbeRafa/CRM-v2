@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   if (typeof raw.email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw.email)) {
     return NextResponse.json({ error: 'Invalid email format' }, { status: 400 });
   }
-  const result = await handleContactIntake(request, raw);
+  const result = await handleContactIntake(request, raw, { legacyRoute: true });
   switch (result.kind) {
     case 'invalid':
       return NextResponse.json({ error: 'All fields are required' }, { status: 400 });

@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, id: ticket.id, ticketNumber: ticket.ref }, { status: 201 })
   } catch (error) {
     if (error instanceof SupportTablesMissingError) {
-      return NextResponse.json({ error: 'support_unavailable' }, { status: 503 })
+      return NextResponse.json({ error: 'El soporte no está disponible en este momento. Escribinos por WhatsApp o correo.' }, { status: 503 })
     }
     throw error
   }

@@ -68,8 +68,8 @@ Once the switch is on, only businesses with the flag (or super admins) can open 
 The live agent keeps replying regardless; this only protects the editor.
 
 ```bash
-npx tsx scripts/seed-custom-agents-flag.ts                        # dry run: prints the list
-SEED_CUSTOM_AGENTS_APPLY=1 npx tsx scripts/seed-custom-agents-flag.ts --apply
+npx tsx --import ./scripts/shim-server-only.mjs scripts/seed-custom-agents-flag.ts                        # dry run: prints the list
+SEED_CUSTOM_AGENTS_APPLY=1 npx tsx --import ./scripts/shim-server-only.mjs scripts/seed-custom-agents-flag.ts --apply
 ```
 
 Picks: active channel binding to a non-`human_only` agent, or an agent turn in 30 days, plus DeepSleep.

@@ -15,6 +15,7 @@ import type { ScenarioStep } from '@/lib/soft-ai/probar-scenarios'
 import { normalizeForRepeat } from '@/lib/soft-ai/repeat-guard'
 import { redactSensitiveForProvider } from '@/lib/soft-ai/llm/redact'
 import { arg, loadPack } from './pack'
+import { looksLikeDataBlock, scrubChatText } from './chat-scrub'
 
 /** agoMin (C5): minutes before the step's message it was sent (real chats keep their real gaps). */
 export type ExamHistoryLine = { direction: 'inbound' | 'outbound'; content: string; agoMin?: number }
@@ -62,7 +63,7 @@ const ADDRESS_WORDS = /\b(calle|avenida|ave\.?|casa|frente|metros|esquina|barrio
 const L_BEFORE = String.raw`(?<![\p{L}\p{N}])`
 const L_AFTER = String.raw`(?![\p{L}\p{N}])`
 
-export function redactCustomerText(text: string, peerName?: string | null): string {
+export function redactCustomerText(text: string, peerName?: string | null, opts: { store?: boolean } = {}): string {
   let t = redactSensitiveForProvider(text || '')
   t = t.replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[correo]')
   t = t.replace(/(?<![\p{L}\p{N}])@[\w.]{2,30}/gu, '[usuario]')
@@ -78,12 +79,33 @@ export function redactCustomerText(text: string, peerName?: string | null): stri
     if (/^(de|del|la|el|una?|cliente|nuev[oa]|mayor|menor|estudiante|al[eé]rgic[oa])\b/iu.test(words)) return `${intro} ${words}`
     return `${intro} [nombre] `
   })
+  // DATA-65: greeted names, links and tracking numbers too (same scrubber as export-chats).
+  t = scrubChatText(t, { collapseDataBlocks: false, tidy: false })
   // Judged on the ORIGINAL text: the '[nombre]' placeholder must never count as a data-form label.
   const original = text || ''
   const addressHits = (original.match(ADDRESS_WORDS) || []).length
   const dataLabels = (original.match(/(?<![\p{L}\p{N}])(nombre( completo)?|tel[eé]fono|celular|provincia|cant[oó]n|distrito|direcci[oó]n|señas|correo)(?![\p{L}\p{N}])/giu) || []).length
-  if (dataLabels >= 2 || addressHits >= 2 || (addressHits >= 1 && /\[número\]/.test(t))) return SYNTHETIC_DATA
+  // A store / agent message is never a customer's data block: its data list ("Nombre completo / Teléfono / Provincia…")
+  // stays readable (the reviewer must see what the agent asked); names, numbers and links are still masked above.
+  if (opts.store) return t
+  if (dataLabels >= 2 || addressHits >= 2 || (addressHits >= 1 && /\[número\]/.test(t)) || looksLikeDataBlock(original, t)) return SYNTHETIC_DATA
   return t
+}
+
+/**
+ * Reviewer input ("CLIENTE: …" / "AGENTE: …" / "TIENDA: …" lines): redacted line by line, so one customer data block
+ * becomes the synthetic block on its own line instead of wiping the whole chat, and store lines keep their data list.
+ */
+export function redactChatForReviewer(chat: string): string {
+  // A message can span lines: lines without a "WHO:" prefix belong to the message above.
+  const entries: Array<{ who: string; text: string }> = []
+  for (const line of (chat || '').split('\n')) {
+    const m = /^(CLIENTE|AGENTE|TIENDA|EQUIPO):\s?(.*)$/.exec(line)
+    if (m) entries.push({ who: m[1], text: m[2] })
+    else if (entries.length) entries[entries.length - 1].text += `\n${line}`
+    else entries.push({ who: 'CLIENTE', text: line })
+  }
+  return entries.map((e) => `${e.who}: ${e.who === 'CLIENTE' ? redactCustomerText(e.text) : redactCustomerText(e.text, null, { store: true })}`).join('\n')
 }
 
 const ASKS_PERSON = /\b(asesor|asesora|persona|humano|alguien que me atienda|hablar con alguien|agente)\b/iu

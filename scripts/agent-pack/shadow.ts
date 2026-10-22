@@ -21,7 +21,7 @@ import { isWithinBusinessHours, parseBusinessHours } from '@/lib/soft-ai/busines
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { arg, loadPack } from './pack'
 import { codeChecks, reviewerKnowledge } from './exam'
-import { redactCustomerText } from './exam-bank'
+import { redactChatForReviewer, redactCustomerText } from './exam-bank'
 import { withExamSession } from './test-session'
 
 const BURST_MS = 90_000
@@ -49,7 +49,7 @@ async function compare(input: { tenantId: string; knowledge: string; history: st
         'Las frases del sitio ("apoya…", "ayuda a reducir antojos", "acompaña el ánimo") NO son promesas. Nombrar los métodos de pago para preguntar cuál prefiere es CORRECTO. De noche decir cuándo escribe el equipo es CORRECTO.',
         'Respondé solo el JSON; reason: una frase corta.',
       ].join('\n'),
-      input: [{ type: 'message', role: 'user', content: [`CONOCIMIENTO:\n${input.knowledge}`, `HORARIO: ${input.night ? 'de noche' : 'de día'}`, `CHAT ANTERIOR:\n${redactCustomerText(input.history) || '(nada)'}`, `CLIENTE: ${redactCustomerText(input.customer)}`, `AGENTE IA: ${redactCustomerText(input.agent) || '(no respondió)'}`, `EQUIPO: ${input.team ? redactCustomerText(input.team) : '(no respondió)'}`].join('\n\n') }],
+      input: [{ type: 'message', role: 'user', content: [`CONOCIMIENTO:\n${input.knowledge}`, `HORARIO: ${input.night ? 'de noche' : 'de día'}`, `CHAT ANTERIOR:\n${redactChatForReviewer(input.history) || '(nada)'}`, `CLIENTE: ${redactCustomerText(input.customer)}`, `AGENTE IA: ${redactCustomerText(input.agent, null, { store: true }) || '(no respondió)'}`, `EQUIPO: ${input.team ? redactCustomerText(input.team, null, { store: true }) : '(no respondió)'}`].join('\n\n') }],
       reasoningEffort: 'low',
       maxOutputTokens: 300,
       timeoutMs: 30_000,
@@ -102,7 +102,7 @@ async function main() {
         if (next && next.direction === 'inbound' && next.sentAt.getTime() - m.sentAt.getTime() <= BURST_MS) continue
         // SecureDog L2: the replay itself is redacted (names, phones, addresses) and the customer is just "Cliente".
         // Burst = one reply: each message keeps its type, so a photo earlier in the burst is planned like live.
-        const history = msgs.slice(Math.max(0, i - 24), i).map((h) => ({ direction: (h.direction === 'inbound' ? 'inbound' : 'outbound') as 'inbound' | 'outbound', content: redactCustomerText(h.content || `[${h.messageType}]`, c.peerName), sentAt: h.sentAt.toISOString(), messageType: h.messageType }))
+        const history = msgs.slice(Math.max(0, i - 24), i).map((h) => ({ direction: (h.direction === 'inbound' ? 'inbound' : 'outbound') as 'inbound' | 'outbound', content: redactCustomerText(h.content || `[${h.messageType}]`, c.peerName, { store: h.direction !== 'inbound' }), sentAt: h.sentAt.toISOString(), messageType: h.messageType }))
         const night = Boolean(schedule.enabled) && !isWithinBusinessHours(schedule, m.sentAt)
         const text = redactCustomerText(m.messageType === 'text' ? m.content || '' : `[${m.messageType}] ${m.content || ''}`.trim(), c.peerName)
         const r = await runAgentTestTurn({ tenantId, agentId: agent.id, inboundText: text, socialAccountId: account, actorUserId: user.id, testSessionId: randomUUID(), history, customerName: 'Cliente', modelOverride: LUNA_CHAT_AGENT_MODEL, usageFeature: 'agent_test', simulateAfterHours: night, replaySentAt: m.sentAt, messageType: (m.messageType as 'text' | 'image' | 'audio' | 'document' | 'video') || 'text' })
@@ -116,9 +116,9 @@ async function main() {
           at: m.sentAt.toISOString(),
           night,
           customer: redactCustomerText(text, c.peerName),
-          agent: redactCustomerText(r.text, c.peerName),
+          agent: redactCustomerText(r.text, c.peerName, { store: true }),
           handoff: r.handoff ? `${r.handoff.kind}:${r.handoff.reason}` : null,
-          team: team?.content ? redactCustomerText(team.content, c.peerName) : null,
+          team: team?.content ? redactCustomerText(team.content, c.peerName, { store: true }) : null,
           teamMinutes: team ? Math.round((team.sentAt.getTime() - m.sentAt.getTime()) / 60_000) : null,
           findings,
           review,

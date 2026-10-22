@@ -9,6 +9,7 @@ import {
   claimJobById,
   claimBatch,
   completeJob,
+  rescheduleJob,
   completeLateJob,
   failJob,
   NEWEST_BURST_JOB_ORDER,
@@ -181,6 +182,11 @@ export async function processClaimedJob(row: ClaimedChatAutomationJob, opts?: { 
   const work = dispatch(row)
   try {
     const result = await withProcessingTimeout(work)
+    if (result && typeof result === 'object' && 'status' in result && result.status === 'provider_retry') {
+      // Lane D: provider outage — same job, later (never completed, never failed).
+      await rescheduleJob(row, result.retryAt, result.payload)
+      return { id: row.id, status: 'completed' as const }
+    }
     await completeJob(row)
     // Burst = one reply: a job that yielded to a newer bubble always hands over to it (also a kicked job), so the
     // newer job never waits for the cron. Bounded: a job only yields while a newer one is queued.

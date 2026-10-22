@@ -49,6 +49,8 @@ export const HANDOFF_REASON = {
   unknownAnswer: 'unknown_answer',
   /** The business's AI allowance for the period is used up (ai-allowance.ts): a person answers. */
   aiAllowance: 'ai_allowance',
+  /** Lane D 2026-10-22: the AI provider stayed down (no credit / errors) through the retries: a person answers. */
+  aiUnavailable: 'ai_unavailable',
 } as const
 
 /**

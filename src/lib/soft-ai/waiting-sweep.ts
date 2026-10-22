@@ -286,7 +286,7 @@ async function prepareConversation(
     const [jobRow, inflight] = await Promise.all([
       prisma.chatAutomationJob.findUnique({
         where: { deliveryKey },
-        select: { id: true, tenantId: true, status: true, attempts: true, _count: { select: { deliveries: { where: { NOT: { deliveryKey: { endsWith: ':waiting_ack' } } } } } } },
+        select: { id: true, tenantId: true, status: true, attempts: true, _count: { select: { deliveries: { where: { AND: [{ NOT: { deliveryKey: { endsWith: ':waiting_ack' } } }, { NOT: { deliveryKey: { endsWith: ':outage_ack' } } }] } } } } },
       }),
       prisma.chatAutomationJob.findFirst({
         where: {

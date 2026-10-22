@@ -219,7 +219,8 @@ describe('C · re-queue is conditional and never resends', () => {
     assert.match(fn, /tenantId: input\.tenantId,/)
     assert.match(fn, /status: \{ in: \['completed', 'failed'\] \}/)
     // luna-10 (verifier round 2): only the ":waiting_ack" delivery is ignored; any real reply still blocks a re-arm.
-    assert.match(fn, /deliveries: \{ none: \{ NOT: \{ deliveryKey: \{ endsWith: ':waiting_ack' \} \} \} \}/)
+    // Lane D: the outage line ("Dame un momento" during a provider outage) is not an answer either.
+    assert.match(fn, /deliveries: \{ none: \{ AND: \[\{ NOT: \{ deliveryKey: \{ endsWith: ':waiting_ack' \} \} \}, \{ NOT: \{ deliveryKey: \{ endsWith: ':outage_ack' \} \} \}\] \} \}/)
     assert.match(fn, /status: 'pending'/)
     assert.doesNotMatch(fn, /ambiguous|processing/)
   })

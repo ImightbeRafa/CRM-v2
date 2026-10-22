@@ -8,6 +8,7 @@ import 'server-only'
 import OpenAI from 'openai'
 import { DEFAULT_CHAT_AGENT_MODEL, isAllowedChatAgentModel } from '@/lib/soft-ai/agent-types'
 import { aiErrorCode, recordAiUsage, type AiUsageFeature } from '@/lib/ai-usage/record'
+import { assertTestBudget, noteProviderFailure, noteProviderOk } from '@/lib/soft-ai/provider-outage'
 
 export const SOFT_AI_OPENAI_BASE_URL = 'https://api.openai.com/v1'
 // Measured 2026-10-09: an answer after a tool call can take >7 s (every follow-up timed out at 7 s → human
@@ -135,6 +136,8 @@ export async function softAiResponsesCreate(args: SoftAiResponsesCreateArgs) {
   const body = buildSoftAiResponsesBody({ ...args, model })
   const started = Date.now()
   const keyLabel = 'SOFT_AI_OPENAI_API_KEY'
+  // Lane D 2026-10-22: test calls (Probar / exams) stop at their own daily cap before spending live credit.
+  await assertTestBudget(args.usage?.feature)
   try {
     const response = await client.responses.create(
       body as unknown as OpenAI.Responses.ResponseCreateParamsNonStreaming,
@@ -151,6 +154,7 @@ export async function softAiResponsesCreate(args: SoftAiResponsesCreateArgs) {
       reasoningTokens: used.reasoningTokens,
       latencyMs: Date.now() - started,
     })
+    void noteProviderOk()
     return response
   } catch (error) {
     // Failed calls are metered too (a timeout can still be billed and shows up as an error in the dashboard).
@@ -162,6 +166,8 @@ export async function softAiResponsesCreate(args: SoftAiResponsesCreateArgs) {
       status: 'error',
       errorCode: aiErrorCode(error),
     })
+    // Lane D: an outage (no credit / 429 / auth / 5xx) alerts the platform owner once per incident.
+    void noteProviderFailure(error)
     throw error
   }
 }

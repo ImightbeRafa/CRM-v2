@@ -43,6 +43,7 @@ import {
 import {
   collectDryRunBlockers,
   hashSoftAiOutput,
+  agentWindowOpen,
   hasHumanRepliedAfter,
   loadDailyTestTokens,
   runClaimGates,
@@ -55,6 +56,7 @@ import {
   type ResolvedChatAgent,
 } from '@/lib/soft-ai/agent-resolver'
 import { burstCustomerText, conversationPaymentContext, recentCustomerTexts, runSoftAiLlmRuntime } from '@/lib/soft-ai/llm/runtime'
+import { planProviderRetry, readProviderRetryState, type ProviderFailureKind } from '@/lib/soft-ai/provider-outage-core'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import {
   CHAT_AGENT_LAYER_V1_FLAG,
@@ -745,6 +747,159 @@ async function ackWaitingCustomer(input: {
   }
 }
 
+/** Lane D 2026-10-22: delivery key of the one "Dame un momento" line a provider outage sends for a customer message. */
+export const OUTAGE_ACK_SUFFIX = ':outage_ack'
+
+/**
+ * Lane D 2026-10-22 (OpenAI 429 "no credits" outage stranded 23 chats on the safe line, still "IA activa"): a provider
+ * failure on a live turn never strands the chat. Plan (provider-outage-core planProviderRetry): silent retry of the
+ * SAME customer message at +2 min; later failures send the safe line once (own delivery key, so the real answer can
+ * still go out) and keep retrying (5/15/30/60 min); after ~2 h, or before the 24 h window would close, the chat goes to
+ * a person like any hand-off (aiMode human, assigned, bell "IA sin servicio"). Every retry re-runs the whole turn, so a
+ * person's reply, a newer customer message, the kill switch or a closed window still stop it.
+ */
+async function handleProviderOutage(input: {
+  row: ClaimedChatAutomationJob
+  payload: JobPayload
+  agent: ResolvedChatAgent
+  bindingId: string | null
+  kind: ProviderFailureKind
+  triggerSentAt: Date
+  hours: AfterHoursState
+}): Promise<AgentTurnDispatchResult> {
+  const { row } = input
+  const now = new Date()
+  const plan = planProviderRetry({
+    previous: readProviderRetryState(row.payload),
+    kind: input.kind,
+    now,
+    windowClosesAt: new Date(input.triggerSentAt.getTime() + 24 * 3_600_000),
+  })
+  await persistSkippedTurn({
+    tenantId: row.tenantId,
+    conversationId: row.conversationId,
+    socialAccountId: row.socialAccountId,
+    agent: input.agent,
+    bindingId: input.bindingId,
+    triggerMessageId: row.messageId,
+    deliveryKey: row.deliveryKey,
+    skipReason: plan.action === 'retry' ? 'provider_retry' : 'provider_down',
+  })
+  if (plan.sendAck) await sendOutageLine({ ...input, now })
+  if (plan.action === 'retry') {
+    const raw = row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload) ? (row.payload as Record<string, unknown>) : {}
+    return { status: 'provider_retry', retryAt: plan.retryAt, payload: { ...raw, providerRetry: plan.state } }
+  }
+  await settleHandoff(row, { kind: 'handoff', reason: HANDOFF_REASON.aiUnavailable }, input.hours)
+  return { status: 'skipped', reason: 'provider_down' }
+}
+
+/** The one safe line of an outage ("Dame un momento y te confirmo 😊"), with the waiting ack's gates. Never throws. */
+async function sendOutageLine(input: {
+  row: ClaimedChatAutomationJob
+  payload: JobPayload
+  agent: ResolvedChatAgent
+  bindingId: string | null
+  triggerSentAt: Date
+  now: Date
+}): Promise<void> {
+  const { row } = input
+  const platform = input.payload.platform || 'whatsapp'
+  try {
+    // A person answered, the chat is with a person / paused, or the 24 h window closed: nothing goes out.
+    if (!agentWindowOpen(platform, input.triggerSentAt, input.now.getTime())) return
+    if (await hasHumanRepliedAfter({ conversationId: row.conversationId, triggerSentAt: input.triggerSentAt })) return
+    const conv = await prisma.chatConversation.findFirst({ where: { id: row.conversationId, tenantId: row.tenantId }, select: { aiMode: true, peerName: true } })
+    if (!conv || conv.aiMode === 'human' || conv.aiMode === 'paused') return
+    const text = SAFE_LINE.review
+    let ackTurnId: string
+    try {
+      const created = await prisma.chatAgentTurn.create({
+        data: {
+          tenantId: row.tenantId,
+          conversationId: row.conversationId,
+          socialAccountId: row.socialAccountId,
+          agentId: input.agent.id,
+          bindingId: input.bindingId,
+          triggerMessageId: null,
+          automationDeliveryKey: `${row.deliveryKey}${OUTAGE_ACK_SUFFIX}`,
+          mode: input.agent.operationMode,
+          model: input.agent.model,
+          agentVersion: input.agent.version,
+          status: 'generated',
+          intent: 'outage_ack',
+          outputText: text,
+          outputHash: hashSoftAiDeliveryContent(text),
+        },
+        select: { id: true },
+      })
+      ackTurnId = created.id
+    } catch (error) {
+      // The unique delivery key is the lock: one line per customer message, whatever the retries.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return
+      throw error
+    }
+    const account = await prisma.socialAccount.findFirst({
+      where: { id: row.socialAccountId, tenantId: row.tenantId },
+      select: { accessToken: true, refreshToken: true, accountId: true, pageId: true, isActive: true, disconnectedAt: true, tokenStatus: true },
+    })
+    const accessToken = account?.accessToken ? decryptSocialAccessToken(account.accessToken) : null
+    const tokenStatus = String(account?.tokenStatus || '').toLowerCase()
+    const lineHealthy = Boolean(account && accessToken && account.isActive !== false && !account.disconnectedAt && tokenStatus !== 'revoked' && tokenStatus !== 'expired')
+    if (!lineHealthy || (await readAgentKillState(row.tenantId)).armed || (await isPlatformAiPaused())) {
+      await prisma.chatAgentTurn.update({ where: { id: ackTurnId }, data: { status: 'skipped', skipReason: lineHealthy ? 'kill_switch' : 'token_unhealthy', completedAt: new Date() } })
+      return
+    }
+    const meta = parseSocialRefreshToken(account!.refreshToken)
+    const outageDelivery = await deliverOnce({
+      jobId: row.id,
+      deliveryKey: `${row.deliveryKey}${OUTAGE_ACK_SUFFIX}`,
+      kind: 'text',
+      contentHash: hashSoftAiDeliveryContent(text),
+      send: async () => {
+        const result = await sendMetaText({ platform, accessToken: accessToken!, phoneNumberId: account!.accountId, pageId: account!.pageId || meta.pageId, recipient: row.peerId, text })
+        if (!result.ok) throw new Error('META_SEND_FAILED')
+        return result
+      },
+      providerDeliveryId: (result) => result.providerMessageId,
+    })
+    const providerMessageId = outageDelivery.providerDeliveryId || (!outageDelivery.skipped ? outageDelivery.result?.providerMessageId : undefined)
+    await dualWriteChatMessage({
+      tenantId: row.tenantId,
+      socialAccountId: row.socialAccountId,
+      direction: 'outbound',
+      content: text,
+      sentAt: new Date(),
+      peerId: row.peerId,
+      peerName: input.payload.senderName || conv.peerName || null,
+      providerMessageId: providerMessageId || null,
+      messageType: 'text',
+      // Not an answer: the customer's message stays waiting for the real reply (or a person).
+      deliveryStatus: 'sent',
+      platform,
+      metadata: {
+        softAi: true,
+        agentId: input.agent.id,
+        agentVersion: input.agent.version,
+        agentName: input.agent.name,
+        agentEmoji: input.agent.emoji,
+        turnId: ackTurnId,
+        to: row.peerId,
+        platform,
+        providerMessageId,
+        automationJobId: row.id,
+        deliverySkipped: outageDelivery.skipped,
+        replyBy: 'code',
+        outageAck: true,
+      },
+      suppressSoftAi: true,
+    })
+    await prisma.chatAgentTurn.update({ where: { id: ackTurnId }, data: { status: 'delivered', completedAt: new Date() } })
+  } catch (error) {
+    console.error('[soft-ai outage-ack]', { code: error instanceof Error ? error.message.slice(0, 60) : 'error' })
+  }
+}
+
 /**
  * Daily token caps sum turns by createdAt (agent-claim-gates loadDailyBilledTokens). A swept / resumed message re-runs
  * on the row first written when it was skipped (same delivery key), so the answering run re-stamps the row: today's
@@ -765,6 +920,8 @@ export type AgentTurnDispatchResult =
   | { status: 'suggested'; turnId: string }
   | { status: 'delivered'; turnId: string; skippedDelivery?: boolean; partialDelivery?: boolean }
   | { status: 'fallback'; turnId?: string }
+  /** Lane D: provider outage — the processor puts this same job back in the queue at retryAt with this payload. */
+  | { status: 'provider_retry'; retryAt: Date; payload: Record<string, unknown> }
   | { status: 'legacy' }
 
 /**
@@ -1329,6 +1486,19 @@ export async function executeAgentLayerTurn(
   })
   runtimeInput.budgetStartedAt = turnBudgetStartedAt
   const llm = await runSoftAiLlmRuntime(runtimeInput)
+  // Lane D 2026-10-22: the provider failed (no credit / 429 / auth / 5xx / timeout) and the fallback did not hand the chat
+  // over itself (a payment message still goes to a person at once): retry this message later, never strand the chat.
+  if (llm.fallbackUsed && llm.providerFailure && llm.handoff?.kind !== 'handoff') {
+    return handleProviderOutage({
+      row,
+      payload,
+      agent: resolved.agent,
+      bindingId: resolved.binding.id,
+      kind: llm.providerFailure,
+      triggerSentAt: trigger.sentAt,
+      hours,
+    })
+  }
 
   const policy = applyFinalOutputPolicy({
     text: llm.text,

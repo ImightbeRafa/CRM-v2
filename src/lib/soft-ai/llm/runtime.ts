@@ -2,6 +2,7 @@
  * Soft Agent Layer LLM runtime loop — ≤2 model calls, ≤4 tool calls.
  */
 
+import { classifyProviderFailure, type ProviderFailureKind } from '@/lib/soft-ai/provider-outage-core'
 import { extractShortcutTag } from '@/lib/soft-ai/reply-images'
 import {
   extractSoftAiFunctionCalls,
@@ -126,6 +127,8 @@ export type SoftAiLlmRuntimeResult = {
   latencyMs: number
   fallbackUsed: boolean
   errorCode?: string
+  /** Lane D 2026-10-22: the model call failed on the provider side (no credit / 429 / auth / 5xx / timeout / network). */
+  providerFailure?: ProviderFailureKind | null
   validationReasons?: string[]
   inventoryPrices?: number[]
   intent?: string
@@ -614,6 +617,7 @@ export async function runSoftAiLlmRuntime(
       latencyMs: Date.now() - started,
       fallbackUsed: true,
       errorCode,
+      providerFailure: classifyProviderFailure(error),
     }
   }
 }

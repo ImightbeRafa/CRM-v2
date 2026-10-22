@@ -32,6 +32,8 @@ const DATA_LABELS =
 const GREETED_NAME =
   /(?<![\p{L}])([Hh][Oo][Ll][Aa]+|[Bb]uen[oa]s(?: [Tt]ardes| [Nn]oches| [Dd][ií]as)?|(?:[Mm]uchas )?[Gg]racias|[Ss]aludos|[Ee]stimad[oa]|[Dd]on|[Dd]oña|[Cc]on gusto|[Cc]laro|[Pp]erfecto|[Ll]isto)([,!¡\s]+)((?:\p{Lu}[\p{Ll}'-]+\s?){1,3})/gu
 
+const SOCIAL_OR_MAP_LINK = /instagram\.com|instagr\.am|ig\.me|wa\.me|whatsapp\.com|facebook\.com|fb\.me|m\.me|tiktok\.com|maps\.app|goo\.gl|google\.[a-z.]+\/maps|waze\.com|correos\.go\.cr/i
+
 export const DATA_BLOCK = '[datos de envío del cliente]'
 
 /** Splits names ("María José Pérez", "@maria.jose_22") into words worth scrubbing (3+ letters, not common words). */
@@ -50,6 +52,8 @@ export function nameWords(...names: Array<string | null | undefined>): string[] 
 export type ScrubOptions = {
   /** Names known for this chat: contact name, IG username, order customer name. */
   names?: string[]
+  /** Keep plain web links (a store's own site in an agent / team reply); social, chat and map links still go. */
+  keepStoreLinks?: boolean
   /** Squeeze double spaces and trim (default true). */
   tidy?: boolean
   /** Collapse a message that is mostly a shipping-data block into one placeholder (default true). */
@@ -60,7 +64,10 @@ export function scrubChatText(text: string, opts: ScrubOptions = {}): string {
   const original = text || ''
   let t = redactSensitiveForProvider(original)
   // Links first (they contain @, digits and names).
-  t = t.replace(/https?:\/\/\S+|(?:www\.)?(?:instagram\.com|instagr\.am|ig\.me|wa\.me|facebook\.com|fb\.me|m\.me|tiktok\.com)\/\S*/giu, '[enlace]')
+  t = t.replace(/https?:\/\/\S+|(?:www\.)?(?:instagram\.com|instagr\.am|ig\.me|wa\.me|facebook\.com|fb\.me|m\.me|tiktok\.com)\/\S*/giu, (m) =>
+    // A store's own page ("https://forge.shopping") is not personal data; profiles, chats and maps pins are.
+    opts.keepStoreLinks && !SOCIAL_OR_MAP_LINK.test(m) ? m : '[enlace]',
+  )
   t = t.replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[correo]')
   t = t.replace(/(?<![\p{L}\p{N}])@[\w.]{2,30}/gu, '[usuario]')
   // Tracking: Correos (XX123456789CR), PY/courier guides and long codes with letters+digits.

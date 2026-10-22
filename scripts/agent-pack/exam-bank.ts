@@ -80,7 +80,7 @@ export function redactCustomerText(text: string, peerName?: string | null, opts:
     return `${intro} [nombre] `
   })
   // DATA-65: greeted names, links and tracking numbers too (same scrubber as export-chats).
-  t = scrubChatText(t, { collapseDataBlocks: false, tidy: false })
+  t = scrubChatText(t, { collapseDataBlocks: false, tidy: false, keepStoreLinks: opts.store })
   // Judged on the ORIGINAL text: the '[nombre]' placeholder must never count as a data-form label.
   const original = text || ''
   const addressHits = (original.match(ADDRESS_WORDS) || []).length

@@ -284,7 +284,11 @@
 .section {
   padding: 88px 0;
   position: relative;
-  /* Below-the-fold sections skip style/layout/paint until near the screen (auto keeps the measured height). */
+  scroll-margin-top: 72px;
+}
+/* Non-anchor sections below the fold skip style/layout/paint until near the screen (auto keeps the measured
+   height). Not used on #agente / #operacion / #precios / #contacto so anchor jumps land exactly. */
+.cv {
   content-visibility: auto;
   contain-intrinsic-size: auto 1100px;
 }
@@ -645,6 +649,25 @@
   background: linear-gradient(180deg, #5b6cff, #4f5ff0);
   color: #fff;
   border-bottom-right-radius: 5px;
+}
+/* A person on the team (not the agent) */
+.bubbleTeam {
+  background: var(--ink-2);
+}
+.dark .bubbleTeam,
+.storyStage .bubbleTeam {
+  background: #3a3a4a;
+}
+.demoTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.h3Big {
+  font-size: 22px !important;
+  line-height: 1.3 !important;
+  margin-top: 10px;
 }
 .bubbleMeta {
   align-self: flex-end;
@@ -1125,7 +1148,7 @@
 }
 .agentText {
   margin-top: 14px;
-  min-height: 66px;
+  min-height: 92px;
   font-size: 14.5px;
   line-height: 1.55;
   color: var(--muted);
@@ -1373,13 +1396,19 @@
 }
 /* looping decorations only run while their Reveal reports them on screen */
 .loop,
-.loop * {
+.loop *,
+.loop *::before,
+.loop *::after {
   animation-play-state: paused;
 }
 [data-in='true'].loop,
 [data-in='true'].loop *,
+[data-in='true'].loop *::before,
+[data-in='true'].loop *::after,
 [data-in='true'] .loop,
-[data-in='true'] .loop * {
+[data-in='true'] .loop *,
+[data-in='true'] .loop *::before,
+[data-in='true'] .loop *::after {
   animation-play-state: running;
 }
 .label {
@@ -1504,7 +1533,9 @@
   display: block;
   color: var(--muted);
 }
+/* display: table beats globals-mobile.css (table { display: block } on phones) */
 .adTable {
+  display: table !important;
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
@@ -2146,6 +2177,7 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     transition-delay: 0s !important;
+    animation-delay: 0s !important;
   }
   [data-in] .anim {
     opacity: 1;

@@ -25,7 +25,7 @@ export function Agent() {
               <DemoFrame title="Betsy · Chats" light>
                 <AgentStage step={0} />
               </DemoFrame>
-              <p className={s.agentText} aria-hidden>
+              <p className={s.agentText}>
                 <b style={{ color: 'var(--ink)' }}>{AGENT.steps[0].title}.</b> {AGENT.steps[0].text}
               </p>
             </div>
@@ -34,7 +34,7 @@ export function Agent() {
 
         <div style={{ marginTop: 96 }}>
           <p className={s.eyebrow}>Para tu tipo de negocio</p>
-          <h3 className={s.cardTitle} style={{ fontSize: 22, marginTop: 10 }}>
+          <h3 className={`${s.cardTitle} ${s.h3Big}`}>
             Así suena en negocios como el tuyo.
           </h3>
           <p className={s.small} style={{ maxWidth: 560 }}>

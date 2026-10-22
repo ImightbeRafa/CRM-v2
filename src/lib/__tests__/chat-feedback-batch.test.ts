@@ -3,7 +3,7 @@
  * (quick replies, emojis), client link, order → guía flow, per-chat drafts, route loading.
  */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import test, { describe } from 'node:test'
 import { conversationAgentMode, defaultAgentMode, isSoftHumanComposerEnabled } from '../soft-ai/agent-state'
 import {
@@ -196,8 +196,13 @@ describe('persistent Aurora frame (route loading)', () => {
     for (const seg of ['dashboard', 'ventas', 'produccion', 'estadisticas', 'chats']) {
       assert.match(read(`src/app/${seg}/loading.tsx`), /AuroraRouteLoading/, seg)
     }
-    assert.match(read('src/app/loading.tsx'), /AppRouteLoading/)
-    assert.doesNotMatch(read('src/app/loading.tsx'), /border-gray-900/)
+    // No root loading.tsx: it hid public pages (/home, /home-preview, /soporte) behind a spinner until hydration.
+    // Every other app folder carries the branded loader itself.
+    assert.equal(existsSync('src/app/loading.tsx'), false)
+    for (const seg of ['backups', 'exports', 'setup-tenant', 'setup-wizard', 'super-admin', 'tareas', 'pedidos']) {
+      assert.match(read(`src/app/${seg}/loading.tsx`), /AppRouteLoading|AuroraRouteLoading/, seg)
+      assert.doesNotMatch(read(`src/app/${seg}/loading.tsx`), /border-gray-900/, seg)
+    }
   })
 })
 

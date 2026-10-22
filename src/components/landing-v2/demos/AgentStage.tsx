@@ -86,7 +86,7 @@ export function AgentStage({ step }: { step: number }) {
               Al día siguiente
             </span>
             <p className={`${s.bubble} ${s.bubbleOut}`} style={d(1)}>
-              ¡Hola Andrea! ¿Pudiste pensarlo? Si querés te lo dejo apartado 😊
+              ¡Hola! ¿Te quedó alguna duda? Si querés te ayudamos a terminar tu pedido 😊
             </p>
             <span className={s.bubbleMeta} style={d(1.6)}>
               ↻ Seguimiento automático · no sube el chat en la Bandeja
@@ -100,7 +100,7 @@ export function AgentStage({ step }: { step: number }) {
           <Head chip={<span className={`${s.chip} ${s.chipPersona}`}>👤 Humano</span>} />
           <div className={s.thread}>
             <p className={`${s.bubble} ${s.bubbleIn}`}>¿Me hacen precio por 3?</p>
-            <p className={`${s.bubble} ${s.bubbleOut}`} style={{ ...d(1.6), background: 'var(--ink-2)' }}>
+            <p className={`${s.bubble} ${s.bubbleOut} ${s.bubbleTeam}`} style={d(1.6)}>
               Te hago uno especial, dame un toque 🙌
             </p>
             <span className={s.bubbleMeta} style={d(1.9)}>

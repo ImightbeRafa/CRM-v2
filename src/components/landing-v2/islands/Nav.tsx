@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Menu, X } from 'lucide-react'
 import s from '../landing.module.css'
 import { LINKS, NAV } from '../content'
+import { BETSY_PLAN } from '@/lib/pricing/plan'
 
 export function Nav() {
   const [solid, setSolid] = useState(false)
@@ -57,7 +58,7 @@ export function Nav() {
           ))}
           <a href={LINKS.signin}>Iniciar sesión</a>
           <a className={s.btn} href={LINKS.signup} style={{ borderBottom: 0 }}>
-            Probar 7 días gratis
+            Probar {BETSY_PLAN.trialDays} días gratis
           </a>
         </div>
       )}

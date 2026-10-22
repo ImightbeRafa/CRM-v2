@@ -36,7 +36,7 @@ export default function AgentPlayer() {
         <DemoFrame title="Betsy · Chats" light controls={reduced ? undefined : { paused: t.paused, onToggle: t.toggle, onReplay: t.replay }}>
           <AgentStage step={t.step} />
         </DemoFrame>
-        <p className={s.agentText} aria-hidden>
+        <p className={s.agentText} aria-live="polite">
           <b style={{ color: 'var(--ink)' }}>{AGENT.steps[t.step].title}.</b> {AGENT.steps[t.step].text}
         </p>
       </div>

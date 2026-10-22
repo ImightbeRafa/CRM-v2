@@ -82,7 +82,7 @@ export function Pricing({
 
 export function Faq() {
   return (
-    <section className={s.section} aria-labelledby="lv2-faq-title">
+    <section className={`${s.section} ${s.cv}`} aria-labelledby="lv2-faq-title">
       <div className={`${s.wrap} ${s.twoCol}`}>
         <div className={s.sectionHead}>
           <p className={s.eyebrow}>Preguntas</p>

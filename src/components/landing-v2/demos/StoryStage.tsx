@@ -70,7 +70,12 @@ export function StoryStage({ step }: { step: number }) {
               </div>
             </>
           )}
-          {step >= 3 && <p className={`${s.bubble} ${s.bubbleOut}`}>{m.a4}</p>}
+          {step >= 3 && (
+            <>
+              <p className={`${s.bubble} ${s.bubbleOut} ${s.bubbleTeam}`}>{m.a4}</p>
+              <span className={s.bubbleMeta}>Respondió {m.a4By}</span>
+            </>
+          )}
         </div>
         <div className={s.statusBar}>
           {step >= 2 && step < 4 ? (

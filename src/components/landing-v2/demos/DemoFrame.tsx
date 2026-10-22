@@ -22,15 +22,15 @@ export function DemoFrame({
           <i />
           <i />
         </span>
-        <span>{title}</span>
+        <span className={s.demoTitle}>{title}</span>
         <span className={s.controls}>
           {controls ? (
             <>
-              <button type="button" className={s.iconBtn} onClick={controls.onToggle} aria-label={controls.paused ? 'Reanudar demostración' : 'Pausar demostración'}>
+              <button type="button" className={s.iconBtn} onClick={controls.onToggle}>
                 {controls.paused ? <Play size={12} aria-hidden /> : <Pause size={12} aria-hidden />}
                 {controls.paused ? 'Seguir' : 'Pausar'}
               </button>
-              <button type="button" className={s.iconBtn} onClick={controls.onReplay} aria-label="Repetir demostración">
+              <button type="button" className={s.iconBtn} onClick={controls.onReplay}>
                 <RotateCcw size={12} aria-hidden /> Repetir
               </button>
             </>

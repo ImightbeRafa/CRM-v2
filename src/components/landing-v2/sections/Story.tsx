@@ -6,7 +6,7 @@ import { Reveal } from '../islands/Reveal'
 
 export function Build() {
   return (
-    <section className={`${s.section} ${s.dark}`} aria-labelledby="lv2-build-title">
+    <section className={`${s.section} ${s.dark} ${s.cv}`} aria-labelledby="lv2-build-title">
       <div className={s.wrap}>
         <div className={s.sectionHead}>
           <p className={s.eyebrow}>{BUILD.label}</p>
@@ -32,7 +32,7 @@ export function Build() {
 
 export function Trust() {
   return (
-    <section className={s.section} aria-labelledby="lv2-trust-title">
+    <section className={`${s.section} ${s.cv}`} aria-labelledby="lv2-trust-title">
       <div className={s.wrap}>
         <div className={s.sectionHead}>
           <p className={s.eyebrow}>{TRUST.label}</p>
@@ -117,7 +117,7 @@ function SoonVisual({ k }: { k: string }) {
 
 export function ComingSoon() {
   return (
-    <section className={`${s.section} ${s.dark}`} aria-labelledby="lv2-soon-title">
+    <section className={`${s.section} ${s.dark} ${s.cv}`} aria-labelledby="lv2-soon-title">
       <div className={s.wrap}>
         <div className={s.sectionHead}>
           <p className={s.eyebrow}>{COMING_SOON.label}</p>

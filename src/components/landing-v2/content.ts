@@ -1,3 +1,5 @@
+import { BETSY_PLAN } from '@/lib/pricing/plan'
+
 /**
  * Copy for home v2 (/home-preview). Spanish (Costa Rica, voseo). Only what the product does today; anything not
  * built yet lives in COMING_SOON and is labeled "Próximamente". No metrics, logos or testimonials.
@@ -46,7 +48,8 @@ export const STORY = {
     a2: 'Caja de 30 parches: ₡12.900',
     a3: '¿Te lo enviamos por Correos o preferís mensajería?',
     pick: 'Por Correos. Ya te hice el SINPE',
-    a4: '¡Gracias! Ya revisamos tu comprobante 🙌',
+    a4: '¡Pago recibido, gracias! Ya preparamos tu pedido 🙌',
+    a4By: 'Carlos (equipo)',
   },
   order: { id: '#2041', item: '1× Parches para dormir ×30', total: '₡12.900', pay: 'SINPE ✓', ship: 'Correos' },
   guia: { number: 'CR 4021 7735 06', to: 'Daniela R. · Heredia 40101', weight: '0,3 kg' },
@@ -113,7 +116,7 @@ export const NICHES = [
     notes: [
       ['Disponibilidad', 'lo que marcás como agotado no se ofrece, y avisa cuándo vuelve si lo indicás.'],
       ['Fotos guardadas', 'manda la foto del producto que el cliente pregunta, desde tus respuestas guardadas.'],
-      ['Del chat al pedido', 'la talla y el color quedan en el pedido, sin copiarlos a mano.'],
+      ['Del chat al pedido', 'los datos del cliente y el producto pasan al pedido, sin copiarlos a mano.'],
     ],
   },
   {
@@ -235,6 +238,6 @@ export const FAQ = [
     q: '¿El agente puede inventar precios?',
     a: 'Contesta con la información de tu negocio que revisamos juntos. Si no sabe algo, no lo inventa: le pasa el chat a tu equipo.',
   },
-  { q: '¿Puedo probar antes de pagar?', a: 'Sí. Tenés 7 días de prueba con todas las funciones para 1 usuario, sin tarjeta.' },
+  { q: '¿Puedo probar antes de pagar?', a: `Sí. Tenés ${BETSY_PLAN.trialDays} días de prueba con todas las funciones para 1 usuario, sin tarjeta.` },
   { q: '¿Tengo que cambiar mi número de WhatsApp?', a: 'No. Conectás tu número de WhatsApp Business por medio de Meta y seguís usando el mismo.' },
 ]

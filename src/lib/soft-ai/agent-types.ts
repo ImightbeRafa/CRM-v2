@@ -110,6 +110,8 @@ export type ChatAgentSkipReason =
   | 'ai_terms_not_accepted'
   /** The business's live AI allowance for the period is used up (ai-allowance.ts): the chat goes to a person. */
   | 'ai_allowance_exhausted'
+  /** SecureDog #127-2: one chat hit its live model-turn cap while a business-wide pause is possible: a person answers. */
+  | 'chat_rate_limited'
 
 export type EffectiveAgentBehavior =
   | 'skip'

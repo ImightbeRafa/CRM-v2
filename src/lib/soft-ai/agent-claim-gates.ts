@@ -161,10 +161,29 @@ export function collectDryRunBlockers(input: {
   return blocked
 }
 
+/**
+ * SecureDog #127-2: while a pause can stop the WHOLE business (an enforcing budget or credits), one chat may not spend
+ * it alone: at most CHAT_MODEL_TURNS_PER_HOUR / _PER_DAY live model turns per chat; past that only that chat goes to a
+ * person. Real chats stay far below it.
+ */
+export const CHAT_MODEL_TURNS_PER_HOUR = 30
+export const CHAT_MODEL_TURNS_PER_DAY = 150
+
+async function chatOverModelCap(tenantId: string, conversationId: string, now = Date.now()): Promise<boolean> {
+  const live = { tenantId, conversationId, mode: { not: 'test' }, status: { notIn: ['skipped'] } }
+  const [hour, day] = await Promise.all([
+    prisma.chatAgentTurn.count({ where: { ...live, createdAt: { gte: new Date(now - 3_600_000) } } }),
+    prisma.chatAgentTurn.count({ where: { ...live, createdAt: { gte: new Date(now - 86_400_000) } } }),
+  ])
+  return hour >= CHAT_MODEL_TURNS_PER_HOUR || day >= CHAT_MODEL_TURNS_PER_DAY
+}
+
 export async function runPreModelGates(input: {
   tenantId: string
   socialAccountId: string
   agentId?: string
+  /** The live turn's chat: enables the per-chat cap while a business-wide pause is possible. */
+  conversationId?: string
 }): Promise<GatePass | GateFail> {
   const [softFlag, layerFlag] = await Promise.all([
     prisma.tenantFeatureFlag.findFirst({
@@ -198,8 +217,14 @@ export async function runPreModelGates(input: {
   }
   // Live spend cap: the business's AI allowance for the period (owner budget with auto-pause; credits later). Checked
   // once, before the model: a started turn always finishes. Tokens per day are not a cap (dailyTokenCap is unused).
-  if ((await resolveAiAllowance(input.tenantId)).exhausted) {
+  const allowance = await resolveAiAllowance(input.tenantId)
+  if (allowance.exhausted) {
     return { ok: false, status: 'budget_blocked', skipReason: 'ai_allowance_exhausted' }
+  }
+  if (input.conversationId && allowance.guarded) {
+    // A count that cannot be read answers (fail open): the business-wide pause stays the backstop.
+    const over = await chatOverModelCap(input.tenantId, input.conversationId).catch(() => false)
+    if (over) return { ok: false, status: 'skipped', skipReason: 'chat_rate_limited' }
   }
   return { ok: true }
 }

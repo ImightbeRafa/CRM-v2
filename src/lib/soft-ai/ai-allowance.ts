@@ -39,6 +39,8 @@ export type AiAllowance = {
   exhausted: boolean
   /** credits only: which cap stopped it (the free / prepaid credit, or the business's own monthly limit). */
   cap?: 'credit' | 'limit'
+  /** A business-wide pause is possible (an enforcing budget or credits): the per-chat model cap applies. */
+  guarded?: boolean
 }
 
 /** The credits source as decideAllowance reads it (from resolveCreditAllowance). */
@@ -172,7 +174,9 @@ async function isOwnerBusiness(tenantId: string, nowMs: number): Promise<boolean
   if (hit && nowMs - hit.at < OWNER_TTL_MS) return hit.owner
   try {
     const row = await prisma.membership.findFirst({
-      where: { tenantId, role: 'OWNER', isActive: true, user: { isSuperAdmin: true, active: true } },
+      // SecureDog #127-1: only the OWNER row created when the business was registered (not invited, not promoted — an
+      // owner can promote any member to OWNER), so a business can never make itself "owned by a super admin".
+      where: { tenantId, role: 'OWNER', isActive: true, invitedBy: null, invitedAt: null, user: { isSuperAdmin: true, active: true } },
       select: { userId: true },
     })
     remember(ownerBusinessCache, tenantId, { at: nowMs, owner: row !== null })
@@ -188,10 +192,10 @@ let lastMeterAlertAt = 0
 /** The credit meter could not be read: the agents keep answering; the platform owner hears it once an hour. */
 async function alertCreditMeterDown(nowMs: number): Promise<void> {
   if (nowMs - lastMeterAlertAt < 60 * 60_000) return
-  lastMeterAlertAt = nowMs
   try {
     const { sendOpsAlert } = await import('@/lib/ops/alert-email')
-    await sendOpsAlert({
+    // SecureDog #127-5: the hourly slot is used only by an alert that really went out.
+    const result = await sendOpsAlert({
       key: `ai-credits:meter-down:${new Date(nowMs).toISOString().slice(0, 13)}`,
       subject: 'No se pudo leer el crédito de IA',
       lines: [
@@ -199,6 +203,7 @@ async function alertCreditMeterDown(nowMs: number): Promise<void> {
         'Revisá Logística › Admin › IA y los logs de "ai-billing/allowance".',
       ],
     })
+    if (result === 'sent') lastMeterAlertAt = nowMs
   } catch (error) {
     console.error('[soft-ai/ai-allowance] meter alert failed', error instanceof Error ? error.name : 'unknown')
   }
@@ -225,10 +230,11 @@ const DB_READERS: AllowanceReaders = {
 export async function resolveAiAllowance(tenantId: string, now = new Date(), readers: AllowanceReaders = DB_READERS): Promise<AiAllowance> {
   if (exemptTenantIds().has(tenantId)) return decideAllowance({ exempt: true, budget: null, spentMicros: 0, now })
   const [budgetAllowance, credits] = await Promise.all([readers.budget(tenantId, now), readers.credits(tenantId, now)])
-  if (budgetAllowance.exhausted || !credits) return budgetAllowance
+  if (budgetAllowance.exhausted) return { ...budgetAllowance, guarded: true }
+  if (!credits) return { ...budgetAllowance, guarded: budgetAllowance.enforce }
   if (credits.failedOpen) void readers.alert(now.getTime())
-  if (!(credits.enforce && credits.exhausted)) return budgetAllowance
-  return decideAllowance({
+  if (!(credits.enforce && credits.exhausted)) return { ...budgetAllowance, guarded: budgetAllowance.enforce || credits.enforce }
+  const decided = decideAllowance({
     exempt: false,
     budget: null,
     spentMicros: budgetAllowance.spentMicros,
@@ -236,6 +242,7 @@ export async function resolveAiAllowance(tenantId: string, now = new Date(), rea
     credits,
     ownerBusiness: await readers.ownerBusiness(tenantId, now.getTime()),
   })
+  return { ...decided, guarded: true }
 }
 
 async function resolveCreditsSafe(tenantId: string, now: Date): Promise<(AllowanceCredits & { failedOpen?: boolean }) | null> {

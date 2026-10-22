@@ -59,6 +59,7 @@ export const HANDOFF_REASON_LABELS: Record<string, string> = {
   customer_waiting: 'El cliente sigue esperando — nadie le respondió',
   // Lane D 2026-10-22: the business's AI allowance for the month is used up; the AI stops and people answer.
   ai_allowance: 'Se acabó el saldo de IA del mes — contestale vos',
+  chat_limit: 'Este chat escribió demasiado seguido para la IA — contestale vos',
   // Lane D 2026-10-22: OpenAI down / without credit through the automatic retries.
   ai_unavailable: 'IA sin servicio — contestale vos',
   review: 'Revisar respuesta de la IA',

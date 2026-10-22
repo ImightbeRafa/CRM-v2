@@ -30,6 +30,7 @@ export type CreditAllowance = {
 
 const TTL_MS = 30_000
 const NEAR_TTL_MS = 5_000
+const STALE_PAUSE_MS = 2 * 60_000
 const MAX_CACHE = 2_000
 const cache = new Map<string, { at: number; value: CreditAllowance }>()
 
@@ -73,6 +74,8 @@ export async function resolveCreditAllowance(tenantId: string, now = new Date())
   } catch (error) {
     console.error('[ai-billing/allowance] read failed', error instanceof Error ? error.name : 'unknown')
     // Verifier #3: the last value this month still answers as it did, but the read failure is reported either way.
-    return hit && hit.value.periodKey === costaRicaPeriodKey(now) ? { ...hit.value, failedOpen: true } : { ...open(now), failedOpen: true }
+    // SecureDog #127-4: a cached "used up" older than 2 min is not served on a read error (answer, never a stale pause).
+    const usable = hit && hit.value.periodKey === costaRicaPeriodKey(now) && (!hit.value.exhausted || now.getTime() - hit.at < STALE_PAUSE_MS)
+    return usable ? { ...hit.value, failedOpen: true } : { ...open(now), failedOpen: true }
   }
 }

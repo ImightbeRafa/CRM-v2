@@ -80,7 +80,7 @@ describe('AI allowance: wiring', () => {
   const allowance = read('src/lib/soft-ai/ai-allowance.ts')
 
   it('checked once before the model, after the AI terms; never at pre-send (a started turn finishes)', () => {
-    assert.match(pre, /\(await resolveAiAllowance\(input\.tenantId\)\)\.exhausted/)
+    assert.match(pre, /const allowance = await resolveAiAllowance\(input\.tenantId\)\s*if \(allowance\.exhausted\) \{/)
     assert.match(pre, /status: 'budget_blocked', skipReason: 'ai_allowance_exhausted'/)
     assert.ok(pre.indexOf('aiTermsAccepted(config)') < pre.indexOf('resolveAiAllowance'))
     assert.doesNotMatch(send, /resolveAiAllowance/)
@@ -88,17 +88,17 @@ describe('AI allowance: wiring', () => {
   })
 
   it('an exhausted allowance hands the chat to a person (aiMode human + assigned bell), not a silent skip', () => {
-    const branch = turn.slice(turn.indexOf("if (preModel.skipReason === 'ai_allowance_exhausted')"), turn.indexOf("} else if (preModel.status === 'budget_blocked')"))
-    assert.match(branch, /await settleHandoff\(row, \{ kind: 'handoff', reason: HANDOFF_REASON\.aiAllowance \}, hours\)/)
+    const branch = turn.slice(turn.indexOf("if (preModel.skipReason === 'ai_allowance_exhausted' || preModel.skipReason === 'chat_rate_limited')"), turn.indexOf("} else if (preModel.status === 'budget_blocked')"))
+    assert.match(branch, /await settleHandoff\(\s*row,\s*\{ kind: 'handoff', reason: preModel\.skipReason === 'chat_rate_limited' \? HANDOFF_REASON\.chatLimit : HANDOFF_REASON\.aiAllowance \},\s*hours,\s*\)/)
     // persisted as a skipped turn first (status budget_blocked, reason ai_allowance_exhausted)
-    const before = turn.slice(0, turn.indexOf("if (preModel.skipReason === 'ai_allowance_exhausted')"))
+    const before = turn.slice(0, turn.indexOf("if (preModel.skipReason === 'ai_allowance_exhausted' || preModel.skipReason === 'chat_rate_limited')"))
     assert.match(before.slice(-700), /skipReason: preModel\.skipReason \|\| 'flag_off',\s+status: preModel\.status,/)
     assert.equal(normalizeHandoffReason('ai_allowance', 'handoff'), 'ai_allowance')
     assert.match(HANDOFF_REASON_LABELS.ai_allowance, /saldo de IA/)
   })
 
   it('Verifier r1: only an answering line hands off; an already generated (paid) reply still goes out', () => {
-    const bypass = turn.slice(turn.indexOf("if (!preModel.ok && preModel.skipReason === 'ai_allowance_exhausted')"), turn.indexOf('if (!preModel.ok) {'))
+    const bypass = turn.slice(turn.indexOf("if (!preModel.ok && (preModel.skipReason === 'ai_allowance_exhausted' || preModel.skipReason === 'chat_rate_limited'))"), turn.indexOf('if (!preModel.ok) {'))
     assert.ok(bypass.includes("const lineAnswers = resolved.agent.operationMode === 'ai_full' && resolved.unlockedForSend"))
     assert.ok(bypass.includes("if (!lineAnswers || (generated?.status === 'generated' && generated.outputText && generated.outputHash)) preModel = { ok: true }"))
     // the not_activated skip and the generated-output reuse both come after it
@@ -168,7 +168,7 @@ describe('AI allowance: credits source (Lane H, SQL 060)', () => {
     const src = read('src/lib/soft-ai/ai-allowance.ts')
     assert.ok(src.includes('if (credits.failedOpen) void readers.alert(now.getTime())'))
     assert.ok(src.includes('alert: (nowMs) => alertCreditMeterDown(nowMs),'))
-    assert.ok(src.includes("where: { tenantId, role: 'OWNER', isActive: true, user: { isSuperAdmin: true, active: true } },"))
+    assert.ok(src.includes("where: { tenantId, role: 'OWNER', isActive: true, invitedBy: null, invitedAt: null, user: { isSuperAdmin: true, active: true } },"))
     // An owner read error counts as the owner's business: answer, never a silent stop.
     assert.match(src, /owner read failed[^\n]*\n\s*void alertCreditMeterDown\(nowMs\)\n\s*return true/)
     const billing = read('src/lib/ai-billing/allowance.ts')
@@ -178,7 +178,7 @@ describe('AI allowance: credits source (Lane H, SQL 060)', () => {
   })
   it('a paused chat goes to a person with the AI-allowance hand-off (no reply, no model call)', () => {
     const turn = read('src/lib/soft-ai/agent-turn.ts')
-    assert.ok(turn.includes("await settleHandoff(row, { kind: 'handoff', reason: HANDOFF_REASON.aiAllowance }, hours)"))
+    assert.ok(turn.includes("{ kind: 'handoff', reason: preModel.skipReason === 'chat_rate_limited' ? HANDOFF_REASON.chatLimit : HANDOFF_REASON.aiAllowance },"))
     assert.match(HANDOFF_REASON_LABELS.ai_allowance, /contestale vos/)
   })
 })
@@ -233,5 +233,40 @@ describe('AI allowance: the combined live decision (resolveAiAllowance, readers 
     const billing = read('src/lib/ai-billing/allowance.ts')
     assert.ok(billing.includes('const configured = (await listRates()).some((r) => r.periodKey <= s.periodKey)'))
     assert.ok(billing.includes('{ ...hit.value, failedOpen: true }'))
+  })
+})
+
+describe('SecureDog #127 fixes', () => {
+  const open: AiAllowance = { source: 'none', enforce: false, limitMicros: null, spentMicros: 0, remainingMicros: null, periodKey: '2026-10', renewsAt: null, exhausted: false }
+  const readers = (credits: unknown, budget: AiAllowance = open) => ({
+    budget: async () => budget,
+    credits: async () => credits as never,
+    ownerBusiness: async () => false,
+    alert: async () => undefined,
+  })
+  it('#2 the per-chat cap applies only while a business-wide pause is possible', async () => {
+    const live = { enforce: true, exhausted: false, cap: 'credit' as const, periodKey: '2026-10', renewsAt: null }
+    assert.equal((await resolveAiAllowance('t', NOW, readers(live))).guarded, true)
+    assert.equal((await resolveAiAllowance('t', NOW, readers({ ...live, enforce: false }))).guarded, false)
+    assert.equal((await resolveAiAllowance('t', NOW, readers(null))).guarded, false)
+    assert.equal((await resolveAiAllowance('t', NOW, readers(null, { ...open, source: 'ai_budget', enforce: true }))).guarded, true)
+    const gates = read('src/lib/soft-ai/agent-claim-gates.ts')
+    assert.ok(gates.includes('export const CHAT_MODEL_TURNS_PER_HOUR = 30'))
+    assert.ok(gates.includes("if (over) return { ok: false, status: 'skipped', skipReason: 'chat_rate_limited' }"))
+    assert.ok(gates.includes('.catch(() => false)'))
+    const turn = read('src/lib/soft-ai/agent-turn.ts')
+    assert.ok(turn.includes('    conversationId: row.conversationId,\n  })') || turn.includes('    conversationId: row.conversationId,\r\n  })'))
+    assert.ok(turn.includes("preModel.skipReason === 'chat_rate_limited' ? HANDOFF_REASON.chatLimit : HANDOFF_REASON.aiAllowance"))
+    assert.equal(normalizeHandoffReason('chat_limit', 'handoff'), 'chat_limit')
+    assert.match(HANDOFF_REASON_LABELS.chat_limit, /contestale vos/)
+  })
+  it('#1 only the OWNER row created at sign-up counts as a super admin\'s business', () => {
+    assert.ok(read('src/lib/soft-ai/ai-allowance.ts').includes("where: { tenantId, role: 'OWNER', isActive: true, invitedBy: null, invitedAt: null, user: { isSuperAdmin: true, active: true } },"))
+  })
+  it('#4 a stale "used up" is not served on a read error; #5 the alert slot is used only when sent', () => {
+    const billing = read('src/lib/ai-billing/allowance.ts')
+    assert.ok(billing.includes('(!hit.value.exhausted || now.getTime() - hit.at < STALE_PAUSE_MS)'))
+    assert.ok(billing.includes('const STALE_PAUSE_MS = 2 * 60_000'))
+    assert.ok(read('src/lib/soft-ai/ai-allowance.ts').includes("if (result === 'sent') lastMeterAlertAt = nowMs"))
   })
 })

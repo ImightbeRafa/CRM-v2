@@ -19,6 +19,7 @@ import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
 import { agentsServingUnboundChannels } from '@/lib/soft-ai/agent-settings'
 import { resolveAiAllowance } from '@/lib/soft-ai/ai-allowance'
+import { isTableReady } from '@/lib/soft-ai/table-ready'
 
 const AGENT_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000
 
@@ -163,21 +164,34 @@ export function collectDryRunBlockers(input: {
 
 /**
  * SecureDog #127-2: while a pause can stop the WHOLE business (an enforcing budget or credits), one chat may not spend
- * it alone: at most CHAT_MODEL_TURNS_PER_HOUR / _PER_DAY live model turns per chat; past that only that chat goes to a
- * person. Real chats stay far below it.
+ * it alone: at most CHAT_MODEL_CALLS_PER_HOUR / _PER_DAY billed AI calls per chat (one reply is 1–3 calls: the model, a
+ * tool step, the "¿ya pagó?" check — about 30 / 150 replies); past that only that chat goes to a person.
  */
-export const CHAT_MODEL_TURNS_PER_HOUR = 30
-export const CHAT_MODEL_TURNS_PER_DAY = 150
+export const CHAT_MODEL_CALLS_PER_HOUR = 90
+export const CHAT_MODEL_CALLS_PER_DAY = 450
 
 async function chatOverModelCap(tenantId: string, conversationId: string, now = Date.now()): Promise<boolean> {
-  // SecureDog #127 r2 B/D: real model runs (a row with tokens), whatever the turn ended as — a reply dropped as a
-  // repeat is still a paid run; acks and code-written replies (0 tokens) never count.
+  const dayAgo = new Date(now - 86_400_000)
+  const hourAgo = new Date(now - 3_600_000)
+  // SecureDog #127 r3: every billed live call of this chat where it is metered (AiUsageEvent, SQL 048): the model, its
+  // tool steps and the "¿ya pagó?" check — also on code-written replies and runs cut short by a provider failure.
+  if (await isTableReady('AiUsageEvent')) {
+    const rows = await prisma.$queryRaw<Array<{ hour: bigint | number; day: bigint | number }>>`
+      SELECT COUNT(*) FILTER (WHERE "createdAt" >= ${hourAgo}) AS "hour", COUNT(*) AS "day"
+        FROM "AiUsageEvent"
+       WHERE "tenantId" = ${tenantId} AND "conversationId" = ${conversationId}
+         AND "feature" IN ('inbox_agent', 'payment_check', 'vision') AND "createdAt" >= ${dayAgo}`
+    const hour = Number(rows[0]?.hour ?? 0)
+    const day = Number(rows[0]?.day ?? 0)
+    return hour >= CHAT_MODEL_CALLS_PER_HOUR || day >= CHAT_MODEL_CALLS_PER_DAY
+  }
+  // Before SQL 048: model runs on the turn rows (a row with tokens, whatever the turn ended as).
   const live = { tenantId, conversationId, mode: { not: 'test' }, inputTokens: { gt: 0 } }
   const [hour, day] = await Promise.all([
-    prisma.chatAgentTurn.count({ where: { ...live, createdAt: { gte: new Date(now - 3_600_000) } } }),
-    prisma.chatAgentTurn.count({ where: { ...live, createdAt: { gte: new Date(now - 86_400_000) } } }),
+    prisma.chatAgentTurn.count({ where: { ...live, createdAt: { gte: hourAgo } } }),
+    prisma.chatAgentTurn.count({ where: { ...live, createdAt: { gte: dayAgo } } }),
   ])
-  return hour >= CHAT_MODEL_TURNS_PER_HOUR || day >= CHAT_MODEL_TURNS_PER_DAY
+  return hour * 3 >= CHAT_MODEL_CALLS_PER_HOUR || day * 3 >= CHAT_MODEL_CALLS_PER_DAY
 }
 
 export async function runPreModelGates(input: {

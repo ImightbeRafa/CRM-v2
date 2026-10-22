@@ -251,7 +251,7 @@ describe('SecureDog #127 fixes', () => {
     assert.equal((await resolveAiAllowance('t', NOW, readers(null))).guarded, false)
     assert.equal((await resolveAiAllowance('t', NOW, readers(null, { ...open, source: 'ai_budget', enforce: true }))).guarded, true)
     const gates = read('src/lib/soft-ai/agent-claim-gates.ts')
-    assert.ok(gates.includes('export const CHAT_MODEL_TURNS_PER_HOUR = 30'))
+    assert.ok(gates.includes('export const CHAT_MODEL_CALLS_PER_HOUR = 90'))
     assert.ok(gates.includes("if (over) return { ok: false, status: 'skipped', skipReason: 'chat_rate_limited' }"))
     assert.match(gates, /chatOverModelCap\(input\.tenantId, input\.conversationId\)\.catch\(\(error\) => \{[\s\S]{0,200}return false/)
     const turn = read('src/lib/soft-ai/agent-turn.ts')
@@ -270,6 +270,9 @@ describe('SecureDog #127 fixes', () => {
   it('r2 B/D: the per-chat cap counts real model runs (tokens), also a reply dropped as a repeat; r2 C: a failed alert retries in ~5 min', () => {
     const gates = read('src/lib/soft-ai/agent-claim-gates.ts')
     assert.ok(gates.includes("const live = { tenantId, conversationId, mode: { not: 'test' }, inputTokens: { gt: 0 } }"))
+    // r3: the billed calls of the chat where they are metered (also the payment check on code-written replies).
+    assert.ok(gates.includes(`AND "feature" IN ('inbox_agent', 'payment_check', 'vision') AND "createdAt" >= $` + '{dayAgo}'))
+    assert.ok(gates.includes('WHERE "tenantId" = ${tenantId} AND "conversationId" = ${conversationId}'))
     assert.ok(!gates.includes("status: { notIn: ['skipped'] } }\n  const [hour"))
     assert.ok(gates.includes("chat cap count failed"))
     assert.ok(read('src/lib/soft-ai/ai-allowance.ts').includes("else if (result === 'failed') lastMeterAlertAt = nowMs - 55 * 60_000"))

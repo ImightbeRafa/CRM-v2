@@ -103,6 +103,7 @@ export const EXPECTED_TABLES = {
   '058': ['MetaDataDeletionRequest'],
   '059': ['SupportTicket', 'SupportTicketMessage', 'SupportTicketEvent', 'SupportMcpAudit'],
   '060': ['AiBillingRate', 'AiBillingSettings', 'AiCreditLedger', 'AiCreditPurchase', 'AiTenantSpendLimit'],
+  '061': ['AiProviderStatus'],
 };
 
 export const EXPECTED_COLUMNS = {

@@ -28,7 +28,7 @@ export const NEEDS_PERSON_SQL = Prisma.sql`(
   AND EXISTS (
     SELECT 1
     FROM (
-      SELECT COALESCE(tm."sentAt", t."createdAt") AS since, t."decisionTrace" -> 'outcomeMarkers' AS om
+      SELECT COALESCE(tm."sentAt", t."createdAt") AS since, t."decisionTrace" -> 'outcomeMarkers' AS om, t.intent AS intent
       FROM "ChatAgentTurn" t
       LEFT JOIN "ChatMessage" tm ON tm.id = t."triggerMessageId" AND tm."tenantId" = t."tenantId"
       WHERE t."conversationId" = c.id
@@ -40,7 +40,9 @@ export const NEEDS_PERSON_SQL = Prisma.sql`(
       LIMIT 1
     ) lt
     WHERE (
-        lt.om ->> 'needsHuman' = 'true'
+        -- #121 outage line ("Dame un momento" while the AI provider is down) is a hand-off in waiting, not an answer.
+        lt.intent = 'outage_ack'
+        OR lt.om ->> 'needsHuman' = 'true'
         OR lt.om ->> 'fallbackUsed' = 'true'
         OR lt.om ->> 'escalate' = 'true'
         OR lt.om ->> 'handoffKind' IN ('handoff', 'review')

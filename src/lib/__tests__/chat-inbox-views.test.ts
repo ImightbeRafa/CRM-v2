@@ -181,6 +181,10 @@ describe('Sin responder · server wiring (Lane A 2026-10-22)', () => {
     // F6: since the customer message the turn answered. F7: a failed person send is not an answer.
     has(rule, 'COALESCE(tm."sentAt", t."createdAt") AS since')
     has(rule, "AND COALESCE(hm.\"deliveryStatus\", '') <> 'failed'")
+    // Release 2 integration: the #121 outage line ("Dame un momento" while the provider is down) keeps the chat in
+    // Sin responder / Necesita persona instead of looking answered.
+    has(rule, 't.intent AS intent')
+    has(rule, "lt.intent = 'outage_ack'")
     // F2: the line filter is applied inside the page query.
     has(rule, 'AND c."socialAccountId" = ANY(${accountIds}::text[])')
     const views = read('src/lib/chat-inbox-views-server.ts')

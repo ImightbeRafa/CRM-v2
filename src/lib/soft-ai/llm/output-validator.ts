@@ -68,7 +68,7 @@ const ALWAYS_PAYMENT_STATUS_REPLY_RE =
  * "pedido enviado / despachado". Held on every reply (the prompt answers in Spanish and never claims a payment).
  */
 const MORE_DONE_REPLY_RE =
-  /(?<![\p{L}])(?:payment\s+(?:has\s+been\s+|was\s+|is\s+)?(?:received|confirmed|approved|processed|completed|verified)|(?:we|i)\s+(?:have\s+|'ve\s+)?(?:got|received|confirmed|verified)\s+(?:your|the)\s+(?:payment|transfer|deposit|money)|(?:your\s+)?order\s+(?:has\s+)?(?:shipped|been\s+(?:sent|shipped|dispatched)|is\s+on\s+(?:its|the)\s+way)|(?:pagamento|paiement)\s+(?:recebido|confirmado|aprovado|re[cç]u|confirm[eé])|gracias\s+por\s+(?:tu\s+|su\s+|el\s+|la\s+)?(?:pago|pagar|sinpe|transferencia|dep[oó]sito)|(?:el\s+equipo\s+|ya\s+)(?:confirm[oó]|verific[oó]|aprob[oó]|valid[oó])\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|(?:ya\s+)?(?:confirmaron|verificaron|aprobaron|validaron|acreditaron)\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|confirmo\s+que\s+(?:ya\s+)?(?:pagaste|pag[oó]|hiciste\s+el\s+(?:pago|sinpe))|ya\s+tenemos\s+(?:tu|la|su)\s+plata|(?:tu\s+|su\s+|el\s+)?pedido\s*:?\s+(?:ya\s+)?(?:fue\s+)?(?:enviado|despachado)(?=\s*(?:[.!,]|\p{Extended_Pictographic}|$)))(?![\p{L}])/iu
+  /(?<![\p{L}])(?:payment\s+(?:has\s+been\s+|was\s+|is\s+)?(?:received|confirmed|approved|processed|completed|verified)|(?:we|i)\s+(?:have\s+|'ve\s+)?(?:got|received|confirmed|verified)\s+(?:your|the)\s+(?:payment|transfer|deposit|money)|(?:your\s+)?order\s+(?:has\s+)?(?:shipped|been\s+(?:sent|shipped|dispatched)|is\s+on\s+(?:its|the)\s+way)|(?:pagamento|paiement)\s+(?:recebido|confirmado|aprovado|re[cç]u|confirm[eé])|gracias\s+por\s+(?:tu\s+|su\s+|el\s+|la\s+)?(?:pago|pagar|sinpe|transferencia|dep[oó]sito)|(?:el\s+equipo\s+|ya\s+)(?:confirm[oó]|verific[oó]|aprob[oó]|valid[oó])\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|(?:ya\s+)?(?:confirmaron|verificaron|aprobaron|validaron|acreditaron)\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|(?:el\s+equipo\s+)?ya\s+(?:lo|la)\s+(?:confirm[oó]|confirmaron|verific[oó]|verificaron|aprob[oó]|aprobaron|valid[oó]|validaron|acredit[oó]|acreditaron)|(?:lo|la)\s+(?:confirm[oó]|verific[oó]|aprob[oó]|valid[oó])\s+el\s+equipo|(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)\s+(?:ya\s+)?(?:se\s+(?:confirm[oó]|verific[oó]|aprob[oó]|valid[oó]|acredit[oó])|(?:lo|la)\s+(?:confirm[oó]|verific[oó]|aprob[oó]|valid[oó]))|se\s+(?:confirm[oó]|verific[oó]|aprob[oó]|valid[oó]|acredit[oó])\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia)|confirmo\s+que\s+(?:ya\s+)?(?:pagaste|pag[oó]|hiciste\s+el\s+(?:pago|sinpe))|ya\s+tenemos\s+(?:tu|la|su)\s+plata|(?:tu\s+|su\s+|el\s+)?pedido\s*:?\s+(?:ya\s+)?(?:fue\s+)?(?:enviado|despachado)(?=\s*(?:[.!,]|\p{Extended_Pictographic}|$)))(?![\p{L}])/iu
 
 /**
  * SecureDog wave D r2 (INT-208): "pagado" / "pago completado · procesado · exitoso" as a statement, per sentence, with
@@ -76,14 +76,29 @@ const MORE_DONE_REPLY_RE =
  * ("si / cuando / con / una vez / tengamos …" before it), "Pagado el pedido, …" (a participle clause), and
  * "procesado por / es / te llega" (a description of the payment page).
  */
-const PAID_WORD_RE = /(?<![\p{L}])pagad[oa](?![\p{L}])(?!\s+(?:el|la|los|las|por\s+adelantado|antes|hasta|despu[eé]s|al|en\s+la|a\s+tiempo)(?![\p{L}]))/iu
-const PAY_DONE_RE = /(?<![\p{L}])pago\s+(?:(?:fue|ha\s+sido|ya\s+fue|qued[oó]|est[aá])\s+)?(?:completado|procesado|exitoso)(?![\p{L}])(?!\s+(?:por|es|te\s+llega|con\s+tilopay)(?![\p{L}]))/iu
-const PAID_EXCUSE_RE = /(?<![\p{L}])(?:dej\p{L}*|adelantad\p{L}*|al\s+recibir|si|cuando|apenas|con|una\s+vez|tengamos|tengas|tenga|despu[eé]s|hasta\s+que|para\s+que|antes\s+de)(?![\p{L}])/iu
+// SecureDog r3 #5: "Pagado el pedido" is excused only as a participle clause followed by a comma ("Pagado el pedido, sale…").
+const PAID_WORD_RE =
+  /(?<![\p{L}])pagad[oa](?![\p{L}])(?!\s+(?:(?:el|la|los|las)\s+\p{L}+(?:\s+\p{L}+)?\s*,|(?:por\s+adelantado|antes|despu[eé]s|al|en\s+la|a\s+tiempo)(?![\p{L}])))/iu
+const PAY_DONE_RE = /(?<![\p{L}])pago\s+(?:(?:fue|ha\s+sido|ya\s+fue|qued[oó]|est[aá])\s+)?(?:completado|procesado|exitoso)(?![\p{L}])(?!\s+(?:por\s+(?:tilopay|la\s+(?:p[aá]gina|web|plataforma)|el\s+banco|medio)|es|te\s+llega|con\s+tilopay)(?![\p{L}]))/iu
+// SecureDog r3 #5: an excuse counts only when it governs the claim (at most 2 words between, no comma).
+const PAID_EXCUSE_RE =
+  /(?<![\p{L}])(?:dej\p{L}*|adelantad\p{L}*|al\s+recibir|si|cuando|apenas|con|una\s+vez(?:\s+que)?|tengamos|tengas|tenga|despu[eé]s\s+de|hasta\s+que|para\s+que|antes\s+de|tiene\s+que|debe|hay\s+que)(?:\s+\p{L}+){0,2}\s*$/iu
+/**
+ * Verifier r3 #6: "pagado" needs a done marker ("ya / está / quedó / fue / todo / lo tenés … pagado") or must be the whole
+ * sentence ("¡Pagado!", "Pagado, gracias") — policy lines ("tiene que estar pagado", "Todo pedido pagado hoy sale…",
+ * "El envío va pagado en el precio", "se entrega pagado") are not claims.
+ */
+const PAID_DONE_MARK_RE =
+  /(?<![\p{L}])(?:ya\s+(?:est[aá]\s+|estaba\s+|qued[oó]\s+|fue\s+)?(?:todo\s+)?|est[aá]\s+(?:todo\s+)?|estaba\s+(?:todo\s+)?|qued[oó]\s+(?:todo\s+)?|fue\s+|todo\s+|(?:lo|la)\s+ten[eé]s\s+)pagad[oa](?![\p{L}])/iu
+const PAID_ALONE_RE =
+  /^[\s\p{P}*_~]*(?:(?:s[ií]|listo|ok|perfecto|claro|gracias)[\s,.!¡]+)?pagad[oa](?:\s+(?:el|la)\s+\p{L}+)?[\s\p{P}*_~]*(?:(?:muchas\s+)?gracias|listo)?[\s\p{P}\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Default_Ignorable_Code_Point}]*$/iu
 function hasPaidStatement(forms: string[]): boolean {
   return forms.some((form) =>
-    form.split(/(?<=[.!?\n])/u).some((seg) => {
+    // SecureDog r3 #5: "¿" starts a new sentence ("Todo pagado ¿Algo más?" judges "Todo pagado").
+    form.split(/(?<=[.!?\n])|(?=¿)/u).some((seg) => {
       if (/[?¿]/u.test(seg)) return false
-      const m = PAID_WORD_RE.exec(seg) ?? PAY_DONE_RE.exec(seg)
+      const paid = PAID_WORD_RE.exec(seg)
+      const m = paid && (PAID_DONE_MARK_RE.test(seg) || PAID_ALONE_RE.test(seg)) ? paid : PAY_DONE_RE.exec(seg)
       return Boolean(m) && !PAID_EXCUSE_RE.test(seg.slice(0, m!.index))
     }),
   )
@@ -97,10 +112,16 @@ const FOREIGN_WORD_RE =
   /(?<![\p{L}])(?:the|you|your|we|our|is|are|has|have|been|it|it's|its|got|thanks|thank|received|yes|order|payment|paid|pay|paying|went|through|shipped|confirmed|seu|sua|voc[eê]|obrigad[oa]|recebemos|pagamento|nous|avons|votre|vous|merci|paiement|re[cç]u)(?![\p{L}])/giu
 const SPANISH_WORD_RE =
   /(?<![\p{L}])(?:de|la|el|que|tu|te|por|con|para|es|en|y|los|las|un|una|s[ií]|gracias|hola|pedido|pago|env[ií]o|precio|est[aá]|ya|lo|le|me|mi|tenemos|pod[eé]s|quer[eé]s)(?![\p{L}])/giu
+/** The words a language check reads: no links, no Title Case brand runs ("Thank You Farmer Sun Project"). */
+function languageWords(text: string): string {
+  return (text || '').replace(/\S*(?:https?:\/\/|www\.)\S*/giu, ' ').replace(/(?<![\p{L}])\p{Lu}[\p{L}']*(?:\s+\p{Lu}[\p{L}']*)+/gu, ' ')
+}
 export function readsAsForeignLanguage(text: string): boolean {
-  const foreign = new Set((text.match(FOREIGN_WORD_RE) ?? []).map((w) => w.toLowerCase())).size
+  // Verifier r3 #8: words inside links and Title Case brand runs ("Thank You Farmer Sun Project") are not the language.
+  const words = languageWords(text)
+  const foreign = new Set((words.match(FOREIGN_WORD_RE) ?? []).map((w) => w.toLowerCase())).size
   if (foreign < 2) return false
-  return foreign > (text.match(SPANISH_WORD_RE) ?? []).length
+  return foreign > (words.match(SPANISH_WORD_RE) ?? []).length
 }
 
 /**
@@ -108,11 +129,21 @@ export function readsAsForeignLanguage(text: string): boolean {
  * "Sip", "Ajá", "¡Así es!", "Efectivamente", "Yes", "¡Sí! ¿Algo más?") reads as "your payment is fine" — unless it hands
  * the check to the team ("el equipo lo revisa", "te confirmo apenas lo vea").
  */
+// SecureDog r3 #2: filler words before the yes ("Mmm sí", "Pues sí", "Jaja sí", "¡Gracias! Sí", "¡De una!").
 const AFFIRM_START_RE =
-  /^[\s¡!¿*_~"'«(\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Default_Ignorable_Code_Point}]*(?:s[ií]+p?|claro|aj[aá]|as[ií]\s+es|efectivamente|afirmativo|de\s+fijo|pura\s+vida|yes|yep|yeah|yup|correct[oa]|exact[oa]|perfecto|list[oa]|hecho|ok|okay|okey|dale|genial|excelente|confirmad[oa]|todo\s+bien|por\s+supuesto|got\s+it|sure)(?![\p{L}])/iu
-const DEFERS_TO_TEAM_RE = /(?<![\p{L}])(?:equipo|revis\p{L}*|verific\p{L}*|te\s+(?:aviso|confirmo)|un\s+momento|persona|compa[nñ]er\p{L}*)(?![\p{L}])/iu
+  /^[\s¡!¿*_~"'«(\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Default_Ignorable_Code_Point}]*(?:(?:m+h*m+|pues|este|ja(?:ja)+|je(?:je)+|ay|bueno|mae|diay|gracias|muchas\s+gracias|hola|ok|okay)[\s,.!¡]+)*(?:s[ií]+p?|de\s+una|claro|aj[aá]|as[ií]\s+es|efectivamente|afirmativo|de\s+fijo|pura\s+vida|yes|yep|yeah|yup|correct[oa]|exact[oa]|perfecto|list[oa]|hecho|ok|okay|okey|dale|genial|excelente|confirmad[oa]|todo\s+bien|por\s+supuesto|got\s+it|sure)(?![\p{L}])/iu
+/**
+ * A PENDING hand-over to the team ("el equipo lo revisa", "lo va a revisar", "te confirmo apenas lo vea", "un momento").
+ * SecureDog r3 #2: never when the reply also says it is done ("el equipo ya lo confirmó", "ya lo verificamos").
+ */
+const PENDING_DEFER_RE =
+  /(?<![\p{L}])(?:(?:lo|la)\s+(?:revisa|revisan|verifica|verifican|confirma|confirman)|(?:lo|la)\s+va(?:n|mos)?\s+a\s+(?:revisar|verificar|confirmar)|(?:te|le)\s+(?:confirma|confirman|confirmo|aviso|avisamos|escribe|escriben)|un\s+momento|ya\s+te\s+(?:aviso|confirmo|escribo))(?![\p{L}])/iu
+const COMPLETED_CHECK_RE =
+  /(?<![\p{L}])(?:ya\s+(?:lo\s+|la\s+|le\s+)?(?:\p{L}+(?:ó|aron|amos|ado|ada|ido|ida)|vio|vieron|vimos)|(?:revis|verific|confirm|aprob|valid)(?:ó|aron|ado|ada))(?![\p{L}])/iu
+const DEFERS_TO_TEAM_RE = { test: (text: string) => PENDING_DEFER_RE.test(text) && !COMPLETED_CHECK_RE.test(text) }
+/** Verifier r3 residual: a yes first is held even with "un momento / mi compañera te escribe" after it (a person decides). */
 function startsWithAffirmation(text: string): boolean {
-  return [text, normalizeForConfirmationCheck(text)].some((t) => AFFIRM_START_RE.test(t)) && !DEFERS_TO_TEAM_RE.test(text)
+  return [text, normalizeForConfirmationCheck(text)].some((t) => AFFIRM_START_RE.test(t))
 }
 
 /** INT-202: a bare affirmation read through markup, soft hyphens, emoji modifiers / joiners and text emoticons. */
@@ -133,6 +164,52 @@ function isStatusQuestion(customerText: string): boolean {
       .some((line) => STATUS_QUESTION_RE.test(line)),
   )
 }
+
+/**
+ * Verifier r3 #4: the two wave-D holds (a yes first / no question in the reply) apply only to a PAYMENT status question
+ * bubble — "¿Ya está?" alone, or a short "¿Les llegó? / ¿Lo recibieron?" / one with a payment noun. Never a story bubble
+ * ("Mi hermana lo vio en Instagram", "¿Te llegó mi mensaje de ayer?").
+ */
+const PAY_NOUN_IN_BUBBLE_RE = /(?<![\p{L}])(?:pag\p{L}*|plata|dinero|sinpe\p{L}*|transfer\p{L}*|dep[oó]sit\p{L}*|comprobante|monto)(?![\p{L}])/iu
+/**
+ * SecureDog r3 #1: with payment in play, a short question made only of status words ("¿Ya quedó?", "¿Todo bien?", "¿Entró?",
+ * "¿Sí llegó?", "¿Ya se reflejó?", "¿Lo tienen?", "¿Y?", "Hola, ¿ya está?", "Ya te lo envié, ¿todo bien?") is a status
+ * question too. Judged on the question clause only; any product / price / other word keeps it a sales question.
+ */
+const STATUS_WORDS = new Set(
+  'ya y o sí si se lo la le les me te nos todo bien así asi está esta estaba listo lista quedó quedo entró entro llegó llego cayó cayo pasó paso salió salio funcionó funciono reflejó reflejo tienen tiene recibieron recibió recibio vieron vio hola gracias ok okay porfa pura vida el pago sinpe plata dinero comprobante transferencia depósito deposito'.split(
+    ' ',
+  ),
+)
+function isShortStatusClause(line: string): boolean {
+  const q = line.lastIndexOf('?')
+  if (q < 0) return false
+  const head = line.slice(0, q)
+  const clause = head.slice(Math.max(head.lastIndexOf('¿'), head.search(/[^.,!¡]*$/u), 0)).replace(/^¿/u, '')
+  const words = (clause.toLowerCase().match(/\p{L}+/gu) ?? []).filter(Boolean)
+  return words.length > 0 && words.length <= 5 && words.every((w) => STATUS_WORDS.has(w))
+}
+function isPaymentStatusQuestion(customerText: string, paymentInPlay = false): boolean {
+  const gapped = invisibleAsGap(customerText)
+  return [customerText.normalize('NFKC'), ...(gapped !== null ? [gapped] : [])].some((t) =>
+    stripFormatChars(t)
+      .split('\n')
+      .some(
+        (line) =>
+          /[?¿]/u.test(line) &&
+          ((STATUS_QUESTION_RE.test(line) && (PAY_NOUN_IN_BUBBLE_RE.test(line) || (line.match(/\p{L}+/gu) ?? []).length <= 4)) ||
+            /(?<![\p{L}])ya\s+est[aá]\s*\?/iu.test(line) ||
+            (paymentInPlay && isShortStatusClause(line))),
+      ),
+  )
+}
+
+/**
+ * SecureDog r3 #3: with payment in play, one English / PT / FR status word in the reply is enough to hold it ("Done",
+ * "Confirmed", "Received", "Perfecto, received", "Tudo certo", "C'est bon", "Reçu").
+ */
+const FOREIGN_STATUS_WORD_RE =
+  /(?<![\p{L}])(?:done|confirmed|received|paid|through|sure|yes|yep|yeah|all\s+set|all\s+good|certo|recebido|re[cç]u|fait|c['’]est\s+bon|tudo\s+certo|pagamento\s+ok|payment\s+ok)(?![\p{L}])/iu
 
 export type OutputValidationResult = {
   ok: boolean
@@ -967,6 +1044,10 @@ export function validateAgentOutput(input: {
   // that participle is masked (shortcuts.ts maskConditionalConfirmation), for this check and the payment-status ones.
   const claimText = maskConditionalConfirmation(text)
   const claimForms = confirmationCheckForms(claimText)
+  // Verifier r3 #5: the model-only / context checks read the model's own words when the final policy gives them
+  // (paymentContextText: before the owner's payment blocks and the purchase summary).
+  const modelForms = input.paymentContextText !== undefined ? confirmationCheckForms(maskConditionalConfirmation(input.paymentContextText)) : claimForms
+  const paymentInPlayEarly = Boolean(input.paymentContext || (input.customerText && hasPaymentWord(input.customerText)))
   if (hasOutboundConfirmationClaim(text)) reasons.push('confirmation_wording')
   if (input.modelText && hasUnsafeLetters(input.styleText ?? text)) reasons.push('unsafe_letters')
   if (resultsClaimIn(text)) reasons.push('results_claim')
@@ -980,7 +1061,7 @@ export function validateAgentOutput(input: {
   // The wave-D list reads model text only (an owner's saved line may say "¡Gracias por la transferencia!").
   if (
     anyForm(ALWAYS_PAYMENT_STATUS_REPLY_RE, claimForms) ||
-    (input.modelText && (anyForm(MORE_DONE_REPLY_RE, claimForms) || hasPaidStatement(claimForms)))
+    (input.modelText && (anyForm(MORE_DONE_REPLY_RE, modelForms) || hasPaidStatement(modelForms)))
   ) {
     reasons.push('payment_status_claim')
   } else if (
@@ -989,15 +1070,16 @@ export function validateAgentOutput(input: {
       // before payment tokens were filled and before the purchase summary), never the owner's configured blocks.
       anyForm(
         PAYMENT_STATUS_REPLY_RE,
-        input.paymentContextText !== undefined ? confirmationCheckForms(maskConditionalConfirmation(input.paymentContextText)) : claimForms,
+        modelForms,
       )) ||
-    (input.customerText && hasPaymentWord(input.customerText) && anyForm(PAYMENT_STATUS_REPLY_RE, claimForms))
+    (input.customerText && hasPaymentWord(input.customerText) && anyForm(PAYMENT_STATUS_REPLY_RE, modelForms))
   ) {
     reasons.push('payment_status_claim')
   } else if (
     input.customerText &&
     (mentionsConfirmVerb(input.customerText) ||
-      isStatusQuestion(input.customerText)) &&
+      isStatusQuestion(input.customerText) ||
+      isPaymentStatusQuestion(input.customerText, paymentInPlayEarly)) &&
     (anyForm(CONFIRM_ASK_STATUS_REPLY_RE, claimForms) ||
       // SecureDog r3 INT-169: a short whole-reply affirmation with no question ("¡Claro que sí!", "¡Hecho!", "Correcto 👍")
       // to a confirm ask reads as "your payment is fine".
@@ -1006,9 +1088,9 @@ export function validateAgentOutput(input: {
       // ("¡Así es!", "¡Sí, con gusto!", "¡Sí! Tu pedido sale hoy") is held.
       // Verifier r7 #2: a direct ask ("pasame estos datos", "contame qué producto", a data list) counts as asking.
       (mentionsConfirmVerb(input.customerText) && !/[?¿]/.test(text) && !DIRECT_ASK_RE.test(text)) ||
-      (isStatusQuestion(input.customerText) && !/[?¿]/.test(text) && !DIRECT_ASK_RE.test(text) && !DEFERS_TO_TEAM_RE.test(text)) ||
+      (isPaymentStatusQuestion(input.customerText, paymentInPlayEarly) && !/[?¿]/.test(text) && !DIRECT_ASK_RE.test(text) && !DEFERS_TO_TEAM_RE.test(text)) ||
       // SecureDog wave D r2: to a status question ("¿Ya está?", "¿Les llegó?") a reply that starts with a yes.
-      (isStatusQuestion(input.customerText) && startsWithAffirmation(text)))
+      (isPaymentStatusQuestion(input.customerText, paymentInPlayEarly) && startsWithAffirmation(text)))
   ) {
     // SecureDog r1 INT-159 / Verifier r3 #3: a reply to a confirm ask ("¿me confirmás?") may not say a payment arrived
     // ("¡Sí, nos llegó!", "¡Perfecto, ya está!", "todo en orden") — but "¡Claro, sin problema!" stays a sales answer.
@@ -1016,10 +1098,11 @@ export function validateAgentOutput(input: {
   }
   // SecureDog wave D r2 (M1): a model reply in English / PT / FR. With payment in play it is a payment hold; otherwise
   // it is repaired / held like any other off-rule reply.
-  if (input.modelText && readsAsForeignLanguage(text)) {
-    reasons.push(
-      input.paymentContext || (input.customerText && hasPaymentWord(input.customerText)) ? 'payment_status_claim' : 'non_spanish_reply',
-    )
+  const paymentInPlay = paymentInPlayEarly
+  if (input.modelText && readsAsForeignLanguage(input.paymentContextText ?? text)) {
+    reasons.push(paymentInPlay ? 'payment_status_claim' : 'non_spanish_reply')
+  } else if (input.modelText && paymentInPlay && FOREIGN_STATUS_WORD_RE.test(languageWords(input.paymentContextText ?? text))) {
+    reasons.push('payment_status_claim')
   }
 
   const inventory =

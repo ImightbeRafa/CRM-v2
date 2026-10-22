@@ -43,10 +43,10 @@ describe('INT-207: a visible blank that is not whitespace (U+2800, U+FFFC) glues
 
 describe('INT-158 M1: deny by default for English / PT / FR', () => {
   it('customer side: a person takes it', () => {
-    for (const c of ['I have paid', "I've paid", 'Paid!', "It's paid", 'All paid', 'Money sent', 'Please confirm my payment', 'Have you received it?', 'Did the money arrive?', 'My wife paid', 'Paguei', 'Já fiz o pagamento', 'Fiz o pix', "J'ai fait le virement", 'Virement effectué', 'Paiement bien reçu ?', 'Ya está paid', 'Listo, sent', 'How can I pay?']) {
+    for (const c of ['I have paid', "I've paid", 'Paid!', "It's paid", 'All paid', 'Money sent', 'Please confirm my payment', 'Have you received it?', 'Did the money arrive?', 'My wife paid', 'Paguei', 'Já fiz o pagamento', 'Fiz o pix', "J'ai fait le virement", 'Virement effectué', 'Paiement bien reçu ?', 'Ya está paid', 'Listo, sent']) {
       assert.equal(classifyPaymentText(c), 'payment_proof_or_risk', c)
     }
-    for (const c of ['Do you ship to Escazú?', 'Hola, quiero 2 paquetes']) assert.notEqual(classifyPaymentText(c), 'payment_proof_or_risk', c)
+    for (const c of ['Do you ship to Escazú?', 'Hola, quiero 2 paquetes', 'How can I pay?']) assert.notEqual(classifyPaymentText(c), 'payment_proof_or_risk', c)
   })
   it('reply side: a reply in English / PT / FR is never sent as is', () => {
     for (const r of ['Got it, thanks!', 'Yes, we received it', 'Your order is confirmed', 'Thanks for paying!', 'Your payment went through', "It's paid", 'Recebemos seu pagamento', 'Nous avons bien reçu votre paiement']) {

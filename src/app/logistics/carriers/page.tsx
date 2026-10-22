@@ -604,7 +604,9 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
     };
 
     const handlePanStart = (e: React.PointerEvent<HTMLDivElement>) => {
-        if (e.button !== 0 || shouldIgnorePan(e.target)) return;
+        // Mouse drag-to-pan only: on touch the browser scrolls natively, and
+        // capturing the pointer would swallow that scroll on phones.
+        if (e.pointerType !== 'mouse' || e.button !== 0 || shouldIgnorePan(e.target)) return;
         const el = scrollRef.current;
         if (!el || el.scrollWidth <= el.clientWidth) return;
         panRef.current = {

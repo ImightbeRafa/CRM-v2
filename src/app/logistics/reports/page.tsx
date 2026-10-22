@@ -977,7 +977,7 @@ export default function ReportsPage() {
                                                 <DollarSign size={15} style={{ color: '#34d399' }} />
                                                 <p style={{ color: '#34d399', fontWeight: 700, fontSize: 14, margin: 0 }}>Salario — {salary.staffName}</p>
                                             </div>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                                            <div className="lm-grid-1" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                                                 {[
                                                     { label: 'Días Trabajados', value: `${salary.daysWorked}` },
                                                     { label: 'Tarifa Diaria', value: fmt(salary.dailyRate) },
@@ -1186,7 +1186,7 @@ export default function ReportsPage() {
             {pendingConfirm && (
                 <div style={{ position: 'fixed', inset: 0, zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
                     onClick={() => setPendingConfirm(null)}>
-                    <div style={{ ...glassHi, padding: '28px 32px', maxWidth: 440, width: '90%', borderColor: 'rgba(251,191,36,0.3)' }}
+                    <div className="lm-modal" style={{ ...glassHi, padding: '28px 32px', maxWidth: 440, width: '90%', borderColor: 'rgba(251,191,36,0.3)' }}
                         onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                             <AlertTriangle size={20} style={{ color: '#fbbf24' }} />
@@ -1214,7 +1214,7 @@ export default function ReportsPage() {
             {revertConfirm && (
                 <div style={{ position: 'fixed', inset: 0, zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
                     onClick={() => !reverting && setRevertConfirm(null)}>
-                    <div style={{ ...glassHi, padding: '28px 32px', maxWidth: 440, width: '90%', borderColor: 'rgba(248,113,113,0.3)' }}
+                    <div className="lm-modal" style={{ ...glassHi, padding: '28px 32px', maxWidth: 440, width: '90%', borderColor: 'rgba(248,113,113,0.3)' }}
                         onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                             <AlertTriangle size={20} style={{ color: '#f87171' }} />

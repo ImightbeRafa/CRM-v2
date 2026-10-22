@@ -765,7 +765,7 @@ export default function WorkforcePage() {
         <div style={{ display: 'grid', gap: 16 }}>
           <WeekToolbar weekStart={scheduleWeekStart} onWeekStartChange={setScheduleWeekStart} onRefresh={loadSchedule} loading={scheduleLoading} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(140px,1fr))', gap: 12 }}>
+          <div className="lm-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(140px,1fr))', gap: 12 }}>
             <Metric label="Active Employees" value={String(activeEmployees.length)} color="#8b87ff" />
             <Metric
               label="Scheduled Shifts"
@@ -1013,7 +1013,7 @@ export default function WorkforcePage() {
             </div>
           ) : null}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(180px,1fr))', gap: 14 }}>
+          <div className="lm-grid-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(180px,1fr))', gap: 14 }}>
             <Metric label="Paid Hours" value={payroll ? String(payroll.totals.hours) : '-'} color="#60a5fa" />
             <Metric label="Paid Minutes" value={payroll ? String(payroll.totals.paidMinutes) : '-'} color="#8b87ff" />
             <Metric label="Total Pay" value={payroll ? fmtMoney(payroll.totals.totalCrc) : '-'} color="#34d399" />

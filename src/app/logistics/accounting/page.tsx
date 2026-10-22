@@ -143,7 +143,7 @@ function ResumenTab({ rates }: { rates: Rates }) {
                     )}
 
                     {/* KPI Cards */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 22 }}>
+                    <div className="lm-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 22 }}>
                         {[{ label: 'Total Paquetes', value: totals.orders, color: '#8b87ff', icon: <Package size={17} /> },
                         { label: 'Mensajería', value: `${totals.mensajeria} paq`, color: '#8b87ff', icon: <Truck size={17} /> },
                         { label: 'Correos CR', value: `${totals.correos} paq`, color: '#60a5fa', icon: <Mail size={17} /> },
@@ -160,7 +160,7 @@ function ResumenTab({ rates }: { rates: Rates }) {
                     </div>
 
                     {/* Cost breakdown */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 22 }}>
+                    <div className="lm-grid-1" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 22 }}>
                         {[{ label: 'Costo Mensajería', value: totals.mensajeriaCost, color: '#8b87ff', note: `${totals.mensajeria} × ${fmt(rates.mensajeria_rate)}` },
                         { label: 'Costo Correos', value: totals.correosCost, color: '#60a5fa', note: `${totals.correos} paq (costo individual)` },
                         { label: 'Total Manejo', value: totals.handling, color: '#34d399', note: `${totals.mensajeria + totals.correos} × ${fmt(rates.handling_rate)}` },
@@ -318,7 +318,7 @@ function CorreosCRTab() {
     return (
         <div>
             {/* KPI Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
+            <div className="lm-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
                 {[{ label: 'Total Entregados', value: summary.totalOrders, color: '#60a5fa' },
                 { label: 'Con Costo', value: summary.withCostCount, color: '#34d399' },
                 { label: 'Sin Costo', value: summary.pendingCostCount, color: '#fbbf24' },
@@ -481,7 +481,7 @@ function ContraEntregasTab() {
     return (
         <div>
             {/* Summary KPIs */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
+            <div className="lm-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
                 {[{ label: 'Total CE', value: summary.total, color: '#fbbf24' },
                 { label: 'Monto Total', value: fmt(summary.totalAmount), color: '#8b87ff' },
                 { label: 'Pendientes', value: summary.pending, color: '#f87171' },
@@ -619,7 +619,7 @@ function DiasTrabajadosTab({ dailyRate }: { dailyRate: number }) {
     return (
         <div>
             {/* Salary Summary */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 22 }}>
+            <div className="lm-grid-1" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 22 }}>
                 {[{ label: 'Días Trabajados', value: daysCount, color: '#8b87ff' },
                 { label: 'Tarifa Diaria', value: fmt(dailyRate), color: '#60a5fa' },
                 { label: 'Total Salario', value: fmt(salaryTotal), color: '#34d399' },
@@ -1134,7 +1134,7 @@ function DiasTrabajadosScheduleTab({ dailyRate }: { dailyRate: number }) {
 
     return (
         <div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 18 }}>
+            <div className="lm-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 18 }}>
                 {[{ label: 'Total semana', value: fmt(salaryTotal), color: '#34d399' },
                 { label: 'Acumulado hoy', value: fmt(accruedTotal), color: '#60a5fa' },
                 { label: 'Pendiente sabado', value: fmt(remainingTotal), color: '#fbbf24' },
@@ -1421,7 +1421,7 @@ function GdBalanceTab() {
 
     return (
         <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 22 }}>
+            <div className="lm-grid-1" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 22 }}>
                 {[{ label: 'Total Cargado', value: fmt(charges), color: '#f87171' },
                 { label: 'Total Pagado', value: fmt(payments), color: '#34d399' },
                 { label: 'Saldo Pendiente', value: fmt(Math.abs(balance)), color: balance > 0 ? '#fbbf24' : '#34d399' },

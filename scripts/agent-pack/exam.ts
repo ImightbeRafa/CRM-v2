@@ -23,7 +23,7 @@ import { softAiResponsesCreate, parseSoftAiResponseText } from '@/lib/soft-ai/ll
 import { LUNA_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
 import { arg, flag, loadPack, type AgentPack } from './pack'
 import { withExamSession } from './test-session'
-import { examHistoryTimes, redactChatForReviewer, redactCustomerText } from './exam-bank'
+import { examHistoryTimes, redactChatForReviewer, redactCustomerText, setStoreNumbers } from './exam-bank'
 import type { ExamBank, ExamItem } from './exam-bank'
 
 type Finding = { cls: string; serious: boolean; why: string }
@@ -116,6 +116,9 @@ const openLabel = (hhmm?: string) => {
 
 /** The reviewer judges against everything the agent may use: knowledge, brand facts, combos / selling script, hours. */
 export function reviewerKnowledge(pack: AgentPack): string {
+  // Every run (exam / shoppers / shadow) builds this first: the store's own SINPE / IBAN stay readable for the reviewer.
+  const pay = (pack.brandFacts as { payment?: { sinpe?: { number?: string }; transfer?: { iban?: string } } }).payment
+  setStoreNumbers([pay?.sinpe?.number, pay?.transfer?.iban])
   const exam = (pack as unknown as { exam?: { graderNotes?: string; allowedPhrases?: string[] } }).exam
   const rules = pack.salesRules as { bundles?: Array<{ name: string; price: number; shippingIncluded?: boolean }>; businessHours?: { enabled?: boolean; windows?: Array<{ open: string; close: string }> } }
   return [

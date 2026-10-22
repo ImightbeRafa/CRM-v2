@@ -71,6 +71,15 @@ describe('reviewer input (exam / shadow)', () => {
     assert.match(redactCustomerText('Pagá en https://forge.shopping', null, { store: true }), /forge\.shopping/)
     assert.doesNotMatch(redactCustomerText('mi perfil https://instagram.com/ana.cr', null, { store: true }), /ana/)
     assert.doesNotMatch(redactCustomerText('mi página https://ana-tienda.com'), /ana-tienda/)
+    // The store's own SINPE / IBAN stay in agent text; a customer's phone and any number in customer text do not.
+    const { setStoreNumbers } = await import('../../../scripts/agent-pack/exam-bank')
+    setStoreNumbers(['62019914', 'CR12010200009506464063'])
+    const agent = redactCustomerText('SINPE Móvil: 6201 9914 · IBAN: CR12 0102 0000 9506 4640 63 · tu cel 8888 7777', null, { store: true })
+    assert.match(agent, /6201 9914/)
+    assert.match(agent, /CR12 0102 0000 9506 4640 63/)
+    assert.doesNotMatch(agent, /8888 7777/)
+    assert.doesNotMatch(redactCustomerText('le hice SINPE al 6201 9914'), /6201 9914/)
+    setStoreNumbers([])
   })
 })
 

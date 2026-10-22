@@ -63,7 +63,27 @@ const ADDRESS_WORDS = /\b(calle|avenida|ave\.?|casa|frente|metros|esquina|barrio
 const L_BEFORE = String.raw`(?<![\p{L}\p{N}])`
 const L_AFTER = String.raw`(?![\p{L}\p{N}])`
 
+/** The store's own SINPE / IBAN (from the pack): kept in store / agent text so the reviewer sees the real number. */
+let STORE_NUMBERS: RegExp[] = []
+export function setStoreNumbers(values: Array<string | null | undefined>): void {
+  STORE_NUMBERS = values
+    .map((v) => String(v || '').replace(/[\s-]/g, ''))
+    .filter((v) => v.length >= 8)
+    .map((v) => new RegExp(v.split('').map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s-]?'), 'gi'))
+}
+
 export function redactCustomerText(text: string, peerName?: string | null, opts: { store?: boolean } = {}): string {
+  if (opts.store && STORE_NUMBERS.length) {
+    // Park the store's own numbers behind tokens the scrubbers never touch, then put them back.
+    const kept: string[] = []
+    let parked = text || ''
+    for (const re of STORE_NUMBERS) parked = parked.replace(re, (m) => `⟦${kept.push(m) - 1}⟧`)
+    if (kept.length) return redactCustomerTextInner(parked, peerName, opts).replace(/⟦(\d+)⟧/g, (_m, i: string) => kept[Number(i)])
+  }
+  return redactCustomerTextInner(text, peerName, opts)
+}
+
+function redactCustomerTextInner(text: string, peerName: string | null | undefined, opts: { store?: boolean }): string {
   let t = redactSensitiveForProvider(text || '')
   t = t.replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[correo]')
   t = t.replace(/(?<![\p{L}\p{N}])@[\w.]{2,30}/gu, '[usuario]')

@@ -2499,7 +2499,10 @@ async function runAgentTestTurnInner(input: {
     agentStatus: runtimeAgent.status,
     conversationAiMode,
   })
-  if (testTokens >= effectiveTestCap(config.testDailyTokenCap)) {
+  // Verifier r2 #4: the line-activation canary keeps the business's own cap (agent-unlock.ts checks the same one);
+  // every other test turn stops at the platform ceiling too.
+  const turnTestCap = input.usageFeature === 'agent_activation' ? config.testDailyTokenCap : effectiveTestCap(config.testDailyTokenCap)
+  if (testTokens >= turnTestCap) {
     blockedBy.push('test_budget_blocked')
     // Budget spent: answer immediately, spend nothing and write nothing (no model call, no turn row).
     return {

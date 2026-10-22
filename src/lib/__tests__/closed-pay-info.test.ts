@@ -66,11 +66,21 @@ const NOT_CLOSED = [
   'Lo quiero',
   'Ya pagué, me pasás el número?',
   'Pagué por SINPE. Me pasás el número?',
+  // Verifier r2 #1
+  'Vivo en Heredia y le pague. ¿A nombre de quién está?',
+  'Vivo en Cartago y les pague. A nombre de quién?',
+  'Vivo en Heredia y cancele. ¿Puedo pagar contra entrega?',
+  'Vivo en Heredia Pagué. ¿Puedo pagar contra entrega?',
 ]
 
 describe('Lane C D8: a payment-info question that asks more goes to the model', () => {
   it('the code payment list answers only a plain how-to-pay question', () => {
-    assert.equal(classifyPaymentText('Hola! Quiero un arnés, mido 1.66 y peso 63 kg. Soy de Alajuela, cuánto sería el total con envío y cómo puedo pagar?'), 'non_payment')
+    const big = decideInbound({ inboundText: 'Hola! Quiero un arnés, mido 1.66 y peso 63 kg. Soy de Alajuela, cuánto sería el total con envío y cómo puedo pagar?', brandFacts: FACTS, shortcuts: SHORTCUTS })
+    assert.equal(big.shortcutKey ?? null, null)
+    assert.equal(big.handoff, null)
+    // Verifier r2 #2: a store that does not share payment data by chat still gets the payment-data review.
+    const hidden = decideInbound({ inboundText: 'Hola, ¿cuánto sería el total con envío y cómo puedo pagar?', brandFacts: parseBrandFacts({ payment: { shareWithCustomers: false } }), shortcuts: SHORTCUTS })
+    assert.notEqual(hidden.handoff, null)
     assert.equal(classifyPaymentText('¿Cómo puedo pagar?'), 'payment_info_safe')
     assert.equal(classifyPaymentText('¿Aceptan transferencia?'), 'payment_info_safe')
   })
@@ -146,8 +156,11 @@ describe('Lane C D2 / D8 round 3 (Forge exam 2026-10-22 21:00)', () => {
     }
   })
   it('an opinion / worry about paying goes to the model, not the method list', () => {
-    assert.equal(classifyPaymentText('¿Qué es mejor, SINPE o tarjeta? No quiero dar mi tarjeta'), 'non_payment')
-    assert.equal(classifyPaymentText('¿Es seguro pagar con tarjeta?'), 'non_payment')
+    for (const t of ['¿Qué es mejor, SINPE o tarjeta? No quiero dar mi tarjeta', '¿Es seguro pagar con tarjeta?']) {
+      const d = decideInbound({ inboundText: t, brandFacts: FACTS, shortcuts: SHORTCUTS })
+      assert.equal(d.shortcutKey ?? null, null, t)
+      assert.equal(d.handoff, null, t)
+    }
     assert.equal(classifyPaymentText('¿Qué métodos de pago tienen?'), 'payment_info_safe')
   })
 })

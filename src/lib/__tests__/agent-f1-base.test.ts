@@ -108,7 +108,7 @@ describe('F1 · isolation between businesses of one tenant (SQL 049)', () => {
     const send = gates.slice(gates.indexOf('export async function runPreSendGates'))
     assert.doesNotMatch(pre, /agentBudgetExceeded|loadDailyBilledTokens/)
     assert.doesNotMatch(send, /agentBudgetExceeded|loadDailyBilledTokens/)
-    assert.match(read('src/lib/soft-ai/agent-turn.ts'), /testTokens >= effectiveTestCap\(config\.testDailyTokenCap\)/)
+    assert.match(read('src/lib/soft-ai/agent-turn.ts'), /testTokens >= turnTestCap\)/)
     assert.match(read('src/lib/soft-ai/agent-turn.ts'), /runPreModelGates\(\{\s*tenantId: row\.tenantId,\s*socialAccountId: row\.socialAccountId,\s*agentId: resolved\.agent\.id,/)
   })
 

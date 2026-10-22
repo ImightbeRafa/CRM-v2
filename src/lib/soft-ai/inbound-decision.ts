@@ -11,6 +11,7 @@ import {
 } from '@/lib/soft-ai/brand-facts'
 import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
 import {
+  asksMoreThanPayment,
   classifyPaymentText,
   embeddedPaymentChoice,
   hasHardPaymentClaim,
@@ -403,6 +404,12 @@ export function decideInbound(input: {
   }
   if (paymentClass === 'payment_info_safe') {
     if (canSharePaymentFacts(input.brandFacts)) {
+      // Lane C D8: it asks more than which methods there are (total, size, an opinion): the model answers all of it.
+      // Not for order data (a choice, not a question).
+      if (!nothingPaidYet && asksMoreThanPayment(input.inboundText)) {
+        steps.push({ step: 'payment_info', outcome: 'model', reason: 'asks_more_than_payment' })
+        return continueToModel(paymentClass, steps)
+      }
       // agents2-format: one method named ("¿cuál es el número de SINPE?", "¿aceptan tarjeta?") → that method only.
       // luna-10 exam round 2: "¿Tienes link de pago? ¿Para la ansiedad cuál me recomendás?" also asks about products —
       // the model answers both (it fills [[PAGO_TARJETA]]); a plain link ask = the card block; "¿se puede pagar con

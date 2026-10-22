@@ -215,6 +215,8 @@ async function supersedeOlderJobs(conversationId: string, keepId: string) {
          AND reply."tenantId" = msg."tenantId"
          AND reply."direction" = 'outbound'
          AND (reply."sentAt", reply."id") > (msg."sentAt", msg."id")
+         -- Verifier r2 #3: the outage line ("Dame un momento") is not a store answer.
+         AND COALESCE(reply."metadata"->>'outageAck', '') <> 'true'
         WHERE msg."id" = job."messageId"
       )
   `
@@ -332,6 +334,7 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
                     AND reply."tenantId" = current_msg."tenantId"
                     AND reply."direction" = 'outbound'
                     AND (reply."sentAt", reply."id") > (current_msg."sentAt", current_msg."id")
+                    AND COALESCE(reply."metadata"->>'outageAck', '') <> 'true'
                 )
               )
           )

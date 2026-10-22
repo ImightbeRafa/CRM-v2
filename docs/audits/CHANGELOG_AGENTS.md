@@ -1,3 +1,16 @@
+## 2026-10-22 — An AI provider outage never strands a chat; separate test budget; Lane C engine fixes (Lane D, claude/lane-d-provider-outage, PR #121; SQL 061 Rafael applies)
+
+- Provider failure (quota / 429 / 5xx / timeout / missing key) no longer leaves a chat on "IA activa" with no answer. The job is re-queued with backoff 2/5/15/30/60 min (±20%), capped at 2 h after the first failure and 10 min before the 24 h window closes. The first retry is silent; after the 2nd failure the customer gets one "Dame un momento y te confirmo" line (night wording after hours, `:outage_ack` delivery key, at most one per 2 h). Then the chat is handed off as "IA sin servicio — contestale vos" (Persona view). Timeouts get 2 tries; a missing key hands off at once. When a payment is in play: the payment safe line plus an immediate hand-off.
+- Queue: `rescheduleJob` / `rescheduleLateJob` (lease-conditional; retries don't use up MAX_ATTEMPTS). The waiting sweep and rearm ignore the outage line as a store answer.
+- Owner alert once per incident (email + bell "OpenAI sin crédito / caído", then "OpenAI volvió"): raw SQL table `AiProviderStatus` (SQL 061, additive, RLS on) with an atomic alert claim. 5xx must last ≥60 s; "volvió" only if the outage lasted ≥2 min; rate limits never alert. Without 061 there is a per-process fallback with a 1 h cooldown.
+- Test budget: hard stop before every test call at min(business testDailyTokenCap, env `AI_TEST_DAILY_TOKEN_CAP`, default 2 000 000 tokens; per business, UTC day; counts graders and every call inside a test turn — 2026-10-22 test runs spent 37.8M on an 800k cap because the exam scripts raise the cap) for Probar + automated exams, checked before each call (`TEST_BUDGET_EXCEEDED`). Live chats never count against it. Activation test calls are metered as `agent_activation`. The Worker forwards the env name.
+- Lane C engine findings:
+  - D1: saved replies may state authorized totals.
+  - D6: bundle prices with "envío incluido" are not masked.
+  - D2: closed before-paying questions are answered by the agent (SINPE number / a nombre de quién, pagar mañana + comprobante, envío y pago, card number by chat, pagar por X cuánto, contra entrega). A done word or a digit keeps the person path.
+  - D8: a payment question that also asks price/total/size goes to the model, not the code payment list.
+  - D5 left to the packs: the replies use the same words as a real "no sé".
+- Tests: `provider-outage.test.ts`, `lane-c-engine.test.ts`, plus additions to `closed-pay-info.test.ts` (all in `test:soft-ai`). Staff bot untouched; no Prisma schema change.
 ## 2026-10-22 — Support pipeline: tickets, /soporte, MCP for the support agent, custom-agent sales page (Lane G, claude/wave-support-pipeline-a09f20; SQL 059 Rafael applies; ships dark)
 
 - Rafael's spec `docs/plans/support-pipeline/SPEC.md` (added as-is). Everything behind `SUPPORT_PIPELINE_ENABLED` (only `true` turns it on); off = legacy behavior. Runbook with env/secrets, SQL, seed, smoke, rollback: `docs/runbooks/support-pipeline.md`.

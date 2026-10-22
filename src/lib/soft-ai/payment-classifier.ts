@@ -797,7 +797,16 @@ const CLOSED_PAY_INFO_SEG_RE = new RegExp(
  * a done / past word (checked by the caller), never a digit (checked for the whole message).
  */
 const CLOSED_PAY_CONTEXT_SEG_RE =
-  /^(?:lo|la)\s+quiero(?:\s+(?:en\s+)?(?:talla|color)\s+[\p{L}]{1,12})?$|^vivo\s+en\s+[\p{L}]+(?:\s+[\p{L}]+){0,3}$|^(?:(?:dale|ok|okey|perfecto|bueno|va)\s*,?\s*)?(?:pago|pagar[eé]|voy\s+a\s+pagar|te\s+pago|le\s+pago|lo\s+pago)\s+(?:por|con)\s+(?:sinpe(?:\s+m[oó]vil)?|transferencia|tarjeta|efectivo)$/iu
+  /^(?:lo|la)\s+quiero(?:\s+(?:en\s+)?(?:talla|color)\s+[\p{L}]{1,12})?$|^vivo\s+en\s+[\p{L}]+(?:\s+[\p{L}]+){0,3}$/iu
+/** "Dale, pago por SINPE": the method choice, a fully anchored shape (no room for a claim). */
+const CLOSED_PAY_CHOICE_SEG_RE =
+  /^(?:(?:dale|ok|okey|perfecto|bueno|va)\s*,?\s*)?(?:pago|pagar[eé]|voy\s+a\s+pagar|te\s+pago|le\s+pago|lo\s+pago)\s+(?:por|con)\s+(?:sinpe(?:\s+m[oó]vil)?|transferencia|tarjeta|efectivo)$/iu
+/**
+ * Verifier r2 #1: the free words of a context sentence ("Vivo en Heredia y le pague") never carry a connector or a
+ * payment / done stem, whatever the accents or capitals ("Vivo en Heredia Pagué", "cancele", "abone").
+ */
+const CONTEXT_FORBIDDEN_RE =
+  /(?<![a-z])(?:y|e|pero|que|porque|ya|pag[a-z]*|cancel[a-z]*|abon[a-z]*|deposit[a-z]*|transf[a-z]*|trasf[a-z]*|sinp[a-z]*|simp[a-z]*|cinp[a-z]*|hic[a-z]*|hiz[a-z]*|hech[a-z]*|list[oa]s?|mande|envie|pase|tire|gire|meti|deje|cubri|liquid[a-z]*|sald[a-z]*|comprob[a-z]*)(?![a-z])/
 /**
  * Lane C D2 round 3: everyday spellings of SINPE ("simpe", "sinpi") and a split clitic ("hacer te un simpe") read as the
  * clean form. Used for the closed shape and as an extra hand-off reading — never to clear a message the raw text flags.
@@ -816,7 +825,12 @@ export function isClosedPayInfoQuestion(text: string): boolean {
     .map((x) => x.replace(/^[\s¿¡,]+/u, '').replace(/[\s,]+$/u, '').replace(LEADING_GREETING_RE, '').trim())
     .filter(Boolean)
   // Lane C D2: a context sentence ("Lo quiero talla XL", "Vivo en Heredia centro") may sit next to the ask, never a done word.
-  const isContext = (t: string) => CLOSED_PAY_CONTEXT_SEG_RE.test(t.replace(/\s+/gu, ' ')) && !hasPastOrDoneWord(t, false)
+  const isContext = (t: string) => {
+    const s = t.replace(/\s+/gu, ' ')
+    if (CLOSED_PAY_CHOICE_SEG_RE.test(s)) return !hasPastOrDoneWord(t, false)
+    const bare = s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+    return CLOSED_PAY_CONTEXT_SEG_RE.test(s) && !CONTEXT_FORBIDDEN_RE.test(bare) && !hasPastOrDoneWord(t, false)
+  }
   const asks = segs.filter((t) => !CLOSED_PAY_INFO_COURTESY_RE.test(t) && !isContext(t))
   return asks.length > 0 && asks.every((t) => CLOSED_PAY_INFO_SEG_RE.test(t.replace(/\s+/gu, ' ')))
 }
@@ -852,11 +866,16 @@ export function classifyPaymentText(
   // A closed before-paying question (every sentence one anchored shape, no digit) that a word rule would hand off is
   // answered by the agent instead, like any other sales question.
   if (cls === 'payment_proof_or_risk' && isClosedPayInfoQuestion(text)) return 'non_payment'
-  // Lane C D8: a payment-info question that also asks something else ("… cuánto sería el total con envío y cómo puedo
-  // pagar?") goes to the model, which answers all of it; the code payment list alone would drop the total / size.
-  // Not for order data (nothingPaidYet: "Nombre: … Método de pago: SINPE"), which is a choice, not a question.
-  if (cls === 'payment_info_safe' && !opts.nothingPaidYet && ASKS_MORE_THAN_PAYMENT_RE.test(stripFormatChars((text || '').normalize('NFKC')))) return 'non_payment'
   return cls
+}
+
+/**
+ * Lane C D8: a payment-info question that also asks something else ("… cuánto sería el total con envío y cómo puedo
+ * pagar?", "¿qué es mejor, SINPE o tarjeta?") is answered by the model, not the code method list. The caller applies it
+ * only when the store shares payment data by chat (Verifier r2 #2: otherwise the payment-data review must still run).
+ */
+export function asksMoreThanPayment(text: string): boolean {
+  return ASKS_MORE_THAN_PAYMENT_RE.test(stripFormatChars((text || '').normalize('NFKC')))
 }
 
 function classifyPaymentTextRules(

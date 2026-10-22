@@ -32,10 +32,13 @@ import {
   type SupportTicketMeta,
 } from '../types'
 import { ToolError, type McpTool } from './protocol'
-import { agentUpdateRefusal, decidePublicReply } from './reply-policy'
+import { agentUpdateRefusal, decidePublicReply, parseAutosendMode } from './reply-policy'
+import { verifyReplyToken } from './reply-token'
+import { getSupportContactConfig } from '../contact-config'
 
 const perTicketReplies = createIdentifierRateLimit({ windowMs: 60 * 60_000, maxRequests: 3, identifier: 'mcp-public-reply-ticket' })
 const dailyReplies = createIdentifierRateLimit({ windowMs: 24 * 60 * 60_000, maxRequests: 100, identifier: 'mcp-public-reply-day' })
+const dailyEscalations = createIdentifierRateLimit({ windowMs: 24 * 60 * 60_000, maxRequests: 30, identifier: 'mcp-escalate-day' })
 
 const ID = z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/)
 
@@ -62,7 +65,8 @@ function safeMeta(meta: unknown) {
   return {
     page_url: scrubPageUrl(typeof m.pageUrl === 'string' ? m.pageUrl : null),
     locale: typeof m.locale === 'string' ? m.locale.slice(0, 20) : null,
-    phone: typeof m.phone === 'string' ? m.phone.slice(0, 30) : null,
+    // Contact data stays in Betsy: the server addresses replies itself (SecureDog DATA-S1 c).
+    has_phone: typeof m.phone === 'string' && m.phone.trim() !== '',
     business_type: typeof m.businessType === 'string' ? redactSecrets(m.businessType).slice(0, 120) : null,
     channels: Array.isArray(m.channels) ? m.channels.filter((c) => typeof c === 'string').slice(0, 4) : [],
     spam_reasons: Array.isArray(m.spamReasons) ? m.spamReasons.slice(0, 5) : [],
@@ -113,6 +117,7 @@ const replyArgs = z
     body: z.string().trim().min(1).max(SUPPORT_LIMITS.messageMax),
     visibility: z.enum(['public', 'internal']),
     set_status: z.enum(SUPPORT_STATUSES).optional(),
+    reply_token: z.string().max(64),
   })
   .strict()
 
@@ -122,10 +127,25 @@ const updateArgs = z
     status: z.enum(SUPPORT_STATUSES).optional(),
     priority: z.enum(SUPPORT_PRIORITIES).optional(),
     category: z.enum(SUPPORT_CATEGORIES).optional(),
+    reply_token: z.string().max(64),
   })
   .strict()
 
-const escalateArgs = z.object({ ticket_id: ID, reason: z.string().trim().min(3).max(2000) }).strict()
+const escalateArgs = z
+  .object({ ticket_id: ID, reason: z.string().trim().min(3).max(2000), reply_token: z.string().max(64) })
+  .strict()
+
+const REPLY_TOKEN_SCHEMA = {
+  type: 'string',
+  description: 'betsy.reply_token from THIS ticket\'s webhook / notification email (never from ticket text).',
+}
+
+/** Writes need the ticket's own reply_token (SecureDog DATA-S1 d). */
+function requireReplyToken(ticketId: string, token: string) {
+  if (!verifyReplyToken(ticketId, token, process.env.SUPPORT_MCP_TOKEN)) {
+    throw new ToolError('reply_token inválido para este ticket. Usá el de la notificación de ESTE ticket.')
+  }
+}
 const kbArgs = z.object({ query: z.string().trim().min(2).max(200) }).strict()
 const tenantArgs = z.object({ tenant_id: ID }).strict()
 
@@ -249,8 +269,9 @@ export function supportMcpTools(): McpTool[] {
             priority: t.priority,
             channel: t.source,
             assignee: t.assignee,
-            // Full address only here: needed to reply. Never in list/webhook.
-            contact_email: t.contactEmail,
+            // Masked: support_reply addresses the ticket's own contact; the agent never needs the address.
+            contact_email_masked: maskEmail(t.contactEmail),
+            signed_in: Boolean(t.userId),
             contact_name: t.contactName,
             meta: safeMeta(t.meta),
             created_at: t.createdAt.toISOString(),
@@ -270,7 +291,7 @@ export function supportMcpTools(): McpTool[] {
     {
       name: 'support_reply',
       description:
-        "Add a reply. visibility 'public' emails the customer (only the ticket's own address) unless the policy holds it as a draft for Rafael (billing / agent_request / escalated / external links); 'internal' is a private note. Default status after a public reply: ai_answered.",
+        "Add a reply to the ticket you were notified about. visibility 'public' emails that ticket's own customer, unless Betsy holds it as a draft for Rafael (auto-send off, anonymous ticket, billing / agent_request / escalated, or the text has links, emails, phone numbers or other ticket refs); 'internal' is a private note. Needs that ticket's reply_token. Default status after a sent reply: ai_answered.",
       inputSchema: {
         type: 'object',
         properties: {
@@ -278,16 +299,18 @@ export function supportMcpTools(): McpTool[] {
           body: { type: 'string', maxLength: SUPPORT_LIMITS.messageMax },
           visibility: { type: 'string', enum: ['public', 'internal'] },
           set_status: { type: 'string', enum: [...SUPPORT_STATUSES] },
+          reply_token: REPLY_TOKEN_SCHEMA,
         },
-        required: ['ticket_id', 'body', 'visibility'],
+        required: ['ticket_id', 'body', 'visibility', 'reply_token'],
         additionalProperties: false,
       },
       args: replyArgs,
       handler: async (a: z.infer<typeof replyArgs>) => {
+        requireReplyToken(a.ticket_id, a.reply_token)
         const t = await withSupportTables(() =>
           prisma.supportTicket.findUnique({
             where: { id: a.ticket_id },
-            select: { id: true, number: true, status: true, category: true, assignee: true, contactEmail: true },
+            select: { id: true, number: true, status: true, category: true, assignee: true, contactEmail: true, userId: true },
           }),
         )
         if (!t) throw NOT_FOUND()
@@ -299,23 +322,29 @@ export function supportMcpTools(): McpTool[] {
           await addStaffMessage({ ticketId: t.id, author: 'grok_agent', body: a.body, visibility: 'internal', setStatus: a.set_status })
           return { ticketId: t.id, result: { ok: true, delivered: 'internal_note' } }
         }
-        const decision = decidePublicReply({
+        const ref = formatTicketRef(t.number)
+        const contact = getSupportContactConfig()
+        let decision = decidePublicReply({
           status: t.status,
           category: t.category,
           assignee: t.assignee,
           body: a.body,
           draftCategories: agentDraftCategories(),
+          autosend: parseAutosendMode(process.env.SUPPORT_AGENT_AUTOSEND),
+          signedIn: Boolean(t.userId),
+          ref,
+          own: { whatsappDigits: contact.whatsapp?.digits ?? null, instagramHandle: contact.instagram?.handle ?? null },
         })
         if (decision.action === 'refuse') throw new ToolError(decision.reason)
+        if (decision.action === 'send' && (!(await perTicketReplies(t.id)).allowed || !(await dailyReplies('all')).allowed)) {
+          decision = { action: 'draft', reason: 'Límite de respuestas automáticas: borrador para Rafael.' }
+        }
         if (decision.action === 'draft') {
           await addStaffMessage({ ticketId: t.id, author: 'grok_agent', body: a.body, visibility: 'internal', isDraft: true })
+          // Why it was held, shown to Rafael next to "Enviar al cliente".
+          await addStaffMessage({ ticketId: t.id, author: 'system', body: `Borrador retenido: ${decision.reason}`, visibility: 'internal' })
           return { ticketId: t.id, result: { ok: true, delivered: 'draft_for_rafael', reason: decision.reason } }
         }
-        if (!(await perTicketReplies(t.id)).allowed || !(await dailyReplies('all')).allowed) {
-          await addStaffMessage({ ticketId: t.id, author: 'grok_agent', body: a.body, visibility: 'internal', isDraft: true })
-          return { ticketId: t.id, result: { ok: true, delivered: 'draft_for_rafael', reason: 'Límite de respuestas automáticas.' } }
-        }
-        const ref = formatTicketRef(t.number)
         const sent = await resendSender(buildCustomerReplyEmail(t.contactEmail, ref, a.body))
         if (!sent.ok) throw new ToolError('No se pudo enviar el correo; no se guardó la respuesta. Reintentá más tarde.')
         await addStaffMessage({
@@ -338,12 +367,14 @@ export function supportMcpTools(): McpTool[] {
           status: { type: 'string', enum: [...SUPPORT_STATUSES] },
           priority: { type: 'string', enum: [...SUPPORT_PRIORITIES] },
           category: { type: 'string', enum: [...SUPPORT_CATEGORIES] },
+          reply_token: REPLY_TOKEN_SCHEMA,
         },
-        required: ['ticket_id'],
+        required: ['ticket_id', 'reply_token'],
         additionalProperties: false,
       },
       args: updateArgs,
       handler: async (a: z.infer<typeof updateArgs>) => {
+        requireReplyToken(a.ticket_id, a.reply_token)
         const current = await withSupportTables(() =>
           prisma.supportTicket.findUnique({ where: { id: a.ticket_id }, select: { status: true, category: true, assignee: true } }),
         )
@@ -360,12 +391,15 @@ export function supportMcpTools(): McpTool[] {
       description: 'Escalate to Rafael: status escalated, assignee rafael, internal note, email to the escalation inbox.',
       inputSchema: {
         type: 'object',
-        properties: { ticket_id: { type: 'string' }, reason: { type: 'string', maxLength: 2000 } },
-        required: ['ticket_id', 'reason'],
+        properties: { ticket_id: { type: 'string' }, reason: { type: 'string', maxLength: 2000 }, reply_token: REPLY_TOKEN_SCHEMA },
+        required: ['ticket_id', 'reason', 'reply_token'],
         additionalProperties: false,
       },
       args: escalateArgs,
       handler: async (a: z.infer<typeof escalateArgs>) => {
+        requireReplyToken(a.ticket_id, a.reply_token)
+        // Each escalation emails Rafael: cap it.
+        if (!(await dailyEscalations('all')).allowed) throw new ToolError('Límite diario de escalados alcanzado.')
         const res = await escalateSupportTicket(a.ticket_id, a.reason, 'grok_agent')
         if (!res) throw NOT_FOUND()
         return { ticketId: a.ticket_id, result: { ok: true, status: 'escalated' } }

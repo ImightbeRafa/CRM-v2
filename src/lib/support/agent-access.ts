@@ -61,10 +61,21 @@ export async function customAgentDenied(tenantId: string, userId: string | null)
 export async function authenticateAgentAPI(
   request: NextRequest,
   permission: Permission,
-  opts: { skipBillingGuard?: boolean } = {},
+  opts: {
+    skipBillingGuard?: boolean
+    /**
+     * Requests that only STOP a live agent (power a line off, deactivate) skip the gate: a business
+     * whose access was turned off (or missed by the seed) must still be able to stop its agent.
+     */
+    isStopRequest?: (body: unknown) => boolean
+  } = {},
 ) {
-  const auth = await authenticateAPIWithPermission(request, permission, opts)
+  const auth = await authenticateAPIWithPermission(request, permission, { skipBillingGuard: opts.skipBillingGuard })
   if (!auth.ok) return auth
+  if (opts.isStopRequest) {
+    const body = await request.clone().json().catch(() => null)
+    if (opts.isStopRequest(body)) return auth
+  }
   const denied = await customAgentDenied(auth.tenantId, auth.userId)
   if (denied) return { ok: false as const, response: denied }
   return auth

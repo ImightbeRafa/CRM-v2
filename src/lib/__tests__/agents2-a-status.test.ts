@@ -295,7 +295,7 @@ describe('source asserts: one switch, no SQL, no flag writes', () => {
   const power = read('src/app/api/chat/agents/[id]/lines/[socialAccountId]/power/route.ts')
   const lines = read('src/app/api/chat/agents/[id]/lines/route.ts')
   it('power route: update_config, same-origin, rate limits, tenant from the session, plain refusals', () => {
-    assert.match(power, /authenticateAgentAPI\(request, 'update_config'\)/)
+    assert.match(power, /authenticateAgentAPI\(request, 'update_config'[,)]/)
     assert.match(power, /isSameOriginRequest\(request\)/)
     assert.match(power, /powerRateLimit\(`\$\{auth\.tenantId\}:\$\{auth\.userId\}`\)/)
     assert.match(power, /testRunTenantLimit\(auth\.tenantId\)/)

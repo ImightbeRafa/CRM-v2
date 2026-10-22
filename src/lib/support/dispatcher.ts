@@ -23,6 +23,7 @@ import {
 } from './events'
 import { buildCustomerAckEmail, buildNotificationEmail, resendSender, type MailSender } from './notify'
 import type { SupportDeliveryStatus } from './types'
+import { withReplyToken } from './mcp/reply-token'
 
 type EnvLike = Record<string, string | undefined>
 
@@ -161,15 +162,16 @@ export async function dispatchPendingSupportEvents(
     // Stay well inside the 2-minute claim: worst case per event is ~28 s (8 s webhook + 2 × 10 s mail),
     // so 45 s + 28 s < 120 s. Unprocessed claims simply become due again when the claim lapses.
     if (Date.now() - started > (opts.budgetMs ?? 45_000)) break
+    const delivered = withReplyToken(ev.payload, env.SUPPORT_MCP_TOKEN)
     let webhook: LegResult = { status: ev.webhookStatus }
     if (ev.webhookStatus === 'pending') {
       webhook = !url || !pushed.has(ev.type)
         ? { status: 'skipped' }
-        : await postWebhook(ev.payload, { url, secret, fetchImpl: opts.fetchImpl })
+        : await postWebhook(delivered, { url, secret, fetchImpl: opts.fetchImpl })
     }
     let email: LegResult = { status: ev.emailStatus }
     if (ev.emailStatus === 'pending') {
-      const res = await send(buildNotificationEmail(ev.payload, env))
+      const res = await send(buildNotificationEmail(delivered, env))
       email = res.ok ? { status: 'sent' } : { status: 'failed', error: res.error }
       // Customer ack: once, best effort, only on the first try of a new ticket.
       if (res.ok && ev.type === 'ticket.created' && ev.attempts === 1) {

@@ -114,3 +114,7 @@ cover non-obvious setup/run gotchas.
 - Support Prisma models have NO relations (they push the tenant client's types past TS's depth limit).
 - Kill switch: `SUPPORT_PIPELINE_ENABLED=false` must keep legacy behavior.
 - Tests: `npm run test:support`.
+- Agent replies: `SUPPORT_AGENT_AUTOSEND` (default `off` = all drafts) and the content rules in
+  `src/lib/support/mcp/reply-policy.ts` decide what the agent may email, never the LLM. MCP write tools
+  need the per-ticket `reply_token` (`mcp/reply-token.ts`); no MCP read tool may return it or full contact data.
+- Stopping a live agent (panic, power off, deactivate) must never be behind the `custom_agents` gate.

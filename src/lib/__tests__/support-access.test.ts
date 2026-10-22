@@ -9,7 +9,7 @@ test('ticket visibility matrix: author, tenant OWNER/ADMIN yes; other members, o
   const cases: Array<[string, Parameters<typeof canViewerSeeTicket>[0], boolean]> = [
     ['anonymous', { userId: '', tenantId: null, role: null }, false],
     ['author (any role)', { userId: 'u-author', tenantId: 't-a', role: 'VIEWER' }, true],
-    ['author after switching business', { userId: 'u-author', tenantId: 't-b', role: 'VIEWER' }, true],
+    ['author after switching business (or removed from it)', { userId: 'u-author', tenantId: 't-b', role: 'VIEWER' }, false],
     ['same-tenant SALES member', { userId: 'u-2', tenantId: 't-a', role: 'SALES' }, false],
     ['same-tenant MANAGER', { userId: 'u-2', tenantId: 't-a', role: 'MANAGER' }, false],
     ['same-tenant OWNER', { userId: 'u-3', tenantId: 't-a', role: 'OWNER' }, true],
@@ -26,11 +26,11 @@ test('public contact tickets (no tenant, no user) are invisible to every session
 
 test('viewerTicketWhere matches canViewerSeeTicket and hides spam', () => {
   assert.deepEqual(viewerTicketWhere({ userId: 'u1', tenantId: 't-a', role: 'SALES' }), {
-    OR: [{ userId: 'u1' }],
+    OR: [{ userId: 'u1', OR: [{ tenantId: 't-a' }, { tenantId: null }] }],
     NOT: { status: 'spam' },
   })
   assert.deepEqual(viewerTicketWhere({ userId: 'u1', tenantId: 't-a', role: 'OWNER' }), {
-    OR: [{ userId: 'u1' }, { tenantId: 't-a' }],
+    OR: [{ userId: 'u1', OR: [{ tenantId: 't-a' }, { tenantId: null }] }, { tenantId: 't-a' }],
     NOT: { status: 'spam' },
   })
 })
@@ -56,4 +56,8 @@ test('custom_agents config parsing: missing/invalid → empty, never throws', ()
     { agentIds: ['a1', 'b2'], enabledBy: 'u1', enabledAt: '2026-10-22T10:00:00Z' },
   )
   assert.equal(parseCustomAgentsConfig({ enabledAt: 'not a date' }).enabledAt, null)
+})
+
+test('own ticket without a business stays visible to its author from any business', () => {
+  assert.equal(canViewerSeeTicket({ userId: 'u1', tenantId: 't-b', role: 'VIEWER' }, { userId: 'u1', tenantId: null }), true)
 })

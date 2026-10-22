@@ -116,7 +116,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await authenticateAgentAPI(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config', {
+      isStopRequest: (b) => Boolean(b && typeof b === 'object' && (b as { action?: unknown }).action === 'deactivate'),
+    })
     if (!auth.ok) return auth.response
     if (!isSameOriginRequest(request)) {
       return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })

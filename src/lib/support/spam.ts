@@ -52,6 +52,33 @@ export function hashIp(ip: string | null | undefined, salt: string | undefined):
   return createHash('sha256').update(`${salt}:${ip}`).digest('hex').slice(0, 32)
 }
 
+/** Rate-limit key for an address: lowercase, no +tag, Gmail dots removed. */
+export function normalizeEmailKey(email: string): string {
+  const lower = email.trim().toLowerCase()
+  const at = lower.lastIndexOf('@')
+  if (at < 1) return lower
+  let local = lower.slice(0, at).split('+')[0]
+  let domain = lower.slice(at + 1)
+  if (domain === 'googlemail.com') domain = 'gmail.com'
+  if (domain === 'gmail.com') local = local.replace(/\./g, '')
+  return `${local}@${domain}`
+}
+
+/** Betsy's own addresses (support inbox, public list, Rafael, From) — never a ticket contact. */
+export function isOwnSupportAddress(email: string, env: Record<string, string | undefined> = process.env): boolean {
+  const key = normalizeEmailKey(email)
+  const own = [
+    env.SUPPORT_AGENT_EMAIL || 'hola@betsycrm.com',
+    env.SUPPORT_ESCALATION_EMAIL || 'betsycrm.cr@gmail.com',
+    ...(env.SUPPORT_PUBLIC_EMAILS ?? 'hola@betsycrm.com').split(','),
+    (env.SUPPORT_FROM_EMAIL || '').replace(/^.*<|>.*$/g, ''),
+  ]
+    .map((e) => e.trim())
+    .filter(Boolean)
+    .map(normalizeEmailKey)
+  return own.includes(key) || /@betsycrm\.com$/.test(key)
+}
+
 /** Strips CR/LF/tab and angle brackets (header injection in email subjects). */
 export function sanitizeHeaderText(text: string, max = 200): string {
   return text.replace(/[\r\n\t]+/g, ' ').replace(/[<>]/g, '').trim().slice(0, max)

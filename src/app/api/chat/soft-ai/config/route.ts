@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
+import { customAgentDenied } from '@/lib/support/agent-access'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 import {
   DEFAULT_SOFT_AI_CONFIG,
@@ -71,6 +72,13 @@ export async function PATCH(request: NextRequest) {
     const existingEnabled = existing?.enabled === true
     const wantsEnabledTrue = wantsEnabledTrueFromBody(bodyRec, existingEnabled)
     const wantsPaymentFalse = wantsPaymentAlwaysHumanFalseFromBody(bodyRec)
+
+    // Turning automatic replies ON is part of the done-for-you agent service (custom_agents gate,
+    // no-op while SUPPORT_PIPELINE_ENABLED is off). Turning them off is always allowed.
+    if (wantsEnabledTrue && !existingEnabled) {
+      const denied = await customAgentDenied(tenantId, auth.userId)
+      if (denied) return denied
+    }
 
     // Exact orch gates (defense in depth beyond update_config).
     const decision = decideSoftAiConfigPatch({

@@ -37,7 +37,9 @@ const k = (n: number) => `${Math.round(n / 1000).toLocaleString('es-CR')} mil`
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string; socialAccountId: string }> }) {
   try {
-    const auth = await authenticateAgentAPI(request, 'update_config')
+    const auth = await authenticateAgentAPI(request, 'update_config', {
+      isStopRequest: (b) => Boolean(b && typeof b === 'object' && (b as { on?: unknown }).on === false),
+    })
     if (!auth.ok) return auth.response
     if (!isSameOriginRequest(request)) {
       return NextResponse.json({ success: false, error: 'Origen no permitido.' }, { status: 403 })

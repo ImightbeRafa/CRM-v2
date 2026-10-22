@@ -3,7 +3,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { authenticateAgentAPI } from '@/lib/support/agent-access'
+// Not behind the custom_agents gate on purpose: every panic action stops the agent, and a business must
+// always be able to stop its own live agent (SecureDog AUTH-S4).
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import {
   panicHumanOnly,
   panicPauseChannel,
@@ -19,7 +21,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await authenticateAgentAPI(request, 'update_config')
+    const auth = await authenticateAPIWithPermission(request, 'update_config')
     if (!auth.ok) return auth.response
     const { id } = await context.params
     const body = await request.json().catch(() => null)

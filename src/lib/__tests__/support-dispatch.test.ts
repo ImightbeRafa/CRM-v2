@@ -161,3 +161,24 @@ test('mail sends are time-boxed (a hung Resend call never stalls the dispatcher)
   const fine = withMailTimeout(async () => ({ ok: true as const, id: 'm1' }), 1000)
   assert.deepEqual(await fine({ from: 'a', to: 'b', subject: 's', html: '', text: '' }), { ok: true, id: 'm1' })
 })
+
+test('staff notifications defang customer links and label the text as unverified; agent copy carries the reply token', async () => {
+  const { defangLinks } = await import('../support/notify')
+  assert.equal(defangLinks('ver https://evil.example.com/x y pagos-betsy.com'), 'ver hxxps://evil.example[.]com/x y pagos-betsy[.]com')
+  const withLink = { ...payload, ticket: { ...payload.ticket, description: 'Pagá en https://evil.example/login' } }
+  const m = buildNotificationEmail({ ...withLink, betsy: { ...withLink.betsy, reply_token: 't'.repeat(32) } }, {})
+  assert.match(m.text, /NO verificado/)
+  assert.doesNotMatch(m.text, /https:\/\/evil/)
+  assert.match(m.text, /reply_token: t{32}/)
+  const esc = buildNotificationEmail({ ...withLink, event: 'ticket.escalated', betsy: { ...withLink.betsy, reply_token: 't'.repeat(32) } }, {})
+  assert.doesNotMatch(esc.text, /reply_token/, 'Rafael\'s copy has no agent token')
+})
+
+test('contact email keys are normalized; Betsy\'s own inboxes are never ticket contacts', async () => {
+  const { normalizeEmailKey, isOwnSupportAddress } = await import('../support/spam')
+  assert.equal(normalizeEmailKey('Ana.Perez+promo@GMail.com'), 'anaperez@gmail.com')
+  assert.equal(normalizeEmailKey('ana.perez+x@empresa.cr'), 'ana.perez@empresa.cr')
+  assert.equal(isOwnSupportAddress('HOLA@betsycrm.com', {}), true)
+  assert.equal(isOwnSupportAddress('betsy.crm.cr+x@gmail.com', {}), true)
+  assert.equal(isOwnSupportAddress('cliente@gmail.com', {}), false)
+})

@@ -348,7 +348,7 @@ export async function addCustomerReply(viewer: SupportViewer, ticketId: string, 
 // Support side (MCP agent / super admin). Callers authorize before calling.
 // ---------------------------------------------------------------------------
 
-export type SupportStaffAuthor = Extract<SupportMessageAuthor, 'grok_agent' | 'rafael'>
+export type SupportStaffAuthor = Extract<SupportMessageAuthor, 'grok_agent' | 'rafael' | 'system'>
 
 export async function addStaffMessage(input: {
   ticketId: string

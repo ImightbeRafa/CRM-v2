@@ -28,7 +28,7 @@ const GUARDS: Record<string, RegExp> = {
   'src/app/api/support/tickets/route.ts': /supportViewer\(request\)/,
   'src/app/api/support/tickets/[id]/route.ts': /supportViewer\(request\)/,
   'src/app/api/support/agent-request/route.ts': /supportViewer\(request\)/,
-  'src/app/api/support/events/route.ts': /bearerMatches\([\s\S]*isSuperAdminRequest\(request\)/,
+  'src/app/api/support/events/route.ts': /process\.env\.SUPPORT_POLL_TOKEN[\s\S]*bearerMatches\(request\.headers\.get\('authorization'\), secret\)[\s\S]*requireSuperAdmin\(request\)/,
   'src/app/api/mcp/route.ts': /checkMcpBearer\(request\.headers\.get\('authorization'\), process\.env\.SUPPORT_MCP_TOKEN\)/,
   'src/app/api/cron/support-dispatch/route.ts': /requireCronBearer\(request\)/,
   'src/app/api/agents/access/route.ts': /authenticateAPI\(request/,
@@ -78,7 +78,7 @@ test('routes never fetch the webhook inline; only the dispatcher posts to it', (
 
 test('contact intake order: validate → rate limit → Turnstile → spam → ticket/legacy', () => {
   const src = read('src/lib/support/contact-intake.ts')
-  const order = ['contactSchema).safeParse', 'ipLimiter(', 'emailLimiter(', 'verifyTurnstile(', 'checkSpam(', 'createSupportTicket(']
+  const order = ['contactSchema).safeParse', 'ipLimiter(', 'verifyTurnstile(', 'emailLimiter(', 'checkSpam(', 'isOwnSupportAddress(', 'createSupportTicket(']
   let last = -1
   for (const step of order) {
     const i = src.indexOf(step, last + 1)
@@ -103,7 +103,7 @@ test('agent editor APIs are gated by custom_agents (inbox-side feedback / AI ter
   assert.ok(routes.length > 25)
   for (const f of routes) {
     const src = read(f)
-    if (f.includes('/agents/feedback/') || f.includes('/agents/ai-terms/')) {
+    if (f.includes('/agents/feedback/') || f.includes('/agents/ai-terms/') || f.endsWith('/panic/route.ts')) {
       assert.doesNotMatch(src, /authenticateAgentAPI/, f)
       continue
     }
@@ -147,6 +147,8 @@ test('Worker forwards every SUPPORT_* env and runs the dispatcher on the 5-minut
     'SUPPORT_AGENT_WEBHOOK_URL',
     'SUPPORT_WEBHOOK_SECRET',
     'SUPPORT_WEBHOOK_EVENTS',
+    'SUPPORT_POLL_TOKEN',
+    'SUPPORT_AGENT_AUTOSEND',
     'SUPPORT_AGENT_DRAFT_CATEGORIES',
     'SUPPORT_MCP_TOKEN',
     'SUPPORT_PUBLIC_BASE_URL',
@@ -194,4 +196,12 @@ test('review fixes: tx-only tenant lookup in transactions, dispatcher time budge
   assert.match(fb, /identifier: 'support-ticket-user'/)
   assert.match(read('src/app/api/contact/route.ts'), /handleContactIntake\(request, raw, \{ legacyRoute: true \}\)/)
   assert.match(read('src/app/api/support/events/route.ts'), /next_since/)
+})
+
+test('stopping a live agent is never behind the gate (panic, power off, deactivate)', () => {
+  assert.match(read('src/app/api/chat/agents/[id]/panic/route.ts'), /authenticateAPIWithPermission\(request, 'update_config'\)/)
+  assert.match(read('src/app/api/chat/agents/[id]/lines/[socialAccountId]/power/route.ts'), /isStopRequest: \(b\) => [^\n]*\.on === false/)
+  assert.match(read('src/app/api/chat/agents/[id]/activation/route.ts'), /isStopRequest: \(b\) => [^\n]*\.action === 'deactivate'/)
+  const gate = read('src/lib/support/agent-access.ts')
+  assert.match(gate, /request\.clone\(\)\.json\(\)/, 'the route still reads its own body')
 })

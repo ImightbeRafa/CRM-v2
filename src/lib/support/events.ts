@@ -56,6 +56,8 @@ export type SupportEventPayload = {
     phone: string | null
     mcp_url: string
     admin_url: string
+    /** Added at delivery time only (mcp/reply-token.ts); required by MCP write tools. */
+    reply_token?: string
   }
 }
 

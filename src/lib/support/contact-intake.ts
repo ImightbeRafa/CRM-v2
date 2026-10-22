@@ -13,7 +13,7 @@ import { verifyTurnstile } from '@/lib/turnstile'
 import { supportPipelineEnabled } from './config'
 import { dispatchPendingSupportEvents } from './dispatcher'
 import { buildLegacyContactEmail, resendSender } from './notify'
-import { checkSpam, hashIp } from './spam'
+import { checkSpam, hashIp, isOwnSupportAddress, normalizeEmailKey } from './spam'
 import { SupportTablesMissingError, createSupportTicket } from './tickets'
 import { SUPPORT_CATEGORIES, SUPPORT_LIMITS } from './types'
 
@@ -70,10 +70,10 @@ export async function handleContactIntake(
   const input = parsed.data
   const ip = getClientIP(request)
   if (!(await ipLimiter(`ip:${ip}`)).allowed) return { kind: 'rate_limited' }
-  if (!(await emailLimiter(`email:${input.email.toLowerCase()}`)).allowed) return { kind: 'rate_limited' }
-
+  // Turnstile before the per-address bucket, so nobody can lock a victim's address out without solving it.
   const ts = await verifyTurnstile(input.turnstileToken, ip)
   if (!ts.ok) return { kind: 'turnstile', error: ts.error }
+  if (!(await emailLimiter(`email:${normalizeEmailKey(input.email)}`)).allowed) return { kind: 'rate_limited' }
 
   const spam = checkSpam({
     honeypot: input.website,
@@ -90,6 +90,8 @@ export async function handleContactIntake(
     return res.ok ? { kind: 'accepted', ticketRef: null, mode: 'legacy_email' } : { kind: 'failed' }
   }
   if (!supportPipelineEnabled()) return legacy()
+  // Betsy's own inboxes as the "customer" would loop acks / agent replies back into the support inbox.
+  if (isOwnSupportAddress(input.email)) return { kind: 'accepted', ticketRef: null, mode: 'dropped' }
 
   const session = await sessionContext(request)
   try {
@@ -114,7 +116,8 @@ export async function handleContactIntake(
     return { kind: 'accepted', ticketRef: ticket.status === 'spam' ? null : ticket.ref, mode: 'ticket' }
   } catch (error) {
     if (error instanceof SupportTablesMissingError) return legacy()
-    console.error('[support] contact intake failed', (error as Error)?.message)
+    // Name only: Prisma messages can echo argument values (the email).
+    console.error('[support] contact intake failed', (error as Error)?.name)
     return { kind: 'failed' }
   }
 }

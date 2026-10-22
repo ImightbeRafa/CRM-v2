@@ -10,6 +10,8 @@ export const TENANT_TICKET_ROLES = new Set(['OWNER', 'ADMIN'])
 
 export function canViewerSeeTicket(viewer: SupportViewer, ticket: SupportTicketOwnership): boolean {
   if (!viewer.userId) return false
+  // A business ticket is only reachable from inside that business (a removed member loses it).
+  if (ticket.tenantId && ticket.tenantId !== viewer.tenantId) return false
   if (ticket.userId && ticket.userId === viewer.userId) return true
   return Boolean(
     viewer.tenantId &&
@@ -22,7 +24,8 @@ export function canViewerSeeTicket(viewer: SupportViewer, ticket: SupportTicketO
 
 /** Prisma `where` matching exactly the tickets `canViewerSeeTicket` allows. */
 export function viewerTicketWhere(viewer: SupportViewer): Record<string, unknown> {
-  const or: Record<string, unknown>[] = [{ userId: viewer.userId }]
+  // Own tickets of THIS business, or own tickets without a business.
+  const or: Record<string, unknown>[] = [{ userId: viewer.userId, OR: [{ tenantId: viewer.tenantId }, { tenantId: null }] }]
   if (viewer.tenantId && viewer.role && TENANT_TICKET_ROLES.has(viewer.role)) {
     or.push({ tenantId: viewer.tenantId })
   }

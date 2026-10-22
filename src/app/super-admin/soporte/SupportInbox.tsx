@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
 
 type TicketRow = {
   id: string
@@ -192,7 +193,17 @@ export default function SupportInbox({ initialId }: { initialId?: string }) {
                   </p>
                   <p className="whitespace-pre-wrap break-words">{m.body}</p>
                   {m.isDraft && (
-                    <button type="button" disabled={busy} onClick={() => void act({ action: 'publish_draft', messageId: m.id }, 'Borrador enviado al cliente.')} className="mt-1 rounded-md bg-white px-2 py-0.5 text-[12px] ring-1 ring-amber-400 disabled:opacity-50">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={async () => {
+                        const ok = await auroraConfirm(
+                          `¿Enviar este borrador a ${detail.contactEmail}?\nLo escribió el agente a partir de texto NO verificado del cliente: revisá enlaces, números y datos antes de enviarlo.`,
+                        )
+                        if (ok) void act({ action: 'publish_draft', messageId: m.id }, 'Borrador enviado al cliente.')
+                      }}
+                      className="mt-1 rounded-md bg-white px-2 py-0.5 text-[12px] ring-1 ring-amber-400 disabled:opacity-50"
+                    >
                       Enviar al cliente
                     </button>
                   )}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { z } from 'zod'
 import { checkMcpBearer } from '../support/mcp/auth'
 import { MCP_PROTOCOL_VERSION, RPC, ToolError, handleMcpMessage, type McpTool } from '../support/mcp/protocol'
-import { decidePublicReply, externalLinks } from '../support/mcp/reply-policy'
+import { decidePublicReply, externalLinks, parseAutosendMode } from '../support/mcp/reply-policy'
 
 // tools.ts pulls in auth modules that build a Resend client at import time.
 process.env.RESEND_API_KEY ||= 're_test_placeholder'
@@ -112,23 +112,88 @@ test('MCP bearer: unset/short token → 503, wrong/missing → 401, right → ok
   assert.deepEqual(checkMcpBearer(`bearer ${token}`, ` ${token} `), { ok: true })
 })
 
-test('reply policy: billing/agent_request/escalated/external links → draft; spam → refuse; else send', () => {
-  const base = { status: 'open', category: 'question', assignee: 'grok_agent', body: 'Hola, así se hace.', draftCategories: new Set(['billing', 'agent_request']) }
+const OWN = { whatsappDigits: '50662470831', instagramHandle: 'betsy_crm' }
+
+test('reply policy: auto-send is OFF by default and anonymous tickets stay drafts in signed_in mode', () => {
+  const base = { status: 'open', category: 'question', assignee: 'grok_agent', body: 'Hola, así se hace.', draftCategories: new Set(['billing']) }
+  assert.equal(decidePublicReply(base).action, 'draft')
+  assert.equal(decidePublicReply({ ...base, autosend: 'signed_in', signedIn: false }).action, 'draft')
+  assert.equal(decidePublicReply({ ...base, autosend: 'signed_in', signedIn: true }).action, 'send')
+  assert.equal(decidePublicReply({ ...base, autosend: 'all', signedIn: false }).action, 'send')
+})
+
+test('reply policy (auto-send on): categories, escalation, spam and sensitive content', () => {
+  const base = {
+    status: 'open',
+    category: 'question',
+    assignee: 'grok_agent',
+    body: 'Hola, así se hace.',
+    draftCategories: new Set(['billing', 'agent_request']),
+    autosend: 'all' as const,
+    signedIn: true,
+    ref: 'BETSY-10',
+    own: OWN,
+  }
   assert.deepEqual(decidePublicReply(base), { action: 'send' })
   assert.equal(decidePublicReply({ ...base, status: 'spam' }).action, 'refuse')
   assert.equal(decidePublicReply({ ...base, category: 'billing' }).action, 'draft')
   assert.equal(decidePublicReply({ ...base, category: 'agent_request' }).action, 'draft')
   assert.equal(decidePublicReply({ ...base, status: 'escalated' }).action, 'draft')
   assert.equal(decidePublicReply({ ...base, assignee: 'rafael' }).action, 'draft')
-  assert.equal(decidePublicReply({ ...base, body: 'Entrá a https://evil.example/login' }).action, 'draft')
-  assert.equal(decidePublicReply({ ...base, body: 'Ingresá a evil.co/login ya' }).action, 'draft')
-  assert.equal(decidePublicReply({ ...base, body: 'Guía: https://www.betsycrm.com/help/billing o https://wa.me/50662470831' }).action, 'send')
-  assert.equal(decidePublicReply({ ...base, draftCategories: new Set() , category: 'billing' }).action, 'send')
+  const held = [
+    'Entrá a https://evil.example/login',
+    'Ingresá a evil.co/login ya',
+    'Pagá en pagos-betsy.com hoy',
+    'Escribile a betsy-soporte.site',
+    'Escribinos a https://wa.me/50688888888',
+    'Seguinos en https://www.instagram.com/betsy_crm_pagos/',
+    'Tu correo es otra@persona.com',
+    'Llamá al +506 8888-8888',
+    'Cuenta IBAN 1234567890123',
+    'Lo mismo pasó en BETSY-11',
+  ]
+  for (const body of held) assert.equal(decidePublicReply({ ...base, body }).action, 'draft', body)
+  const allowed = [
+    'Guía: https://www.betsycrm.com/help/billing',
+    'WhatsApp: https://wa.me/50662470831 o +506 6247-0831',
+    'Instagram: https://www.instagram.com/betsy_crm/',
+    'Tu caso BETSY-10 está listo.',
+    'Hacelo en 3 pasos y listo.',
+  ]
+  for (const body of allowed) assert.equal(decidePublicReply({ ...base, body }).action, 'send', body)
+  assert.equal(decidePublicReply({ ...base, draftCategories: new Set(), category: 'billing' }).action, 'send')
+  assert.equal(parseAutosendMode('ALL'), 'all')
+  assert.equal(parseAutosendMode('yes'), 'off')
 })
 
-test('externalLinks lists only non-Betsy hosts', () => {
-  assert.deepEqual(externalLinks('https://betsycrm.com/x https://www.instagram.com/betsy_crm/'), [])
-  assert.equal(externalLinks('mirá https://betsycrm.com.evil.io/x').length, 1)
+test('externalLinks lists only Betsy\'s own contact URLs as safe', () => {
+  assert.deepEqual(externalLinks('https://betsycrm.com/x https://www.instagram.com/betsy_crm/ https://wa.me/50662470831', OWN), [])
+  assert.equal(externalLinks('mirá https://betsycrm.com.evil.io/x', OWN).length, 1)
+  assert.equal(externalLinks('wa.me/50611112222', OWN).length, 1)
+})
+
+test('reply tokens: per ticket, never valid for another ticket or without the MCP secret', async () => {
+  const { replyToken, verifyReplyToken, withReplyToken } = await import('../support/mcp/reply-token')
+  const secret = 'm'.repeat(40)
+  const tA = replyToken('ticketA', secret)
+  assert.equal(tA.length, 32)
+  assert.equal(verifyReplyToken('ticketA', tA, secret), true)
+  assert.equal(verifyReplyToken('ticketB', tA, secret), false)
+  assert.equal(verifyReplyToken('ticketA', tA, 'other'.repeat(10)), false)
+  assert.equal(verifyReplyToken('ticketA', tA, undefined), false)
+  assert.equal(verifyReplyToken('ticketA', undefined, secret), false)
+  const p = { event: 'ticket.created', source: 'betsy', ticket: { id: 'ticketA' }, betsy: { ref: 'BETSY-1' } } as never
+  assert.equal((withReplyToken(p, secret) as any).betsy.reply_token, tA)
+  assert.equal((withReplyToken(p, '') as any).betsy.reply_token, undefined)
+})
+
+test('write tools require reply_token; read tools never return it', () => {
+  const tools = supportMcpTools()
+  for (const name of ['support_reply', 'support_update_ticket', 'support_escalate']) {
+    const t = tools.find((x) => x.name === name)!
+    assert.ok((t.inputSchema as { required: string[] }).required.includes('reply_token'), name)
+    assert.equal(t.args.safeParse({ ticket_id: 'x', body: 'b', visibility: 'internal', reason: 'abc' }).success, false, name)
+  }
 })
 
 test('support_update_ticket / set_status cannot undo the draft rule', async () => {

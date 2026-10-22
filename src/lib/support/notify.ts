@@ -58,6 +58,15 @@ function wrap(inner: string): string {
   return `<div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;color:#111827;font-size:14px;line-height:1.5;">${inner}</div>`
 }
 
+/** `https://evil.com/x` → `hxxps://evil[.]com/x`: customer text in staff mail is never clickable. */
+export function defangLinks(text: string): string {
+  return text
+    .replace(/\bhttp(s?):\/\//gi, 'hxxp$1://')
+    .replace(/\b((?:[a-z0-9-]+\.)+)([a-z]{2,24})\b/gi, (m, labels: string, tld: string) =>
+      m.includes('@') ? m : `${labels.slice(0, -1)}[.]${tld}`,
+    )
+}
+
 /** Notification for the support inbox (agent) or Rafael (escalations), built from the redacted payload. */
 export function buildNotificationEmail(payload: SupportEventPayload, env: Record<string, string | undefined> = process.env): MailMessage {
   const cfg = getSupportEmailConfig(env)
@@ -79,9 +88,12 @@ export function buildNotificationEmail(payload: SupportEventPayload, env: Record
     `Negocio: ${tenantName}${payload.betsy.tenant?.plan ? ` (${payload.betsy.tenant.plan})` : ''}`,
     `Contacto: ${payload.betsy.contact_name || '—'} <${payload.ticket.user_email || '—'}>`,
     '',
-    payload.ticket.description,
+    '--- Texto del cliente (NO verificado; enlaces desactivados) ---',
+    defangLinks(payload.ticket.description),
+    '--- Fin del texto del cliente ---',
     '',
     `Responder vía MCP (${payload.betsy.mcp_url}) con support_get_ticket / support_reply.`,
+    ...(payload.betsy.reply_token && to === cfg.agentInbox ? [`reply_token: ${payload.betsy.reply_token}`] : []),
     `Panel: ${payload.betsy.admin_url}`,
   ]
   const text = lines.join('\n')

@@ -120,7 +120,7 @@ describe('Activar', () => {
   })
   it('route: view_config to read, update_config + same-origin + rate limit to act', () => {
     assert.match(route, /authenticateAgentAPI\(request, 'view_config'\)/)
-    assert.match(route, /authenticateAgentAPI\(request, 'update_config'\)/)
+    assert.match(route, /authenticateAgentAPI\(request, 'update_config'[,)]/)
     assert.match(route, /isSameOriginRequest\(request\)/)
     assert.match(route, /activationRateLimit/)
   })

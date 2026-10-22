@@ -59,6 +59,11 @@ export type CreateSupportTicketInput = {
   status?: Extract<SupportTicketStatus, 'open' | 'spam'>
   meta?: SupportTicketMeta
   legacyFeedbackTicketId?: string | null
+  /**
+   * Historical import (scripts/backfill-feedback-to-support.ts only): keeps the original status and
+   * dates, adds the old admin notes as an internal message, and writes NO outbox event.
+   */
+  backfill?: { status: SupportTicketStatus; createdAt: Date; resolvedAt: Date | null; internalNote: string | null }
 }
 
 export type CreatedSupportTicket = { id: string; number: number; ref: string; status: string }
@@ -116,9 +121,10 @@ export async function createSupportTicket(input: CreateSupportTicketInput): Prom
   const name = input.contact.name ? sanitizeHeaderText(input.contact.name, SUPPORT_LIMITS.name) || null : null
   const category = isOneOf(SUPPORT_CATEGORIES, input.category) ? input.category : 'question'
   const priority = isOneOf(SUPPORT_PRIORITIES, input.priority) ? input.priority : 'normal'
-  const status = input.status === 'spam' ? 'spam' : 'open'
+  const backfill = input.backfill && isOneOf(SUPPORT_STATUSES, input.backfill.status) ? input.backfill : null
+  const status = backfill ? backfill.status : input.status === 'spam' ? 'spam' : 'open'
   const tenant = await withSupportTables(() => tenantSummary(input.tenantId))
-  const now = new Date()
+  const now = backfill ? backfill.createdAt : new Date()
 
   return withSupportTables(() =>
     prisma.$transaction(async (tx) => {
@@ -136,12 +142,18 @@ export async function createSupportTicket(input: CreateSupportTicketInput): Prom
           meta: (input.meta || {}) as object,
           legacyFeedbackTicketId: input.legacyFeedbackTicketId || null,
           lastCustomerMessageAt: now,
+          ...(backfill ? { createdAt: backfill.createdAt, resolvedAt: backfill.resolvedAt } : {}),
         },
       })
       await tx.supportTicketMessage.create({
-        data: { ticketId: ticket.id, author: 'customer', visibility: 'public', body },
+        data: { ticketId: ticket.id, author: 'customer', visibility: 'public', body, createdAt: now },
       })
-      if (status !== 'spam') {
+      if (backfill?.internalNote) {
+        await tx.supportTicketMessage.create({
+          data: { ticketId: ticket.id, author: 'rafael', visibility: 'internal', body: clip(backfill.internalNote, SUPPORT_LIMITS.bodyMax), createdAt: now },
+        })
+      }
+      if (status !== 'spam' && !backfill) {
         const id = newEventId()
         const payload = buildTicketEventPayload('ticket.created', eventInput(ticket, body, tenant), {
           deliveryId: id,

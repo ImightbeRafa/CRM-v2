@@ -88,3 +88,29 @@ cover non-obvious setup/run gotchas.
   Phase 0 kickoff (see `docs/audits/PHASE0_DEAD_CODE.md`).
 - `DOCUMENTATION.md` may still reference missing files (e.g. `env-template-local.txt`);
   agent-maintained audit truth lives under `docs/audits/`.
+
+### Support pipeline (tickets, contact, MCP, managed agents)
+- Spec: `docs/plans/support-pipeline/SPEC.md`; runbook (env, SQL 059, seed, smoke, rollback):
+  `docs/runbooks/support-pipeline.md`. Single write path: `createSupportTicket()` in
+  `src/lib/support/tickets.ts`. Never insert `SupportTicket` rows elsewhere; it writes the outbox
+  event in the same transaction.
+- Outbound to the support agent only via the `SupportTicketEvent` outbox +
+  `dispatchPendingSupportEvents()` (production container only); never fetch the webhook inline from a route.
+- Agent access only through `/api/mcp` with `SUPPORT_MCP_TOKEN`; every tool output goes through
+  `src/lib/support/redact.ts`; every call is audited in `SupportMcpAudit`.
+- Tenant agent access = `TenantFeatureFlag` key `custom_agents` (default off, explicit rows only).
+  Only super admin changes it. Enforced server-side by `authenticateAgentAPI` on `/api/chat/agents/**`
+  and `/api/chat/knowledge/**` (inbox-side `feedback` and `ai-terms` stay open; the agent runtime is
+  never gated). Never add it to PREVIEW_UNLOCKED_KEYS. No user-facing tiers; review views live under
+  `/super-admin` only.
+- The Agents tab for non-enabled tenants is a sales page; its CTA creates an `agent_request` ticket
+  via `createSupportTicket()`.
+- Webhook payload stays compatible with Advance `ticket.created` (+ `source: "betsy"`, `betsy{}`).
+  Contact info (WhatsApp, Instagram, emails, hours) comes from `getSupportContactConfig()`.
+- Tenant id comes from the session JWT, never from the request body. Foreign ticket ids return 404.
+- Support emails come from env (`SUPPORT_AGENT_EMAIL`, `SUPPORT_FROM_EMAIL`,
+  `SUPPORT_ESCALATION_EMAIL`, `SUPPORT_PUBLIC_EMAILS`); never hardcode addresses. New `SUPPORT_*`
+  env names must also be added to `CONTAINER_ENV_KEYS` in `src/cf-container-worker.ts`.
+- Support Prisma models have NO relations (they push the tenant client's types past TS's depth limit).
+- Kill switch: `SUPPORT_PIPELINE_ENABLED=false` must keep legacy behavior.
+- Tests: `npm run test:support`.

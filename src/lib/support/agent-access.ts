@@ -14,27 +14,18 @@ import 'server-only'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
-import { prisma } from '@/lib/db'
-import { CUSTOM_AGENTS_FLAG } from '@/lib/feature-flags'
 import type { Permission } from '@/lib/rbac'
 import { isSuperAdmin } from '@/lib/super-admin-helpers'
 import { supportPipelineEnabled } from './config'
 import { decideCustomAgentAccess, parseCustomAgentsConfig, type CustomAgentsConfig } from './agent-access-core'
+import { CUSTOM_AGENTS_FLAG, readCustomAgentsFlag } from './agent-flag'
 
-export { CUSTOM_AGENTS_FLAG }
+export { CUSTOM_AGENTS_FLAG, readCustomAgentsFlag }
 
 export type CustomAgentAccess = {
   enabled: boolean
   reason: 'legacy' | 'super_admin' | 'flag' | 'not_enabled'
   config: CustomAgentsConfig
-}
-
-export async function readCustomAgentsFlag(tenantId: string) {
-  const row = await prisma.tenantFeatureFlag.findFirst({
-    where: { scope: tenantId, tenantId, key: CUSTOM_AGENTS_FLAG },
-    select: { enabled: true, config: true, updatedAt: true },
-  })
-  return row ? { enabled: row.enabled === true, config: parseCustomAgentsConfig(row.config), updatedAt: row.updatedAt } : null
 }
 
 export async function getCustomAgentAccess(tenantId: string, userId: string | null): Promise<CustomAgentAccess> {

@@ -71,6 +71,17 @@ export default function HelpIndex() {
       {/* Search */}
       <HelpIndexClient docs={docs} />
 
+      <Link
+        href="/soporte"
+        className="mb-8 flex items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white p-4 text-[14px] shadow-sm transition-all hover:border-au-line-c9bfff hover:shadow-md"
+      >
+        <span>
+          <span className="block font-medium text-slate-900">¿No encontrás lo que buscás?</span>
+          <span className="block text-xs text-slate-500">Escribinos por WhatsApp, Instagram o correo, o abrí un caso de soporte.</span>
+        </span>
+        <ArrowRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+      </Link>
+
       {/* Featured Card */}
       {featuredDoc && (
         <Link

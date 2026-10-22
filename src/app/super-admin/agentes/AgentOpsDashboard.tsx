@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import KillSwitchPanel from '@/app/super-admin/agentes/KillSwitchPanel'
 import ScorecardPanel from '@/app/super-admin/agentes/ScorecardPanel'
+import CustomAgentAccessPanel from '@/app/super-admin/agentes/CustomAgentAccessPanel'
 
 type Bucket = {
   turns: number
@@ -161,6 +162,7 @@ export default function AgentOpsDashboard() {
         </a>
       </p>
       <KillSwitchPanel />
+      <CustomAgentAccessPanel />
       <div className="flex flex-wrap items-center gap-2">
         {DAY_OPTIONS.map((d) => (
           <button

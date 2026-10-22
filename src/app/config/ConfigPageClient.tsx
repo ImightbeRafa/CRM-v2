@@ -17,6 +17,7 @@ import { InviteMemberModal } from '@/components/aurora/config/InviteMemberModal'
 import { useAuroraConfirm } from '@/components/aurora/ui/AuroraConfirmDialog'
 import { useToast } from '@/app/hooks/use-toast'
 import { AuroraListSkeleton } from '@/components/aurora/states/AuroraSkeleton'
+import { CustomAgentGate } from '@/components/aurora/agentes/CustomAgentGate'
 import {
   CONFIG_HUB_TAB,
   normalizeConfigSearch,
@@ -974,7 +975,9 @@ function ConfigPageInner() {
           )}
           {visited.has('agentes') && (
             <div hidden={activeTab !== 'agentes'} className={PAGE_PANEL_BLEED}>
-              <AgentesPanelPage />
+              <CustomAgentGate>
+                <AgentesPanelPage />
+              </CustomAgentGate>
             </div>
           )}
           {visited.has('integrations') && (

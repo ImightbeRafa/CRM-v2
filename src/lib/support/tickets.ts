@@ -225,6 +225,57 @@ export async function listTicketsForViewer(viewer: SupportViewer, limit = 50) {
   }))
 }
 
+const FEEDBACK_STATUS: Record<string, string> = {
+  open: 'open',
+  ai_answered: 'in_progress',
+  waiting_customer: 'in_progress',
+  escalated: 'in_progress',
+  resolved: 'resolved',
+  closed: 'closed',
+}
+
+/**
+ * The caller's own tickets in this business, in the legacy FeedbackTicket shape the in-app
+ * FeedbackWidget reads (/api/feedback GET). description = first message, adminNotes = the
+ * latest public support reply (never internal notes or drafts).
+ */
+export async function listFeedbackShapedTickets(userId: string, tenantId: string) {
+  const rows = await withSupportTables(() =>
+    prisma.supportTicket.findMany({
+      where: { userId, tenantId, NOT: { status: 'spam' } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    }),
+  )
+  if (!rows.length) return []
+  const messages = await prisma.supportTicketMessage.findMany({
+    where: { ticketId: { in: rows.map((r) => r.id) }, visibility: 'public', isDraft: false },
+    orderBy: { createdAt: 'asc' },
+    select: { ticketId: true, author: true, body: true },
+  })
+  return rows.map((r) => {
+    const thread = messages.filter((m) => m.ticketId === r.id)
+    const first = thread.find((m) => m.author === 'customer')
+    const lastReply = [...thread].reverse().find((m) => m.author !== 'customer')
+    return {
+      id: r.id,
+      ref: formatTicketRef(r.number),
+      tenantId: r.tenantId,
+      userId: r.userId,
+      category: r.category,
+      subject: r.subject,
+      description: first?.body ?? '',
+      status: FEEDBACK_STATUS[r.status] || 'open',
+      priority: r.priority,
+      adminNotes: lastReply?.body ?? null,
+      legacyFeedbackTicketId: r.legacyFeedbackTicketId,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      resolvedAt: r.resolvedAt?.toISOString() ?? null,
+    }
+  })
+}
+
 /** Thread with PUBLIC, non-draft messages only. null = not found or not allowed (caller answers 404). */
 export async function getTicketForViewer(viewer: SupportViewer, ticketId: string) {
   if (typeof ticketId !== 'string' || ticketId.length > 64) return null

@@ -2,6 +2,8 @@ import { Eye, Package } from 'lucide-react'
 import { paymentChip, shipChip, type PedidoRow } from '@/lib/pedidos-aurora'
 import { canalLabel, type OrderLine } from '@/lib/order-channel-line'
 import { CanalCell, PaymentPill, ShipPill } from './PedidoChips'
+import OrderItemsList from '@/components/orders/OrderItemsList'
+import ShippingMethodBadge from '@/components/orders/ShippingMethodBadge'
 
 const CR_TZ = 'America/Costa_Rica'
 const AVATAR_TONES = [
@@ -77,7 +79,6 @@ export function PedidosTable({
           {rows.map((o) => {
             const name = o.customerName || o.username || 'Sin nombre'
             const contact = o.phone || (o.username ? `@${o.username.replace(/^@/, '')}` : '')
-            const qty = o.quantity && o.quantity > 0 ? o.quantity : 1
             return (
               <tr
                 key={o.orderId}
@@ -113,16 +114,18 @@ export function PedidosTable({
                   </div>
                 </td>
                 <td className="px-3 py-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-start gap-2">
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-400" aria-hidden>
                       <Package className="h-3.5 w-3.5" />
                     </span>
-                    <span className="min-w-0">
-                      <span className="block max-w-[180px] truncate text-slate-700" title={o.product}>
-                        {o.product || '—'}
-                      </span>
-                      <span className="block text-[11px] text-slate-400">×{qty}</span>
-                    </span>
+                    <OrderItemsList
+                      order={o}
+                      maxItems={2}
+                      emptyLabel="—"
+                      style={{ minWidth: 160, maxWidth: 260 }}
+                      itemStyle={{ color: 'rgb(var(--p-tx-slate-700, 51 65 85))' }}
+                      moreColor="#5b6cff"
+                    />
                   </div>
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-900">
@@ -132,7 +135,10 @@ export function PedidosTable({
                   <PaymentPill chip={paymentChip(o)} />
                 </td>
                 <td className="px-3 py-3">
-                  <ShipPill chip={shipChip(o)} />
+                  <div className="flex flex-col items-start gap-1">
+                    <ShipPill chip={shipChip(o)} />
+                    <ShippingMethodBadge order={o} size="xs" showCod={false} />
+                  </div>
                 </td>
                 <td className="px-3 py-3">
                   <CanalCell canal={canalLabel(o, lines?.[o.id ?? o.orderId])} />

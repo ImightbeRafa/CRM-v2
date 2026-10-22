@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Package, PackageCheck, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X, Archive, ArchiveRestore, Copy, CheckCircle2, FileText, Download } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import PaymentMethodWizard, { type PaymentConfirmPayload } from '@/app/logistics/components/PaymentMethodWizard';
+import ShippingMethodBadge from '@/components/orders/ShippingMethodBadge';
+import OrderItemsList from '@/components/orders/OrderItemsList';
 import {
     costaRicaLocations,
     provinceNames,
@@ -16,6 +18,7 @@ interface Order {
     customerName: string; phone: string | null; email: string | null; product: string | null;
     quantity: number | null; province: string | null; canton: string | null; district: string | null;
     address: string | null; total: number; comments: string | null; delivery: string | null;
+    courier?: string | null; itemLines?: string[] | null;
     lmCarrier: string | null; lmStatus: string | null; isContraEntrega: boolean; contraEntregaCollected: boolean;
     cePaymentMethod?: string | null; ceConfirmedBy?: string | null;
     archivedAt: string | null; correosShippingCost: number | null;
@@ -90,6 +93,13 @@ const compactOrderNameStyle = {
     lineHeight: 1.25,
     overflowWrap: 'anywhere',
     wordBreak: 'break-word',
+} as const;
+
+/** Item list on dark cards: muted, wraps, never a one-line cut. */
+const itemsListStyle = {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 11,
+    marginBottom: 6,
 } as const;
 
 const normalizeText = (value: string | undefined | null) => {
@@ -432,10 +442,12 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onConfirmC
                         </button>
                     </div>
                 )}
-                {/* Row 3: Location, product, total */}
+                {/* Row 3: How it ships + items (full names, wrapped) */}
+                <ShippingMethodBadge order={order} theme="dark" size="xs" style={{ marginBottom: 5 }} />
+                <OrderItemsList order={order} style={itemsListStyle} moreColor="#a5a2ff" />
+                {/* Row 4: Location, guía, total */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
                     {location && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>📍 {location}</span>}
-                    {order.product && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{order.product}{order.quantity && order.quantity > 1 ? ` ×${order.quantity}` : ''}</span>}
                     {carrier === 'correos' && trackingCode && order.guiaStatus !== 'failed' && (
                         <span style={{ color: '#60a5fa', background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.25)', borderRadius: 6, padding: '1px 6px', fontSize: 10.5, fontWeight: 700 }}>Guia {trackingCode}</span>
                     )}
@@ -447,7 +459,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onConfirmC
                 {showHistorial && <HistorialPanel orderId={order.id} />}
                 {expanded && (
                     <div onClick={e => e.stopPropagation()} style={{ padding: '10px 12px', background: 'rgba(0,0,0,0.25)', borderRadius: 8, marginBottom: 8, border: '1px solid rgba(255,255,255,0.08)', fontSize: 11, overflow: 'visible' }}>
-                        {order.product && <div style={detailRowStyle}><span style={detailLabelStyle}>Producto</span><span style={detailValueStyle}>{order.product}{order.quantity ? ` × ${order.quantity}` : ''}</span></div>}
+                        {order.product && <div style={detailRowStyle}><span style={detailLabelStyle}>Producto</span><OrderItemsList order={order} maxItems={50} lineClamp={20} style={detailValueStyle} /></div>}
                         {addr && <div style={detailRowStyle}><span style={detailLabelStyle}>Dirección</span><span style={detailValueStyle}>{addr}</span></div>}
                         {order.delivery && <div style={detailRowStyle}><span style={detailLabelStyle}>Entrega</span><span style={detailValueStyle}>{order.delivery}</span></div>}
                         {order.comments && <div style={{ marginTop: 6, padding: '6px 9px', background: 'rgba(255,255,255,0.04)', borderRadius: 6, border: '1px solid rgba(255,255,255,0.07)' }}>
@@ -492,7 +504,6 @@ function ArchivedOrderRow({ order, onRestore, getTenantName, getTenantColor }: {
     const location = [order.province, order.canton].filter(Boolean).join(', ');
     const address = [order.address, order.district, order.canton, order.province].filter(Boolean).join(', ');
     const trackingCode = order.trackingNumber || order.guiaNumber;
-    const carrierLabel = order.lmCarrier === 'mensajeria' ? 'Mensajería' : order.lmCarrier === 'correos' ? 'Correos' : 'Sin carrier';
     const total = Number(order.total || 0);
     const statusColor = order.lmStatus === 'Entregado' ? '#34d399' : order.lmStatus === 'Devuelto' ? '#fbbf24' : 'rgba(255,255,255,0.45)';
 
@@ -512,19 +523,15 @@ function ArchivedOrderRow({ order, onRestore, getTenantName, getTenantColor }: {
                     <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, marginBottom: 4 }}>📞 {order.phone}</div>
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11 }}>
-                    <span style={{ color: 'rgba(255,255,255,0.4)' }}>{order.lmCarrier === 'mensajeria' ? '🚚' : order.lmCarrier === 'correos' ? '📮' : '•'} {carrierLabel}</span>
+                    <ShippingMethodBadge order={order} theme="dark" size="xs" />
                     {order.lmStatus && <span style={{ color: statusColor, fontWeight: 700 }}>{order.lmStatus}</span>}
                     {location && <span style={{ color: 'rgba(255,255,255,0.35)' }}>📍 {location}</span>}
-                    {order.product && (
-                        <span style={{ color: 'rgba(255,255,255,0.35)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
-                            {order.product}{order.quantity && order.quantity > 1 ? ` ×${order.quantity}` : ''}
-                        </span>
-                    )}
                     {order.lmCarrier === 'correos' && trackingCode && (
                         <span style={{ padding: '1px 6px', borderRadius: 20, background: 'rgba(96,165,250,0.12)', color: '#60a5fa', fontSize: 9, fontWeight: 800 }}>Guia {trackingCode}</span>
                     )}
                     <span style={{ color: '#34d399', fontWeight: 700, marginLeft: 'auto' }}>₡{total.toLocaleString('es-CR')}</span>
                 </div>
+                <OrderItemsList order={order} style={{ ...itemsListStyle, marginTop: 4, marginBottom: 0 }} moreColor="#a5a2ff" />
                 {address && (
                     <div style={{ color: 'rgba(255,255,255,0.28)', fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 4 }}>{address}</div>
                 )}
@@ -1456,7 +1463,8 @@ export default function CarriersPage() {
                                                 </div>
                                             </div>
                                             {o.phone && <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: '0 0 2px' }}>📞 {o.phone}</p>}
-                                            {o.product && <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.product}{o.quantity && o.quantity > 1 ? ` ×${o.quantity}` : ''}</p>}
+                                            <ShippingMethodBadge order={o} theme="dark" size="xs" style={{ margin: '2px 0 4px' }} />
+                                            <OrderItemsList order={o} style={{ ...itemsListStyle, marginBottom: 4 }} moreColor="#93c5fd" />
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: o.comments ? 4 : 8 }}>
                                                 <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>📍 {o.canton || o.province || '—'}</span>
                                                 <span style={{ color: '#34d399', fontWeight: 700, fontSize: 11 }}>₡{o.total.toLocaleString('es-CR')}</span>

@@ -5,6 +5,8 @@ import { Button } from "@/app/components/ui/button";
 import { Checkbox } from "@/app/components/ui/checkbox";
 import { Sale } from '../types/sales';
 import { PaymentStatusBadge } from '@/app/components/orders/PaymentStatusBadge';
+import OrderItemsList from '@/components/orders/OrderItemsList';
+import ShippingMethodBadge from '@/components/orders/ShippingMethodBadge';
 import {
   Clock,
   User,
@@ -281,9 +283,9 @@ function EnhancedOrderCardComponent({
 
         {/* Product Info */}
         <div className="space-y-1.5">
-          <div className="flex items-center gap-2 text-sm">
-            <Package className="h-3.5 w-3.5 text-muted-foreground/50" />
-            <span className="font-medium text-foreground">{order.product}</span>
+          <div className="flex items-start gap-2 text-sm">
+            <Package className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+            <OrderItemsList order={order} maxItems={4} emptyLabel="—" style={{ flex: 1 }} itemStyle={{ fontWeight: 500 }} />
           </div>
 
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
@@ -398,12 +400,11 @@ function EnhancedOrderCardComponent({
         </div>
 
         {/* Courier Info (for EA orders) */}
-        {order.orderType === 'EA' && (order as any).courier && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Truck className="h-3 w-3 text-muted-foreground/40" />
-            <span>Mensajería: {(order as any).courier}</span>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <Truck className="h-3 w-3 text-muted-foreground/40" />
+          <ShippingMethodBadge order={order} size="xs" showCod={false} />
+          {order.orderType === 'EA' && (order as any).courier && <span>{(order as any).courier}</span>}
+        </div>
 
         {/* Divider */}
         <div className="border-t border-white/[0.04]" />

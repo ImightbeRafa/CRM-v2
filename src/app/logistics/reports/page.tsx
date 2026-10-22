@@ -10,6 +10,7 @@ import {
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import { MANAGED_TENANT_IDS } from '@/lib/logistics-managed-tenants';
 import { csvCell } from '@/lib/csv-safe';
+import OrderItemsList from '@/components/orders/OrderItemsList';
 
 /* ─── Styling constants ────────────────────────────────── */
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14 } as const;
@@ -858,7 +859,7 @@ export default function ReportsPage() {
                                                                                         {o.reportTimestampCR ?? o.timestampCR}
                                                                                     </div>
                                                                                 </td>
-                                                                                <td style={{ padding: '6px 8px', color: 'rgba(255,255,255,0.5)', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.product ?? '—'}</td>
+                                                                                <td style={{ padding: '6px 8px', color: 'rgba(255,255,255,0.5)', minWidth: 140, maxWidth: 240 }}><OrderItemsList order={o} maxItems={2} emptyLabel="—" /></td>
                                                                                 <td style={{ padding: '6px 8px' }}>
                                                                                     <span style={{
                                                                                         padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600,

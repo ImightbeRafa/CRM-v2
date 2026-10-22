@@ -29,6 +29,7 @@ import {
   expiresAtFromExpiresIn,
   reconnectLifecycleData,
 } from '@/lib/social-account-token-health'
+import { backfillLineMetaUser, tokenGrantedByUserId } from '@/lib/meta-data-deletion/store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -508,6 +509,11 @@ export async function POST(request: NextRequest) {
           wabaId: true,
         },
       })
+    }
+
+    // Who connected this line, for Meta's data-deletion callback (058). Best effort; never blocks the connection.
+    if (businessToken) {
+      await backfillLineMetaUser(saved.id, await tokenGrantedByUserId(businessToken), { overwrite: true })
     }
 
     const accountPayload = {

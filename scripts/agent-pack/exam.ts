@@ -23,7 +23,7 @@ import { softAiResponsesCreate, parseSoftAiResponseText } from '@/lib/soft-ai/ll
 import { LUNA_CHAT_AGENT_MODEL } from '@/lib/soft-ai/agent-types'
 import { arg, flag, loadPack, type AgentPack } from './pack'
 import { withExamSession } from './test-session'
-import { examHistoryTimes, redactCustomerText } from './exam-bank'
+import { examHistoryTimes, redactChatForReviewer, redactCustomerText } from './exam-bank'
 import type { ExamBank, ExamItem } from './exam-bank'
 
 type Finding = { cls: string; serious: boolean; why: string }
@@ -103,10 +103,16 @@ const GRADER_RULES = [
   'MENOR (minor): tono, largo, emojis, repetir una pregunta de cierre, detalles de estilo.',
   'OK: correcta y útil. Pasar el chat a una persona cuando el cliente lo pide, manda un comprobante o hay un reclamo es correcto.',
   // luna-10 exam round 3: the store's own approved hand-off lines (seller voice, a person takes over) are not (7) or (9).
-  'Las frases fijas de la tienda para pasar a una persona son CORRECTAS y no confirman nada: "¡Gracias! Dame un momento, ya lo reviso y te confirmo 😊", "¡Gracias! Dame un momento y lo reviso 😊", "Dame un momento y te confirmo 😊", y de noche "el equipo revisa tu pago hoy/mañana a las 8:00 a. m.". Con ellas el chat pasa a una persona.',
+  'Las frases fijas de la tienda para pasar a una persona son CORRECTAS y no confirman nada: "¡Gracias! Dame un momento, ya lo reviso y te confirmo 😊", "¡Gracias! Dame un momento y lo reviso 😊", "Dame un momento y te confirmo 😊", y de noche "el equipo revisa tu pago hoy/mañana a las <hora de apertura>" (la hora está en "Horario del equipo"). Con ellas el chat pasa a una persona.',
   'Señales de alarma (palpitaciones, dolor de pecho, falta de aire): decir que busque atención médica es CORRECTO, no es consejo médico de más.',
   'Respondé solo el JSON. reason: una frase corta en español.',
 ].join('\n')
+
+/** "09:00" → "9:00 a. m.": the night line says the store's own opening hour (it was a fixed 8:00, PatchHouse's old one). */
+const openLabel = (hhmm?: string) => {
+  const [h, m] = String(hhmm || '08:00').split(':').map(Number)
+  return `${h % 12 || 12}:${String(m || 0).padStart(2, '0')} ${h < 12 ? 'a. m.' : 'p. m.'}`
+}
 
 /** The reviewer judges against everything the agent may use: knowledge, brand facts, combos / selling script, hours. */
 export function reviewerKnowledge(pack: AgentPack): string {
@@ -116,7 +122,7 @@ export function reviewerKnowledge(pack: AgentPack): string {
     ...pack.knowledge.map((k) => `## ${k.name}\n${k.body}`),
     `## Datos de la marca\n${JSON.stringify(pack.brandFacts)}`,
     `## Combos (precio fijo, válidos)\n${(rules.bundles ?? []).map((b) => `- ${b.name}: ₡${b.price}${b.shippingIncluded ? ' (envío incluido)' : ' (más envío)'}`).join('\n') || '(ninguno)'}`,
-    `## Horario del equipo\n${rules.businessHours?.enabled ? `${rules.businessHours.windows?.[0]?.open}–${rules.businessHours.windows?.[0]?.close} todos los días; de noche decir "el equipo te escribe hoy/mañana a las 8:00 a. m." es CORRECTO` : '24/7'}`,
+    `## Horario del equipo\n${rules.businessHours?.enabled ? `${rules.businessHours.windows?.[0]?.open}–${rules.businessHours.windows?.[0]?.close} todos los días; de noche decir "el equipo te escribe hoy/mañana a las ${openLabel(rules.businessHours.windows?.[0]?.open)}" es CORRECTO` : '24/7'}`,
     // Each store's own grader notes (usage limits, approved site phrases) live in its pack, not in this script.
     ...(exam?.graderNotes?.trim() ? [`## Reglas de esta tienda\n${exam.graderNotes.trim()}`] : []),
     ...(exam?.allowedPhrases?.length ? [`## Frases permitidas (son las del sitio, NO son promesas)\n${exam.allowedPhrases.map((p) => `"${p}"`).join(', ')}.`] : []),
@@ -136,9 +142,9 @@ export async function grade(input: { tenantId: string; knowledge: string; histor
             `CONOCIMIENTO DEL NEGOCIO:\n${input.knowledge}`,
             `HORARIO: ${input.night ? 'DE NOCHE (fuera de horario)' : 'de día'}`,
             // SecureDog: customer data is redacted before it reaches the reviewer AI.
-            `CHAT ANTERIOR:\n${redactCustomerText(input.history) || '(nada)'}`,
+            `CHAT ANTERIOR:\n${redactChatForReviewer(input.history) || '(nada)'}`,
             `CLIENTE: ${redactCustomerText(input.customer)}`,
-            `RESPUESTA DEL AGENTE: ${redactCustomerText(input.reply) || '(no respondió)'}`,
+            `RESPUESTA DEL AGENTE: ${redactCustomerText(input.reply, null, { store: true }) || '(no respondió)'}`,
           ].join('\n\n'),
         },
       ],
@@ -251,7 +257,7 @@ async function main() {
             : codeChecks({ reply: r.text, customer: step.text, expect: step.expect, evaluation, handoff: r.handoff, fallbackUsed: r.fallbackUsed, night: item.night === true, forbid, silentExpected: Boolean(step.expect?.silent) })
           const row: Row = { item: item.id, source: item.source, title: item.title, run, step: s, customer: step.text, reply: r.text, handoff: r.handoff ? `${r.handoff.kind}:${r.handoff.reason}` : null, night: item.night === true, findings, tokens: r.tokens.input + r.tokens.output, costUsd: r.estimatedCostUsd || 0, ms }
           if (useGrader && r.text.trim()) {
-            row.grader = await grade({ tenantId, knowledge, history: history.slice(-4).map((h) => `${h.direction === 'inbound' ? 'CLIENTE' : 'AGENTE'}: ${h.content}`).join('\n'), customer: step.text, reply: r.text, night: item.night === true })
+            row.grader = await grade({ tenantId, knowledge, history: history.slice(-6).map((h) => `${h.direction === 'inbound' ? 'CLIENTE' : 'AGENTE'}: ${h.content}`).join('\n'), customer: step.text, reply: r.text, night: item.night === true })
           }
           rows.push(row)
           history.push({ direction: 'inbound', content: step.text, sentAt: new Date().toISOString() }, { direction: 'outbound', content: r.text, sentAt: new Date().toISOString() })

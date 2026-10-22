@@ -8,21 +8,46 @@ import {
 } from '@/lib/meta-api'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { isProductionContainer } from '@/lib/ops/runtime'
+import { backfillLineMetaUser } from '@/lib/meta-data-deletion/store'
+import { instagramEventsAllowed, readMetaSalesSettings } from '@/lib/meta-attribution/settings'
 
 /**
- * Per WhatsApp line: can Betsy send sales events to this business's Meta dataset?
- * 1. debug_token: the line's token must carry `whatsapp_business_manage_events` (granted when the
- *    business connects / reconnects WhatsApp after the permission is added to Embedded Signup).
- * 2. GET /{waba}/dataset, else POST /{waba}/dataset → the dataset id (Meta returns the existing one).
+ * Per WhatsApp / Instagram line: can Betsy send sales events to this business's Meta dataset?
+ * 1. debug_token: the line's token must carry the events permission: `whatsapp_business_manage_events`
+ *    (Embedded Signup) or `instagram_manage_events` (Facebook Login for Business, the IG Page token). Granted
+ *    when the business connects / reconnects after the permission is added to the login configuration.
+ * 2. GET /{id}/dataset, else POST /{id}/dataset → the dataset id (Meta returns the existing one).
+ *    {id} = the WhatsApp Business account id, or the Instagram account id (the IG user id that
+ *    `instagram_business_account` on the Page returns, which is also the events' `instagram_business_account_id`).
  * The token is decrypted only here and in the sender, sent only as a Bearer header + appsecret_proof,
- * and never logged. Read-only for the WhatsApp line itself: messaging is not touched.
+ * and never logged. Read-only for the line itself: messaging is not touched.
  */
 export const REQUIRED_SCOPE = 'whatsapp_business_manage_events'
+export const INSTAGRAM_REQUIRED_SCOPE = 'instagram_manage_events'
+
+export type DatasetPlatform = 'whatsapp' | 'instagram'
+
+export function requiredScopeFor(platform: DatasetPlatform): string {
+  return platform === 'instagram' ? INSTAGRAM_REQUIRED_SCOPE : REQUIRED_SCOPE
+}
+
+/** The Graph node that owns the dataset: WABA id for WhatsApp, Instagram account id for Instagram. */
+export function datasetOwnerId(account: { platform?: string | null; wabaId: string | null; accountId?: string | null }): string | null {
+  const id = account.platform === 'instagram' ? account.accountId : account.wabaId
+  return id && /^\d{5,30}$/.test(id) ? id : null
+}
 const GRAPH_TIMEOUT_MS = 10_000
 
 export type DatasetStatus = 'ready' | 'missing_permission' | 'token_invalid' | 'error'
 
-export type DatasetCheck = { socialAccountId: string; status: DatasetStatus; datasetId: string | null; errorCode: string | null }
+export type DatasetCheck = {
+  socialAccountId: string
+  status: DatasetStatus
+  datasetId: string | null
+  errorCode: string | null
+  /** debug_token's user_id (the person who granted the token), for the data-deletion callback. */
+  grantedByUserId?: string | null
+}
 
 type FetchLike = typeof fetch
 
@@ -38,7 +63,14 @@ function metaErrorCode(json: Record<string, unknown>): number | null {
 }
 
 export async function checkLineDataset(
-  account: { id: string; tenantId: string; wabaId: string | null; accessToken: string | null },
+  account: {
+    id: string
+    tenantId: string
+    wabaId: string | null
+    accessToken: string | null
+    platform?: string | null
+    accountId?: string | null
+  },
   opts: { fetchImpl?: FetchLike; env?: Record<string, string | undefined>; createIfMissing?: boolean } = {},
 ): Promise<DatasetCheck> {
   const fetchImpl = opts.fetchImpl ?? fetch
@@ -50,7 +82,11 @@ export async function checkLineDataset(
   } catch {
     return { ...base, status: 'error', datasetId: null, errorCode: 'token_unreadable' }
   }
-  if (!token || !account.wabaId || !/^\d{5,30}$/.test(account.wabaId)) {
+  const platform: DatasetPlatform = account.platform === 'instagram' ? 'instagram' : 'whatsapp'
+  const ownerId = datasetOwnerId({ ...account, platform })
+  // WhatsApp tokens are proofed with the WA secret; the IG Page token with the Inbox app's (default purpose).
+  const proofPurpose = platform === 'whatsapp' ? ({ purpose: 'whatsapp' } as const) : undefined
+  if (!token || !ownerId) {
     return { ...base, status: 'error', datasetId: null, errorCode: 'line_not_ready' }
   }
   const appId = getMetaWhatsAppAppId(env)
@@ -69,29 +105,37 @@ export async function checkLineDataset(
       { method: 'GET' },
       fetchImpl,
     )
-    const data = (debug.json.data ?? {}) as { is_valid?: boolean; scopes?: unknown }
+    const data = (debug.json.data ?? {}) as { is_valid?: boolean; scopes?: unknown; user_id?: unknown }
     if (data.is_valid === false) return { ...base, status: 'token_invalid', datasetId: null, errorCode: 'token_invalid' }
+    const grantedByUserId = typeof data.user_id === 'string' && /^\d{1,30}$/.test(data.user_id) ? data.user_id : null
+    const withUser = { ...base, grantedByUserId }
     const scopes = Array.isArray(data.scopes) ? data.scopes.map(String) : []
-    if (!scopes.includes(REQUIRED_SCOPE)) return { ...base, status: 'missing_permission', datasetId: null, errorCode: 'scope_missing' }
+    if (!scopes.includes(requiredScopeFor(platform))) {
+      return { ...withUser, status: 'missing_permission', datasetId: null, errorCode: 'scope_missing' }
+    }
 
     // 2) The business's dataset (existing, else create).
     const headers = { Authorization: `Bearer ${token}` }
-    const datasetUrl = addAppSecretProofToUrl(buildMetaGraphUrl(`${account.wabaId}/dataset`), token, { purpose: 'whatsapp' })
+    const datasetUrl = addAppSecretProofToUrl(buildMetaGraphUrl(`${ownerId}/dataset`), token, proofPurpose)
     const existing = await graphJson(datasetUrl, { method: 'GET', headers }, fetchImpl)
     let datasetId = pickDatasetId(existing.json)
     if (!datasetId && opts.createIfMissing === false) {
       // Not opted in yet: never create anything in the business's Meta account.
-      return { ...base, status: 'error', datasetId: null, errorCode: 'no_dataset_yet' }
+      return { ...withUser, status: 'error', datasetId: null, errorCode: 'no_dataset_yet' }
     }
     if (!datasetId) {
       const created = await graphJson(datasetUrl, { method: 'POST', headers }, fetchImpl)
       const code = metaErrorCode(created.json)
-      if (code === 190) return { ...base, status: 'token_invalid', datasetId: null, errorCode: '190' }
-      if (code === 10 || code === 200 || code === 294) return { ...base, status: 'missing_permission', datasetId: null, errorCode: String(code) }
+      if (code === 190) return { ...withUser, status: 'token_invalid', datasetId: null, errorCode: '190' }
+      if (code === 10 || code === 200 || code === 294) {
+        return { ...withUser, status: 'missing_permission', datasetId: null, errorCode: String(code) }
+      }
       datasetId = pickDatasetId(created.json)
-      if (!datasetId) return { ...base, status: 'error', datasetId: null, errorCode: code ? String(code) : `http_${created.status}` }
+      if (!datasetId) {
+        return { ...withUser, status: 'error', datasetId: null, errorCode: code ? String(code) : `http_${created.status}` }
+      }
     }
-    return { ...base, status: 'ready', datasetId, errorCode: null }
+    return { ...withUser, status: 'ready', datasetId, errorCode: null }
   } catch (error) {
     const name = error instanceof Error ? error.name : 'Error'
     return { ...base, status: 'error', datasetId: null, errorCode: name === 'TimeoutError' ? 'timeout' : 'network' }
@@ -110,7 +154,7 @@ export function pickDatasetId(json: Record<string, unknown>): string | null {
 const LOCAL_ERRORS = new Set(['app_not_configured', 'token_unreadable'])
 
 /**
- * Checks every active WhatsApp line of a business. Results are stored (ids and status only) only
+ * Checks every active WhatsApp and Instagram line of a business. Results are stored (ids and status only) only
  * by the production container: the Railway preview shares the database and may lack the Meta app
  * secret, which must never mark a production line as broken. A dataset is created in the
  * business's Meta account only once the business has opted in.
@@ -121,19 +165,26 @@ export async function refreshTenantDatasets(
 ): Promise<DatasetCheck[]> {
   const persist = opts.persist ?? isProductionContainer()
   const accounts = await prisma.socialAccount.findMany({
-    where: { tenantId, isActive: true, platform: 'whatsapp' },
-    select: { id: true, tenantId: true, wabaId: true, accessToken: true },
+    where: { tenantId, isActive: true, platform: { in: ['whatsapp', 'instagram'] } },
+    select: { id: true, tenantId: true, wabaId: true, accessToken: true, platform: true, accountId: true },
     take: 20,
   })
+  // An Instagram dataset is created only once the owner accepted the notice that covers Instagram.
+  const igAllowed = accounts.some((a) => a.platform === 'instagram')
+    ? instagramEventsAllowed(await readMetaSalesSettings(tenantId))
+    : false
   const results: DatasetCheck[] = []
   for (const account of accounts) {
     let check: DatasetCheck
     try {
-      check = await checkLineDataset(account, opts)
+      const createIfMissing = account.platform === 'instagram' ? opts.createIfMissing !== false && igAllowed : opts.createIfMissing
+      check = await checkLineDataset(account, { ...opts, createIfMissing })
     } catch {
       check = { socialAccountId: account.id, status: 'error', datasetId: null, errorCode: 'check_failed' }
     }
     results.push(check)
+    // Lines connected before 058 learn which Facebook user connected them (data-deletion callback).
+    if (persist && account.platform === 'instagram') await backfillLineMetaUser(account.id, check.grantedByUserId)
     if (!persist || (check.errorCode && LOCAL_ERRORS.has(check.errorCode)) || check.errorCode === 'no_dataset_yet') continue
     const now = new Date()
     await prisma.metaCapiDataset.upsert({

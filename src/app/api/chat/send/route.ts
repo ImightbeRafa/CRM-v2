@@ -7,11 +7,16 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { chatSendRateLimit } from '@/lib/rate-limit'
+import { dualWriteChatMessage, finalizeOutboundDelivery } from '@/lib/chat-conversation-write'
+import { isSameOriginJson } from '@/lib/same-origin'
 import {
-  dualWriteChatMessage,
-  finalizeOutboundDelivery,
-  isPersistedDualWrite,
-} from '@/lib/chat-conversation-write'
+  browserClientRequestId,
+  claimChatSend,
+  findOutboundByClientRequestId,
+  markChatSendDelivered,
+  releaseChatSend,
+  resolveDeliveredOutboundRow,
+} from '@/lib/chat-send-claim'
 import {
   findApprovedWhatsAppTemplate,
   normalizeWhatsAppTemplateRows,
@@ -71,6 +76,9 @@ export async function POST(request: NextRequest) {
       return auth.response
     }
 
+    // SecureDog AUTH-SEND-2: browser JSON from this origin only (a sibling subdomain is same-site).
+    if (!isSameOriginJson(request)) return jsonError('Origen no permitido.', 403)
+
     const db = prisma as any
     const { tenantId, userId } = auth
 
@@ -96,13 +104,7 @@ export async function POST(request: NextRequest) {
     const content = body.content ? String(body.content) : ''
     const orderId = body.orderId ? String(body.orderId) : null
     const clientId = body.clientId ? String(body.clientId) : null
-    const rawClientRequestId = body.clientRequestId ? String(body.clientRequestId).trim() : ''
-    const clientRequestId =
-      rawClientRequestId &&
-      rawClientRequestId.length <= 80 &&
-      /^[A-Za-z0-9._:-]+$/.test(rawClientRequestId)
-        ? rawClientRequestId
-        : null
+    const clientRequestId = browserClientRequestId(body.clientRequestId)
     const messageType = body.type ? String(body.type).toLowerCase() : 'text'
     const templateName = body.templateName ? String(body.templateName).trim() : ''
     const templateLanguage = body.templateLanguage
@@ -195,233 +197,270 @@ export async function POST(request: NextRequest) {
       return jsonError(`Falta el token de acceso de ${account.platform}. Reconecta la cuenta en Configuración Social.`, 400)
     }
 
+    // Same id already stored (Retry, double click, second tab): answer with that message, never send again.
+    const already = await findOutboundByClientRequestId(db, {
+      tenantId,
+      socialAccountId: account.id,
+      clientRequestId,
+    })
+    if (already) {
+      return NextResponse.json({
+        success: true,
+        duplicate: true,
+        message: mapMessageToDto(already),
+        conversationId: already.conversationId ?? null,
+        clientRequestId,
+      })
+    }
+    const claim = await claimChatSend(tenantId, clientRequestId)
+    if (claim.kind === 'delivered') {
+      // Went out earlier but was not stored then: show the row the webhook echo may have stored since.
+      const row = await findDeliveredRow(db, tenantId, account.id, claim)
+      return NextResponse.json({
+        success: true,
+        duplicate: true,
+        persisted: Boolean(row),
+        message: row ? mapMessageToDto(row) : null,
+        conversationId: row?.conversationId ?? null,
+        clientRequestId,
+      })
+    }
+    if (claim.kind === 'in_flight') {
+      // Another request with this id is sending it right now: not an error, the bubble stays "sending".
+      return NextResponse.json(
+        { success: true, inFlight: true, persisted: false, message: null, conversationId: null, clientRequestId },
+        { status: 202 },
+      )
+    }
+    const ownsClaim = claim.kind === 'claimed'
+
     let dispatchResult = 'sent'
     let providerMessageId: string | undefined
     let providerResponse: any = null
     let storedContent = content
+    // True once Meta accepted the message: from here on the answer is never an error.
+    let delivered = false
+    // Timed out talking to Meta: it may or may not have gone out.
+    let ambiguous = false
 
-    if (account.platform === 'instagram') {
-      if (isTemplate) {
-        return jsonError('Las plantillas Meta solo están disponibles para WhatsApp', 400)
-      }
-      try {
-        const pageId = parseSocialRefreshToken(account.refreshToken).pageId
-        const sendPath = pageId ? `${encodeURIComponent(pageId)}/messages` : 'me/messages'
-        const sendUrl = addAppSecretProofToUrl(buildMetaGraphUrl(sendPath), account.accessToken)
-        const igRes = await fetch(sendUrl, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${account.accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            messaging_type: 'RESPONSE',
-            recipient: { id: recipient },
-            message: { text: content },
-          }),
-          signal: metaFetchSignal(),
-        })
-        providerResponse = await readProviderJson(igRes)
-        if (!igRes.ok) {
-          console.error('[chat/send] Instagram send failed', {
-            status: igRes.status,
-            sendPath,
-            error: providerResponse?.error,
-          })
-          await markSocialTokenRevoked(db, account.id, providerResponse)
-          if (isMetaInvalidTokenError(providerResponse)) {
-            return jsonError(socialTokenSendBlockMessage({ ...account, tokenStatus: 'revoked' }), 400)
-          }
-          return jsonError(
-            providerResponse?.error?.message || 'Falló el envío por Instagram',
-            502,
-            { providerResponse },
-          )
-        }
-        providerMessageId = providerResponse?.message_id || providerResponse?.messages?.[0]?.id
-      } catch (e: any) {
-        console.error('[chat/send] Instagram send error', e)
-        if (isAbortError(e)) {
-          return jsonError('Tiempo de espera agotado al contactar Instagram. Intenta de nuevo.', 504)
-        }
-        return jsonError(e?.message || 'Error al enviar por Instagram', 502)
-      }
-    } else if (account.platform === 'whatsapp') {
-      try {
-        // Server-side APPROVED gate — never trust the client picker alone.
+    try {
+      if (account.platform === 'instagram') {
         if (isTemplate) {
-          const wabaId = parseSocialRefreshToken(account.refreshToken).whatsappBusinessAccountId
-          if (!wabaId) {
+          return jsonError('Las plantillas Meta solo están disponibles para WhatsApp', 400)
+        }
+        try {
+          const pageId = parseSocialRefreshToken(account.refreshToken).pageId
+          const sendPath = pageId ? `${encodeURIComponent(pageId)}/messages` : 'me/messages'
+          const sendUrl = addAppSecretProofToUrl(buildMetaGraphUrl(sendPath), account.accessToken)
+          const igRes = await fetch(sendUrl, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${account.accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              messaging_type: 'RESPONSE',
+              recipient: { id: recipient },
+              message: { text: content },
+            }),
+            signal: metaFetchSignal(),
+          })
+          providerResponse = await readProviderJson(igRes)
+          if (!igRes.ok) {
+            console.error('[chat/send] Instagram send failed', {
+              status: igRes.status,
+              sendPath,
+              error: providerResponse?.error,
+            })
+            await markSocialTokenRevoked(db, account.id, providerResponse)
+            if (isMetaInvalidTokenError(providerResponse)) {
+              return jsonError(socialTokenSendBlockMessage({ ...account, tokenStatus: 'revoked' }), 400)
+            }
             return jsonError(
-              'Falta WhatsApp Business Account ID. Reconectá WhatsApp desde Configuración Social.',
-              400,
+              providerResponse?.error?.message || 'Falló el envío por Instagram',
+              502,
+              { providerResponse },
             )
           }
+          delivered = true
+          providerMessageId = providerResponse?.message_id || providerResponse?.messages?.[0]?.id
+        } catch (e: any) {
+          console.error('[chat/send] Instagram send error', e)
+          if (isAbortError(e)) {
+            // Meta may have accepted it: keep the claim (it goes stale in 2 min), Retry never doubles.
+            ambiguous = true
+            return jsonError('Tiempo de espera agotado al contactar Instagram. Intenta de nuevo.', 504)
+          }
+          return jsonError(e?.message || 'Error al enviar por Instagram', 502)
+        }
+      } else if (account.platform === 'whatsapp') {
+        try {
+          // Server-side APPROVED gate — never trust the client picker alone.
+          if (isTemplate) {
+            const wabaId = parseSocialRefreshToken(account.refreshToken).whatsappBusinessAccountId
+            if (!wabaId) {
+              return jsonError(
+                'Falta WhatsApp Business Account ID. Reconectá WhatsApp desde Configuración Social.',
+                400,
+              )
+            }
 
-          const templatesUrl = addAppSecretProofToUrl(
-            buildMetaGraphUrl(
-              `${encodeURIComponent(wabaId)}/message_templates?limit=100&fields=${encodeURIComponent('name,status,language,category')}`,
-            ),
+            const templatesUrl = addAppSecretProofToUrl(
+              buildMetaGraphUrl(
+                `${encodeURIComponent(wabaId)}/message_templates?limit=100&fields=${encodeURIComponent('name,status,language,category')}`,
+              ),
+              account.accessToken,
+              { purpose: 'whatsapp' },
+            )
+
+            let approvedRows
+            try {
+              approvedRows = await getApprovedTemplates(wabaId, async () => {
+                const templatesRes = await fetch(templatesUrl, {
+                  headers: { Authorization: `Bearer ${account.accessToken}` },
+                  signal: metaFetchSignal(),
+                })
+                const templatesData = await readProviderJson(templatesRes)
+                if (!templatesRes.ok) {
+                  console.warn('[chat/send] Template status lookup failed', {
+                    status: templatesRes.status,
+                    error: templatesData?.error?.message,
+                  })
+                  const err = new Error(
+                    templatesData?.error?.message ||
+                      'No se pudo verificar el estado APPROVED de la plantilla en Meta',
+                  ) as Error & { status: number; providerResponse: unknown }
+                  err.status = 502
+                  err.providerResponse = templatesData
+                  throw err
+                }
+                return filterApprovedWhatsAppTemplates(
+                  normalizeWhatsAppTemplateRows(templatesData?.data),
+                )
+              })
+            } catch (error: any) {
+              if (error?.status === 502) {
+                return jsonError(error.message, 502, {
+                  providerResponse: error.providerResponse,
+                })
+              }
+              throw error
+            }
+
+            const approved = findApprovedWhatsAppTemplate(
+              approvedRows,
+              templateName,
+              templateLanguage,
+            )
+            if (!approved) {
+              const sameName = approvedRows.find(
+                (t) =>
+                  t.name === templateName.trim() &&
+                  t.language.toLowerCase() === (templateLanguage || 'es').trim().toLowerCase(),
+              )
+              console.warn('[chat/send] Rejected non-APPROVED template', {
+                templateName,
+                templateLanguage,
+                status: sameName?.status || null,
+              })
+              return jsonError(templateNotApprovedErrorMessage(templateName, sameName?.status), 400, {
+                templateStatus: sameName?.status || null,
+                templateName,
+                templateLanguage,
+              })
+            }
+          }
+
+          const sendUrl = addAppSecretProofToUrl(
+            buildMetaGraphUrl(`${account.accountId}/messages`),
             account.accessToken,
             { purpose: 'whatsapp' },
           )
-
-          let approvedRows
-          try {
-            approvedRows = await getApprovedTemplates(wabaId, async () => {
-              const templatesRes = await fetch(templatesUrl, {
-                headers: { Authorization: `Bearer ${account.accessToken}` },
-                signal: metaFetchSignal(),
-              })
-              const templatesData = await readProviderJson(templatesRes)
-              if (!templatesRes.ok) {
-                console.warn('[chat/send] Template status lookup failed', {
-                  status: templatesRes.status,
-                  error: templatesData?.error?.message,
-                })
-                const err = new Error(
-                  templatesData?.error?.message ||
-                    'No se pudo verificar el estado APPROVED de la plantilla en Meta',
-                ) as Error & { status: number; providerResponse: unknown }
-                err.status = 502
-                err.providerResponse = templatesData
-                throw err
+          const waBody = isTemplate
+            ? {
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to: recipient,
+                type: 'template',
+                template: {
+                  name: templateName,
+                  language: { code: templateLanguage || 'es' },
+                },
               }
-              return filterApprovedWhatsAppTemplates(
-                normalizeWhatsAppTemplateRows(templatesData?.data),
-              )
-            })
-          } catch (error: any) {
-            if (error?.status === 502) {
-              return jsonError(error.message, 502, {
-                providerResponse: error.providerResponse,
-              })
-            }
-            throw error
-          }
+            : {
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to: recipient,
+                type: 'text',
+                text: {
+                  preview_url: false,
+                  body: content,
+                },
+              }
 
-          const approved = findApprovedWhatsAppTemplate(
-            approvedRows,
-            templateName,
-            templateLanguage,
-          )
-          if (!approved) {
-            const sameName = approvedRows.find(
-              (t) =>
-                t.name === templateName.trim() &&
-                t.language.toLowerCase() === (templateLanguage || 'es').trim().toLowerCase(),
+          const waRes = await fetch(sendUrl, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${account.accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(waBody),
+            signal: metaFetchSignal(),
+          })
+
+          const waData = await readProviderJson(waRes)
+          providerResponse = waData
+
+          if (!waRes.ok) {
+            console.error('[chat/send] WhatsApp send failed', { status: waRes.status, error: waData?.error })
+            return jsonError(
+              waData?.error?.message || 'Falló el envío por WhatsApp',
+              502,
+              { providerResponse: waData },
             )
-            console.warn('[chat/send] Rejected non-APPROVED template', {
-              templateName,
-              templateLanguage,
-              status: sameName?.status || null,
-            })
-            return jsonError(templateNotApprovedErrorMessage(templateName, sameName?.status), 400, {
-              templateStatus: sameName?.status || null,
-              templateName,
-              templateLanguage,
-            })
           }
+
+          delivered = true
+          providerMessageId = waData.messages?.[0]?.id
+          if (isTemplate) {
+            storedContent = `[Plantilla] ${templateName}`
+          }
+          console.log('[chat/send] WhatsApp message sent', {
+            messageId: providerMessageId,
+            to: recipient,
+            type: isTemplate ? 'template' : 'text',
+          })
+        } catch (e: any) {
+          console.error('[chat/send] WhatsApp send error', e)
+          if (isAbortError(e)) {
+            ambiguous = true
+            return jsonError('Tiempo de espera agotado al contactar WhatsApp. Intenta de nuevo.', 504)
+          }
+          return jsonError(e?.message || 'Error al enviar por WhatsApp', 502)
         }
-
-        const sendUrl = addAppSecretProofToUrl(
-          buildMetaGraphUrl(`${account.accountId}/messages`),
-          account.accessToken,
-          { purpose: 'whatsapp' },
-        )
-        const waBody = isTemplate
-          ? {
-              messaging_product: 'whatsapp',
-              recipient_type: 'individual',
-              to: recipient,
-              type: 'template',
-              template: {
-                name: templateName,
-                language: { code: templateLanguage || 'es' },
-              },
-            }
-          : {
-              messaging_product: 'whatsapp',
-              recipient_type: 'individual',
-              to: recipient,
-              type: 'text',
-              text: {
-                preview_url: false,
-                body: content,
-              },
-            }
-
-        const waRes = await fetch(sendUrl, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${account.accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(waBody),
-          signal: metaFetchSignal(),
-        })
-
-        const waData = await readProviderJson(waRes)
-        providerResponse = waData
-
-        if (!waRes.ok) {
-          console.error('[chat/send] WhatsApp send failed', { status: waRes.status, error: waData?.error })
-          return jsonError(
-            waData?.error?.message || 'Falló el envío por WhatsApp',
-            502,
-            { providerResponse: waData },
-          )
-        }
-
-        providerMessageId = waData.messages?.[0]?.id
-        if (isTemplate) {
-          storedContent = `[Plantilla] ${templateName}`
-        }
-        console.log('[chat/send] WhatsApp message sent', {
-          messageId: providerMessageId,
-          to: recipient,
-          type: isTemplate ? 'template' : 'text',
-        })
-      } catch (e: any) {
-        console.error('[chat/send] WhatsApp send error', e)
-        if (isAbortError(e)) {
-          return jsonError('Tiempo de espera agotado al contactar WhatsApp. Intenta de nuevo.', 504)
-        }
-        return jsonError(e?.message || 'Error al enviar por WhatsApp', 502)
+      } else {
+        return jsonError(`Plataforma no soportada: ${account.platform}`, 400)
       }
-    } else {
-      return jsonError(`Plataforma no soportada: ${account.platform}`, 400)
+    } finally {
+      // Meta refused it (or it never left): Retry may send this id again. A timeout is ambiguous.
+      if (ownsClaim && !delivered && !ambiguous) await releaseChatSend(tenantId, clientRequestId)
     }
 
-    const senderUser = await db.user.findUnique({
-      where: { id: userId },
-      select: { id: true, name: true, username: true, email: true, image: true },
-    })
-    const senderSnapshot = buildHumanSenderSnapshot({
-      userId,
-      name: senderUser?.name,
-      username: senderUser?.username,
-      email: senderUser?.email,
-      image: senderUser?.image,
-    })
-
-    const now = new Date()
-    const write = await dualWriteChatMessage({
-      tenantId,
-      socialAccountId: account.id,
-      direction: 'outbound',
-      content: storedContent,
-      sentAt: now,
-      receivedAt: null,
-      peerId: recipient,
-      providerMessageId: providerMessageId || null,
-      messageType: isTemplate ? 'template' : 'text',
-      deliveryStatus: 'pending',
-      platform: account.platform,
-      clientId: clientId ?? null,
-      orderId: orderId ?? null,
-      senderUserId: userId,
-      metadata: mergeHumanSenderMetadata(
+    // Delivered. Storing it can still fail (echo stored first, a DB hiccup): the customer already has
+    // the message, so the answer is success either way (persisted:false → the bubble stays "sent").
+    try {
+      const senderUser = await db.user.findUnique({
+        where: { id: userId },
+        select: { id: true, name: true, username: true, email: true, image: true },
+      })
+      const senderSnapshot = buildHumanSenderSnapshot({
+        userId,
+        name: senderUser?.name,
+        username: senderUser?.username,
+        email: senderUser?.email,
+        image: senderUser?.image,
+      })
+      const sendMetadata = mergeHumanSenderMetadata(
         {
           to: recipient,
           provider: account.platform,
@@ -438,55 +477,118 @@ export async function POST(request: NextRequest) {
             : {}),
         },
         senderSnapshot,
-      ),
-      suppressSoftAi: true,
-    })
+      )
 
-    if (!isPersistedDualWrite(write)) {
-      return jsonError('No se pudo guardar el mensaje enviado', 500, {
-        reason: !write.ok ? write.reason : 'duplicate',
-      })
-    }
-
-    await finalizeOutboundDelivery({
-      messageId: write.messageId,
-      tenantId,
-      conversationId: write.conversationId,
-      userId,
-      providerMessageId: providerMessageId || null,
-      deliveryStatus: providerMessageId ? 'sent' : 'failed',
-      errorCode: providerMessageId ? null : 'missing_provider_message_id',
-      providerResponse,
-    })
-
-    // First human reply on an unassigned chat makes the sender its owner (delivered sends only).
-    if (providerMessageId && write.conversationId && senderUser) {
-      await autoAssignOnFirstHumanReply(db, { tenantId, conversationId: write.conversationId, userId })
-      // Fire-and-forget activity metrics (never awaited: must not delay the send).
-      void recordHumanSendMetrics({
+      const now = new Date()
+      const write = await dualWriteChatMessage({
         tenantId,
-        conversationId: write.conversationId,
-        userId,
-        messageId: write.messageId,
-        quickReplyShortcut: body.quickReplyShortcut,
+        socialAccountId: account.id,
+        direction: 'outbound',
+        content: storedContent,
+        sentAt: now,
+        receivedAt: null,
+        peerId: recipient,
+        providerMessageId: providerMessageId || null,
+        messageType: isTemplate ? 'template' : 'text',
+        deliveryStatus: 'pending',
+        platform: account.platform,
+        clientId: clientId ?? null,
+        orderId: orderId ?? null,
+        senderUserId: userId,
+        metadata: sendMetadata,
+        suppressSoftAi: true,
       })
+
+      const stored = await resolveDeliveredOutboundRow(db, write, {
+        tenantId,
+        socialAccountId: account.id,
+        providerMessageId,
+        clientRequestId,
+        metadata: sendMetadata,
+      })
+      if (ownsClaim) {
+        await markChatSendDelivered(tenantId, clientRequestId, {
+          providerMessageId: providerMessageId || null,
+          messageId: stored?.messageId ?? null,
+        })
+      }
+      if (!stored) {
+        console.error('[chat/send] delivered but not stored', { reason: !write.ok ? write.reason : 'duplicate' })
+        return deliveredNotStored(dispatchResult, clientRequestId)
+      }
+
+      await finalizeOutboundDelivery({
+        messageId: stored.messageId,
+        tenantId,
+        conversationId: stored.conversationId,
+        userId,
+        providerMessageId: providerMessageId || null,
+        deliveryStatus: providerMessageId ? 'sent' : 'failed',
+        errorCode: providerMessageId ? null : 'missing_provider_message_id',
+        providerResponse,
+      })
+
+      // First human reply on an unassigned chat makes the sender its owner (delivered sends only).
+      if (providerMessageId && senderUser) {
+        await autoAssignOnFirstHumanReply(db, { tenantId, conversationId: stored.conversationId, userId })
+        // Fire-and-forget activity metrics (never awaited: must not delay the send).
+        void recordHumanSendMetrics({
+          tenantId,
+          conversationId: stored.conversationId,
+          userId,
+          messageId: stored.messageId,
+          quickReplyShortcut: body.quickReplyShortcut,
+        })
+      }
+
+      const saved = await db.chatMessage.findFirst({ where: { id: stored.messageId, tenantId } })
+
+      return NextResponse.json({
+        success: true,
+        message: saved ? mapMessageToDto(saved) : null,
+        conversationId: stored.conversationId,
+        providerDispatch: dispatchResult,
+        clientRequestId,
+      })
+    } catch (error) {
+      console.error('[chat/send] delivered but not stored', error instanceof Error ? error.name : 'unknown')
+      if (ownsClaim) {
+        await markChatSendDelivered(tenantId, clientRequestId, { providerMessageId: providerMessageId || null })
+      }
+      return deliveredNotStored(dispatchResult, clientRequestId)
     }
-
-    const saved = await db.chatMessage.findUnique({ where: { id: write.messageId } })
-
-    return NextResponse.json({
-      success: true,
-      message: saved ? mapMessageToDto(saved) : null,
-      conversationId: write.conversationId,
-      providerDispatch: dispatchResult,
-      clientRequestId,
-    })
   } catch (error) {
     console.error('[chat/send] Internal error', error)
     return jsonError('Error interno al enviar el mensaje', 500)
   }
 }
 
+function deliveredNotStored(providerDispatch: string, clientRequestId: string | null) {
+  return NextResponse.json({
+    success: true,
+    persisted: false,
+    message: null,
+    conversationId: null,
+    providerDispatch,
+    clientRequestId,
+  })
+}
+
+async function findDeliveredRow(
+  db: any,
+  tenantId: string,
+  socialAccountId: string,
+  claim: { providerMessageId: string | null; messageId: string | null },
+) {
+  if (claim.messageId) {
+    const row = await db.chatMessage.findFirst({ where: { id: claim.messageId, tenantId, socialAccountId } })
+    if (row) return row
+  }
+  if (!claim.providerMessageId) return null
+  return db.chatMessage.findFirst({
+    where: { tenantId, socialAccountId, providerMessageId: claim.providerMessageId },
+  })
+}
 
 async function markSocialTokenRevoked(db: any, accountId: string, providerResponse: any) {
   if (!isMetaInvalidTokenError(providerResponse)) return

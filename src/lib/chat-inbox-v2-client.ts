@@ -1,4 +1,4 @@
-import type { ChatInboxMessage } from '@/lib/chat-inbox'
+import { compareThreadMessages, type ChatInboxMessage } from '@/lib/chat-inbox'
 import {
   conversationStorageKey,
   type ConversationStatus,
@@ -450,7 +450,7 @@ export function mergeThreadMessageWindow<
       byId.set(merged.id, merged)
       if (crid) cridToId.set(crid, merged.id)
     }
-    return [...byId.values()].sort((a, b) => a.sentAt.localeCompare(b.sentAt) || a.id.localeCompare(b.id))
+    return [...byId.values()].sort(compareThreadMessages)
   }
 
   if (opts.mode === 'replace') {

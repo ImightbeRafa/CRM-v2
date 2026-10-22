@@ -18,6 +18,7 @@ export interface PedidoRow {
   contraEntrega?: boolean
   cePaymentConfirmed?: boolean
   customFields?: unknown
+  itemLines?: string[] | null
 }
 
 export type PedidosTab = 'todos' | 'por_cobrar' | 'por_enviar' | 'en_transito' | 'entregados'

@@ -322,12 +322,13 @@ describe('chat-inbox-v2-client reducers', () => {
     assert.match(src, /clientRequestId/)
     assert.match(src, /failedOutboundId/)
     assert.match(src, /onRetryMessage/)
-    // Pack 2 — double-send guard: media is single-flight; text queues in order without
-    // locking the composer, but a retry already queued or a double Enter never sends twice.
-    assert.match(src, /sendInFlightRef/)
-    assert.match(src, /\(queues\.get\(conversationId\) \?\? Promise\.resolve\(\)\)\.then\(deliver, deliver\)/)
-    // Media waits for the chat's queued texts; quick-reply media never awaits the trailing text.
-    assert.match(src, /await textSendQueueRef\.current\.get\(conversationId\)\?\.catch/)
+    // Pack 2 — double-send guard: text and files queue in order per chat without locking the
+    // composer; a retry already queued or a double Enter never sends twice (server claim per id).
+    assert.match(src, /\(queues\.get\(conversationId\) \?\? Promise\.resolve\(\)\)\.then\(run, run\)/)
+    assert.match(src, /await enqueueChatSend\(conversationId, deliver\)/)
+    // Files ride the same chat queue (after the texts typed before them), never the composer.
+    assert.match(src, /void enqueueChatSend\(job\.conversationId, \(\) => deliverMedia\(job\)\)/)
+    assert.doesNotMatch(src, /sendInFlightRef/)
     assert.match(src, /void handleSendMessage\(\{ preventDefault\(\) \{\} \} as FormEvent\)/)
     // Stage moves to en_curso even if the operator already switched chats.
     assert.match(src, /if \(conversationStatus === 'nuevo'\) updateStatus\('en_curso'\)/)
@@ -347,7 +348,9 @@ describe('chat-inbox-v2-client reducers', () => {
     // Pack 5 — Spanish errors
     assert.match(src, /humanizeChatSendError/)
     // Pack 6 — focus + scroll
-    assert.match(src, /composerRef\.current\?\.focus\(\)/)
+    // The visible composer (desktop + phone panes are both mounted and share composerRef).
+    assert.match(src, /function focusComposer\(opts\?: FocusOptions\)/)
+    assert.match(src, /el\.getClientRects\(\)\.length > 0/)
     assert.match(src, /messagesEndRef\.current\?\.scrollIntoView/)
   })
 

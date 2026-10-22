@@ -430,7 +430,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[13px] font-semibold text-slate-900">{o.customerName}</p>
-                      <p className="truncate text-[11px] text-slate-500">
+                      <p className="line-clamp-2 break-words text-[11px] text-slate-500" title={o.product ? `${o.orderId} · ${o.product}` : o.orderId}>
                         {o.orderId}
                         {o.product ? ` · ${o.product}` : ''}
                       </p>

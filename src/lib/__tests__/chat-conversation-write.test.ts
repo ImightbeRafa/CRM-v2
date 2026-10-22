@@ -48,7 +48,8 @@ test('send route stamps providerMessageId on first dual-write and accepts echo-f
   const source = readFileSync('src/app/api/chat/send/route.ts', 'utf8')
   assert.match(source, /dualWriteChatMessage/)
   assert.match(source, /finalizeOutboundDelivery/)
-  assert.match(source, /isPersistedDualWrite/)
+  // Echo-first duplicates resolve to the echo row (chat-send-claim), never a 500.
+  assert.match(source, /resolveDeliveredOutboundRow\(db, write,/)
   assert.match(source, /providerMessageId: providerMessageId \|\| null/)
   assert.doesNotMatch(source, /providerMessageId:\s*null/)
   assert.doesNotMatch(source, /chatMessage\.create\(/)

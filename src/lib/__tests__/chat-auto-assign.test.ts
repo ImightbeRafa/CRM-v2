@@ -31,5 +31,5 @@ test('never assigns non-members and never throws', async () => {
 
 test('send route auto-assigns only after a delivered human send', () => {
   const src = readFileSync('src/app/api/chat/send/route.ts', 'utf8')
-  assert.match(src, /if \(providerMessageId && write\.conversationId && senderUser\) \{\s*await autoAssignOnFirstHumanReply/)
+  assert.match(src, /if \(providerMessageId && senderUser\) \{\s*await autoAssignOnFirstHumanReply/)
 })

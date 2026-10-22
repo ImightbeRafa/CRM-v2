@@ -210,3 +210,54 @@ export async function sendTeamInviteEmail(input: {
     return { success: false, error: error?.message || 'Failed to send invite email' }
   }
 }
+
+/**
+ * Meta data-deletion request (privacy §8.2): tell the business owner that the lines a Facebook user connected were
+ * disconnected and when their chats will be erased. Names are user-controlled: escaped / single-line.
+ */
+export async function sendMetaDataDeletionNoticeEmail(input: {
+  email: string
+  tenantName: string
+  lines: string[]
+  eraseAfter: Date
+  confirmationCode: string
+}) {
+  try {
+    if (!process.env.RESEND_API_KEY) {
+      console.warn('[Email] RESEND_API_KEY missing — data deletion notice skipped')
+      return { success: false, error: 'RESEND_API_KEY missing' }
+    }
+    const tenantName = escapeHtml(String(input.tenantName || 'tu negocio').slice(0, 80))
+    const subjectName = String(input.tenantName || 'tu negocio').replace(/[\r\n\t]+/g, ' ').replace(/[<>]/g, '').slice(0, 60)
+    const lines = input.lines.slice(0, 20).map((l) => `<li>${escapeHtml(String(l).slice(0, 80))}</li>`).join('')
+    const when = new Intl.DateTimeFormat('es-CR', { dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Costa_Rica' }).format(input.eraseAfter)
+    const code = escapeHtml(String(input.confirmationCode).slice(0, 40))
+    await resend.emails.send({
+      from: 'BetsyCRM <noreply@betsycrm.com>',
+      to: input.email,
+      subject: `Solicitud de eliminación de datos en ${subjectName}`,
+      html: `
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto;">
+          <h2 style="color:#111827;margin:0 0 12px;">Se pidió borrar datos de ${tenantName}</h2>
+          <p style="color:#4b5563;font-size:14px;">
+            La persona que conectó estas cuentas a Betsy quitó la app en Facebook o Instagram y pidió borrar sus datos.
+            Ya las desconectamos:
+          </p>
+          <ul style="color:#111827;font-size:14px;">${lines}</ul>
+          <p style="color:#4b5563;font-size:14px;">
+            A partir del <strong>${when}</strong> borraremos las conversaciones, mensajes y archivos recibidos por esas
+            cuentas. Tus pedidos, clientes y agentes no se borran.
+          </p>
+          <p style="color:#4b5563;font-size:14px;">
+            Si no lo esperabas, escribí antes de esa fecha a support@betsycrm.com con el código <strong>${code}</strong>.
+            Para seguir usando esas cuentas, volvé a conectarlas en Configuración › Cuentas conectadas.
+          </p>
+        </div>
+      `,
+    })
+    return { success: true }
+  } catch (error: any) {
+    console.error('[Email] sendMetaDataDeletionNoticeEmail error:', error?.name || 'unknown')
+    return { success: false, error: 'Failed to send data deletion notice' }
+  }
+}

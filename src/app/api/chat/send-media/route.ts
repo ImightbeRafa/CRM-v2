@@ -7,6 +7,8 @@ import { filenameForMime, loadStoredChatMediaBytes, sendWhatsAppMediaBytes, type
 import { readChatMediaFromBlob } from '@/lib/chat-media'
 import { isQuickReplyMediaPath, quickRepliesFromSettings, quickReplyMediaPaths } from '@/lib/chat-quick-replies'
 import { prisma } from '@/lib/db'
+import { browserClientRequestId } from '@/lib/chat-send-claim'
+import { isSameOriginRequest } from '@/lib/same-origin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -29,16 +31,16 @@ function toResponse(result: SendMediaResult, clientRequestId: string | null) {
   return NextResponse.json({
     success: true,
     ...(result.duplicate ? { duplicate: true } : {}),
+    ...(result.persisted === false ? { persisted: false } : {}),
+    ...(result.inFlight ? { inFlight: true } : {}),
     message: result.message,
     conversationId: result.conversationId,
     clientRequestId,
   })
 }
 
-function cleanRequestId(raw: unknown): string | null {
-  const value = String(raw || '').trim()
-  return /^[A-Za-z0-9._:-]{1,80}$/.test(value) ? value : null
-}
+// Browser ids only: server-reserved prefixes (guía) are refused (SecureDog DATA-CLAIM-1).
+const cleanRequestId = browserClientRequestId
 
 /**
  * POST /api/chat/send-media
@@ -52,6 +54,8 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_sales')
     if (!auth.ok) return auth.response
+    // SecureDog AUTH-SEND-2: this origin only (a sibling subdomain is same-site).
+    if (!isSameOriginRequest(request)) return jsonError('Origen no permitido.', 403)
     const { tenantId, userId } = auth
 
     if (!(await isTenantFeatureNotDisabled(tenantId, CHAT_OUTBOUND_MEDIA_FLAG))) {

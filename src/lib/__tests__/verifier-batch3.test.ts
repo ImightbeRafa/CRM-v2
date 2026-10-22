@@ -15,12 +15,15 @@ test('F2: network failures while loading a thread show the error state; retry sh
   assert.match(inbox(), /onRetryThread: \(\) => \{\s*if \(selectedConversationId\) void loadThreadMessages/)
 })
 
-test('F3: a retried file is deduplicated and a sent-but-unsaved file clears the chip', () => {
-  const route = readFileSync('src/lib/chat-send-media-core.ts', 'utf8')
-  assert.match(route, /metadata: \{ path: \['clientRequestId'\], equals: clientRequestId \}/)
-  assert.match(route, /\{ sent: true \}/)
-  assert.match(inbox(), /pendingFileRequestIds\.current/)
-  assert.match(inbox(), /if \(alreadySent\) \{/)
+test('F3: a retried file is deduplicated and a sent-but-unsaved file is never an error', () => {
+  const core = readFileSync('src/lib/chat-send-media-core.ts', 'utf8')
+  assert.match(core, /findOutboundByClientRequestId\(db, \{ tenantId, socialAccountId, clientRequestId \}\)/)
+  assert.match(core, /claimChatSend\(tenantId, clientRequestId\)/)
+  assert.match(core, /return \{ ok: true, persisted: false, message: null, conversationId: null \}/)
+  assert.match(readFileSync('src/lib/chat-send-claim.ts', 'utf8'), /metadata: \{ path: \['clientRequestId'\], equals: opts\.clientRequestId \}/)
+  // Reintentar re-runs the same job (same clientRequestId); the chip clears when queued.
+  assert.match(inbox(), /mediaJobsRef\.current\.get\(crid\)/)
+  assert.match(inbox(), /settleOptimisticOutboundWithoutRow/)
 })
 
 test('F4: audio never stores a caption the customer did not receive', () => {

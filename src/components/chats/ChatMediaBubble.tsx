@@ -430,3 +430,63 @@ export function ChatMediaBubble({ msg, outbound }: { msg: ChatInboxMessage; outb
     </div>
   )
 }
+
+/**
+ * A file the agent just sent, before the stored row replaces it: the picked photo (or a file chip)
+ * with upload progress. Nothing here fetches from the server; the composer never waits on it.
+ */
+export function PendingMediaBubble({ msg }: { msg: ChatInboxMessage }) {
+  const kind = chatMediaKind(msg)
+  const failed = msg.deliveryStatus === 'failed'
+  const progress = Math.max(0, Math.min(1, msg.uploadProgress ?? 0))
+  const uploading = !failed && msg.deliveryStatus === 'pending'
+  const label = failed ? 'No se envió' : !uploading ? 'Enviado' : progress < 1 ? `Subiendo ${Math.round(progress * 100)}%` : 'Enviando…'
+  const bar = uploading ? (
+    <span className="absolute inset-x-2 bottom-2 h-1.5 overflow-hidden rounded-full bg-black/25" aria-hidden>
+      <span className="block h-full rounded-full bg-white transition-[width] duration-200" style={{ width: `${Math.max(4, progress * 100)}%` }} />
+    </span>
+  ) : null
+  if (kind === 'image' && msg.localPreviewUrl) {
+    return (
+      <span className="relative mt-1 block overflow-hidden rounded-xl" data-testid="pending-media-bubble">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={msg.localPreviewUrl}
+          alt={msg.mediaFilename || 'imagen'}
+          className={`max-h-72 max-w-full object-contain ${uploading ? 'opacity-80' : ''}`}
+          decoding="async"
+        />
+        {uploading || failed ? (
+          <span
+            className={`absolute left-2 top-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${
+              failed ? 'bg-red-600/90' : 'bg-black/55'
+            }`}
+          >
+            {uploading ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+            {label}
+          </span>
+        ) : null}
+        {bar}
+      </span>
+    )
+  }
+  return (
+    <span
+      className="relative mt-1 flex w-[240px] max-w-full items-center gap-3 overflow-hidden rounded-xl bg-white/70 px-3 py-2.5 pb-4 ring-1 ring-slate-200/70"
+      data-testid="pending-media-bubble"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#5B6CFF]/10 text-au-ink-5b6cff">
+        {uploading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <FileText className="h-4 w-4" aria-hidden />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[12.5px] font-medium text-slate-800">{msg.mediaFilename || MEDIA_LABEL[kind]}</span>
+        <span className={`mt-0.5 block text-[11px] ${failed ? 'font-medium text-red-600' : 'text-slate-500'}`}>{label}</span>
+      </span>
+      {uploading ? (
+        <span className="absolute inset-x-3 bottom-1.5 h-1 overflow-hidden rounded-full bg-slate-200" aria-hidden>
+          <span className="block h-full rounded-full bg-[#5B6CFF] transition-[width] duration-200" style={{ width: `${Math.max(4, progress * 100)}%` }} />
+        </span>
+      ) : null}
+    </span>
+  )
+}

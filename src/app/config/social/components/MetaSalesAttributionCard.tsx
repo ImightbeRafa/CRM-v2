@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Megaphone, RefreshCw } from 'lucide-react'
 
-type Line = { id: string; name: string; status: string; checkedAt: string | null }
+type Line = { id: string; platform: 'whatsapp' | 'instagram'; name: string; status: string; checkedAt: string | null }
 type Data = {
   enabled: boolean
   acknowledgedAt: string | null
+  instagramNoticeAccepted: boolean
   testEventCode: string | null
   testEventCodeExpiresAt: string | null
   currency: 'CRC' | 'USD' | null
@@ -15,13 +16,35 @@ type Data = {
   lines: Line[]
 }
 
-const LINE_STATUS: Record<string, { label: string; tone: string }> = {
-  ready: { label: 'Listo', tone: 'bg-emerald-50 text-emerald-700' },
-  missing_permission: { label: 'Falta permiso: reconectá WhatsApp', tone: 'bg-amber-50 text-amber-800' },
-  token_invalid: { label: 'Reconectar WhatsApp', tone: 'bg-red-50 text-red-700' },
-  error: { label: 'No se pudo verificar', tone: 'bg-slate-100 text-slate-600' },
-  unknown: { label: 'Sin verificar', tone: 'bg-slate-100 text-slate-600' },
+const TONE = {
+  ok: 'bg-emerald-50 text-emerald-700',
+  warn: 'bg-amber-50 text-amber-800',
+  bad: 'bg-red-50 text-red-700',
+  idle: 'bg-slate-100 text-slate-600',
+} as const
+
+/** Plain status per line; the reconnect hint names the line's own app. */
+export function lineStatusLabel(line: Pick<Line, 'platform' | 'status'>, instagramNoticeAccepted: boolean): { label: string; tone: string } {
+  const app = line.platform === 'instagram' ? 'Instagram' : 'WhatsApp'
+  if (line.platform === 'instagram' && !instagramNoticeAccepted && line.status !== 'missing_permission' && line.status !== 'token_invalid') {
+    return { label: 'Falta aceptar el aviso de Instagram', tone: TONE.warn }
+  }
+  switch (line.status) {
+    case 'ready':
+      return { label: 'Listo', tone: TONE.ok }
+    case 'missing_permission':
+      return { label: `Falta permiso: reconectá ${app}`, tone: TONE.warn }
+    case 'token_invalid':
+      return { label: `Reconectar ${app}`, tone: TONE.bad }
+    case 'error':
+      return { label: 'No se pudo verificar', tone: TONE.idle }
+    default:
+      return { label: 'Sin verificar', tone: TONE.idle }
+  }
 }
+
+const NOTICE_TEXT =
+  'Entiendo que Betsy enviará a Meta, en nombre de mi negocio, solo cuando un pedido que llegó por un anuncio queda pagado: el monto y, para WhatsApp, el identificador del clic del anuncio; para Instagram, el identificador de Instagram del cliente en ese chat (sin nombres, teléfonos ni mensajes), y que informo a mis clientes según mi aviso de privacidad.'
 
 /**
  * Config › Cuentas conectadas: report paid ad sales to the business's own Meta ad account.
@@ -79,6 +102,8 @@ export function MetaSalesAttributionCard() {
 
   if (hidden || !data) return null
   const needsAck = !data.acknowledgedAt
+  const hasInstagram = data.lines.some((l) => l.platform === 'instagram')
+  const needsInstagramAck = data.enabled && hasInstagram && !data.instagramNoticeAccepted
 
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white p-5" data-testid="meta-sales-attribution">
@@ -89,9 +114,9 @@ export function MetaSalesAttributionCard() {
         <div className="min-w-0 flex-1">
           <h2 className="text-[15px] font-semibold text-slate-900">Ventas por anuncios (Meta)</h2>
           <p className="mt-0.5 text-[12.5px] leading-relaxed text-slate-500">
-            Cuando un cliente llega por un anuncio de WhatsApp y su pedido queda <strong>pagado</strong>, Betsy le avisa a
-            tu cuenta de anuncios de Meta. Así Meta puede optimizar tus anuncios para ventas reales. No cambia nada de
-            cómo funciona tu WhatsApp.
+            Cuando un cliente llega por un anuncio a WhatsApp o Instagram y su pedido queda <strong>pagado</strong>, Betsy le
+            avisa a tu cuenta de anuncios de Meta. En WhatsApp, Meta puede optimizar tus anuncios para ventas reales; en
+            Instagram, ves las ventas en tus reportes. No cambia nada de cómo funcionan tus chats.
           </p>
         </div>
         <label className="inline-flex shrink-0 cursor-pointer items-center gap-2 text-[13px] text-slate-700">
@@ -110,22 +135,41 @@ export function MetaSalesAttributionCard() {
       {!data.enabled && needsAck ? (
         <label className="mt-3 flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-[12px] text-slate-600">
           <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#5B6CFF]" checked={ack} onChange={(e) => setAck(e.target.checked)} data-testid="meta-sales-ack" />
-          <span>
-            Entiendo que Betsy enviará a Meta, en nombre de mi negocio, el identificador del clic del anuncio y el monto de
-            las ventas pagadas (sin nombres ni teléfonos), y que informo a mis clientes según mi aviso de privacidad.
-          </span>
+          <span>{NOTICE_TEXT}</span>
         </label>
+      ) : null}
+
+      {needsInstagramAck ? (
+        <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2.5 text-[12px] text-amber-900" data-testid="meta-sales-ig-ack">
+          <label className="flex items-start gap-2">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#5B6CFF]" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+            <span>
+              Para incluir Instagram, aceptá el aviso actualizado: {NOTICE_TEXT}
+            </span>
+          </label>
+          <button
+            type="button"
+            disabled={busy !== null || !ack}
+            onClick={() => void put({ action: 'save', enabled: true, acknowledge: true }, 'save')}
+            className="mt-2 rounded-lg bg-white px-2.5 py-1.5 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Aceptar e incluir Instagram
+          </button>
+        </div>
       ) : null}
 
       <div className="mt-4 space-y-2">
         {data.lines.length === 0 ? (
-          <p className="text-[12px] text-slate-500">Conectá una línea de WhatsApp para usarlo.</p>
+          <p className="text-[12px] text-slate-500">Conectá una línea de WhatsApp o una cuenta de Instagram para usarlo.</p>
         ) : (
           data.lines.map((line) => {
-            const st = LINE_STATUS[line.status] ?? LINE_STATUS.unknown
+            const st = lineStatusLabel(line, data.enabled ? data.instagramNoticeAccepted : true)
             return (
-              <div key={line.id} className="flex items-center justify-between gap-3 text-[12.5px]">
-                <span className="truncate text-slate-700">{line.name}</span>
+              <div key={line.id} className="flex items-center justify-between gap-3 text-[12.5px]" data-testid={`meta-sales-line-${line.platform}`}>
+                <span className="truncate text-slate-700">
+                  <span className="mr-1.5 text-[11px] text-slate-400">{line.platform === 'instagram' ? 'Instagram' : 'WhatsApp'}</span>
+                  {line.name}
+                </span>
                 <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${st.tone}`}>{st.label}</span>
               </div>
             )

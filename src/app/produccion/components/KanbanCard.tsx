@@ -6,6 +6,8 @@ import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { ArrowRight, Calendar, MapPin, Package, Phone, User } from 'lucide-react';
 import { PaymentStatusBadge } from '@/app/components/orders/PaymentStatusBadge';
+import OrderItemsList from '@/components/orders/OrderItemsList';
+import ShippingMethodBadge from '@/components/orders/ShippingMethodBadge';
 
 interface KanbanCardProps {
   order: Sale;
@@ -32,11 +34,11 @@ export function KanbanCard({ order, statuses, onClick, onMove, moving }: KanbanC
         </div>
         <div className="flex items-center text-[13px] font-medium"><User className="h-3 w-3 mr-1.5 shrink-0" /><span className="break-words whitespace-normal">{order.customerName}</span></div>
         {order.phone && <div className="flex items-center text-xs text-muted-foreground"><Phone className="h-3 w-3 mr-1.5 shrink-0" />{order.phone}</div>}
-        <div className="flex items-start text-xs"><Package className="h-3 w-3 mr-1.5 mt-0.5 shrink-0" /><span className="break-words whitespace-normal">{order.product}</span></div>
+        <div className="flex items-start text-xs"><Package className="h-3 w-3 mr-1.5 mt-0.5 shrink-0" /><OrderItemsList order={order} open emptyLabel="—" style={{ flex: 1 }} /></div>
         {order.orderType === 'EA' && order.district && <div className="flex items-center text-xs text-muted-foreground"><MapPin className="h-3 w-3 mr-1.5 shrink-0" /><span className="break-words whitespace-normal">{order.district}</span></div>}
         <div className="flex items-center justify-between border-t border-white/[0.04] pt-2">
           <div className="flex flex-wrap gap-1">
-            <Badge variant="outline">{order.orderType === 'EA' ? 'Envío' : 'Retiro'}</Badge>
+            <ShippingMethodBadge order={order} size="xs" showCod={false} />
             <PaymentStatusBadge order={order} />
           </div>
           <strong>₡{Number(order.total || 0).toLocaleString('es-CR')}</strong>

@@ -7,11 +7,16 @@ import { StatusBadge } from './StatusBadge';
 import { PaymentStatusBadge } from '@/app/components/orders/PaymentStatusBadge';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
+import OrderItemsList from '@/components/orders/OrderItemsList';
+import ShippingMethodBadge from '@/components/orders/ShippingMethodBadge';
 
 interface OrderData {
   orderId: string;
   customerName: string;
   product?: string;
+  quantity?: number;
+  itemLines?: string[] | null;
+  courier?: string;
   total?: number;
   status: string;
   timestamp: string;
@@ -52,17 +57,19 @@ export function MobileOrderCard({ order, formatCurrency, className = '' }: Mobil
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
               <span className="font-semibold text-sm text-foreground">#{order.orderId}</span>
-              {order.orderType && (
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                  {order.orderType === 'EA' ? 'Envío' : 'Retiro'}
-                </span>
-              )}
+              {order.orderType && <ShippingMethodBadge order={order} size="xs" showCod={false} />}
             </div>
             <p className="text-sm text-foreground truncate">{order.customerName}</p>
             {order.product && (
-              <p className="text-xs text-muted-foreground truncate mt-0.5">{order.product}</p>
+              <OrderItemsList
+                order={order}
+                open={expanded}
+                maxItems={2}
+                style={{ marginTop: 2 }}
+                itemStyle={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}
+              />
             )}
           </div>
 

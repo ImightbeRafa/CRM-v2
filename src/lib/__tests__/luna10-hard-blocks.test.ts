@@ -292,7 +292,8 @@ describe('verifier + SecureDog round 2 (luna-10)', () => {
   it('SecureDog L2/L4: shadow replays redacted text as "Cliente"; the test cap is bounded and only our own raise is undone', () => {
     const shadow = fs.readFileSync('scripts/agent-pack/shadow.ts', 'utf8')
     assert.match(shadow, /customerName: 'Cliente',/)
-    assert.match(shadow, /agent: redactCustomerText\(r\.text, c\.peerName\)/)
+    // Lane C 2026-10-22: still redacted; `store: true` only keeps the agent's own data-list wording readable.
+    assert.match(shadow, /agent: redactCustomerText\(r\.text, c\.peerName(, \{ store: true \})?\)/)
     const session = fs.readFileSync('scripts/agent-pack/test-session.ts', 'utf8')
     // Rafael 2026-10-18 raised the per-day test ceiling from 20M to 40M.
     assert.match(session, /input\.cap > 40_000_000/)

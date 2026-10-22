@@ -23,6 +23,8 @@ export interface BaseOrder {
   customFields?: Record<string, any> | string | null;
   contraEntrega?: boolean;
   cePaymentConfirmed?: boolean;
+  /** One label per item from productDetails (list APIs only). */
+  itemLines?: string[] | null;
   /** Sales channel (WhatsApp, Instagram, Website…); null when the order has none. */
   salesChannel?: string | null;
   province?: string;

@@ -5,6 +5,7 @@ import { Package, TrendingUp, Truck, Mail, FileDown, CheckCircle, Calendar, Doll
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import PaymentMethodWizard, { type PaymentConfirmPayload } from '@/app/logistics/components/PaymentMethodWizard';
 import { csvCell } from '@/lib/csv-safe';
+import ShippingMethodBadge from '@/components/orders/ShippingMethodBadge';
 
 interface Rates { mensajeria_rate: number; correos_rate: number; handling_rate: number; salary_daily_rate: number; }
 
@@ -523,7 +524,7 @@ function ContraEntregasTab() {
                                         <td style={{ padding: '10px 14px' }}><span style={{ padding: '2px 8px', borderRadius: 20, background: `${tc}20`, color: tc, fontSize: 10.5, fontWeight: 700 }}>{getTenantName(o.tenantId)}</span></td>
                                         <td style={{ padding: '10px 14px', color: '#F2F2F2', fontWeight: 500 }}>{o.customerName}<div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>#{o.orderRef}</div></td>
                                         <td style={{ padding: '10px 14px' }}>
-                                            {o.lmCarrier ? <span style={{ padding: '2px 8px', borderRadius: 20, background: o.lmCarrier === 'mensajeria' ? 'rgba(139,135,255,0.15)' : 'rgba(96,165,250,0.15)', color: o.lmCarrier === 'mensajeria' ? '#8b87ff' : '#60a5fa', fontSize: 11 }}>{o.lmCarrier === 'mensajeria' ? 'Mensajería' : 'Correos'}</span> : <span style={{ color: 'rgba(255,255,255,0.2)' }}>—</span>}
+                                            <ShippingMethodBadge order={{ orderType: o.orderType, courier: o.courier, lmCarrier: o.lmCarrier, isContraEntrega: true }} theme="dark" size="xs" showCod={false} />
                                         </td>
                                         <td style={{ padding: '10px 14px', color: '#fbbf24', fontWeight: 700 }}>{fmt(o.total)}</td>
                                         <td style={{ padding: '10px 14px', color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>{new Date(o.timestamp).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}</td>

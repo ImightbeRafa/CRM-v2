@@ -1,3 +1,10 @@
+## 2026-10-22 — Follow-up experiments for every agent (Lane E)
+
+- `scripts/agent-pack/follow-up-campaign.ts`: a pack's `follow-up.json` holds one agent's standing experiment (champion vs next challenger). New `--start`, `--rotate` (winner rule → next round), `--compare` (all agents side by side), `--eligible` (who can get one now and why not), `--dry-run` on every write, `--report --replies` with ₡ and opt-outs. A new round stops only the same agent's rounds and refuses a line another agent's round uses (the old script stopped every campaign in the tenant). Claims are re-read right before each write.
+- Winner rule `scripts/agent-pack/follow-up-rule.ts` (+ `follow-up-experiment.test.ts` in `test:soft-ai`): opt-out guardrail, 150 chats/text + 7 days, orders first (95 %), then replies if orders can't decide.
+- 2026-10-18 PatchHouse result: "duda" 10/48 replies (21 %) vs "combo" 2/50 (4 %); 0 vs 1 order (₡12 900); no opt-outs. "duda" is champion.
+- No engine change (`src/lib/soft-ai/**` untouched). Engine spec for standing rounds, per-text waits, holdout: `docs/handoff/2026-10-22-follow-up-experiments.md`. Rounds for Sofi and Vale are ready but not started (prod write needs Rafael).
+
 ## 2026-10-21 — Exam bank: delivery-time after a confirmed order is a handoff
 
 - `expectForRealMessage` now sees the 6-message history. If the team already confirmed a SINPE / entered the order, “¿cuándo llegaría?” / guía / estado is `handoff: true` (existing order), not a first-contact shipping question.

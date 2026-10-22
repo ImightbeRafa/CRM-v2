@@ -122,6 +122,9 @@ const CrearPedidoDrawer = dynamic(
 )
 
 
+const IN_FLIGHT_RECHECKS = 5
+const IN_FLIGHT_RECHECK_MS = 4000
+
 /** Phone thread / details: below the global banners, as tall as the visible area above the keyboard. */
 const MOBILE_THREAD_STYLE = {
   top: 'calc(var(--app-top-offset, 0px) + var(--chat-vv-top, 0px))',
@@ -269,6 +272,8 @@ export function SoftCopilotInboxV2() {
   /** File sends by clientRequestId until they are stored (Reintentar re-runs the same job, same id). */
   const mediaJobsRef = useRef<Map<string, MediaSendJob>>(new Map())
   const sendRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** "Still sending elsewhere" re-checks per clientRequestId (bounded). */
+  const inFlightChecksRef = useRef<Map<string, number>>(new Map())
   const lastQueuedTextRef = useRef<{ conversationId: string; content: string; at: number } | null>(null)
   /** Last quick reply inserted, per chat: reported with that chat's next send (usage metric). */
   const quickReplyUsedRef = useRef<{ conversationId: string; shortcut: string } | null>(null)
@@ -943,18 +948,28 @@ export function SoftCopilotInboxV2() {
   const router = useRouter()
   const [deepLinkId, setDeepLinkId] = useState<string | null>(null)
   const deepLinkFetched = useRef<string | null>(null)
+  /** The ?c= already opened: a history step back onto that URL must not reopen it (phone back loop). */
+  const handledDeepLinkRef = useRef<string | null>(null)
   useEffect(() => {
     const c = searchParams?.get('c')
-    if (c && /^[A-Za-z0-9_-]{8,64}$/.test(c)) setDeepLinkId(c)
+    if (!c) {
+      handledDeepLinkRef.current = null
+      return
+    }
+    if (c !== handledDeepLinkRef.current && c && /^[A-Za-z0-9_-]{8,64}$/.test(c)) setDeepLinkId(c)
   }, [searchParams])
   useEffect(() => {
     if (!deepLinkId) return
     if (dtoMap.has(deepLinkId)) {
       setDeepLinkId(null)
       deepLinkFetched.current = null
+      handledDeepLinkRef.current = deepLinkId
+      // Handled: drop ?c= so the same notification can be clicked again later. Synchronously and in
+      // place, BEFORE the phone thread entry is pushed: a later router.replace would
+      // overwrite that entry and the phone's back would land on ?c= and reopen the chat.
+      // Plain data: Next's patched replaceState copies its own state and syncs useSearchParams.
+      window.history.replaceState({}, '', '/chats')
       openConversationById(deepLinkId)
-      // Handled: drop ?c= so the same notification can be clicked again later.
-      router.replace('/chats', { scroll: false })
       return
     }
     if (deepLinkFetched.current === deepLinkId) return
@@ -1660,7 +1675,10 @@ export function SoftCopilotInboxV2() {
     }
   }
 
-  async function handleSendMessage(e: FormEvent, opts?: { retryClientRequestId?: string }) {
+  async function handleSendMessage(
+    e: FormEvent,
+    opts?: { retryClientRequestId?: string; /** Send this text as a NEW message (composer untouched). */ resendContent?: string },
+  ) {
     e.preventDefault()
     if (!selectedConversation || !selectedConversationId) return
 
@@ -1669,7 +1687,7 @@ export function SoftCopilotInboxV2() {
     const recipient = selectedConversation.recipientId
     const socialAccountId = selectedConversation.socialAccountId
 
-    let content = messageInput.trim()
+    let content = (opts?.resendContent ?? messageInput).trim()
     let clientRequestId = opts?.retryClientRequestId
 
     if (clientRequestId) {
@@ -1693,7 +1711,7 @@ export function SoftCopilotInboxV2() {
 
     // Usage metric: the quick reply inserted in THIS chat since the last send (not on retries).
     const quickReplyShortcut =
-      !opts?.retryClientRequestId && quickReplyUsedRef.current?.conversationId === conversationId
+      !opts?.retryClientRequestId && opts?.resendContent === undefined && quickReplyUsedRef.current?.conversationId === conversationId
         ? quickReplyUsedRef.current.shortcut
         : undefined
     quickReplyUsedRef.current = null
@@ -1723,7 +1741,7 @@ export function SoftCopilotInboxV2() {
         )
         return next
       })
-      setMessageInput('')
+      if (opts?.resendContent === undefined) setMessageInput('')
       nearBottomRef.current = true
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -1746,6 +1764,28 @@ export function SoftCopilotInboxV2() {
       deliverTextMessage({ conversationId, conversationStatus, socialAccountId, recipient, content, clientRequestId: requestId, quickReplyShortcut })
         .finally(() => textInFlightRef.current.delete(requestId))
     await enqueueChatSend(conversationId, deliver)
+  }
+
+  /**
+   * The server said another request with this id is still sending it. Re-ask a few times (same id,
+   * never a second send); if it is still unknown, the bubble turns failed so "Reintentar" shows.
+   */
+  function scheduleInFlightRecheck(conversationId: string, clientRequestId: string, run: () => Promise<void>) {
+    const attempt = (inFlightChecksRef.current.get(clientRequestId) ?? 0) + 1
+    if (attempt > IN_FLIGHT_RECHECKS) {
+      inFlightChecksRef.current.delete(clientRequestId)
+      setThreadMessages((prev) => ({
+        ...prev,
+        [conversationId]: markOptimisticOutboundFailed(prev[conversationId] || [], clientRequestId),
+      }))
+      if (selectedConversationIdRef.current === conversationId) {
+        setSendError('No pudimos confirmar si salió. Tocá Reintentar: no se manda dos veces.')
+        setFailedOutboundId(`optimistic:${clientRequestId}`)
+      }
+      return
+    }
+    inFlightChecksRef.current.set(clientRequestId, attempt)
+    window.setTimeout(() => void enqueueChatSend(conversationId, run), IN_FLIGHT_RECHECK_MS)
   }
 
   /** Many fast sends → one list refresh shortly after the last one (not one request per message). */
@@ -1846,7 +1886,15 @@ export function SoftCopilotInboxV2() {
           ...prev,
           [conversationId]: settleOptimisticOutboundWithoutRow(prev[conversationId] || [], clientRequestId, { inFlight }),
         }))
+        if (inFlight) {
+          // Ask again shortly (same id: the server never sends twice); give up into "Reintentar".
+          scheduleInFlightRecheck(conversationId, clientRequestId, () =>
+            deliverTextMessage({ conversationId, conversationStatus, socialAccountId, recipient, content, clientRequestId }),
+          )
+          return
+        }
       }
+      inFlightChecksRef.current.delete(clientRequestId)
 
       // updateStatus is bound to the chat of this send (render-time closure), so it still applies
       // after the operator moved to another chat.
@@ -1979,6 +2027,13 @@ export function SoftCopilotInboxV2() {
         fail(humanizeChatSendError(!parsed.ok ? parsed.error : parsed.data.error, !parsed.ok ? parsed.status : res.status))
         return
       }
+      if (parsed.data.inFlight === true) {
+        // Keep the job (Reintentar needs it); ask again with the same id.
+        patch({ deliveryStatus: 'pending' })
+        scheduleInFlightRecheck(conversationId, clientRequestId, () => deliverMedia(job))
+        return
+      }
+      inFlightChecksRef.current.delete(clientRequestId)
       mediaJobsRef.current.delete(clientRequestId)
       if (parsed.data.message) {
         const persisted = messageDtoToInbox(parsed.data.message)
@@ -1994,9 +2049,7 @@ export function SoftCopilotInboxV2() {
       } else {
         setThreadMessages((prev) => ({
           ...prev,
-          [conversationId]: settleOptimisticOutboundWithoutRow(prev[conversationId] || [], clientRequestId, {
-            inFlight: parsed.data.inFlight === true,
-          }),
+          [conversationId]: settleOptimisticOutboundWithoutRow(prev[conversationId] || [], clientRequestId, {}),
         }))
       }
       if (job.conversationStatus === 'nuevo') updateStatus('en_curso')
@@ -2109,6 +2162,15 @@ export function SoftCopilotInboxV2() {
           (m) => m.id === messageId,
         )?.clientRequestId
     if (!crid) return
+    if (!messageId.startsWith('optimistic:')) {
+      // A stored row Meta failed later (status webhook): it never reached the customer, so Reintentar
+      // is a NEW send of the same text with a new id (the old id is already "delivered" on the server).
+      const row = (threadMessagesRef.current[selectedConversationId || ''] || []).find((m) => m.id === messageId)
+      if (row?.content?.trim() && (row.messageType || 'text') === 'text') {
+        void handleSendMessage({ preventDefault() {} } as FormEvent, { resendContent: row.content })
+      }
+      return
+    }
     const mediaJob = mediaJobsRef.current.get(crid)
     if (mediaJob) {
       // Same id: the server never sends it twice (claim), even if the first try actually went out.

@@ -240,6 +240,8 @@ export async function POST(request: NextRequest) {
     let storedContent = content
     // True once Meta accepted the message: from here on the answer is never an error.
     let delivered = false
+    // Timed out talking to Meta: it may or may not have gone out.
+    let ambiguous = false
 
     try {
       if (account.platform === 'instagram') {
@@ -285,6 +287,8 @@ export async function POST(request: NextRequest) {
         } catch (e: any) {
           console.error('[chat/send] Instagram send error', e)
           if (isAbortError(e)) {
+            // Meta may have accepted it: keep the claim (it goes stale in 2 min), Retry never doubles.
+            ambiguous = true
             return jsonError('Tiempo de espera agotado al contactar Instagram. Intenta de nuevo.', 504)
           }
           return jsonError(e?.message || 'Error al enviar por Instagram', 502)
@@ -429,6 +433,7 @@ export async function POST(request: NextRequest) {
         } catch (e: any) {
           console.error('[chat/send] WhatsApp send error', e)
           if (isAbortError(e)) {
+            ambiguous = true
             return jsonError('Tiempo de espera agotado al contactar WhatsApp. Intenta de nuevo.', 504)
           }
           return jsonError(e?.message || 'Error al enviar por WhatsApp', 502)
@@ -437,8 +442,8 @@ export async function POST(request: NextRequest) {
         return jsonError(`Plataforma no soportada: ${account.platform}`, 400)
       }
     } finally {
-      // Meta refused it (or it never left): Retry may send this id again.
-      if (ownsClaim && !delivered) await releaseChatSend(tenantId, clientRequestId)
+      // Meta refused it (or it never left): Retry may send this id again. A timeout is ambiguous.
+      if (ownsClaim && !delivered && !ambiguous) await releaseChatSend(tenantId, clientRequestId)
     }
 
     // Delivered. Storing it can still fail (echo stored first, a DB hiccup): the customer already has

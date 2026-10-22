@@ -9,6 +9,8 @@ export const OUTBOUND_IMAGE_MAX_SIDE = 1600
 /** Photos already at most this size and within the max side are sent as they are. */
 export const OUTBOUND_IMAGE_KEEP_BYTES = 1024 * 1024
 const OUTBOUND_IMAGE_QUALITY = 0.85
+/** Upload + Meta send budget (the server waits up to 30 s per Meta call). */
+export const UPLOAD_TIMEOUT_MS = 180_000
 // WhatsApp images are JPEG / PNG only (webp is stickers): every shrunk photo goes out as JPEG.
 const DOWNSCALE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 
@@ -78,6 +80,8 @@ export function postFormWithProgress(
       return
     }
     xhr.open('POST', url)
+    // A stalled upload fails instead of holding this chat's queue (texts typed after it) for minutes.
+    xhr.timeout = UPLOAD_TIMEOUT_MS
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && e.total > 0) onProgress(Math.min(1, e.loaded / e.total))
     }

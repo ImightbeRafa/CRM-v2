@@ -113,6 +113,21 @@ try {
     checks.inAppBackToList = (await thread.count()) === 0
     checks.historyClean = await page.evaluate(() => !(window.history.state && window.history.state.betsyChat))
 
+    // Opened from a notification (/chats?c=<id>): back goes to the list once, never loops into the chat.
+    const list = await (await page.request.get(`${baseUrl}/api/chat/conversations?limit=1`)).json().catch(() => null)
+    const convId = list?.conversations?.[0]?.id
+    if (convId) {
+      await page.goto(`${baseUrl}/dashboard`, { waitUntil: 'domcontentloaded', timeout: 120_000 })
+      await page.goto(`${baseUrl}/chats?c=${encodeURIComponent(convId)}`, { waitUntil: 'domcontentloaded', timeout: 120_000 })
+      await thread.waitFor({ timeout: 60_000 })
+      await page.waitForTimeout(1500)
+      checks.deepLinkUrlCleaned = !new URL(page.url()).searchParams.has('c')
+      await page.goBack()
+      await page.waitForTimeout(2500)
+      checks.deepLinkBackToList = (await thread.count()) === 0 && new URL(page.url()).pathname === '/chats'
+      await page.screenshot({ path: shot('6-deeplink-back') })
+    }
+
     const deviceOk = Object.entries(checks).every(([k, v]) => (typeof v === 'boolean' ? v : true) || k === 'listRows')
     if (!deviceOk) ok = false
     await context.close()

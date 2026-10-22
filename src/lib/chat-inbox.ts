@@ -301,12 +301,17 @@ export function preferDeliveryStatus(
  * bubble never jumps above one already sent when the browser clock and the server clock differ
  * (fast sends looked like they reordered).
  */
+function isUnsettledOptimistic(m: { id: string; deliveryStatus?: string | null }): boolean {
+  return m.id.startsWith('optimistic:') && m.deliveryStatus !== 'sent'
+}
+
 export function compareThreadMessages(
-  a: { id: string; sentAt: string },
-  b: { id: string; sentAt: string },
+  a: { id: string; sentAt: string; deliveryStatus?: string | null },
+  b: { id: string; sentAt: string; deliveryStatus?: string | null },
 ): number {
-  const aPending = a.id.startsWith('optimistic:')
-  const bPending = b.id.startsWith('optimistic:')
+  // Only bubbles still sending / failed wait at the end; one settled as sent keeps its time.
+  const aPending = isUnsettledOptimistic(a)
+  const bPending = isUnsettledOptimistic(b)
   if (aPending !== bPending) return aPending ? 1 : -1
   return a.sentAt.localeCompare(b.sentAt) || a.id.localeCompare(b.id)
 }
@@ -439,7 +444,9 @@ export function reconcileOptimisticOutbound(
       deliveryStatus: persisted.deliveryStatus ?? 'sent',
     })
   }
-  return next.sort(compareThreadMessages)
+  // The echo row may already be in the thread (a poll merged it first) AND replace the bubble: one row per id.
+  const seen = new Set<string>()
+  return next.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true))).sort(compareThreadMessages)
 }
 
 export function markOptimisticOutboundFailed(

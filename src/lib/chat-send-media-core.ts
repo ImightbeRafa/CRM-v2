@@ -151,6 +151,7 @@ export async function sendWhatsAppMediaBytes(opts: {
   let sendData: any
   // True once Meta accepted the file: from here on the answer is never an error.
   let delivered = false
+  let ambiguous = false
   try {
     if (platform === 'instagram') {
       // 1–2) Upload the photo to the Page (Meta gets the bytes, never a link), then send it; the caption follows as text.
@@ -202,6 +203,11 @@ export async function sendWhatsAppMediaBytes(opts: {
           buildWhatsAppMediaMessage({ to: recipient, kind: media.kind, mediaId, caption, filename: media.filename }),
         ),
         signal: AbortSignal.timeout(META_TIMEOUT_MS),
+      }).catch((error: unknown) => {
+        // Timed out after the send left: Meta may have it. Keep the claim (stale in 2 min).
+        const name = (error as { name?: string } | null)?.name
+        if (name === 'AbortError' || name === 'TimeoutError') ambiguous = true
+        throw error
       })
       sendData = await readJson(sendRes)
       if (!sendRes.ok) {
@@ -212,8 +218,8 @@ export async function sendWhatsAppMediaBytes(opts: {
       providerMessageId = sendData?.messages?.[0]?.id
     }
   } finally {
-    // Meta refused it (or it never left): Retry may send this id again.
-    if (ownsClaim && !delivered) await releaseChatSend(tenantId, clientRequestId)
+    // Meta refused it (or it never left): Retry may send this id again. A timeout is ambiguous.
+    if (ownsClaim && !delivered && !ambiguous) await releaseChatSend(tenantId, clientRequestId)
   }
 
   // 3) Persist like a human text send (attribution, conversation, delivery). The customer already has

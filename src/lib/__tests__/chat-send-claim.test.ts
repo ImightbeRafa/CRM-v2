@@ -221,13 +221,13 @@ describe('send routes: claim before Meta, success after delivery', () => {
       )
       assert.ok(src.indexOf('findOutboundByClientRequestId(') < firstMeta, name)
       assert.ok(src.indexOf('claimChatSend(') < firstMeta, name)
-      assert.match(src, /finally \{\s*\/\/[^\n]*\n\s*if \(ownsClaim && !delivered\) await releaseChatSend/, name)
+      assert.match(src, /finally \{\s*\/\/[^\n]*\n\s*if \(ownsClaim && !delivered && !ambiguous\) await releaseChatSend/, name)
     }
   })
 
   it('after Meta accepted, no path answers an error', () => {
     for (const [name, src] of [['send', route], ['send-media', media]] as const) {
-      const after = src.slice(src.indexOf('if (ownsClaim && !delivered)'))
+      const after = src.slice(src.indexOf("if (ownsClaim && !delivered && !ambiguous)"))
       const persistEnd = after.indexOf('delivered but not stored\', error')
       assert.ok(persistEnd > 0, name)
       const persist = after.slice(0, persistEnd)
@@ -258,5 +258,48 @@ describe('SecureDog fixes (DATA-CLAIM-1, AUTH-SEND-2)', () => {
     assert.match(route, /where: \{ id: claim\.messageId, tenantId, socialAccountId \}/)
     assert.match(readFileSync('src/lib/chat-send-media-core.ts', 'utf8'), /where: \{ id: claim\.messageId, tenantId, socialAccountId: found\.id \}/)
     assert.doesNotMatch(readFileSync('src/lib/chat-outbound-upload.ts', 'utf8'), /withCredentials/)
+  })
+})
+
+describe('verifier fixes (Lane A)', () => {
+  const inbox = readFileSync('src/components/chats/SoftCopilotInboxV2.tsx', 'utf8')
+
+  it('phone: a notification link is cleaned in place before the thread entry is pushed', () => {
+    const clean = inbox.indexOf("window.history.replaceState({}, '', '/chats')")
+    const open = inbox.indexOf('openConversationById(deepLinkId)')
+    assert.ok(clean > 0 && open > clean)
+    assert.match(inbox, /c !== handledDeepLinkRef\.current/)
+  })
+
+  it('Retry on a stored row Meta failed later is a new send with a new id', () => {
+    assert.match(inbox, /handleSendMessage\(\{ preventDefault\(\) \{\} \} as FormEvent, \{ resendContent: row\.content \}\)/)
+    assert.match(inbox, /if \(opts\?\.resendContent === undefined\) setMessageInput\(''\)/)
+  })
+
+  it('"in flight" is re-checked a few times, then becomes Reintentar; media keeps its job', () => {
+    assert.match(inbox, /if \(attempt > IN_FLIGHT_RECHECKS\)/)
+    assert.match(inbox, /scheduleInFlightRecheck\(conversationId, clientRequestId, \(\) => deliverMedia\(job\)\)/)
+    const media = inbox.slice(inbox.indexOf('async function deliverMedia'))
+    assert.ok(media.indexOf('scheduleInFlightRecheck') < media.indexOf('mediaJobsRef.current.delete(clientRequestId)\n') || media.includes('mediaJobsRef.current.delete(clientRequestId)\r\n'))
+  })
+
+  it('a Meta timeout keeps the claim (ambiguous), uploads time out', () => {
+    for (const p of ['src/app/api/chat/send/route.ts', 'src/lib/chat-send-media-core.ts']) {
+      assert.match(readFileSync(p, 'utf8'), /if \(ownsClaim && !delivered && !ambiguous\) await releaseChatSend/, p)
+    }
+    assert.match(readFileSync('src/lib/chat-outbound-upload.ts', 'utf8'), /xhr\.timeout = UPLOAD_TIMEOUT_MS/)
+  })
+
+  it('settled bubbles keep their time; reconcile never leaves two rows with one id', async () => {
+    const { compareThreadMessages, reconcileOptimisticOutbound } = await import('../chat-inbox')
+    const stored = { id: 'm2', sentAt: '2026-10-22T10:05:00.000Z', deliveryStatus: 'read' }
+    const ghost = { id: 'optimistic:a', sentAt: '2026-10-22T10:00:00.000Z', deliveryStatus: 'sent' }
+    const pending = { id: 'optimistic:b', sentAt: '2026-10-22T09:00:00.000Z', deliveryStatus: 'pending' }
+    assert.deepEqual([stored, pending, ghost].sort(compareThreadMessages).map((m) => m.id), ['optimistic:a', 'm2', 'optimistic:b'])
+
+    const echo = { id: 'e1', direction: 'outbound', content: 'hola', sentAt: '2026-10-22T10:00:01.000Z', receivedAt: null, deliveryStatus: 'sent' }
+    const bubble = { id: 'optimistic:c', direction: 'outbound', content: 'hola', sentAt: '2026-10-22T10:00:00.000Z', receivedAt: null, deliveryStatus: 'pending', clientRequestId: 'c' }
+    const out = reconcileOptimisticOutbound([echo, bubble] as any, { ...echo, clientRequestId: 'c', metadata: { clientRequestId: 'c' } } as any)
+    assert.deepEqual(out.map((m) => m.id), ['e1'])
   })
 })

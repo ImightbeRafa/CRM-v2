@@ -440,7 +440,7 @@ export function PendingMediaBubble({ msg }: { msg: ChatInboxMessage }) {
   const failed = msg.deliveryStatus === 'failed'
   const progress = Math.max(0, Math.min(1, msg.uploadProgress ?? 0))
   const uploading = !failed && msg.deliveryStatus === 'pending'
-  const label = failed ? 'No se envió' : progress < 1 ? `Subiendo ${Math.round(progress * 100)}%` : 'Enviando…'
+  const label = failed ? 'No se envió' : !uploading ? 'Enviado' : progress < 1 ? `Subiendo ${Math.round(progress * 100)}%` : 'Enviando…'
   const bar = uploading ? (
     <span className="absolute inset-x-2 bottom-2 h-1.5 overflow-hidden rounded-full bg-black/25" aria-hidden>
       <span className="block h-full rounded-full bg-white transition-[width] duration-200" style={{ width: `${Math.max(4, progress * 100)}%` }} />

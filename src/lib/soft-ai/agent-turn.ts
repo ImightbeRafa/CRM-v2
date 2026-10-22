@@ -54,7 +54,7 @@ import {
   type AgentResolveResult,
   type ResolvedChatAgent,
 } from '@/lib/soft-ai/agent-resolver'
-import { burstCustomerText, recentCustomerTexts, runSoftAiLlmRuntime } from '@/lib/soft-ai/llm/runtime'
+import { burstCustomerText, conversationPaymentContext, recentCustomerTexts, runSoftAiLlmRuntime } from '@/lib/soft-ai/llm/runtime'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import {
   CHAT_AGENT_LAYER_V1_FLAG,
@@ -1337,6 +1337,8 @@ export async function executeAgentLayerTurn(
     skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
     // SecureDog round 6: the whole burst since the store last wrote ("Estoy embarazada" + "¿Lo puedo usar?").
     customerText: burstCustomerText(history, burst.inboundText),
+    // SecureDog INT-205: the shortened (sent) text gets the payment-status checks the runtime ran on the full text.
+    paymentContext: conversationPaymentContext(history, burst.inboundText),
     allowedDeals: runtimeInput.salesAllowedDeals,
     freeShipping: runtimeInput.salesFreeShipping,
     freeShippingRule: runtimeInput.salesFreeShippingRule,
@@ -2459,6 +2461,7 @@ async function runAgentTestTurnInner(input: {
       quoteAmounts: runtimeInput.salesAllowedAmounts,
       skipPurchaseSummary: Boolean(runtimeInput.salesTurnBlock),
       customerText: burstCustomerText(input.history ?? [], probarBurst.inboundText),
+      paymentContext: conversationPaymentContext(input.history ?? [], probarBurst.inboundText),
       allowedDeals: runtimeInput.salesAllowedDeals,
       freeShipping: runtimeInput.salesFreeShipping,
       freeShippingRule: runtimeInput.salesFreeShippingRule,

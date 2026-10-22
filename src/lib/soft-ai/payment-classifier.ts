@@ -414,7 +414,21 @@ export function isCourtesyText(text: string): boolean {
 
 /** The customer used a confirm / review verb (any form): replies to it get the payment-status backstop (INT-159). */
 export function mentionsConfirmVerb(text: string): boolean {
-  return CONFIRM_CUE_RE.test(stripFormatChars((text || '').normalize('NFKC')))
+  const gapped = invisibleAsGap(text)
+  return CONFIRM_CUE_RE.test(stripFormatChars((text || '').normalize('NFKC'))) || (gapped !== null && CONFIRM_CUE_RE.test(stripFormatChars(gapped)))
+}
+
+/**
+ * SecureDog INT-158 M1: a payment's state in English / Portuguese / French ("Did you receive my payment?", "Payment
+ * done", "I paid yesterday", "Here is my transfer receipt", "pagamento feito", "paiement envoyé"). The prompt answers in
+ * Spanish only, so any of these goes to a person. Both readings (invisible characters as gaps too).
+ */
+const FOREIGN_PAYMENT_STATE_RE =
+  /(?<![\p{L}])(?:(?:i|we)\s+(?:already\s+|just\s+)?(?:paid|sent\s+(?:the\s+|my\s+)?(?:money|payment|transfer)|transferred|deposited|made\s+(?:the\s+)?payment)|payment\s+(?:is\s+|was\s+|has\s+been\s+)?(?:done|made|sent|completed|received|confirmed)|(?:did|have)\s+(?:you|u)\s+(?:get|got|receive|received|see|seen)\s+(?:my|the)\s+(?:payment|transfer|deposit|money|receipt)|(?:my|the)\s+(?:payment|transfer|deposit)\s+(?:went\s+through|arrived|is\s+done)|(?:transfer|payment|deposit)\s+receipt|refund|charged\s+(?:me|twice)|pagamento\s+(?:feito|enviado|realizado|recebido|confirmado)|j[aá]\s+paguei|paiement\s+(?:fait|envoy[eé]|effectu[eé]|re[cç]u|confirm[eé])|j['’]ai\s+pay[eé])(?![\p{L}])/iu
+/** English / PT / FR payment-state wording in customer text (either reading). */
+export function hasForeignPaymentState(text: string): boolean {
+  const gapped = invisibleAsGap(text)
+  return FOREIGN_PAYMENT_STATE_RE.test(stripFormatChars((text || '').normalize('NFKC'))) || (gapped !== null && FOREIGN_PAYMENT_STATE_RE.test(stripFormatChars(gapped)))
 }
 
 /**
@@ -459,14 +473,26 @@ export function maskNonPaymentPhrases(value: string): string {
   return out
 }
 
-export function hasHardPaymentClaim(text: string, opts: { noPaymentYet?: boolean } = {}): boolean {
+/**
+ * Stripping invisible characters glues words ("ya<ZWSP>pague" → "yapague"), so customer text is also read with them as
+ * a gap (line / paragraph separators as a line break). Every customer-text check reads both forms; either reading that
+ * claims a payment counts (hand-off is the safe direction). Returns null when both readings are the same text.
+ */
+export function invisibleAsGap(text: string): string | null {
   const nfkc = (text || '').normalize('NFKC')
-  // Stripping invisible characters glues words ("ya<tag>pague" → "yapague"), so they are also read as a gap. Either
-  // reading that claims a payment counts (hand-off is the safe direction).
   const gapped = nfkc
     .replace(/[\p{Zl}\p{Zp}]/gu, '\n')
     .replace(/[\p{Default_Ignorable_Code_Point}\p{Cc}]/gu, (c) => (c === '\n' || c === '\t' || c === '\r' ? c : ' '))
-  return hardClaimIn(stripFormatChars(nfkc), opts) || (gapped !== nfkc && hardClaimIn(stripFormatChars(gapped), opts))
+  return gapped === nfkc ? null : gapped
+}
+
+export function hasHardPaymentClaim(text: string, opts: { noPaymentYet?: boolean } = {}): boolean {
+  const gapped = invisibleAsGap(text)
+  return (
+    hardClaimIn(stripFormatChars((text || '').normalize('NFKC')), opts) ||
+    (gapped !== null && hardClaimIn(stripFormatChars(gapped), opts)) ||
+    hasForeignPaymentState(text)
+  )
 }
 
 function hardClaimIn(stripped: string, opts: { noPaymentYet?: boolean }): boolean {
@@ -663,7 +689,15 @@ export function classifyPaymentText(
   text: string,
   opts: { awaitingPaymentMethod?: boolean; noPaymentYet?: boolean; nothingPaidYet?: boolean } = {},
 ): PaymentClassification {
-  const cls = classifyPaymentTextRules(text, opts)
+  // SecureDog INT-201: the latest message too is read with invisible characters as gaps; a hand-off in either wins.
+  const gapped = invisibleAsGap(text)
+  const plain = classifyPaymentTextRules(text, opts)
+  const cls =
+    plain !== 'payment_proof_or_risk' && gapped !== null && classifyPaymentTextRules(gapped, opts) === 'payment_proof_or_risk'
+      ? 'payment_proof_or_risk'
+      : plain === 'payment_proof_or_risk' || !hasForeignPaymentState(text)
+        ? plain
+        : 'payment_proof_or_risk'
   // A closed before-paying question (every sentence one anchored shape, no digit) that a word rule would hand off is
   // answered by the agent instead, like any other sales question.
   return cls === 'payment_proof_or_risk' && isClosedPayInfoQuestion(text) ? 'non_payment' : cls
@@ -777,7 +811,10 @@ function isPaymentInfoQuestion(value: string): boolean {
 
 /** Any payment word at all (media caption check: a photo with "sinpe" / "pago" is treated as a receipt). */
 export function hasPaymentWord(text: string): boolean {
-  return PAYMENT_RE.test(text || '') || hasPaymentProofCue(text) || hasPaymentClaimCue(text || '')
+  const read = (t: string) => PAYMENT_RE.test(t) || hasPaymentProofCue(t) || hasPaymentClaimCue(t)
+  // SecureDog INT-201 / M1: invisible characters read as gaps too; English / PT / FR payment state opens the context.
+  const gapped = invisibleAsGap(text)
+  return read(text || '') || (gapped !== null && read(gapped)) || hasForeignPaymentState(text)
 }
 
 /**

@@ -16,6 +16,7 @@ import {
   hasOutboundConfirmationClaim,
   hasUnsafeLetters,
   maskConditionalConfirmation,
+  normalizeForConfirmationCheck,
   renderShortcutTemplate,
   shortcutByKey,
   stripBidiControls,
@@ -23,7 +24,7 @@ import {
 } from '@/lib/soft-ai/shortcuts'
 import type { AgentIntent } from '@/lib/soft-ai/agent-intents'
 import { fillPaymentToken, paymentNumberProblems, type PaymentFillOptions, type TokenPaymentMethod } from '@/lib/soft-ai/payment-guard'
-import { hasPaymentWord, mentionsConfirmVerb } from '@/lib/soft-ai/payment-classifier'
+import { hasPaymentWord, invisibleAsGap, mentionsConfirmVerb } from '@/lib/soft-ai/payment-classifier'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import { buildLinkAllowlist, foreignLinks, type LinkAllowlist } from '@/lib/soft-ai/links'
 import { canonicalizeOrderDataList, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
@@ -59,6 +60,29 @@ const STATUS_QUESTION_RE =
 /** Never said by the agent in any chat: it cannot see the bank ("acreditado", "recibimos tu sinpe", "pago verificado"). */
 const ALWAYS_PAYMENT_STATUS_REPLY_RE =
   /(?<![\p{L}])(?:(?:tu|su|el)\s+(?:sinpe|pago|dep[oó]sito|transferencia)\s+ya\s+(?:cay[oó]|lleg[oó]|entr[oó])|ya\s+nos\s+(?:lleg|cay|entr)[oó](?=\s*(?:[.!🙌😊👍💚❤✨]|$|,\s*(?:muchas\s+)?gracias))|acredit\p{L}*|(?:recibimos|ya\s+recibimos|verificamos|validamos|confirmamos|ya\s+vimos|vimos|ya\s+vi|vi)\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|(?:pago|sinpe|dep[oó]sito|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|validad[oa]|acreditad[oa]|aprobad[oa])|(?:tu|su)\s+(?:pago|sinpe|dep[oó]sito|transferencia)\s+(?:ya\s+)?(?:est[aá]|qued[oó]|fue)\s+(?:recibid|confirmad|verificad|validad|acreditad|aprobad|procesad|registrad)\p{L}*)(?![\p{L}])/iu
+
+/**
+ * SecureDog INT-158 M1 / M2 (wave 2026-10-22): done-claims the model writes unprompted that the lists above missed —
+ * English / Portuguese / French ("Payment received", "Your order has shipped"), "gracias por tu pago / por pagar",
+ * "Pagado ✅" / "todo pagado", "pago completado / procesado / exitoso", "confirmo que pagaste", "ya tenemos tu plata",
+ * "pedido enviado / despachado". Held on every reply (the prompt answers in Spanish and never claims a payment).
+ */
+const MORE_DONE_REPLY_RE =
+  /(?<![\p{L}])(?:payment\s+(?:has\s+been\s+|was\s+|is\s+)?(?:received|confirmed|approved|processed|completed|verified)|(?:we|i)\s+(?:have\s+|'ve\s+)?(?:got|received|confirmed|verified)\s+(?:your|the)\s+(?:payment|transfer|deposit|money)|(?:your\s+)?order\s+(?:has\s+)?(?:shipped|been\s+(?:sent|shipped|dispatched)|is\s+on\s+(?:its|the)\s+way)|(?:pagamento|paiement)\s+(?:recebido|confirmado|aprovado|re[cç]u|confirm[eé])|gracias\s+por\s+(?:tu\s+|su\s+|el\s+|la\s+)?(?:pago|pagar|sinpe|transferencia|dep[oó]sito)|(?:todo|ya\s+(?:lo|la)\s+ten[eé]s|ya\s+qued[oó]|qued[oó])\s+pagad[oa]|(?:^|\n)[\s*_~]*pagad[oa](?![\p{L}])|(?<!(?:una\s+vez|cuando|apenas|si|hasta\s+que|despu[eé]s\s+de)\s+(?:el\s+|tu\s+|su\s+)?)pago\s+(?:completado|procesado|exitoso)|confirmo\s+que\s+(?:ya\s+)?(?:pagaste|pag[oó]|hiciste\s+el\s+(?:pago|sinpe))|ya\s+tenemos\s+(?:tu|la|su)\s+plata|(?:tu\s+|su\s+|el\s+)?pedido\s*:?\s+(?:ya\s+)?(?:fue\s+)?(?:enviado|despachado)(?=\s*(?:[.!,]|\p{Extended_Pictographic}|$)))(?![\p{L}])/iu
+
+/** INT-202: a bare affirmation read through markup, soft hyphens, emoji modifiers / joiners and text emoticons. */
+function isAffirmOnly(text: string): boolean {
+  const clear = (t: string) =>
+    t.replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Default_Ignorable_Code_Point}\p{M}]/gu, ' ').replace(/(?<![\p{L}\d])(?:[:;=]-?[)D(pP]|<3|xD)(?![\p{L}\d])/gu, ' ')
+  // An emoji / emoticon-only reply ("👍🏽", ":)") to a status question is a yes too.
+  return [text, normalizeForConfirmationCheck(text)].some((t) => AFFIRM_ONLY_RE.test(clear(t)) || (t.trim() !== '' && !/[\p{L}\d?¿]/u.test(clear(t))))
+}
+
+/** INT-201: a payment status question in either reading of the customer's text (invisible characters as gaps too). */
+function isStatusQuestion(customerText: string): boolean {
+  const gapped = invisibleAsGap(customerText)
+  return [customerText.normalize('NFKC'), ...(gapped !== null ? [gapped] : [])].some((t) => STATUS_QUESTION_RE.test(stripFormatChars(t)))
+}
 
 export type OutputValidationResult = {
   ok: boolean
@@ -901,7 +925,7 @@ export function validateAgentOutput(input: {
     reasons.push('results_claim')
   }
   // Advisor (luna-10): the unmistakable "payment received" wordings are held on EVERY reply, payment words or not.
-  if (anyForm(ALWAYS_PAYMENT_STATUS_REPLY_RE, claimForms)) {
+  if (anyForm(ALWAYS_PAYMENT_STATUS_REPLY_RE, claimForms) || anyForm(MORE_DONE_REPLY_RE, claimForms)) {
     reasons.push('payment_status_claim')
   } else if (
     (input.paymentContext || (input.customerText && hasPaymentWord(input.customerText))) &&
@@ -911,11 +935,11 @@ export function validateAgentOutput(input: {
   } else if (
     input.customerText &&
     (mentionsConfirmVerb(input.customerText) ||
-      STATUS_QUESTION_RE.test(stripFormatChars(input.customerText.normalize('NFKC')))) &&
+      isStatusQuestion(input.customerText)) &&
     (anyForm(CONFIRM_ASK_STATUS_REPLY_RE, claimForms) ||
       // SecureDog r3 INT-169: a short whole-reply affirmation with no question ("¡Claro que sí!", "¡Hecho!", "Correcto 👍")
       // to a confirm ask reads as "your payment is fine".
-      AFFIRM_ONLY_RE.test(text.replace(/[\p{Extended_Pictographic}\uFE0F]/gu, ' ')) ||
+      isAffirmOnly(text) ||
       // SecureDog r4 #4: to a confirm ask the agent asks what to confirm or moves the sale on — a reply with no question
       // ("¡Así es!", "¡Sí, con gusto!", "¡Sí! Tu pedido sale hoy") is held.
       // Verifier r7 #2: a direct ask ("pasame estos datos", "contame qué producto", a data list) counts as asking.
@@ -1139,6 +1163,8 @@ export function applyFinalOutputPolicy(input: {
   paymentOptions?: PaymentFillOptions
   /** INT-158 H3: the text was written by the model (live turn / Probar): letters outside Latin-1 are held. */
   modelText?: boolean
+  /** SecureDog INT-205: the chat is about a payment (runtime conversationPaymentContext): the SENT (shortened) text gets the payment-status checks too. */
+  paymentContext?: boolean
   /** Sleeping C3: the store's own per-unit rates (sales-state salesUnitRates). */
   unitRates?: UnitRate[] | null
   /** Out-of-stock switch (SQL 055): same stock checks as the runtime (live turn + Probar). */
@@ -1273,6 +1299,7 @@ export function applyFinalOutputPolicy(input: {
     allowedDeals: input.allowedDeals,
     freeShippingRule: input.freeShippingRule,
     customerText: input.customerText,
+    paymentContext: input.paymentContext,
     // INT-109: live and Probar both come through here — a reply may only link the brand's own site.
     linkAllowlist: input.linkAllowlist ?? undefined,
     styleText,

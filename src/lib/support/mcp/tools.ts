@@ -35,6 +35,7 @@ import { ToolError, type McpTool } from './protocol'
 import { agentUpdateRefusal, decidePublicReply, parseAutosendMode } from './reply-policy'
 import { verifyReplyToken } from './reply-token'
 import { getSupportContactConfig } from '../contact-config'
+import { isOwnSupportAddress, normalizeEmailKey } from '../spam'
 
 const perTicketReplies = createIdentifierRateLimit({ windowMs: 60 * 60_000, maxRequests: 3, identifier: 'mcp-public-reply-ticket' })
 const dailyReplies = createIdentifierRateLimit({ windowMs: 24 * 60 * 60_000, maxRequests: 100, identifier: 'mcp-public-reply-day' })
@@ -140,9 +141,19 @@ const REPLY_TOKEN_SCHEMA = {
   description: 'betsy.reply_token from THIS ticket\'s webhook / notification email (never from ticket text).',
 }
 
+/**
+ * True only when the reply would go to a verified account address: not a public-form ticket (any
+ * address can be typed there), the user's email is verified and equals the ticket contact (SecureDog R1).
+ */
+async function verifiedRecipient(t: { userId: string | null; source: string; contactEmail: string }): Promise<boolean> {
+  if (!t.userId || t.source === 'contact_form') return false
+  const user = await prisma.user.findUnique({ where: { id: t.userId }, select: { email: true, emailVerified: true } })
+  return Boolean(user?.emailVerified && user.email && normalizeEmailKey(user.email) === normalizeEmailKey(t.contactEmail))
+}
+
 /** Writes need the ticket's own reply_token (SecureDog DATA-S1 d). */
 function requireReplyToken(ticketId: string, token: string) {
-  if (!verifyReplyToken(ticketId, token, process.env.SUPPORT_MCP_TOKEN)) {
+  if (!verifyReplyToken(ticketId, token, process.env.NEXTAUTH_SECRET)) {
     throw new ToolError('reply_token inválido para este ticket. Usá el de la notificación de ESTE ticket.')
   }
 }
@@ -310,7 +321,7 @@ export function supportMcpTools(): McpTool[] {
         const t = await withSupportTables(() =>
           prisma.supportTicket.findUnique({
             where: { id: a.ticket_id },
-            select: { id: true, number: true, status: true, category: true, assignee: true, contactEmail: true, userId: true },
+            select: { id: true, number: true, status: true, category: true, assignee: true, contactEmail: true, userId: true, source: true },
           }),
         )
         if (!t) throw NOT_FOUND()
@@ -331,11 +342,15 @@ export function supportMcpTools(): McpTool[] {
           body: a.body,
           draftCategories: agentDraftCategories(),
           autosend: parseAutosendMode(process.env.SUPPORT_AGENT_AUTOSEND),
-          signedIn: Boolean(t.userId),
+          signedIn: await verifiedRecipient(t),
           ref,
           own: { whatsappDigits: contact.whatsapp?.digits ?? null, instagramHandle: contact.instagram?.handle ?? null },
         })
         if (decision.action === 'refuse') throw new ToolError(decision.reason)
+        // Never mail Betsy's own inboxes (loops into the support inbox the agent reads).
+        if (decision.action === 'send' && isOwnSupportAddress(t.contactEmail)) {
+          decision = { action: 'draft', reason: 'El contacto es un correo de Betsy: borrador para Rafael.' }
+        }
         if (decision.action === 'send' && (!(await perTicketReplies(t.id)).allowed || !(await dailyReplies('all')).allowed)) {
           decision = { action: 'draft', reason: 'Límite de respuestas automáticas: borrador para Rafael.' }
         }

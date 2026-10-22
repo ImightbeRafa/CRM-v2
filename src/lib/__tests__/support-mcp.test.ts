@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
+import { readFileSync } from 'node:fs'
 import { checkMcpBearer } from '../support/mcp/auth'
 import { MCP_PROTOCOL_VERSION, RPC, ToolError, handleMcpMessage, type McpTool } from '../support/mcp/protocol'
 import { decidePublicReply, externalLinks, parseAutosendMode } from '../support/mcp/reply-policy'
@@ -172,19 +173,60 @@ test('externalLinks lists only Betsy\'s own contact URLs as safe', () => {
   assert.equal(externalLinks('wa.me/50611112222', OWN).length, 1)
 })
 
-test('reply tokens: per ticket, never valid for another ticket or without the MCP secret', async () => {
-  const { replyToken, verifyReplyToken, withReplyToken } = await import('../support/mcp/reply-token')
-  const secret = 'm'.repeat(40)
-  const tA = replyToken('ticketA', secret)
-  assert.equal(tA.length, 32)
-  assert.equal(verifyReplyToken('ticketA', tA, secret), true)
-  assert.equal(verifyReplyToken('ticketB', tA, secret), false)
-  assert.equal(verifyReplyToken('ticketA', tA, 'other'.repeat(10)), false)
-  assert.equal(verifyReplyToken('ticketA', tA, undefined), false)
-  assert.equal(verifyReplyToken('ticketA', undefined, secret), false)
+test('reply tokens: per ticket, server-only key, expire after 72 h', async () => {
+  const { replyToken, verifyReplyToken, withReplyToken, REPLY_TOKEN_TTL_SECONDS } = await import('../support/mcp/reply-token')
+  const server = 's'.repeat(40)
+  const now = new Date('2026-10-22T10:00:00Z')
+  const tA = replyToken('ticketA', server, now)
+  assert.match(tA, /^[0-9a-z]+\.[A-Za-z0-9_-]{32}$/)
+  assert.equal(verifyReplyToken('ticketA', tA, server, now), true)
+  assert.equal(verifyReplyToken('ticketB', tA, server, now), false)
+  assert.equal(verifyReplyToken('ticketA', tA, 'other'.repeat(10), now), false, 'the MCP bearer cannot mint tokens')
+  assert.equal(verifyReplyToken('ticketA', tA, undefined, now), false)
+  assert.equal(verifyReplyToken('ticketA', undefined, server, now), false)
+  const later = new Date(now.getTime() + (REPLY_TOKEN_TTL_SECONDS + 60) * 1000)
+  assert.equal(verifyReplyToken('ticketA', tA, server, later), false, 'expired')
+  const forgedExp = `${'zzzzzz'}.${tA.split('.')[1]}`
+  assert.equal(verifyReplyToken('ticketA', forgedExp, server, now), false, 'expiry is signed')
   const p = { event: 'ticket.created', source: 'betsy', ticket: { id: 'ticketA' }, betsy: { ref: 'BETSY-1' } } as never
-  assert.equal((withReplyToken(p, secret) as any).betsy.reply_token, tA)
+  assert.equal((withReplyToken(p, server, now) as any).betsy.reply_token, tA)
   assert.equal((withReplyToken(p, '') as any).betsy.reply_token, undefined)
+  const sources = ['src/lib/support/dispatcher.ts', 'src/lib/support/mcp/tools.ts', 'src/app/api/support/events/route.ts']
+  const { readFileSync } = await import('node:fs')
+  for (const f of sources) {
+    const src = readFileSync(f, 'utf8')
+    assert.match(src, /ReplyToken\([^)]*NEXTAUTH_SECRET\)/, f)
+    assert.doesNotMatch(src, /ReplyToken\([^)]*SUPPORT_MCP_TOKEN\)/, f)
+  }
+})
+
+test('auto-send content rules catch lookalike domains, disguised numbers, ref variants and keys', () => {
+  const base = {
+    status: 'open', category: 'question', assignee: 'grok_agent', body: '', draftCategories: new Set<string>(),
+    autosend: 'all' as const, signedIn: true, ref: 'BETSY-10', own: OWN,
+  }
+  for (const body of [
+    'Entrá a betsу.com', // Cyrillic у
+    'pagos-betsý.com',
+    'Llamá al 8888/8888',
+    'Llamá al 8888_8888',
+    'Número ８８８８８８８８', // full-width
+    'Igual que BETSY 1041',
+    'Igual que #1041',
+    'tu clave es sk9f8a7d6s5f4g3h2j1k0l9z8x7c',
+  ]) {
+    assert.equal(decidePublicReply({ ...base, body }).action, 'draft', body)
+  }
+  assert.equal(decidePublicReply({ ...base, body: 'Tu caso #10 está listo.' }).action, 'send')
+  const off = decidePublicReply({ ...base, autosend: 'off', body: 'Pagá en evil.co' })
+  assert.match((off as { reason: string }).reason, /Ojo! Incluye enlace/)
+})
+
+test('signed_in auto-send needs a verified account address on an in-app ticket', () => {
+  const src = readFileSync('src/lib/support/mcp/tools.ts', 'utf8')
+  assert.match(src, /if \(!t\.userId \|\| t\.source === 'contact_form'\) return false/)
+  assert.match(src, /user\?\.emailVerified && user\.email && normalizeEmailKey\(user\.email\) === normalizeEmailKey\(t\.contactEmail\)/)
+  assert.match(src, /isOwnSupportAddress\(t\.contactEmail\)/)
 })
 
 test('write tools require reply_token; read tools never return it', () => {

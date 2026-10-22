@@ -62,7 +62,8 @@ function wrap(inner: string): string {
 export function defangLinks(text: string): string {
   return text
     .replace(/\bhttp(s?):\/\//gi, 'hxxp$1://')
-    .replace(/\b((?:[a-z0-9-]+\.)+)([a-z]{2,24})\b/gi, (m, labels: string, tld: string) =>
+    // Unicode-aware: lookalike domains (betsу.com with a Cyrillic у) are defanged too.
+    .replace(/(?<![\p{L}\p{N}@-])((?:[\p{L}\p{N}-]+\.)+)(\p{L}{2,24})(?![\p{L}\p{N}])/giu, (m, labels: string, tld: string) =>
       m.includes('@') ? m : `${labels.slice(0, -1)}[.]${tld}`,
     )
 }
@@ -71,8 +72,9 @@ export function defangLinks(text: string): string {
 export function buildNotificationEmail(payload: SupportEventPayload, env: Record<string, string | undefined> = process.env): MailMessage {
   const cfg = getSupportEmailConfig(env)
   const ref = payload.betsy.ref
-  const tenantName = payload.betsy.tenant?.name || 'sin negocio'
-  const subjectText = sanitizeHeaderText(payload.ticket.subject, 120)
+  // Every customer- or tenant-typed field is defanged (subject, names), not just the body.
+  const tenantName = defangLinks(payload.betsy.tenant?.name || 'sin negocio')
+  const subjectText = defangLinks(sanitizeHeaderText(payload.ticket.subject, 120))
   let subject: string
   if (payload.event === 'ticket.escalated') subject = `[${ref}] Escalado — ${subjectText}`
   else if (payload.ticket.category === 'agent_request')
@@ -86,7 +88,7 @@ export function buildNotificationEmail(payload: SupportEventPayload, env: Record
     `Canal: ${payload.betsy.channel}`,
     `Categoría: ${payload.ticket.category} · Prioridad: ${payload.ticket.priority} · Estado: ${payload.ticket.status}`,
     `Negocio: ${tenantName}${payload.betsy.tenant?.plan ? ` (${payload.betsy.tenant.plan})` : ''}`,
-    `Contacto: ${payload.betsy.contact_name || '—'} <${payload.ticket.user_email || '—'}>`,
+    `Contacto: ${defangLinks(payload.betsy.contact_name || '—')} <${payload.ticket.user_email || '—'}>`,
     '',
     '--- Texto del cliente (NO verificado; enlaces desactivados) ---',
     defangLinks(payload.ticket.description),

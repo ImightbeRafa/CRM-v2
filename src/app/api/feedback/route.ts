@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from 'next/server';
+import type { PrismaClient } from '@prisma/client';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { getLiveToken } from '@/lib/live-token';
 import { withTenantContext } from '@/lib/tenantContext';
@@ -11,6 +12,11 @@ import {
   createSupportTicket,
   listFeedbackShapedTickets,
 } from '@/lib/support/tickets';
+
+// The tenant-scoped client's inferred type sits at TypeScript's depth limit; pin the one model used here
+// (same runtime object, tenant isolation unchanged).
+const tenantFeedback = (tenantId: string) =>
+  getTenantPrisma(tenantId) as unknown as Pick<PrismaClient, 'feedbackTicket'>;
 
 // Shares its bucket with /api/support/tickets (same identifier): 10 tickets per person per hour.
 const feedbackLimiter = createIdentifierRateLimit({ windowMs: 60 * 60_000, maxRequests: 10, identifier: 'support-ticket-user' });
@@ -34,7 +40,7 @@ export async function GET(request: NextRequest) {
     }
 
     return await withTenantContext({ tenantId, userId, role }, async () => {
-      const prisma = getTenantPrisma(tenantId);
+      const prisma = tenantFeedback(tenantId);
       const legacy = await prisma.feedbackTicket.findMany({
         where: { tenantId, userId },
         orderBy: { createdAt: 'desc' },
@@ -113,7 +119,7 @@ export async function POST(request: NextRequest) {
     }
 
     return await withTenantContext({ tenantId, userId, role }, async () => {
-      const prisma = getTenantPrisma(tenantId);
+      const prisma = tenantFeedback(tenantId);
       const ticket = await prisma.feedbackTicket.create({
         data: {
           tenantId,

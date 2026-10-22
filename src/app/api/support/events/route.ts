@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
         next_since: last ? last.createdAt.toISOString() : since.toISOString(),
         has_more: rows.length === 50,
         events: rows.map((r) =>
-          agent ? withReplyToken(r.payload as SupportEventPayload, process.env.SUPPORT_MCP_TOKEN) : r.payload,
+          agent ? withReplyToken(r.payload as SupportEventPayload, process.env.NEXTAUTH_SECRET) : r.payload,
         ),
       },
       { headers: { 'Cache-Control': 'no-store' } },

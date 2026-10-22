@@ -25,9 +25,12 @@ export function parseAutosendMode(raw: string | undefined | null): AutosendMode 
 export type OwnContact = { whatsappDigits: string | null; instagramHandle: string | null }
 
 const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>()"']+/gi
-// "label.tld" with or without a path (pagos-betsy.com, evil.site/login). Emails are caught separately.
-const DOMAIN_RE = /(?<![@\w.-])(?:[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\.)+[a-z]{2,24}(?:\/[^\s<>()"']*)?/gi
-const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
+// "label.tld" with or without a path (pagos-betsy.com, evil.site/login), Unicode-aware so lookalike
+// letters (betsу.com with a Cyrillic у) still count. Emails are caught separately.
+const DOMAIN_RE = /(?<![@\p{L}\p{N}_.-])(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,62}[\p{L}\p{N}])?\.)+\p{L}{2,24}(?:\/[^\s<>()"']*)?/giu
+const EMAIL_RE = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.\p{L}{2,}/giu
+// Long opaque strings (keys, tokens) that should never be mailed out.
+const OPAQUE_RE = /[A-Za-z0-9_\-+/=]{24,}/g
 
 function isOwnUrl(raw: string, own: OwnContact): boolean {
   let u: URL
@@ -57,23 +60,28 @@ export function externalLinks(text: string, own: OwnContact = { whatsappDigits: 
 }
 
 /** Reasons a reply body must get a human look before it leaves Betsy. */
-export function sensitiveContent(body: string, own: OwnContact, ownRef: string): string[] {
+export function sensitiveContent(raw: string, own: OwnContact, ownRef: string): string[] {
   const reasons: string[] = []
-  if (EMAIL_RE.test(body)) reasons.push('correo electrónico')
-  EMAIL_RE.lastIndex = 0
+  // NFKC folds full-width digits / compatibility letters before matching.
+  const body = raw.normalize('NFKC')
+  if (body.match(EMAIL_RE)) reasons.push('correo electrónico')
   if (externalLinks(body, own).length) reasons.push('enlace o dominio externo')
-  for (const m of body.matchAll(/\+?\d[\d\s().-]{5,}\d/g)) {
+  for (const m of body.matchAll(/\+?\d[\d\s().\-/_,]{5,}\d/g)) {
     const digits = m[0].replace(/\D/g, '')
     if (digits.length >= 7 && digits !== own.whatsappDigits && `506${digits}` !== own.whatsappDigits) {
       reasons.push('número de teléfono o cuenta')
       break
     }
   }
-  for (const m of body.matchAll(/\bBETSY-(\d+)\b/gi)) {
-    if (`BETSY-${m[1]}`.toUpperCase() !== ownRef.toUpperCase()) {
+  const ownNumber = /(\d+)$/.exec(ownRef)?.[1] ?? ''
+  for (const m of body.matchAll(/(?:\bBETSY[\s_#-]*|#)(\d+)\b/gi)) {
+    if (m[1] !== ownNumber) {
       reasons.push('referencia a otro ticket')
       break
     }
+  }
+  if ([...body.matchAll(OPAQUE_RE)].some((m) => /[A-Za-z]/.test(m[0]) && /\d/.test(m[0]))) {
+    reasons.push('código o clave')
   }
   return reasons
 }
@@ -113,24 +121,29 @@ export function decidePublicReply(input: {
   body: string
   draftCategories: Set<string>
   autosend?: AutosendMode
-  /** Ticket filed by a signed-in user (userId set). */
+  /**
+   * The reply goes to a VERIFIED account address: an in-app ticket (not the public form, where any address
+   * can be typed) from a user whose email is verified and equals the ticket contact (SecureDog R1).
+   */
   signedIn?: boolean
   ref?: string
   own?: OwnContact
 }): ReplyDecision {
   if (input.status === 'spam') return { action: 'refuse', reason: 'Ticket marcado como spam.' }
   const autosend = input.autosend ?? 'off'
-  if (autosend === 'off') return { action: 'draft', reason: 'Envío automático apagado: borrador para Rafael.' }
+  // Always computed, so Rafael sees the specific warning even when everything is a draft anyway.
+  const sensitive = sensitiveContent(input.body, input.own ?? { whatsappDigits: null, instagramHandle: null }, input.ref ?? '')
+  const warn = sensitive.length ? ` ¡Ojo! Incluye ${sensitive.join(', ')}.` : ''
+  if (autosend === 'off') return { action: 'draft', reason: `Envío automático apagado: borrador para Rafael.${warn}` }
   if (autosend === 'signed_in' && !input.signedIn) {
-    return { action: 'draft', reason: 'Ticket anónimo del formulario: borrador para Rafael.' }
+    return { action: 'draft', reason: `Destino no verificado (formulario o correo sin verificar): borrador para Rafael.${warn}` }
   }
   if (input.draftCategories.has(input.category)) {
-    return { action: 'draft', reason: `Categoría ${input.category}: borrador para Rafael.` }
+    return { action: 'draft', reason: `Categoría ${input.category}: borrador para Rafael.${warn}` }
   }
   if (input.assignee === 'rafael' || input.status === 'escalated') {
-    return { action: 'draft', reason: 'Ticket escalado: borrador para Rafael.' }
+    return { action: 'draft', reason: `Ticket escalado: borrador para Rafael.${warn}` }
   }
-  const sensitive = sensitiveContent(input.body, input.own ?? { whatsappDigits: null, instagramHandle: null }, input.ref ?? '')
   if (sensitive.length) {
     return { action: 'draft', reason: `La respuesta incluye ${sensitive.join(', ')}: borrador para Rafael.` }
   }

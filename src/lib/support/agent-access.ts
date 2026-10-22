@@ -70,12 +70,14 @@ export async function authenticateAgentAPI(
     isStopRequest?: (body: unknown) => boolean
   } = {},
 ) {
-  const auth = await authenticateAPIWithPermission(request, permission, { skipBillingGuard: opts.skipBillingGuard })
+  // A stop request also skips the billing write guard: a business with restricted billing must still be
+  // able to stop its own agent (same as revoking the AI terms).
+  const isStop = opts.isStopRequest ? opts.isStopRequest(await request.clone().json().catch(() => null)) : false
+  const auth = await authenticateAPIWithPermission(request, permission, {
+    skipBillingGuard: opts.skipBillingGuard || isStop,
+  })
   if (!auth.ok) return auth
-  if (opts.isStopRequest) {
-    const body = await request.clone().json().catch(() => null)
-    if (opts.isStopRequest(body)) return auth
-  }
+  if (isStop) return auth
   const denied = await customAgentDenied(auth.tenantId, auth.userId)
   if (denied) return { ok: false as const, response: denied }
   return auth

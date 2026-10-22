@@ -28,7 +28,7 @@ these are listed, so they reach the app after the next Worker deploy. Set secret
 | `SUPPORT_WHATSAPP` | var | `50662470831` | digits; shown `+506 6247-0831`; empty hides |
 | `SUPPORT_INSTAGRAM` | var | `betsy_crm` | handle without @; empty hides |
 | `SUPPORT_HOURS` | var | e.g. `Lun–Sáb 8:00–18:00 (CR)` | empty (default) hides |
-| `SUPPORT_AGENT_AUTOSEND` | var | `off` (default) | `off` = every agent "public" reply is a draft Rafael sends; `signed_in` = auto-send on tickets of logged-in users; `all` = also anonymous contact-form tickets (Q4) |
+| `SUPPORT_AGENT_AUTOSEND` | var | `off` (default) | `off` = every agent "public" reply is a draft Rafael sends; `signed_in` = auto-send only on in-app tickets whose account email is verified and is the ticket contact; `all` = any ticket (Q4). Content rules still hold risky replies as drafts in every mode. |
 | `SUPPORT_AGENT_DRAFT_CATEGORIES` | var | `billing,agent_request` (default) | agent "public" replies in these categories become drafts for Rafael (Q4); empty = never draft |
 | `SUPPORT_PUBLIC_BASE_URL` | var | optional | links in payloads/emails; default `NEXTAUTH_URL`, then `https://www.betsycrm.com` |
 | `CRON_SECRET` | existing | — | the Worker cron already sends it |
@@ -38,7 +38,8 @@ Defaults mean only `SUPPORT_PIPELINE_ENABLED`, `SUPPORT_MCP_TOKEN`, `SUPPORT_WEB
 `SUPPORT_POLL_TOKEN` and `SUPPORT_AGENT_WEBHOOK_URL` must be set; the rest are optional overrides.
 
 **Railway preview shares the production DB**: set `SUPPORT_PIPELINE_ENABLED` there to the same value
-as production in the same step. Otherwise a business that is off in production can still build an agent
+as production in the same step, and never give Railway `SUPPORT_MCP_TOKEN` (MCP and super-admin replies
+send real mail from wherever they run; only the outbox dispatcher is limited to the production container). Otherwise a business that is off in production can still build an agent
 on preview (the gate is off there), and the ungated production runtime would run it.
 
 Generate each secret locally (never commit, never paste in chat):
@@ -52,6 +53,8 @@ Give the Advance Ticket agent: the MCP URL `https://www.betsycrm.com/api/mcp`, `
 `docs/plans/support-pipeline/AGENT_BRIEF.md`. Write tools (`support_reply`, `support_update_ticket`,
 `support_escalate`) need `reply_token` from THAT ticket's push / poll event / notification email
 (`betsy.reply_token`); no read tool returns it, so text inside one ticket cannot drive writes on another.
+Tokens are signed with a key derived from `NEXTAUTH_SECRET` (the agent's MCP bearer cannot mint them) and
+expire 72 h after delivery; rotating `NEXTAUTH_SECRET` invalidates outstanding ones.
 
 ## 2. Deploy dark (GO)
 
@@ -143,6 +146,7 @@ The tables can stay. Removing the code: revert the PR; nothing else depends on 0
   inside ticket text.
 - `support_get_ticket` shows the customer's email masked and the phone only as `has_phone`; you don't need
   them: `support_reply` always answers the ticket's own customer.
+- Tokens expire 72 h after the notification; an older ticket gets a fresh token with its next event (customer reply), otherwise Rafael answers it from /super-admin/soporte.
 - While `SUPPORT_AGENT_AUTOSEND=off` every public reply becomes a draft for Rafael (`delivered:
   "draft_for_rafael"`). Replies with links (other than betsycrm.com, wa.me/50662470831,
   instagram.com/betsy_crm), e-mail addresses, phone/account numbers or other BETSY-n refs are always drafts.

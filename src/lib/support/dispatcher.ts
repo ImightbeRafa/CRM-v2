@@ -24,6 +24,7 @@ import {
 import { buildCustomerAckEmail, buildNotificationEmail, resendSender, type MailSender } from './notify'
 import type { SupportDeliveryStatus } from './types'
 import { withReplyToken } from './mcp/reply-token'
+import { isOwnSupportAddress } from './spam'
 
 type EnvLike = Record<string, string | undefined>
 
@@ -162,7 +163,7 @@ export async function dispatchPendingSupportEvents(
     // Stay well inside the 2-minute claim: worst case per event is ~28 s (8 s webhook + 2 × 10 s mail),
     // so 45 s + 28 s < 120 s. Unprocessed claims simply become due again when the claim lapses.
     if (Date.now() - started > (opts.budgetMs ?? 45_000)) break
-    const delivered = withReplyToken(ev.payload, env.SUPPORT_MCP_TOKEN)
+    const delivered = withReplyToken(ev.payload, env.NEXTAUTH_SECRET)
     let webhook: LegResult = { status: ev.webhookStatus }
     if (ev.webhookStatus === 'pending') {
       webhook = !url || !pushed.has(ev.type)
@@ -178,7 +179,7 @@ export async function dispatchPendingSupportEvents(
         const t = await prisma.supportTicket
           .findUnique({ where: { id: ev.ticketId }, select: { contactEmail: true, status: true } })
           .catch(() => null)
-        if (t && t.status !== 'spam') await send(buildCustomerAckEmail(t.contactEmail, ev.payload.betsy.ref, env))
+        if (t && t.status !== 'spam' && !isOwnSupportAddress(t.contactEmail, env)) await send(buildCustomerAckEmail(t.contactEmail, ev.payload.betsy.ref, env))
       }
     }
     if (webhook.status === 'sent') summary.webhookSent++

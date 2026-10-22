@@ -14,6 +14,7 @@ import {
   UsersRound,
   CreditCard,
   History,
+  Gauge,
   MessagesSquare,
   type LucideIcon,
 } from 'lucide-react'
@@ -38,6 +39,7 @@ export type ConfigTabId =
   | 'bulk-delete'
   | 'users'
   | 'billing'
+  | 'ai-usage'
   | 'audit'
 
 export type ConfigNavItem = {
@@ -140,6 +142,14 @@ export const CONFIG_NAV: ConfigNavGroup[] = [
     items: [
       { key: 'users', tab: 'users', label: 'Equipo', icon: UsersRound, aliases: ['equipo'], figmaNode: '193:3470' },
       { key: 'billing', tab: 'billing', label: 'Plan', icon: CreditCard, aliases: ['plan'], figmaNode: '193:3956' },
+      {
+        key: 'ai-usage',
+        tab: 'ai-usage',
+        label: 'Uso de IA',
+        icon: Gauge,
+        aliases: ['ia', 'uso-ia', 'uso-de-ia', 'creditos'],
+        figmaNode: 'lane-h-ai-usage',
+      },
       { key: 'audit', tab: 'audit', label: 'Auditoría', icon: History, aliases: ['auditoria'], figmaNode: '193:4344' },
     ],
   },

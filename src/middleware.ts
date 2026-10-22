@@ -27,6 +27,7 @@ const PUBLIC_ROUTES = [
   '/api/work-clock',
   '/api/tilopay/webhook',
   '/api/tilopay/webhook-repeat',
+  '/api/tilopay/webhook-ai-credits',             // AI credit packs (Tilopay secret/HMAC checked in handler)
   '/api/tilopay/callback',
   '/api/stripe/webhook',
   '/api/chat/webhook',                          // Meta webhooks (Instagram/WhatsApp/Facebook)

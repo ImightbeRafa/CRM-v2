@@ -740,11 +740,14 @@ export const REPAIRABLE_REASONS: ReadonlySet<string> = new Set([
   'sold_out_offered',
   'restock_date_invented',
   'non_spanish_reply',
+  'affirm_first',
 ])
 
 const REPAIR_REASON_TEXT: Record<string, string> = {
   // SecureDog wave D r2 (M1): a reply in English / PT / FR with no payment in play is rewritten in Spanish (repairable).
   non_spanish_reply: 'respondiste en otro idioma; respondé en español de Costa Rica',
+  // SecureDog wave D r4 (INT-206): in a payment chat a reply may not open with a yes (it reads as "your payment is fine").
+  affirm_first: 'empezaste con un "sí / claro / perfecto" o solo con un emoji en un chat de pago; respondé directo con el dato o preguntá qué necesita, sin afirmar nada sobre un pago',
   unsourced_money: 'pusiste un monto que no está en los precios / envíos de BETSY_DATOS ni en lo que consultaste',
   unsourced_amount: 'pusiste un número o monto que no sale de los datos',
   money_mismatch_inventory: 'el precio no coincide con el del producto',

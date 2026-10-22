@@ -113,12 +113,24 @@ const FOREIGN_WORD_RE =
 const SPANISH_WORD_RE =
   /(?<![\p{L}])(?:de|la|el|que|tu|te|por|con|para|es|en|y|los|las|un|una|s[ií]|gracias|hola|pedido|pago|env[ií]o|precio|est[aá]|ya|lo|le|me|mi|tenemos|pod[eé]s|quer[eé]s)(?![\p{L}])/giu
 /** The words a language check reads: no links, no Title Case brand runs ("Thank You Farmer Sun Project"). */
-function languageWords(text: string): string {
-  return (text || '').replace(/\S*(?:https?:\/\/|www\.)\S*/giu, ' ').replace(/(?<![\p{L}])\p{Lu}[\p{L}']*(?:\s+\p{Lu}[\p{L}']*)+/gu, ' ')
+/**
+ * SecureDog r4 (M1 reply side): with payment in play a Title Case run is a name only when it is the store's own (it appears
+ * in the brand facts / catalog text, `ownNames`) — "Your Order Is Confirmed" / "Payment Went Through" are not names.
+ */
+function languageWords(text: string, ownNames?: string | null): string {
+  const noLinks = (text || '').replace(/\S*(?:https?:\/\/|www\.)\S*/giu, ' ')
+  const own = ownNames == null ? null : ownNames.toLowerCase()
+  return noLinks.replace(/(?<![\p{L}])\p{Lu}[\p{L}']*(?:\s+\p{Lu}[\p{L}']*)+/gu, (run) => {
+    if (own === null) return ' '
+    // A sentence-start article is not part of the name ("El Done Patch").
+    const lower = run.toLowerCase().replace(/^(?:el|la|los|las|un|una|mi|tu|su|nuestro|nuestra)\s+/u, '')
+    const lead = lower.split(/\s+/u).slice(0, 2).join(' ')
+    return own.includes(lower) || own.includes(lead) ? ' ' : run
+  })
 }
-export function readsAsForeignLanguage(text: string): boolean {
+export function readsAsForeignLanguage(text: string, ownNames?: string | null): boolean {
   // Verifier r3 #8: words inside links and Title Case brand runs ("Thank You Farmer Sun Project") are not the language.
-  const words = languageWords(text)
+  const words = languageWords(text, ownNames)
   const foreign = new Set((words.match(FOREIGN_WORD_RE) ?? []).map((w) => w.toLowerCase())).size
   if (foreign < 2) return false
   return foreign > (words.match(SPANISH_WORD_RE) ?? []).length
@@ -213,7 +225,7 @@ function isPaymentStatusQuestion(customerText: string, paymentInPlay = false): b
  * "Confirmed", "Received", "Perfecto, received", "Tudo certo", "C'est bon", "Reçu").
  */
 const FOREIGN_STATUS_WORD_RE =
-  /(?<![\p{L}])(?:done|confirmed|received|paid|through|sure|yes|yep|yeah|all\s+set|all\s+good|certo|recebido|re[cç]u|fait|c['’]est\s+bon|tudo\s+certo|pagamento\s+ok|payment\s+ok)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:done|confirmed|received|paid|through|sure|yes|yep|yeah|approved|verified|completed|success|successful|arrived|perfect|chegou|recebi|aprovado|all\s+set|all\s+good|certo|recebido|re[cç]u|fait|c['’]est\s+bon|tudo\s+certo|pagamento\s+ok|payment\s+ok)(?![\p{L}])/iu
 
 export type OutputValidationResult = {
   ok: boolean
@@ -1103,10 +1115,26 @@ export function validateAgentOutput(input: {
   // SecureDog wave D r2 (M1): a model reply in English / PT / FR. With payment in play it is a payment hold; otherwise
   // it is repaired / held like any other off-rule reply.
   const paymentInPlay = paymentInPlayEarly
-  if (input.modelText && readsAsForeignLanguage(input.paymentContextText ?? text)) {
+  const ownNames = paymentInPlay ? (input.ownText ?? '') : null
+  if (input.modelText && readsAsForeignLanguage(input.paymentContextText ?? text, ownNames)) {
     reasons.push(paymentInPlay ? 'payment_status_claim' : 'non_spanish_reply')
-  } else if (input.modelText && paymentInPlay && FOREIGN_STATUS_WORD_RE.test(languageWords(input.paymentContextText ?? text))) {
+  } else if (input.modelText && paymentInPlay && FOREIGN_STATUS_WORD_RE.test(languageWords(input.paymentContextText ?? text, ownNames))) {
     reasons.push('payment_status_claim')
+  }
+  // SecureDog r4 (INT-206, structural): with payment in play, to ANY customer question a reply that starts with a yes or
+  // is only emoji is rewritten (repairable) — "¡Claro que sí!" to "¿Todo en orden?" / "¿Novedades?" never goes out as is.
+  // A real payment status question is already a payment hold above.
+  if (
+    input.modelText &&
+    paymentInPlay &&
+    input.customerText &&
+    /[?¿]/u.test(input.customerText) &&
+    !reasons.includes('payment_status_claim') &&
+    [input.paymentContextText ?? text].some(
+      (t) => startsWithAffirmation(t) || startsWithAffirmation(t.replace(/^[\s¡!]*hola[\s,.!¡]*/iu, '')) || isAffirmOnly(t),
+    )
+  ) {
+    reasons.push('affirm_first')
   }
 
   const inventory =

@@ -433,10 +433,50 @@ export function mentionsConfirmVerb(text: string): boolean {
 // those only in a state shape ("money sent", "done, gracias", "charged me twice").
 const FOREIGN_PAYMENT_STATE_RE =
   /(?<![\p{L}])(?:paid|paying|payment|payments|transferred|wired|deposited|receipt|receipts|refund\p{L}*|pix|pagamento|pagamentos|paguei|pagou|pago\s+feito|virement|paiement|pay[eé]e?|re[cç]u|(?:money|cash|transfer|sinpe|plata|pago)\s+(?:sent|done|arrived)|(?:sent|done)\s+(?:the\s+|el\s+|la\s+|my\s+)?(?:money|cash|transfer|sinpe|plata|pago)|charged\s+(?:me|twice)|(?:did|has|have)\s+(?:it|you|u)\s+(?:arrive[ds]?|got|get|gotten|receive[ds]?|seen|see)|(?:did|has)\s+(?:the|my)\s+(?:money|transfer|deposit|sinpe)\s+(?:arrive[ds]?|go\s+through|come\s+through)|went\s+through|recebe(?:u|ram|ste)|recebido|(?:did|has)\s+it\s+(?:go(?:ne)?\s+through|work(?:ed)?)|(?:is|was)\s+it\s+(?:there|received)|(?:you\s+)?got\s+it\s*\?|arrived\s*\?|did\s+you\s+guys\s+get\s+it|(?:can\s+(?:u|you)\s+)?confirm\s*(?:pls|please|plz)?\s*\?|confirm\s+(?:pls|please|plz)|all\s+good\s*\?|check\s+your\s+account|(?:j[aá]\s+)?(?:mandei|enviei|transferi)|comprovante|dinheiro|chegou\s*\?|caiu\s*\?|c['’]est\s+(?:fait|r[eé]gl[eé])|j['’]ai\s+(?:envoy[eé]|r[eé]gl[eé]|pay[eé]|fait\s+le\s+virement))(?![\p{L}])|^[\s\p{P}]*(?:(?:ok|okay|listo|ya|ready)[\s\p{P}]+)?(?:sent|done)(?:[\s\p{P}]+(?:gracias|thanks|thx|ty))?[\s\p{P}\p{Extended_Pictographic}]*$/iu
+/**
+ * SecureDog wave D r4 (M1, structural): a customer bubble WRITTEN in English / PT / FR (more of its words are foreign
+ * than Spanish, links and Title Case names aside) that carries a state word ("I sent it", "Just sent", "It's done",
+ * "Transfer is done", "Já foi", "Depositei", "Je vous ai envoyé l'argent") is a payment-state message — no phrase list.
+ */
+const FOREIGN_CUSTOMER_WORD_RE =
+  /(?<![\p{L}])(?:i|i'm|it|it's|its|is|was|just|already|all|the|my|you|your|we|made|have|has|did|sent|done|transfer|transferred|money|deposit|deposited|paid|payment|received|j[aá]|foi|fiz|fez|depositei|transferi|transferência|dinheiro|enviei|mandei|je|vous|ai|envoy[eé]|argent|fait|virement|pay[eé])(?![\p{L}])/giu
+const FOREIGN_STATE_WORD_RE =
+  /(?<![\p{L}])(?:sent|done|made|transfer|transferred|money|deposit|deposited|paid|payment|received|foi|fiz|depositei|transferi|transferência|dinheiro|enviei|mandei|envoy[eé]|argent|fait|virement|pay[eé])(?![\p{L}])/iu
+const SPANISH_CUSTOMER_WORD_RE =
+  /(?<![\p{L}])(?:de|la|el|que|y|en|los|las|un|una|por|con|para|es|lo|le|me|mi|te|ya|s[ií]|no|hola|gracias|quiero|tienen|cu[aá]nto|est[aá]|pago|env[ií]o|precio)(?![\p{L}])/giu
+function readsAsForeignStateStatement(text: string): boolean {
+  const words = (text || '').replace(/\S*(?:https?:\/\/|www\.)\S*/giu, ' ').replace(/(?<![\p{L}])\p{Lu}\p{Ll}+(?:\s+\p{Lu}\p{Ll}+)+/gu, ' ')
+  if (!FOREIGN_STATE_WORD_RE.test(words)) return false
+  const foreign = (words.match(FOREIGN_CUSTOMER_WORD_RE) ?? []).length
+  return foreign >= 1 && foreign > (words.match(SPANISH_CUSTOMER_WORD_RE) ?? []).length
+}
+
 /** English / PT / FR payment-state wording in customer text (either reading). */
 export function hasForeignPaymentState(text: string): boolean {
   const gapped = invisibleAsGap(text)
-  return FOREIGN_PAYMENT_STATE_RE.test(stripFormatChars((text || '').normalize('NFKC'))) || (gapped !== null && FOREIGN_PAYMENT_STATE_RE.test(stripFormatChars(gapped)))
+  const read = (t: string) => FOREIGN_PAYMENT_STATE_RE.test(t) || readsAsForeignStateStatement(t)
+  return read(stripFormatChars((text || '').normalize('NFKC'))) || (gapped !== null && read(stripFormatChars(gapped)))
+}
+
+/**
+ * SecureDog wave D r4 (INT-209, structural): a word that mixes Latin letters with another script, or uses IPA / small
+ * capitals / dotless ı / Latin-extended look-alikes ("hıce", "Lօ", "ӏӏegó", "Lᴇs", "Pаid") — instead of growing a fold map.
+ * Such a customer message goes to a person. Pure.
+ */
+const ODD_LATIN_RE = new RegExp(
+  '[' +
+    [[0x131, 0x131], [0x250, 0x2af], [0x1d00, 0x1dbf], [0xa730, 0xa7ff], [0xab30, 0xab6f]]
+      .map(([a, b]) => `${String.fromCodePoint(a)}-${String.fromCodePoint(b)}`)
+      .join('') +
+    ']',
+  'u',
+)
+export function hasMixedScriptWord(text: string): boolean {
+  for (const w of (text || '').normalize('NFKC').match(/[\p{L}\p{M}]+/gu) ?? []) {
+    if (ODD_LATIN_RE.test(w)) return true
+    if (/\p{Script=Latin}/u.test(w) && /[^\p{Script=Latin}\p{M}]/u.test(w)) return true
+  }
+  return false
 }
 
 /**
@@ -511,7 +551,8 @@ export function hasHardPaymentClaim(text: string, opts: { noPaymentYet?: boolean
   return (
     hardClaimIn(stripFormatChars((text || '').normalize('NFKC')), opts) ||
     (gapped !== null && hardClaimIn(stripFormatChars(gapped), opts)) ||
-    hasForeignPaymentState(text)
+    hasForeignPaymentState(text) ||
+    hasMixedScriptWord(text)
   )
 }
 
@@ -717,7 +758,8 @@ export function classifyPaymentText(
   const gapped = invisibleAsGap(text)
   const plain = classifyPaymentTextRules(text, opts)
   const cls =
-    plain !== 'payment_proof_or_risk' && gapped !== null && classifyPaymentTextRules(gapped, opts) === 'payment_proof_or_risk'
+    (plain !== 'payment_proof_or_risk' && gapped !== null && classifyPaymentTextRules(gapped, opts) === 'payment_proof_or_risk') ||
+    hasMixedScriptWord(text)
       ? 'payment_proof_or_risk'
       : plain === 'payment_proof_or_risk' || !hasForeignPaymentState(text)
         ? plain

@@ -56,6 +56,20 @@ describe('exam-bank uses the same extras (DATA-65)', () => {
   })
 })
 
+describe('reviewer input (exam / shadow)', () => {
+  it("keeps the agent's data list readable and only collapses the customer's data line", async () => {
+    const { redactChatForReviewer } = await import('../../../scripts/agent-pack/exam-bank')
+    const ask = 'Pasame estos datos: - Nombre completo - Teléfono - Provincia - Cantón'
+    assert.equal(redactCustomerText(ask, null, { store: true }), ask)
+    const chat = redactChatForReviewer(`CLIENTE: peso 81 kg\nAGENTE: ${ask}\nCLIENTE: Nombre: Ana Solís\nTeléfono 8888 7777\nCLIENTE: mido 1.77`)
+    assert.match(chat, /peso 81 kg/)
+    assert.match(chat, /AGENTE: Pasame estos datos/)
+    assert.match(chat, /mido 1\.77/)
+    assert.doesNotMatch(chat, /Ana Solís|8888 7777/)
+    assert.match(chat, /CLIENTE: María Pérez Solís/) // the synthetic block, on that message only
+  })
+})
+
 describe('export-chats helpers', () => {
   it('Costa Rica day window', () => {
     assert.equal(crDayStart('2026-10-21').toISOString(), '2026-10-21T06:00:00.000Z')

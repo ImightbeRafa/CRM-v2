@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Truck, Mail, Printer, CheckSquare, Square, Search, RefreshCw, Package, Zap, CheckCircle, AlertTriangle, X, Download, Clock, FileText } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
+import OrderItemsList from '@/components/orders/OrderItemsList';
 import {
     costaRicaLocations,
     provinceNames,
@@ -508,7 +509,7 @@ export default function GuiasPage() {
                                                 </td>
                                                 <td style={{ padding: '8px 11px', color: '#F2F2F2', fontWeight: 600 }}>{o.customerName}<div style={{ color: 'rgba(255,255,255,0.28)', fontSize: 9.5 }}>#{o.orderId}</div></td>
                                                 <td style={{ padding: '8px 11px', color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>{getTenantName(o.tenantId)}</td>
-                                                <td style={{ padding: '8px 11px', color: 'rgba(255,255,255,0.45)', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.product || '—'}{o.quantity > 1 ? ` ×${o.quantity}` : ''}</td>
+                                                <td style={{ padding: '8px 11px', color: 'rgba(255,255,255,0.45)', minWidth: 140, maxWidth: 240 }}><OrderItemsList order={o} maxItems={2} emptyLabel="—" /></td>
                                                 <td style={{ padding: '8px 11px', color: 'rgba(255,255,255,0.38)' }}>{o.province || '—'}</td>
                                                 <td style={{ padding: '8px 11px', color: 'rgba(255,255,255,0.38)' }}>{o.phone || '—'}</td>
                                                 <td style={{ padding: '8px 11px', color: '#34d399', fontWeight: 700 }}>{fmt(o.total)}</td>

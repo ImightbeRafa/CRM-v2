@@ -11,6 +11,7 @@ import {
     managedTenantIdsForSql,
 } from '@/lib/logistics-managed-tenants';
 import { fetchArchivedLogisticsOrders, type ArchivedLogisticsOrder } from '@/lib/logistics-archived-orders';
+import { orderItemLabels } from '@/lib/orders/order-items';
 
 type GuiaInfo = {
     guiaId: string;
@@ -226,6 +227,7 @@ export async function GET(req: NextRequest) {
                     seller: true,
                     contraEntrega: true,
                     cePaymentConfirmed: true,
+                    productDetails: true,
                     tenant: { select: { name: true, slug: true, businessName: true } },
                 },
                 orderBy: { timestamp: 'desc' },
@@ -380,8 +382,9 @@ export async function GET(req: NextRequest) {
             await Promise.all([loadCe(), loadGuias()]);
         }
 
-        const enriched = orders.map((o) => ({
+        const enriched = orders.map(({ productDetails, ...o }) => ({
             ...o,
+            itemLines: orderItemLabels({ productDetails }) ?? null,
             lmCarrier: lmData[o.id]?.lmCarrier ?? null,
             isContraEntrega: (o as any).contraEntrega || lmData[o.id]?.isContraEntrega || false,
             contraEntregaCollected: (o as any).cePaymentConfirmed || lmData[o.id]?.contraEntregaCollected || false,

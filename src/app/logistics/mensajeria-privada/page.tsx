@@ -23,6 +23,7 @@ import {
 import { FALLBACK_TENANT_CONFIG, useTenantConfig } from '@/hooks/useTenantConfig';
 import PaymentMethodWizard, { type PaymentConfirmPayload } from '@/app/logistics/components/PaymentMethodWizard';
 import { csvCell } from '@/lib/csv-safe';
+import OrderItemsList from '@/components/orders/OrderItemsList';
 
 const CR_TZ = 'America/Costa_Rica';
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14 } as const;
@@ -576,7 +577,7 @@ export default function PrivateDeliveryPage() {
                                                                         {order.lmStatus || 'Sin estado'}
                                                                     </span>
                                                                 </td>
-                                                                <td style={{ padding: '8px 9px', color: 'rgba(255,255,255,0.48)', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.product || '—'}</td>
+                                                                <td style={{ padding: '8px 9px', color: 'rgba(255,255,255,0.48)', minWidth: 140, maxWidth: 240 }}><OrderItemsList order={order} maxItems={2} emptyLabel="—" /></td>
                                                                 <td style={{ padding: '8px 9px', color: 'rgba(255,255,255,0.45)', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                                     {[order.canton, order.province].filter(Boolean).join(', ') || '—'}
                                                                 </td>

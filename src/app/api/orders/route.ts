@@ -8,6 +8,7 @@ import { logCreate } from '@/lib/auditLogger'
 import { ORDER_COMMENT_FIELD_ALIASES, resolveOrderComment } from '@/lib/order-comments'
 import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags'
 import { createLifecycleOrder, lifecycleIdempotencyKey, OrderLifecycleError } from '@/lib/order-lifecycle'
+import { orderItemLabels } from '@/lib/orders/order-items'
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic'
@@ -207,7 +208,9 @@ export async function GET(request: NextRequest) {
           contraEntrega: true,
           cePaymentConfirmed: true,
           tenantId: true, // Include for security verification
-          // Exclude only the heaviest field: productDetails (can be loaded separately if needed)
+          // productDetails is read only to build compact itemLines below; the
+          // heavy JSON itself is not sent (load it via /api/orders/details).
+          productDetails: true,
         }
         }),
       ]);
@@ -226,10 +229,15 @@ export async function GET(request: NextRequest) {
       }
     }
       
+      const data = orders.map(({ productDetails, ...order }: any) => {
+        const itemLines = orderItemLabels({ productDetails })
+        return itemLines ? { ...order, itemLines } : order
+      })
+
       // Return orders with pagination metadata - NO CACHE HEADERS
       const response = NextResponse.json({
         status: 'success',
-        data: orders,
+        data,
         pagination: {
           page,
           limit,

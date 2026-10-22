@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
+import OrderItemsList from '@/components/orders/OrderItemsList';
+import ShippingMethodBadge from '@/components/orders/ShippingMethodBadge';
 
 interface MobileProductionWorkflowProps {
   orders: Sale[];
@@ -255,6 +257,8 @@ export function MobileProductionWorkflow({
             </span>
           </div>
 
+          <ShippingMethodBadge order={order} size="xs" showCod={false} style={{ marginBottom: 8 }} />
+
           <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
             <span>{orderAge.label}</span>
             {order.orderType === 'EA' && (order as any).expectedDate && (
@@ -297,9 +301,9 @@ export function MobileProductionWorkflow({
 
               {order.product && (
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Package className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-medium text-sm">{order.product}</span>
+                  <div className="flex items-start gap-2">
+                    <Package className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <OrderItemsList order={order} maxItems={10} style={{ flex: 1, fontSize: 14 }} itemStyle={{ fontWeight: 500 }} />
                   </div>
                   <div className="flex items-center gap-4 text-xs text-muted-foreground ml-6">
                     <span>Cant: {order.quantity}</span>

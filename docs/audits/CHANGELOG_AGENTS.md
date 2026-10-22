@@ -32,6 +32,8 @@
 - Winner rule `scripts/agent-pack/follow-up-rule.ts` (+ `follow-up-experiment.test.ts` in `test:soft-ai`): opt-out guardrail, 150 chats/text + 7 days, orders first (95 %), then replies if orders can't decide.
 - 2026-10-18 PatchHouse result: "duda" 10/48 replies (21 %) vs "combo" 2/50 (4 %); 0 vs 1 order (₡12 900); no opt-outs. "duda" is champion.
 - No engine change (`src/lib/soft-ai/**` untouched). Engine spec for standing rounds, per-text waits, holdout: `docs/handoff/2026-10-22-follow-up-experiments.md`. Rounds for Sofi and Vale are ready but not started (prod write needs Rafael).
+- Exam / shadow reviewer: the chat is scrubbed per message (a data list no longer wipes the whole history into the synthetic address); the night line is the pack's opening hour, not a fixed 8:00.
+- `build-agent.ts` now BLOCKS a pack the engine would silently cut: salesRules voice > 600, closing > 800, upsells / handoffWhen > 800, objections > 1 200, mustSay / neverSay > 10 × 200, brand_book + policy > 4 000 or faq > 3 000 (a doc is left out of the prompt). Forge and Pura Sonrisa had lost half their objections and Pura Sonrisa's SINPE closing step this way.
 
 ## 2026-10-21 — Exam bank: delivery-time after a confirmed order is a handoff
 

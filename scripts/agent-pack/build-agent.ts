@@ -27,6 +27,7 @@ import { listShortcuts, createShortcut, updateShortcut } from '@/lib/soft-ai/sho
 import { agentAssetsReady, storeAgentAsset, setReplyAssets, loadReplyAssets } from '@/lib/soft-ai/agent-assets'
 import { createKnowledgeSource, approveKnowledgeSource, bindKnowledgeToAgent, unbindKnowledgeFromAgent } from '@/lib/soft-ai/knowledge-admin'
 import { hashKnowledgeBody } from '@/lib/soft-ai/knowledge-repository'
+import { KNOWLEDGE_LAYER2_CHAR_BUDGET, KNOWLEDGE_LAYER34_CHAR_BUDGET } from '@/lib/soft-ai/knowledge-types'
 import { loadMappedInventoryIds, setMappedInventory } from '@/lib/soft-ai/agent-inventory-map'
 import { loadSalesSetup, saveSalesSetup, parseSalesRules, salesRulesOctets, SALES_RULES_MAX_OCTETS } from '@/lib/soft-ai/agent-sales-setup'
 import { parseBrandFacts, parseBrandFactsSafe, parseReplyStyleSafe, ReplyStyleSchema } from '@/lib/soft-ai/brand-facts'
@@ -40,7 +41,7 @@ import { parseChatAgentLayerConfig } from '@/lib/soft-ai/agent-config'
 import { loadDailyTestTokens } from '@/lib/soft-ai/agent-claim-gates'
 import { agentsServingUnboundChannels } from '@/lib/soft-ai/agent-settings'
 import { resultsClaimIn } from '@/lib/soft-ai/llm/output-validator'
-import { arg, flag, loadPack } from './pack'
+import { arg, flag, loadPack, type AgentPack } from './pack'
 
 const APPLY = flag('apply')
 /** --allow-live=<agentId>: the only way to touch a live agent (exact id). */
@@ -52,6 +53,31 @@ const log = (s: string) => console.log(s)
 const stable = (v: unknown): unknown =>
   Array.isArray(v) ? v.map(stable) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([k, x]) => [k, stable(x)])) : v
 const same = (a: unknown, b: unknown) => JSON.stringify(stable(a)) === JSON.stringify(stable(b))
+
+/**
+ * What the engine would drop WITHOUT a warning: parseSalesRules cuts each text field at its cap (voice 600, closing 800,
+ * objections 1 200…) and list items at 200 / 10 items; the prompt leaves out a whole knowledge doc when brand_book +
+ * policy pass 4 000 chars or faq passes 3 000. Lane C 2026-10-22: Forge/Pura Sonrisa objections lost half their rules.
+ */
+export function packLimitProblems(pack: Pick<AgentPack, 'salesRules' | 'knowledge'>, rules: ReturnType<typeof parseSalesRules>): string[] {
+  const problems: string[] = []
+  const raw = pack.salesRules as Record<string, unknown>
+  for (const key of ['voice', 'closing', 'upsells', 'objections', 'handoffWhen'] as const) {
+    const wanted = typeof raw[key] === 'string' ? (raw[key] as string).trim() : ''
+    const kept = (rules[key] as string | null) ?? ''
+    if (wanted.length > kept.length) problems.push(`salesRules.${key}: ${wanted.length} caracteres, el motor solo guarda ${kept.length} (se cortaría: "${wanted.slice(kept.length, kept.length + 60)}…")`)
+  }
+  for (const key of ['mustSay', 'neverSay'] as const) {
+    const items = Array.isArray(raw[key]) ? (raw[key] as unknown[]) : []
+    if (items.length > rules[key].length || items.some((x, i) => typeof x === 'string' && x.trim() !== rules[key][i])) problems.push(`salesRules.${key}: máx. 10 frases de 200 caracteres (alguna se cortaría)`)
+  }
+  const size = (kinds: string[]) => pack.knowledge.filter((k) => kinds.includes(k.kind)).reduce((n, k) => n + k.body.length, 0)
+  const layer2 = size(['brand_book', 'policy'])
+  if (layer2 > KNOWLEDGE_LAYER2_CHAR_BUDGET) problems.push(`conocimiento producto + políticas: ${layer2} de ${KNOWLEDGE_LAYER2_CHAR_BUDGET} caracteres (un documento quedaría fuera del prompt)`)
+  const layer34 = size(['faq'])
+  if (layer34 > KNOWLEDGE_LAYER34_CHAR_BUDGET) problems.push(`conocimiento preguntas frecuentes: ${layer34} de ${KNOWLEDGE_LAYER34_CHAR_BUDGET} caracteres (un documento quedaría fuera del prompt)`)
+  return problems
+}
 
 async function main() {
   const packDir = arg('pack')
@@ -135,6 +161,7 @@ async function main() {
   const rules = parseSalesRules(pack.salesRules)
   if (salesRulesOctets(rules) > SALES_RULES_MAX_OCTETS) blockers.push('salesRules demasiado grandes (> 8 000 bytes)')
   if ((rules.bundles?.length ?? 0) !== ((pack.salesRules.bundles as unknown[]) ?? []).length) warnings.push('Algún combo fue descartado (nombre o precio inválido)')
+  for (const problem of packLimitProblems(pack, rules)) blockers.push(problem)
 
   // ---- Products: read only (shared with /ventas)
   const itemIds: string[] = []
@@ -404,9 +431,11 @@ async function main() {
   log(`Huella del pack: ${createHash('sha256').update(JSON.stringify(pack)).digest('hex').slice(0, 12)}`)
 }
 
-main()
-  .catch((e) => {
-    console.error(`ERROR: ${(e as Error).message}`)
-    process.exitCode = 1
-  })
-  .finally(() => prisma.$disconnect())
+if (process.argv[1]?.endsWith('build-agent.ts')) {
+  main()
+    .catch((e) => {
+      console.error(`ERROR: ${(e as Error).message}`)
+      process.exitCode = 1
+    })
+    .finally(() => prisma.$disconnect())
+}

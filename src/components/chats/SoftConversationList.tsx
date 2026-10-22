@@ -25,7 +25,7 @@ import { ChatTagFilter, ChatViewMenu } from '@/components/chats/ChatViewMenu'
 import { SyncAgeLabel } from '@/components/chats/SyncAgeLabel'
 import { SoundToggle } from '@/components/chats/SoundToggle'
 import { InboxViewTabs } from '@/components/chats/InboxViewTabs'
-import type { InboxView, InboxViewCounts } from '@/lib/chat-inbox-views'
+import { waitTone, type InboxView, type InboxViewCounts } from '@/lib/chat-inbox-views'
 import {
   AuroraEmptyState,
   AuroraErrorState,
@@ -103,6 +103,63 @@ function avatarTint(seed: string) {
   let h = 0
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0
   return AVATAR_TINTS[h % AVATAR_TINTS.length]
+}
+
+const FOLLOW_UP_TITLE = 'Seguimiento automático: no sube el chat en la Bandeja (míralo en Seguimientos)'
+
+const WAIT_TONE_CLASS = {
+  fresh: 'bg-slate-100 text-slate-600 ring-slate-200',
+  warn: 'bg-amber-50 text-amber-800 ring-amber-300',
+  late: 'bg-red-50 text-red-700 ring-red-300',
+} as const
+
+/** "Sin responder": how long the customer has waited; amber after 1 h, red after 4 h. */
+function WaitBadge({ since, small = false }: { since?: string | null; small?: boolean }) {
+  if (!since) return null
+  const tone = waitTone(since)
+  return (
+    <span
+      className={`flex shrink-0 items-center gap-1 rounded-lg font-semibold ring-1 ${WAIT_TONE_CLASS[tone]} ${
+        small ? 'px-1.5 py-px text-[10px]' : 'px-2 py-1 text-[12px]'
+      }`}
+      title="Tiempo desde el último mensaje del cliente"
+      data-testid="conv-wait-badge"
+      data-tone={tone}
+    >
+      <Clock className={small ? 'h-2.5 w-2.5' : 'h-3 w-3'} aria-hidden />
+      espera {formatRelativeEs(since)}
+    </span>
+  )
+}
+
+/** The agent left this chat to a person (safe line / hand-off / provider failure): never shown as "IA". */
+function NeedsPersonChip({ small = false }: { small?: boolean }) {
+  return (
+    <span
+      className={`shrink-0 rounded-lg bg-amber-100 font-semibold text-amber-900 ring-1 ring-amber-300 ${
+        small ? 'ml-1 px-1 py-px text-[9px]' : 'px-2 py-1 text-[12px]'
+      }`}
+      title="El agente le pasó este chat a una persona: nadie le ha respondido todavía"
+      data-testid="conv-needs-person"
+    >
+      Necesita persona
+    </span>
+  )
+}
+
+/** Top of "Sin responder": how many wait, how many for long, and the oldest wait. */
+function UnansweredSummary({ conversations }: { conversations: SoftConversation[] }) {
+  const since = conversations.map((c) => c.waitingSince).filter((s): s is string => Boolean(s))
+  const oldest = since.length ? since.reduce((a, b) => (a < b ? a : b)) : null
+  const late = since.filter((s) => waitTone(s) === 'late').length
+  return (
+    <p className="mx-4 mt-2 text-[12px] text-slate-600" data-testid="unanswered-summary">
+      <span className="font-semibold text-slate-900">{conversations.length}</span>{' '}
+      {conversations.length === 1 ? 'cliente espera' : 'clientes esperan'} respuesta
+      {late ? <span className="font-semibold text-red-700"> · {late} hace más de 4 h</span> : null}
+      {oldest ? <> · el que más espera: {formatRelativeEs(oldest)}</> : null}
+    </p>
+  )
 }
 
 function conversationKey(c: SoftConversation) {
@@ -298,6 +355,7 @@ export function SoftConversationList({
       {inboxView && onInboxViewChange ? (
         <InboxViewTabs view={inboxView} counts={inboxViewCounts ?? null} onChange={onInboxViewChange} wrap={!compact} />
       ) : null}
+      {inboxView === 'sin_responder' && conversations.length ? <UnansweredSummary conversations={conversations} /> : null}
 
       {compact && bucket && onBucketChange ? (
         <div
@@ -454,8 +512,13 @@ export function SoftConversationList({
                             {formatRelativeEs(conv.lastMessageAt)}
                           </span>
                         </div>
-                        <div className="mt-1 flex items-center gap-2">
-                          <p className="min-w-0 flex-1 truncate text-[14px] text-slate-500">
+                        {/* Sin responder: the waiting message gets its own line; the chips wrap under it. */}
+                        <div className={`mt-1 flex items-center gap-2 ${inboxView === 'sin_responder' ? 'flex-wrap' : ''}`}>
+                          <p
+                            className={`min-w-0 flex-1 truncate text-[14px] text-slate-500 ${inboxView === 'sin_responder' ? 'basis-full' : ''}`}
+                            title={conv.lastIsFollowUp ? FOLLOW_UP_TITLE : undefined}
+                          >
+                            {conv.lastIsFollowUp ? '↻ ' : ''}
                             {chatPreviewText(conv.lastMessage) || '—'}
                           </p>
                           {conv.orderNumber ? (
@@ -472,7 +535,10 @@ export function SoftConversationList({
                               Demo
                             </span>
                           ) : null}
-                          {aiHandled ? (
+                          {inboxView === 'sin_responder' ? <WaitBadge since={conv.waitingSince} /> : null}
+                          {conv.needsPerson ? (
+                            <NeedsPersonChip />
+                          ) : aiHandled ? (
                             <span
                               className="flex shrink-0 items-center gap-1 rounded-lg bg-au-tint-f1eeff px-2 py-1 text-[12px] font-semibold text-au-ink-5b3fe0"
                               data-testid="soft-agent-dot"
@@ -535,7 +601,8 @@ export function SoftConversationList({
                           {formatRelativeEs(conv.lastMessageAt)}
                         </span>
                       </div>
-                      <p className="mt-0.5 truncate text-xs text-slate-500">
+                      <p className="mt-0.5 truncate text-xs text-slate-500" title={conv.lastIsFollowUp ? FOLLOW_UP_TITLE : undefined}>
+                        {conv.lastIsFollowUp ? '↻ ' : ''}
                         {chatPreviewText(conv.lastMessage) || '—'}
                       </p>
                       <div className="mt-1 flex items-center justify-between gap-2">
@@ -565,7 +632,9 @@ export function SoftConversationList({
                               #{conv.orderNumber}
                             </span>
                           ) : null}
-                          {conv.agentEmoji || conv.agentStateDot || conv.aiStatus ? (
+                          {conv.needsPerson ? (
+                            <NeedsPersonChip small />
+                          ) : conv.agentEmoji || conv.agentStateDot || conv.aiStatus ? (
                             <span
                               className="ml-1 shrink-0 rounded bg-slate-100 px-1 py-px text-[9px] font-semibold text-slate-600"
                               data-testid="soft-agent-dot"
@@ -577,6 +646,7 @@ export function SoftConversationList({
                             </span>
                           ) : null}
                         </p>
+                        {inboxView === 'sin_responder' ? <WaitBadge since={conv.waitingSince} small /> : null}
                         {unread > 0 ? (
                           <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#5B6CFF] px-1 text-[10px] font-bold text-white">
                             {unread > 9 ? '9+' : unread}

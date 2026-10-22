@@ -55,6 +55,12 @@ export interface SoftConversation extends ChatConversation {
   pendingSuggestionText?: string | null
   /** Agentes IA 2.0: who really has this chat ("IA" only when the line answers it). */
   aiStatus?: ChatAiStatus | null
+  /** The agent left this chat to a person (safe line / hand-off / provider failure): "Necesita persona", never "IA". */
+  needsPerson?: boolean
+  /** The customer's last message (the "Sin responder" wait starts there). */
+  waitingSince?: string | null
+  /** The newest message is our follow-up (it keeps the chat's place in the Bandeja on purpose). */
+  lastIsFollowUp?: boolean
 }
 
 export interface SoftSocialAccount {

@@ -95,6 +95,7 @@ export type ConversationRow = {
   lastMessagePreview: string | null
   lastMessageDirection: string | null
   lastInboundAt: Date | null
+  lastOutboundAt?: Date | null
   inboundCount: number
   /** Inbound count the team had answered at its last confirmed reply (SQL 037). */
   repliedInboundCount?: number
@@ -129,8 +130,15 @@ export type ChatConversationListItemDto = {
   assignedUser: { id: string; name: string | null; image: string | null } | null
   /** Last customer message (snooze wakes up when the customer writes after it was snoozed). */
   lastInboundAt?: string | null
+  /** Our newest send (a follow-up keeps lastMessageAt, so "Seguimientos" orders by this). */
+  lastOutboundAt?: string | null
   /** The newest message is our follow-up / reactivation send (metadata.followUp); set by the list/changes routes. */
   lastIsFollowUp?: boolean
+  /**
+   * The agent's last reply left this chat to a person (safe line, hand-off, provider failure) and nobody wrote since.
+   * Shown as "Necesita persona", never "IA"; set by the list/changes routes (chat-unanswered-server).
+   */
+  needsPerson?: boolean
   /** Snoozed until (Phase 2b); set by the list/changes routes only while it is in effect. */
   snooze?: { until: string; at: string } | null
   /** Latest order linked from this chat (internal id + human number); set by the list/changes routes. */
@@ -250,6 +258,7 @@ export function mapConversationToListDto(row: ConversationRow, stages: StageDef[
     lastMessage: row.lastMessagePreview,
     lastMessageDirection: row.lastMessageDirection,
     lastInboundAt: row.lastInboundAt ? row.lastInboundAt.toISOString() : null,
+    lastOutboundAt: row.lastOutboundAt ? row.lastOutboundAt.toISOString() : null,
     waWindowOpen: waWindowOpenFromInbound(platform, row.lastInboundAt),
     aiMode: normalizeAiMode(row.aiMode),
     assignedUserId: row.assignedUserId,
@@ -367,6 +376,7 @@ export function conversationSelect(): Prisma.ChatConversationSelect {
     lastMessagePreview: true,
     lastMessageDirection: true,
     lastInboundAt: true,
+    lastOutboundAt: true,
     inboundCount: true,
     repliedInboundCount: true,
     revision: true,

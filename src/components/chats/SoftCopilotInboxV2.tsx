@@ -1152,7 +1152,7 @@ export function SoftCopilotInboxV2() {
   const visibleConversations = useMemo(() => {
     if (inboxView !== 'todos') {
       const q = search.trim().toLowerCase()
-      const rows: Array<{ c: SoftConversation; lastInboundAt: string | null; lastMessageAt: string; lastMessageDirection: string | null }> = []
+      const rows: Array<{ c: SoftConversation; id: string; lastMessageAt: string; lastOutboundAt: string | null }> = []
       for (const c of conversations) {
         const dto = dtoByKey.get(`${c.socialAccountId}|${c.recipientId}`)
         if (!dto) continue
@@ -1167,6 +1167,7 @@ export function SoftCopilotInboxV2() {
           lineAiOn: dto.aiLine?.state === 'on',
           closed: isConversationClosed(c),
           hasOpenOrder: dto.hasOpenOrder === true,
+          needsPerson: dto.needsPerson === true,
         }
         if (!matchesInboxView(row, inboxView)) continue
         if (
@@ -1184,7 +1185,7 @@ export function SoftCopilotInboxV2() {
         ) {
           continue
         }
-        rows.push({ c, lastInboundAt: dto.lastInboundAt ?? null, lastMessageAt: dto.lastMessageAt, lastMessageDirection: dto.lastMessageDirection })
+        rows.push({ c, id: dto.id, lastMessageAt: dto.lastMessageAt, lastOutboundAt: dto.lastOutboundAt ?? null })
       }
       return sortForInboxView(rows, inboxView).map((r) => r.c)
     }
@@ -1202,7 +1203,7 @@ export function SoftCopilotInboxV2() {
         const dto = [...dtoMap.values()].find(
           (d) => d.socialAccountId === c.socialAccountId && d.peerId === c.recipientId,
         )
-        return dto?.aiMode === 'ai_active' && !isConversationClosed(c)
+        return dto?.aiMode === 'ai_active' && !dto.needsPerson && !isConversationClosed(c)
       })
     }
     if (activeTag) list = list.filter((c) => c.tags.includes(activeTag))

@@ -279,6 +279,8 @@ function hasInstagramAttachment(msg: ChatInboxMessage): boolean {
   return Boolean(raw?.attachments?.[0]?.hasUrl)
 }
 
+const NEEDS_PERSON_REASON = 'El agente le pasó este chat a una persona. Respondé vos o tomá el control.'
+
 function messageHasMedia(msg: ChatInboxMessage): boolean {
   if (msg.providerMediaId || msg.mediaBlobPath) return true
   const type = (msg.messageType || '').toLowerCase()
@@ -353,6 +355,8 @@ export function SoftThreadPane({
   // Agentes IA 2.0 — the truth: "IA activa" (and the composer lock) only when the line really answers this chat.
   // A chat on a line that is off is the team's (composer open); 'human' / 'paused' still win.
   const aiTruth = conversation?.aiStatus ?? null
+  // The agent left this chat to a person (safe line / hand-off / provider failure): never "IA activa".
+  const needsPerson = conversation?.needsPerson === true
   const agentMode: SoftAiAgentMode = aiTruth
     ? aiTruth.state === 'ia'
       ? 'ai_active'
@@ -737,11 +741,13 @@ export function SoftThreadPane({
                   {chatStageLabel(conversation.status)}
                 </span>
                 <span
-                  className="rounded-md bg-au-tint-eef0ff px-2 py-0.5 text-[10px] font-medium text-au-ink-4a46e5"
-                  title={aiTruth?.reason}
+                  className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${
+                    needsPerson ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300' : 'bg-au-tint-eef0ff text-au-ink-4a46e5'
+                  }`}
+                  title={needsPerson ? NEEDS_PERSON_REASON : aiTruth?.reason}
                   data-testid="soft-ai-truth-chip"
                 >
-                  {aiTruth && aiTruth.state !== 'ia' ? aiTruth.label : agentModeLabel(agentMode)}
+                  {needsPerson ? 'Necesita persona' : aiTruth && aiTruth.state !== 'ia' ? aiTruth.label : agentModeLabel(agentMode)}
                 </span>
                 {conversation.tags.map((t) => {
                   const def = tagDefs.find((d) => d.key === t)
@@ -883,6 +889,8 @@ export function SoftThreadPane({
                 <p className="truncate text-[14px] font-bold text-slate-900">
                   {aiBlocked
                     ? 'IA detenida: falta autorizar el uso de IA'
+                    : needsPerson
+                    ? 'Necesita persona'
                     : agentMode === 'ai_active'
                     ? `${conversation.agentLabel || 'Agente'} está atendiendo`
                     : agentMode === 'paused'
@@ -893,8 +901,8 @@ export function SoftThreadPane({
                           : aiTruth.label
                         : 'Control humano'}
                 </p>
-                <p className="truncate text-[12px] text-slate-500" title={aiTruth?.reason}>
-                  {aiTruth && aiTruth.state !== 'ia' ? aiTruth.reason : agentModeLabel(agentMode)}
+                <p className="truncate text-[12px] text-slate-500" title={needsPerson ? NEEDS_PERSON_REASON : aiTruth?.reason}>
+                  {needsPerson ? NEEDS_PERSON_REASON : aiTruth && aiTruth.state !== 'ia' ? aiTruth.reason : agentModeLabel(agentMode)}
                   {aiBusy ? ' · procesando…' : ` · ${agentActionsToday} ${agentActionsToday === 1 ? 'acción' : 'acciones'} hoy`}
                 </p>
               </div>
@@ -1208,7 +1216,7 @@ export function SoftThreadPane({
             <span
               aria-hidden
               className={`h-1.5 w-1.5 rounded-full ${
-                aiBlocked
+                aiBlocked || needsPerson
                   ? 'bg-amber-500'
                   : agentMode === 'ai_active'
                     ? 'bg-emerald-500'
@@ -1220,7 +1228,9 @@ export function SoftThreadPane({
             <span className="font-medium text-slate-600">
               {aiBlocked
                 ? 'IA detenida: falta autorizar el uso de IA'
-                : agentMode === 'ai_active'
+                : needsPerson
+                  ? `Necesita persona · ${NEEDS_PERSON_REASON}`
+                  : agentMode === 'ai_active'
                   ? 'IA activa'
                   : agentMode === 'paused'
                     ? 'IA en pausa'

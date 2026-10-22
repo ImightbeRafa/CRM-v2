@@ -23,12 +23,12 @@ export function PedidosPager({
   onPage: (page: number) => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-5 py-3">
-      <p className="text-[12px] text-slate-400">
+    <div className="flex flex-wrap items-center justify-center gap-2 border-t border-slate-100 px-2 py-3 sm:flex-nowrap sm:justify-between sm:gap-3 sm:px-5">
+      <p className="w-full text-center text-[12px] text-slate-400 sm:w-auto sm:text-left">
         Mostrando {shown} de {total} {total === 1 ? 'pedido' : 'pedidos'}
       </p>
       {totalPages > 1 ? (
-        <nav className="flex items-center gap-1" aria-label="Paginación">
+        <nav className="flex items-center gap-0.5 sm:gap-1" aria-label="Paginación">
           <button
             type="button"
             className={`${BTN} text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-40`}

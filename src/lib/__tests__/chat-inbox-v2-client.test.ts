@@ -348,7 +348,9 @@ describe('chat-inbox-v2-client reducers', () => {
     // Pack 5 — Spanish errors
     assert.match(src, /humanizeChatSendError/)
     // Pack 6 — focus + scroll
-    assert.match(src, /composerRef\.current\?\.focus\(\)/)
+    // The visible composer (desktop + phone panes are both mounted and share composerRef).
+    assert.match(src, /function focusComposer\(opts\?: FocusOptions\)/)
+    assert.match(src, /el\.getClientRects\(\)\.length > 0/)
     assert.match(src, /messagesEndRef\.current\?\.scrollIntoView/)
   })
 

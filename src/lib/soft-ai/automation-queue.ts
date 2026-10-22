@@ -138,7 +138,8 @@ export async function rearmFinishedJob(input: {
       tenantId: input.tenantId,
       status: { in: ['completed', 'failed'] },
       // luna-10: the waiting ack ("Ya le avisé al equipo…") is not an answer to this message.
-      deliveries: { none: { NOT: { deliveryKey: { endsWith: ':waiting_ack' } } } },
+      // Lane D: nor is the outage line ("Dame un momento") a provider outage sends once.
+      deliveries: { none: { AND: [{ NOT: { deliveryKey: { endsWith: ':waiting_ack' } } }, { NOT: { deliveryKey: { endsWith: ':outage_ack' } } }] } },
     },
     data: {
       status: 'pending',
@@ -214,6 +215,8 @@ async function supersedeOlderJobs(conversationId: string, keepId: string) {
          AND reply."tenantId" = msg."tenantId"
          AND reply."direction" = 'outbound'
          AND (reply."sentAt", reply."id") > (msg."sentAt", msg."id")
+         -- Verifier r2 #3: the outage line ("Dame un momento") is not a store answer.
+         AND COALESCE(reply."metadata"->>'outageAck', '') <> 'true'
         WHERE msg."id" = job."messageId"
       )
   `
@@ -331,6 +334,7 @@ async function claimRows(id?: string, limit = 1): Promise<ClaimedChatAutomationJ
                     AND reply."tenantId" = current_msg."tenantId"
                     AND reply."direction" = 'outbound'
                     AND (reply."sentAt", reply."id") > (current_msg."sentAt", current_msg."id")
+                    AND COALESCE(reply."metadata"->>'outageAck', '') <> 'true'
                 )
               )
           )
@@ -396,6 +400,41 @@ export async function completeJob(row: ClaimedChatAutomationJob) {
       leaseExpiresAt: null,
       lastErrorCode: null,
       lastErrorAt: null,
+    },
+  })
+}
+
+/**
+ * Lane D 2026-10-22: a provider outage puts the SAME job back in the queue at retryAt (status retry, own payload with
+ * the outage state). Conditional on this claim's lease, like completeJob: a reclaimed / finished job is never touched.
+ */
+export async function rescheduleJob(row: ClaimedChatAutomationJob, retryAt: Date, payload: Record<string, unknown>) {
+  await prisma.chatAutomationJob.updateMany({
+    where: { id: row.id, status: 'processing', leaseToken: row.leaseToken },
+    data: {
+      status: 'retry',
+      availableAt: retryAt,
+      payload: payload as Prisma.InputJsonValue,
+      // Verifier: outage retries never use up the general attempt limit (MAX_ATTEMPTS) the claim counted.
+      attempts: { decrement: 1 },
+      leaseToken: null,
+      leaseExpiresAt: null,
+      lastErrorCode: 'PROVIDER_OUTAGE',
+      lastErrorAt: new Date(),
+    },
+  })
+}
+
+/** Verifier: a provider_retry turn that finished after the processing timeout (failJob already set status retry). */
+export async function rescheduleLateJob(row: ClaimedChatAutomationJob, retryAt: Date, payload: Record<string, unknown>) {
+  await prisma.chatAutomationJob.updateMany({
+    where: { id: row.id, status: 'retry', attempts: row.attempts },
+    data: {
+      availableAt: retryAt,
+      payload: payload as Prisma.InputJsonValue,
+      attempts: { decrement: 1 },
+      lastErrorCode: 'PROVIDER_OUTAGE',
+      lastErrorAt: new Date(),
     },
   })
 }

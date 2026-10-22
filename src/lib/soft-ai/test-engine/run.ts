@@ -31,6 +31,7 @@ import {
   type TurnForGrading,
 } from '@/lib/soft-ai/test-engine/grade'
 import { attemptCostMicros, caseWhy, shouldRetryCase } from '@/lib/soft-ai/test-engine/why'
+import { effectiveTestCap } from '@/lib/soft-ai/provider-outage'
 
 const TABLE = 'ChatAgentTestRun'
 export const TEST_RUN_COST_CAP_MICROS = 400_000 // US$0.40 per run
@@ -310,8 +311,9 @@ export async function startAgentTestRun(input: {
     }),
   ])
   const needed = estimateRunTokens(cases.length, recent.map((t) => (t.inputTokens || 0) + (t.outputTokens || 0)))
-  const remaining = Math.max(0, layer.testDailyTokenCap - usedTokens)
-  if (needed > remaining) throw new TestRunBudgetError(remaining, needed, layer.testDailyTokenCap)
+  const testCap = effectiveTestCap(layer.testDailyTokenCap)
+  const remaining = Math.max(0, testCap - usedTokens)
+  if (needed > remaining) throw new TestRunBudgetError(remaining, needed, testCap)
   const id = randomUUID()
   try {
     await prisma.$executeRaw`

@@ -173,7 +173,7 @@ describe('6 · reactions get no turn; a whole-message "me atiende alguien" reach
     // The sweep never treats a reaction as the customer's waiting message (else it re-created the job ~90 s later).
     const sweep = read('src/lib/soft-ai/waiting-sweep.ts')
     assert.match(sweep, /messageType: true,/)
-    assert.match(sweep, /waitingAck !== true && r\.messageType !== 'reaction'/)
+    assert.match(sweep, /waitingAck !== true && meta\?\.outageAck !== true && r\.messageType !== 'reaction'/)
   })
   const person = [
     'Me atiende alguien por favor?',

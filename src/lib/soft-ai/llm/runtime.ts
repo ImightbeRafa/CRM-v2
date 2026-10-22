@@ -2,6 +2,7 @@
  * Soft Agent Layer LLM runtime loop — ≤2 model calls, ≤4 tool calls.
  */
 
+import { classifyProviderFailure, type ProviderFailureKind } from '@/lib/soft-ai/provider-outage-core'
 import { extractShortcutTag } from '@/lib/soft-ai/reply-images'
 import {
   extractSoftAiFunctionCalls,
@@ -63,7 +64,7 @@ export type SoftAiLlmRuntimeInput = {
   linkedOrderId?: string | null
   toolCtx: SoftAiToolRunContext
   /** Meter label for sandbox turns: manual Probar vs automatic checks (quick check, unlock, test runs). */
-  usageFeature?: 'probar' | 'agent_test'
+  usageFeature?: 'probar' | 'agent_test' | 'agent_activation'
   pricingVersion: string
   brandFactsBlock?: string | null
   shortcutCatalog?: string | null
@@ -86,6 +87,8 @@ export type SoftAiLlmRuntimeInput = {
   salesFreeShipping?: boolean
   /** Store rule "envío gratis desde ₡X": the words pass only next to that amount (output-validator). */
   salesFreeShippingRule?: FreeShippingRule | null
+  /** Lane C D6: prices of bundles with shipping included ('₡32 800 con envío incluido' is not a free-shipping offer). */
+  salesIncludedShippingAmounts?: number[]
   /** Sleeping C3: the store's own per-unit rates ("Pack 3 bolsas (90 noches)"), the only source of a per-night amount. */
   salesUnitRates?: Array<{ price: number; count: number; unit: string }>
   /** Out-of-stock switch (SQL 055): sold-out products + names on sale for the stock checks (null = none sold out). */
@@ -126,6 +129,8 @@ export type SoftAiLlmRuntimeResult = {
   latencyMs: number
   fallbackUsed: boolean
   errorCode?: string
+  /** Lane D 2026-10-22: the model call failed on the provider side (no credit / 429 / auth / 5xx / timeout / network). */
+  providerFailure?: ProviderFailureKind | null
   validationReasons?: string[]
   inventoryPrices?: number[]
   intent?: string
@@ -442,6 +447,7 @@ export async function runSoftAiLlmRuntime(
         quoteAmounts: input.salesAllowedAmounts,
         allowedDeals: input.salesAllowedDeals,
         freeShippingRule: input.salesFreeShippingRule,
+        includedShippingAmounts: input.salesIncludedShippingAmounts,
         unitRates: input.salesUnitRates,
         ownText: input.brandFactsBlock ?? null,
         // SecureDog round 6: the whole burst since the store last wrote, not only the newest message.
@@ -578,7 +584,9 @@ export async function runSoftAiLlmRuntime(
     const errorCode =
       error instanceof Error && error.message === 'LLM_NOT_CONFIGURED'
         ? 'LLM_NOT_CONFIGURED'
-        : authFailure
+        : error instanceof Error && error.message === 'TEST_BUDGET_EXCEEDED'
+          ? 'TEST_BUDGET_EXCEEDED'
+          : authFailure
           ? 'LLM_AUTH'
           : error instanceof Error && /timed? ?out|abort/i.test(error.message)
             ? 'LLM_TIMEOUT'
@@ -614,6 +622,7 @@ export async function runSoftAiLlmRuntime(
       latencyMs: Date.now() - started,
       fallbackUsed: true,
       errorCode,
+      providerFailure: classifyProviderFailure(error),
     }
   }
 }

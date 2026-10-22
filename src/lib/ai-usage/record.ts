@@ -14,6 +14,8 @@ export type AiUsageFeature =
   | 'inbox_agent'
   | 'probar'
   | 'agent_test'
+  /** Lane D: the line-activation canary (not capped by the daily test budget). */
+  | 'agent_activation'
   | 'agent_import'
   | 'shortcut_import'
   | 'vision'

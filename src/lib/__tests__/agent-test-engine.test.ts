@@ -204,7 +204,7 @@ describe('2026-10-14: no wasted test runs; a quiet channel says why', () => {
   })
   it('the budget check runs before the run row exists (nothing spent, nothing half-done)', () => {
     const src = read('src/lib/soft-ai/test-engine/run.ts')
-    const check = src.indexOf('if (needed > remaining) throw new TestRunBudgetError(remaining, needed, layer.testDailyTokenCap)')
+    const check = src.indexOf('if (needed > remaining) throw new TestRunBudgetError(remaining, needed, testCap)')
     const insert = src.indexOf('INSERT INTO "ChatAgentTestRun"')
     assert.ok(check > 0 && insert > check)
     assert.match(read('src/app/api/chat/agents/[id]/activation/route.ts'), /error instanceof TestRunBudgetError[\s\S]{0,900}No se gastó nada/)

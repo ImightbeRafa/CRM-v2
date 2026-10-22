@@ -11,6 +11,8 @@ import {
 } from '@/lib/soft-ai/brand-facts'
 import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
 import {
+  asksMoreThanPayment,
+  isCardByChatOffer,
   classifyPaymentText,
   embeddedPaymentChoice,
   hasHardPaymentClaim,
@@ -94,6 +96,8 @@ function finish(input: {
   paymentClass: PaymentClassification
   steps: DecisionStep[]
   facts: BrandFacts
+  /** Lane C D1: the amounts the sales turn may say (bundle / catalog prices, shipping): a saved reply may say them too. */
+  allowedAmounts?: number[]
   replyStyle?: ReplyStyle | null
   shortcuts: RuntimeShortcut[]
   forceNeedsHuman?: boolean
@@ -107,6 +111,7 @@ function finish(input: {
     brandFacts: input.facts,
     replyStyle: input.replyStyle,
     shortcuts: input.shortcuts,
+    quoteAmounts: input.allowedAmounts,
   })
   const reasons = [...new Set([...(input.extraReasons || []), ...policy.reasons])]
   const needsHuman = input.forceNeedsHuman || policy.needsHuman || input.escalate
@@ -174,6 +179,8 @@ export function decideInbound(input: {
   orderDataChoice?: ChosenPaymentMethod | null
   /** SecureDog wave D final: the store already sent its payment details (sales-state paymentDetailsIn on its messages). */
   paymentDetailsSent?: boolean
+  /** Lane C D1: sales-state salesAllowedAmounts of this agent (live + Probar), for verbatim saved replies with a ₡ total. */
+  allowedAmounts?: number[]
 }): InboundDecision {
   // SecureDog r1 INT-159: the relaxation needs a text message AND no bubble of the burst (this one included) hinting at
   // a payment's state ("¿Me confirmás?" + "¿Les llegó?" stays a payment hand-off).
@@ -239,6 +246,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
+      allowedAmounts: input.allowedAmounts,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
@@ -256,6 +264,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
+      allowedAmounts: input.allowedAmounts,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       handoff: input.messageType === 'sticker' ? null : { kind: 'review', reason: HANDOFF_REASON.review },
@@ -272,6 +281,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
+      allowedAmounts: input.allowedAmounts,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
@@ -291,6 +301,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
+      allowedAmounts: input.allowedAmounts,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
@@ -353,6 +364,7 @@ export function decideInbound(input: {
         paymentClass,
         steps,
         facts: input.brandFacts,
+        allowedAmounts: input.allowedAmounts,
         replyStyle: input.replyStyle,
         shortcuts: input.shortcuts,
         forceNeedsHuman: true,
@@ -376,6 +388,7 @@ export function decideInbound(input: {
         paymentClass,
         steps,
         facts: input.brandFacts,
+        allowedAmounts: input.allowedAmounts,
         replyStyle: input.replyStyle,
         shortcuts: input.shortcuts,
       })
@@ -385,6 +398,46 @@ export function decideInbound(input: {
   }
 
 
+  // SecureDog r3: a card number offered by chat ("te paso el número de mi tarjeta por acá?") is never left to the model,
+  // whatever is pending or also asked: the store's card link, or without one the payment-data review.
+  if (paymentClass === 'payment_info_safe' && isCardByChatOffer(input.inboundText)) {
+    const cardReply =
+      canSharePaymentFacts(input.brandFacts) && paymentMethodBlock(input.brandFacts, 'tarjeta')
+        ? paymentChoiceReply('tarjeta', 'Claro 🙌 Por seguridad no mandés los datos de tu tarjeta por chat:')
+        : null
+    if (cardReply) {
+      steps.push({ step: 'payment_info', outcome: 'share', reason: 'card_by_chat' })
+      return finish({
+        text: cardReply,
+        intent: 'payment_info',
+        shortcutKey: 'sys_payment_info',
+        escalate: false,
+        paymentClass,
+        steps,
+        facts: input.brandFacts,
+        allowedAmounts: input.allowedAmounts,
+        replyStyle: input.replyStyle,
+        shortcuts: input.shortcuts,
+      })
+    }
+    steps.push({ step: 'payment_info', outcome: 'handoff', reason: 'card_by_chat' })
+    const soon = seedShortcut('sys_payment_soon', input.shortcuts)
+    return finish({
+      text: renderShortcutTemplate(soon.body, { facts: input.brandFacts }),
+      intent: 'payment_info',
+      shortcutKey: 'sys_payment_soon',
+      escalate: true,
+      paymentClass,
+      steps,
+      facts: input.brandFacts,
+      allowedAmounts: input.allowedAmounts,
+      replyStyle: input.replyStyle,
+      shortcuts: input.shortcuts,
+      forceNeedsHuman: true,
+      extraReasons: ['card_by_chat'],
+      handoff: { kind: 'review', reason: HANDOFF_REASON.paymentData },
+    })
+  }
   if (paymentClass === 'payment_info_safe' && input.awaitingPaymentMethod && canSharePaymentFacts(input.brandFacts)) {
     // N4: never the method list again while the store's method question is pending — the model answers.
     steps.push({ step: 'payment_info', outcome: 'model', reason: 'method_question_pending' })
@@ -392,6 +445,12 @@ export function decideInbound(input: {
   }
   if (paymentClass === 'payment_info_safe') {
     if (canSharePaymentFacts(input.brandFacts)) {
+      // Lane C D8: it asks more than which methods there are (total, size, an opinion): the model answers all of it.
+      // Not for order data (a choice, not a question).
+      if (!nothingPaidYet && asksMoreThanPayment(input.inboundText)) {
+        steps.push({ step: 'payment_info', outcome: 'model', reason: 'asks_more_than_payment' })
+        return continueToModel(paymentClass, steps)
+      }
       // agents2-format: one method named ("¿cuál es el número de SINPE?", "¿aceptan tarjeta?") → that method only.
       // luna-10 exam round 2: "¿Tienes link de pago? ¿Para la ansiedad cuál me recomendás?" also asks about products —
       // the model answers both (it fills [[PAGO_TARJETA]]); a plain link ask = the card block; "¿se puede pagar con
@@ -417,6 +476,7 @@ export function decideInbound(input: {
           paymentClass,
           steps,
           facts: input.brandFacts,
+          allowedAmounts: input.allowedAmounts,
           replyStyle: input.replyStyle,
           shortcuts: input.shortcuts,
         })
@@ -441,6 +501,7 @@ export function decideInbound(input: {
         paymentClass,
         steps,
         facts: input.brandFacts,
+        allowedAmounts: input.allowedAmounts,
         replyStyle: input.replyStyle,
         shortcuts: input.shortcuts,
       })
@@ -458,6 +519,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
+      allowedAmounts: input.allowedAmounts,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
@@ -483,6 +545,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
+      allowedAmounts: input.allowedAmounts,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: verbatim.kind === 'handoff',

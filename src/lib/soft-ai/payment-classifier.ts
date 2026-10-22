@@ -145,7 +145,7 @@ const PAY_LINK_PHRASE_RE = /(?<![\p{L}])(?:link|enlace)s?\s+(?:de|para|del)\s+(?
 const LINK_FAILURE_RE =
   /(?<![\p{L}])(?:venc\p{L}*|expir\p{L}*|caduc\p{L}*|sirv\p{L}*|sirve|funcion\p{L}*|abr[eií]\p{L}*|abre|ca[ií]d[oa]|rechaz\p{L}*|declin\p{L}*|fall\p{L}*|error|us[eéoó]|otro|otra\s+vez|de\s+nuevo|carg[oó]|cobr[oó])(?![\p{L}])/iu
 const FRIENDLY_RE = /[😊🙏🙌🥰❤️👋🏻🏼🏽🏾🏿️😁☺😄😃🤗✨💕💚🌸]/gu
-const GREETING = String.raw`hol+a+|holi|holis|pura\s+vida|upe|diay|mae|bueno|va|ah\s+ok|ah\s+bueno|buenas|buen\s+d[ií]a|buenos\s+d[ií]as|buenas\s+(?:tardes|noches)|hey|saludos|disculpe|disculp[aá]|una\s+consulta|consulta|(?:muchas\s+)?gracias|ok|okay|okey|perfecto|genial|excelente|s[uú]per|dale|claro|s[ií]|por\s+favor|porfa`
+const GREETING = String.raw`hol+a+|holi|holis|pura\s+vida|upe|diay|mae|bueno|va|ah\s+ok|ah\s+bueno|buenas\s+(?:tardes|noches)|buenos\s+d[ií]as|buen\s+d[ií]a|buenas|hey|saludos|disculpe|disculp[aá]|una\s+consulta|consulta|(?:muchas\s+)?gracias|ok|okay|okey|perfecto|genial|excelente|s[uú]per|dale|claro|s[ií]|por\s+favor|porfa`
 const PRODUCT_WORD = String.raw`(?:los|las|el|la|unos|unas|un|una|de|del|y|para|\d+|dos|tres|cuatro|cinco|seis|ambos|todo|parches?|paquetes?|cajas?|combos?|kits?|productos?|unidades?|eso|esos|esto|estos|esta|estas|ese|esa|esas|glp-?1|glp|sue[nñ]o|dormir|energ[ií]a|ansiedad|calma|focus|enfoque|hambre|antojos?)`
 const BUY = String.raw`(?:(?:quiero|queremos|necesito|quisiera|me\s+gustar[ií]a|voy\s+a|vamos\s+a)\s+(?:comprar|pedir|encargar|llevar|ordenar)|quiero|queremos|me\s+interesan?|me\s+(?:(?:lo|la|los|las)\s+)?llevo)(?:\s+${PRODUCT_WORD}){0,8}`
 /** Only greetings / thanks / "quiero comprar los 2 parches", separated by punctuation, may come before the question. */
@@ -764,7 +764,8 @@ const PAY_NOTE_OF = String.raw`(?:\s+(?:del|de\s+la|de|para\s+el|para\s+la)\s+(?
 const COD_WHEN = String.raw`(?:ya\s+)?(?:est[eé]|est[aá]|llegue|me\s+llegue|lo\s+tenga|la\s+tenga|lo\s+reciba|la\s+reciba|me\s+lo\s+entreguen|me\s+lo\s+traigan)`
 const COD_THING = String.raw`(?:\s+(?:el|mi)\s+(?:producto|pedido|paquete|arn[eé]s|env[ií]o))?`
 const CLOSED_PAY_INFO_SEG_RE = new RegExp(
-  String.raw`^(?:y\s+|pero\s+|entonces\s+|ok\s+|oki?\s+|disculpe?\s+|perd[oó]n\s+)?(?:` +
+  // Lane C D2: "quisiera saber cómo sería el envío y el pago" — the same shapes after "quisiera / quiero saber".
+  String.raw`^(?:y\s+|pero\s+|entonces\s+|ok\s+|oki?\s+|disculpe?\s+|perd[oó]n\s+)?(?:(?:quisiera|quiero|me\s+gustar[ií]a|necesito)\s+saber\s+)?(?:` +
     // what goes in the transfer note
     String.raw`(?:qu[eé]|que)\s+(?:le\s+|les\s+|te\s+)?(?:pongo|escribo|tengo\s+que\s+poner|debo\s+poner|hay\s+que\s+poner|pongo\s+yo|va)\s+(?:de|en\s+(?:el|la))\s+${PAY_NOTE_FIELD}${PAY_NOTE_OF}` +
     String.raw`|(?:en\s+(?:el|la)\s+)?${PAY_NOTE_FIELD}${PAY_NOTE_OF}\s+qu[eé]\s+(?:le\s+)?(?:pongo|escribo|va)` +
@@ -776,24 +777,112 @@ const CLOSED_PAY_INFO_SEG_RE = new RegExp(
     String.raw`|(?:se\s+puede|puedo|podr[ií]a|ser[ií]a\s+posible|es\s+posible)\s+pagar(?:lo|la|le)?\s+(?:cuando|hasta\s+que)\s+${COD_WHEN}(?:\s+(?:ac[aá]|aqu[ií]|en\s+(?:mi\s+)?casa))?${COD_THING}` +
     String.raw`|(?:se\s+puede|puedo|podr[ií]a)\s+pagar(?:lo|la|le)?\s+(?:al\s+recibir(?:lo|la)?|contra\s*entrega|(?:en\s+efectivo\s+)?al\s+(?:recibir(?:lo|la)?|entregar(?:lo|la)?|llegar))${COD_THING}` +
     String.raw`|(?:tienen|manejan|hacen|aceptan)\s+(?:pago\s+)?contra\s*entrega` +
+    // Lane C D2 (real store chats): the SINPE number, paying later, shipping + payment, card by chat
+    String.raw`|(?:cu[aá]l|qu[eé])\s+(?:ser[ií]a|es)\s+el\s+n[uú]mero\s+(?:para|de|del)\s+(?:hacer(?:te|le|les)?\s+(?:un|el)\s+)?sinpe(?:\s+m[oó]vil)?` +
+    String.raw`|a\s+qu[eé]\s+n[uú]mero\s+(?:te\s+|le\s+|les\s+)?(?:hago|mando|paso)\s+el\s+sinpe` +
+    String.raw`|(?:puedo|se\s+puede|podr[ií]a)\s+(?:hacer\s+el\s+pago|pagar(?:lo|la|le)?)\s+(?:ma[nñ]ana|pasado\s+ma[nñ]ana|m[aá]s\s+tarde|despu[eé]s|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))(?:\s+y\s+(?:env[ií]o|mando|paso)\s+el\s+comprobante)?` +
+    String.raw`|(?:y\s+)?(?:el\s+)?(?:env[ií]o\s+y\s+(?:el\s+)?pago|pago\s+y\s+(?:el\s+)?env[ií]o)\s+c[oó]mo\s+(?:ser[ií]a|es|funciona)` +
+    String.raw`|c[oó]mo\s+(?:ser[ií]a|es|funciona)\s+(?:el\s+)?(?:env[ií]o\s+y\s+(?:el\s+)?pago|pago\s+y\s+(?:el\s+)?env[ií]o)` +
+    String.raw`|(?:quiero\s+pagar(?:\s+ya|\s+ahora|\s+ahorita)?\s*,?\s*)?(?:te|le|les)\s+(?:paso|mando|doy|env[ií]o|puedo\s+(?:mandar|pasar|dar|enviar))\s+(?:el\s+)?n[uú]mero\s+de\s+(?:la\s+|mi\s+)?tarjeta(?:\s+por\s+(?:ac[aá]|aqu[ií]|el\s+chat|whatsapp))?` +
+    // "Dale, pago por SINPE. ¿Me pasás el número y a nombre de quién?" (the ask; the choice is a context sentence)
+    String.raw`|me\s+(?:pas[aá]s|das|envi[aá]s|mand[aá]s|compart[ií]s)\s+(?:el\s+)?n[uú]mero(?:\s+(?:del?\s+)?sinpe)?(?:\s+y\s+(?:a\s+)?nombre\s+de\s+qui[eé]n)?` +
+    String.raw`|a\s+nombre\s+de\s+qui[eé]n(?:\s+(?:est[aá]|sale|va))?` +
+    String.raw`|(?:quiero|quisiera|me\s+gustar[ií]a)\s+pagar\s+(?:por|con)\s+(?:sinpe(?:\s+m[oó]vil)?|transferencia|tarjeta|efectivo)(?:\s*,?\s*(?:cu[aá]nto|c[oó]mo)\s+ser[ií]a)?` +
+    String.raw`|(?:puedo|se\s+puede)\s+pagar\s+contra\s*entrega` +
   String.raw`)$`,
   'iu',
 )
-export function isClosedPayInfoQuestion(text: string): boolean {
-  const v = clean(stripFormatChars((text || '').normalize('NFKC')))
+/**
+ * Lane C D2: a context sentence around a closed question ("Lo quiero talla XL", "Vivo en Heredia centro") — never with
+ * a done / past word (checked by the caller), never a digit (checked for the whole message).
+ */
+const CLOSED_PAY_CONTEXT_SEG_RE =
+  /^(?:lo|la)\s+quiero(?:\s+(?:en\s+)?(?:talla|color)\s+[\p{L}]{1,12})?$|^vivo\s+en\s+[\p{L}]+(?:\s+[\p{L}]+){0,3}$/iu
+/** Strict context (the "¿ya pagó?" check and the receipt cue): only "Lo quiero" with a size from a closed list. */
+const CLOSED_PAY_STRICT_CONTEXT_SEG_RE = /^(?:lo|la)\s+quiero(?:\s+(?:en\s+)?talla\s+(?:xxs|xs|s|m|l|xl|xxl|xxxl|peque[nñ]a|mediana|grande))?$/iu
+/**
+ * SecureDog r2 F1: the free words after "vivo en" are a place — a capitalised name or a place word ("Vivo en Heredia
+ * centro", "Vivo en San José", "Vivo en Santa Ana de Escazú"), never a lowercase verb ("mi esposa mando").
+ */
+const PLACE_WORD_RE = /^(?:\p{Lu}\p{L}*|de|del|la|el|los|las|centro|cerca|norte|sur|este|oeste|barrio|residencial|condominio)$/u
+const PLACE_FILLER_RE = /^(?:lo|le|les|se|me|te|nos|mi|tu|su|ya|todo|toda|todos|bien|mal|que|y|e)$/iu
+/**
+ * SecureDog r3: the strict form (the "¿ya pagó?" check, the receipt cue) never skips a sentence that opens with a yes —
+ * "Sí, gracias. ¿A nombre de quién sale?" can answer the store's "¿Pudiste hacer el SINPE?".
+ */
+const STRICT_LEADING_YES_RE =
+  /(?:^|[.!?\n])[\s¿¡]*(?:s[ií]|claro|ok|oki|okey|dale|listo|va|bueno|perfecto|exacto|correcto)(?![\p{L}])/iu
+const EMOJI_JOINER_RE = new RegExp(
+  `(\\p{Extended_Pictographic})[${String.fromCharCode(0xfe0e, 0xfe0f, 0x200d)}]+(?=\\p{Extended_Pictographic}|\\s|[.!?,]|$)`,
+  'gu',
+)
+/** "Dale, pago por SINPE": the method choice, a fully anchored shape (no room for a claim). */
+const CLOSED_PAY_CHOICE_SEG_RE =
+  /^(?:(?:dale|ok|okey|perfecto|bueno|va)\s*,?\s*)?(?:pago|pagar[eé]|voy\s+a\s+pagar|te\s+pago|le\s+pago|lo\s+pago)\s+(?:por|con)\s+(?:sinpe(?:\s+m[oó]vil)?|transferencia|tarjeta|efectivo)$/iu
+/**
+ * Verifier r2 #1: the free words of a context sentence ("Vivo en Heredia y le pague") never carry a connector or a
+ * payment / done stem, whatever the accents or capitals ("Vivo en Heredia Pagué", "cancele", "abone").
+ */
+const CONTEXT_FORBIDDEN_RE =
+  /(?<![a-z])(?:y|e|pero|que|porque|ya|pag[a-z]*|cancel[a-z]*|abon[a-z]*|deposit[a-z]*|transf[a-z]*|trasf[a-z]*|sinp[a-z]*|simp[a-z]*|cinp[a-z]*|hic[a-z]*|hiz[a-z]*|hech[a-z]*|list[oa]s?|mande|envie|pase|tire|gire|meti|deje|cubri|liquid[a-z]*|sald[a-z]*|comprob[a-z]*)(?![a-z])/
+/**
+ * Lane C D2 round 3: everyday spellings of SINPE ("simpe", "sinpi") and a split clitic ("hacer te un simpe") read as the
+ * clean form. Used for the closed shape and as an extra hand-off reading — never to clear a message the raw text flags.
+ */
+export function normalizePaySpelling(v: string): string {
+  return v
+    .replace(/(?<![\p{L}])(?:s[iy]mpe|sinpi|simpi|cinpe)(?![\p{L}])/giu, 'sinpe')
+    .replace(/(?<![\p{L}])(hacer|mandar|enviar|pasar|depositar|transferir)\s+(te|le|les)(?![\p{L}])/giu, '$1$2')
+}
+export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean } = {}): boolean {
+  // SecureDog r3: an emoji's own variation selector / joiner ("❤️", "👨‍👩") is not an invisible gap; after a letter it is.
+  if ((text || '').length > 400) return false
+  const raw = (text || '').replace(EMOJI_JOINER_RE, '$1')
+  if (opts.strict && STRICT_LEADING_YES_RE.test(raw)) return false
+  // SecureDog r2 F1: invisible / line-separator characters, look-alike letters and foreign payment words never get the
+  // exemption ("Vivo en Heredia ya<U+2028>pague", Cyrillic "уа раgue", "paiement envoyé"): the normal rules decide.
+  if (raw.length > 400) return false
+  const v = clean(normalizePaySpelling(stripFormatChars(raw.normalize('NFKC'))))
   if (!v.trim() || v.length > 200 || /\d/.test(v)) return false
+  if (invisibleAsGap(raw) !== null || hasMixedScriptWord(raw) || hasForeignPaymentState(raw)) return false
   const segs = v
     .replace(/¿/gu, '\u0001¿')
     .split(/[.!?\n\u0001]+/u)
     .map((x) => x.replace(/^[\s¿¡,]+/u, '').replace(/[\s,]+$/u, '').replace(LEADING_GREETING_RE, '').trim())
     .filter(Boolean)
-  const asks = segs.filter((t) => !CLOSED_PAY_INFO_COURTESY_RE.test(t))
+  // Lane C D2: a context sentence ("Lo quiero talla XL", "Vivo en Heredia centro") may sit next to the ask, never a done word.
+  const isContext = (t: string) => {
+    const s = t.replace(/\s+/gu, ' ')
+    if (hasHardPaymentClaim(s) || hasPastOrDoneWord(t, false)) return false
+    if (opts.strict) return CLOSED_PAY_STRICT_CONTEXT_SEG_RE.test(s)
+    if (CLOSED_PAY_CHOICE_SEG_RE.test(s)) return true
+    const bare = s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+    if (!CLOSED_PAY_CONTEXT_SEG_RE.test(s) || CONTEXT_FORBIDDEN_RE.test(bare)) return false
+    const place = /^vivo\s+en\s+(.+)$/iu.exec(s)
+    // SecureDog r3: "VIVO EN HEREDIA JUAN LO MANDO" — pronouns / fillers are never part of a place, in any case.
+    return !place || place[1].split(' ').every((w) => PLACE_WORD_RE.test(w) && !PLACE_FILLER_RE.test(w))
+  }
+  const asks = segs.filter((t) => !CLOSED_PAY_INFO_COURTESY_RE.test(t) && !isContext(t))
   return asks.length > 0 && asks.every((t) => CLOSED_PAY_INFO_SEG_RE.test(t.replace(/\s+/gu, ' ')))
+}
+/** An offer to send the card number by chat (one of the closed shapes above). */
+const CARD_BY_CHAT_RE =
+  /(?:paso|mando|doy|env[ií]o|escribo|mandar|pasar|dar|enviar|escribir)\s+(?:el\s+|los\s+|la\s+|una\s+)?(?:n[uú]meros?|datos|d[ií]gitos|foto)\s+de\s+(?:la\s+|mi\s+)?tarjeta/iu
+/** SecureDog r3: the customer offers card data by chat (the decision answers with the store's card link). */
+export function isCardByChatOffer(text: string): boolean {
+  return CARD_BY_CHAT_RE.test(stripFormatChars((text || '').normalize('NFKC')))
 }
 /** A sentence that is only a greeting / courtesy ("Hola,", "Disculpe", "Una consulta") around the question. */
 const CLOSED_PAY_INFO_COURTESY_RE =
   // Verifier r2 #3: "Perfecto, ¿qué le pongo de detalle?". Never sí / claro / listo / ya / hecho (they can answer "¿ya pagó?").
   /^(?:hola|holi|buenas|buenos\s+d[ií]as|buenas\s+(?:tardes|noches)|disculpe?|perd[oó]n|ok|oki|okey|gracias|muchas\s+gracias|una\s+consulta|consulta|pura\s+vida|(?:ok\s+|okey\s+)?(?:perfecto|dale|genial|excelente|bueno|va))$/iu
+
+/**
+ * Lane C D8: price / total / size / shipping-to words, or an opinion / worry about paying ("¿qué es mejor, SINPE o
+ * tarjeta? No quiero dar mi tarjeta") — the message asks more than which methods there are.
+ */
+const ASKS_MORE_THAN_PAYMENT_RE =
+  /(?<![\p{L}])(?:cu[aá]nto|total|precio|cuesta|cuestan|vale|valen|talla|tallas|mido|peso|medida|medidas|env[ií]o\s+a|tama[nñ]o|mejor|conviene|recomend\p{L}*|segur[oa]s?|seguridad|confiable|confianza|miedo|no\s+quiero|prefiero\s+no)(?![\p{L}])/iu
 
 export function classifyPaymentText(
   text: string,
@@ -802,8 +891,11 @@ export function classifyPaymentText(
   // SecureDog INT-201: the latest message too is read with invisible characters as gaps; a hand-off in either wins.
   const gapped = invisibleAsGap(text)
   const plain = classifyPaymentTextRules(text, opts)
+  // Lane C D2 round 3: "ya te hice el simpe" is read as "sinpe" too (only ever adds a hand-off).
+  const spelled = normalizePaySpelling(text || '')
   const cls =
     (plain !== 'payment_proof_or_risk' && gapped !== null && classifyPaymentTextRules(gapped, opts) === 'payment_proof_or_risk') ||
+    (plain !== 'payment_proof_or_risk' && spelled !== text && classifyPaymentTextRules(spelled, opts) === 'payment_proof_or_risk') ||
     hasMixedScriptWord(text)
       ? 'payment_proof_or_risk'
       : plain === 'payment_proof_or_risk' || !hasForeignPaymentState(text)
@@ -811,7 +903,21 @@ export function classifyPaymentText(
         : 'payment_proof_or_risk'
   // A closed before-paying question (every sentence one anchored shape, no digit) that a word rule would hand off is
   // answered by the agent instead, like any other sales question.
-  return cls === 'payment_proof_or_risk' && isClosedPayInfoQuestion(text) ? 'non_payment' : cls
+  if (cls === 'payment_proof_or_risk' && isClosedPayInfoQuestion(text)) {
+    // SecureDog r2 F2: "te paso el número de mi tarjeta por acá?" gets the code card reply (the store's card link), never
+    // a free model answer that could ask for the card data.
+    return CARD_BY_CHAT_RE.test(stripFormatChars((text || '').normalize('NFKC'))) ? 'payment_info_safe' : 'non_payment'
+  }
+  return cls
+}
+
+/**
+ * Lane C D8: a payment-info question that also asks something else ("… cuánto sería el total con envío y cómo puedo
+ * pagar?", "¿qué es mejor, SINPE o tarjeta?") is answered by the model, not the code method list. The caller applies it
+ * only when the store shares payment data by chat (Verifier r2 #2: otherwise the payment-data review must still run).
+ */
+export function asksMoreThanPayment(text: string): boolean {
+  return ASKS_MORE_THAN_PAYMENT_RE.test(stripFormatChars((text || '').normalize('NFKC')))
 }
 
 function classifyPaymentTextRules(

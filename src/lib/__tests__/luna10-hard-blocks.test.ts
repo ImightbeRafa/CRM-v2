@@ -228,7 +228,8 @@ describe('verifier round 1 (luna-10)', () => {
     assert.match(turn, /if \(outgoingText !== input\.outputText\) \{\s*await prisma\.chatAgentTurn\.update\(\{\s*where: \{ id: input\.turnId \},\s*data: \{ outputText: outgoingText, outputHash: hashSoftAiOutput\(outgoingText\) \}/)
     assert.match(turn, /input\.replyAssets\?\.size && !repeatAllDropped\)/)
     // v53 (2026-10-18): the same skip, plus emoji reactions (no turn for a reaction).
-    assert.match(fs.readFileSync('src/lib/soft-ai/waiting-sweep.ts', 'utf8'), /\.find\(\(r\) => \(r\.metadata as \{ waitingAck\?: unknown \} \| null\)\?\.waitingAck !== true && r\.messageType !== 'reaction'\)/)
+    // Lane D: the outage line is skipped the same way.
+    assert.ok(fs.readFileSync('src/lib/soft-ai/waiting-sweep.ts', 'utf8').includes("return meta?.waitingAck !== true && meta?.outageAck !== true && r.messageType !== 'reaction'"))
   })
 })
 
@@ -236,7 +237,8 @@ describe('SecureDog round 1 (luna-10)', () => {
   it('waiting ack: line health + kill re-check right before the send; one "sigue esperando" alert per 15 min', () => {
     const turn = fs.readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
     const ack = turn.slice(turn.indexOf('async function ackWaitingCustomer'), turn.indexOf('Daily token caps sum turns'))
-    assert.match(ack, /account\.isActive !== false && !account\.disconnectedAt && tokenStatus !== 'revoked' && tokenStatus !== 'expired'/)
+    // SecureDog INT-219 (lane D): the same token rule as the pre-send gate (valid / expiring only).
+    assert.match(ack, /account\.isActive !== false && !account\.disconnectedAt && \(tokenStatus === 'valid' \|\| tokenStatus === 'expiring'\)/)
     assert.ok(ack.indexOf('(await readAgentKillState(row.tenantId)).armed || (await isPlatformAiPaused())') < ack.indexOf('const ackDelivery = await deliverOnce('))
     assert.match(ack, /createdAt: \{ gte: new Date\(Date\.now\(\) - WAITING_ALERT_THROTTLE_MS\) \}/)
   })
@@ -285,8 +287,9 @@ describe('verifier + SecureDog round 2 (luna-10)', () => {
     assert.equal(isNearRepeat('El envío a San José cuesta ₡2.500 y llega en 2 días hábiles', ['El envío a San José cuesta ₡2.500 y llega en 2 días hábiles'], 'cuanto el envio?'), true)
   })
   it('#1: the waiting ack never counts as an answer for the sweep or the re-arm (Devolver a IA answers the message)', () => {
-    assert.match(fs.readFileSync('src/lib/soft-ai/waiting-sweep.ts', 'utf8'), /_count: \{ select: \{ deliveries: \{ where: \{ NOT: \{ deliveryKey: \{ endsWith: ':waiting_ack' \} \} \} \} \} \}/)
-    assert.match(fs.readFileSync('src/lib/soft-ai/automation-queue.ts', 'utf8'), /deliveries: \{ none: \{ NOT: \{ deliveryKey: \{ endsWith: ':waiting_ack' \} \} \} \}/)
+    // Lane D: nor is the outage line.
+    assert.match(fs.readFileSync('src/lib/soft-ai/waiting-sweep.ts', 'utf8'), /_count: \{ select: \{ deliveries: \{ where: \{ AND: \[\{ NOT: \{ deliveryKey: \{ endsWith: ':waiting_ack' \} \} \}, \{ NOT: \{ deliveryKey: \{ endsWith: ':outage_ack' \} \} \}\] \} \} \} \}/)
+    assert.match(fs.readFileSync('src/lib/soft-ai/automation-queue.ts', 'utf8'), /deliveries: \{ none: \{ AND: \[\{ NOT: \{ deliveryKey: \{ endsWith: ':waiting_ack' \} \} \}, \{ NOT: \{ deliveryKey: \{ endsWith: ':outage_ack' \} \} \}\] \} \}/)
     assert.match(fs.readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8'), /deliveryKey: `\$\{row\.deliveryKey\}:waiting_ack`/)
   })
   it('SecureDog L2/L4: shadow replays redacted text as "Cliente"; the test cap is bounded and only our own raise is undone', () => {

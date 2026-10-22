@@ -45,6 +45,7 @@ export const FILES = {
   '058': '058_meta_data_deletion.sql',
   '059': '059_support_pipeline.sql',
   '060': '060_ai_credits.sql',
+  '061': '061_ai_provider_status.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';

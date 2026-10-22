@@ -43,6 +43,7 @@ import {
 import {
   collectDryRunBlockers,
   hashSoftAiOutput,
+  agentWindowOpen,
   hasHumanRepliedAfter,
   loadDailyTestTokens,
   runClaimGates,
@@ -55,6 +56,13 @@ import {
   type ResolvedChatAgent,
 } from '@/lib/soft-ai/agent-resolver'
 import { burstCustomerText, conversationPaymentContext, recentCustomerTexts, runSoftAiLlmRuntime } from '@/lib/soft-ai/llm/runtime'
+import {
+  PROVIDER_RETRY_MAX_MS,
+  planProviderRetry,
+  readProviderRetryState,
+  type ProviderFailureKind,
+  type ProviderRetryState,
+} from '@/lib/soft-ai/provider-outage-core'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import {
   CHAT_AGENT_LAYER_V1_FLAG,
@@ -100,13 +108,14 @@ import { notifyHandoff } from '@/lib/soft-ai/handoff-notify'
 import { decideWaitingAck, isOptOutText, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS, WAITING_ALERT_THROTTLE_MS } from '@/lib/soft-ai/waiting-ack'
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { dropRepeatedParts, REPEAT_WINDOW_MS } from '@/lib/soft-ai/repeat-guard'
-import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet, orderDataChoice, paymentDetailsIn } from '@/lib/soft-ai/sales-state'
+import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet, orderDataChoice, paymentDetailsIn, salesAllowedAmounts } from '@/lib/soft-ai/sales-state'
 import { duplicateReceiptReply, isPaymentHandoff } from '@/lib/soft-ai/repeat-order'
 import { loadSettledSale } from '@/lib/soft-ai/settled-sale'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
 import { decideInbound, decisionOrderDataChoice, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import { paymentCheckGate, paymentCheckMode, runPaymentClaimCheck } from '@/lib/soft-ai/llm/payment-claim-check'
+import { unansweredPaymentState } from '@/lib/soft-ai/payment-claim-check-core'
 import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
 import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
@@ -142,6 +151,9 @@ import {
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 import { readSoftTenantAiConfig } from '@/lib/feature-flags'
 import { turnWasCodeDecided } from '@/lib/soft-ai/turn-origin'
+import { withAiUsageContext } from '@/lib/ai-usage/context'
+import { classifyPaymentText } from '@/lib/soft-ai/payment-classifier'
+import { effectiveTestCap } from '@/lib/soft-ai/provider-outage'
 
 type JobPayload = {
   platform?: string | null
@@ -687,7 +699,8 @@ async function ackWaitingCustomer(input: {
     const accessToken = account?.accessToken ? decryptSocialAccessToken(account.accessToken) : null
     // SecureDog (INT): a disconnected / revoked / expired line never sends, like the main reply's token gate.
     const tokenStatus = String(account?.tokenStatus || '').toLowerCase()
-    const lineHealthy = Boolean(account && accessToken && account.isActive !== false && !account.disconnectedAt && tokenStatus !== 'revoked' && tokenStatus !== 'expired')
+    // SecureDog INT-219: the same token rule as the pre-send gate (valid / expiring only).
+    const lineHealthy = Boolean(account && accessToken && account.isActive !== false && !account.disconnectedAt && (tokenStatus === 'valid' || tokenStatus === 'expiring'))
     // Kill switch armed meanwhile (incident): re-checked right before the send.
     if (!lineHealthy || (await readAgentKillState(row.tenantId)).armed || (await isPlatformAiPaused())) {
       await prisma.chatAgentTurn.update({ where: { id: ackTurnId }, data: { status: 'skipped', skipReason: lineHealthy ? 'kill_switch' : 'token_unhealthy', completedAt: new Date() } })
@@ -745,6 +758,227 @@ async function ackWaitingCustomer(input: {
   }
 }
 
+/** Lane D 2026-10-22: delivery key of the one "Dame un momento" line a provider outage sends for a customer message. */
+export const OUTAGE_ACK_SUFFIX = ':outage_ack'
+
+/**
+ * Lane D 2026-10-22 (OpenAI 429 "no credits" outage stranded 23 chats on the safe line, still "IA activa"): a provider
+ * failure on a live turn never strands the chat. Plan (provider-outage-core planProviderRetry): silent retry of the
+ * SAME customer message at +2 min; later failures send the safe line once (own delivery key, so the real answer can
+ * still go out) and keep retrying (5/15/30/60 min); after ~2 h, or before the 24 h window would close, the chat goes to
+ * a person like any hand-off (aiMode human, assigned, bell "IA sin servicio"). Every retry re-runs the whole turn, so a
+ * person's reply, a newer customer message, the kill switch or a closed window still stop it.
+ */
+async function handleProviderOutage(input: {
+  row: ClaimedChatAutomationJob
+  payload: JobPayload
+  agent: ResolvedChatAgent
+  bindingId: string | null
+  kind: ProviderFailureKind
+  triggerSentAt: Date
+  hours: AfterHoursState
+  paymentInPlay?: boolean
+  /** A claim / receipt among the unanswered messages: the payment line (else the review line). */
+  paymentClaim?: boolean
+}): Promise<AgentTurnDispatchResult> {
+  const { row } = input
+  const now = new Date()
+  if (input.paymentInPlay) {
+    // SecureDog INT-217: a payment conversation never waits out an outage: the payment line, then a person (fail closed).
+    await persistSkippedTurn({
+      tenantId: row.tenantId,
+      conversationId: row.conversationId,
+      socialAccountId: row.socialAccountId,
+      agent: input.agent,
+      bindingId: input.bindingId,
+      triggerMessageId: row.messageId,
+      deliveryKey: row.deliveryKey,
+      skipReason: 'provider_down',
+    })
+    await sendOutageLine({ ...input, now, text: input.paymentClaim ? SAFE_LINE.payment : undefined })
+    await settleHandoff(row, { kind: 'handoff', reason: HANDOFF_REASON.payment }, input.hours)
+    return { status: 'skipped', reason: 'provider_down' }
+  }
+  // Verifier r2 #3: the 2 h clock belongs to the conversation, not the job: a newer message (a new job) or a re-armed
+  // job continues the outage the chat is already in.
+  const plan = planProviderRetry({
+    previous: readProviderRetryState(row.payload) ?? (await conversationRetryState(row, now)),
+    kind: input.kind,
+    now,
+    windowClosesAt: new Date(input.triggerSentAt.getTime() + 24 * 3_600_000),
+    jitter: Math.random(),
+  })
+  await persistSkippedTurn({
+    tenantId: row.tenantId,
+    conversationId: row.conversationId,
+    socialAccountId: row.socialAccountId,
+    agent: input.agent,
+    bindingId: input.bindingId,
+    triggerMessageId: row.messageId,
+    deliveryKey: row.deliveryKey,
+    skipReason: plan.action === 'retry' ? 'provider_retry' : 'provider_down',
+  })
+  if (plan.sendAck) await sendOutageLine({ ...input, now })
+  if (plan.action === 'retry') {
+    const raw = row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload) ? (row.payload as Record<string, unknown>) : {}
+    return { status: 'provider_retry', retryAt: plan.retryAt, payload: { ...raw, providerRetry: plan.state } }
+  }
+  await settleHandoff(row, { kind: 'handoff', reason: HANDOFF_REASON.aiUnavailable }, input.hours)
+  return { status: 'skipped', reason: 'provider_down' }
+}
+
+function outagePaymentState(state: { inPlay: boolean; claim: boolean }): { paymentInPlay: boolean; paymentClaim: boolean } {
+  return { paymentInPlay: state.inPlay, paymentClaim: state.claim }
+}
+
+/** The oldest provider retry of this chat in the last 2 h, as the retry state a new job continues from. Never throws. */
+async function conversationRetryState(row: ClaimedChatAutomationJob, now: Date): Promise<ProviderRetryState | null> {
+  try {
+    const agg = await prisma.chatAgentTurn.aggregate({
+      where: { tenantId: row.tenantId, conversationId: row.conversationId, skipReason: 'provider_retry', createdAt: { gte: new Date(now.getTime() - PROVIDER_RETRY_MAX_MS) } },
+      _min: { createdAt: true },
+      _count: { _all: true },
+    })
+    const first = agg._min.createdAt
+    return first ? { n: agg._count._all, firstAt: first.toISOString(), ackSent: false } : null
+  } catch {
+    return null
+  }
+}
+
+/** The one safe line of an outage ("Dame un momento y te confirmo 😊"), with the waiting ack's gates. Never throws. */
+async function sendOutageLine(input: {
+  row: ClaimedChatAutomationJob
+  payload: JobPayload
+  agent: ResolvedChatAgent
+  bindingId: string | null
+  triggerSentAt: Date
+  hours: AfterHoursState
+  now: Date
+  /** The line to send (default: the review line, night wording after hours). */
+  text?: string
+}): Promise<void> {
+  const { row } = input
+  const platform = input.payload.platform || 'whatsapp'
+  try {
+    // A person answered, the chat is with a person / paused, or the 24 h window closed: nothing goes out.
+    if (!agentWindowOpen(platform, input.triggerSentAt, input.now.getTime())) return
+    if (await hasHumanRepliedAfter({ conversationId: row.conversationId, triggerSentAt: input.triggerSentAt })) return
+    const conv = await prisma.chatConversation.findFirst({ where: { id: row.conversationId, tenantId: row.tenantId }, select: { aiMode: true, peerName: true } })
+    if (!conv || conv.aiMode === 'human' || conv.aiMode === 'paused') return
+    // Verifier: one safe line per chat, not one per customer message (the B1 loop cap, plus any outage line in 2 h).
+    if (await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey)) return
+    const recentOutageLine = await prisma.chatAgentTurn.findFirst({
+      where: { tenantId: row.tenantId, conversationId: row.conversationId, intent: 'outage_ack', status: 'delivered', completedAt: { gte: new Date(input.now.getTime() - 2 * 3_600_000) } },
+      select: { id: true },
+    })
+    if (recentOutageLine) return
+    // Verifier: at night the line says when the team is back (and the AI disclosure, transparent mode), like the review line.
+    const text = input.text ?? (input.hours.afterHours ? afterHoursReviewLine(input.hours.label, input.hours.transparent) : SAFE_LINE.review)
+    // The customer's message stays unanswered in the counts: the line "answers" only up to the message before it.
+    // SecureDog: the whole unanswered burst stays unanswered — only up to the last customer message the store answered.
+    const lastStoreReply = await prisma.chatMessage.findFirst({
+      where: { tenantId: row.tenantId, conversationId: row.conversationId, direction: 'outbound', sentAt: { lt: input.triggerSentAt } },
+      orderBy: { sentAt: 'desc' },
+      select: { sentAt: true },
+    })
+    const previousInbound = lastStoreReply
+      ? await prisma.chatMessage.findFirst({
+          where: { tenantId: row.tenantId, conversationId: row.conversationId, direction: 'inbound', sentAt: { lte: lastStoreReply.sentAt } },
+          orderBy: { sentAt: 'desc' },
+          select: { id: true },
+        })
+      : null
+    let ackTurnId: string
+    try {
+      const created = await prisma.chatAgentTurn.create({
+        data: {
+          tenantId: row.tenantId,
+          conversationId: row.conversationId,
+          socialAccountId: row.socialAccountId,
+          agentId: input.agent.id,
+          bindingId: input.bindingId,
+          triggerMessageId: null,
+          automationDeliveryKey: `${row.deliveryKey}${OUTAGE_ACK_SUFFIX}`,
+          mode: input.agent.operationMode,
+          model: input.agent.model,
+          agentVersion: input.agent.version,
+          status: 'generated',
+          intent: 'outage_ack',
+          outputText: text,
+          outputHash: hashSoftAiDeliveryContent(text),
+        },
+        select: { id: true },
+      })
+      ackTurnId = created.id
+    } catch (error) {
+      // The unique delivery key is the lock: one line per customer message, whatever the retries.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return
+      throw error
+    }
+    const account = await prisma.socialAccount.findFirst({
+      where: { id: row.socialAccountId, tenantId: row.tenantId },
+      select: { accessToken: true, refreshToken: true, accountId: true, pageId: true, isActive: true, disconnectedAt: true, tokenStatus: true },
+    })
+    const accessToken = account?.accessToken ? decryptSocialAccessToken(account.accessToken) : null
+    const tokenStatus = String(account?.tokenStatus || '').toLowerCase()
+    // SecureDog INT-219: the same token rule as the pre-send gate (valid / expiring only).
+    const lineHealthy = Boolean(account && accessToken && account.isActive !== false && !account.disconnectedAt && (tokenStatus === 'valid' || tokenStatus === 'expiring'))
+    if (!lineHealthy || (await readAgentKillState(row.tenantId)).armed || (await isPlatformAiPaused())) {
+      await prisma.chatAgentTurn.update({ where: { id: ackTurnId }, data: { status: 'skipped', skipReason: lineHealthy ? 'kill_switch' : 'token_unhealthy', completedAt: new Date() } })
+      return
+    }
+    const meta = parseSocialRefreshToken(account!.refreshToken)
+    const outageDelivery = await deliverOnce({
+      jobId: row.id,
+      deliveryKey: `${row.deliveryKey}${OUTAGE_ACK_SUFFIX}`,
+      kind: 'text',
+      contentHash: hashSoftAiDeliveryContent(text),
+      send: async () => {
+        const result = await sendMetaText({ platform, accessToken: accessToken!, phoneNumberId: account!.accountId, pageId: account!.pageId || meta.pageId, recipient: row.peerId, text })
+        if (!result.ok) throw new Error('META_SEND_FAILED')
+        return result
+      },
+      providerDeliveryId: (result) => result.providerMessageId,
+    })
+    const providerMessageId = outageDelivery.providerDeliveryId || (!outageDelivery.skipped ? outageDelivery.result?.providerMessageId : undefined)
+    await dualWriteChatMessage({
+      tenantId: row.tenantId,
+      socialAccountId: row.socialAccountId,
+      direction: 'outbound',
+      content: text,
+      sentAt: new Date(),
+      peerId: row.peerId,
+      peerName: input.payload.senderName || conv.peerName || null,
+      providerMessageId: providerMessageId || null,
+      messageType: 'text',
+      // Not an answer: the customer's message stays waiting for the real reply (or a person).
+      answersMessageId: previousInbound?.id ?? null,
+      deliveryStatus: 'sent',
+      platform,
+      metadata: {
+        softAi: true,
+        agentId: input.agent.id,
+        agentVersion: input.agent.version,
+        agentName: input.agent.name,
+        agentEmoji: input.agent.emoji,
+        turnId: ackTurnId,
+        to: row.peerId,
+        platform,
+        providerMessageId,
+        automationJobId: row.id,
+        deliverySkipped: outageDelivery.skipped,
+        replyBy: 'code',
+        outageAck: true,
+      },
+      suppressSoftAi: true,
+    })
+    await prisma.chatAgentTurn.update({ where: { id: ackTurnId }, data: { status: 'delivered', completedAt: new Date() } })
+  } catch (error) {
+    console.error('[soft-ai outage-ack]', { code: error instanceof Error ? error.message.slice(0, 60) : 'error' })
+  }
+}
+
 /**
  * Daily token caps sum turns by createdAt (agent-claim-gates loadDailyBilledTokens). A swept / resumed message re-runs
  * on the row first written when it was skipped (same delivery key), so the answering run re-stamps the row: today's
@@ -765,6 +999,8 @@ export type AgentTurnDispatchResult =
   | { status: 'suggested'; turnId: string }
   | { status: 'delivered'; turnId: string; skippedDelivery?: boolean; partialDelivery?: boolean }
   | { status: 'fallback'; turnId?: string }
+  /** Lane D: provider outage — the processor puts this same job back in the queue at retryAt with this payload. */
+  | { status: 'provider_retry'; retryAt: Date; payload: Record<string, unknown> }
   | { status: 'legacy' }
 
 /**
@@ -1081,16 +1317,16 @@ export async function executeAgentLayerTurn(
     })
     return { status: 'skipped', reason: 'superseded' }
   }
-  // B6: only a photo / file / audio (here or earlier in the burst) needs the sale's state before the decision.
+  // Lane C D1: the sale's context is loaded once, before the decision (saved replies may say the same amounts as the sales
+  // turn) and reused for the model input. B6: only a photo / file / audio reads it for the receipt check.
+  const turnSalesContext = await loadAgentSalesContext({
+    tenantId: row.tenantId,
+    agentId: resolved.agent.id,
+    inventoryItemIds: liveInventoryIds,
+    brandFacts: resolved.agent.brandFacts,
+  })
   const mediaSalesContext =
-    isMediaLikeMessageType(trigger.messageType) || burstEarlier.some((m) => isMediaLikeMessageType(m.messageType))
-    ? await loadAgentSalesContext({
-        tenantId: row.tenantId,
-        agentId: resolved.agent.id,
-        inventoryItemIds: liveInventoryIds,
-        brandFacts: resolved.agent.brandFacts,
-      })
-    : null
+    isMediaLikeMessageType(trigger.messageType) || burstEarlier.some((m) => isMediaLikeMessageType(m.messageType)) ? turnSalesContext : null
   const shortcuts = await listRuntimeShortcuts(row.tenantId, resolved.agent.id)
   const replyAssets = await loadReplyAssets(row.tenantId, resolved.agent.id)
   // Only replies whose image would really go out are marked "(va con imagen)" (WhatsApp / Instagram, not yet sent in this chat).
@@ -1115,6 +1351,8 @@ export async function executeAgentLayerTurn(
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
     paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),
+    // Lane C D1: a verbatim saved reply may state the totals the sales turn may state.
+    allowedAmounts: turnSalesContext ? salesAllowedAmounts(turnSalesContext) : undefined,
     // Sleeping C2: nothing about paying in this chat yet (no payment details, receipt photo, payment words, web order).
     // SecureDog r1 MEDIA-16: the trigger too (a receipt photo sent as the newest bubble ends "no payment yet").
     noPaymentYet: noPaymentYet([
@@ -1309,12 +1547,7 @@ export async function executeAgentLayerTurn(
     knowledge,
     decision,
     afterHoursLine: afterHoursPromptLine(hours),
-    salesContext: await loadAgentSalesContext({
-      tenantId: row.tenantId,
-      agentId: resolved.agent.id,
-      inventoryItemIds: liveInventoryIds,
-      brandFacts: resolved.agent.brandFacts,
-    }),
+    salesContext: turnSalesContext,
     settledSale,
     toolCtxBase: {
       tenantId: row.tenantId,
@@ -1329,6 +1562,22 @@ export async function executeAgentLayerTurn(
   })
   runtimeInput.budgetStartedAt = turnBudgetStartedAt
   const llm = await runSoftAiLlmRuntime(runtimeInput)
+  // Lane D 2026-10-22: the provider failed (no credit / 429 / auth / 5xx / timeout) and the fallback did not hand the chat
+  // over itself (a payment message still goes to a person at once): retry this message later, never strand the chat.
+  if (llm.fallbackUsed && llm.providerFailure && llm.handoff?.kind !== 'handoff') {
+    return handleProviderOutage({
+      row,
+      payload,
+      agent: resolved.agent,
+      bindingId: resolved.binding.id,
+      kind: llm.providerFailure,
+      triggerSentAt: trigger.sentAt,
+      hours,
+      // SecureDog INT-217: with payment in play the "¿ya pagó?" check could not run either — a person, now. Verifier r2
+      // #6: only the unanswered messages count (a store "¿Cómo preferís pagar?" earlier is not a payment in play).
+      ...outagePaymentState(unansweredPaymentState(burst.inboundText, history)),
+    })
+  }
 
   const policy = applyFinalOutputPolicy({
     text: llm.text,
@@ -1344,6 +1593,7 @@ export async function executeAgentLayerTurn(
     allowedDeals: runtimeInput.salesAllowedDeals,
     freeShipping: runtimeInput.salesFreeShipping,
     freeShippingRule: runtimeInput.salesFreeShippingRule,
+    includedShippingAmounts: runtimeInput.salesIncludedShippingAmounts,
     unitRates: runtimeInput.salesUnitRates,
     stockGuard: runtimeInput.salesStockGuard,
     brandFacts: resolved.agent.brandFacts,
@@ -2167,7 +2417,7 @@ async function runAgentTestTurnInner(input: {
   /** Images this test chat already showed (asset ids). */
   sentImageIds?: string[]
   /** Meter label: automatic checks pass 'agent_test' so they don't count as manual Probar. */
-  usageFeature?: 'probar' | 'agent_test'
+  usageFeature?: 'probar' | 'agent_test' | 'agent_activation'
   /** agents2-hours: "Simular fuera de horario" (Probar only). */
   simulateAfterHours?: boolean
   /**
@@ -2281,7 +2531,10 @@ async function runAgentTestTurnInner(input: {
     agentStatus: runtimeAgent.status,
     conversationAiMode,
   })
-  if (testTokens >= config.testDailyTokenCap) {
+  // Verifier r2 #4: the line-activation canary keeps the business's own cap (agent-unlock.ts checks the same one);
+  // every other test turn stops at the platform ceiling too.
+  const turnTestCap = input.usageFeature === 'agent_activation' ? config.testDailyTokenCap : effectiveTestCap(config.testDailyTokenCap)
+  if (testTokens >= turnTestCap) {
     blockedBy.push('test_budget_blocked')
     // Budget spent: answer immediately, spend nothing and write nothing (no model call, no turn row).
     return {
@@ -2322,15 +2575,15 @@ async function runAgentTestTurnInner(input: {
   const probarTrigger = { content: input.inboundText, messageType: input.messageType || 'text', sentAt: input.replaySentAt ?? new Date() }
   const probarBurstEarlier = unansweredBurst(history, probarTrigger)
   // Like live: a photo / file / audio here or earlier in the burst needs the sale's state before the decision.
+  // Lane C D1: loaded once (decision + model input), like the live turn.
+  const probarTurnSalesContext = await loadAgentSalesContext({
+    tenantId: input.tenantId,
+    agentId: runtimeAgent.id,
+    inventoryItemIds: probarInventoryIds,
+    brandFacts: runtimeAgent.brandFacts,
+  })
   const probarMediaSalesContext =
-    isMediaLikeMessageType(input.messageType) || probarBurstEarlier.some((m) => isMediaLikeMessageType(m.messageType))
-    ? await loadAgentSalesContext({
-        tenantId: input.tenantId,
-        agentId: runtimeAgent.id,
-        inventoryItemIds: probarInventoryIds,
-        brandFacts: runtimeAgent.brandFacts,
-      })
-    : null
+    isMediaLikeMessageType(input.messageType) || probarBurstEarlier.some((m) => isMediaLikeMessageType(m.messageType)) ? probarTurnSalesContext : null
   const probarImageReplyIds = imageChannel(account.platform) ? sendableImageReplyIds(replyAssets, input.sentImageIds) : new Set<string>()
   const probarBudgetStartedAt = Date.now()
   const probarBurst = planBurstInbound({
@@ -2346,6 +2599,8 @@ async function runAgentTestTurnInner(input: {
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
     paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),
+    // Lane C D1: a verbatim saved reply may state the totals the sales turn may state.
+    allowedAmounts: probarTurnSalesContext ? salesAllowedAmounts(probarTurnSalesContext) : undefined,
     // Sleeping C2: nothing about paying in this chat yet (photos / files counted from their type, like live).
     noPaymentYet: noPaymentYet([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }]),
     orderDataChoice: orderDataChoice([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }], {
@@ -2430,12 +2685,7 @@ async function runAgentTestTurnInner(input: {
       afterHoursLine: afterHoursPromptLine(probarHours),
       knowledge,
       decision,
-      salesContext: await loadAgentSalesContext({
-        tenantId: input.tenantId,
-        agentId: runtimeAgent.id,
-        inventoryItemIds: probarInventoryIds,
-        brandFacts: runtimeAgent.brandFacts,
-      }),
+      salesContext: probarTurnSalesContext,
       toolCtxBase: {
         tenantId: input.tenantId,
         conversationId: 'sandbox',
@@ -2456,6 +2706,8 @@ async function runAgentTestTurnInner(input: {
     escalateReason = llm.escalateReason ?? null
     validationReasons = llm.validationReasons ?? []
     llmErrorCode = llm.errorCode ?? null
+    // Lane D: the business's daily test budget (US$) stopped the call — shown like the token cap.
+    if (llm.errorCode === 'TEST_BUDGET_EXCEEDED' && !blockedBy.includes('test_budget_blocked')) blockedBy.push('test_budget_blocked')
     salesTrace = runtimeInput.salesTrace ?? null
     const policy = applyFinalOutputPolicy({
       text: llm.text,
@@ -2469,6 +2721,7 @@ async function runAgentTestTurnInner(input: {
       allowedDeals: runtimeInput.salesAllowedDeals,
       freeShipping: runtimeInput.salesFreeShipping,
       freeShippingRule: runtimeInput.salesFreeShippingRule,
+    includedShippingAmounts: runtimeInput.salesIncludedShippingAmounts,
       unitRates: runtimeInput.salesUnitRates,
       stockGuard: runtimeInput.salesStockGuard,
       brandFacts: runtimeAgent.brandFacts,
@@ -2628,7 +2881,11 @@ export async function runAgentTestTurn(input: ProbarInput): Promise<ProbarResult
   if (await isPlatformAiPaused()) throw new Error('AI_PAUSED')
   if (!acquireProbarSlot(input.tenantId)) throw new Error('PROBAR_BUSY')
   try {
-    return await runAgentTestTurnInner(input)
+    // Lane D 2026-10-22: every AI call inside a test turn (payment check, image reading, …) is test spend and stops at
+    // the test cap. The line-activation canary keeps its own check (agent-unlock.ts).
+    if (input.usageFeature === 'agent_activation') return await runAgentTestTurnInner(input)
+    const feature = input.usageFeature ?? 'probar'
+    return await withAiUsageContext({ tenantId: input.tenantId, feature, test: true }, () => runAgentTestTurnInner(input))
   } finally {
     releaseProbarSlot(input.tenantId)
   }

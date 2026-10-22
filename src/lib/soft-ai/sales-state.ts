@@ -17,6 +17,7 @@ import {
   hasPaymentWord,
   hasChoiceClaimOrStatusWord,
   hasPaymentStatusClaim,
+  isClosedPayInfoQuestion,
   isPaymentCompletionClaim,
   NEGATION_RE,
   paymentChoiceGrammar,
@@ -441,7 +442,8 @@ export function deriveSalesState(input: {
     if (RETRACT_BUY_RE.test(t)) break
   }
   const duplicateOrder = input.duplicateReceipt?.orderNumber || null
-  const receiptCue = !duplicateOrder && (RECEIPT_RE.test(last) || hasPaymentClaimCue(last))
+  // Lane C D2 round 3: "¿Puedo hacer el pago mañana y envío el comprobante?" is a closed before-paying question, not a receipt.
+  const receiptCue = !duplicateOrder && !isClosedPayInfoQuestion(last, { strict: true }) && (RECEIPT_RE.test(last) || hasPaymentClaimCue(last))
   // agents2-format: the store asked HOW to pay and gave no payment details after that question.
   const askedMethod = methodQuestionPending(ours)
   // A pick counts after the store's question, or when the customer names a method and asks for its details. N4: with

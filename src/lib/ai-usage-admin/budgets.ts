@@ -132,7 +132,7 @@ export function shouldPause(input: {
 }
 
 /** Bell for the platform owners (each in a business they belong to). Best effort. */
-async function notifyOwners(dedupeKey: string): Promise<void> {
+export async function notifyOwners(dedupeKey: string): Promise<void> {
   const owners = await prisma.user.findMany({ where: { isSuperAdmin: true, active: true }, select: { id: true }, take: 10 })
   for (const o of owners) {
     const m = await prisma.membership.findFirst({ where: { userId: o.id, isActive: true }, select: { tenantId: true }, orderBy: { joinedAt: "asc" } })

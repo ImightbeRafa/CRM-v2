@@ -59,6 +59,8 @@ export const HANDOFF_REASON_LABELS: Record<string, string> = {
   customer_waiting: 'El cliente sigue esperando — nadie le respondió',
   // Lane D 2026-10-22: the business's AI allowance for the month is used up; the AI stops and people answer.
   ai_allowance: 'Se acabó el saldo de IA del mes — contestale vos',
+  // Lane D 2026-10-22: OpenAI down / without credit through the automatic retries.
+  ai_unavailable: 'IA sin servicio — contestale vos',
   review: 'Revisar respuesta de la IA',
 }
 
@@ -334,6 +336,22 @@ export async function listNotifications(tenantId: string, userId: string, limit 
         // ai_budget:paused:<tenant>:<month> (business team) or ai_budget:<scope>:<month>:<level> (platform owner)
         const parts = String(r.dedupeKey || '').split(':')
         const paused = parts[1] === 'paused'
+        // ai_budget:provider:<down|up>:<incident> (platform owner): the AI provider failed / came back (provider-outage.ts).
+        if (parts[1] === 'provider') {
+          const up = parts[2] === 'up'
+          items.push({
+            id: r.id,
+            kind: 'ai_budget',
+            read: Boolean(r.readAt),
+            createdAt: r.createdAt.toISOString(),
+            title: up ? 'OpenAI volvió: la IA responde de nuevo' : 'OpenAI sin crédito / caído',
+            snippet: up
+              ? 'Los chats que quedaron esperando se vuelven a intentar solos.'
+              : 'La IA no puede responder. Los chats se reintentan solos y, si sigue caído, pasan al equipo.',
+            href: '/super-admin/ia',
+          })
+          continue
+        }
         items.push({
           id: r.id,
           kind: 'ai_budget',

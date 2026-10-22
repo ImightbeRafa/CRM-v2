@@ -141,6 +141,8 @@ const TURN_REASON_COPY: Record<string, string> = {
   kill_switch: 'la IA estaba pausada',
   budget_blocked: 'se alcanzó el límite de gasto de IA',
   ai_allowance_exhausted: 'se acabó el saldo de IA del mes y el chat pasó al equipo',
+  provider_retry: 'OpenAI no respondió; se vuelve a intentar solo en unos minutos',
+  provider_down: 'OpenAI siguió sin servicio y el chat pasó al equipo',
   token_unhealthy: 'la línea perdió la conexión',
   ai_terms_not_accepted: 'faltan los términos de IA',
   flag_off: 'la IA no está habilitada para el negocio',

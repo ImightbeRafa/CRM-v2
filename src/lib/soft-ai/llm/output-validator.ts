@@ -600,6 +600,29 @@ export function thresholdAmountOk(amount: number, rawText: string, rule: FreeShi
   return seen && !otherForms
 }
 /** Deal check with the narrower included-combo rule on top of the promo kinds. */
+/**
+ * Lane C D6: a bundle stored with its shipping included ("Pedido de 2 arneses", ₡32 800, shippingIncluded) may be quoted
+ * as "₡32 800 con envío incluido": in a sentence that quotes one of those amounts, only the "envío incluido / incluye el
+ * envío" wording is excused ("gratis" and every other deal word are still judged).
+ */
+const INCLUDED_SHIPPING_WORDING_RE = /(?:con\s+(?:el\s+)?)?env[ií]os?\s+incluid[oa]s?|incluye(?:n)?\s+(?:el\s+)?env[ií]o/giu
+export function maskIncludedShipping(text: string, includedAmounts: readonly number[] | null | undefined): string {
+  if (!includedAmounts || includedAmounts.length === 0) return text
+  const set = new Set(includedAmounts.map((n) => Math.round(n)))
+  return text
+    .split(/(?<=[.!?\n])/u)
+    .map((seg) => {
+      // SecureDog r2 F3 / Verifier r2 #7: only a sentence whose every amount is an included one, with one such phrase
+      // ("₡18 000 con envío incluido y el pack ₡32 800", "… y todos los demás incluyen el envío" are still judged).
+      const amounts = extractMoneyAmounts(seg)
+      const phrases = seg.match(INCLUDED_SHIPPING_WORDING_RE)?.length ?? 0
+      // SecureDog r3: never with a scope word ("Hoy envío incluido en todo, el pack …"): that is a store-wide offer.
+      const storeWide = /(?<![\p{L}])(?:todo|todos|todas|toda|cualquier|cualquiera|dem[aá]s|tambi[eé]n|igual)(?![\p{L}])/iu.test(seg)
+      return amounts.length > 0 && amounts.every((a) => set.has(Math.round(a))) && phrases === 1 && !storeWide ? seg.replace(INCLUDED_SHIPPING_WORDING_RE, ' ') : seg
+    })
+    .join('')
+}
+
 function dealProblemWithRule(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>, rule: FreeShippingRule | null | undefined): boolean {
   if (!dealProblem(text, allowed)) return false
   if (!rule || allowed.includes('free_shipping')) return true
@@ -618,6 +641,24 @@ const CREATED_CLAIM_RE =
 const ORDER_CLOSING_CLAIM_RE =
   /pedido\s+(?:ya\s+)?(?:qued[oó]\s+|est[aá]\s+)?(?:registrad|anotad|agendad|confirmad|list)[oa]|(?:orden|compra)\s+(?:ya\s+)?(?:qued[oó]\s+|est[aá]\s+)?(?:registrad|anotad|agendad|confirmad|list)[oa]|(?<![\p{L}])agend[eé](?![\p{L}])|anot[eé]\s+(?:tu|el|su)\s+pedido|sale\s+(?:hoy|ma[nñ]ana)|te\s+(?:lo|la|los|las)\s+mando\s+(?:hoy|ma[nñ]ana)|ma[nñ]ana\s+te\s+llega|(?:queda|qued[oó])\s+(?:programad|agendad)\p{L}*|te\s+(?:lo|la|los|las)\s+despachamos|va\s+en\s+camino|tu\s+entrega\s+(?:queda|est[aá])\s+(?:para|agendada)/iu
 const UNIT_COST_RE = /unitCost|costo\s+unitario|precio\s+de\s+costo/i
+/**
+ * SecureDog r2 F2: a reply that asks for card data by chat (number, CVV / security code, expiry). Never repairable: a
+ * card is paid only through the store's card link.
+ */
+const CARD_DATA_NOUN_RE =
+  /(?<![\p{L}])(?:n[uú]meros?|d[ií]gitos|datos|foto|fotos|imagen)\s+de\s+(?:la\s+|tu\s+|su\s+)?tarjeta|(?<![\p{L}])tarjeta(?![\p{L}])[^.!?\n]{0,60}(?<![\p{L}])(?:vencimiento|expiraci[oó]n|caducidad|d[ií]gitos|atr[aá]s)(?![\p{L}])|(?<![\p{L}])(?:cvv|cvc|cvv2)(?![\p{L}])|c[oó]digo\s+(?:de\s+seguridad|de\s+atr[aá]s)|(?:3|tres)\s+(?:d[ií]gitos|n[uú]meros)\s+de\s+atr[aá]s|(?<!\d)(?:16|diecis[eé]is)\s+(?:d[ií]gitos|n[uú]meros)/iu
+/** A warning, not an ask: "nunca / no mandés … por chat", "no hace falta". */
+const CARD_DATA_NEGATED_RE = /(?<![\p{L}])(?:nunca|jam[aá]s|no\s+(?:me\s+|nos\s+)?(?:mand|envi|pas|compart|escrib|d[eé]|hace\s+falta|ocup|necesit|ped))/iu
+/**
+ * SecureDog r2 F2 / r3: a reply that asks for card data by chat (number, digits, photo, CVV / security code, expiry),
+ * whatever the verb or form ("¿Me podés pasar el número de tu tarjeta?", "Envíeme el número de su tarjeta"). Only a
+ * sentence that warns against it is excused. Never repairable: a card is paid only through the store's card link.
+ */
+function asksCardData(text: string): boolean {
+  return (text || '')
+    .split(/(?<=[.!?\n])/u)
+    .some((sentence) => CARD_DATA_NOUN_RE.test(sentence) && !CARD_DATA_NEGATED_RE.test(sentence))
+}
 
 /** Sleeping C7: "ya te lo compartí / dije / pasé / mencioné / indiqué" (refusing to repeat what the customer asks again). */
 const REPEAT_REFUSAL_RE =
@@ -1031,6 +1072,8 @@ export function validateAgentOutput(input: {
   allowedDeals?: Array<'free_shipping' | 'special_price'>
   /** Store rule "envío gratis desde ₡X" (only valid next to that amount). */
   freeShippingRule?: FreeShippingRule | null
+  /** Lane C D6: prices of bundles stored with their shipping included (sales-state bundles shippingIncluded). */
+  includedShippingAmounts?: number[]
   /** The customer's message: a reply about the state of a payment to a payment message is never sent (INT-93). */
   customerText?: string
   /** The conversation is about a payment (recent payment words / media / payment already discussed): same backstop. */
@@ -1072,6 +1115,7 @@ export function validateAgentOutput(input: {
   // configuration needs no allowlist entry, and the allowlist never widens to a whole payment host (Verifier F2).
   if (input.linkAllowlist && foreignLinks(input.linkText ?? text, input.linkAllowlist).length > 0) reasons.push('foreign_link')
   if (UNIT_COST_RE.test(text)) reasons.push('unit_cost_leak')
+  if (asksCardData(input.styleText ?? text)) reasons.push('card_data_request')
   // Sleeping C9: a reply that is only a personal-data block (someone's name / phone / address copied from the chat).
   if (isPersonalDataEcho(input.styleText ?? text, input.ownText)) reasons.push('data_echo')
   // Sleeping C7: the customer asked again — "ya te lo compartí / ya te lo dije" refuses an answer it can give.
@@ -1085,7 +1129,7 @@ export function validateAgentOutput(input: {
   if (anyForm(CREATED_CLAIM_RE, textForms) || (input.orderClosing && anyForm(ORDER_CLOSING_CLAIM_RE, textForms))) {
     reasons.push('write_claim')
   }
-  if (dealProblemWithRule(text, input.allowedDeals ?? [], input.freeShippingRule)) reasons.push('deal_offer')
+  if (dealProblemWithRule(maskIncludedShipping(text, input.includedShippingAmounts), input.allowedDeals ?? [], input.freeShippingRule)) reasons.push('deal_offer')
   // v53 tests 2026-10-18: a conditional next-step participle ("una vez confirmado el pago, sale…") is not a claim; only
   // that participle is masked (shortcuts.ts maskConditionalConfirmation), for this check and the payment-status ones.
   const claimText = maskConditionalConfirmation(text)
@@ -1369,6 +1413,8 @@ export function applyFinalOutputPolicy(input: {
   /** Promo makes shipping free: the store's fixed shipping amounts stop being valid. */
   freeShipping?: boolean
   freeShippingRule?: FreeShippingRule | null
+  /** Lane C D6: prices of bundles stored with their shipping included (sales-state bundles shippingIncluded). */
+  includedShippingAmounts?: number[]
   /**
    * Agentes IA 2.0 (B3): a model reply longer than the style allows is shortened by code (first lines + the payment
    * line + the final question) instead of being held for a person. Off for the owner's own saved replies.
@@ -1520,6 +1566,7 @@ export function applyFinalOutputPolicy(input: {
     intent,
     allowedDeals: input.allowedDeals,
     freeShippingRule: input.freeShippingRule,
+    includedShippingAmounts: input.includedShippingAmounts,
     customerText: input.customerText,
     paymentContext: input.paymentContext,
     paymentContextText,

@@ -8,6 +8,8 @@ import 'server-only'
 import OpenAI from 'openai'
 import { DEFAULT_CHAT_AGENT_MODEL, isAllowedChatAgentModel } from '@/lib/soft-ai/agent-types'
 import { aiErrorCode, recordAiUsage, type AiUsageFeature } from '@/lib/ai-usage/record'
+import { currentAiUsageContext } from '@/lib/ai-usage/context'
+import { assertTestBudget, noteProviderFailure, noteProviderOk, testAwareFeature } from '@/lib/soft-ai/provider-outage'
 
 export const SOFT_AI_OPENAI_BASE_URL = 'https://api.openai.com/v1'
 // Measured 2026-10-09: an answer after a tool call can take >7 s (every follow-up timed out at 7 s → human
@@ -131,10 +133,21 @@ export function buildSoftAiResponsesBody(args: Omit<SoftAiResponsesCreateArgs, '
 export async function softAiResponsesCreate(args: SoftAiResponsesCreateArgs) {
   const model = resolveSoftAiModel(args.model)
   const timeoutMs = args.timeoutMs ?? SOFT_AI_FIRST_CALL_TIMEOUT_MS
-  const client = createSoftAiClient(model, timeoutMs)
+  let client: ReturnType<typeof createSoftAiClient>
+  try {
+    client = createSoftAiClient(model, timeoutMs)
+  } catch (error) {
+    // Verifier: a missing key (LLM_NOT_CONFIGURED) reaches the owner alert too.
+    void noteProviderFailure(error)
+    throw error
+  }
   const body = buildSoftAiResponsesBody({ ...args, model })
   const started = Date.now()
   const keyLabel = 'SOFT_AI_OPENAI_API_KEY'
+  // Lane D 2026-10-22: test calls (Probar / exams, and every call inside a test turn) stop at their business's daily test
+  // cap before spending live credit; they are metered under the test feature so the cap sees them.
+  const usage = { ...args.usage, feature: testAwareFeature(args.usage.feature, currentAiUsageContext()) as AiUsageFeature }
+  await assertTestBudget(usage.feature, usage.tenantId ?? null)
   try {
     const response = await client.responses.create(
       body as unknown as OpenAI.Responses.ResponseCreateParamsNonStreaming,
@@ -142,7 +155,7 @@ export async function softAiResponsesCreate(args: SoftAiResponsesCreateArgs) {
     )
     const used = readSoftAiUsage(response)
     recordAiUsage({
-      ...args.usage,
+      ...usage,
       model,
       keyLabel,
       inputTokens: used.inputTokens,
@@ -151,17 +164,20 @@ export async function softAiResponsesCreate(args: SoftAiResponsesCreateArgs) {
       reasoningTokens: used.reasoningTokens,
       latencyMs: Date.now() - started,
     })
+    void noteProviderOk()
     return response
   } catch (error) {
     // Failed calls are metered too (a timeout can still be billed and shows up as an error in the dashboard).
     recordAiUsage({
-      ...args.usage,
+      ...usage,
       model,
       keyLabel,
       latencyMs: Date.now() - started,
       status: 'error',
       errorCode: aiErrorCode(error),
     })
+    // Lane D: an outage (no credit / 429 / auth / 5xx) alerts the platform owner once per incident.
+    void noteProviderFailure(error)
     throw error
   }
 }

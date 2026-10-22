@@ -273,6 +273,7 @@ export function assembleAgentRuntimeInputs(input: {
     salesAllowedDeals: sales ? salesAllowedDeals(sales) : [],
     salesFreeShipping: Boolean(sales?.promo?.freeShipping),
     salesFreeShippingRule: sales ? salesFreeShippingRule(sales) : null,
+    salesIncludedShippingAmounts: sales ? (sales.bundles ?? []).filter((b) => b.shippingIncluded).map((b) => Math.round(b.price)) : undefined,
     salesUnitRates: sales ? salesUnitRates(sales) : undefined,
     salesStockGuard: sales ? salesStockGuard(sales, salesState ?? null) : null,
     // INT-112: same allowlist for live and Probar — brand site, map link, and links the owner wrote in ACTIVE saved

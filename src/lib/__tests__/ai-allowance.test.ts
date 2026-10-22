@@ -135,3 +135,49 @@ describe('AI allowance: wiring', () => {
     assert.doesNotMatch(read('src/app/api/chat/agents/[id]/settings/route.ts'), /patch\.dailyTokenCap\s*=/)
   })
 })
+
+describe('AI allowance: credits source (Lane H, SQL 060)', () => {
+  const credits = (over: Partial<{ enforce: boolean; exhausted: boolean; cap: 'credit' | 'limit' }> = {}) => ({
+    enforce: true,
+    exhausted: true,
+    cap: 'credit' as const,
+    periodKey: '2026-10',
+    renewsAt: new Date('2026-11-01T06:00:00Z'),
+    ...over,
+  })
+  it('used-up credits pause, with the cap that stopped it', () => {
+    const a = decideAllowance({ exempt: false, budget: null, spentMicros: USD(3), now: NOW, credits: credits() })
+    assert.equal(a.source, 'credits')
+    assert.equal(a.exhausted, true)
+    assert.equal(a.cap, 'credit')
+    assert.equal(a.renewsAt?.toISOString(), '2026-11-01T06:00:00.000Z')
+    assert.equal(decideAllowance({ exempt: false, budget: null, spentMicros: 0, now: NOW, credits: credits({ cap: 'limit' }) }).cap, 'limit')
+  })
+  it('credits not enforced (before SQL 060, enforcement off, no rate saved) never pause', () => {
+    for (const c of [credits({ enforce: false, exhausted: false }), credits({ enforce: false }), credits({ exhausted: false }), null]) {
+      assert.equal(decideAllowance({ exempt: false, budget: null, spentMicros: USD(50), now: NOW, credits: c }).exhausted, false)
+    }
+  })
+  it('exempt and super-admin-owned businesses are never paused by credits; an exhausted budget still wins first', () => {
+    assert.equal(decideAllowance({ exempt: true, budget: null, spentMicros: 0, now: NOW, credits: credits() }).exhausted, false)
+    assert.equal(decideAllowance({ exempt: false, budget: null, spentMicros: 0, now: NOW, credits: credits(), ownerBusiness: true }).exhausted, false)
+    const b = decideAllowance({ exempt: false, budget: { monthlyUsdMicros: USD(1), autoPause: true }, spentMicros: USD(2), now: NOW, credits: credits() })
+    assert.equal(b.source, 'ai_budget')
+  })
+  it('a meter that cannot be read answers and alerts the platform owner; no pause without a saved rate', () => {
+    const src = read('src/lib/soft-ai/ai-allowance.ts')
+    assert.ok(src.includes('if (credits.failedOpen) void alertCreditMeterDown(now.getTime())'))
+    assert.ok(src.includes("where: { tenantId, role: 'OWNER', isActive: true, user: { isSuperAdmin: true, active: true } },"))
+    // An owner read error counts as the owner's business: answer, never a silent stop.
+    assert.match(src, /owner read failed[^\n]*\n\s*return true/)
+    const billing = read('src/lib/ai-billing/allowance.ts')
+    assert.ok(billing.includes('const configured = (await listRates()).length > 0'))
+    assert.ok(billing.includes('const value: CreditAllowance = d.enforced && configured'))
+    assert.ok(billing.includes('{ ...open(now), failedOpen: true }'))
+  })
+  it('a paused chat goes to a person with the AI-allowance hand-off (no reply, no model call)', () => {
+    const turn = read('src/lib/soft-ai/agent-turn.ts')
+    assert.ok(turn.includes("await settleHandoff(row, { kind: 'handoff', reason: HANDOFF_REASON.aiAllowance }, hours)"))
+    assert.match(HANDOFF_REASON_LABELS.ai_allowance, /contestale vos/)
+  })
+})

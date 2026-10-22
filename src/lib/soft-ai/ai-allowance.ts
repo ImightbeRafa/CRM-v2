@@ -6,7 +6,10 @@
  * A budget is ENFORCED only when its "autoPause" is on; alert-only rows keep their meaning. A business listed in
  * AI_ALLOWANCE_EXEMPT_TENANTS (env, comma-separated tenant ids) is never capped.
  *
- * Later waves plug prepaid / free credits in as another source in decideAllowance (exempt always wins).
+ * Second source (Lane H credits, SQL 060, resolveCreditAllowance): the free monthly credit + prepaid balance, or the
+ * business's own monthly AI limit. It pauses only when the platform owner turned enforcement on AND saved a credit rate;
+ * before SQL 060 / without that config nothing pauses. Exempt businesses and businesses OWNED by a super admin are never
+ * paused by credits. A credit meter that cannot be read answers (fails open) and alerts the platform owner once an hour.
  *
  * Soft cap: checked once before the model runs (a started turn always finishes, never a half reply), cached per
  * process for a few seconds, so a business can pass its limit by a few cents. A meter that cannot be read fails OPEN
@@ -20,7 +23,7 @@ import { prisma } from '@/lib/db'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
 import { costaRicaMonthStartUtc, costaRicaPeriodKey, nextCostaRicaMonthStartUtc } from '@/lib/ai-usage/period'
 
-export type AiAllowanceSource = 'none' | 'exempt' | 'ai_budget'
+export type AiAllowanceSource = 'none' | 'exempt' | 'ai_budget' | 'credits'
 
 export type AiAllowance = {
   source: AiAllowanceSource
@@ -34,7 +37,12 @@ export type AiAllowance = {
   renewsAt: Date | null
   /** Live replies must stop: the chat goes to a person. */
   exhausted: boolean
+  /** credits only: which cap stopped it (the free / prepaid credit, or the business's own monthly limit). */
+  cap?: 'credit' | 'limit'
 }
+
+/** The credits source as decideAllowance reads it (from resolveCreditAllowance). */
+export type AllowanceCredits = { enforce: boolean; exhausted: boolean; cap: 'credit' | 'limit'; periodKey: string; renewsAt: Date | null }
 
 export type AllowanceBudget = { monthlyUsdMicros: number; autoPause: boolean }
 
@@ -49,7 +57,35 @@ export function exemptTenantIds(raw: string | undefined = process.env.AI_ALLOWAN
 }
 
 /** Pure: every allowance rule lives here. */
-export function decideAllowance(input: { exempt: boolean; budget: AllowanceBudget | null; spentMicros: number; now: Date }): AiAllowance {
+export function decideAllowance(input: {
+  exempt: boolean
+  budget: AllowanceBudget | null
+  spentMicros: number
+  now: Date
+  credits?: AllowanceCredits | null
+  /** Owned by a super admin (the platform owner's own business): credits never pause it. */
+  ownerBusiness?: boolean
+}): AiAllowance {
+  const budgetAllowance = decideBudgetAllowance(input)
+  if (input.exempt || budgetAllowance.exhausted) return budgetAllowance
+  const c = input.credits
+  if (c && c.enforce && c.exhausted && !input.ownerBusiness) {
+    return {
+      source: 'credits',
+      enforce: true,
+      limitMicros: null,
+      spentMicros: budgetAllowance.spentMicros,
+      remainingMicros: 0,
+      periodKey: c.periodKey,
+      renewsAt: c.renewsAt,
+      exhausted: true,
+      cap: c.cap,
+    }
+  }
+  return budgetAllowance
+}
+
+function decideBudgetAllowance(input: { exempt: boolean; budget: AllowanceBudget | null; spentMicros: number; now: Date }): AiAllowance {
   const periodKey = costaRicaPeriodKey(input.now)
   const spentMicros = Math.max(0, Math.floor(input.spentMicros || 0))
   const open = (source: AiAllowanceSource, limitMicros: number | null = null): AiAllowance => ({
@@ -128,9 +164,78 @@ async function loadSpend(tenantId: string, now: Date, budget: AllowanceBudget): 
   return spent
 }
 
-/** The business's live allowance now. Never throws: a read error fails open with the last known spend. */
+const OWNER_TTL_MS = 10 * 60_000
+const ownerBusinessCache = new Map<string, { at: number; owner: boolean }>()
+/** A business with an active OWNER who is an active super admin. A read error counts as "owner" (answer, never a silent stop). */
+async function isOwnerBusiness(tenantId: string, nowMs: number): Promise<boolean> {
+  const hit = ownerBusinessCache.get(tenantId)
+  if (hit && nowMs - hit.at < OWNER_TTL_MS) return hit.owner
+  try {
+    const row = await prisma.membership.findFirst({
+      where: { tenantId, role: 'OWNER', isActive: true, user: { isSuperAdmin: true, active: true } },
+      select: { userId: true },
+    })
+    remember(ownerBusinessCache, tenantId, { at: nowMs, owner: row !== null })
+    return row !== null
+  } catch (error) {
+    console.error('[soft-ai/ai-allowance] owner read failed', error instanceof Error ? error.name : 'unknown')
+    return true
+  }
+}
+
+let lastMeterAlertAt = 0
+/** The credit meter could not be read: the agents keep answering; the platform owner hears it once an hour. */
+async function alertCreditMeterDown(nowMs: number): Promise<void> {
+  if (nowMs - lastMeterAlertAt < 60 * 60_000) return
+  lastMeterAlertAt = nowMs
+  try {
+    const { sendOpsAlert } = await import('@/lib/ops/alert-email')
+    await sendOpsAlert({
+      key: `ai-credits:meter-down:${new Date(nowMs).toISOString().slice(0, 13)}`,
+      subject: 'No se pudo leer el crédito de IA',
+      lines: [
+        'Betsy no pudo leer el crédito de IA de un negocio. Las IA siguen respondiendo (no se pausa nada por esto).',
+        'Revisá Logística › Admin › IA y los logs de "ai-billing/allowance".',
+      ],
+    })
+  } catch (error) {
+    console.error('[soft-ai/ai-allowance] meter alert failed', error instanceof Error ? error.name : 'unknown')
+  }
+}
+
+/**
+ * The business's live allowance now: the owner's monthly budget, then the credits (exempt always wins). Never throws: a
+ * read error fails open with the last known value.
+ */
 export async function resolveAiAllowance(tenantId: string, now = new Date()): Promise<AiAllowance> {
   if (exemptTenantIds().has(tenantId)) return decideAllowance({ exempt: true, budget: null, spentMicros: 0, now })
+  const [budgetAllowance, credits] = await Promise.all([resolveBudgetAllowance(tenantId, now), resolveCreditsSafe(tenantId, now)])
+  if (budgetAllowance.exhausted || !credits) return budgetAllowance
+  if (credits.failedOpen) void alertCreditMeterDown(now.getTime())
+  if (!(credits.enforce && credits.exhausted)) return budgetAllowance
+  return decideAllowance({
+    exempt: false,
+    budget: null,
+    spentMicros: budgetAllowance.spentMicros,
+    now,
+    credits,
+    ownerBusiness: await isOwnerBusiness(tenantId, now.getTime()),
+  })
+}
+
+async function resolveCreditsSafe(tenantId: string, now: Date): Promise<(AllowanceCredits & { failedOpen?: boolean }) | null> {
+  try {
+    const { resolveCreditAllowance } = await import('@/lib/ai-billing/allowance')
+    return await resolveCreditAllowance(tenantId, now)
+  } catch (error) {
+    console.error('[soft-ai/ai-allowance] credits read failed', error instanceof Error ? error.name : 'unknown')
+    void alertCreditMeterDown(now.getTime())
+    return null
+  }
+}
+
+/** The owner's monthly AI budget (SQL 051). */
+async function resolveBudgetAllowance(tenantId: string, now: Date): Promise<AiAllowance> {
   let budget: AllowanceBudget | null = null
   try {
     budget = await loadBudget(tenantId, now.getTime())

@@ -12,7 +12,7 @@ import 'server-only'
 import { costaRicaPeriodKey } from '@/lib/ai-usage/period'
 import { aiExemptTenantIds, listFromBilled } from './math'
 import { getCreditState } from './state'
-import { getSettings } from './store'
+import { getSettings, listRates } from './store'
 
 export type CreditAllowance = {
   source: 'credits'
@@ -24,6 +24,8 @@ export type CreditAllowance = {
   renewsAt: Date | null
   /** List micros the business may still spend this month (null when nothing is enforced). */
   remainingListMicros: number | null
+  /** Lane D: the meter could not be read and the answer failed open (the caller alerts the platform owner). */
+  failedOpen?: boolean
 }
 
 const TTL_MS = 30_000
@@ -51,7 +53,9 @@ export async function resolveCreditAllowance(tenantId: string, now = new Date())
     if (aiExemptTenantIds().has(tenantId) || !(await getSettings()).enforce) return open(now)
     const s = await getCreditState(tenantId, now)
     const d = s.decision
-    const value: CreditAllowance = d.enforced
+    // Lane D (Rafael 2026-10-22): nothing pauses until the owner saved a credit rate (no config = answer).
+    const configured = (await listRates()).length > 0
+    const value: CreditAllowance = d.enforced && configured
       ? {
           source: 'credits',
           enforce: true,
@@ -67,6 +71,6 @@ export async function resolveCreditAllowance(tenantId: string, now = new Date())
     return value
   } catch (error) {
     console.error('[ai-billing/allowance] read failed', error instanceof Error ? error.name : 'unknown')
-    return hit && hit.value.periodKey === costaRicaPeriodKey(now) ? hit.value : open(now)
+    return hit && hit.value.periodKey === costaRicaPeriodKey(now) ? hit.value : { ...open(now), failedOpen: true }
   }
 }

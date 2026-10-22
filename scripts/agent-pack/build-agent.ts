@@ -388,7 +388,8 @@ async function main() {
   // The owner's promo and "¿sos un bot?" choice (UI) stay unless the pack sets them.
   const wantedRules = {
     ...rules,
-    promo: setup.salesRules.promo,
+    // A pack that sets "promo" (e.g. a temporary free-shipping promo that matches the store's site) owns it.
+    promo: pack.salesRules.promo ? rules.promo : setup.salesRules.promo,
     aiDisclosure: pack.salesRules.aiDisclosure ? rules.aiDisclosure : setup.salesRules.aiDisclosure,
   }
   if (!same(setup.salesRules, wantedRules)) {

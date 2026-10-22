@@ -713,6 +713,7 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
                                 {query && (
                                     <button
                                         type="button"
+                                        className="lm-inline-btn"
                                         onClick={() => setColumnSearch(prev => ({ ...prev, [status]: '' }))}
                                         aria-label={`Limpiar busqueda de ${status}`}
                                         style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', width: 18, height: 18, borderRadius: 5, border: 'none', background: 'transparent', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}

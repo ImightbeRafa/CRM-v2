@@ -321,8 +321,9 @@ export const LOGISTICS_CSS = `
                 }
 
                 /* ── Phone pass (2026-10-22): tables → cards, collapsing grids,
-                   44px tap targets, 12px minimum text. Desktop is untouched. ── */
-                @media (max-width: 768px) {
+                   44px tap targets, 12px minimum text. Screen only: desktop
+                   printouts (guía tickets, reports) measure ~720px wide. ── */
+                @media screen and (max-width: 768px) {
                     .lm-mobile-menu-btn, .lm-mobile-exit { width: 44px; height: 44px; }
 
                     /* Tables: each row is a card; LogisticsTableLabels writes the
@@ -383,6 +384,8 @@ export const LOGISTICS_CSS = `
                     .lm-main select,
                     .lm-main a[role="button"] { min-height: 44px; }
                     .lm-main button { min-width: 44px; }
+                    /* Small controls inside a field (e.g. clear search) keep their size. */
+                    .lm-main button.lm-inline-btn { min-width: 0; min-height: 0; }
                     .lm-main input:not([type="checkbox"]):not([type="radio"]),
                     .lm-main select,
                     .lm-main textarea { min-height: 44px; font-size: 16px !important; }

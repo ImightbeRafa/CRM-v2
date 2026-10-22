@@ -36,6 +36,14 @@ describe('mobile pass wiring', () => {
     assert.match(read('src/app/globals-mobile.css'), /textarea \{\n\s+font-size: 16px !important;/);
   });
 
+  it('phone-only rules are screen-only so desktop printouts keep tables and sizes', () => {
+    const mobile = read('src/app/globals-mobile.css');
+    const block = mobile.slice(mobile.indexOf('@media screen and (max-width: 767px)'));
+    assert.ok(block.length > 0 && block.includes('table.m-cards thead'), 'm-cards lives in the screen-only block');
+    assert.match(block, /table\.m-cards td\.hidden \{ display: none !important; \}/);
+    assert.match(read('src/app/logistics/logistics-styles.ts'), /@media screen and \(max-width: 768px\) \{\n\s+\.lm-mobile-menu-btn/);
+  });
+
   it('logistics layout keeps table labels and the phone CSS', () => {
     const layout = read('src/app/logistics/layout.tsx');
     assert.match(layout, /<LogisticsTableLabels \/>/);

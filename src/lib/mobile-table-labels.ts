@@ -31,12 +31,21 @@ export function rowCellLabels(labels: string[], cellSpans: number[]): string[] {
   return out;
 }
 
+/** Header text with separate blocks joined by a space ("Lun" + "22 oct" → "Lun 22 oct"). */
+export function headerCellText(cell: Element): string {
+  const blocks = Array.from(cell.children);
+  const text = blocks.length > 1
+    ? blocks.map((child) => child.textContent ?? '').join(' ')
+    : cell.textContent ?? '';
+  return text.replace(/\s+/g, ' ').trim();
+}
+
 /** Writes data-label on every body cell of `table` (no-op without a header row). */
 export function applyTableCardLabels(table: HTMLTableElement): void {
   const headerRow = table.tHead?.rows[table.tHead.rows.length - 1];
   if (!headerRow) return;
   const labels = columnLabels(
-    Array.from(headerRow.cells).map((cell) => ({ text: cell.textContent ?? '', colSpan: cell.colSpan })),
+    Array.from(headerRow.cells).map((cell) => ({ text: headerCellText(cell), colSpan: cell.colSpan })),
   );
   for (const body of Array.from(table.tBodies)) {
     for (const row of Array.from(body.rows)) {

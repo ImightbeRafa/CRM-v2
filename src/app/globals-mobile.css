@@ -7,52 +7,6 @@
     font-size: 16px;
   }
 
-  /* iOS Safari zooms the page when a focused field is under 16px. */
-  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-  select,
-  textarea {
-    font-size: 16px !important;
-  }
-
-  /* Opt-in table → labelled cards (useTableCardLabels writes data-label). */
-  table.m-cards {
-    display: block !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    overflow: visible !important;
-  }
-  table.m-cards thead { display: none !important; }
-  table.m-cards tbody,
-  table.m-cards tfoot { display: block !important; }
-  table.m-cards tr {
-    display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px 12px;
-    padding: 12px 4px;
-    border-bottom: 1px solid rgb(var(--p-bd-slate-200, 226 232 240));
-  }
-  table.m-cards td {
-    display: block !important;
-    width: auto !important;
-    min-width: 0 !important;
-    max-width: none !important;
-    padding: 0 !important;
-    border: none !important;
-    white-space: normal !important;
-    overflow-wrap: anywhere;
-  }
-  table.m-cards td[data-label]:not([data-label=""])::before {
-    content: attr(data-label);
-    display: block;
-    margin-bottom: 2px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: rgb(var(--p-tx-slate-500, 100 116 139));
-  }
-  table.m-cards td[colspan] { grid-column: 1 / -1; }
-
   /* Prevent horizontal scroll */
   body {
     overflow-x: hidden;
@@ -174,4 +128,56 @@
 .snap-scroll-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Phone pass (2026-10-22). Screen only: a desktop printout measures ~720px wide
+   and must keep its tables and font sizes. */
+@media screen and (max-width: 767px) {
+  /* iOS Safari zooms the page when a focused field is under 16px. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Opt-in table → labelled cards (useTableCardLabels writes data-label). */
+  table.m-cards {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+  }
+  table.m-cards thead { display: none !important; }
+  table.m-cards tbody,
+  table.m-cards tfoot { display: block !important; }
+  table.m-cards tr {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+    padding: 12px 4px;
+    border-bottom: 1px solid rgb(var(--p-bd-slate-200, 226 232 240));
+  }
+  table.m-cards td {
+    display: block !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: 0 !important;
+    border: none !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+  }
+  table.m-cards td[data-label]:not([data-label=""])::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: rgb(var(--p-tx-slate-500, 100 116 139));
+  }
+  table.m-cards td[colspan] { grid-column: 1 / -1; }
+  /* Cells hidden on phones (hidden md:table-cell) stay hidden as cards. */
+  table.m-cards td.hidden { display: none !important; }
 }

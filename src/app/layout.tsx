@@ -31,6 +31,8 @@ const spaceGrotesk = Space_Grotesk({
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // Lets env(safe-area-inset-*) report real values (bottom nav, sheets, home indicator).
+  viewportFit: 'cover',
 }
 
 export const metadata: Metadata = {

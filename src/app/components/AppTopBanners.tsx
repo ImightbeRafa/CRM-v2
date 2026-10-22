@@ -27,7 +27,7 @@ export function AppTopBanners({ showPreviewWarning }: { showPreviewWarning: bool
   }, [])
 
   return (
-    <div ref={ref} className="sticky top-0 z-50" data-testid="app-top-banners">
+    <div ref={ref} className="sticky top-0 z-50 pt-[env(safe-area-inset-top)]" data-testid="app-top-banners">
       <SubscriptionBanner />
       {showPreviewWarning ? <PreviewDataWarning /> : null}
     </div>

@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app
 import { Button } from '@/app/components/ui/button';
 import { Badge } from '@/app/components/ui/badge';
 import TilopaySubscriptionCheckout from './TilopaySubscriptionCheckout';
+import { BETSY_PLAN, LEGACY_SUBSCRIPTION_CRC, planPriceLabels } from '@/lib/pricing/plan';
 import { 
   CreditCard, 
   TrendingUp, 
@@ -23,6 +24,9 @@ import {
   BarChart3,
   Clock
 } from 'lucide-react';
+
+const PRICE = planPriceLabels();
+const SUBSCRIPTION_CHARGE_LABEL = `₡${LEGACY_SUBSCRIPTION_CRC.toLocaleString('es-CR')}/mes`;
 
 interface BillingDashboardProps {
   tenantId?: string;
@@ -116,7 +120,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
     {
       id: 'pro',
       name: 'PRO',
-      price: 20,
+      price: BETSY_PLAN.baseUsdCents / 100,
       interval: 'month',
       features: [
         'Usuarios ilimitados',
@@ -316,8 +320,9 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
     
     // Show embedded Tilopay SDK v2 checkout
     const planPricing: Record<string, number> = {
-      basic: 10000,  // ₡10,000/month ($20 USD) - legacy
-      pro: 10000     // ₡10,000/month ($20 USD)
+      // What the Tilopay Repeat plan charges today (LEGACY_SUBSCRIPTION_CRC in src/lib/pricing/plan.ts).
+      basic: LEGACY_SUBSCRIPTION_CRC,
+      pro: LEGACY_SUBSCRIPTION_CRC
     };
     
     const amount = planPricing[planId];
@@ -421,7 +426,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                     className="bg-red-600 hover:bg-red-700 text-white"
                   >
                     <CreditCard className="w-4 h-4 mr-2" />
-                    Activar Plan Pro ($20/mes)
+                    Activar Plan Pro ({PRICE.short})
                   </Button>
                 </div>
                 <p className="text-sm text-red-700 mt-4">
@@ -513,9 +518,12 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                     <p className="text-2xl font-bold text-blue-600">
                       {currentPlanDetails.price === 0 
                         ? 'Gratis' 
-                        : `${formatCurrency(currentPlanDetails.price)}/mes`
+                        : PRICE.short
                       }
                     </p>
+                    {currentPlanDetails.price > 0 && (
+                      <span className="text-sm text-muted-foreground">Cobro en Tilopay: {SUBSCRIPTION_CHARGE_LABEL}</span>
+                    )}
                     {currentPlan.name === 'FREE' && (
                       <Badge variant="default" className="bg-green-100 text-green-800 border-green-300">
                         Activo
@@ -732,7 +740,9 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                   }
                 </div>
                 {plan.price > 0 && plan.id !== 'enterprise' && (
-                  <p className="text-sm text-muted-foreground">por mes</p>
+                  <p className="text-sm text-muted-foreground">
+                    por mes + IVA · cobro en Tilopay: {SUBSCRIPTION_CHARGE_LABEL}
+                  </p>
                 )}
               </CardHeader>
 

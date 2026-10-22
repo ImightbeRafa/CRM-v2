@@ -7,6 +7,7 @@ import { Callout } from './mdx/Callout';
 import { Steps, Step } from './mdx/Steps';
 import { LinkCard } from './mdx/LinkCard';
 
+
 const CATEGORY_LABELS: Record<string, string> = {
   'getting-started': 'Primeros Pasos',
   'shipping': 'Envíos',

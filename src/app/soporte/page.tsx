@@ -13,7 +13,9 @@ export const metadata: Metadata = {
 };
 
 /** Public support / contact page (SPEC §7.1). Contact info from env; empty values are hidden. */
-export default function SoportePage() {
+export default async function SoportePage({ searchParams }: { searchParams: Promise<{ tema?: string | string[] }> }) {
+  const { tema } = await searchParams;
+  const topic = tema === 'agente' ? 'agent' : null;
   const contact = getSupportContactConfig();
   const ticketsEnabled = supportPipelineEnabled();
 
@@ -96,7 +98,7 @@ export default function SoportePage() {
           )}
         </section>
 
-        <SoporteClient ticketsEnabled={ticketsEnabled} />
+        <SoporteClient ticketsEnabled={ticketsEnabled} topic={topic} />
       </main>
     </div>
   );

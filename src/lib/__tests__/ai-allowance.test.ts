@@ -6,7 +6,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { decideAllowance, exemptTenantIds } from '@/lib/soft-ai/ai-allowance'
+import { decideAllowance, exemptTenantIds, resolveAiAllowance, type AiAllowance } from '@/lib/soft-ai/ai-allowance'
 import { costaRicaMonthStartUtc, costaRicaPeriodKey, nextCostaRicaMonthStartUtc } from '@/lib/ai-usage/period'
 import { costaRicaMonthKey } from '@/lib/ai-usage-admin/summary'
 import { HANDOFF_REASON_LABELS } from '@/lib/workspace-notifications'
@@ -117,7 +117,7 @@ describe('AI allowance: wiring', () => {
   it('the periodic sweep does not re-queue it; the line-on check sees the allowance', () => {
     assert.equal(turnAllowsRearm({ status: 'budget_blocked', skipReason: 'ai_allowance_exhausted' }, 'periodic'), false)
     assert.match(read('src/lib/soft-ai/waiting-sweep.ts'), /if \(\(await resolveAiAllowance\(tenantId\)\)\.exhausted\) return false/)
-    assert.match(read('src/lib/soft-ai/agent-status-server.ts'), /budget: \{ tenantExhausted: allowanceExhausted, agentExhausted: false \}/)
+    assert.match(read('src/lib/soft-ai/agent-status-server.ts'), /budget: \{ tenantExhausted: allowanceExhausted, agentExhausted: false, cap: allowance\.source === 'credits' \? allowance\.cap : undefined \}/)
   })
 
   it('missing tables cap nothing; a broken meter fails open; the owner budget change clears the cache', () => {
@@ -166,12 +166,13 @@ describe('AI allowance: credits source (Lane H, SQL 060)', () => {
   })
   it('a meter that cannot be read answers and alerts the platform owner; no pause without a saved rate', () => {
     const src = read('src/lib/soft-ai/ai-allowance.ts')
-    assert.ok(src.includes('if (credits.failedOpen) void alertCreditMeterDown(now.getTime())'))
+    assert.ok(src.includes('if (credits.failedOpen) void readers.alert(now.getTime())'))
+    assert.ok(src.includes('alert: (nowMs) => alertCreditMeterDown(nowMs),'))
     assert.ok(src.includes("where: { tenantId, role: 'OWNER', isActive: true, user: { isSuperAdmin: true, active: true } },"))
     // An owner read error counts as the owner's business: answer, never a silent stop.
-    assert.match(src, /owner read failed[^\n]*\n\s*return true/)
+    assert.match(src, /owner read failed[^\n]*\n\s*void alertCreditMeterDown\(nowMs\)\n\s*return true/)
     const billing = read('src/lib/ai-billing/allowance.ts')
-    assert.ok(billing.includes('const configured = (await listRates()).length > 0'))
+    assert.ok(billing.includes('const configured = (await listRates()).some((r) => r.periodKey <= s.periodKey)'))
     assert.ok(billing.includes('const value: CreditAllowance = d.enforced && configured'))
     assert.ok(billing.includes('{ ...open(now), failedOpen: true }'))
   })
@@ -179,5 +180,58 @@ describe('AI allowance: credits source (Lane H, SQL 060)', () => {
     const turn = read('src/lib/soft-ai/agent-turn.ts')
     assert.ok(turn.includes("await settleHandoff(row, { kind: 'handoff', reason: HANDOFF_REASON.aiAllowance }, hours)"))
     assert.match(HANDOFF_REASON_LABELS.ai_allowance, /contestale vos/)
+  })
+})
+
+describe('AI allowance: the combined live decision (resolveAiAllowance, readers injected)', () => {
+  const open: AiAllowance = { source: 'none', enforce: false, limitMicros: null, spentMicros: 0, remainingMicros: null, periodKey: '2026-10', renewsAt: null, exhausted: false }
+  const usedUp = { enforce: true, exhausted: true, cap: 'credit' as const, periodKey: '2026-10', renewsAt: new Date('2026-11-01T06:00:00Z') }
+  const run = async (over: { budget?: AiAllowance; credits?: unknown; owner?: boolean | 'throw' }) => {
+    const alerts: number[] = []
+    const ownerCalls: string[] = []
+    const a = await resolveAiAllowance('t-live', NOW, {
+      budget: async () => over.budget ?? open,
+      credits: async () => (over.credits === undefined ? usedUp : (over.credits as typeof usedUp | null)),
+      ownerBusiness: async (t) => {
+        ownerCalls.push(t)
+        return over.owner === true
+      },
+      alert: async (ms) => {
+        alerts.push(ms)
+      },
+    })
+    return { a, alerts, ownerCalls }
+  }
+  it('used-up credits pause a regular business; the owner check runs only then', async () => {
+    const { a, ownerCalls } = await run({})
+    assert.equal(a.exhausted, true)
+    assert.equal(a.source, 'credits')
+    assert.deepEqual(ownerCalls, ['t-live'])
+    const notUsed = await run({ credits: { ...usedUp, exhausted: false } })
+    assert.equal(notUsed.a.exhausted, false)
+    assert.deepEqual(notUsed.ownerCalls, [])
+  })
+  it('a super-admin-owned business answers', async () => {
+    assert.equal((await run({ owner: true })).a.exhausted, false)
+  })
+  it('a meter read failure answers and alerts; no credits reader result answers', async () => {
+    const failed = await run({ credits: { enforce: false, exhausted: false, cap: 'credit', periodKey: '2026-10', renewsAt: null, failedOpen: true } })
+    assert.equal(failed.a.exhausted, false)
+    assert.equal(failed.alerts.length, 1)
+    assert.equal((await run({ credits: null })).a.exhausted, false)
+  })
+  it('an exhausted budget wins first (no credits / owner read needed)', async () => {
+    const b = await run({ budget: { ...open, source: 'ai_budget', enforce: true, exhausted: true } })
+    assert.equal(b.a.source, 'ai_budget')
+    assert.deepEqual(b.ownerCalls, [])
+  })
+  it('the status page names the cap: the own limit says to raise it', () => {
+    const src = read('src/lib/soft-ai/agent-status.ts')
+    assert.ok(src.includes("if (input.budget.cap === 'limit') {"))
+    assert.match(src, /Subí tu límite en Configuración › Uso de IA/)
+    assert.ok(read('src/lib/soft-ai/agent-status-server.ts').includes("cap: allowance.source === 'credits' ? allowance.cap : undefined"))
+    const billing = read('src/lib/ai-billing/allowance.ts')
+    assert.ok(billing.includes('const configured = (await listRates()).some((r) => r.periodKey <= s.periodKey)'))
+    assert.ok(billing.includes('{ ...hit.value, failedOpen: true }'))
   })
 })

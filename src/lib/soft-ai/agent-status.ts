@@ -98,7 +98,7 @@ export type LineAiInput = {
   allowlisted: boolean
   /** aiFullUnlockStatus for the serving agent + model (agent-config.ts). */
   unlock: { unlocked: boolean; reason: AiFullUnlockMismatch | null; versionWarning?: boolean; agentId?: string | null }
-  budget: { tenantExhausted: boolean; agentExhausted: boolean }
+  budget: { tenantExhausted: boolean; agentExhausted: boolean; /** credits: which cap stopped it. */ cap?: 'credit' | 'limit' }
   /** Latest test run of the evaluated agent on this line. */
   run: LineRunInput | null
   /** The line's latest real AI turn in the last hour (not tests), when it did NOT answer for an unexpected reason. */
@@ -283,6 +283,10 @@ export function lineAiStatus(input: LineAiInput): LineAiStatus {
     }
   }
   if (input.budget.tenantExhausted || input.budget.agentExhausted) {
+    // Verifier #4: the business's own monthly limit stopped it — the fix is raising that limit, not buying credit.
+    if (input.budget.cap === 'limit') {
+      return st('problem', 'NO_BUDGET', 'Llegaste a tu límite de IA del mes', 'Los chats nuevos pasan al equipo. Subí tu límite en Configuración › Uso de IA, o se renueva el día 1 del mes (hora de Costa Rica).')
+    }
     return st('problem', 'NO_BUDGET', 'Sin saldo de IA este mes', 'Los chats nuevos pasan al equipo. Se renueva el día 1 del mes (hora de Costa Rica) o pedí más saldo a Betsy.')
   }
   // Every switch above is fine, so the line answers: a recent odd skip is a warning, never "Sin IA" on every chat

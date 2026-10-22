@@ -179,6 +179,7 @@ async function isOwnerBusiness(tenantId: string, nowMs: number): Promise<boolean
     return row !== null
   } catch (error) {
     console.error('[soft-ai/ai-allowance] owner read failed', error instanceof Error ? error.name : 'unknown')
+    void alertCreditMeterDown(nowMs)
     return true
   }
 }
@@ -207,11 +208,25 @@ async function alertCreditMeterDown(nowMs: number): Promise<void> {
  * The business's live allowance now: the owner's monthly budget, then the credits (exempt always wins). Never throws: a
  * read error fails open with the last known value.
  */
-export async function resolveAiAllowance(tenantId: string, now = new Date()): Promise<AiAllowance> {
+/** The readers resolveAiAllowance uses (injectable for tests; the defaults read the DB). */
+export type AllowanceReaders = {
+  budget: (tenantId: string, now: Date) => Promise<AiAllowance>
+  credits: (tenantId: string, now: Date) => Promise<(AllowanceCredits & { failedOpen?: boolean }) | null>
+  ownerBusiness: (tenantId: string, nowMs: number) => Promise<boolean>
+  alert: (nowMs: number) => Promise<void>
+}
+const DB_READERS: AllowanceReaders = {
+  budget: (tenantId, now) => resolveBudgetAllowance(tenantId, now),
+  credits: (tenantId, now) => resolveCreditsSafe(tenantId, now),
+  ownerBusiness: (tenantId, nowMs) => isOwnerBusiness(tenantId, nowMs),
+  alert: (nowMs) => alertCreditMeterDown(nowMs),
+}
+
+export async function resolveAiAllowance(tenantId: string, now = new Date(), readers: AllowanceReaders = DB_READERS): Promise<AiAllowance> {
   if (exemptTenantIds().has(tenantId)) return decideAllowance({ exempt: true, budget: null, spentMicros: 0, now })
-  const [budgetAllowance, credits] = await Promise.all([resolveBudgetAllowance(tenantId, now), resolveCreditsSafe(tenantId, now)])
+  const [budgetAllowance, credits] = await Promise.all([readers.budget(tenantId, now), readers.credits(tenantId, now)])
   if (budgetAllowance.exhausted || !credits) return budgetAllowance
-  if (credits.failedOpen) void alertCreditMeterDown(now.getTime())
+  if (credits.failedOpen) void readers.alert(now.getTime())
   if (!(credits.enforce && credits.exhausted)) return budgetAllowance
   return decideAllowance({
     exempt: false,
@@ -219,7 +234,7 @@ export async function resolveAiAllowance(tenantId: string, now = new Date()): Pr
     spentMicros: budgetAllowance.spentMicros,
     now,
     credits,
-    ownerBusiness: await isOwnerBusiness(tenantId, now.getTime()),
+    ownerBusiness: await readers.ownerBusiness(tenantId, now.getTime()),
   })
 }
 

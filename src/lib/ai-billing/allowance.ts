@@ -53,8 +53,9 @@ export async function resolveCreditAllowance(tenantId: string, now = new Date())
     if (aiExemptTenantIds().has(tenantId) || !(await getSettings()).enforce) return open(now)
     const s = await getCreditState(tenantId, now)
     const d = s.decision
-    // Lane D (Rafael 2026-10-22): nothing pauses until the owner saved a credit rate (no config = answer).
-    const configured = (await listRates()).length > 0
+    // Lane D (Rafael 2026-10-22): nothing pauses until the owner saved a credit rate IN FORCE this month (no config =
+    // answer; a rate saved for next month never enforces this month on the code defaults — Verifier #1).
+    const configured = (await listRates()).some((r) => r.periodKey <= s.periodKey)
     const value: CreditAllowance = d.enforced && configured
       ? {
           source: 'credits',
@@ -71,6 +72,7 @@ export async function resolveCreditAllowance(tenantId: string, now = new Date())
     return value
   } catch (error) {
     console.error('[ai-billing/allowance] read failed', error instanceof Error ? error.name : 'unknown')
-    return hit && hit.value.periodKey === costaRicaPeriodKey(now) ? hit.value : { ...open(now), failedOpen: true }
+    // Verifier #3: the last value this month still answers as it did, but the read failure is reported either way.
+    return hit && hit.value.periodKey === costaRicaPeriodKey(now) ? { ...hit.value, failedOpen: true } : { ...open(now), failedOpen: true }
   }
 }

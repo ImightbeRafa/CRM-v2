@@ -1,3 +1,12 @@
+## 2026-10-22 — AI credits pause the inbox agent (Lane D, claude/lane-d-credits-pause, PR #127; Release 3; uses Lane H SQL 060)
+
+- `resolveAiAllowance` adds Lane H's credits source after the owner's monthly budget. A used-up credit, or the business's own monthly limit, pauses live replies with the existing hand-off (no model call; the chat goes to a person; bell "Se acabó el saldo de IA del mes — contestale vos"). The status page says "Llegaste a tu límite de IA del mes — subí tu límite" when the business's own limit stopped it.
+- Never paused by credits:
+  - `AI_ALLOWANCE_EXEMPT_TENANTS`;
+  - businesses with an active OWNER who is an active super admin (an owner read error counts as owner: answer).
+- Nothing pauses before SQL 060, with enforcement off, or without a credit rate in force this month. A credit meter that can't be read answers and emails the platform owner once an hour; it never stops silently.
+- `ai-billing/allowance.ts` (small, additive): `failedOpen` on read errors, and "a rate in force this month" before enforcing.
+- Tests: `ai-allowance.test.ts` covers the rules and the combined live decision with injected readers.
 ## 2026-10-22 — An AI provider outage never strands a chat; separate test budget; Lane C engine fixes (Lane D, claude/lane-d-provider-outage, PR #121; SQL 061 Rafael applies)
 
 - Provider failure (quota / 429 / 5xx / timeout / missing key) no longer leaves a chat on "IA activa" with no answer. The job is re-queued with backoff 2/5/15/30/60 min (±20%), capped at 2 h after the first failure and 10 min before the 24 h window closes. The first retry is silent; after the 2nd failure the customer gets one "Dame un momento y te confirmo" line (night wording after hours, `:outage_ack` delivery key, at most one per 2 h). Then the chat is handed off as "IA sin servicio — contestale vos" (Persona view). Timeouts get 2 tries; a missing key hands off at once. When a payment is in play: the payment safe line plus an immediate hand-off.

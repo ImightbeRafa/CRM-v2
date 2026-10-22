@@ -75,6 +75,8 @@ export interface SoftSocialAccount {
   disconnectedAt?: string | Date | null
   /** Dead-line alarm: a busy line went quiet at this time (null = fine). */
   silentSince?: string | null
+  /** Meta no longer sends this line's messages to Betsy (webhook subscription gone). */
+  webhookGoneSince?: string | null
 }
 
 /** Short display label for a connected social account (§7.2 fallback chain). */

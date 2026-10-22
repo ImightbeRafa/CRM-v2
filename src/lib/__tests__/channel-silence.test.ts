@@ -16,8 +16,12 @@ import {
   lineDownReason,
   lostSiblingsSentence,
   parseLineDownKey,
+  silenceIsFarBeyondPattern,
   silenceShouldAlert,
   silenceThresholdMinutes,
+  lineDownAlerts,
+  webhookSubscriptionState,
+  WEBHOOK_GONE_CODE,
 } from '../channel-silence-core'
 import { buildInstagramSuccessHtml, lostInstagramLinesHtml } from '../instagram-connect'
 import { classifyTokenStatus } from '../social-account-token-health'
@@ -53,15 +57,16 @@ test('threshold scales with the line’s usual traffic, quiet lines are never ju
   assert.equal(silenceThresholdMinutes(Number.NaN), null)
 })
 
-test('a busy line quiet for 2.5 business hours is not an alert; 4.5 hours is', () => {
+test('a busy line quiet for 2.5 business hours is not checked; 4.5 hours is (a check, not an alert)', () => {
   assert.equal(silenceShouldAlert(2000, 150), false)
   assert.equal(silenceShouldAlert(200, 150), false)
   assert.equal(silenceShouldAlert(2000, 270), true)
   assert.equal(silenceShouldAlert(200, 270), true)
   assert.equal(silenceShouldAlert(10, 270), false)
   const runner = read('src/lib/channel-silence.ts')
-  assert.match(runner, /Sin mensajes recientes:/)
-  assert.match(runner, /período tranquilo/)
+  // Silence makes the line a suspect (token + subscription check); only evidence emails.
+  assert.match(runner, /suspects\.push\(\{ row, why: 'silent' \}\)/)
+  assert.match(runner, /Dejó de recibir mensajes: /)
   assert.doesNotMatch(runner, /Canal caído/)
 })
 
@@ -99,6 +104,10 @@ test('bell key round-trips and rejects junk; text names the line, the time and t
   const key = `line_down:acc_1:silent:${Math.floor(since.getTime() / 60_000)}`
   assert.deepEqual(parseLineDownKey(key), { socialAccountId: 'acc_1', reason: 'silent', since })
   assert.equal(parseLineDownKey('line_down:acc_1:other:1'), null)
+  assert.equal(parseLineDownKey(`line_down:acc_1:webhook:${Math.floor(since.getTime() / 60_000)}`)?.reason, 'webhook')
+  const gone = lineDownNotificationText('Tazas', { reason: 'webhook', since })
+  assert.match(gone.title, /Dejó de recibir mensajes · Tazas/)
+  assert.match(gone.snippet, /Reparar/)
   assert.equal(parseLineDownKey('line_down::silent:1'), null)
   assert.equal(parseLineDownKey('ai_handoff:a:b:c'), null)
   assert.equal(parseLineDownKey(null), null)
@@ -138,13 +147,56 @@ test('connect result page names the lines that were dropped, escaped, and stays 
   assert.doesNotMatch(lost, /window\.close\(\)/, 'the warning must not auto-close')
 })
 
-test('Canales / chats banner: a silent line needs action', () => {
+test('Canales / chats banner: a quiet line is a note, never an alarm; a gone webhook is (Rafael 2026-10-22)', () => {
   const base = { id: 'a', platform: 'instagram', accountId: '1', linkedAt: '', isActive: true, tokenStatus: 'valid' }
   assert.equal(classifyChannelHealth(base).healthy, true)
   const silent = classifyChannelHealth({ ...base, silentSince: '2026-10-18T15:03:00Z' })
   assert.equal(silent.label, 'Sin mensajes recientes')
-  assert.equal(silent.needsAction, true)
-  assert.equal(silent.action, 'reconnect')
+  assert.equal(silent.needsAction, false)
+  assert.equal(silent.tone, 'neutral')
+  const gone = classifyChannelHealth({ ...base, webhookGoneSince: '2026-10-18T15:03:00Z' })
+  assert.equal(gone.needsAction, true)
+  assert.equal(gone.action, 'repair')
+  // A dead token still wins over a quiet note.
+  assert.equal(classifyChannelHealth({ ...base, tokenStatus: 'revoked', silentSince: 'x' }).needsAction, true)
+
+  const banners = read('src/components/chats/SoftTokenHealthBanners.tsx')
+  assert.match(banners, /data-testid="soft-line-quiet-note"/)
+  assert.match(banners, /filter\(\(\{ health \}\) => health\.needsAction\)/)
+  assert.doesNotMatch(banners, /no necesariamente una desconexión/)
+  assert.match(read('src/app/api/chat/accounts/route.ts'), /webhookGoneSince: row\.lastErrorCode === WEBHOOK_GONE_CODE/)
+})
+
+test('silence alone never emails or bells; token / webhook evidence does', () => {
+  assert.equal(lineDownAlerts('silent'), false)
+  assert.equal(lineDownAlerts(null), false)
+  assert.equal(lineDownAlerts('token'), true)
+  assert.equal(lineDownAlerts('webhook'), true)
+  assert.equal(lineDownReason({ tokenStatus: 'valid', lastErrorCode: WEBHOOK_GONE_CODE }), 'webhook')
+  assert.equal(lineDownReason({ tokenStatus: 'revoked', lastErrorCode: WEBHOOK_GONE_CODE }), 'token')
+  const runner = read('src/lib/channel-silence.ts')
+  assert.match(runner, /if \(!lineDownAlerts\(reason\) \|\| !reason\) continue/)
+  assert.doesNotMatch(runner, /Sin mensajes recientes: /, 'no silence email subject left')
+  // The quiet note needs silence far beyond the line's own pattern, not the 4 h suspect threshold.
+  assert.equal(silenceIsFarBeyondPattern(300, 5 * 60), false)
+  assert.equal(silenceIsFarBeyondPattern(300, 13 * 60), false)
+  assert.equal(silenceIsFarBeyondPattern(300, 14 * 60), true)
+  assert.equal(silenceIsFarBeyondPattern(40, 14 * 60), false, 'a slow line needs 3× its own longer threshold')
+  assert.equal(silenceIsFarBeyondPattern(40, 18 * 60), true)
+  assert.equal(silenceIsFarBeyondPattern(10, 100 * 60), false, 'quiet lines are never judged')
+  // Quiet lines are re-checked at most every 30 min (no Graph call every 5-min cron run).
+  assert.match(runner, /if \(!businessNow \|\| probedRecently\) continue/)
+})
+
+test('webhook subscription: only a clear "not subscribed" answer is evidence', () => {
+  assert.equal(webhookSubscriptionState({ data: [] }, { platform: 'whatsapp' }), 'missing')
+  assert.equal(webhookSubscriptionState({ data: [{ whatsapp_business_api_data: { id: 'app1' } }] }, { appId: 'app1', platform: 'whatsapp' }), 'subscribed')
+  // Another app only (could be a stale app id in env): proves nothing.
+  assert.equal(webhookSubscriptionState({ data: [{ whatsapp_business_api_data: { id: 'other' } }] }, { appId: 'app1', platform: 'whatsapp' }), 'unknown')
+  assert.equal(webhookSubscriptionState({ data: [{ id: 'app1', subscribed_fields: ['messages', 'feed'] }] }, { appId: 'app1', platform: 'instagram' }), 'subscribed')
+  assert.equal(webhookSubscriptionState({ data: [{ id: 'app1', subscribed_fields: ['feed'] }] }, { appId: 'app1', platform: 'instagram' }), 'missing')
+  assert.equal(webhookSubscriptionState({ error: { message: 'x' } }, { platform: 'instagram' }), 'unknown')
+  assert.equal(webhookSubscriptionState(null, { platform: 'instagram' }), 'unknown')
 })
 
 test('guards: cron-only, tenant-scoped writes, no webhook load, no token / raw code to the client', () => {
@@ -191,6 +243,8 @@ test('verifier r1: daily token probe keeps an open incident and the silence mark
     tokenCheckErrorFields({ tokenStatus: 'valid', lastErrorCode: SILENT_LINE_CODE }, { tokenStatus: 'error', lastErrorCode: 'TimeoutError', transient: true }, now),
     {},
   )
+  // The webhook-gone marker survives a healthy token probe too (owned by the silence cron).
+  assert.deepEqual(tokenCheckErrorFields({ tokenStatus: 'valid', lastErrorCode: WEBHOOK_GONE_CODE }, ok, now), {})
   // Silent line whose token is now dead: becomes a token incident.
   assert.deepEqual(tokenCheckErrorFields({ tokenStatus: 'valid', lastErrorCode: SILENT_LINE_CODE }, bad, now), { lastErrorCode: '190', lastErrorAt: now })
   // Healthy line, healthy probe: cleared as before.

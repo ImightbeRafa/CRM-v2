@@ -6,11 +6,15 @@ import { installNotificationSoundUnlock, isNewInboundActivity, playNotificationC
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   appendOptimisticOutbound,
+  createOptimisticOutboundMedia,
   createOptimisticOutboundMessage,
   humanizeChatSendError,
   markOptimisticOutboundFailed,
+  settleOptimisticOutboundWithoutRow,
+  shouldAutoFocusComposer,
   newClientRequestId,
   parseApiJson,
+  patchOptimisticOutbound,
   projectOptimisticListPreview,
   reconcileOptimisticOutbound,
   type ChatInboxMessage,
@@ -78,6 +82,8 @@ import {
 import { lineHealth, lineIsDown, summarizeLineCounts } from '@/lib/chat-line-filter'
 import { AuroraShell } from '@/components/aurora/AuroraShell'
 import { IG_OUTBOUND_ACCEPT, WA_OUTBOUND_ACCEPT } from '@/lib/chat-outbound-media'
+import { downscaleImageForSend, outboundKindForMime, postFormWithProgress } from '@/lib/chat-outbound-upload'
+import { quickReplyMediaUrl } from '@/components/chats/composer/ComposerExtras'
 import { WA_CAPTION_MAX, type ChatQuickReply, type QuickReplyChange, type QuickReplyMedia } from '@/lib/chat-quick-replies'
 import { hasOrderDraft } from '@/lib/order-draft'
 import { useSession } from 'next-auth/react'
@@ -114,6 +120,36 @@ const CrearPedidoDrawer = dynamic(
   () => import('@/components/aurora/pedidos/CrearPedidoDrawer').then((m) => m.CrearPedidoDrawer),
   { ssr: false },
 )
+
+
+const IN_FLIGHT_RECHECKS = 5
+const IN_FLIGHT_RECHECK_MS = 4000
+
+/** Phone thread / details: below the global banners, as tall as the visible area above the keyboard. */
+const MOBILE_THREAD_STYLE = {
+  top: 'calc(var(--app-top-offset, 0px) + var(--chat-vv-top, 0px))',
+  height: 'calc(var(--chat-vv-height, 100dvh) - var(--app-top-offset, 0px))',
+} as const
+
+function isPhoneViewport(): boolean {
+  return typeof window !== 'undefined' && Boolean(window.matchMedia?.('(max-width: 767px)').matches)
+}
+
+/** A queued file send (captured when picked; Reintentar re-runs it with the same clientRequestId). */
+type MediaSendJob = {
+  conversationId: string
+  conversationStatus: string | undefined
+  clientRequestId: string
+  socialAccountId: string
+  recipient: string
+  platform?: string
+  caption: string
+  /** Picked from the device (multipart upload) … */
+  file?: File
+  /** … or already stored on the server (Recientes / respuesta rápida). */
+  json?: Record<string, unknown>
+  previewUrl?: string
+}
 
 export function SoftCopilotInboxV2() {
   const { toast } = useToast()
@@ -180,6 +216,8 @@ export function SoftCopilotInboxV2() {
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null)
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list')
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false)
+  /** Phone: which of thread / details we pushed as a history entry (the phone's back goes there). */
+  const mobileHistoryRef = useRef({ thread: false, details: false })
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [threadBeforeCursor, setThreadBeforeCursor] = useState<Record<string, string | null>>({})
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
@@ -204,7 +242,6 @@ export function SoftCopilotInboxV2() {
   /** Unsent composer text per chat (WhatsApp-style drafts; this tab only). */
   const composerDrafts = useRef(new Map<string, string>())
   const [threadErrorId, setThreadErrorId] = useState<string | null>(null)
-  const pendingFileRequestIds = useRef(new Map<string, string>())
   /** Server search hits for the active query; re-merged after a reconcile replaces the list. */
   const searchHitsRef = useRef<ChatConversationListItemDto[]>([])
   const [searchHitKeys, setSearchHitKeys] = useState<ReadonlySet<string>>(() => new Set())
@@ -225,14 +262,18 @@ export function SoftCopilotInboxV2() {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
   const composerRef = useRef<HTMLTextAreaElement>(null)
-  const sendInFlightRef = useRef(false)
   /**
-   * Text sends run one after another (WhatsApp order = typing order) but never block the
-   * composer: the bubble appears and the box clears at once, the request queues here.
+   * Sends (text and files) run one after another per chat (WhatsApp order = typing order) but never
+   * block the composer: the bubble appears and the box clears at once, the request queues here.
    */
   const textSendQueueRef = useRef<Map<string, Promise<void>>>(new Map())
   /** Double-send guard: requests already queued, and the last new text (a double Enter fires before the box clears). */
   const textInFlightRef = useRef<Set<string>>(new Set())
+  /** File sends by clientRequestId until they are stored (Reintentar re-runs the same job, same id). */
+  const mediaJobsRef = useRef<Map<string, MediaSendJob>>(new Map())
+  const sendRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** "Still sending elsewhere" re-checks per clientRequestId (bounded). */
+  const inFlightChecksRef = useRef<Map<string, number>>(new Map())
   const lastQueuedTextRef = useRef<{ conversationId: string; content: string; at: number } | null>(null)
   /** Last quick reply inserted, per chat: reported with that chat's next send (usage metric). */
   const quickReplyUsedRef = useRef<{ conversationId: string; shortcut: string } | null>(null)
@@ -907,18 +948,28 @@ export function SoftCopilotInboxV2() {
   const router = useRouter()
   const [deepLinkId, setDeepLinkId] = useState<string | null>(null)
   const deepLinkFetched = useRef<string | null>(null)
+  /** The ?c= already opened: a history step back onto that URL must not reopen it (phone back loop). */
+  const handledDeepLinkRef = useRef<string | null>(null)
   useEffect(() => {
     const c = searchParams?.get('c')
-    if (c && /^[A-Za-z0-9_-]{8,64}$/.test(c)) setDeepLinkId(c)
+    if (!c) {
+      handledDeepLinkRef.current = null
+      return
+    }
+    if (c !== handledDeepLinkRef.current && c && /^[A-Za-z0-9_-]{8,64}$/.test(c)) setDeepLinkId(c)
   }, [searchParams])
   useEffect(() => {
     if (!deepLinkId) return
     if (dtoMap.has(deepLinkId)) {
       setDeepLinkId(null)
       deepLinkFetched.current = null
+      handledDeepLinkRef.current = deepLinkId
+      // Handled: drop ?c= so the same notification can be clicked again later. Synchronously and in
+      // place, BEFORE the phone thread entry is pushed: a later router.replace would
+      // overwrite that entry and the phone's back would land on ?c= and reopen the chat.
+      // Plain data: Next's patched replaceState copies its own state and syncs useSearchParams.
+      window.history.replaceState({}, '', '/chats')
       openConversationById(deepLinkId)
-      // Handled: drop ?c= so the same notification can be clicked again later.
-      router.replace('/chats', { scroll: false })
       return
     }
     if (deepLinkFetched.current === deepLinkId) return
@@ -1215,15 +1266,114 @@ export function SoftCopilotInboxV2() {
     setFailedOutboundId(null)
     setMessageInput(composerDrafts.current.get(id) ?? '')
     setTemplatePickerOpen(false)
+    if (mobileHistoryRef.current.details) closeMobileEntry('details')
     setMobileDetailsOpen(false)
     nearBottomRef.current = true
     setMobileView('thread')
+    pushMobileEntry('thread')
     void loadThreadMessages(id).then(() => {
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
-        composerRef.current?.focus()
+        // The thread finished loading: the composer may have just been enabled / mounted.
+        if (selectedConversationIdRef.current === id && shouldAutoFocusComposer()) {
+          focusComposer({ preventScroll: true })
+        }
       })
     })
+  }
+
+  /**
+   * Phone: opening a chat / its details adds a history entry, so the phone's back button or swipe
+   * goes thread → list (Rafael 2026-10-22) instead of leaving Chats. The URL does not change.
+   */
+  function pushMobileEntry(kind: 'thread' | 'details') {
+    if (typeof window === 'undefined' || !isPhoneViewport() || mobileHistoryRef.current[kind]) return
+    mobileHistoryRef.current[kind] = true
+    window.history.pushState({ ...(window.history.state ?? {}), betsyChat: kind }, '')
+  }
+
+  /** In-app back / Cerrar: pop our own entries (popstate closes the view), else close directly. */
+  function closeMobileEntry(kind: 'thread' | 'details') {
+    const entries = kind === 'thread'
+      ? Number(mobileHistoryRef.current.thread) + Number(mobileHistoryRef.current.details)
+      : Number(mobileHistoryRef.current.details)
+    const atOurs = typeof window !== 'undefined' && Boolean((window.history.state as { betsyChat?: string } | null)?.betsyChat)
+    if (entries > 0 && atOurs) {
+      window.history.go(-entries)
+      return
+    }
+    mobileHistoryRef.current = kind === 'thread' ? { thread: false, details: false } : { ...mobileHistoryRef.current, details: false }
+    setMobileDetailsOpen(false)
+    if (kind === 'thread') setMobileView('list')
+  }
+
+  useEffect(() => {
+    const onPop = (event: PopStateEvent) => {
+      const at = (event.state as { betsyChat?: string } | null)?.betsyChat
+      const open = mobileHistoryRef.current
+      if (open.details && at !== 'details') {
+        open.details = false
+        setMobileDetailsOpen(false)
+      }
+      if (open.thread && at !== 'thread' && at !== 'details') {
+        open.thread = false
+        setMobileDetailsOpen(false)
+        setMobileView('list')
+      }
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  // Phone keyboard: iOS / Android shrink only the visual viewport, so the open thread follows it and
+  // the composer stays right above the keyboard (header stays on screen).
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const root = document.documentElement
+    const apply = () => {
+      root.style.setProperty('--chat-vv-height', `${Math.round(vv.height)}px`)
+      root.style.setProperty('--chat-vv-top', `${Math.round(vv.offsetTop)}px`)
+    }
+    apply()
+    vv.addEventListener('resize', apply)
+    vv.addEventListener('scroll', apply)
+    return () => {
+      vv.removeEventListener('resize', apply)
+      vv.removeEventListener('scroll', apply)
+      root.style.removeProperty('--chat-vv-height')
+      root.style.removeProperty('--chat-vv-top')
+    }
+  }, [])
+
+  // Opening a chat (click, keyboard, deep link) puts the cursor in the composer on a computer. The
+  // composer can turn on a moment later (agent state loads), so it tries again while nothing else
+  // took the focus (the agent clicking the search box or a button wins).
+  useEffect(() => {
+    if (!selectedConversationId || !shouldAutoFocusComposer()) return
+    const tryFocus = () => {
+      const active = document.activeElement as HTMLElement | null
+      const idle = !active || active === document.body || Boolean(active.closest('[data-soft-conv-key]'))
+      if (idle) focusComposer({ preventScroll: true })
+    }
+    const raf = requestAnimationFrame(tryFocus)
+    const timers = [400, 1200].map((ms) => window.setTimeout(tryFocus, ms))
+    return () => {
+      cancelAnimationFrame(raf)
+      timers.forEach((t) => window.clearTimeout(t))
+    }
+  }, [selectedConversationId])
+
+  /**
+   * Focus the composer on screen. Desktop and phone thread panes are both mounted (one hidden by
+   * CSS) and share `composerRef`, which holds whichever mounted last, so look for the visible one.
+   */
+  function focusComposer(opts?: FocusOptions) {
+    const candidates = [
+      composerRef.current,
+      ...Array.from(document.querySelectorAll<HTMLTextAreaElement>('textarea[data-testid="composer-textarea"]')),
+    ]
+    candidates.find((el) => el && !el.disabled && el.getClientRects().length > 0)?.focus(opts)
   }
 
   async function patchConversation(partial: {
@@ -1525,7 +1675,10 @@ export function SoftCopilotInboxV2() {
     }
   }
 
-  async function handleSendMessage(e: FormEvent, opts?: { retryClientRequestId?: string }) {
+  async function handleSendMessage(
+    e: FormEvent,
+    opts?: { retryClientRequestId?: string; /** Send this text as a NEW message (composer untouched). */ resendContent?: string },
+  ) {
     e.preventDefault()
     if (!selectedConversation || !selectedConversationId) return
 
@@ -1534,7 +1687,7 @@ export function SoftCopilotInboxV2() {
     const recipient = selectedConversation.recipientId
     const socialAccountId = selectedConversation.socialAccountId
 
-    let content = messageInput.trim()
+    let content = (opts?.resendContent ?? messageInput).trim()
     let clientRequestId = opts?.retryClientRequestId
 
     if (clientRequestId) {
@@ -1558,7 +1711,7 @@ export function SoftCopilotInboxV2() {
 
     // Usage metric: the quick reply inserted in THIS chat since the last send (not on retries).
     const quickReplyShortcut =
-      !opts?.retryClientRequestId && quickReplyUsedRef.current?.conversationId === conversationId
+      !opts?.retryClientRequestId && opts?.resendContent === undefined && quickReplyUsedRef.current?.conversationId === conversationId
         ? quickReplyUsedRef.current.shortcut
         : undefined
     quickReplyUsedRef.current = null
@@ -1588,11 +1741,11 @@ export function SoftCopilotInboxV2() {
         )
         return next
       })
-      setMessageInput('')
+      if (opts?.resendContent === undefined) setMessageInput('')
       nearBottomRef.current = true
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-        composerRef.current?.focus()
+        focusComposer()
       })
     } else {
       setThreadMessages((prev) => ({
@@ -1610,14 +1763,49 @@ export function SoftCopilotInboxV2() {
     const deliver = () =>
       deliverTextMessage({ conversationId, conversationStatus, socialAccountId, recipient, content, clientRequestId: requestId, quickReplyShortcut })
         .finally(() => textInFlightRef.current.delete(requestId))
-    // One queue per chat: order matters inside a conversation, a slow send never holds another chat.
+    await enqueueChatSend(conversationId, deliver)
+  }
+
+  /**
+   * The server said another request with this id is still sending it. Re-ask a few times (same id,
+   * never a second send); if it is still unknown, the bubble turns failed so "Reintentar" shows.
+   */
+  function scheduleInFlightRecheck(conversationId: string, clientRequestId: string, run: () => Promise<void>) {
+    const attempt = (inFlightChecksRef.current.get(clientRequestId) ?? 0) + 1
+    if (attempt > IN_FLIGHT_RECHECKS) {
+      inFlightChecksRef.current.delete(clientRequestId)
+      setThreadMessages((prev) => ({
+        ...prev,
+        [conversationId]: markOptimisticOutboundFailed(prev[conversationId] || [], clientRequestId),
+      }))
+      if (selectedConversationIdRef.current === conversationId) {
+        setSendError('No pudimos confirmar si salió. Revisá el chat antes de tocar Reintentar.')
+        setFailedOutboundId(`optimistic:${clientRequestId}`)
+      }
+      return
+    }
+    inFlightChecksRef.current.set(clientRequestId, attempt)
+    window.setTimeout(() => void enqueueChatSend(conversationId, run), IN_FLIGHT_RECHECK_MS)
+  }
+
+  /** Many fast sends → one list refresh shortly after the last one (not one request per message). */
+  function scheduleRefreshAfterSend() {
+    if (sendRefreshTimerRef.current) clearTimeout(sendRefreshTimerRef.current)
+    sendRefreshTimerRef.current = setTimeout(() => {
+      sendRefreshTimerRef.current = null
+      void fetchChanges()
+    }, 350)
+  }
+
+  /** One queue per chat: order matters inside a conversation, a slow send never holds another chat. */
+  function enqueueChatSend(conversationId: string, run: () => Promise<void>): Promise<void> {
     const queues = textSendQueueRef.current
-    const queued = (queues.get(conversationId) ?? Promise.resolve()).then(deliver, deliver)
+    const queued = (queues.get(conversationId) ?? Promise.resolve()).then(run, run)
     queues.set(conversationId, queued)
     void queued.finally(() => {
       if (queues.get(conversationId) === queued) queues.delete(conversationId)
     })
-    await queued
+    return queued
   }
 
   /** One queued text send: POST, then reconcile or mark the optimistic bubble as failed. */
@@ -1657,6 +1845,7 @@ export function SoftCopilotInboxV2() {
         message?: Parameters<typeof messageDtoToInbox>[0]
         conversationId?: string
         clientRequestId?: string | null
+        inFlight?: boolean
       }>(res)
 
       // Thread may have changed while the request was in flight — only patch the origin conversation.
@@ -1690,15 +1879,30 @@ export function SoftCopilotInboxV2() {
             persisted,
           ),
         }))
+      } else {
+        // Delivered but not stored yet (or another tab is sending this id): never an error.
+        const inFlight = parsed.data.inFlight === true
+        setThreadMessages((prev) => ({
+          ...prev,
+          [conversationId]: settleOptimisticOutboundWithoutRow(prev[conversationId] || [], clientRequestId, { inFlight }),
+        }))
+        if (inFlight) {
+          // Ask again shortly (same id: the server never sends twice); give up into "Reintentar".
+          scheduleInFlightRecheck(conversationId, clientRequestId, () =>
+            deliverTextMessage({ conversationId, conversationStatus, socialAccountId, recipient, content, clientRequestId }),
+          )
+          return
+        }
       }
+      inFlightChecksRef.current.delete(clientRequestId)
 
       // updateStatus is bound to the chat of this send (render-time closure), so it still applies
       // after the operator moved to another chat.
       if (conversationStatus === 'nuevo') updateStatus('en_curso')
       // Live list/unread via changes poll — no hard thread reload (keeps optimistic UX).
-      // Not awaited: the next queued message should not wait for the list refresh.
-      void fetchChanges()
-      if (stillOnSameThread) {
+      // Coalesced: a burst of fast sends refreshes the list once, after the last one.
+      scheduleRefreshAfterSend()
+      if (stillOnSameThread && nearBottomRef.current) {
         requestAnimationFrame(() => {
           messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
         })
@@ -1720,27 +1924,179 @@ export function SoftCopilotInboxV2() {
     }
   }
 
-  /** Upload + send a file (WhatsApp). Returns true when sent so the composer clears the chip. */
-  async function handleSendFile(file: File, caption: string): Promise<boolean> {
-    if (!selectedConversation) return false
-    const form = new FormData()
-    form.append('file', file)
-    form.append('socialAccountId', selectedConversation.socialAccountId)
-    form.append('recipient', selectedConversation.recipientId)
-    form.append('caption', caption.trim())
-    // One id per picked file: a retry of the same file is deduplicated by the server.
-    const requestIdKey = `${file.name}:${file.size}:${file.lastModified}`
-    if (!pendingFileRequestIds.current.has(requestIdKey)) {
-      pendingFileRequestIds.current.set(requestIdKey, newClientRequestId())
+  /**
+   * A file send: the bubble (photo preview + progress) shows at once, the chip and caption clear,
+   * the composer stays free and the agent may switch chats; the upload runs in this chat's queue.
+   */
+  function queueMediaSend(
+    job: MediaSendJob,
+    preview: { messageType: string; mimeType: string; filename: string },
+  ) {
+    mediaJobsRef.current.set(job.clientRequestId, job)
+    const optimistic = createOptimisticOutboundMedia({
+      clientRequestId: job.clientRequestId,
+      messageType: preview.messageType,
+      mimeType: preview.mimeType,
+      filename: preview.filename,
+      caption: job.caption,
+      localPreviewUrl: job.previewUrl,
+      to: job.recipient,
+      platform: job.platform,
+    })
+    setThreadMessages((prev) => ({
+      ...prev,
+      [job.conversationId]: appendOptimisticOutbound(prev[job.conversationId] || [], optimistic),
+    }))
+    setDtoMap((prev) => {
+      const row = prev.get(job.conversationId)
+      if (!row) return prev
+      const next = new Map(prev)
+      next.set(job.conversationId, projectOptimisticListPreview(row, job.caption || `📎 ${preview.filename}`, optimistic.sentAt))
+      return next
+    })
+    nearBottomRef.current = true
+    requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }))
+    void enqueueChatSend(job.conversationId, () => deliverMedia(job))
+  }
+
+  /** One queued file send: shrink photos, upload with progress, then reconcile or mark failed. */
+  async function deliverMedia(job: MediaSendJob): Promise<void> {
+    const { conversationId, clientRequestId } = job
+    const patch = (next: Parameters<typeof patchOptimisticOutbound>[2]) =>
+      setThreadMessages((prev) => ({
+        ...prev,
+        [conversationId]: patchOptimisticOutbound(prev[conversationId] || [], clientRequestId, next),
+      }))
+    const fail = (error: string) => {
+      patch({ deliveryStatus: 'failed' })
+      if (selectedConversationIdRef.current === conversationId) {
+        setSendError(error)
+        setFailedOutboundId(`optimistic:${clientRequestId}`)
+      }
     }
-    form.append('clientRequestId', pendingFileRequestIds.current.get(requestIdKey)!)
-    return postChatMedia({ method: 'POST', credentials: 'same-origin', body: form })
+    try {
+      let res: Response
+      if (job.file) {
+        const file = await downscaleImageForSend(job.file)
+        const form = new FormData()
+        form.append('file', file)
+        form.append('socialAccountId', job.socialAccountId)
+        form.append('recipient', job.recipient)
+        form.append('caption', job.caption)
+        form.append('clientRequestId', clientRequestId)
+        let shown = 0
+        res = await postFormWithProgress('/api/chat/send-media', form, (fraction) => {
+          // ~20 repaints per upload at most.
+          if (fraction - shown >= 0.05 || fraction === 1) {
+            shown = fraction
+            patch({ uploadProgress: fraction })
+          }
+        })
+      } else {
+        res = await fetch('/api/chat/send-media', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...job.json,
+            socialAccountId: job.socialAccountId,
+            recipient: job.recipient,
+            caption: job.caption,
+            clientRequestId,
+          }),
+        })
+        patch({ uploadProgress: 1 })
+      }
+      const parsed = await parseApiJson<{
+        success?: boolean
+        error?: string
+        sent?: boolean
+        inFlight?: boolean
+        message?: Parameters<typeof messageDtoToInbox>[0]
+      }>(res)
+      if (!parsed.ok || !res.ok || !parsed.data.success) {
+        // Older servers answered "sent but not saved" as an error; the customer has it.
+        if (parsed.ok && parsed.data.sent === true) {
+          mediaJobsRef.current.delete(clientRequestId)
+          setThreadMessages((prev) => ({
+            ...prev,
+            [conversationId]: settleOptimisticOutboundWithoutRow(prev[conversationId] || [], clientRequestId, {}),
+          }))
+          return
+        }
+        fail(humanizeChatSendError(!parsed.ok ? parsed.error : parsed.data.error, !parsed.ok ? parsed.status : res.status))
+        return
+      }
+      if (parsed.data.inFlight === true) {
+        // Keep the job (Reintentar needs it); ask again with the same id.
+        patch({ deliveryStatus: 'pending' })
+        scheduleInFlightRecheck(conversationId, clientRequestId, () => deliverMedia(job))
+        return
+      }
+      inFlightChecksRef.current.delete(clientRequestId)
+      mediaJobsRef.current.delete(clientRequestId)
+      if (parsed.data.message) {
+        const persisted = messageDtoToInbox(parsed.data.message)
+        setThreadMessages((prev) => ({
+          ...prev,
+          [conversationId]: reconcileOptimisticOutbound(prev[conversationId] || [], persisted),
+        }))
+        // The stored row shows the server copy; the browser preview is no longer on screen.
+        if (job.previewUrl?.startsWith('blob:')) {
+          const url = job.previewUrl
+          setTimeout(() => URL.revokeObjectURL(url), 30_000)
+        }
+      } else {
+        setThreadMessages((prev) => ({
+          ...prev,
+          [conversationId]: settleOptimisticOutboundWithoutRow(prev[conversationId] || [], clientRequestId, {}),
+        }))
+      }
+      if (job.conversationStatus === 'nuevo') updateStatus('en_curso')
+      scheduleRefreshAfterSend()
+    } catch (err: unknown) {
+      fail(humanizeChatSendError(err instanceof Error ? err.message : 'Error al enviar el archivo'))
+    }
+  }
+
+  /** The chat a file send belongs to, captured when it is queued (the agent may switch chats). */
+  function mediaJobBase(caption: string): Omit<MediaSendJob, 'clientRequestId'> | null {
+    if (!selectedConversation || !selectedConversationId) return null
+    return {
+      conversationId: selectedConversationId,
+      conversationStatus: selectedConversation.status,
+      socialAccountId: selectedConversation.socialAccountId,
+      recipient: selectedConversation.recipientId,
+      platform: selectedConversation.platform,
+      caption: caption.trim(),
+    }
+  }
+
+  /** Upload + send a file (WhatsApp / Instagram photos). Queued: returns true at once so the chip clears. */
+  async function handleSendFile(file: File, caption: string): Promise<boolean> {
+    const kind = outboundKindForMime(file.type || '')
+    // Audio never carries a caption on WhatsApp (the server drops it too).
+    const base = mediaJobBase(kind === 'audio' ? '' : caption)
+    if (!base) return false
+    setSendError(null)
+    setFailedOutboundId(null)
+    queueMediaSend(
+      {
+        ...base,
+        clientRequestId: newClientRequestId(),
+        file,
+        previewUrl: kind === 'image' && typeof URL.createObjectURL === 'function' ? URL.createObjectURL(file) : undefined,
+      },
+      { messageType: kind, mimeType: file.type || 'application/octet-stream', filename: file.name },
+    )
+    setMessageInput('')
+    requestAnimationFrame(() => focusComposer())
+    return true
   }
 
   /**
    * Quick reply with files: the files go first (the text rides as the first one's caption when it
-   * fits WhatsApp's 1024 limit), then a longer text as its own message. One request id per file
-   * and chat, so retrying after a partial failure never re-sends what already went out.
+   * fits WhatsApp's 1024 limit), then a longer text as its own message, all in this chat's order.
    */
   async function handleSendQuickReplyMedia(media: QuickReplyMedia[], text: string): Promise<boolean> {
     if (!selectedConversation || media.length === 0) return false
@@ -1748,36 +2104,30 @@ export function SoftCopilotInboxV2() {
       quickReplyUsedRef.current?.conversationId === selectedConversationId ? quickReplyUsedRef.current.shortcut : undefined
     const caption = text.trim()
     const captionFits = caption.length > 0 && caption.length <= WA_CAPTION_MAX
-    const keys: string[] = []
+    setSendError(null)
+    setFailedOutboundId(null)
     for (let i = 0; i < media.length; i += 1) {
       const m = media[i]
-      const key = `qr:${m.path}:${selectedConversation.recipientId}`
-      keys.push(key)
-      if (!pendingFileRequestIds.current.has(key)) pendingFileRequestIds.current.set(key, newClientRequestId())
-      const ok = await postChatMedia(
+      const base = mediaJobBase(i === 0 && captionFits ? caption : '')
+      if (!base) return false
+      const kind = outboundKindForMime(m.mime || '')
+      queueMediaSend(
         {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          ...base,
+          clientRequestId: newClientRequestId(),
+          json: {
             quickReplyMediaPath: m.path,
             filename: m.filename,
-            socialAccountId: selectedConversation.socialAccountId,
-            recipient: selectedConversation.recipientId,
-            caption: i === 0 && captionFits ? caption : '',
-            clientRequestId: pendingFileRequestIds.current.get(key),
             ...(i === 0 && usedShortcut ? { quickReplyShortcut: usedShortcut } : {}),
-          }),
+          },
+          previewUrl: kind === 'image' ? quickReplyMediaUrl(m.path) : undefined,
         },
-        '/api/chat/send-media',
-        { keepInput: true },
+        { messageType: kind, mimeType: m.mime || 'application/octet-stream', filename: m.filename },
       )
-      if (!ok) return false
     }
-    for (const key of keys) pendingFileRequestIds.current.delete(key)
     if (usedShortcut) quickReplyUsedRef.current = null
     if (caption && !captionFits) {
-      // Queued, not awaited: the media chip clears now, so a second Enter cannot resend the files.
+      // Queued after the files (same chat queue); the box clears inside handleSendMessage.
       void handleSendMessage({ preventDefault() {} } as FormEvent)
     } else {
       setMessageInput('')
@@ -1785,85 +2135,24 @@ export function SoftCopilotInboxV2() {
     return true
   }
 
-  /** "Recientes": re-send a photo already stored in this business's chats. */
+  /** "Recientes": re-send a photo already stored in this business's chats (no new upload). */
   async function handleSendRecent(sourceMessageId: string, caption: string): Promise<boolean> {
-    if (!selectedConversation) return false
-    const requestIdKey = `recent:${sourceMessageId}:${selectedConversation.recipientId}`
-    if (!pendingFileRequestIds.current.has(requestIdKey)) {
-      pendingFileRequestIds.current.set(requestIdKey, newClientRequestId())
-    }
-    // A retry of a failed send reuses the id (no double send); after success the next pick is new.
-    const sent = await postChatMedia({
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sourceMessageId,
-        socialAccountId: selectedConversation.socialAccountId,
-        recipient: selectedConversation.recipientId,
-        caption: caption.trim(),
-        clientRequestId: pendingFileRequestIds.current.get(requestIdKey),
-      }),
-    })
-    if (sent) pendingFileRequestIds.current.delete(requestIdKey)
-    return sent
-  }
-
-  async function postChatMedia(
-    init: RequestInit,
-    url = '/api/chat/send-media',
-    opts: { keepInput?: boolean } = {},
-  ): Promise<boolean> {
-    if (!selectedConversation || !selectedConversationId || sendInFlightRef.current) return false
-    const conversationId = selectedConversationId
-    sendInFlightRef.current = true
-    setSending(true)
+    const base = mediaJobBase(caption)
+    if (!base) return false
     setSendError(null)
-    try {
-      // Texts typed before this file go first (same order the customer sees in the chat).
-      await textSendQueueRef.current.get(conversationId)?.catch(() => {})
-      const res = await fetch(url, init)
-      const parsed = await parseApiJson<{
-        success?: boolean
-        error?: string
-        sent?: boolean
-        message?: Parameters<typeof messageDtoToInbox>[0]
-      }>(res)
-      if (!parsed.ok || !res.ok || !parsed.data.success) {
-        const alreadySent = parsed.ok && parsed.data.sent === true
-        if (selectedConversationIdRef.current === conversationId) {
-          setSendError(
-            humanizeChatSendError(!parsed.ok ? parsed.error : parsed.data.error, !parsed.ok ? parsed.status : res.status),
-          )
-        }
-        // The customer already got it: clear the chip so nobody re-sends it.
-        if (alreadySent) {
-          await fetchChanges()
-          return true
-        }
-        return false
-      }
-      if (parsed.data.message) {
-        const persisted = messageDtoToInbox(parsed.data.message)
-        setThreadMessages((prev) => ({
-          ...prev,
-          [conversationId]: reconcileOptimisticOutbound(prev[conversationId] || [], persisted),
-        }))
-      }
-      if (!opts.keepInput) setMessageInput('')
-      if (selectedConversation.status === 'nuevo') updateStatus('en_curso')
-      await fetchChanges()
-      requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }))
-      return true
-    } catch (err: unknown) {
-      if (selectedConversationIdRef.current === conversationId) {
-        setSendError(humanizeChatSendError(err instanceof Error ? err.message : 'Error al enviar el archivo'))
-      }
-      return false
-    } finally {
-      sendInFlightRef.current = false
-      setSending(false)
-    }
+    setFailedOutboundId(null)
+    queueMediaSend(
+      {
+        ...base,
+        clientRequestId: newClientRequestId(),
+        json: { sourceMessageId },
+        previewUrl: `/api/chat/media/${encodeURIComponent(sourceMessageId)}`,
+      },
+      { messageType: 'image', mimeType: 'image/jpeg', filename: 'Imagen reciente' },
+    )
+    setMessageInput('')
+    requestAnimationFrame(() => focusComposer())
+    return true
   }
 
   function handleRetryMessage(messageId: string) {
@@ -1873,6 +2162,32 @@ export function SoftCopilotInboxV2() {
           (m) => m.id === messageId,
         )?.clientRequestId
     if (!crid) return
+    if (!messageId.startsWith('optimistic:')) {
+      // A stored row Meta failed later (status webhook): it never reached the customer, so Reintentar
+      // is a NEW send of the same text with a new id (the old id is already "delivered" on the server).
+      const row = (threadMessagesRef.current[selectedConversationId || ''] || []).find((m) => m.id === messageId)
+      if (row?.content?.trim() && (row.messageType || 'text') === 'text') {
+        void handleSendMessage({ preventDefault() {} } as FormEvent, { resendContent: row.content })
+      } else {
+        setSendError('Este archivo o plantilla no salió: volvé a adjuntarlo o elegí la plantilla de nuevo.')
+      }
+      return
+    }
+    const mediaJob = mediaJobsRef.current.get(crid)
+    if (mediaJob) {
+      // Same id: the server never sends it twice (claim), even if the first try actually went out.
+      setSendError(null)
+      setFailedOutboundId(null)
+      setThreadMessages((prev) => ({
+        ...prev,
+        [mediaJob.conversationId]: patchOptimisticOutbound(prev[mediaJob.conversationId] || [], crid, {
+          deliveryStatus: 'pending',
+          uploadProgress: 0,
+        }),
+      }))
+      void enqueueChatSend(mediaJob.conversationId, () => deliverMedia(mediaJob))
+      return
+    }
     void handleSendMessage({ preventDefault() {} } as FormEvent, {
       retryClientRequestId: crid,
     })
@@ -2218,30 +2533,34 @@ export function SoftCopilotInboxV2() {
               onInboxViewChange={setInboxView}
             />
           ) : (
-            <SoftThreadPane
-              {...threadSharedProps}
-              onClose={() => setMobileView('list')}
-              onBack={() => {
-                setMobileDetailsOpen(false)
-                setMobileView('list')
-              }}
-              onOpenDetails={() => setMobileDetailsOpen(true)}
-              agentActionsToday={agentActionsToday}
-              compact
-            />
+            // Pinned to the visual viewport: the composer sits right above the phone keyboard.
+            <div className="fixed inset-x-0 z-30 flex flex-col bg-white md:hidden" style={MOBILE_THREAD_STYLE} data-testid="mobile-thread">
+              <SoftThreadPane
+                {...threadSharedProps}
+                onClose={() => closeMobileEntry('thread')}
+                onBack={() => closeMobileEntry('thread')}
+                onOpenDetails={() => {
+                  setMobileDetailsOpen(true)
+                  pushMobileEntry('details')
+                }}
+                agentActionsToday={agentActionsToday}
+                compact
+              />
+            </div>
           )}
           {mobileView === 'thread' && mobileDetailsOpen && railConversation ? (
             <div
-              className="fixed inset-0 z-40 flex flex-col bg-white md:hidden"
+              className="fixed inset-x-0 z-40 flex flex-col bg-white md:hidden"
+              style={MOBILE_THREAD_STYLE}
               role="dialog"
               aria-modal="true"
               aria-label="Detalles del chat"
             >
-              <div className="flex shrink-0 items-center justify-between border-b border-slate-200/70 px-4 py-3">
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-200/70 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
                 <h2 className="text-[16px] font-bold text-slate-900">Detalles</h2>
                 <button
                   type="button"
-                  onClick={() => setMobileDetailsOpen(false)}
+                  onClick={() => closeMobileEntry('details')}
                   className="rounded-full bg-slate-100 px-3.5 py-1.5 text-[13px] font-semibold text-slate-700"
                 >
                   Cerrar

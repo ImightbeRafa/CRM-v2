@@ -49,7 +49,7 @@ test('send paths call the metrics fire-and-forget, only for delivered human send
     assert.match(src, /void recordHumanSendMetrics\(\{/, f)
     assert.doesNotMatch(src, /await recordHumanSendMetrics/, f)
     // Inside the same guard as auto-assign: provider accepted + a human sender.
-    const guard = src.indexOf('if (providerMessageId && write.conversationId && senderUser)')
+    const guard = src.indexOf('if (providerMessageId && senderUser)')
     const call = src.indexOf('void recordHumanSendMetrics')
     assert.ok(guard > 0 && call > guard && call - guard < 500, f)
   }

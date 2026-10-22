@@ -4,7 +4,7 @@ import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
 import { toChatAccountDto } from '@/lib/social-account-identity'
 import { refreshMissingAccountIdentities } from '@/lib/social-account-identity-refresh'
-import { SILENT_LINE_CODE } from '@/lib/channel-silence-core'
+import { SILENT_LINE_CODE, WEBHOOK_GONE_CODE } from '@/lib/channel-silence-core'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -60,6 +60,7 @@ function mapAccountRow(row: {
     lastWebhookAt: row.lastWebhookAt ?? null,
     // Dead-line alarm: only the fact + since, never the raw error code.
     silentSince: row.lastErrorCode === SILENT_LINE_CODE ? row.lastWebhookAt ?? row.lastErrorAt ?? null : null,
+    webhookGoneSince: row.lastErrorCode === WEBHOOK_GONE_CODE ? row.lastWebhookAt ?? row.lastErrorAt ?? null : null,
   }
 }
 

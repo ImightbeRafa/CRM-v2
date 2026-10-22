@@ -53,6 +53,22 @@ describe('PR-G mobile chats (CHAT-M01 / CHAT-M02)', () => {
     assert.match(thread, /text-\[16px\]/) // avoids iOS focus zoom
   })
 
+  it('phone back goes thread → list; the thread follows the keyboard (Rafael 2026-10-22)', () => {
+    // Thread and details are history entries (URL unchanged); popstate closes them.
+    assert.match(inbox, /window\.history\.pushState\(\{ \.\.\.\(window\.history\.state \?\? \{\}\), betsyChat: kind \}, ''\)/)
+    assert.match(inbox, /window\.addEventListener\('popstate', onPop\)/)
+    assert.match(inbox, /onBack=\{\(\) => closeMobileEntry\('thread'\)\}/)
+    assert.match(inbox, /onClick=\{\(\) => closeMobileEntry\('details'\)\}/)
+    // Only phones push entries (desktop history untouched).
+    assert.match(inbox, /!isPhoneViewport\(\) \|\| mobileHistoryRef\.current\[kind\]/)
+    // Composer above the keyboard: the phone thread is sized by the visual viewport.
+    assert.match(inbox, /vv\.addEventListener\('resize', apply\)/)
+    assert.match(inbox, /height: 'calc\(var\(--chat-vv-height, 100dvh\) - var\(--app-top-offset, 0px\)\)'/)
+    assert.match(inbox, /data-testid="mobile-thread"/)
+    // Desktop focuses the composer on open; phones never pop the keyboard by themselves.
+    assert.match(read('src/lib/chat-inbox.ts'), /matchMedia\('\(hover: hover\) and \(pointer: fine\)'\)/)
+  })
+
   it('no Soft wording in user-visible mobile strings', () => {
     for (const src of [nav, list, thread]) {
       const strings = src.match(/>[^<>{}\n]*[A-Za-zÁ-ú][^<>{}\n]*</g) ?? []

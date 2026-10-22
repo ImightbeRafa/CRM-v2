@@ -683,7 +683,8 @@ export function isClosedPayInfoQuestion(text: string): boolean {
 }
 /** A sentence that is only a greeting / courtesy ("Hola,", "Disculpe", "Una consulta") around the question. */
 const CLOSED_PAY_INFO_COURTESY_RE =
-  /^(?:hola|holi|buenas|buenos\s+d[ií]as|buenas\s+(?:tardes|noches)|disculpe?|perd[oó]n|ok|oki|okey|gracias|muchas\s+gracias|una\s+consulta|consulta|pura\s+vida)$/iu
+  // Verifier r2 #3: "Perfecto, ¿qué le pongo de detalle?". Never sí / listo / ya / hecho (they can answer "¿ya pagó?").
+  /^(?:hola|holi|buenas|buenos\s+d[ií]as|buenas\s+(?:tardes|noches)|disculpe?|perd[oó]n|ok|oki|okey|gracias|muchas\s+gracias|una\s+consulta|consulta|pura\s+vida|(?:ok\s+|okey\s+)?(?:perfecto|dale|genial|excelente|bueno|claro|va))$/iu
 
 export function classifyPaymentText(
   text: string,

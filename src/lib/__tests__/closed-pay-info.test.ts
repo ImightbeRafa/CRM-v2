@@ -8,6 +8,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { classifyPaymentText, isClosedPayInfoQuestion } from '@/lib/soft-ai/payment-classifier'
 import { paymentCheckGate } from '@/lib/soft-ai/payment-claim-check-core'
+import { isPaymentSensitiveText } from '@/lib/soft-ai/config'
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
 import { parseBrandFacts } from '@/lib/soft-ai/brand-facts'
 import { RESERVED_SHORTCUT_SEEDS } from '@/lib/soft-ai/shortcuts'
@@ -29,6 +30,10 @@ const SAFE = [
   '¿Tienen contra entrega?',
   'Disculpe ¿cómo se paga?',
   'Hola! ¿Qué le pongo de detalle? Gracias',
+  // Verifier r2 #3
+  'Perfecto, ¿qué le pongo de detalle?',
+  'Dale, ¿qué le pongo de detalle?',
+  'Ok perfecto, que le pongo de detalle',
 ]
 
 const NOT_CLOSED = [
@@ -42,6 +47,8 @@ const NOT_CLOSED = [
   'Mi tarjeta es 4111 1111 1111 1111, ¿cómo se paga?',
   'Hola',
   'Gracias. Ya pagué',
+  'Listo, ¿qué le pongo de detalle?',
+  'Sí. ¿Qué le pongo de detalle?',
 ]
 
 describe('closed before-paying questions (Forge real-49 / real-61)', () => {
@@ -60,6 +67,10 @@ describe('closed before-paying questions (Forge real-49 / real-61)', () => {
     for (const t of ['Que le pongo de detalle? ya pagué', 'Se puede pagar cuando ya está acá? ya lo mandé', 'qué le pongo de detalle, ya hice el sinpe']) {
       assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
     }
+  })
+
+  it('the legacy worker keeps them payment-sensitive (Verifier r2 #4)', () => {
+    for (const t of SAFE) assert.equal(isPaymentSensitiveText(t), true, t)
   })
 
   it('the "¿ya pagó?" model check is skipped only when everything unanswered is a closed question', () => {

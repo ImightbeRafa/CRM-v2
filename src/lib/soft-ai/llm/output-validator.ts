@@ -68,7 +68,7 @@ const ALWAYS_PAYMENT_STATUS_REPLY_RE =
  * "pedido enviado / despachado". Held on every reply (the prompt answers in Spanish and never claims a payment).
  */
 const MORE_DONE_REPLY_RE =
-  /(?<![\p{L}])(?:payment\s+(?:has\s+been\s+|was\s+|is\s+)?(?:received|confirmed|approved|processed|completed|verified)|(?:we|i)\s+(?:have\s+|'ve\s+)?(?:got|received|confirmed|verified)\s+(?:your|the)\s+(?:payment|transfer|deposit|money)|(?:your\s+)?order\s+(?:has\s+)?(?:shipped|been\s+(?:sent|shipped|dispatched)|is\s+on\s+(?:its|the)\s+way)|(?:pagamento|paiement)\s+(?:recebido|confirmado|aprovado|re[cç]u|confirm[eé])|gracias\s+por\s+(?:tu\s+|su\s+|el\s+|la\s+)?(?:pago|pagar|sinpe|transferencia|dep[oó]sito)|(?:todo|ya\s+(?:lo|la)\s+ten[eé]s|ya\s+qued[oó]|qued[oó])\s+pagad[oa]|(?:^|\n)[\s*_~]*pagad[oa](?![\p{L}])|(?<!(?:una\s+vez|cuando|apenas|si|hasta\s+que|despu[eé]s\s+de)\s+(?:el\s+|tu\s+|su\s+)?)pago\s+(?:completado|procesado|exitoso)|confirmo\s+que\s+(?:ya\s+)?(?:pagaste|pag[oó]|hiciste\s+el\s+(?:pago|sinpe))|ya\s+tenemos\s+(?:tu|la|su)\s+plata|(?:tu\s+|su\s+|el\s+)?pedido\s*:?\s+(?:ya\s+)?(?:fue\s+)?(?:enviado|despachado)(?=\s*(?:[.!,]|\p{Extended_Pictographic}|$)))(?![\p{L}])/iu
+  /(?<![\p{L}])(?:payment\s+(?:has\s+been\s+|was\s+|is\s+)?(?:received|confirmed|approved|processed|completed|verified)|(?:we|i)\s+(?:have\s+|'ve\s+)?(?:got|received|confirmed|verified)\s+(?:your|the)\s+(?:payment|transfer|deposit|money)|(?:your\s+)?order\s+(?:has\s+)?(?:shipped|been\s+(?:sent|shipped|dispatched)|is\s+on\s+(?:its|the)\s+way)|(?:pagamento|paiement)\s+(?:recebido|confirmado|aprovado|re[cç]u|confirm[eé])|gracias\s+por\s+(?:tu\s+|su\s+|el\s+|la\s+)?(?:pago|pagar|sinpe|transferencia|dep[oó]sito)|(?:^|(?<=\n))[ \t*_~¡!]*(?:(?:todo|ya\s+(?:lo|la)\s+ten[eé]s|ya\s+est[aá]|ya\s+qued[oó]|qued[oó])\s+)?pagad[oa][ \t*_~!.…]*(?:[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Default_Ignorable_Code_Point}][ \t]*)*(?=\n|$)|(?:^|(?<=\n|[.!?…][ \t]?))[ \t*_~¡!]*(?:(?:tu|su|el)\s+)?pago\s+(?:(?:fue|ha\s+sido|ya\s+fue|qued[oó])\s+)?(?:completado|procesado|exitoso)(?=[ \t]*(?:[.!,]|\p{Extended_Pictographic}|\n|$))|confirmo\s+que\s+(?:ya\s+)?(?:pagaste|pag[oó]|hiciste\s+el\s+(?:pago|sinpe))|ya\s+tenemos\s+(?:tu|la|su)\s+plata|(?:tu\s+|su\s+|el\s+)?pedido\s*:?\s+(?:ya\s+)?(?:fue\s+)?(?:enviado|despachado)(?=\s*(?:[.!,]|\p{Extended_Pictographic}|$)))(?![\p{L}])/iu
 
 /** INT-202: a bare affirmation read through markup, soft hyphens, emoji modifiers / joiners and text emoticons. */
 function isAffirmOnly(text: string): boolean {
@@ -874,6 +874,8 @@ export function validateAgentOutput(input: {
   styleText?: string
   /** The text links are judged on (the reply before payment tokens were filled). Defaults to `text`. */
   linkText?: string
+  /** The model's own words (before payment tokens / the purchase summary) for the paymentContext check. Defaults to `text`. */
+  paymentContextText?: string
   /** N3: the contra-entrega / efectivo closing turn — the order-confirmation wording check applies. */
   orderClosing?: boolean
   /** INT-158 H3: the text was written by the model — a letter outside Latin-1 / a stray combining mark is held. */
@@ -925,11 +927,18 @@ export function validateAgentOutput(input: {
     reasons.push('results_claim')
   }
   // Advisor (luna-10): the unmistakable "payment received" wordings are held on EVERY reply, payment words or not.
-  if (anyForm(ALWAYS_PAYMENT_STATUS_REPLY_RE, claimForms) || anyForm(MORE_DONE_REPLY_RE, claimForms)) {
+  // The wave-D list reads model text only (an owner's saved line may say "¡Gracias por la transferencia!").
+  if (anyForm(ALWAYS_PAYMENT_STATUS_REPLY_RE, claimForms) || (input.modelText && anyForm(MORE_DONE_REPLY_RE, claimForms))) {
     reasons.push('payment_status_claim')
   } else if (
-    (input.paymentContext || (input.customerText && hasPaymentWord(input.customerText))) &&
-    anyForm(PAYMENT_STATUS_REPLY_RE, claimForms)
+    (input.paymentContext &&
+      // Verifier r2 #2: a payment context given by the final policy judges the MODEL's words only (paymentContextText:
+      // before payment tokens were filled and before the purchase summary), never the owner's configured blocks.
+      anyForm(
+        PAYMENT_STATUS_REPLY_RE,
+        input.paymentContextText !== undefined ? confirmationCheckForms(maskConditionalConfirmation(input.paymentContextText)) : claimForms,
+      )) ||
+    (input.customerText && hasPaymentWord(input.customerText) && anyForm(PAYMENT_STATUS_REPLY_RE, claimForms))
   ) {
     reasons.push('payment_status_claim')
   } else if (
@@ -1247,6 +1256,8 @@ export function applyFinalOutputPolicy(input: {
   // must be a configured one (when shareable) or one the customer wrote.
   // The length rule is judged with each token as its one line (a configured payment block is not "too long").
   let styleText = text
+  // The model's own words, tokens stripped: the paymentContext check never reads the owner's filled payment blocks.
+  const paymentContextText = text.replace(new RegExp(LEFTOVER_TOKEN_STRIP_RE.source, 'gu'), ' ')
   const filled = fillPaymentToken(text, facts, { ...input.paymentOptions, customerText: input.paymentOptions?.customerText ?? input.customerText ?? undefined })
   text = filled.text
   if (filled.needsHuman) reasons.push('payment_info_not_shared')
@@ -1300,6 +1311,7 @@ export function applyFinalOutputPolicy(input: {
     freeShippingRule: input.freeShippingRule,
     customerText: input.customerText,
     paymentContext: input.paymentContext,
+    paymentContextText,
     // INT-109: live and Probar both come through here — a reply may only link the brand's own site.
     linkAllowlist: input.linkAllowlist ?? undefined,
     styleText,

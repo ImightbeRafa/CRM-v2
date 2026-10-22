@@ -80,6 +80,8 @@ describe('reviewer input (exam / shadow)', () => {
     assert.doesNotMatch(agent, /8888 7777/)
     assert.doesNotMatch(redactCustomerText('le hice SINPE al 6201 9914'), /6201 9914/)
     setStoreNumbers([])
+    // A price list over several lines stays readable.
+    assert.match(redactCustomerText('- 5 cajas sueltas: ₡52 250\n- 2 combos + 1 caja: ₡50 250', null, { store: true }), /₡52 250[\s\S]*₡50 250/)
   })
 })
 

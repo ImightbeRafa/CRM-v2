@@ -88,7 +88,8 @@ function redactCustomerTextInner(text: string, peerName: string | null | undefin
   t = t.replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[correo]')
   t = t.replace(/(?<![\p{L}\p{N}])@[\w.]{2,30}/gu, '[usuario]')
   // Phones, cédulas, accounts — also written with dots ("8888.8888", "1.1234.0567").
-  t = t.replace(/\+?\d[\d\s.-]{6,}\d/g, '[número]')
+  // One line only, and never right after "₡": a price list on separate lines ("₡52 250 / - 2 combos") is not a phone.
+  t = t.replace(/(?<![₡\d])\+?\d[\d \t.-]{6,}\d/g, '[número]')
   t = t.replace(/\bCR\d{2}[\d\s]{10,}\b/gi, '[cuenta]')
   for (const w of String(peerName || '').split(/\s+/).filter((x) => x.length >= 3)) {
     t = t.replace(new RegExp(`${L_BEFORE}${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${L_AFTER}`, 'giu'), '[nombre]')

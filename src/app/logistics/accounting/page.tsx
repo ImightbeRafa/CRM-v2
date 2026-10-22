@@ -524,7 +524,7 @@ function ContraEntregasTab() {
                                         <td style={{ padding: '10px 14px' }}><span style={{ padding: '2px 8px', borderRadius: 20, background: `${tc}20`, color: tc, fontSize: 10.5, fontWeight: 700 }}>{getTenantName(o.tenantId)}</span></td>
                                         <td style={{ padding: '10px 14px', color: '#F2F2F2', fontWeight: 500 }}>{o.customerName}<div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>#{o.orderRef}</div></td>
                                         <td style={{ padding: '10px 14px' }}>
-                                            {o.lmCarrier ? <ShippingMethodBadge order={{ lmCarrier: o.lmCarrier }} theme="dark" size="xs" /> : <span style={{ color: 'rgba(255,255,255,0.2)' }}>—</span>}
+                                            <ShippingMethodBadge order={{ orderType: o.orderType, courier: o.courier, lmCarrier: o.lmCarrier, isContraEntrega: true }} theme="dark" size="xs" showCod={false} />
                                         </td>
                                         <td style={{ padding: '10px 14px', color: '#fbbf24', fontWeight: 700 }}>{fmt(o.total)}</td>
                                         <td style={{ padding: '10px 14px', color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>{new Date(o.timestamp).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}</td>

@@ -3,9 +3,10 @@
  * "2× Parche Sleeping Melatonina 30u". Pure and client-safe.
  *
  * Source of truth is `productDetails` (JSON array written by the sales form and
- * the inventory flow). Older or imported orders only have the comma-joined
- * `product` text, which is split conservatively (commas, new lines, `;`).
- * Quantities are only shown when we actually know them — never invented.
+ * the inventory flow) while it still matches `product` / `quantity`. Edited,
+ * older or imported orders use the comma-joined `product` text, split
+ * conservatively (commas, new lines, `;`). Quantities are only shown when we
+ * actually know them — never invented.
  */
 
 export type OrderItemLine = {
@@ -91,33 +92,58 @@ function linesFromDetails(details: unknown): OrderItemLine[] {
   return lines;
 }
 
+/**
+ * productDetails is written at creation; editing an order (Pedidos › Editar,
+ * the staff bot) changes product / quantity but not productDetails. Trust the
+ * details only while they still match: every item name appears in the product
+ * text and the item counts add up to the order quantity.
+ */
+function detailsMatchOrder(lines: OrderItemLine[], order: OrderItemsInput): boolean {
+  const product = fold(String(order.product ?? ''));
+  if (product && !lines.every((line) => product.includes(fold(line.name)))) return false;
+  const total = positiveInt(order.quantity);
+  if (total !== null) {
+    const sum = lines.reduce((acc, line) => acc + (line.qty ?? 0), 0);
+    if (sum !== total) return false;
+  }
+  return true;
+}
+
+function trustedDetailLines(order: OrderItemsInput): OrderItemLine[] {
+  const lines = linesFromDetails(parseDetails(order.productDetails));
+  return lines.length > 0 && detailsMatchOrder(lines, order) ? lines : [];
+}
+
 /** "Parche x2", "Parche ×2", "Parche (2)", "2 Parche" → name + explicit qty. */
 function parseQty(part: string): { name: string; qty: number | null } {
-  const name = part.replace(/^[-*•]\s*/, '').trim();
-  const trailing = name.match(/^(.*?\S)\s*(?:[xX×]\s*(\d{1,4})|\(\s*(\d{1,4})\s*\))$/);
+  const trailing = part.match(/^(.*?\S)\s*(?:[xX×]\s*(\d{1,4})|\(\s*(\d{1,4})\s*\))$/);
   if (trailing) return { name: trailing[1].trim(), qty: positiveInt(trailing[2] ?? trailing[3]) };
-  const leading = name.match(/^(\d{1,4})\s*[xX×]?\s+(\D.*)$/);
+  const leading = part.match(/^(\d{1,4})\s*[xX×]?\s+(\D.*)$/);
   if (leading) return { name: leading[2].trim(), qty: positiveInt(leading[1]) };
-  return { name, qty: null };
+  return { name: part, qty: null };
 }
 
 function linesFromText(product: string, quantity: number | null | undefined): OrderItemLine[] {
+  // Split on new lines, ";" and commas, but not a decimal comma ("Pack 3,5 kg").
   const parts = product
-    .split(/\r?\n|;|,/)
-    .map((part) => part.trim())
+    .split(/\r?\n|;|(?<!\d),|,(?!\d)/)
+    .map((part) => part.replace(/^[-*•]\s*/, '').trim())
     .filter(Boolean);
   if (parts.length === 0) return [];
-  const parsed = parts.map(parseQty);
   const total = positiveInt(quantity);
-  if (parsed.length === 1) {
-    const only = parsed[0];
-    return [makeLine(only.name, only.qty ?? total, null)];
+  // One item: the name stays as written ("Parches Sleeping x30" is a pack
+  // size, not a count) and the order quantity is the count.
+  if (parts.length === 1) return [makeLine(parts[0], total, null)];
+
+  // Several items: per-item counts only when they add up to the order quantity.
+  const parsed = parts.map(parseQty);
+  const allExplicit = parsed.every((p) => p.qty !== null);
+  const sum = parsed.reduce((acc, p) => acc + (p.qty ?? 0), 0);
+  if (allExplicit && total !== null && sum === total) {
+    return parsed.map((p) => makeLine(p.name, p.qty, null));
   }
-  // Several items and one shared quantity: only spread it when it is exactly
-  // one each; otherwise leave the per-item quantity unknown.
-  const anyExplicit = parsed.some((p) => p.qty !== null);
-  const oneEach = !anyExplicit && total === parsed.length;
-  return parsed.map((p) => makeLine(p.name, oneEach ? 1 : p.qty, null));
+  const oneEach = total === parts.length;
+  return parts.map((part) => makeLine(part, oneEach ? 1 : null, null));
 }
 
 export function formatOrderItems(order: OrderItemsInput): OrderItemLine[] {
@@ -125,18 +151,18 @@ export function formatOrderItems(order: OrderItemsInput): OrderItemLine[] {
     const labels = order.itemLines.map((label) => String(label ?? '').trim()).filter(Boolean);
     if (labels.length > 0) return labels.map((label) => ({ name: label, qty: null, variant: null, label }));
   }
-  const fromDetails = linesFromDetails(parseDetails(order.productDetails));
+  const fromDetails = trustedDetailLines(order);
   if (fromDetails.length > 0) return fromDetails;
   return linesFromText(String(order.product ?? ''), order.quantity);
 }
 
 /**
  * For list APIs: labels built from productDetails, so the client gets per-item
- * quantities without the heavy JSON. undefined when productDetails has no items
- * (the client then falls back to the product text it already has).
+ * quantities without the heavy JSON. Pass product + quantity too: undefined when
+ * the details are missing or stale (the client then uses the product text).
  */
 export function orderItemLabels(order: OrderItemsInput): string[] | undefined {
-  const lines = linesFromDetails(parseDetails(order.productDetails));
+  const lines = trustedDetailLines(order);
   return lines.length > 0 ? lines.map((line) => line.label) : undefined;
 }
 

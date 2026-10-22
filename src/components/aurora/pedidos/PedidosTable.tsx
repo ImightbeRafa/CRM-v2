@@ -123,7 +123,7 @@ export function PedidosTable({
                       maxItems={2}
                       emptyLabel="—"
                       style={{ minWidth: 160, maxWidth: 260 }}
-                      itemStyle={{ color: '#334155' }}
+                      itemStyle={{ color: 'rgb(var(--p-tx-slate-700, 51 65 85))' }}
                       moreColor="#5b6cff"
                     />
                   </div>

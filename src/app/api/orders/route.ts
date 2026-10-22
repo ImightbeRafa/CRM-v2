@@ -230,7 +230,7 @@ export async function GET(request: NextRequest) {
     }
       
       const data = orders.map(({ productDetails, ...order }: any) => {
-        const itemLines = orderItemLabels({ productDetails })
+        const itemLines = orderItemLabels({ productDetails, product: order.product, quantity: order.quantity })
         return itemLines ? { ...order, itemLines } : order
       })
 

@@ -5,6 +5,7 @@ import { readProductionServerReadiness } from '@/lib/feature-flags';
 import { decodeTimestampCursor, encodeTimestampCursor, parsePageLimit } from '@/lib/cursor-pagination';
 import { buildProductionWhere, parseProductionQuery, productionCursorScope } from '@/lib/production-query';
 import { PII_NO_STORE_HEADERS } from '@/lib/security';
+import { orderItemLabels } from '@/lib/orders/order-items';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,12 +74,17 @@ export async function GET(request: NextRequest) {
           courier: true, expectedDate: true, funnel: true, agreedDate: true, pickupDate: true,
           saleDate: true, seller: true, delivery: true, customFields: true, contraEntrega: true,
           cePaymentConfirmed: true,
+          // Read only to build compact itemLines; the JSON itself is not sent.
+          productDetails: true,
         },
       }),
       tenantPrisma.order.count({ where: baseWhere }),
     ]);
     const hasMore = rows.length > limit;
-    const items = hasMore ? rows.slice(0, limit) : rows;
+    const items = (hasMore ? rows.slice(0, limit) : rows).map(({ productDetails, ...order }) => {
+      const itemLines = orderItemLabels({ productDetails, product: order.product, quantity: order.quantity });
+      return itemLines ? { ...order, itemLines } : order;
+    });
     const last = items.at(-1);
     return NextResponse.json({
       status: 'success',

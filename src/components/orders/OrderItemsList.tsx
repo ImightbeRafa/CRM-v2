@@ -43,7 +43,11 @@ export default function OrderItemsList({
     return emptyLabel ? <span style={style}>{emptyLabel}</span> : null;
   }
 
-  const fullText = lines.map((line) => line.label).join('\n');
+  // Several items whose own counts are unknown: still say the order total.
+  const unknownCounts = !order.itemLines?.length && lines.length > 1 && lines.every((line) => line.qty === null);
+  const totalUnits = unknownCounts && Number(order.quantity) > 0 ? Math.trunc(Number(order.quantity)) : null;
+  const totalLabel = totalUnits ? `${totalUnits} u. en total` : null;
+  const fullText = [...lines.map((line) => line.label), totalLabel].filter(Boolean).join('\n');
   const visible = expanded ? lines : lines.slice(0, maxItems);
   const hidden = lines.length - visible.length;
   // Phones have no tooltip: offer an expand whenever a name may be clamped.
@@ -69,6 +73,7 @@ export default function OrderItemsList({
           <span key={`${index}-${line.label}`} style={lineStyle}>{line.label}</span>
         ))}
         {hidden > 0 && <span style={{ display: 'block', ...moreStyle }}>+{hidden} más</span>}
+        {totalLabel && <span style={{ display: 'block', opacity: 0.75 }}>{totalLabel}</span>}
       </span>
     );
   }
@@ -82,6 +87,7 @@ export default function OrderItemsList({
       {visible.map((line, index) => (
         <li key={`${index}-${line.label}`} style={lineStyle}>{line.label}</li>
       ))}
+      {totalLabel && <li style={{ margin: 0, opacity: 0.75 }}>{totalLabel}</li>}
       {canToggle && (
         <li style={{ margin: 0 }}>
           <button

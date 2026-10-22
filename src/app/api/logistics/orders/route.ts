@@ -384,7 +384,7 @@ export async function GET(req: NextRequest) {
 
         const enriched = orders.map(({ productDetails, ...o }) => ({
             ...o,
-            itemLines: orderItemLabels({ productDetails }) ?? null,
+            itemLines: orderItemLabels({ productDetails, product: o.product, quantity: o.quantity }) ?? null,
             lmCarrier: lmData[o.id]?.lmCarrier ?? null,
             isContraEntrega: (o as any).contraEntrega || lmData[o.id]?.isContraEntrega || false,
             contraEntregaCollected: (o as any).cePaymentConfirmed || lmData[o.id]?.contraEntregaCollected || false,

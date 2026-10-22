@@ -79,6 +79,8 @@ export async function GET(req: NextRequest) {
                 o.total,
                 o.timestamp,
                 o.province,
+                o."orderType",
+                o.courier,
                 lm.carrier      AS "lmCarrier",
                 lm.status       AS "lmStatus",
                 (COALESCE(o."contraEntrega", FALSE) OR COALESCE(lm.is_contra_entrega, FALSE)) AS "isContraEntrega",

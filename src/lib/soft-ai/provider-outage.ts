@@ -4,13 +4,15 @@
  *
  * Provider down: the first quota / 429 / auth / 5xx / not-configured failure of an incident alerts the platform owner
  * once (email + bell, "OpenAI sin crédito / caído"); the first success afterwards sends "volvió". One alert per
- * incident across containers via SQL 060 "AiProviderStatus" (claimed with a conditional UPDATE); without the table,
+ * incident across containers via SQL 061 "AiProviderStatus" (claimed with a conditional UPDATE); without the table,
  * per process.
  *
- * Test budget: Probar / exam / shopper / test-engine calls (features 'probar', 'agent_test') of a business stop at a hard
- * daily cap in USD per business (AI_TEST_DAILY_USD_CAP, default 15; Costa Rica day), so exam runs can never drain the
- * credit live replies need. The line-activation canary ('agent_activation') is never capped. Checked before every test
- * call (cached a few seconds); the meter failing to read never blocks.
+ * Test budget: Probar / exam / shopper / shadow / test-engine calls (features 'probar', 'agent_test', and every call made
+ * inside a test turn) of a business stop at its daily test token cap — never above the platform ceiling
+ * AI_TEST_DAILY_TOKEN_CAP (default 2 000 000; env only, the exam scripts' cap raise cannot pass it). 2026-10-22: test
+ * runs spent 37.8M tokens on an 800k cap because the scripts raised the cap and grader calls were not counted. Live
+ * replies are never checked. The line-activation canary ('agent_activation') keeps its own check. Checked before every
+ * test call (cached 3 s); the meter failing to read never blocks.
  */
 import 'server-only'
 
@@ -122,11 +124,12 @@ export async function noteProviderOk(now = new Date()): Promise<void> {
 
 /* ---------------------------------------------------------------- test budget */
 
-/** Features that are tests (Probar, exams, shoppers, test engine): never live customer replies. */
+/** Features that are tests (Probar, exams, shoppers, shadow, test engine): never live customer replies. */
 export const TEST_AI_FEATURES = new Set(['probar', 'agent_test'])
-const DEFAULT_TEST_DAILY_USD = 15
-const TEST_SPEND_TTL_MS = 5_000
-const testSpendCache = new Map<string, { at: number; day: string; micros: number }>()
+/** Platform ceiling on a business's daily test tokens: exam scripts may raise the business's own cap, never past this. */
+const DEFAULT_TEST_DAILY_TOKEN_CEILING = 2_000_000
+const TEST_SPEND_TTL_MS = 3_000
+const testSpendCache = new Map<string, { at: number; day: string; tokens: number; cap: number }>()
 
 export class TestBudgetExceededError extends Error {
   constructor() {
@@ -135,41 +138,67 @@ export class TestBudgetExceededError extends Error {
   }
 }
 
-/** Platform daily cap for test AI spend in micro-USD (env AI_TEST_DAILY_USD_CAP; 0 or invalid = default). */
-export function testDailyCapMicros(raw: string | undefined = process.env.AI_TEST_DAILY_USD_CAP): number {
-  const usd = Number(raw)
-  return Math.round((Number.isFinite(usd) && usd > 0 ? usd : DEFAULT_TEST_DAILY_USD) * 1_000_000)
+/** Platform ceiling in tokens (env AI_TEST_DAILY_TOKEN_CAP; 0 or invalid = default). Only env changes it. */
+export function testDailyTokenCeiling(raw: string | undefined = process.env.AI_TEST_DAILY_TOKEN_CAP): number {
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_TEST_DAILY_TOKEN_CEILING
 }
 
-/** Costa Rica (UTC-6, no DST) day start in UTC. */
-export function costaRicaDayStartUtc(now: Date): Date {
-  const cr = new Date(now.getTime() - 6 * 3_600_000)
-  return new Date(Date.UTC(cr.getUTCFullYear(), cr.getUTCMonth(), cr.getUTCDate(), 6))
+/** The business's cap (testDailyTokenCap, as Agentes shows it) never above the platform ceiling. */
+export function effectiveTestCap(businessCap: number, ceiling = testDailyTokenCeiling()): number {
+  return Math.min(Number.isFinite(businessCap) && businessCap > 0 ? businessCap : ceiling, ceiling)
 }
 
-/** Throws TestBudgetExceededError when today's test spend reached the cap. Live features are never checked. */
+/** UTC day start, the same day loadDailyTestTokens counts ("pruebas hoy"). */
+export function testDayStartUtc(now: Date): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+}
+
+/**
+ * Throws TestBudgetExceededError when the business's test tokens today (every metered test call: agent turns, graders,
+ * simulated shoppers, and the calls inside a test turn) reached its cap. Live features are never checked.
+ */
 export async function assertTestBudget(feature: string | null | undefined, tenantId: string | null = null, now = new Date()): Promise<void> {
   if (!feature || !TEST_AI_FEATURES.has(feature) || !tenantId) return
-  const start = costaRicaDayStartUtc(now)
+  const start = testDayStartUtc(now)
   const day = start.toISOString()
-  let micros: number
+  let tokens: number
+  let cap: number
   const hit = testSpendCache.get(tenantId)
   if (hit && hit.day === day && now.getTime() - hit.at < TEST_SPEND_TTL_MS) {
-    micros = hit.micros
+    tokens = hit.tokens
+    cap = hit.cap
   } else {
     try {
       if (!(await isTableReady('AiUsageEvent'))) return
-      const rows = await prisma.$queryRaw<Array<{ spent: bigint | number | null }>>`
-        SELECT COALESCE(SUM("costMicros"), 0)::bigint AS "spent"
-          FROM "AiUsageEvent"
-         WHERE "tenantId" = ${tenantId} AND "feature" IN ('probar', 'agent_test') AND "createdAt" >= ${start}`
-      micros = Number(rows[0]?.spent ?? 0)
+      const [{ readChatAgentLayerConfig }, { parseChatAgentLayerConfig }] = await Promise.all([
+        import('@/lib/feature-flags'),
+        import('@/lib/soft-ai/agent-config'),
+      ])
+      const [rows, layer] = await Promise.all([
+        prisma.$queryRaw<Array<{ used: bigint | number | null }>>`
+          SELECT COALESCE(SUM("inputTokens" + "outputTokens"), 0)::bigint AS "used"
+            FROM "AiUsageEvent"
+           WHERE "tenantId" = ${tenantId} AND "feature" IN ('probar', 'agent_test') AND "createdAt" >= ${start}`,
+        readChatAgentLayerConfig(tenantId),
+      ])
+      tokens = Number(rows[0]?.used ?? 0)
+      cap = effectiveTestCap(parseChatAgentLayerConfig(layer.config).testDailyTokenCap)
       if (testSpendCache.size > 500) testSpendCache.clear()
-      testSpendCache.set(tenantId, { at: now.getTime(), day, micros })
+      testSpendCache.set(tenantId, { at: now.getTime(), day, tokens, cap })
     } catch (error) {
       console.error('[provider-outage] test spend read failed', error instanceof Error ? error.name : 'unknown')
       return
     }
   }
-  if (micros >= testDailyCapMicros()) throw new TestBudgetExceededError()
+  if (tokens >= cap) throw new TestBudgetExceededError()
+}
+
+/**
+ * The feature a call is metered and capped under. Inside a test turn (ambient scope test: true) every call — the payment
+ * check, image reading, … — counts as that test's spend, so nothing a test does escapes the cap.
+ */
+export function testAwareFeature(feature: string, scope: { test?: boolean; feature?: string } | undefined): string {
+  if (TEST_AI_FEATURES.has(feature) || !scope?.test) return feature
+  return scope.feature && TEST_AI_FEATURES.has(scope.feature) ? scope.feature : 'agent_test'
 }

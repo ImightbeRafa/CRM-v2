@@ -1,7 +1,7 @@
--- 060 AI provider status (wave 2026-10-22, lane D): one row per AI provider, so "OpenAI sin crédito / caído" is
+-- 061 AI provider status (wave 2026-10-22, lane D): one row per AI provider, so "OpenAI sin crédito / caído" is
 -- alerted to the platform owner ONCE per incident across every container, and a "volvió" alert goes out when it
 -- recovers. Written by src/lib/soft-ai/provider-outage.ts only (server code; no tenant data, no customer text).
--- Additive only. Gated: BETSY_V2_APPLY_FILES=060 — never DEFAULT_APPLY_FILES. DO NOT run prisma db push / migrate.
+-- Additive only. Gated: BETSY_V2_APPLY_FILES=061 — never DEFAULT_APPLY_FILES. DO NOT run prisma db push / migrate.
 -- Code works without it (per-process dedupe only).
 --   provider    'openai'
 --   downSince   first failure of the current incident (NULL = healthy)

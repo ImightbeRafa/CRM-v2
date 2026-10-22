@@ -12,6 +12,8 @@ export type AiUsageScope = {
   feature?: string
   userId?: string | null
   conversationId?: string | null
+  /** Inside a test turn (Probar / exam / shopper): every AI call counts as test spend and stops at the test cap. */
+  test?: boolean
 }
 
 const storage = new AsyncLocalStorage<AiUsageScope>()

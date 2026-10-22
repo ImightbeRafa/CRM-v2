@@ -144,6 +144,8 @@ import {
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 import { readSoftTenantAiConfig } from '@/lib/feature-flags'
 import { turnWasCodeDecided } from '@/lib/soft-ai/turn-origin'
+import { withAiUsageContext } from '@/lib/ai-usage/context'
+import { effectiveTestCap } from '@/lib/soft-ai/provider-outage'
 
 type JobPayload = {
   platform?: string | null
@@ -2497,7 +2499,7 @@ async function runAgentTestTurnInner(input: {
     agentStatus: runtimeAgent.status,
     conversationAiMode,
   })
-  if (testTokens >= config.testDailyTokenCap) {
+  if (testTokens >= effectiveTestCap(config.testDailyTokenCap)) {
     blockedBy.push('test_budget_blocked')
     // Budget spent: answer immediately, spend nothing and write nothing (no model call, no turn row).
     return {
@@ -2844,7 +2846,11 @@ export async function runAgentTestTurn(input: ProbarInput): Promise<ProbarResult
   if (await isPlatformAiPaused()) throw new Error('AI_PAUSED')
   if (!acquireProbarSlot(input.tenantId)) throw new Error('PROBAR_BUSY')
   try {
-    return await runAgentTestTurnInner(input)
+    // Lane D 2026-10-22: every AI call inside a test turn (payment check, image reading, …) is test spend and stops at
+    // the test cap. The line-activation canary keeps its own check (agent-unlock.ts).
+    if (input.usageFeature === 'agent_activation') return await runAgentTestTurnInner(input)
+    const feature = input.usageFeature ?? 'probar'
+    return await withAiUsageContext({ tenantId: input.tenantId, feature, test: true }, () => runAgentTestTurnInner(input))
   } finally {
     releaseProbarSlot(input.tenantId)
   }

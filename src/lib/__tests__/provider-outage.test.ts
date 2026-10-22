@@ -14,7 +14,7 @@ import {
   readProviderRetryState,
   type ProviderRetryState,
 } from '@/lib/soft-ai/provider-outage-core'
-import { assertTestBudget, costaRicaDayStartUtc, testDailyCapMicros } from '@/lib/soft-ai/provider-outage'
+import { assertTestBudget, effectiveTestCap, testAwareFeature, testDailyTokenCeiling, testDayStartUtc } from '@/lib/soft-ai/provider-outage'
 import { HANDOFF_REASON_LABELS } from '@/lib/workspace-notifications'
 
 const read = (p: string) => readFileSync(p, 'utf8')
@@ -82,12 +82,29 @@ describe('retry plan for one customer message', () => {
 })
 
 describe('test budget', () => {
-  it('has a hard daily cap in USD (env, default 15) on the Costa Rica day', () => {
-    assert.equal(testDailyCapMicros(undefined), 15_000_000)
-    assert.equal(testDailyCapMicros('40'), 40_000_000)
-    assert.equal(testDailyCapMicros('-3'), 15_000_000)
-    assert.equal(costaRicaDayStartUtc(new Date('2026-10-22T05:00:00Z')).toISOString(), '2026-10-21T06:00:00.000Z')
-    assert.equal(costaRicaDayStartUtc(new Date('2026-10-22T07:00:00Z')).toISOString(), '2026-10-22T06:00:00.000Z')
+  it('the business cap never passes the platform ceiling (env only, default 2M tokens), on the "pruebas hoy" day', () => {
+    assert.equal(testDailyTokenCeiling(undefined), 2_000_000)
+    assert.equal(testDailyTokenCeiling('5000000'), 5_000_000)
+    assert.equal(testDailyTokenCeiling('-3'), 2_000_000)
+    // 2026-10-22: an exam raised the cap to 12M (37.8M spent on an 800k cap): the ceiling still holds.
+    assert.equal(effectiveTestCap(12_000_000, 2_000_000), 2_000_000)
+    assert.equal(effectiveTestCap(40_000_000, 2_000_000), 2_000_000)
+    assert.equal(effectiveTestCap(800_000, 2_000_000), 800_000)
+    assert.equal(effectiveTestCap(0, 2_000_000), 2_000_000)
+    assert.equal(testDayStartUtc(new Date('2026-10-22T05:00:00Z')).toISOString(), '2026-10-22T00:00:00.000Z')
+  })
+  it('every call inside a test turn is test spend; live calls never are', () => {
+    assert.equal(testAwareFeature('payment_check', { test: true, feature: 'agent_test' }), 'agent_test')
+    assert.equal(testAwareFeature('vision', { test: true, feature: 'probar' }), 'probar')
+    assert.equal(testAwareFeature('payment_check', { test: true }), 'agent_test')
+    assert.equal(testAwareFeature('payment_check', undefined), 'payment_check')
+    assert.equal(testAwareFeature('inbox_agent', { feature: 'staff_bot' } as { feature: string }), 'inbox_agent')
+    assert.equal(testAwareFeature('agent_test', undefined), 'agent_test')
+    const turn = read('src/lib/soft-ai/agent-turn.ts')
+    assert.ok(turn.includes("withAiUsageContext({ tenantId: input.tenantId, feature, test: true }, () => runAgentTestTurnInner(input))"))
+    const o = read('src/lib/soft-ai/provider-outage.ts')
+    assert.ok(o.includes('SUM("inputTokens" + "outputTokens")'))
+    assert.ok(o.includes('cap = effectiveTestCap(parseChatAgentLayerConfig(layer.config).testDailyTokenCap)'))
   })
   it('never checks live features or the activation canary; is per business', async () => {
     await assertTestBudget('inbox_agent', 't1')
@@ -132,7 +149,7 @@ describe('SecureDog r1 fixes', () => {
     const o = read('src/lib/soft-ai/provider-outage.ts')
     assert.ok(o.includes("now.toISOString().slice(0, 13)"))
     const w = read('src/cf-container-worker.ts')
-    assert.ok(w.includes('"AI_TEST_DAILY_USD_CAP",') && w.includes('AI_TEST_DAILY_USD_CAP?: string;'))
+    assert.ok(w.includes('"AI_TEST_DAILY_TOKEN_CAP",') && w.includes('AI_TEST_DAILY_TOKEN_CAP?: string;'))
   })
 })
 
@@ -180,15 +197,18 @@ describe('wiring', () => {
   })
   it('every Soft AI call checks the test budget first and reports provider health', () => {
     const c = read('src/lib/soft-ai/llm/client.ts')
-    assert.ok(c.indexOf('await assertTestBudget(args.usage?.feature, args.usage?.tenantId ?? null)') < c.indexOf('client.responses.create('))
+    const check = c.indexOf('await assertTestBudget(usage.feature, usage.tenantId ?? null)')
+    assert.ok(check > 0 && check < c.indexOf('client.responses.create('))
+    assert.ok(c.includes('feature: testAwareFeature(args.usage.feature, currentAiUsageContext())'))
+    assert.equal(c.split('      ...usage,').length - 1, 2)
     assert.match(c, /void noteProviderOk\(\)/)
     assert.match(c, /void noteProviderFailure\(error\)/)
   })
-  it('SQL 060 is additive, RLS on, registered', () => {
-    const sql = read('supabase/migrations/060_ai_provider_status.sql')
+  it('SQL 061 is additive, RLS on, registered', () => {
+    const sql = read('supabase/migrations/061_ai_provider_status.sql')
     assert.match(sql, /CREATE TABLE IF NOT EXISTS public\."AiProviderStatus"/)
     assert.match(sql, /ENABLE ROW LEVEL SECURITY/)
     assert.doesNotMatch(sql, /DROP|ALTER TABLE public\."(?!AiProviderStatus)/)
-    assert.match(read('scripts/lib/betsy-v2-additive-manifest.mjs'), /'060': '060_ai_provider_status\.sql'/)
+    assert.match(read('scripts/lib/betsy-v2-additive-manifest.mjs'), /'061': '061_ai_provider_status\.sql'/)
   })
 })

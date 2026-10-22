@@ -13,6 +13,155 @@
 - Channel silence waits at least 4 business hours (07:00–21:00 Costa Rica), using the longer of that floor and the old 4× typical gap, still capped at 6 hours. The alert says "Sin mensajes recientes" and that it may just be a quiet period. The token check is unchanged.
 - No schema change.
 
+## 2026-10-18 — Payment choice inside the order data, round 6 notes (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
+
+- Verifier r6 (Fable, on 9d56f5f): PASS WITH NOTES — r5 notes all fixed, but three over-corrections reopened part of
+  INT-I / INT-O / INT-K. Fixed:
+  - F1: the whole-row "le puse / se lo tiré" rule now excludes only non-money objects (mensaje, like, reseña, datos,
+    número…) instead of allowing a fixed tail ("Se lo tiramos ayer", "Le puse 9900", "Le dejé, fíjese" close again).
+  - F2: "la plata está (en su cuenta)" statements close again (not "está habilitado / disponible"); "la transfe ya la
+    hago" is intent and stays open.
+  - F3: "yale…" glued forms rejected again except names (Ayales, Yaleska). F4: liquidao / liquidó.
+  - F5: a QR line with a pay word closes regardless of the product-QR exclusions; "Sinpe lo hacés al mismo" closes.
+  - N1: "SINPE al mismo precio" stays open. N2: "Listo 👍" is buying talk again (✅ ✔ ☑ only). N3: "listón", Kallisto
+    and common -isto / -echo words allowed. N4: "tallas 7.5", "talla US 7.5", "tenis 7.5".
+- Tests: pay-choice-in-data 55/55; test:soft-ai 1357/1357; test:security 289/289; tsc, eslint clean. Probes: flows 4/30,
+  earlier 7/90, store 1/67, attacks 32/33 blocked (the announced standalone "Y4"), legit 8/65.
+
+## 2026-10-18 — Payment choice inside the order data, round 5 notes (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
+
+- Verifier r5 (Fable, on 1d6f8b6): **PASS WITH NOTES** (r4 F1–F5 fixed; 32/33 attacks blocked end-to-end, the 1 routed is
+  the announced standalone "Y4"; numbers confirmed: flows 4/30, earlier 7/90, store 1/67, legit 8/65). Notes applied:
+  - F1 / N3: "liquid…" narrowed to liquidado / liquidé ("labial líquido", "en liquidación" are products); "le dejé /
+    le puse / se lo tiré" close the gate only as the whole row ("Le dejé un mensaje ayer" stays open).
+  - F2: decimals are money-like only — not after talla / km / kg / tamaño, not before a unit ("talla 7.5", "1.5 kg").
+  - F3: done stems glued after another word ("listoya", "sinpelisto") are rejected ("Calisto" allowed).
+  - F4: after store payment talk, an oddly spelled short "listo" ("l is t o", "lısto", "L1STO") closes the gate; glued
+    paid verbs ("yapague", "lohice") close it in any context; "la plata ya está" only as a statement.
+  - F5: "lito", bare "tenés / tienes" and "yale" dropped from the reject list ("Lito Vargas", "Ayales", "Yaleska").
+  - F6: QR exclusions add "de la tienda / etiqueta / producto", "para ver / seguir"; "SINPE … a este" must be adjacent.
+  - N1: "y a mano derecha" / "y a la par" are directions, not "ya". N2: "Listo ✅" / "Ya está ✔" close the gate always.
+- Tests: pay-choice-in-data 51/51; test:soft-ai 1353/1353; test:security 288/289 (the 100 ms perf guard flake, 289/289
+  on the previous idle run); tsc and eslint clean. Probes: flows 4/30, earlier 7/90, store 1/67, attacks 32/33 blocked.
+
+## 2026-10-18 — Payment choice inside the order data, round 4 security (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
+
+- SecureDog r4 (Fable): **PASS** (no High / Medium; the mandatory model check is airtight at the wiring level: both
+  callers, burst merge, media skip). Its cheap pre-deploy fixes, applied:
+  - INT-N: C0 / C1 controls are rejected like the other invisible characters (trigger and earlier rows).
+  - INT-O: any separator between single letters, runs of short chunks ("l is t o", "tr an sf er i"), glued claims
+    ("yapague", "lohice", "selopague").
+  - INT-P: tenés / tienes, "le dejo / tiro / mando", "les cae / va", consignado / ingresado, misspellings (lysto, lito,
+    exo, tranferi, cansele, lo ise), EN/PT (payed, completed, received, feito, pronto), "12.9" shorthand,
+    respaldo / evidencia / prueba.
+  - INT-R: "te lo paso por privado / DM", a bare "Está en la bio / el perfil", any QR (not "QR del menú"); with no payment
+    number configured, a store row with a typed 8-digit number fails closed.
+  - INT-S: ø ð æ ß þ (no plain fold) are outside the name alphabet.
+  - Check prompt: data + method is claim=false ONLY with no done / paid word, even written oddly or glued.
+  - `scripts/agent-pack/payment-check-eval.ts`: 17 data-block claims + 3 plain data blocks (run it once against Luna
+    before deploy — it meters usage; not run here: no OpenAI in this cloud environment).
+  - Ops switch: `SOFT_AI_ORDER_DATA_CHOICE=off` turns the feature off (old hand-off everywhere).
+- Verifier r4 probes re-run on this head: 30 realistic chats 4 fall back (base 4), 90 customer lines 7 close the gate
+  (base 7), 67 store lines 1 (base 1), per-message 8/65 (the announced residue: lowercase "palí", "gire a la derecha",
+  "Barrio La Plata", "fábrica de harina", "Calle A, Avenida B y C", "casa 7 200 metros").
+- Tests: pay-choice-in-data 44/44; test:soft-ai 1346/1346; test:security 288/289 under load — the one failure is the
+  100 ms wall-clock perf guard (perf-guards.test.ts:109, safety router, untouched), 1/3 isolated runs pass → environment;
+  tsc and eslint clean.
+
+## 2026-10-18 — Payment choice inside the order data, round 4 (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
+
+- Verifier r4 (Fable) FAIL on 957c681: safe, but the new conversation gates turned the feature off in 20/30 realistic
+  chats (base 4/30). Narrowed, now that the model check is a mandatory backstop:
+  - `earlierRowMayBeClaim`: specific done / money phrases ("le puse", "puse la plata", "la plata ya está", liquidado,
+    pagao, "ahí les cae") close the gate even in a question (r4 F4); a bare "Listo" / "Ya" only as a short standalone row
+    AFTER the store talked about payment; "plata" only with a verb ("Quiero la plata" = colour).
+  - Store gate: only the STORE's number / SINPE ("a este número", "el mismo de WhatsApp", "mi número … en la bio /
+    descripción"), not "tu número de WhatsApp", "número de guía", "el mismo día"; QR / evidencia / respaldo / "cuando me
+    llegue" only with a payment word.
+  - Latin-1 letters allowed in names ("Zoë", "João", "François"; ı / ł still out); apartment codes "B4", "A2" allowed
+    (one capital + 1–2 digits, alone — so a standalone "Y4" passes too; the model check backstops it).
+- Tests: pay-choice-in-data 38/38 (3 new + INT-I updated); test:soft-ai 1340/1340; test:security 289/289; tsc, eslint clean.
+
+## 2026-10-18 — Payment choice inside the order data, round 3 security (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
+
+- SecureDog r3 (Fable, on 9e110b6): INT-A..F closed; new INT-G High (invisible-character glue), INT-H High (plain CR
+  claim wording in free values), INT-I/J Medium, INT-K/L/M Low. Fixed:
+  - INT-G: `embeddedPaymentChoice` rejects every \p{Cf} / default-ignorable character and odd break (never strips);
+    `nothingPaidYet` runs the hard-claim check BEFORE honouring an order-data row; the burst exemption and that row
+    forgive only the store's list labels (`hasHardPaymentClaimLabelMasked`).
+  - INT-H: **the "¿ya pagó?" model check is always enforced on an `order_data_*` decision** (whatever
+    SOFT_AI_PAYMENT_CHECK says; error / timeout → hand-off) — the semantic backstop behind the regex allowlist. Its prompt
+    gets one claim=false example for "datos del pedido + método". Plus every reported word: tiramos, liquidado, girado,
+    -ao forms, listísimo, la transfe / el depo, desde el BAC / mi banco, app del banco, al día, ahí le cae, payment / wired.
+  - INT-I: earlier customer rows (not questions) with done / money wording ("Listo", "Ya", "pagao", "Le puse la plata")
+    close the gate (`earlierRowMayBeClaim`).
+  - INT-J: an alphabet allowlist (Spanish letters only) and no digit glued after a letter ("l1sto").
+  - INT-K: store "a este número / el mismo de WhatsApp", QR, "en la descripción / destacados / post", "cuando pagués /
+    lo hagás", "apenas me caiga", evidencia / respaldo close the gate.
+  - INT-L / INT-M: spoken amounts ("doce novecientos"), 3+ spaced numbers, and a bare "puesto" are rejected.
+- Not done (SecureDog's optional structural idea): a closed lowercase address vocabulary for free values — the model
+  check now covers the open-ended wording instead. Needs OpenAI reachable in prod (it is); without it the path hands off.
+- Tests: pay-choice-in-data 35/35 (7 new); test:soft-ai 1337/1337; test:security 289/289; test:chat-harden 704/713
+  (baseline 1 fail + 8 cancelled); tsc and eslint clean.
+
+## 2026-10-18 — Payment choice inside the order data, round 3 (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
+
+- Verifier r3 (Fable) FAIL on round 2: security fixes held, but the new rules were too strict (20/65 realistic CR order
+  messages fell back to a hand-off) and the one-line bound on "a nombre de" reopened two-line typed details. Fixed:
+  - F1: "a nombre de" ↔ digits allowed across lines, bounded to 120 chars.
+  - F2: name cap 8 words, other values 40; "número" allowed in addresses ("casa número 25"); "puesto" only in a done frame
+    ("ya / está / quedó puesto"); "gire a la derecha" allowed by the reject list (still a hand-off via the live
+    hasPastOrDoneWord list — additive by design).
+  - F3: store "elsewhere" words are word-bounded and no longer include correo / datos; receipt-photo asks only (foto del
+    pago, "mandame la foto cuando…", a payment word + foto/captura/print); 2-2-2-2 numbers need a lead ("al", "sinpe",
+    "número"); store rows may be up to 4 000 chars.
+  - F4: a done / paid word split in 2–3 chunks inside a free value ("lis to", "pa gué") is rejected.
+  - F5: an earlier customer row with VT/FF/NEL/U+2028-9 fails closed.
+- Note for Rafael: lowercase accented names / places ("nombre: josé mora", "frente al palí") fall back to a hand-off,
+  because the live claim check reads them as past-tense verbs. That is the INT-A additive rule.
+- Tests: pay-choice-in-data 28/28 (5 new); test:soft-ai 1330/1330; test:security 289/289; tsc and eslint clean.
+
+## 2026-10-18 — Payment choice inside the order data, round 2 (claude/sharp-hawking-wgee33 → claudio/pay-choice-in-data, NOT deployed)
+
+- Reviews r2 on Fable: Verifier FAIL (F1 HIGH "Nombre completo" list + another bubble still handed off; F2 "?" in the
+  burst; F3–F5 LOW) and SecureDog FIX BEFORE PROD (INT-A/B High, INT-C/D Medium, INT-E/F Low). Fixed:
+  - INT-A: `embeddedPaymentChoice` also runs `hasHardPaymentClaim` on the label-masked text, so it is additive and never
+    a replacement (every input live already hands off stays a hand-off).
+  - INT-B: free label values reject money / receipt nouns (plata, dinero, cuenta, print, imagen, cel, número, bio…;
+    bank names stay allowed as landmarks), are capped (name ≤ 5 words, others ≤ 15); the whole-message reject list adds
+    puse / dejé / metí / giré / pagao / cancelao / puesta and spaced thousands ("12 900").
+  - INT-C: the gate closes on store "gracias por el SINPE / tu compra", "número / SINPE en la bio / por privado",
+    "mandame la foto", and a 2-2-2-2 typed number; "a nombre de" + digits is bounded to one line.
+  - INT-D: Latin look-alikes (IPA / small caps / Latin Ext-D/E), letter-spaced words and VT/FF/NEL/U+2028-9 are rejected
+    (orderDataChoice passes raw NFKC text so odd breaks are seen before they are stripped).
+  - INT-E: history rows are whitespace-collapsed and > 1 200 chars fail closed (the 4 KB padding case is now fast).
+  - Verifier F1: an earlier burst bubble that is itself an order-data choice is not a `burstClaim`.
+  - Verifier F3: the store's own payment number typed by the customer ends "nothing paid yet".
+  - Verifier F5 / INT-F: efectivo / contra entrega inside the data are tagged `order_data_<method>`.
+- Not changed (design limit, Rafael to decide): Verifier F2 — any "?" bubble in the unanswered burst voids the choice
+  (falls back to the old hand-off, safe direction). Not covered: SOFT_AI_PAYMENT_CHECK prod value (shadow by default).
+- Tests: `pay-choice-in-data.test.ts` 23/23 (8 new, every r2 input pinned); test:soft-ai 1325/1325; test:security
+  289/289; test:chat-harden 704/713 (1 fail + 8 cancelled identical on the base = baseline); tsc only the baseline
+  `@/BetsyLogo.png`; eslint clean.
+
+## 2026-10-18 — Payment choice inside the order data (claudio/pay-choice-in-data, NOT deployed)
+
+- Rafael: getting customers to pay. "Nombre: … Dirección: … Envío a domicilio. Pago por SINPE 🙌" used to be
+  payment_proof_or_risk ("Dame un momento, ya lo reviso…", sale stalls). Now, when nothing about paying happened in
+  the chat yet (`sales-state.ts` nothingPaidYet: no payment block / typed details / store payment number / receipt or
+  payment-check talk from the store, no photo / file / placeholder bubble, no customer claim, history window not
+  full), `orderDataChoice` joins the whole unanswered burst and `payment-classifier.ts` embeddedPaymentChoice reads it
+  as an ALLOWLIST: one method in the choice grammar ("Pago por SINPE", "Forma de pago: SINPE", ", pago por SINPE"),
+  every other part a known label + plain value / phone / delivery phrase / greeting; no "?", Latin letters only,
+  only 🙏 😊 🙌, and no claim / time / amount / status / part-payment / dispute word on raw, folded or collapsed text.
+  `inbound-decision.ts` then routes to the model (`payment_choice: order_data_<method>`, also after the close's method
+  question); sales-state nextStep: total with shipping first, then the method token (offered method, one unit only).
+- Claims stay hand-offs (pinned: `pay-choice-in-data.test.ts`, 15 tests incl. every SecureDog / Verifier r1 bypass).
+- Reviews r1: SecureDog FIX BEFORE PROD (F1 burst split, F2 cue on its own line HIGH; F3 typed details MEDIUM; F4/F5
+  LOW) and Verifier FAIL (same + close-question gap, label "Nombre completo", store "¡Listo!") — all fixed in r2
+  (eac08ebb); r2 not re-reviewed. Known fallbacks to the old hand-off: unlabelled data lines ("Ana Mora\n8888…"),
+  store "Revisá las fotos".
+
 ## 2026-10-18 — Home "esta semana" uses Costa Rica, chat messages show the time
 
 - Inicio counted the week from the server's local midnight (UTC). Sunday night in Costa Rica was already Monday there, so Ventas/Pedidos semana was only the last few hours. The week now starts Monday 00:00 America/Costa_Rica, same as Estadísticas. Chat bubbles show the send time in that clock.

@@ -19,7 +19,7 @@ import {
 } from '@/lib/soft-ai/agent-types'
 import type { ResolvedChatAgent } from '@/lib/soft-ai/agent-resolver'
 import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
-import type { InboundDecision } from '@/lib/soft-ai/inbound-decision'
+import { decisionOrderDataChoice, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import { guideShortcutCatalog, renderShortcutTemplate } from '@/lib/soft-ai/shortcuts'
 import { brandFactsLinkAllowlist } from '@/lib/soft-ai/llm/output-validator'
@@ -214,6 +214,7 @@ export function assembleAgentRuntimeInputs(input: {
           input.settledSale?.duplicateReceipt && input.settledSale.orderNumber
             ? { orderNumber: input.settledSale.orderNumber }
             : null,
+        dataChoice: decisionOrderDataChoice(input.decision),
       })
     : null
   return {

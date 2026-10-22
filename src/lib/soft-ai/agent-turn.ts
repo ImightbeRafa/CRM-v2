@@ -100,12 +100,12 @@ import { notifyHandoff } from '@/lib/soft-ai/handoff-notify'
 import { decideWaitingAck, isOptOutText, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS, WAITING_ALERT_THROTTLE_MS } from '@/lib/soft-ai/waiting-ack'
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { dropRepeatedParts, REPEAT_WINDOW_MS } from '@/lib/soft-ai/repeat-guard'
-import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet } from '@/lib/soft-ai/sales-state'
+import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet, orderDataChoice } from '@/lib/soft-ai/sales-state'
 import { duplicateReceiptReply, isPaymentHandoff } from '@/lib/soft-ai/repeat-order'
 import { loadSettledSale } from '@/lib/soft-ai/settled-sale'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
-import { decideInbound, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
+import { decideInbound, decisionOrderDataChoice, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import { paymentCheckGate, paymentCheckMode, runPaymentClaimCheck } from '@/lib/soft-ai/llm/payment-claim-check'
 import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
@@ -198,6 +198,11 @@ function customerTextSinceLastAnswer(history: Array<{ direction: string; content
  * The customer's earlier messages for the burst claim check: since the store last wrote, plus any from the last 10 min
  * (SecureDog round 7: a message typed while the store's reply was being written sorts before that reply).
  */
+/** The store's configured SINPE number / IBAN (digits): a message from the store carrying one = payment details. */
+function storePaymentDigits(facts: { payment?: { sinpe?: { number?: string | null } | null; transfer?: { iban?: string | null } | null } | null } | null | undefined): string[] {
+  return [facts?.payment?.sinpe?.number, facts?.payment?.transfer?.iban].map((n) => (n || '').replace(/\D/g, '')).filter((d) => d.length >= 8)
+}
+
 function earlierCustomerTexts(history: Array<{ direction: string; content?: string | null; sentAt?: string | Date | null }>): string[] {
   return recentCustomerTexts(history, 10 * 60_000, 6)
 }
@@ -253,12 +258,15 @@ async function withPaymentClaimCheck(
   decision: InboundDecision,
   ctx: { tenantId: string; agentId: string; conversationId: string | null; history: Array<{ direction: string; content?: string | null }> },
 ): Promise<InboundDecision> {
-  const mode = paymentCheckMode()
+  // SecureDog r3 INT-H: a choice inside the order data is a regex ALLOWLIST over free text; the model check is its
+  // mandatory backstop — always enforced on that path, whatever SOFT_AI_PAYMENT_CHECK says (error / timeout → hand-off).
+  const dataChoicePath = decisionOrderDataChoice(decision) !== null
+  const mode = dataChoicePath ? 'enforce' : paymentCheckMode()
   if (mode === 'off' || decision.escalate || decision.handoff) return decision
   // SecureDog r9 F1: only real media skips (it has its own receipt path). A reaction / share / location / story
   // mention that took the burst over still gets the check: the claim text is in the unanswered history it reads.
   if (input.messageType && isMediaLikeMessageType(input.messageType)) return decision
-  if (!paymentCheckGate(input.inboundText, ctx.history)) return decision
+  if (!dataChoicePath && !paymentCheckGate(input.inboundText, ctx.history)) return decision
   const result = await runPaymentClaimCheck({
     inboundText: input.inboundText,
     history: ctx.history,
@@ -1096,6 +1104,16 @@ export async function executeAgentLayerTurn(
       ...burstEarlier,
       { direction: 'inbound', content: payload.content || '', messageType: trigger.messageType },
     ]),
+    // Rafael 2026-10-18: a choice inside the order data with nothing paid yet — same rows, same types. A full window
+    // (more rows than loaded) fails closed; the store's own payment numbers end it too.
+    orderDataChoice: orderDataChoice(
+      [
+        ...history.map((m) => ({ ...m, messageType: messageTypeOf.get(m.id) ?? null })),
+        ...burstEarlier,
+        { direction: 'inbound', content: payload.content || '', messageType: trigger.messageType },
+      ],
+      { windowFull: loadedRows >= HISTORY_WINDOW_MAX, paymentDigits: storePaymentDigits(resolved.agent.brandFacts) },
+    ),
   }
   const burstTurn = decideBurstTurn({
     burst,
@@ -2308,6 +2326,10 @@ async function runAgentTestTurnInner(input: {
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // Sleeping C2: nothing about paying in this chat yet (photos / files counted from their type, like live).
     noPaymentYet: noPaymentYet([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }]),
+    orderDataChoice: orderDataChoice([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }], {
+      windowFull: (input.history || []).length >= HISTORY_WINDOW_MAX,
+      paymentDigits: storePaymentDigits(runtimeAgent.brandFacts),
+    }),
   }
   const probarBurstTurn = decideBurstTurn({
     burst: probarBurst,

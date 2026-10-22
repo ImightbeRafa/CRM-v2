@@ -140,8 +140,8 @@ describe('SecureDog r1 fixes', () => {
   it('INT-217: with payment in play an outage hands the chat over as a payment at once', () => {
     const turn = read('src/lib/soft-ai/agent-turn.ts')
     // Verifier r2 #6: only the unanswered messages; the payment line only for a claim (else the review line).
-    assert.ok(turn.includes('paymentInPlay: paymentCheckGate(burst.inboundText, []),'))
-    assert.ok(turn.includes("paymentClaim: classifyPaymentText(burst.inboundText) === 'payment_proof_or_risk',"))
+    // SecureDog r3: the whole unanswered burst (closed-pay-info.test.ts covers unansweredPaymentState).
+    assert.ok(turn.includes('...outagePaymentState(unansweredPaymentState(burst.inboundText, history)),'))
     assert.ok(turn.includes('await sendOutageLine({ ...input, now, text: input.paymentClaim ? SAFE_LINE.payment : undefined })'))
     // Verifier r2 #3: the 2 h clock is the conversation's (a new job continues the chat's outage).
     assert.ok(turn.includes('previous: readProviderRetryState(row.payload) ?? (await conversationRetryState(row, now)),'))

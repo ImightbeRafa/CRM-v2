@@ -115,6 +115,7 @@ import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
 import { decideInbound, decisionOrderDataChoice, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import { paymentCheckGate, paymentCheckMode, runPaymentClaimCheck } from '@/lib/soft-ai/llm/payment-claim-check'
+import { unansweredPaymentState } from '@/lib/soft-ai/payment-claim-check-core'
 import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
 import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
@@ -824,6 +825,10 @@ async function handleProviderOutage(input: {
   }
   await settleHandoff(row, { kind: 'handoff', reason: HANDOFF_REASON.aiUnavailable }, input.hours)
   return { status: 'skipped', reason: 'provider_down' }
+}
+
+function outagePaymentState(state: { inPlay: boolean; claim: boolean }): { paymentInPlay: boolean; paymentClaim: boolean } {
+  return { paymentInPlay: state.inPlay, paymentClaim: state.claim }
 }
 
 /** The oldest provider retry of this chat in the last 2 h, as the retry state a new job continues from. Never throws. */
@@ -1570,8 +1575,7 @@ export async function executeAgentLayerTurn(
       hours,
       // SecureDog INT-217: with payment in play the "¿ya pagó?" check could not run either — a person, now. Verifier r2
       // #6: only the unanswered messages count (a store "¿Cómo preferís pagar?" earlier is not a payment in play).
-      paymentInPlay: paymentCheckGate(burst.inboundText, []),
-      paymentClaim: classifyPaymentText(burst.inboundText) === 'payment_proof_or_risk',
+      ...outagePaymentState(unansweredPaymentState(burst.inboundText, history)),
     })
   }
 

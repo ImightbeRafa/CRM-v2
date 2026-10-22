@@ -12,6 +12,7 @@ import {
 import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
 import {
   asksMoreThanPayment,
+  isCardByChatOffer,
   classifyPaymentText,
   embeddedPaymentChoice,
   hasHardPaymentClaim,
@@ -397,6 +398,46 @@ export function decideInbound(input: {
   }
 
 
+  // SecureDog r3: a card number offered by chat ("te paso el número de mi tarjeta por acá?") is never left to the model,
+  // whatever is pending or also asked: the store's card link, or without one the payment-data review.
+  if (paymentClass === 'payment_info_safe' && isCardByChatOffer(input.inboundText)) {
+    const cardReply =
+      canSharePaymentFacts(input.brandFacts) && paymentMethodBlock(input.brandFacts, 'tarjeta')
+        ? paymentChoiceReply('tarjeta', 'Claro 🙌 Por seguridad no mandés los datos de tu tarjeta por chat:')
+        : null
+    if (cardReply) {
+      steps.push({ step: 'payment_info', outcome: 'share', reason: 'card_by_chat' })
+      return finish({
+        text: cardReply,
+        intent: 'payment_info',
+        shortcutKey: 'sys_payment_info',
+        escalate: false,
+        paymentClass,
+        steps,
+        facts: input.brandFacts,
+        allowedAmounts: input.allowedAmounts,
+        replyStyle: input.replyStyle,
+        shortcuts: input.shortcuts,
+      })
+    }
+    steps.push({ step: 'payment_info', outcome: 'handoff', reason: 'card_by_chat' })
+    const soon = seedShortcut('sys_payment_soon', input.shortcuts)
+    return finish({
+      text: renderShortcutTemplate(soon.body, { facts: input.brandFacts }),
+      intent: 'payment_info',
+      shortcutKey: 'sys_payment_soon',
+      escalate: true,
+      paymentClass,
+      steps,
+      facts: input.brandFacts,
+      allowedAmounts: input.allowedAmounts,
+      replyStyle: input.replyStyle,
+      shortcuts: input.shortcuts,
+      forceNeedsHuman: true,
+      extraReasons: ['card_by_chat'],
+      handoff: { kind: 'review', reason: HANDOFF_REASON.paymentData },
+    })
+  }
   if (paymentClass === 'payment_info_safe' && input.awaitingPaymentMethod && canSharePaymentFacts(input.brandFacts)) {
     // N4: never the method list again while the store's method question is pending — the model answers.
     steps.push({ step: 'payment_info', outcome: 'model', reason: 'method_question_pending' })

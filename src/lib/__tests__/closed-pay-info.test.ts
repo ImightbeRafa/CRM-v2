@@ -6,9 +6,11 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { classifyPaymentText, isClosedPayInfoQuestion, normalizePaySpelling } from '@/lib/soft-ai/payment-classifier'
+import { classifyPaymentText, isCardByChatOffer, isClosedPayInfoQuestion, normalizePaySpelling } from '@/lib/soft-ai/payment-classifier'
 import { deriveSalesState, type SalesContext } from '@/lib/soft-ai/sales-state'
-import { paymentCheckGate } from '@/lib/soft-ai/payment-claim-check-core'
+import { paymentCheckGate, unansweredPaymentState } from '@/lib/soft-ai/payment-claim-check-core'
+import { readFileSync } from 'node:fs'
+const read = (p: string) => readFileSync(p, 'utf8')
 import { isPaymentSensitiveText } from '@/lib/soft-ai/config'
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
 import { validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
@@ -94,7 +96,9 @@ describe('closed before-paying questions (Forge real-49 / real-61)', () => {
       assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
       const d = decideInbound({ inboundText: t, brandFacts: FACTS, shortcuts: SHORTCUTS })
       assert.notEqual(d.paymentClass, 'payment_proof_or_risk', t)
-      assert.equal(d.handoff, null, t)
+      // SecureDog r3: a card offer with no card block on file gets the payment-data review, never a payment hand-off.
+      if (isCardByChatOffer(t)) assert.equal(d.handoff?.kind, 'review', t)
+      else assert.equal(d.handoff, null, t)
     }
   })
 
@@ -193,16 +197,68 @@ describe('SecureDog r2 F1 / F2 (closed-question exemption, card by chat)', () =>
     assert.equal(isClosedPayInfoQuestion('Lo quiero talla XL. ¿Puedo hacer el pago mañana y envío el comprobante?', { strict: true }), true)
     assert.equal(isClosedPayInfoQuestion('¿Qué le pongo de detalle?', { strict: true }), true)
   })
-  it('an offer to send the card number gets the code card reply; a reply asking for card data is held', () => {
-    const CARD_FACTS = parseBrandFacts({ payment: { shareWithCustomers: true, methods: ['sinpe', 'tarjeta'], sinpe: { number: '88880000', holderName: 'Ana Mora' }, cardLink: 'https://tienda.example/pagar' } })
-    for (const t of ['Hola! quiero pagar ya, te paso el número de mi tarjeta por acá?', 'Le paso el numero de mi tarjeta por whatsapp']) {
+  it('an offer to send the card number gets the code card reply, also with the method question pending', () => {
+    const CARD_FACTS = parseBrandFacts({ payment: { shareWithCustomers: true, methods: ['sinpe', 'tarjeta'], sinpe: { number: '88880000', holderName: 'Ana Mora' }, cardUrl: 'https://tienda.example/pagar' } })
+    for (const t of ['Hola! quiero pagar ya, te paso el número de mi tarjeta por acá?', 'Le paso el numero de mi tarjeta por whatsapp', 'Lo quiero talla M. Te paso los datos de mi tarjeta?']) {
       assert.equal(classifyPaymentText(t), 'payment_info_safe', t)
-      const d = decideInbound({ inboundText: t, brandFacts: CARD_FACTS, shortcuts: SHORTCUTS })
-      assert.equal(d.handoff, null, t)
-      assert.equal(d.shortcutKey, 'sys_payment_info', t)
+      for (const awaitingPaymentMethod of [false, true]) {
+        const d = decideInbound({ inboundText: t, brandFacts: CARD_FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod })
+        assert.equal(d.handoff, null, t)
+        assert.equal(d.shortcutKey, 'sys_payment_info', t)
+        assert.match(String((d as { text?: string }).text ?? ''), /no mandés los datos de tu tarjeta por chat/, t)
+        assert.match(String((d as { text?: string }).text ?? ''), /\[\[PAGO_TARJETA\]\]|tienda\.example\/pagar/, t)
+      }
     }
-    const held = validateAgentOutput({ text: '¡Claro! Pasame el número de la tarjeta, la fecha de vencimiento y el código de atrás por aquí 😊', citedToolNames: [] }).reasons
-    assert.ok(held.includes('card_data_request'))
-    assert.ok(!validateAgentOutput({ text: 'Con tarjeta pagás en la web, nunca mandés los datos de la tarjeta por chat 😊', citedToolNames: [] }).reasons.includes('card_data_request'))
+    // No card block: a person sends how to pay (review), never the model.
+    const noCard = decideInbound({ inboundText: 'te paso el número de mi tarjeta por acá?', brandFacts: FACTS, shortcuts: SHORTCUTS, awaitingPaymentMethod: true })
+    assert.equal(noCard.handoff?.kind, 'review')
+  })
+  it('a reply asking for card data is held in every form; a warning is not', () => {
+    for (const t of [
+      '¡Claro! Pasame el número de la tarjeta, la fecha de vencimiento y el código de atrás por aquí 😊',
+      '¡Claro! ¿Me podés pasar el número de tu tarjeta?',
+      'Con gusto, me puede enviar el número de su tarjeta y la fecha de vencimiento',
+      'Envíeme el número de su tarjeta por favor',
+      'Claro, páseme los datos de su tarjeta',
+      'Me pasás los 16 dígitos de la tarjeta y el vencimiento?',
+      'Perfecto, escribí acá el número de la tarjeta',
+      'Mandá foto de la tarjeta por los dos lados',
+      'El número de la tarjeta me lo pasás por acá',
+      'Podés enviarme el número de la tarjeta y los 3 números de atrás',
+      '¿Me compartís el número de la tarjeta?',
+      'Pasame el CVV y listo',
+    ]) assert.ok(validateAgentOutput({ text: t, citedToolNames: [] }).reasons.includes('card_data_request'), t)
+    for (const t of ['Con tarjeta pagás en la web, nunca mandés los datos de la tarjeta por chat 😊', 'Por seguridad no me pases el número de tu tarjeta por acá: pagás en el link 😊', 'Aceptamos tarjeta en la web 🙌']) {
+      assert.ok(!validateAgentOutput({ text: t, citedToolNames: [] }).reasons.includes('card_data_request'), t)
+    }
+    assert.match(read('src/lib/soft-ai/llm/prompt.ts'), /Nunca pidas ni aceptes datos de tarjeta por chat/)
+  })
+})
+
+describe('SecureDog r3 Lows', () => {
+  const ch = (...codes: number[]) => String.fromCharCode(...codes)
+  it('the strict form never skips a sentence that opens with a yes', () => {
+    for (const t of ['Sí, gracias. ¿A nombre de quién sale?', 'Sí, a nombre de quién sale?', 'Claro, me pasás el número?']) {
+      assert.equal(isClosedPayInfoQuestion(t, { strict: true }), false, t)
+      assert.equal(paymentCheckGate(t, [{ direction: 'outbound', content: '¿Pudiste hacer el SINPE?' }]), true, t)
+    }
+  })
+  it('an ALL-CAPS "VIVO EN" with a pronoun / filler is not a place', () => {
+    for (const t of ['VIVO EN HEREDIA JUAN LO MANDO. ¿TIENEN CONTRA ENTREGA?', 'VIVO EN HEREDIA TODO BIEN. ¿TIENEN CONTRA ENTREGA?']) {
+      assert.equal(isClosedPayInfoQuestion(t), false, t)
+    }
+    assert.equal(isClosedPayInfoQuestion('VIVO EN HEREDIA. ¿TIENEN CONTRA ENTREGA?'), true)
+  })
+  it('an emoji with its own variation selector keeps the closed shape; after a letter it does not', () => {
+    assert.equal(isClosedPayInfoQuestion(`¿Qué le pongo de detalle? ${ch(0x2764, 0xfe0f)}`), true)
+    assert.equal(isClosedPayInfoQuestion(`¿Qué le pongo de detalle? ${ch(0x263a, 0xfe0f)}`), true)
+    assert.equal(isClosedPayInfoQuestion(`Vivo en Heredia Ya${ch(0xfe0f)}Pagué. ¿Me pasás el número?`), false)
+  })
+  it('the outage path reads the whole unanswered burst for payment in play', () => {
+    const turn = read('src/lib/soft-ai/agent-turn.ts')
+    assert.ok(turn.includes('...outagePaymentState(unansweredPaymentState(burst.inboundText, history)),'))
+    const hist = [{ direction: 'inbound', content: 'Mi tarjeta no pasa' }]
+    assert.deepEqual(unansweredPaymentState('¿Qué hago?', hist), { inPlay: true, claim: true })
+    assert.equal(unansweredPaymentState('¿Lo tienen en negro?', [{ direction: 'outbound', content: '¿Cómo preferís pagar?' }]).inPlay, false)
   })
 })

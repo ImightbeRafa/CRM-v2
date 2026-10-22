@@ -2,7 +2,7 @@
  * Pure parts of the "¿ya pagó?" model check (llm/payment-claim-check.ts): when it runs, what it sees, how its answer
  * is read. No network, no server-only imports — unit-testable.
  */
-import { hasPaymentWord, isClosedPayInfoQuestion } from '@/lib/soft-ai/payment-classifier'
+import { classifyPaymentText, hasPaymentWord, isClosedPayInfoQuestion } from '@/lib/soft-ai/payment-classifier'
 
 export type PaymentCheckMode = 'off' | 'shadow' | 'enforce'
 export type PaymentCheckVerdict = 'claim' | 'clear' | 'error'
@@ -65,6 +65,19 @@ export function paymentCheckGate(inboundText: string, history: PaymentCheckHisto
   const recentInbound = history.filter((m) => m.direction === 'inbound').slice(-3).map((m) => m.content || '')
   if (recentInbound.some((t) => hasPaymentWord(t))) return true
   return history.some((m) => m.direction === 'outbound' && hasPaymentWord(m.content || ''))
+}
+
+/**
+ * Verifier r2 #6 / SecureDog r3: the outage path's "payment in play" — money or payment words among the customer's
+ * UNANSWERED messages (the whole burst, not only the newest), never an earlier store "¿Cómo preferís pagar?". claim = one
+ * of them reads as a payment claim / receipt.
+ */
+export function unansweredPaymentState(inboundText: string, history: PaymentCheckHistory): { inPlay: boolean; claim: boolean } {
+  const unanswered = [...unansweredCustomerTexts(history).burst, inboundText || ''].filter((t) => t.trim())
+  return {
+    inPlay: unanswered.some((t) => MONEY_WORDS_RE.test(t) || FOREIGN_MONEY_WORDS_RE.test(t) || hasPaymentWord(t)),
+    claim: unanswered.some((t) => classifyPaymentText(t) === 'payment_proof_or_risk'),
+  }
 }
 
 /** Role labels a customer could type to look like another speaker in the prompt. */

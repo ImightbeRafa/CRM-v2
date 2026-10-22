@@ -805,6 +805,17 @@ const CLOSED_PAY_STRICT_CONTEXT_SEG_RE = /^(?:lo|la)\s+quiero(?:\s+(?:en\s+)?tal
  * centro", "Vivo en San José", "Vivo en Santa Ana de Escazú"), never a lowercase verb ("mi esposa mando").
  */
 const PLACE_WORD_RE = /^(?:\p{Lu}\p{L}*|de|del|la|el|los|las|centro|cerca|norte|sur|este|oeste|barrio|residencial|condominio)$/u
+const PLACE_FILLER_RE = /^(?:lo|le|les|se|me|te|nos|mi|tu|su|ya|todo|toda|todos|bien|mal|que|y|e)$/iu
+/**
+ * SecureDog r3: the strict form (the "¿ya pagó?" check, the receipt cue) never skips a sentence that opens with a yes —
+ * "Sí, gracias. ¿A nombre de quién sale?" can answer the store's "¿Pudiste hacer el SINPE?".
+ */
+const STRICT_LEADING_YES_RE =
+  /(?:^|[.!?\n])[\s¿¡]*(?:s[ií]|claro|ok|oki|okey|dale|listo|va|bueno|perfecto|exacto|correcto)(?![\p{L}])/iu
+const EMOJI_JOINER_RE = new RegExp(
+  `(\\p{Extended_Pictographic})[${String.fromCharCode(0xfe0e, 0xfe0f, 0x200d)}]+(?=\\p{Extended_Pictographic}|\\s|[.!?,]|$)`,
+  'gu',
+)
 /** "Dale, pago por SINPE": the method choice, a fully anchored shape (no room for a claim). */
 const CLOSED_PAY_CHOICE_SEG_RE =
   /^(?:(?:dale|ok|okey|perfecto|bueno|va)\s*,?\s*)?(?:pago|pagar[eé]|voy\s+a\s+pagar|te\s+pago|le\s+pago|lo\s+pago)\s+(?:por|con)\s+(?:sinpe(?:\s+m[oó]vil)?|transferencia|tarjeta|efectivo)$/iu
@@ -824,7 +835,10 @@ export function normalizePaySpelling(v: string): string {
     .replace(/(?<![\p{L}])(hacer|mandar|enviar|pasar|depositar|transferir)\s+(te|le|les)(?![\p{L}])/giu, '$1$2')
 }
 export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean } = {}): boolean {
-  const raw = text || ''
+  // SecureDog r3: an emoji's own variation selector / joiner ("❤️", "👨‍👩") is not an invisible gap; after a letter it is.
+  if ((text || '').length > 400) return false
+  const raw = (text || '').replace(EMOJI_JOINER_RE, '$1')
+  if (opts.strict && STRICT_LEADING_YES_RE.test(raw)) return false
   // SecureDog r2 F1: invisible / line-separator characters, look-alike letters and foreign payment words never get the
   // exemption ("Vivo en Heredia ya<U+2028>pague", Cyrillic "уа раgue", "paiement envoyé"): the normal rules decide.
   if (raw.length > 400) return false
@@ -845,13 +859,19 @@ export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean }
     const bare = s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
     if (!CLOSED_PAY_CONTEXT_SEG_RE.test(s) || CONTEXT_FORBIDDEN_RE.test(bare)) return false
     const place = /^vivo\s+en\s+(.+)$/iu.exec(s)
-    return !place || place[1].split(' ').every((w) => PLACE_WORD_RE.test(w))
+    // SecureDog r3: "VIVO EN HEREDIA JUAN LO MANDO" — pronouns / fillers are never part of a place, in any case.
+    return !place || place[1].split(' ').every((w) => PLACE_WORD_RE.test(w) && !PLACE_FILLER_RE.test(w))
   }
   const asks = segs.filter((t) => !CLOSED_PAY_INFO_COURTESY_RE.test(t) && !isContext(t))
   return asks.length > 0 && asks.every((t) => CLOSED_PAY_INFO_SEG_RE.test(t.replace(/\s+/gu, ' ')))
 }
 /** An offer to send the card number by chat (one of the closed shapes above). */
-const CARD_BY_CHAT_RE = /(?:paso|mando|doy|env[ií]o|mandar|pasar|dar|enviar)\s+(?:el\s+)?n[uú]mero\s+de\s+(?:la\s+|mi\s+)?tarjeta/iu
+const CARD_BY_CHAT_RE =
+  /(?:paso|mando|doy|env[ií]o|escribo|mandar|pasar|dar|enviar|escribir)\s+(?:el\s+|los\s+|la\s+|una\s+)?(?:n[uú]meros?|datos|d[ií]gitos|foto)\s+de\s+(?:la\s+|mi\s+)?tarjeta/iu
+/** SecureDog r3: the customer offers card data by chat (the decision answers with the store's card link). */
+export function isCardByChatOffer(text: string): boolean {
+  return CARD_BY_CHAT_RE.test(stripFormatChars((text || '').normalize('NFKC')))
+}
 /** A sentence that is only a greeting / courtesy ("Hola,", "Disculpe", "Una consulta") around the question. */
 const CLOSED_PAY_INFO_COURTESY_RE =
   // Verifier r2 #3: "Perfecto, ¿qué le pongo de detalle?". Never sí / claro / listo / ya / hecho (they can answer "¿ya pagó?").

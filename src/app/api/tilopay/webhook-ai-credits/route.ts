@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyWebhookSharedSecret } from '@/lib/tilopay'
 import { applyPurchaseWebhook, isBillingTableMissing } from '@/lib/ai-billing/store'
 import { clearCreditAllowanceCache } from '@/lib/ai-billing/allowance'
+import { creditPaymentsEnvAllowed } from '@/lib/ai-billing/math'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const APPROVED = ['aprobada', 'approved', 'success', 'paid']
 const DECLINED = ['rechazada', 'declined', 'failed', 'canceled', 'cancelada']
+const REFUNDED = ['reembolsada', 'refunded', 'reversed', 'reversada', 'void', 'voided', 'anulada', 'chargeback', 'contracargo']
 
 /**
  * Tilopay notification for an AI credit pack (one-off payment link from /api/billing/ai-credits/checkout).
@@ -17,6 +19,8 @@ const DECLINED = ['rechazada', 'declined', 'failed', 'canceled', 'cancelada']
  * Answers 200 for anything already handled or not ours, so Tilopay does not retry forever; logs carry no ids.
  */
 export async function POST(req: NextRequest) {
+  // Preview shares the production DB: only production may credit (fail closed; Tilopay retries to prod).
+  if (!creditPaymentsEnvAllowed()) return NextResponse.json({ error: 'Not available' }, { status: 503 })
   const raw = await req.text()
   if (!verifyWebhookSharedSecret(req, raw)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   let body: Record<string, unknown>
@@ -36,14 +40,15 @@ export async function POST(req: NextRequest) {
       ref,
       approved: APPROVED.includes(status) || event === 'payment.approved',
       declined: DECLINED.includes(status),
+      refunded: REFUNDED.includes(status) || /refund|reembolso|chargeback/.test(event),
       // Tilopay sends minor units on this path (same as /api/tilopay/webhook: USD 2000 = $20.00).
       amountCents: Number.isFinite(amount) ? Math.round(amount) : -1,
       currency: String(body.moneda ?? body.currency ?? ''),
       transactionId: tx === undefined || tx === null || tx === '' ? null : String(tx).slice(0, 120),
     })
-    if (outcome.result === 'credited') clearCreditAllowanceCache(outcome.tenantId)
+    if (outcome.result === 'credited' || outcome.result === 'refunded') clearCreditAllowanceCache(outcome.tenantId)
     if (outcome.result === 'mismatch') {
-      console.warn('[tilopay/webhook-ai-credits] payment does not match the server price')
+      console.warn('[tilopay/webhook-ai-credits] payment does not match the server price', { purchaseId: outcome.purchaseId })
       return NextResponse.json({ error: 'Payment does not match the purchase' }, { status: 409 })
     }
     return NextResponse.json({ ok: true, result: outcome.result })

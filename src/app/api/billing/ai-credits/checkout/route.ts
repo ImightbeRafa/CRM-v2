@@ -6,7 +6,7 @@ import { createIdentifierRateLimit } from '@/lib/rate-limit'
 import { createPaymentLink } from '@/lib/tilopay'
 import { readCustomAgentsFlag } from '@/lib/support/agent-flag'
 import { formatUsdCents } from '@/lib/pricing/plan'
-import { quotePack } from '@/lib/ai-billing/math'
+import { creditPacksEnabled, quotePack } from '@/lib/ai-billing/math'
 import {
   aiBillingReady,
   createPendingPurchase,
@@ -35,7 +35,9 @@ export async function POST(request: NextRequest) {
   if (!isSameOriginRequest(request)) return NextResponse.json({ error: 'Origen no permitido' }, { status: 403 })
   const parsed = schema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Paquete inválido' }, { status: 400 })
-  if (!(await aiBillingReady())) return NextResponse.json({ error: 'Los créditos de IA aún no están disponibles.' }, { status: 503 })
+  if (!creditPacksEnabled() || !(await aiBillingReady())) {
+    return NextResponse.json({ error: 'Los créditos de IA aún no están disponibles.' }, { status: 503 })
+  }
 
   const tenantId = auth.tenantId
   const flag = await readCustomAgentsFlag(tenantId)
@@ -49,12 +51,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Tenés pagos pendientes. Terminá uno o esperá unas horas.' }, { status: 429 })
   }
   const settings = await getSettings()
-  const pack = settings.packs.find((p) => p.id === parsed.data.packId)
+  // No cutover yet = closed months are never settled, so a prepaid balance would never be used up.
+  if (!settings.cutoverPeriod) return NextResponse.json({ error: 'Las recargas se activan pronto.' }, { status: 503 })
+  const pack =settings.packs.find((p) => p.id === parsed.data.packId)
   if (!pack) return NextResponse.json({ error: 'Paquete inválido' }, { status: 400 })
   const quote = quotePack(pack)
 
   const purchase = await createPendingPurchase({ tenantId, ...quote, createdBy: auth.userId })
-  const base = process.env.NEXTAUTH_URL || request.nextUrl.origin
+  // Never build Tilopay URLs from the request Host (a forged host could receive the notification + secret).
+  const base = (process.env.NEXTAUTH_URL || '').replace(/\/+$/, '')
+  if (!/^https:\/\//.test(base)) {
+    await deletePendingPurchase(purchase.id).catch(() => undefined)
+    return NextResponse.json({ error: 'Los créditos de IA aún no están disponibles.' }, { status: 503 })
+  }
   try {
     const link = await createPaymentLink({
       amountMinor: quote.totalCents,
@@ -66,7 +75,7 @@ export async function POST(request: NextRequest) {
       callbackUrl: `${base}/api/tilopay/webhook-ai-credits`,
       customerEmail: auth.session?.user?.email || undefined,
     })
-    if (!link.url || !/^https:\/\//.test(link.url)) throw new Error('no_link')
+    if (!link.url || !/^https:\/\/([a-z0-9-]+\.)*tilopay\.com(\/|$)/i.test(link.url)) throw new Error('no_link')
     return NextResponse.json({ checkoutUrl: link.url, quote })
   } catch (error) {
     await deletePendingPurchase(purchase.id).catch(() => undefined)

@@ -63,7 +63,11 @@ export function AiBillingSettingsCard({ tenants }: { tenants: Array<{ id: string
       })
       const json = await res.json().catch(() => ({}))
       setMsg(res.ok ? `Guardado. La tarifa rige desde ${json.ratePeriod}.` : json.error || 'No se pudo guardar')
-      if (res.ok) await load()
+      if (res.ok) {
+        // One-shot: a later save (e.g. packs) must not reprice the current month again.
+        setForm((f) => ({ ...f, effectiveNow: false }))
+        await load()
+      }
     } finally {
       setBusy(false)
     }
@@ -98,7 +102,7 @@ export function AiBillingSettingsCard({ tenants }: { tenants: Array<{ id: string
         {!p.ready && <p className="text-amber-700">Falta aplicar SQL 060: se muestran los valores por defecto y no se puede guardar.</p>}
         <p className="text-slate-600">
           Este mes ({p.periodKey}): margen {markupNow}, {formatUsdMicros(p.current.freeMonthlyMicros)} gratis por negocio.{' '}
-          {p.settings.enforce ? 'Los topes PAUSAN la IA.' : 'Los topes son solo informativos (no pausan).'}
+          {p.settings.enforce ? 'Los topes PAUSAN los agentes.' : 'Los topes son solo informativos (no pausan).'}
           {p.settings.cutoverPeriod ? ` Saldo descontado desde ${p.settings.cutoverPeriod}.` : ''}
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -125,7 +129,7 @@ export function AiBillingSettingsCard({ tenants }: { tenants: Array<{ id: string
         <div className="flex flex-wrap items-center gap-4">
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={form.enforce} onChange={(e) => setForm({ ...form, enforce: e.target.checked })} />
-            Pausar la IA al llegar al tope o sin saldo
+            Pausar los agentes al llegar al tope o sin saldo
           </label>
           <label className="flex items-center gap-2 text-amber-800">
             <input type="checkbox" checked={form.effectiveNow} onChange={(e) => setForm({ ...form, effectiveNow: e.target.checked })} />
@@ -137,7 +141,9 @@ export function AiBillingSettingsCard({ tenants }: { tenants: Array<{ id: string
         </div>
         <p className="text-[12px] text-slate-500">
           Un cambio de margen o crédito gratis rige desde el mes siguiente, así no se recalcula un mes empezado. Tus negocios en
-          AI_ALLOWANCE_EXEMPT_TENANTS nunca tienen tope.
+          AI_ALLOWANCE_EXEMPT_TENANTS nunca tienen tope. La pausa solo actúa sobre los agentes y cuando el corte de Lane D esté
+          conectado (docs/plans/ai-credits-allowance-spec.md). El primer guardado fija el mes desde el que se descuenta el saldo.
+          La venta de paquetes además necesita AI_CREDIT_PACKS_ENABLED=true.
         </p>
 
         <div className="border-t border-slate-100 pt-4">

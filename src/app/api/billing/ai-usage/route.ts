@@ -4,7 +4,7 @@ import { getCreditState } from '@/lib/ai-billing/state'
 import { buildUsageReport } from '@/lib/ai-billing/report'
 import { getSettings, listLedger, listPurchases, listRates, monthDailyUsage } from '@/lib/ai-billing/store'
 import { loadAgentNames } from '@/lib/soft-ai/agent-usage-server'
-import { isPeriodKey, quotePack, rateForPeriod } from '@/lib/ai-billing/math'
+import { creditPacksEnabled, isPeriodKey, quotePack, rateForPeriod } from '@/lib/ai-billing/math'
 import { IVA_BPS } from '@/lib/pricing/plan'
 
 export const runtime = 'nodejs'
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
       enforce: state.settings.enforce,
       decision: state.decision,
       canManage: auth.role === 'OWNER',
-      packs: state.agentEnabled && state.ready ? settings.packs.map((p) => quotePack(p)) : [],
+      packs: state.agentEnabled && state.ready && creditPacksEnabled() && settings.cutoverPeriod ? settings.packs.map((p) => quotePack(p)) : [],
       report,
       agentNames: Object.fromEntries(Object.entries(agentNames).map(([id, a]) => [id, a.name])),
       ledger,

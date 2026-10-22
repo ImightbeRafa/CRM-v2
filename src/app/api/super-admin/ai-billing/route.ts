@@ -86,7 +86,7 @@ export async function PUT(request: NextRequest) {
 
 const adjustSchema = z.object({
   tenantId: z.string().trim().min(1).max(64),
-  amountUsd: z.number().finite().min(-10_000).max(10_000).refine((v) => v !== 0),
+  amountUsd: z.number().finite().min(-10_000).max(10_000).refine((v) => Math.abs(v) >= 0.01),
   note: z.string().trim().min(3).max(160),
   requestId: z.string().uuid(),
 })

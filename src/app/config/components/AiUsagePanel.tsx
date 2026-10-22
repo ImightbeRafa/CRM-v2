@@ -12,7 +12,7 @@ import { formatUsdCents } from '@/lib/pricing/plan'
 
 type Quote = { packId: string; priceCents: number; ivaCents: number; totalCents: number; creditMicros: number }
 type Purchase = { id: string; packId: string; creditMicros: number; totalCents: number; status: string; createdAt: string }
-type Ledger = { id: string; kind: string; amountMicros: number; periodKey: string | null; note: string | null; createdAt: string }
+type Ledger = { id: string; kind: string; amountMicros: number; periodKey: string | null; createdAt: string }
 
 type UsageData = {
   ready: boolean
@@ -62,7 +62,7 @@ function lastMonths(periodKey: string, n: number) {
   return out
 }
 
-const KIND_LABEL: Record<string, string> = { purchase: 'Compra de créditos', adjustment: 'Ajuste de Betsy', usage_settle: 'Uso del mes' }
+const KIND_LABEL: Record<string, string> = { purchase: 'Compra de créditos', refund: 'Reembolso', adjustment: 'Ajuste de Betsy', usage_settle: 'Uso del mes' }
 
 /** Config › Uso de IA: what this business's AI costs, how it is calculated, its limit and credits. */
 export function AiUsagePanel() {
@@ -163,6 +163,9 @@ export function AiUsagePanel() {
   const capLabel = d.cap === 'limit' ? 'tu límite mensual' : 'tu crédito disponible'
   const capMicros = d.cap === 'limit' ? (d.limitMicros ?? 0) : d.creditMicros
   const pct = Math.min(100, Math.max(0, d.usedPct))
+  // Only the inbox agent is paused by the allowance (Lane D); helpers for accounts without an agent are not.
+  const agentPauses = data.enforce && data.agentEnabled && !data.exempt
+  const creditLeft = Math.max(0, d.creditMicros - d.billedMicros)
 
   return (
     <div className="space-y-5">
@@ -185,6 +188,15 @@ export function AiUsagePanel() {
         }
       />
 
+      {error && (
+        <div className={`${card} flex flex-wrap items-center justify-between gap-2 text-[14px] text-red-700`} role="alert">
+          {error}
+          <button type="button" className={auroraBtnSecondary} onClick={() => void load(period)}>
+            Reintentar
+          </button>
+        </div>
+      )}
+
       {!data.ready && (
         <div className={`${card} text-[14px] text-slate-600`}>
           Los créditos y límites de IA se activan pronto. Mientras tanto ves tu uso con la tarifa base.
@@ -204,8 +216,8 @@ export function AiUsagePanel() {
             {d.alert === 100 ? <PauseCircle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden /> : <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />}
             <p>
               {d.alert === 100
-                ? data.enforce
-                  ? `Llegaste al 100 % de ${capLabel}. La IA está en pausa y tu equipo sigue atendiendo los chats.`
+                ? agentPauses
+                  ? `Llegaste al 100 % de ${capLabel}. Tu agente de IA está en pausa y tu equipo sigue atendiendo los chats.`
                   : `Llegaste al 100 % de ${capLabel}.`
                 : `Ya usaste el ${Math.floor(d.usedPct)} % de ${capLabel} este mes.`}{' '}
               {data.agentEnabled && data.packs.length > 0 ? 'Podés recargar créditos abajo.' : d.cap === 'limit' ? 'Podés subir tu límite abajo.' : ''}
@@ -222,10 +234,11 @@ export function AiUsagePanel() {
           <p className="text-[12px] text-slate-500">+ IVA · se renueva el {dateFmt.format(new Date(data.renewsAt))}</p>
         </div>
         <div className={card}>
-          <p className="text-[12px] font-medium text-slate-500">Crédito disponible</p>
-          <p className="mt-1 text-[26px] font-semibold tracking-tight text-slate-900">{money(d.creditMicros)}</p>
+          <p className="text-[12px] font-medium text-slate-500">Crédito que te queda</p>
+          <p className="mt-1 text-[26px] font-semibold tracking-tight text-slate-900">{money(creditLeft)}</p>
           <p className="text-[12px] text-slate-500">
-            {money(data.rate.freeMonthlyMicros)} gratis este mes{data.balanceMicros > 0 ? ` + ${money(data.balanceMicros)} prepago` : ''}
+            de {money(d.creditMicros)}: {money(data.rate.freeMonthlyMicros)} gratis este mes
+            {data.balanceMicros > 0 ? ` + ${money(data.balanceMicros)} prepago` : ''}
           </p>
         </div>
         <div className={card}>
@@ -259,8 +272,8 @@ export function AiUsagePanel() {
             />
           </div>
           <p className="mt-2 text-[12px] text-slate-500">
-            {data.enforce
-              ? 'Si llegás al 100 %, la IA se pausa sola y tu equipo sigue atendiendo. Nunca se corta una respuesta a medias.'
+            {agentPauses
+              ? 'Si llegás al 100 %, tu agente de IA se pausa solo y tu equipo sigue atendiendo. Nunca se corta una respuesta a medias.'
               : 'Por ahora es informativo: la IA no se pausa por este tope.'}
           </p>
         </div>
@@ -459,14 +472,14 @@ export function AiUsagePanel() {
         </section>
       </div>
 
-      {(data.ledger.length > 0 || data.purchases.length > 0) && (
+      {(data.ledger.some((l) => l.amountMicros !== 0) || data.purchases.some((p) => p.status === 'pending' || p.status === 'failed')) && (
         <section aria-labelledby="ai-moves" className={card}>
           <h2 id="ai-moves" className="text-[15px] font-semibold text-slate-900">
             Movimientos del saldo
           </h2>
           <ul className="mt-2 divide-y divide-slate-100 text-[13px]">
             {data.purchases
-              .filter((p) => p.status !== 'paid')
+              .filter((p) => p.status === 'pending' || p.status === 'failed')
               .map((p) => (
                 <li key={p.id} className="flex items-center justify-between gap-3 py-2">
                   <span className="text-slate-700">
@@ -475,7 +488,7 @@ export function AiUsagePanel() {
                   <span className="text-slate-400">{dateFmt.format(new Date(p.createdAt))}</span>
                 </li>
               ))}
-            {data.ledger.map((l) => (
+            {data.ledger.filter((l) => l.amountMicros !== 0).map((l) => (
               <li key={l.id} className="flex items-center justify-between gap-3 py-2">
                 <span className="min-w-0 truncate text-slate-700">
                   {KIND_LABEL[l.kind] ?? l.kind}

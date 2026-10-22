@@ -138,6 +138,25 @@ test('webhook decision: unknown, replay, decline, wrong amount / currency / miss
   assert.equal(decidePurchaseWebhook({ ...ok, approved: false, declined: true, purchase: pending }), 'mark_failed')
   assert.equal(decidePurchaseWebhook({ ...ok, approved: false, declined: true, purchase: { status: 'failed', totalCents: 1_130 } }), 'ignore')
   assert.equal(decidePurchaseWebhook({ ...ok, approved: false, declined: false, purchase: pending }), 'ignore')
+  // Refund / chargeback takes the credit back once; never on an unpaid purchase.
+  assert.equal(decidePurchaseWebhook({ ...ok, approved: false, refunded: true, purchase: { status: 'paid', totalCents: 1_130 } }), 'refund')
+  assert.equal(decidePurchaseWebhook({ ...ok, approved: false, refunded: true, purchase: pending }), 'ignore')
+  assert.equal(decidePurchaseWebhook({ ...ok, purchase: { status: 'refunded', totalCents: 1_130 } }), 'ignore')
+})
+
+test('credit payments are production-only (preview shares the prod DB) and never use the request host', async () => {
+  const { creditPaymentsEnvAllowed, creditPacksEnabled } = await import('../ai-billing/math')
+  assert.equal(creditPaymentsEnvAllowed({ APP_ENV: 'production' }), true)
+  assert.equal(creditPaymentsEnvAllowed({ APP_ENV: 'preview', NODE_ENV: 'production' }), false)
+  assert.equal(creditPaymentsEnvAllowed({ APP_ENV: 'staging' }), false)
+  assert.equal(creditPaymentsEnvAllowed({ NODE_ENV: 'production' }), true)
+  assert.equal(creditPaymentsEnvAllowed({ NODE_ENV: 'development' }), false)
+  assert.equal(creditPacksEnabled({ AI_CREDIT_PACKS_ENABLED: 'true', APP_ENV: 'preview' }), false)
+  const hook = read('src/app/api/tilopay/webhook-ai-credits/route.ts')
+  assert.ok(hook.indexOf('creditPaymentsEnvAllowed()') < hook.indexOf('req.text()'))
+  const checkout = read('src/app/api/billing/ai-credits/checkout/route.ts')
+  assert.doesNotMatch(checkout, /request\.nextUrl\.origin|headers\.get\('host'\)/)
+  assert.match(checkout, /tilopay\\\.com/)
 })
 
 test('billable features: staff bot, tests, templates are included (never charged)', () => {
@@ -186,7 +205,10 @@ test('SQL 060: additive, RLS on every table, exactly-once keys, in the manifest'
 test('store: ledger writes are idempotent and purchases are paid by a status-guarded update in one transaction', () => {
   const s = read('src/lib/ai-billing/store.ts')
   const inserts = s.split('INSERT INTO "AiCreditLedger"').length - 1
-  assert.equal(inserts, 3)
+  assert.equal(inserts, 4)
+  assert.match(s, /`refund:\$\{p\.id\}`/)
+  assert.match(s, /UPDATE "AiCreditPurchase" SET "status" = 'refunded'[\s\S]*?AND "status" = 'paid'/)
+  assert.doesNotMatch(s.slice(s.indexOf('export async function listLedger')), /^[^\n]*"note"[^\n]*FROM "AiCreditLedger" WHERE "tenantId"/m)
   assert.equal(s.split('ON CONFLICT ("sourceKey") DO NOTHING').length - 1, inserts, 'every ledger insert is idempotent')
   assert.match(s, /UPDATE "AiCreditPurchase" SET "status" = 'paid'[\s\S]*?WHERE "id" = \$\{p\.id\} AND "status" IN \('pending', 'failed'\)/)
   assert.match(s, /if \(updated !== 1\) return \{ result: 'already_paid' as const \}/)
@@ -237,5 +259,34 @@ test('allowance hook fails open and never enforces before SQL 060 / with enforce
   assert.match(a, /d\.enforced\s*\?/)
   const st = read('src/lib/ai-billing/state.ts')
   assert.match(st, /enforce: ready && settings\.enforce/)
-  assert.match(st, /exemptTenantIds\(\)\.has\(tenantId\)/)
+  assert.match(st, /aiExemptTenantIds\(\)\.has\(tenantId\)/)
+  // Cheap exit before any per-tenant read; no import of soft-ai (Lane D imports this file: no cycle).
+  assert.match(a, /if \(aiExemptTenantIds\(\)\.has\(tenantId\) \|\| !\(await getSettings\(\)\)\.enforce\) return open\(now\)/)
+  for (const f of ['allowance', 'state', 'store', 'math', 'report']) {
+    assert.doesNotMatch(read(`src/lib/ai-billing/${f}.ts`), /from '@\/lib\/soft-ai\/ai-allowance'/, f)
+  }
+})
+
+test('exempt list and packs kill switch read env (packs OFF by default)', async () => {
+  const { aiExemptTenantIds, creditPacksEnabled } = await import('../ai-billing/math')
+  assert.deepEqual([...aiExemptTenantIds(' t1, t2 ,,')], ['t1', 't2'])
+  assert.equal(creditPacksEnabled({}), false)
+  assert.equal(creditPacksEnabled({ AI_CREDIT_PACKS_ENABLED: '1' }), false)
+  assert.equal(creditPacksEnabled({ AI_CREDIT_PACKS_ENABLED: 'true', APP_ENV: 'production' }), true)
+  const checkout = read('src/app/api/billing/ai-credits/checkout/route.ts')
+  assert.match(checkout, /if \(!creditPacksEnabled\(\) \|\| !\(await aiBillingReady\(\)\)\)/)
+  assert.match(checkout, /if \(!settings\.cutoverPeriod\) return/)
+  assert.match(read('src/cf-container-worker.ts'), /"AI_CREDIT_PACKS_ENABLED",/)
+})
+
+test('a $0 cap shows the 100 % banner whenever the AI could be paused', () => {
+  const d = decideCredits({ billedMicros: 0, freeMicros: 0, balanceMicros: 0, limitMicros: null, ceilingMicros: null, enforce: true, exempt: false })
+  assert.equal(d.exhausted, true)
+  assert.equal(d.alert, 100)
+})
+
+test('settlement never stalls: settled months are filtered before the 12-per-call cap', () => {
+  const s = read('src/lib/ai-billing/store.ts')
+  assert.match(s, /const todo = periods\.filter\(\(p\) => !settled\.has\(p\)\)\.slice\(0, 12\)/)
+  assert.match(s, /const cutover = input\.cutoverPeriod \?\? costaRicaPeriodKey\(now\)/)
 })

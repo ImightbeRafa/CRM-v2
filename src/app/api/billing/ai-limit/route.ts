@@ -3,8 +3,7 @@ import { z } from 'zod'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { isSameOriginRequest } from '@/lib/same-origin'
 import { clearCreditAllowanceCache } from '@/lib/ai-billing/allowance'
-import { MAX_LIMIT_MICROS, MICROS_PER_USD, effectiveLimit } from '@/lib/ai-billing/math'
-import { exemptTenantIds } from '@/lib/soft-ai/ai-allowance'
+import { MAX_LIMIT_MICROS, MICROS_PER_USD, aiExemptTenantIds, effectiveLimit } from '@/lib/ai-billing/math'
 import { getSettings, getTenantLimit, isBillingTableMissing, setTenantLimit } from '@/lib/ai-billing/store'
 
 export const runtime = 'nodejs'
@@ -33,7 +32,7 @@ export async function PUT(request: NextRequest) {
   const auth = await authenticateAPIWithPermission(request, 'manage_billing', { skipBillingGuard: true })
   if (!auth.ok) return auth.response
   if (!isSameOriginRequest(request)) return NextResponse.json({ error: 'Origen no permitido' }, { status: 403 })
-  if (exemptTenantIds().has(auth.tenantId)) {
+  if (aiExemptTenantIds().has(auth.tenantId)) {
     return NextResponse.json({ error: 'Esta cuenta no tiene límite de IA.' }, { status: 400 })
   }
   const parsed = schema.safeParse(await request.json().catch(() => null))

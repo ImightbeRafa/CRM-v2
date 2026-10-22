@@ -155,8 +155,9 @@ export function decideCredits(input: {
   const capMicros = cap === 'limit' ? (limit as number) : credit
   const remaining = capMicros - billed
   const usedPct = capMicros > 0 ? Math.round((billed / capMicros) * 1000) / 10 : billed > 0 ? 100 : 0
-  const alert: 0 | 80 | 100 = usedPct >= 100 ? 100 : usedPct >= 80 ? 80 : 0
   const enforced = input.enforce && !input.exempt
+  // A cap of $0 (no free credit, no balance) is "100 % used": the banner must explain any pause.
+  const alert: 0 | 80 | 100 = usedPct >= 100 || remaining <= 0 ? 100 : usedPct >= 80 ? 80 : 0
   return {
     creditMicros: credit,
     limitMicros: limit,
@@ -187,17 +188,21 @@ export function formatMarkup(markupBps: number): string {
  * Pure webhook rule for a credit-pack payment (store.applyPurchaseWebhook runs it, then writes with
  * status-guarded UPDATE + UNIQUE ledger key so a replay or a race can never credit twice).
  */
-export type PurchaseWebhookAction = 'credit' | 'already_paid' | 'unknown_ref' | 'mismatch' | 'mark_failed' | 'ignore'
+export type PurchaseWebhookAction = 'credit' | 'already_paid' | 'unknown_ref' | 'mismatch' | 'mark_failed' | 'refund' | 'ignore'
 export function decidePurchaseWebhook(input: {
   purchase: { status: string; totalCents: number } | null
   approved: boolean
   declined: boolean
+  /** Tilopay says the payment was refunded / voided / charged back. */
+  refunded?: boolean
   amountCents: number
   currency: string
   transactionId: string | null
 }): PurchaseWebhookAction {
   const p = input.purchase
   if (!p) return 'unknown_ref'
+  if (input.refunded) return p.status === 'paid' ? 'refund' : 'ignore'
+  if (p.status === 'refunded') return 'ignore'
   if (p.status === 'paid') return 'already_paid'
   if (input.declined) return p.status === 'pending' ? 'mark_failed' : 'ignore'
   if (!input.approved) return 'ignore'
@@ -205,4 +210,32 @@ export function decidePurchaseWebhook(input: {
   if (input.currency.trim().toUpperCase() !== 'USD') return 'mismatch'
   if (!Number.isInteger(input.amountCents) || input.amountCents !== p.totalCents) return 'mismatch'
   return 'credit'
+}
+
+/**
+ * Kill switch for selling credit packs: OFF unless AI_CREDIT_PACKS_ENABLED=true. The one-off payment-link path
+ * (src/lib/tilopay.ts createPaymentLink, amounts in minor units) is not proven against Tilopay yet: one sandbox
+ * charge must confirm the amount units and the webhook payload before it is turned on.
+ */
+export function creditPacksEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env.AI_CREDIT_PACKS_ENABLED === 'true' && creditPaymentsEnvAllowed(env)
+}
+
+/**
+ * Credit payments only run in production: Railway preview shares the production database, so a preview webhook
+ * (e.g. with a sandbox secret) must never credit the real ledger. APP_ENV 'production' or unset in a production
+ * build passes; 'preview' / 'development' / any other value fails closed.
+ */
+export function creditPaymentsEnvAllowed(env: Record<string, string | undefined> = process.env): boolean {
+  const appEnv = (env.APP_ENV || '').trim().toLowerCase()
+  if (appEnv) return appEnv === 'production'
+  return env.NODE_ENV === 'production'
+}
+
+/**
+ * Businesses never capped (the owner's own): same env as soft-ai/ai-allowance.ts (AI_ALLOWANCE_EXEMPT_TENANTS).
+ * Read here, not imported from soft-ai, so the allowance hook Lane D imports never forms an import cycle.
+ */
+export function aiExemptTenantIds(raw: string | undefined = process.env.AI_ALLOWANCE_EXEMPT_TENANTS): Set<string> {
+  return new Set((raw || '').split(',').map((s) => s.trim()).filter(Boolean))
 }

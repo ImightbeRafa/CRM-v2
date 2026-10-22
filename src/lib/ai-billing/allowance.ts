@@ -10,8 +10,9 @@
 import 'server-only'
 
 import { costaRicaPeriodKey } from '@/lib/ai-usage/period'
-import { listFromBilled } from './math'
+import { aiExemptTenantIds, listFromBilled } from './math'
 import { getCreditState } from './state'
+import { getSettings } from './store'
 
 export type CreditAllowance = {
   source: 'credits'
@@ -46,6 +47,8 @@ export async function resolveCreditAllowance(tenantId: string, now = new Date())
     if (now.getTime() - hit.at < (near ? NEAR_TTL_MS : TTL_MS)) return hit.value
   }
   try {
+    // Cheap exits first (settings are cached 60 s): no per-tenant reads while nothing can pause.
+    if (aiExemptTenantIds().has(tenantId) || !(await getSettings()).enforce) return open(now)
     const s = await getCreditState(tenantId, now)
     const d = s.decision
     const value: CreditAllowance = d.enforced

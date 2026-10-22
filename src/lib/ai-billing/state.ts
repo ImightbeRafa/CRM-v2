@@ -5,9 +5,8 @@
 import 'server-only'
 
 import { costaRicaPeriodKey, nextCostaRicaMonthStartUtc } from '@/lib/ai-usage/period'
-import { exemptTenantIds } from '@/lib/soft-ai/ai-allowance'
 import { readCustomAgentsFlag } from '@/lib/support/agent-flag'
-import { billedFromList, decideCredits, rateForPeriod, type AiBillingRate, type CreditDecision } from './math'
+import { aiExemptTenantIds, billedFromList, decideCredits, rateForPeriod, type AiBillingRate, type CreditDecision } from './math'
 import {
   aiBillingReady,
   getSettings,
@@ -51,7 +50,7 @@ export async function getCreditState(tenantId: string, now = new Date()): Promis
   ])
   const rate = rateForPeriod(rates, periodKey)
   const next = rates.find((r) => r.periodKey > periodKey) ?? null
-  const exempt = exemptTenantIds().has(tenantId)
+  const exempt = aiExemptTenantIds().has(tenantId)
   const decision = decideCredits({
     billedMicros: billedFromList(listMicros, rate.markupBps),
     freeMicros: rate.freeMonthlyMicros,

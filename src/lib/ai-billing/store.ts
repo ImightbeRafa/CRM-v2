@@ -104,10 +104,13 @@ export async function getSettings(): Promise<AiBillingSettings> {
   return value
 }
 
-/** Owner: packs, ceiling, enforcement. Turning enforcement on without a cutover starts settling this month. */
+/**
+ * Owner: packs, ceiling, enforcement. The first save sets the cutover (this month): from then on closed months are
+ * settled against the balance, so prepaid credit is really used up. Packs are not sold before a cutover exists.
+ */
 export async function saveSettings(input: AiBillingSettings & { updatedBy: string }, now = new Date()): Promise<void> {
   await requireReady()
-  const cutover = input.cutoverPeriod ?? (input.enforce ? costaRicaPeriodKey(now) : null)
+  const cutover = input.cutoverPeriod ?? costaRicaPeriodKey(now)
   await prisma.$executeRaw`
     INSERT INTO "AiBillingSettings" ("id", "packs", "ceilingMicros", "enforce", "cutoverPeriod", "updatedBy", "updatedAt")
     VALUES ('default', ${JSON.stringify(input.packs)}::jsonb, ${input.ceilingMicros}, ${input.enforce}, ${cutover}, ${input.updatedBy}, NOW())
@@ -177,14 +180,14 @@ export async function ledgerBalance(tenantId: string): Promise<number> {
   return num(rows[0]?.bal)
 }
 
-export type LedgerRow = { id: string; kind: string; amountMicros: number; periodKey: string | null; note: string | null; createdAt: string }
+export type LedgerRow = { id: string; kind: string; amountMicros: number; periodKey: string | null; createdAt: string }
 
 export async function listLedger(tenantId: string, limit = 50): Promise<LedgerRow[]> {
   if (!(await aiBillingReady())) return []
-  const rows = await prisma.$queryRaw<Array<{ id: string; kind: string; amountMicros: bigint; periodKey: string | null; note: string | null; createdAt: Date }>>`
-    SELECT "id", "kind", "amountMicros", "periodKey", "note", "createdAt"
+  const rows = await prisma.$queryRaw<Array<{ id: string; kind: string; amountMicros: bigint; periodKey: string | null; createdAt: Date }>>`
+    SELECT "id", "kind", "amountMicros", "periodKey", "createdAt"
       FROM "AiCreditLedger" WHERE "tenantId" = ${tenantId} ORDER BY "createdAt" DESC LIMIT ${limit}`
-  return rows.map((r) => ({ id: r.id, kind: r.kind, amountMicros: num(r.amountMicros), periodKey: r.periodKey, note: r.note, createdAt: r.createdAt.toISOString() }))
+  return rows.map((r) => ({ id: r.id, kind: r.kind, amountMicros: num(r.amountMicros), periodKey: r.periodKey, createdAt: r.createdAt.toISOString() }))
 }
 
 /**
@@ -195,14 +198,15 @@ export async function settleClosedMonths(tenantId: string, now = new Date()): Pr
   const settings = await getSettings()
   if (!settings.cutoverPeriod || !(await aiBillingReady())) return 0
   const current = costaRicaPeriodKey(now)
+  // Every closed month since the cutover (bounded: 10 years), minus the settled ones; then at most 12 per call.
   const periods: string[] = []
-  for (let p = settings.cutoverPeriod; p < current && periods.length < 12; p = nextPeriodKey(p)) periods.push(p)
+  for (let p = settings.cutoverPeriod; p < current && periods.length < 120; p = nextPeriodKey(p)) periods.push(p)
   if (periods.length === 0) return 0
-  const keys = periods.map((p) => `usage:${tenantId}:${p}`)
-  const done = await prisma.$queryRaw<Array<{ sourceKey: string }>>`
-    SELECT "sourceKey" FROM "AiCreditLedger" WHERE "sourceKey" = ANY(${keys}::text[])`
-  const settled = new Set(done.map((r) => r.sourceKey))
-  const todo = periods.filter((p) => !settled.has(`usage:${tenantId}:${p}`))
+  const done = await prisma.$queryRaw<Array<{ periodKey: string }>>`
+    SELECT "periodKey" FROM "AiCreditLedger"
+     WHERE "tenantId" = ${tenantId} AND "kind" = 'usage_settle' AND "periodKey" >= ${settings.cutoverPeriod}`
+  const settled = new Set(done.map((r) => r.periodKey))
+  const todo = periods.filter((p) => !settled.has(p)).slice(0, 12)
   if (todo.length === 0) return 0
   const rates = await listRates()
   let written = 0
@@ -323,7 +327,8 @@ export type PaymentOutcome =
   | { result: 'credited'; tenantId: string; creditMicros: number }
   | { result: 'already_paid' }
   | { result: 'unknown_ref' }
-  | { result: 'mismatch' }
+  | { result: 'mismatch'; purchaseId: string }
+  | { result: 'refunded'; tenantId: string }
   | { result: 'failed_marked' }
   | { result: 'ignored' }
 
@@ -336,6 +341,7 @@ export async function applyPurchaseWebhook(input: {
   ref: string
   approved: boolean
   declined: boolean
+  refunded: boolean
   amountCents: number
   currency: string
   transactionId: string | null
@@ -348,6 +354,7 @@ export async function applyPurchaseWebhook(input: {
     purchase: p ? { status: p.status, totalCents: num(p.totalCents) } : null,
     approved: input.approved,
     declined: input.declined,
+    refunded: input.refunded,
     amountCents: input.amountCents,
     currency: input.currency,
     transactionId: input.transactionId,
@@ -355,7 +362,23 @@ export async function applyPurchaseWebhook(input: {
   if (action === 'unknown_ref' || !p) return { result: 'unknown_ref' }
   if (action === 'already_paid') return { result: 'already_paid' }
   if (action === 'ignore') return { result: 'ignored' }
-  if (action === 'mismatch') return { result: 'mismatch' }
+  if (action === 'mismatch') {
+    // Leave a trace on the purchase (money may have been taken without a credit): Rafael checks these rows.
+    await prisma.$executeRaw`UPDATE "AiCreditPurchase" SET "lastEvent" = ${`mismatch ${new Date().toISOString()}`} WHERE "id" = ${p.id}`
+    return { result: 'mismatch', purchaseId: p.id }
+  }
+  if (action === 'refund') {
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.$executeRaw`
+        UPDATE "AiCreditPurchase" SET "status" = 'refunded', "lastEvent" = 'refund' WHERE "id" = ${p.id} AND "status" = 'paid'`
+      if (updated !== 1) return { result: 'ignored' as const }
+      await tx.$executeRaw`
+        INSERT INTO "AiCreditLedger" ("id", "tenantId", "kind", "amountMicros", "sourceKey", "note", "createdBy")
+        VALUES (${randomUUID()}, ${p.tenantId}, 'refund', ${-num(p.creditMicros)}, ${`refund:${p.id}`}, ${`Reembolso paquete ${p.packId}`}, 'tilopay')
+        ON CONFLICT ("sourceKey") DO NOTHING`
+      return { result: 'refunded' as const, tenantId: p.tenantId }
+    })
+  }
   if (action === 'mark_failed') {
     await prisma.$executeRaw`UPDATE "AiCreditPurchase" SET "status" = 'failed' WHERE "id" = ${p.id} AND "status" = 'pending'`
     return { result: 'failed_marked' }
@@ -376,7 +399,7 @@ export async function applyPurchaseWebhook(input: {
     })
   } catch (error) {
     // Same Tilopay transaction id on another purchase (replayed proof) → never credit.
-    if (error instanceof Error && /AiCreditPurchase_transaction_key|unique/i.test(error.message)) return { result: 'mismatch' }
+    if (error instanceof Error && /AiCreditPurchase_transaction_key|unique/i.test(error.message)) return { result: 'mismatch', purchaseId: p.id }
     throw error
   }
 }

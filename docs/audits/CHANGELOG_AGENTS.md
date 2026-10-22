@@ -1,3 +1,9 @@
+## 2026-10-22 — /chats "Sin responder", newest-first everywhere, "Necesita persona" (Lane A, claude/lane-a-unanswered; no SQL)
+
+- New "Sin responder" view right after Bandeja: open chats where the customer wrote last, or where the agent's latest delivered turn (not the waiting ack, not Probar) was a safe line / hand-off / provider failure and no person wrote since the message it answered. One SQL rule (`src/lib/chat-unanswered-server.ts`) feeds list, per-line counts and the row flag; the line filter is applied inside the page query. Rows show the waiting message and "espera 2h" (amber > 1 h, red > 4 h), plus a summary line.
+- Every view is newest activity first ("Persona" used to put the oldest wait on top). "Seguimientos" orders by the follow-up send. Follow-ups still keep the chat's Bandeja place on purpose (#110); their preview starts with "↻". Read-only check: follow-ups were the only out-of-order cause on live data.
+- Chats the agent left to a person read "Necesita persona" everywhere (list, thread chip/banner/status, details rail, composer hint), are out of "IA atendiendo" and the IA counts. Uses only the outcome markers (no `src/lib/soft-ai/**` edits).
+
 ## 2026-10-22 — Support pipeline: tickets, /soporte, MCP for the support agent, custom-agent sales page (Lane G, claude/wave-support-pipeline-a09f20; SQL 059 Rafael applies; ships dark)
 
 - Rafael's spec `docs/plans/support-pipeline/SPEC.md` (added as-is). Everything behind `SUPPORT_PIPELINE_ENABLED` (only `true` turns it on); off = legacy behavior. Runbook with env/secrets, SQL, seed, smoke, rollback: `docs/runbooks/support-pipeline.md`.

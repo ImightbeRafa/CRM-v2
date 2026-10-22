@@ -10,6 +10,7 @@ import { isClosedCategory, ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG, type StageDef }
 import { PERSON_AI_MODES, type InboxCountedView, type InboxViewCounts } from '@/lib/chat-inbox-views'
 import { closedOrderStatuses } from '@/lib/open-order'
 import { aiOnLineIds } from '@/lib/soft-ai/agent-inbox-enrich'
+import { NEEDS_PERSON_SQL, UNANSWERED_SQL } from '@/lib/chat-unanswered-server'
 
 /** Stage keys that close a chat (won / lost; 'hecho' unless the tenant redefined it). */
 export function closedStageKeys(stages: StageDef[]): string[] {
@@ -58,7 +59,7 @@ export async function listFollowUpOnlyIds(tenantId: string, closedKeys: string[]
         AND c."lastMessageDirection" = 'outbound'
         AND m.metadata -> 'followUp' IS NOT NULL
         AND NOT (c.status = ANY(${closedKeys}::text[]))
-      ORDER BY c."lastMessageAt" DESC, c.id DESC
+      ORDER BY c."lastOutboundAt" DESC NULLS LAST, c.id DESC
       LIMIT ${limit}`
     return rows.map((r) => r.id)
   } catch (error) {
@@ -149,6 +150,8 @@ export function viewWhere(
         ],
       }
     case 'seguimientos':
+    case 'sin_responder':
+      // Resolved to ids by the caller (follow-up / unanswered rules need the messages and agent turns).
       return open
     default: {
       const exhaustive: never = view
@@ -187,9 +190,10 @@ async function queryInboxViewCounts(
   const aiLines = await aiOnLineIds(tenantId, accounts.map((a) => a.id))
   const person = [...PERSON_AI_MODES]
   const rows = await prisma.$queryRaw<
-    Array<{ socialAccountId: string; persona: bigint; pago: bigint; pedido: bigint; ia: bigint; seguimientos: bigint }>
+    Array<{ socialAccountId: string; sin_responder: bigint; persona: bigint; pago: bigint; pedido: bigint; ia: bigint; seguimientos: bigint }>
   >`
     SELECT c."socialAccountId",
+      COUNT(*) FILTER (WHERE ${UNANSWERED_SQL}) AS sin_responder,
       COUNT(*) FILTER (WHERE c."aiMode" = ANY(${person}::text[])) AS persona,
       COUNT(*) FILTER (WHERE ${PAYMENT_REVIEW_TAG} = ANY(c.tags)) AS pago,
       COUNT(*) FILTER (
@@ -206,6 +210,7 @@ async function queryInboxViewCounts(
         WHERE c."socialAccountId" = ANY(${aiLines}::text[])
           AND (c."aiMode" IS NULL OR NOT (c."aiMode" = ANY(${person}::text[])))
           AND NOT (c.tags && ARRAY[${PAYMENT_REVIEW_TAG}, ${ORDER_REVIEW_TAG}]::text[])
+          AND NOT ${NEEDS_PERSON_SQL}
       ) AS ia,
       COUNT(*) FILTER (
         WHERE c."lastMessageDirection" = 'outbound' AND m.metadata -> 'followUp' IS NOT NULL
@@ -220,6 +225,7 @@ async function queryInboxViewCounts(
   const out: Record<string, InboxViewCounts> = {}
   for (const r of rows) {
     out[r.socialAccountId] = {
+      sin_responder: Number(r.sin_responder),
       persona: Number(r.persona),
       pago: Number(r.pago),
       pedido: Number(r.pedido),

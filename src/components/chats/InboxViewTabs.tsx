@@ -4,6 +4,8 @@ import { INBOX_VIEW_DEFS, type InboxView, type InboxViewCounts } from '@/lib/cha
 
 const TONE: Record<InboxView, { on: string; off: string }> = {
   todos: { on: 'bg-slate-900 text-white ring-slate-900', off: 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50' },
+  // The customer is waiting on us: the loudest chip, right after Bandeja.
+  sin_responder: { on: 'bg-amber-500 text-white ring-amber-500', off: 'bg-amber-50 text-amber-900 ring-amber-300 hover:bg-amber-100' },
   persona: { on: 'bg-violet-600 text-white ring-violet-600', off: 'bg-violet-50 text-violet-800 ring-violet-200 hover:bg-violet-100' },
   pago: { on: 'bg-rose-600 text-white ring-rose-600', off: 'bg-rose-50 text-rose-800 ring-rose-200 hover:bg-rose-100' },
   pedido: { on: 'bg-orange-500 text-white ring-orange-500', off: 'bg-orange-50 text-orange-900 ring-orange-200 hover:bg-orange-100' },

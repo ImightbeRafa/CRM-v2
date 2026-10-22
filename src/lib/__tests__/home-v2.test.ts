@@ -21,7 +21,7 @@ test('preview route: public by an exact middleware entry, noindex, own look in a
   // /home itself is untouched by this slice: it still renders the current landing.
   assert.match(read('src/app/home/page.tsx'), /import LandingPage from '\.\/components\/LandingPage'/)
   // Not linked from the current landing or the app.
-  for (const f of ['src/app/home/components/LandingPage.tsx', 'src/app/home/content.ts']) assert.doesNotMatch(read(f), /home-preview/)
+  for (const f of ['src/app/home/components/LandingPage.tsx', 'src/app/home/page.tsx']) assert.doesNotMatch(read(f), /home-preview/)
 })
 
 test('price and contact come from their single sources; no hand-typed price', () => {

@@ -94,7 +94,7 @@ export const IG_HUMAN_AGENT_NOT_APPROVED_MESSAGE =
 
 /**
  * Meta's answer to a failed Instagram send → a clean Spanish message, or null to keep the generic handling.
- * Codes: 10 / 200 / 551 are permission errors; with the HUMAN_AGENT tag they mean the permission is not approved.
+ * Codes: 10 / 200 are permission errors; with the HUMAN_AGENT tag they mean the permission is not approved.
  * Subcodes 2018278 / 2534022 (and "outside of allowed window") mean the messaging window has passed.
  */
 export function mapInstagramSendError(
@@ -109,7 +109,7 @@ export function mapInstagramSendError(
   if (subcode === 2018278 || subcode === 2534022 || /outside of (the )?allowed window/.test(text)) {
     return { message: IG_WINDOW_CLOSED_MESSAGE, reason: 'window_closed' }
   }
-  if (usedHumanAgentTag && (code === 10 || code === 200 || code === 551 || /human.?agent|tag/.test(text))) {
+  if (usedHumanAgentTag && (code === 10 || code === 200 || /human.?agent|tag/.test(text))) {
     return { message: IG_HUMAN_AGENT_NOT_APPROVED_MESSAGE, reason: 'human_agent_not_approved' }
   }
   return null

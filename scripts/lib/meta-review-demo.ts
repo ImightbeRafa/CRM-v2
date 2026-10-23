@@ -2,6 +2,7 @@
  * Demo data for the Meta App Review screencast (pure: builds rows, writes nothing). Used by
  * scripts/meta-review-demo-seed.ts. Every row is clearly marked demo:
  *  - ids start with `demo_<tenant>_`, products / clients / chats are named "[DEMO] …", orders are "DEMO-…";
+ *  - customer phones use the unassignable +506 0000 range, so they can never reach a real person;
  *  - demo chats hang on the business's real connected test line, with made-up customer ids `demo-…` that the send
  *    routes refuse (src/lib/demo-chat.ts), so nothing is ever sent to Meta for them;
  *  - demo ad referrals carry NO click id, and Instagram demo peers are not numeric, so the ad sales sweep never
@@ -14,8 +15,13 @@ export type DemoLine = { id: string; platform: 'whatsapp' | 'instagram' }
 export const DEMO_NAME_PREFIX = '[DEMO]'
 export const DEMO_ORDER_PREFIX = 'DEMO-'
 
+/** Every demo row id of a business starts with this (full tenant id: no collision across businesses). */
+export function demoIdPrefix(tenantId: string): string {
+  return `demo_${tenantId}_`
+}
+
 export function demoId(tenantId: string, kind: string, n: number): string {
-  return `demo_${tenantId.slice(-8)}_${kind}_${n}`
+  return `${demoIdPrefix(tenantId)}${kind}_${n}`
 }
 
 const PRODUCTS = [
@@ -26,9 +32,9 @@ const PRODUCTS = [
 ]
 
 const CUSTOMERS = [
-  { name: 'María Rojas', phone: '+50688880001', province: 'San José', canton: 'Montes de Oca', district: 'San Pedro' },
-  { name: 'José Vargas', phone: '+50688880002', province: 'Heredia', canton: 'Heredia', district: 'Mercedes' },
-  { name: 'Ana Solís', phone: '+50688880003', province: 'Alajuela', canton: 'Alajuela', district: 'San José' },
+  { name: 'María Rojas', phone: '+50600000001', province: 'San José', canton: 'Montes de Oca', district: 'San Pedro' },
+  { name: 'José Vargas', phone: '+50600000002', province: 'Heredia', canton: 'Heredia', district: 'Mercedes' },
+  { name: 'Ana Solís', phone: '+50600000003', province: 'Alajuela', canton: 'Alajuela', district: 'San José' },
 ]
 
 type Msg = { direction: 'inbound' | 'outbound'; content: string; minutesAgo: number }
@@ -106,3 +112,8 @@ export function buildDemoPlan(tenantId: string, lines: DemoLine[]): DemoPlan {
 
 /** A business with this many real (non-demo) orders is not a test business: the seed refuses it. */
 export const MAX_REAL_ORDERS_FOR_DEMO = 20
+
+/** Only a business whose name says it is a test one may receive demo rows ("Meta Review Test", "Prueba …"). */
+export function looksLikeTestBusiness(name: string | null | undefined): boolean {
+  return /\b(test|prueba|demo|review)\b/i.test(String(name || ''))
+}

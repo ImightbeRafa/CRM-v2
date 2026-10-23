@@ -9,6 +9,7 @@ import {
   decideWhatsAppDirectOauthPopupClosed,
   isFbSdkEmbeddedSignup36008,
   isWaEmbeddedSignupFinishEvent,
+  isFacebookOrigin,
   isWaEmbeddedSignupMessage,
   openWhatsAppDirectOauthPopup,
   parseWaDirectOauthMessage,
@@ -365,7 +366,7 @@ export default function SocialConfigPage() {
         return
       }
 
-      if (!String(event.origin).endsWith('facebook.com')) return
+      if (!isFacebookOrigin(event.origin)) return
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
         if (!isWaEmbeddedSignupMessage(data)) return

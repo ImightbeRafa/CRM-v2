@@ -97,6 +97,16 @@ const FINISH_EVENTS = new Set<string>([
   'FINISH_GRANT_ONLY_API_ACCESS',
 ])
 
+/** Embedded Signup session messages come from https://facebook.com or a subdomain of it, nothing else. */
+export function isFacebookOrigin(origin: unknown): boolean {
+  try {
+    const url = new URL(String(origin))
+    return url.protocol === 'https:' && (url.hostname === 'facebook.com' || url.hostname.endsWith('.facebook.com'))
+  } catch {
+    return false
+  }
+}
+
 export function isWaEmbeddedSignupMessage(value: unknown): value is WaEmbeddedSignupMessage {
   if (!value || typeof value !== 'object') return false
   return (value as WaEmbeddedSignupMessage).type === WA_EMBEDDED_SIGNUP_TYPE

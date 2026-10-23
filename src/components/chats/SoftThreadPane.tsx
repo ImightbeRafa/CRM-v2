@@ -119,6 +119,8 @@ interface SoftThreadPaneProps {
   showTemplateCta: boolean
   /** Instagram: the server allows HUMAN_AGENT replies after 24 h (META_IG_HUMAN_AGENT). */
   igHumanAgentEnabled?: boolean
+  /** The conversation's last customer message (server value, same one the send route uses). */
+  lastInboundAt?: string | null
   compact?: boolean
   hasMoreMessages?: boolean
   loadingOlder?: boolean
@@ -310,6 +312,7 @@ export function SoftThreadPane({
   onMessagesScroll,
   showTemplateCta,
   igHumanAgentEnabled,
+  lastInboundAt,
   compact,
   hasMoreMessages,
   loadingOlder,
@@ -548,7 +551,7 @@ export function SoftThreadPane({
   // Instagram: after 24 h a person may still answer as a human agent (up to 7 days) once Meta approved it.
   const igWindow =
     conversation.platform === 'instagram'
-      ? igReplyWindow(lastInboundTime(conversation.messages), Date.now(), igHumanAgentEnabled === true)
+      ? igReplyWindow(lastInboundAt ?? lastInboundTime(conversation.messages), Date.now(), igHumanAgentEnabled === true)
       : null
   const igHint = igComposerHint(igWindow)
   const canCreateOrder = Boolean(onCreateOrder) && !conversation.orderId && !conversation.isDemo
@@ -1378,7 +1381,7 @@ export function SoftThreadPane({
               data-testid="ig-window-hint"
             >
               {igHint.text}
-              {igWindow?.state === 'human_agent' ? ' · solo texto (Instagram no permite fotos en este plazo).' : ''}
+              {igWindow?.state === 'human_agent' ? ' · por ahora Betsy envía solo texto en este plazo.' : ''}
             </p>
           ) : null}
 

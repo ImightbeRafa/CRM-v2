@@ -211,6 +211,22 @@ export async function POST(request: NextRequest) {
       return jsonError('Este es un chat de demostración: no se envía a Instagram ni a WhatsApp.', 400, { reason: 'demo_chat' })
     }
 
+    // Same id already stored (Retry, double click, second tab): answer with that message, never send again.
+    const already = await findOutboundByClientRequestId(db, {
+      tenantId,
+      socialAccountId: account.id,
+      clientRequestId,
+    })
+    if (already) {
+      return NextResponse.json({
+        success: true,
+        duplicate: true,
+        message: mapMessageToDto(already),
+        conversationId: already.conversationId ?? null,
+        clientRequestId,
+      })
+    }
+
     // Instagram, a person replying (this route is human-only): after 24 h and within 7 days Meta allows the
     // HUMAN_AGENT tag once the permission is approved (META_IG_HUMAN_AGENT=1). Decided here, never by the client,
     // and before the send claim so a refusal leaves nothing "in flight".
@@ -226,22 +242,6 @@ export async function POST(request: NextRequest) {
       if (humanAgentOn && igWindowState === 'closed') {
         return jsonError(IG_WINDOW_CLOSED_MESSAGE, 409, { reason: 'window_closed' })
       }
-    }
-
-    // Same id already stored (Retry, double click, second tab): answer with that message, never send again.
-    const already = await findOutboundByClientRequestId(db, {
-      tenantId,
-      socialAccountId: account.id,
-      clientRequestId,
-    })
-    if (already) {
-      return NextResponse.json({
-        success: true,
-        duplicate: true,
-        message: mapMessageToDto(already),
-        conversationId: already.conversationId ?? null,
-        clientRequestId,
-      })
     }
     const claim = await claimChatSend(tenantId, clientRequestId)
     if (claim.kind === 'delivered') {

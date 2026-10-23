@@ -39,6 +39,7 @@ scripts/agent-pack/*
 !scripts/chat-account-identity-backfill.ts
 !scripts/chat-scale-seed.ts
 !scripts/chat-scale-benchmark.ts
+!scripts/meta-review-demo-seed.ts
 !scripts/chat-webhook-burst.ts
 !scripts/chat-idle-network-assert.ts
 !scripts/shim-server-only.mjs

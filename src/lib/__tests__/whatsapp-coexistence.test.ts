@@ -1,3 +1,4 @@
+import { WHATSAPP_OAUTH_SCOPES } from '../meta-chat-config'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
@@ -21,6 +22,7 @@ import {
   WA_DIRECT_OAUTH_MESSAGE_TYPE,
   WA_DIRECT_OAUTH_POPUP_NAME,
   WA_SESSION_INFO_VERSION,
+  WA_EMBEDDED_SIGNUP_VERSION,
   type OpenNamedWindow,
 } from '../whatsapp-embedded-signup'
 import { selectCoexistencePhoneNumber, WHATSAPP_SUBSCRIBED_FIELDS_DEFAULT } from '../meta-api'
@@ -31,15 +33,14 @@ import {
   whatsappRefreshTokensForWabaId,
 } from '../social-account-meta'
 
-test('coexistence FB.login extras match Meta docs', () => {
+test('coexistence FB.login extras match Meta docs (Embedded Signup v4: no sessionInfoVersion)', () => {
   const extras = buildWhatsAppCoexistenceLoginExtras()
-  assert.deepEqual(extras, {
-    setup: {},
-    featureType: WA_COEXISTENCE_FEATURE_TYPE,
-    sessionInfoVersion: WA_SESSION_INFO_VERSION,
-  })
+  assert.deepEqual(extras, { setup: {}, featureType: WA_COEXISTENCE_FEATURE_TYPE })
   assert.equal(extras.featureType, 'whatsapp_business_app_onboarding')
-  assert.equal(extras.sessionInfoVersion, '3')
+  assert.equal('sessionInfoVersion' in extras, false)
+  assert.equal(WA_SESSION_INFO_VERSION, '3', 'the v3 value, no longer sent')
+  assert.equal(WA_EMBEDDED_SIGNUP_VERSION, 4)
+  assert.ok((WHATSAPP_OAUTH_SCOPES as readonly string[]).includes('whatsapp_business_manage_events'))
 
   const options = buildWhatsAppEmbeddedSignupLoginOptions('cfg-123')
   assert.equal(options.config_id, 'cfg-123')
@@ -416,7 +417,7 @@ test('direct OAuth dialog URL matches Embedded Signup FB.login extras', () => {
   assert.equal(url.searchParams.get('scope'), null)
   const extras = JSON.parse(url.searchParams.get('extras') || '{}')
   assert.equal(extras.featureType, WA_COEXISTENCE_FEATURE_TYPE)
-  assert.equal(extras.sessionInfoVersion, WA_SESSION_INFO_VERSION)
+  assert.equal(extras.sessionInfoVersion, undefined, 'v4: version comes from the configuration')
 })
 
 test('parseWaDirectOauthMessage and 36008 detection', () => {

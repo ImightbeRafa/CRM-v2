@@ -1,3 +1,11 @@
+## 2026-10-22 — Meta App Review kit (Lane F, slice 2)
+
+- Instagram Human Agent: a PERSON replying from /chats between 24 h and 7 days after the customer's last message sends messaging_type MESSAGE_TAG + tag HUMAN_AGENT (src/lib/instagram-human-agent.ts, decided server-side in /api/chat/send before the send claim). Off until META_IG_HUMAN_AGENT=1 (after Meta approves Human Agent). After 7 days the route refuses with a clean message; Meta's window / permission errors are mapped. AI, follow-ups, automations and media keep RESPONSE inside 24 h. Composer hint with the deadline ("solo texto").
+- Embedded Signup v4 (v2/v3 deprecated by Meta 2026-10-15): no sessionInfoVersion, featureType kept for coexistence; the version and permissions (incl. whatsapp_business_manage_events) come from the dashboard configuration (NEXT_PUBLIC_FB_LOGIN_CONFIG_ID, rebuild).
+- Super-admin event log /super-admin/meta-eventos (+ GET /api/super-admin/meta-events): ad sales events per business, order, ad, amount, status, fbtrace_id, error. Ids/amounts only, 404 for non-admins, audited.
+- scripts/meta-review-demo-seed.ts: fills a test business Rafael created (dry run by default; --apply/--cleanup need META_DEMO_CONFIRM_TENANT; refuses >20 real orders). Demo chats hang on the real test line with demo- customers that the send routes refuse; demo referrals carry no click id, so they are never reported to Meta.
+- Review docs: Human Agent permission text + Video 5, event log step, v4 dashboard steps, servers / retention answers.
+
 ## 2026-10-22 — Home v2 at /home-preview: live demos, agent explainer, ops showcase, "Próximamente" (Lane H; preview only, /home unchanged)
 
 - `/home-preview` (noindex, public, no nav link) now renders `src/components/landing-v2/**` instead of the #123 page the wave moved there (0ee42805). `/home` (Release 1 page) is untouched; the swap is one commit when Rafael approves.

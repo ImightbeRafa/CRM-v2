@@ -21,6 +21,7 @@ import { useAiTermsAccepted } from '@/components/chats/useAiTermsAccepted'
 import {
   initialsFromName,
   isWhatsAppWindowOpen,
+  lastInboundTime,
   type SoftConversation,
   type SoftTag,
 } from '@/lib/chat-soft-copilot'
@@ -80,6 +81,7 @@ import { ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
 import { ChatSnoozeButton } from '@/components/chats/ChatSnoozeButton'
 import { PeerAvatar } from '@/components/chats/PeerAvatar'
 import { conversationDisplayName } from '@/lib/chat-peer-display'
+import { igComposerHint, igReplyWindow } from '@/lib/instagram-human-agent'
 
 export type SoftWaTemplateOption = {
   name: string
@@ -115,6 +117,8 @@ interface SoftThreadPaneProps {
   messagesContainerRef: Ref<HTMLDivElement>
   onMessagesScroll: () => void
   showTemplateCta: boolean
+  /** Instagram: the server allows HUMAN_AGENT replies after 24 h (META_IG_HUMAN_AGENT). */
+  igHumanAgentEnabled?: boolean
   compact?: boolean
   hasMoreMessages?: boolean
   loadingOlder?: boolean
@@ -305,6 +309,7 @@ export function SoftThreadPane({
   messagesContainerRef,
   onMessagesScroll,
   showTemplateCta,
+  igHumanAgentEnabled,
   compact,
   hasMoreMessages,
   loadingOlder,
@@ -540,6 +545,12 @@ export function SoftThreadPane({
     .join(' · ')
 
   const closedWindow = conversation.platform === 'whatsapp' && !windowOpen
+  // Instagram: after 24 h a person may still answer as a human agent (up to 7 days) once Meta approved it.
+  const igWindow =
+    conversation.platform === 'instagram'
+      ? igReplyWindow(lastInboundTime(conversation.messages), Date.now(), igHumanAgentEnabled === true)
+      : null
+  const igHint = igComposerHint(igWindow)
   const canCreateOrder = Boolean(onCreateOrder) && !conversation.orderId && !conversation.isDemo
   // F37-03: unlock composer whenever paused / human takeover (incl. DEMO).
   const composerEnabled = isSoftHumanComposerEnabled(agentMode)
@@ -1361,6 +1372,16 @@ export function SoftThreadPane({
             compact ? 'pb-[max(0.75rem,env(safe-area-inset-bottom))]' : ''
           }`}
         >
+          {igHint ? (
+            <p
+              className={`mb-2 text-[11px] ${igHint.tone === 'warn' ? 'font-medium text-red-700' : 'font-medium text-amber-800'}`}
+              data-testid="ig-window-hint"
+            >
+              {igHint.text}
+              {igWindow?.state === 'human_agent' ? ' · solo texto (Instagram no permite fotos en este plazo).' : ''}
+            </p>
+          ) : null}
+
           {!composerEnabled && !compact ? (
             <p className={`mb-2 text-[11px] ${needsPerson ? 'font-medium text-amber-800' : 'text-slate-500'}`}>
               {needsPerson

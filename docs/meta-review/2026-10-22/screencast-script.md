@@ -62,6 +62,23 @@ Permissions: whatsapp_business_manage_events, instagram_manage_events.
 7. In Events Manager show the Instagram Purchase event. *"For Instagram Betsy sends the Instagram account id and the
    Instagram-scoped id (IGSID) from the webhook, value and currency. Used for measurement and reporting."*
 8. Note on camera: test sends do not raise **Ventas enviadas (30 días)**; that counter counts real sends (after the test code expires, each sale is sent once for real).
+9. **Event log.** Signed in as a Betsy platform admin, open **/super-admin/meta-eventos** (Super Admin → **Eventos de
+   Meta**). Show the two rows: business, channel (WhatsApp / Instagram), the ad, order number, amount, status
+   **Enviado** (or **En cola** + *prueba* in test mode), the send time and the **fbtrace_id** of Meta's answer.
+   *"Betsy keeps a log of every event it sent to the business's dataset, with Meta's trace id."*
+
+## Video 5: Human Agent (Instagram, after the 24-hour window)
+
+Permission: Human Agent (human_agent). Record only after Meta approved it and `META_IG_HUMAN_AGENT=1` is set
+(before that Betsy says the permission is not approved yet, which is also fine to show).
+
+1. Use an Instagram chat whose customer wrote more than 24 hours ago and less than 7 days ago (send a DM from your test
+   account the day before recording).
+2. Open it in **Chats**. Above the composer: **Ventana de 24 h cerrada · podés responder como agente humano hasta
+   <fecha>**. *"The standard window has closed; a person on the team can still answer for up to 7 days."*
+3. If an AI agent is on for the chat, press **Tomar control** first. *"Only a person can use this; the AI never does."*
+4. Type a reply and press **Enviar**. Show it arriving on the phone. *"Betsy sends it with the HUMAN_AGENT tag."*
+5. Optional: a chat older than 7 days shows that Instagram does not allow a reply.
 
 ## Video 4 (short): deletion
 

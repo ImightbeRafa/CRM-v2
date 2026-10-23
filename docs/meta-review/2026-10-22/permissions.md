@@ -35,6 +35,15 @@ messaging_channel instagram, user_data { instagram_business_account_id, ig_sid }
 ig_sid is the Instagram-scoped id from the webhook; we send no name, username, phone, email or message content. One event
 per order. The business uses it to measure which Instagram ads bring real sales. The owner can turn it off at any time.
 
+### Human Agent (human_agent)
+
+Betsy uses the Human Agent feature so that a person on the business's team can still answer a customer's Instagram Direct
+message after the 24-hour window, up to 7 days after the customer's last message, for example when the shop was closed
+for the weekend or an order question needs more time. Only replies typed by a person in the Betsy inbox (/chats) are sent
+with messaging_type MESSAGE_TAG and tag HUMAN_AGENT. The AI agent, follow-ups and automations never use the tag; they
+only answer inside the 24-hour window. The composer shows "Ventana de 24 h cerrada · podés responder como agente humano
+hasta <fecha>" so the person knows the deadline. After 7 days Betsy does not send. We never use the tag for promotions.
+
 ---
 
 ## Already approved, re-reviewed

@@ -136,6 +136,13 @@ export default function SuperAdminDashboard() {
             Soporte
           </Link>
           <Link
+            href="/super-admin/meta-eventos"
+            className="px-4 py-2 rounded-md ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
+            data-testid="super-admin-meta-eventos-link"
+          >
+            Eventos de Meta
+          </Link>
+          <Link
             href="/logistics/admin?tab=ia"
             className="px-4 py-2 rounded-md ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
             data-testid="super-admin-ia-link"

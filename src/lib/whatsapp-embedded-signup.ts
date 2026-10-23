@@ -14,7 +14,17 @@ export const WA_EMBEDDED_SIGNUP_TYPE = 'WA_EMBEDDED_SIGNUP' as const
 
 export const WA_COEXISTENCE_FEATURE_TYPE = 'whatsapp_business_app_onboarding' as const
 
-/** Session logging version required by Meta for coexistence / session events. */
+/**
+ * Embedded Signup v4 (Meta deprecated v2 / v3 on 2026-10-15). In v4 the VERSION comes from the Facebook Login for
+ * Business configuration (config_id) created with the "WhatsApp Embedded Signup" variation in the dashboard, not
+ * from code; session info is always posted back, so `sessionInfoVersion` is no longer sent. Coexistence still
+ * needs featureType. Permissions (WHATSAPP_OAUTH_SCOPES, incl. whatsapp_business_manage_events) are chosen in that
+ * configuration too, so NEXT_PUBLIC_FB_LOGIN_CONFIG_ID must point at a v4 configuration (it is baked in at build
+ * time: a config change means a rebuild).
+ */
+export const WA_EMBEDDED_SIGNUP_VERSION = 4 as const
+
+/** The v3 session logging version (no longer sent; kept so older tests / notes can name it). */
 export const WA_SESSION_INFO_VERSION = '3' as const
 
 export type WaEmbeddedSignupFinishEvent =
@@ -51,15 +61,13 @@ export type WaEmbeddedSignupMessage = {
 export type WaFbLoginExtras = {
   setup: Record<string, never>
   featureType: typeof WA_COEXISTENCE_FEATURE_TYPE
-  sessionInfoVersion: typeof WA_SESSION_INFO_VERSION
 }
 
-/** FB.login extras that enable coexistence (existing WA Business App numbers). */
+/** FB.login extras (v4) that enable coexistence (existing WA Business App numbers). */
 export function buildWhatsAppCoexistenceLoginExtras(): WaFbLoginExtras {
   return {
     setup: {},
     featureType: WA_COEXISTENCE_FEATURE_TYPE,
-    sessionInfoVersion: WA_SESSION_INFO_VERSION,
   }
 }
 

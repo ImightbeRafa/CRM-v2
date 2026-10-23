@@ -9,7 +9,7 @@ approved.
 | [dashboard-checklist.md](dashboard-checklist.md) | Rafael | Every step only you can do, in order: deploy + SQL 058, Business Verification, URLs, login configurations, Marketing API tier, submit. Also the decisions waiting on you. |
 | [reviewer-instructions.md](reviewer-instructions.md) | Rafael, then Meta | How to prepare the test login and test chats, and the text to paste as reviewer instructions. |
 | [screencast-script.md](screencast-script.md) | Rafael | Step-by-step recordings showing each permission, including ad chat → order → paid → event, for WhatsApp and Instagram. |
-| [permissions.md](permissions.md) | Meta form | "How will your app use this permission?" text for each of the 11 permissions. |
+| [permissions.md](permissions.md) | Meta form | "How will your app use this permission?" text for each of the 12 permissions / features (incl. Human Agent). |
 | [data-handling-answers.md](data-handling-answers.md) | Meta form | Data handling questionnaire answers that match /privacy. |
 
 ## What changed in Betsy for this review (branch `claude/wave-meta-compliance-fe6c0c`)
@@ -25,6 +25,9 @@ approved.
   run only on the production container. New **deauthorize
   callback** (`/api/auth/meta/deauthorize`) disconnects only.
 - **Instagram purchase events** through the Conversions API for Business Messaging, next to the WhatsApp ones.
+- **Review kit (second PR):** Instagram Human Agent replies (24 h – 7 days, people only, off until `META_IG_HUMAN_AGENT=1`),
+  Embedded Signup v4 launch, the super-admin event log (/super-admin/meta-eventos) and the demo-data script
+  (`scripts/meta-review-demo-seed.ts`, dry run by default).
 
 ## Facts checked against Meta's doc
 

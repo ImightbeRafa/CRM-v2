@@ -59,7 +59,7 @@ describe('P8: at night, "me atiende alguien" never promises "en un momento"', ()
 
 describe('D6: "No manejamos descuentos" is not an offer', () => {
   it('a closed negation before the word passes; a real offer is still held', () => {
-    for (const t of ['No manejamos descuentos, pero el combo sale ₡32 800', 'No tenemos promociones ni descuentos 😊', 'No hay ningún descuento ahorita']) assert.equal(dealProblem(t, []), false, t)
+    for (const t of ['No tenemos promociones ni descuentos 😊', 'No hay ningún descuento ahorita']) assert.equal(dealProblem(t, []), false, t)
     for (const t of ['Te hago un descuento', 'No olvides que hay descuento', 'No te preocupes, hay descuento hoy', '¿Querés un descuento?']) assert.equal(dealProblem(t, []), true, t)
   })
 })
@@ -77,7 +77,7 @@ describe('Verifier #128 fixes', () => {
       '¿Por qué no aplicamos un descuento a tu pedido?',
       'Nunca hay un descuento así, ¡aprovechá!',
     ]) assert.equal(dealProblem(t, []), true, t)
-    for (const t of ['No manejamos descuentos.', 'No manejamos descuentos, pero el combo sale ₡32 800', 'No tenemos promociones ni descuentos 😊']) {
+    for (const t of ['No manejamos descuentos.', 'No tenemos promociones ni descuentos 😊']) {
       assert.equal(dealProblem(t, []), false, t)
     }
   })
@@ -143,7 +143,7 @@ describe('SecureDog #128 r1: the negated discount is a closed refusal, and nothi
     ]) assert.equal(dealProblem(t, []), true, JSON.stringify(t))
   })
   it('the plain refusals Lane C needs still pass', () => {
-    for (const t of ['No manejamos descuentos.', 'No manejamos descuentos, pero el combo sale ₡32 800', 'No tenemos promociones ni descuentos 😊', 'No hay ningún descuento ahorita', 'Por ahora no tenemos descuentos 🙏', 'Lo siento, no manejamos promociones ni rebajas.']) {
+    for (const t of ['No manejamos descuentos.', 'No tenemos promociones ni descuentos 😊', 'No hay ningún descuento ahorita', 'Por ahora no tenemos descuentos 🙏', 'Lo siento, no manejamos promociones ni rebajas.']) {
       assert.equal(dealProblem(t, []), false, t)
     }
   })
@@ -153,5 +153,37 @@ describe('SecureDog #128 r1: the negated discount is a closed refusal, and nothi
       dropImmediatePromises('Suspendé el uso inmediatamente; en un momento te escribe alguien del equipo.'),
       'Suspendé el uso inmediatamente; en un momento te escribe alguien del equipo.',
     )
+  })
+})
+
+describe('SecureDog #128 r2: only a whole-reply closed refusal is exempt; both text forms are judged', () => {
+  const ch = (...codes: number[]) => String.fromCharCode(...codes)
+  it('H1 / H2 / M1: every offer SecureDog found is held', () => {
+    for (const t of [
+      'No hay descuentos, pero el combo dos por uno sale ₡14 900.',
+      'No manejamos descuentos, pero los dos kits a mitad de precio salen ₡14 900.',
+      'No hay descuentos, pero el precio especial para vos queda en ₡9 900.',
+      'No tenemos promociones, pero el kit con oferta especial para vos queda en ₡9 900 😉',
+      'No hay descuentos, pero el segundo de regalo sale ₡0.',
+      'No manejamos descuentos, pero el combo sale ₡32 800',
+      'Por ahora no tenemos descuentos 😊\n\nSin embargo, por ser tu primer pedido, podemos hacer una excepción 🙌',
+      '¡Entiendo! Por ahora no tenemos descuentos.\n\nNo obstante, para tu primer pedido te puedo aplicar uno pequeño 😊',
+      'No manejamos descuentos 🙏\n\nDe todas formas, contame qué kit querés y te consigo uno.',
+      'No tenemos descuentos ahorita. Te puedo aplicar uno.',
+      'No hay descuentos por ahora. El lunes los activamos 😊',
+      '1. No hay descuentos.\n2. Te puedo aplicar uno.',
+      'No hay descuentos. But for you, I can make one.',
+      'No hay descuentos. P*ero* para v*os* s*í* 😉',
+      '¡Hay descuento™ para vos!',
+      '¡Hoy 2x1™ en todo!',
+      'Precio especial™ para vos',
+      `Tenemos descuento${ch(0xad)}para vos 😉`,
+      `No manejamos descuentos.\nPero${ch(0xad)}para${ch(0xad)}vos${ch(0xad)}sí 😉`,
+    ]) assert.equal(dealProblem(t, []), true, JSON.stringify(t))
+  })
+  it('L1: a one-line refusal with any emoji form passes', () => {
+    for (const t of ['No manejamos descuentos ☺️', `No manejamos descuentos 🙏${ch(0xd83c, 0xdffd)}`, 'Por ahora no tenemos promociones ni descuentos 😊', 'No hay ningún descuento ahorita.']) {
+      assert.equal(dealProblem(t, []), false, t)
+    }
   })
 })

@@ -318,59 +318,34 @@ export function freeShippingWording(text: string): Array<{ index: number; end: n
 }
 
 /**
- * Lane C D6, closed allowlist (Verifier #128-1, SecureDog #128 r1): the store saying it has NO discount is not an offer
- * — but only a sentence that is a closed refusal from start to end ("No manejamos descuentos", "Por ahora no tenemos
- * promociones ni descuentos 😊", "No hay descuento, pero el combo sale ₡32 800"), and only when nothing anywhere else
- * in the reply turns it back into an offer ("… Pero para vos sí", a %, "te lo dejo", "cortesía"). Anything else is
- * judged as a deal (a false hit only triggers the normal repair).
+ * Lane C D6, closed allowlist (Verifier #128-1, SecureDog #128 r1 + r2): the store saying it has NO discount is not an
+ * offer — but ONLY when the whole reply is one short closed refusal ("No manejamos descuentos 🙏", "Por ahora no tenemos
+ * promociones ni descuentos 😊"). Anything else in the reply (a second bubble, "pero el combo…", "sin embargo…", a
+ * date, another language) and the reply is judged as a deal: a false hit only costs one repair round.
  */
 const DEAL_NOUN = String.raw`(?:descuentos?|rebajas?|promoci[oó]n(?:es)?(?:\s+especial(?:es)?)?|ofertas?(?:\s+especial(?:es)?)?|precios?\s+especial(?:es)?)`
 const DEAL_TIME_TAIL = String.raw`(?:por\s+ahora|de\s+momento|por\s+el\s+momento|en\s+este\s+momento|actualmente|ahorita)`
-const REFUSAL_SENTENCE_RE = new RegExp(
+const EMOJI_TAIL = String.raw`(?:[\p{Extended_Pictographic}\p{Emoji_Modifier}\u{FE0F}\u{200D}]\s*)*`
+const REFUSAL_REPLY_RE = new RegExp(
   String.raw`^(?:(?:lo\s+siento|lamentablemente|disculp[aá]|perd[oó]n|${DEAL_TIME_TAIL})\s*,?\s*)?` +
     String.raw`(?:no|tampoco)\s+(?:manejamos|tenemos|hay|ofrecemos|damos|aplicamos|hacemos)\s+(?:(?:ning[uú]n|ninguna|ningunos|ningunas)\s+)?${DEAL_NOUN}` +
     String.raw`(?:\s*(?:,|y|ni)\s+(?:(?:ning[uú]n|ninguna)\s+)?${DEAL_NOUN})*` +
     String.raw`(?:\s*,?\s*${DEAL_TIME_TAIL})?` +
-    String.raw`(?:\s*,\s*pero\s+(?:el|la|los|las)\s+[\p{L} ]{1,40}?\s+(?:sale|salen|cuesta|cuestan|queda|quedan)\s+(?:en\s+|a\s+)?[₡¢]\s?\d[\d .,]*)?` +
-    String.raw`\s*[.!]*\s*(?:\p{Extended_Pictographic}\s*)*$`,
+    String.raw`\s*[.!]?\s*${EMOJI_TAIL}$`,
   'iu',
 )
-/** Anything elsewhere in the reply that turns the refusal back into an offer. */
-const DEAL_REVERSAL_RE =
-  /(?<![\p{L}])(?:s[ií]|vos|ti|usted|ustedes|primera|esta\s+vez|salvo|excepto|sino|menos|mentira|broma|bueno|pero|aunque|te\s+(?:lo|la|los|las|hago|dejo|doy|rebaj\p{L}*|regal\p{L}*)|regal\p{L}*|cortes[ií]a|gratis|aprovech\p{L}*|llev\p{L}*\s+\d+|pag\p{L}*\s+\d+|no\s+te\s+cuesta|como|igual|as[ií]|parecid\p{L}*|compar\p{L}*|super\p{L}*|gan\p{L}*|mejor|mayor|tan)(?![\p{L}])|\d{1,3}\s?%|\d\s?x\s?\d/iu
 
-/** P8's sentence rule: a sentence ends at . ! ? before a space / the end, at a line break or at ';'. */
-function sentenceSpan(text: string, index: number): { start: number; end: number } {
-  let start = 0
-  for (let i = index - 1; i >= 0; i--) {
-    const c = text[i]
-    if (c === '\n' || c === ';' || ((c === '.' || c === '!' || c === '?') && /\s/u.test(text[i + 1] || ''))) {
-      start = i + 1
-      break
-    }
-  }
-  const e = text.slice(index).search(/[.!?](?=\s|$)|\n|;/u)
-  return { start, end: e < 0 ? text.length : index + e + 1 }
+/** The whole reply is one short closed refusal (both forms must agree: raw and as read). */
+function isWholeReplyRefusal(text: string): boolean {
+  const t = text.trim()
+  return t.length > 0 && t.length <= 160 && REFUSAL_REPLY_RE.test(t)
 }
 
-function negatedDeal(text: string, index: number): boolean {
-  const { start, end } = sentenceSpan(text, index)
-  const sentence = text.slice(start, end).trim()
-  // A refusal is short: a long "sentence" is never exempt (and the shape is never run on a long input).
-  if (sentence.length > 200 || !REFUSAL_SENTENCE_RE.test(sentence)) return false
-  return !DEAL_REVERSAL_RE.test(`${text.slice(0, start)} ${text.slice(end)}`)
-}
-
-/**
- * Deal wording is blocked unless the owner's active promo enables that exact kind (B1): free shipping and a special
- * price can be enabled; discounts, %, 2x1, "te lo dejo en", gifts are always blocked.
- */
-export function dealProblem(rawText: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
-  // SecureDog #128 r1: judged as the customer reads it (soft hyphens / zero-width removed; NFKC turns NBSP into a space).
-  const text = stripFormatChars((rawText || '').normalize('NFKC'))
+/** Deal wording in one form of the text (raw, or as the customer reads it). */
+function dealProblemIn(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>, refusal: boolean): boolean {
   for (const m of text.matchAll(DEAL_ALL_RE)) {
     const phrase = m[1].trim()
-    if (negatedDeal(text, m.index ?? 0)) continue
+    if (refusal) continue
     // Free-shipping phrasing is judged below with the wider wording list.
     if (FREE_SHIPPING_DEAL_RE.test(phrase)) continue
     if (allowed.includes('special_price') && SPECIAL_PRICE_DEAL_RE.test(phrase)) continue
@@ -378,6 +353,23 @@ export function dealProblem(rawText: string, allowed: ReadonlyArray<'free_shippi
   }
   if (!allowed.includes('free_shipping') && freeShippingWording(text).length > 0) return true
   return false
+}
+
+/** SecureDog #128 r1 / r2: the text as the customer reads it (soft hyphens / zero-width removed; NFKC). */
+export function dealReadForm(text: string): string {
+  return stripFormatChars((text || '').normalize('NFKC'))
+}
+
+/**
+ * Deal wording is blocked unless the owner's active promo enables that exact kind (B1): free shipping and a special
+ * price can be enabled; discounts, %, 2x1, "te lo dejo en", gifts are always blocked. Judged on the raw text AND on the
+ * text as read (a deal in either is a deal; "descuento™" / a soft hyphen can hide a word in one form, never in both).
+ */
+export function dealProblem(rawText: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
+  const raw = rawText || ''
+  const read = dealReadForm(raw)
+  const refusal = isWholeReplyRefusal(raw) && isWholeReplyRefusal(read)
+  return dealProblemIn(raw, allowed, refusal) || dealProblemIn(read, allowed, refusal)
 }
 
 /** Wording that turns a combo fact into a promise for this customer or this order. */
@@ -674,7 +666,7 @@ function dealProblemWithRule(text: string, allowed: ReadonlyArray<'free_shipping
   if (!dealProblem(text, allowed)) return false
   if (!rule || allowed.includes('free_shipping')) return true
   // Only free-shipping wording is the problem, and every phrase is an included-combo fact.
-  return dealProblem(text, [...allowed, 'free_shipping']) || !freeShippingRuleOk(text, rule)
+  return dealProblem(text, [...allowed, 'free_shipping']) || !freeShippingRuleOk(text, rule) || !freeShippingRuleOk(dealReadForm(text), rule)
 }
 
 // Everywhere: "ya creé / registré", and (N3) "tu pedido / tu orden / tu compra" + a confirmation verb. Not "sale

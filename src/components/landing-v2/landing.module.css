@@ -358,19 +358,19 @@
   height: var(--fade-h);
   pointer-events: none;
   z-index: 0;
-  --fade-c: var(--canvas);
+  --fade-rgb: 246, 245, 242; /* --canvas */
 }
 .fadeTop::before {
   top: 0;
-  background: linear-gradient(to top, color-mix(in srgb, var(--fade-c) 0%, transparent) 0%, color-mix(in srgb, var(--fade-c) 3%, transparent) 10%, color-mix(in srgb, var(--fade-c) 9%, transparent) 20%, color-mix(in srgb, var(--fade-c) 19%, transparent) 30%, color-mix(in srgb, var(--fade-c) 32%, transparent) 40%, color-mix(in srgb, var(--fade-c) 50%, transparent) 50%, color-mix(in srgb, var(--fade-c) 68%, transparent) 60%, color-mix(in srgb, var(--fade-c) 81%, transparent) 70%, color-mix(in srgb, var(--fade-c) 91%, transparent) 80%, color-mix(in srgb, var(--fade-c) 97%, transparent) 90%, color-mix(in srgb, var(--fade-c) 100%, transparent) 100%);
+  background: linear-gradient(to top, rgba(var(--fade-rgb), 0) 0%, rgba(var(--fade-rgb), 0.03) 10%, rgba(var(--fade-rgb), 0.09) 20%, rgba(var(--fade-rgb), 0.19) 30%, rgba(var(--fade-rgb), 0.32) 40%, rgba(var(--fade-rgb), 0.5) 50%, rgba(var(--fade-rgb), 0.68) 60%, rgba(var(--fade-rgb), 0.81) 70%, rgba(var(--fade-rgb), 0.91) 80%, rgba(var(--fade-rgb), 0.97) 90%, rgba(var(--fade-rgb), 1) 100%);
 }
 .fadeBottom::after {
   bottom: 0;
-  background: linear-gradient(to bottom, color-mix(in srgb, var(--fade-c) 0%, transparent) 0%, color-mix(in srgb, var(--fade-c) 3%, transparent) 10%, color-mix(in srgb, var(--fade-c) 9%, transparent) 20%, color-mix(in srgb, var(--fade-c) 19%, transparent) 30%, color-mix(in srgb, var(--fade-c) 32%, transparent) 40%, color-mix(in srgb, var(--fade-c) 50%, transparent) 50%, color-mix(in srgb, var(--fade-c) 68%, transparent) 60%, color-mix(in srgb, var(--fade-c) 81%, transparent) 70%, color-mix(in srgb, var(--fade-c) 91%, transparent) 80%, color-mix(in srgb, var(--fade-c) 97%, transparent) 90%, color-mix(in srgb, var(--fade-c) 100%, transparent) 100%);
+  background: linear-gradient(to bottom, rgba(var(--fade-rgb), 0) 0%, rgba(var(--fade-rgb), 0.03) 10%, rgba(var(--fade-rgb), 0.09) 20%, rgba(var(--fade-rgb), 0.19) 30%, rgba(var(--fade-rgb), 0.32) 40%, rgba(var(--fade-rgb), 0.5) 50%, rgba(var(--fade-rgb), 0.68) 60%, rgba(var(--fade-rgb), 0.81) 70%, rgba(var(--fade-rgb), 0.91) 80%, rgba(var(--fade-rgb), 0.97) 90%, rgba(var(--fade-rgb), 1) 100%);
 }
 .fromPaper::before,
 .toPaper::after {
-  --fade-c: var(--paper);
+  --fade-rgb: 255, 255, 255; /* --paper */
 }
 .fadeTop > .wrap,
 .fadeBottom > .wrap {
@@ -2331,6 +2331,7 @@
 }
 .costumeHead {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 14px;
   min-width: 0;
@@ -2342,6 +2343,34 @@
   padding: 12px 4px 4px;
   border-radius: 14px;
   background: var(--canvas);
+}
+.costumePlay {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.costumePlay .iconBtn {
+  min-height: 40px;
+  border-color: var(--line);
+  background: var(--canvas);
+  color: var(--ink-2);
+}
+.costumePlay .iconBtn:focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 2px;
+}
+@media (max-width: 640px) {
+  .costumeChat {
+    height: 380px;
+  }
+}
+/* No animation to protect: show the whole conversation. */
+@media (prefers-reduced-motion: reduce) {
+  .costumeChat {
+    height: auto;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
 }
 .costumeEvent {
   align-self: center;

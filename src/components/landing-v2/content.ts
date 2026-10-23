@@ -165,7 +165,7 @@ export const NICHES = [
     ],
     notes: [
       ['Precios al día', 'el agente usa los precios de tu catálogo, no los que vio la semana pasada.'],
-      ['Da seguimiento', 'si el cliente se queda a medias, le vuelve a escribir una vez.'],
+      ['Da seguimiento', 'si lo activás y el cliente se queda a medias, le vuelve a escribir una vez.'],
       ['Contra entrega', 'confirma los datos y deja el pedido listo para que tu equipo lo revise.'],
     ],
   },

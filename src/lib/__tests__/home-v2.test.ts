@@ -141,9 +141,18 @@ test('agent in action: mark on a colored plate acts out the mini-chat; no name i
   assert.match(c, /state=\{BEATS\[step\]\.mark\}/)
   for (const st of ['listen', 'typing', 'speak', 'yes', 'paused']) assert.match(c, new RegExp(`mark: '${st}'`))
   assert.match(c, /Necesita persona/)
-  assert.match(c, /Al día siguiente/)
-  // Same timeline rules as the other demos: stops off-screen, reduced motion = final state.
+  // Honest follow-up (soft-ai/follow-up.ts skips chats with an order, a payment under review or a hand-off): the
+  // follow-up beat comes before the receipt and the hand-off, and it is not promised for "el día siguiente".
+  const jsx = c.slice(c.indexOf('  return ('))
+  const order = ['Dejame pensarlo', 'Más tarde', 'Comprobante SINPE', 'Pago verificado', 'Necesita persona'].map((x) =>
+    jsx.indexOf(x),
+  )
+  assert.ok(order.every((x, i) => x > 0 && (i === 0 || x > order[i - 1])), `beat order ${order}`)
+  assert.doesNotMatch(source, /día siguiente/)
+  // Same timeline rules as the other demos: stops off-screen, reduced motion = final state, pause + replay (WCAG 2.2.2).
   assert.match(c, /useTimeline\(DURATIONS, \{ restStep: LAST, reduced, visible \}\)/)
+  assert.match(c, /onClick=\{t\.toggle\}/)
+  assert.match(c, /onClick=\{t\.replay\}/)
   assert.match(read(`${DIR}/sections/Agent.tsx`), /<AgentCostumes \/>/)
   assert.doesNotMatch(read(`${DIR}/sections/Agent.tsx`), /→/)
 })

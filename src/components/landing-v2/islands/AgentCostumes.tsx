@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { CreditCard } from 'lucide-react'
+import { CreditCard, Pause, Play, RotateCcw } from 'lucide-react'
 import { AgentMark, PlateSwatch } from '@/components/brand/AgentMark'
 import type { BetsyState } from '@/components/brand/BetsyMark'
 import { AGENT_PLATES, AGENT_PLATE_LABELS, type AgentPlate } from '@/lib/agent-appearance'
@@ -12,8 +12,8 @@ import { useOnScreen, usePrefersReducedMotion, useTimeline } from '../demos/useT
 /**
  * "Tu agente, en acción" (Rafael 2026-10-23): the agent's costume from the Agents tab (Lane I's AgentMark: Betsy's
  * official mark on a colored plate, never recolored) plus a looping mini-chat of what the agent does — answers with
- * the store's info, a person on the team verifies the payment ("yes"), hands off ("Necesita persona") and follows up
- * the next day. The mark's state follows each beat. Swatches change the plate; no name input (Rafael: silly).
+ * the store's info, follows up once later on a chat that went quiet (only before any order/payment, like
+ * soft-ai/follow-up.ts), a person on the team verifies the payment ("yes"), and hands off ("Necesita persona"). The mark's state follows each beat. Swatches change the plate; no name input (Rafael: silly).
  * One mark in this view (example chips and colors are swatches). Names and businesses are made up.
  */
 type Preset = { name: string; business: string; plate: AgentPlate; ask: string; answer: string; human: string }
@@ -55,14 +55,15 @@ const PRESETS: ReadonlyArray<Preset> = [
 
 /** One beat per step: how long it shows and what the mark does. */
 const BEATS: ReadonlyArray<{ ms: number; mark: BetsyState }> = [
-  { ms: 1600, mark: 'listen' }, // 0 customer asks
-  { ms: 1400, mark: 'typing' }, // 1 the agent writes
-  { ms: 2300, mark: 'speak' }, // 2 the agent answers with the store's info
-  { ms: 1700, mark: 'listen' }, // 3 the receipt arrives
-  { ms: 2400, mark: 'yes' }, // 4 a person on the team verifies the payment
-  { ms: 1700, mark: 'listen' }, // 5 the customer asks for something only a person can do
-  { ms: 2800, mark: 'paused' }, // 6 hand-off: Necesita persona
-  { ms: 3600, mark: 'speak' }, // 7 the next day: one follow-up
+  { ms: 1500, mark: 'listen' }, // 0 customer asks
+  { ms: 1300, mark: 'typing' }, // 1 the agent writes
+  { ms: 2200, mark: 'speak' }, // 2 the agent answers with the store's info
+  { ms: 1700, mark: 'listen' }, // 3 the customer goes quiet ("dejame pensarlo")
+  { ms: 2800, mark: 'speak' }, // 4 later: one follow-up (only while there is no order or payment yet)
+  { ms: 1600, mark: 'listen' }, // 5 the receipt arrives
+  { ms: 2300, mark: 'yes' }, // 6 a person on the team verifies the payment
+  { ms: 1600, mark: 'listen' }, // 7 the customer asks for something only a person can do
+  { ms: 3400, mark: 'paused' }, // 8 hand-off: Necesita persona (rest frame)
 ]
 const DURATIONS = BEATS.map((b) => b.ms)
 const LAST = BEATS.length - 1
@@ -92,6 +93,17 @@ export function AgentCostumes() {
             <b>{p.name}</b>
             <span>Agente de ventas · {p.business}</span>
           </div>
+          {!reduced && (
+            <span className={s.costumePlay}>
+              <button type="button" className={s.iconBtn} onClick={t.toggle}>
+                {t.paused ? <Play size={12} aria-hidden /> : <Pause size={12} aria-hidden />}
+                {t.paused ? 'Seguir' : 'Pausar'}
+              </button>
+              <button type="button" className={s.iconBtn} onClick={t.replay} aria-label="Repetir la conversación">
+                <RotateCcw size={12} aria-hidden />
+              </button>
+            </span>
+          )}
         </div>
 
         {/* A looping illustration (aria-hidden); the list next to it says the same in words. */}
@@ -105,35 +117,30 @@ export function AgentCostumes() {
             </span>
           )}
           {step >= 2 && <p className={`${s.bubble} ${s.bubbleOut}`}>{p.answer}</p>}
-          {step >= 3 && (
+          {step >= 3 && <p className={`${s.bubble} ${s.bubbleIn}`}>Dejame pensarlo y te aviso</p>}
+          {step >= 4 && (
+            <>
+              <span className={s.costumeEvent}>
+                <Chip kind="seguimiento">Más tarde · seguimiento</Chip>
+              </span>
+              <p className={`${s.bubble} ${s.bubbleOut}`}>¡Hola! ¿Te quedó alguna duda? Con gusto te ayudo con tu pedido.</p>
+            </>
+          )}
+          {step >= 5 && (
             <p className={`${s.bubble} ${s.bubbleIn} ${s.inlineIcon}`}>
               <CreditCard size={13} aria-hidden /> Comprobante SINPE Móvil
             </p>
           )}
-          {step >= 4 && (
-            <span className={s.costumeEvent}>
-              <Chip kind="live">
-                Pago verificado por tu equipo
-              </Chip>
-            </span>
-          )}
-          {step >= 5 && <p className={`${s.bubble} ${s.bubbleIn}`}>{p.human}</p>}
           {step >= 6 && (
             <span className={s.costumeEvent}>
-              <Chip kind="persona">
-                Necesita persona · le avisó a tu equipo
-              </Chip>
+              <Chip kind="live">Pago verificado por tu equipo</Chip>
             </span>
           )}
-          {step >= 7 && (
-            <>
-              <span className={s.costumeEvent}>
-                <Chip kind="seguimiento">
-                  Al día siguiente
-                </Chip>
-              </span>
-              <p className={`${s.bubble} ${s.bubbleOut}`}>¡Hola! ¿Te quedó alguna duda? Con gusto te ayudo a terminar tu pedido.</p>
-            </>
+          {step >= 7 && <p className={`${s.bubble} ${s.bubbleIn}`}>{p.human}</p>}
+          {step >= 8 && (
+            <span className={s.costumeEvent}>
+              <Chip kind="persona">Necesita persona · le avisó a tu equipo</Chip>
+            </span>
           )}
         </div>
       </div>
@@ -179,9 +186,9 @@ export function AgentCostumes() {
         <p className={s.costumeLabel}>Qué hace</p>
         <ul className={s.costumeFacts}>
           <li>Contesta con tu información: precios, tallas, envíos.</li>
+          <li>Si lo activás, a quien se quedó a medias le escribe una vez más tarde (dentro de las 24 h que permite Meta).</li>
           <li>Un pago lo confirma una persona de tu equipo, no el agente.</li>
           <li>Si el cliente necesita a alguien, el chat pasa a “Necesita persona”.</li>
-          <li>A quien se quedó a medias le escribe una vez al día siguiente.</li>
         </ul>
         <p className={s.costumeHint}>Vista de ejemplo: los nombres y negocios son inventados.</p>
       </div>

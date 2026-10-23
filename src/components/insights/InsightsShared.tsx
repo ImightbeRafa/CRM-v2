@@ -200,3 +200,13 @@ export function Tile({ label, value, hint }: { label: string; value: string; hin
 }
 
 export const nf = new Intl.NumberFormat('es-CR')
+
+/**
+ * Page body for every Estadísticas tab: the full content width (same side padding as the headers), capped
+ * only on very wide screens (≥ ~1960 px of content) so lines and tables never stretch absurdly. Left-aligned
+ * (no mx-auto) so the body always lines up with the header and tabs above it.
+ */
+export const STATS_CONTAINER = 'w-full max-w-[1760px] space-y-4 px-4 pb-8 pt-5 md:px-8'
+
+/** Main chart + side card: side card fixed on laptops, a third of the width on wide screens. */
+export const STATS_SPLIT = 'grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]'

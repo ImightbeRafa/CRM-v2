@@ -28,7 +28,7 @@ import { StatusBreakdownBody, type StatusRow } from './StatusBreakdownCard'
 import { LinePerformanceBody, type LineRow } from './LinePerformance'
 import { FunnelBody } from './FunnelCard'
 import { StatsHeader } from './StatsHeader'
-import { InsightsTabs } from '@/components/insights/InsightsShared'
+import { InsightsTabs, STATS_CONTAINER, STATS_SPLIT } from '@/components/insights/InsightsShared'
 
 // The legacy report (custom range, day report, top customers) stays reachable, lazily loaded.
 const EstadisticasDashboard = dynamic(
@@ -149,8 +149,8 @@ function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
     <div className="flex min-h-0 flex-1 flex-col" data-testid="stats-dashboard">
       <StatsHeader spec={spec} range={range} onPeriod={setPeriod} />
       <InsightsTabs className="shrink-0 border-b border-slate-200/70 bg-white px-4 py-2 md:px-8" />
-      <div className="mx-auto w-full max-w-[1200px] space-y-4 px-4 pb-6 pt-5 md:px-7">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className={STATS_CONTAINER}>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <KpiCard
             accent="brand"
             icon={<Wallet className="h-4 w-4" />}
@@ -196,7 +196,7 @@ function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className={STATS_SPLIT}>
           <StatsCard
             title="Ventas por día"
             subtitle={rangeLabel ? `${symbol} · ${rangeLabel}` : undefined}
@@ -218,7 +218,7 @@ function Dashboard({ statistics }: { statistics: StatisticsReadiness }) {
           </StatsCard>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className={STATS_SPLIT}>
           <StatsCard
             title="Rendimiento por línea"
             subtitle="Cada número de WhatsApp o cuenta de Instagram es un canal"

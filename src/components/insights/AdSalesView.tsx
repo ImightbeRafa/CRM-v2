@@ -11,7 +11,7 @@ import { AuroraEmptyState } from '@/components/aurora/states'
 import { formatCompactMoney, formatDayLabel } from '@/lib/statistics-aurora'
 import { formatPercent, rate } from '@/lib/insights/stats-math'
 import { safeAdLink, type AdSalesReport, type AdSalesRow } from '@/lib/insights/ad-sales'
-import { InsightsHeader, SourceNote, nf, useInsightsJson, useUrlPeriod } from './InsightsShared'
+import { InsightsHeader, SourceNote, STATS_CONTAINER, STATS_SPLIT, nf, useInsightsJson, useUrlPeriod } from './InsightsShared'
 import { AreaChart, InsightCard, NEUTRAL_SERIES, SERIES, Segmented, SplitBar, StatTile, StatusChip } from './charts'
 
 type Payload = {
@@ -132,7 +132,7 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
         />
       </dl>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className={STATS_SPLIT}>
         <div className="rounded-xl border border-slate-100 p-3.5">
           <p className="text-[12.5px] font-semibold text-slate-800">Pedidos por día</p>
           <p className="mb-3 text-[11px] text-slate-400">Pedidos vinculados a un chat, por día de venta</p>
@@ -334,7 +334,7 @@ function View() {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="insights-ads">
       <InsightsHeader title="Ventas por anuncio" subtitle="Qué anuncio de Meta trae chats, pedidos y plata" spec={spec} range={range} onPeriod={setSpec} />
-      <div className="mx-auto w-full max-w-[1200px] space-y-4 px-4 pb-8 pt-5 md:px-7">
+      <div className={STATS_CONTAINER}>
         <InsightCard
           icon={Megaphone}
           title="Anuncio → chat → venta"

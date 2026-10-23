@@ -31,7 +31,7 @@ import { AuroraEmptyState } from '@/components/aurora/states'
 import { hasSessionPermission } from '@/lib/session-permissions'
 import { formatCompactMoney, formatDayLabel } from '@/lib/statistics-aurora'
 import { daysBetweenKeys, REORDER_LIMITS, type ReorderRule } from '@/lib/insights/reorder'
-import { InsightsHeader, SourceNote, nf, useInsightsJson } from './InsightsShared'
+import { InsightsHeader, SourceNote, STATS_CONTAINER, nf, useInsightsJson } from './InsightsShared'
 import { InsightCard, Meter, SERIES, Segmented, StatTile, StatusChip, type ChipTone } from './charts'
 
 type DueRow = {
@@ -565,14 +565,15 @@ function View() {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="insights-customers">
       <InsightsHeader title="Clientes" subtitle="A quién escribirle hoy para que vuelva a comprar" />
-      <div className="mx-auto w-full max-w-[1200px] space-y-4 px-4 pb-8 pt-5 md:px-7">
+      <div className={STATS_CONTAINER}>
         {session && !canSeeCustomers ? (
           <AuroraEmptyState tone="neutral" icon={<Lock className="h-6 w-6" aria-hidden />} title="Sin acceso a clientes" description="Tu rol no puede ver datos de clientes." />
         ) : session ? (
-          <>
+          // Side by side on wide screens; stacked on laptops and phones.
+          <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2 2xl:items-start">
             <ReorderSection canEditRules={canEditRules} />
             <RepeatSection />
-          </>
+          </div>
         ) : null}
       </div>
     </div>

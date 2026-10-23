@@ -4,7 +4,7 @@ import { AuroraShell, useInAuroraFrame } from '../AuroraShell'
 import { AuroraMobileNav } from '../AuroraMobileNav'
 import { AuroraListSkeleton, AuroraThreadSkeleton } from './AuroraSkeleton'
 
-export type AuroraRouteLoadingVariant = 'page' | 'list' | 'chats'
+export type AuroraRouteLoadingVariant = 'page' | 'list' | 'chats' | 'stats'
 
 function Pulse({ className = '' }: { className?: string }) {
   return <div className={`animate-pulse rounded-lg bg-slate-200/70 ${className}`} />
@@ -31,6 +31,23 @@ function PageBody() {
         ))}
       </div>
       <div className="h-72 animate-pulse rounded-2xl border border-slate-200/70 bg-white" />
+    </div>
+  )
+}
+
+/** Estadísticas: same full-width body as the loaded pages (STATS_CONTAINER), 4 KPIs from 1024 px. */
+function StatsBody() {
+  return (
+    <div className="w-full max-w-[1760px] space-y-4 px-4 pt-5 md:px-8">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-[120px] animate-pulse rounded-2xl border border-slate-200/70 bg-white" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="h-72 animate-pulse rounded-2xl border border-slate-200/70 bg-white" />
+        <div className="hidden h-72 animate-pulse rounded-2xl border border-slate-200/70 bg-white lg:block" />
+      </div>
     </div>
   )
 }
@@ -84,9 +101,9 @@ function ChatsBody() {
  * the content skeleton, so the sidebar never blinks and no pre-Aurora skeleton shows up.
  */
 export function AuroraRouteLoading({ variant = 'page' }: { variant?: AuroraRouteLoadingVariant }) {
-  const body = variant === 'chats' ? <ChatsBody /> : variant === 'list' ? <ListBody /> : <PageBody />
+  const body = variant === 'chats' ? <ChatsBody /> : variant === 'list' ? <ListBody /> : variant === 'stats' ? <StatsBody /> : <PageBody />
   return (
-    <AuroraShell fullBleed={variant !== 'page'} bottomNav={<AuroraMobileNav />}>
+    <AuroraShell fullBleed={variant !== 'page' && variant !== 'stats'} bottomNav={<AuroraMobileNav />}>
       <div className="flex min-h-0 flex-1 flex-col" role="status" aria-busy="true" aria-label="Cargando">
         {variant !== 'chats' ? <HeaderSkeleton /> : null}
         {body}

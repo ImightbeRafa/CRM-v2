@@ -54,7 +54,7 @@ test('the shown price equals what the Tilopay subscription charges (CRC 10000)',
 
 test('landing, docs and BillingDashboard read the price from the one source', () => {
   // The redesign at /home-preview (src/components/landing-v2); its own tests live in home-v2.test.ts.
-  const landing = ['src/app/home-preview/page.tsx', 'src/components/landing-v2/LandingV2.tsx', 'src/components/landing-v2/content.ts']
+  const landing = ['src/app/home/page.tsx', 'src/components/landing-v2/LandingV2.tsx', 'src/components/landing-v2/content.ts']
     .map(read)
     .join('\n')
   assert.doesNotMatch(landing, /\$\s?20\b|₡\s?10[.,]000/, 'no hand-typed price on the landing')
@@ -104,7 +104,7 @@ test('landing is honest: no fake testimonials, no raw payment link, real contact
   // The landing is a server component; only the islands run on the client.
   assert.doesNotMatch(page, /^'use client'/)
   assert.match(read('src/components/landing-v2/islands/Nav.tsx'), /^'use client'/)
-  assert.match(read('src/app/home-preview/page.tsx'), /export const metadata/)
+  assert.match(read('src/app/home/page.tsx'), /export const metadata/)
 })
 
 test('/soporte?tema=agente starts the contact form as an agent lead', () => {

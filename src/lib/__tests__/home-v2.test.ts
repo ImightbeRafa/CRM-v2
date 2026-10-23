@@ -13,15 +13,14 @@ const all = (dir: string): string[] =>
 const files = all(DIR).filter((f) => /\.(tsx?|css)$/.test(f))
 const source = files.map((f) => read(f)).join('\n')
 
-test('preview route: public by an exact middleware entry, noindex, own look in any theme', () => {
-  const page = read('src/app/home-preview/page.tsx')
-  assert.match(page, /robots: \{ index: false, follow: false/)
-  assert.match(page, /theme-static/)
+test('/home renders the v2 landing (indexable, own look); /home-preview redirects to it', () => {
+  const home = read('src/app/home/page.tsx')
+  assert.match(home, /import \{ LandingV2 \} from '@\/components\/landing-v2\/LandingV2'/)
+  assert.match(home, /theme-static/)
+  assert.match(home, /export const metadata/)
+  assert.doesNotMatch(home, /index: false/)
+  assert.match(read('src/app/home-preview/page.tsx'), /permanentRedirect\('\/home'\)/)
   assert.match(read('src/middleware.ts'), /'\/home-preview',/)
-  // /home itself is untouched by this slice: it still renders the current landing.
-  assert.match(read('src/app/home/page.tsx'), /import LandingPage from '\.\/components\/LandingPage'/)
-  // Not linked from the current landing or the app.
-  for (const f of ['src/app/home/components/LandingPage.tsx', 'src/app/home/page.tsx']) assert.doesNotMatch(read(f), /home-preview/)
 })
 
 test('price and contact come from their single sources; no hand-typed price', () => {

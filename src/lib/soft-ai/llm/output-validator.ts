@@ -289,7 +289,8 @@ const FREE_SHIPPING_WORDING_RE = new RegExp(
     'incluye(?:n)?\\s+(?:el\\s+)?env[ií]o',
     'no\\s+(?:te\\s+|le\\s+|les\\s+)?(?:cobr\\p{L}*|pag\\p{L}*)\\s+(?:el\\s+|nada\\s+de\\s+|nada\\s+por\\s+el\\s+)?env[ií]o',
     'sin\\s+(?:cargo|costo|cobro)\\s+(?:de|por|del)\\s+env[ií]o',
-    'env[ií]o\\s*[:(]?\\s*(?:[₡¢]\\s?0(?![\\d.,])|gratis)',
+    // SecureDog #131 L1: one whitespace run around the optional ":" / "(" (linear, never quadratic on long spaces).
+    'env[ií]o\\s*(?:[:(]\\s*)?(?:[₡¢]\\s?0(?![\\d.,])|gratis)',
     'te\\s+(?:lo|la|los|las)\\s+(?:mando|env[ií]o|llevo)\\s+gratis',
     // INT-92: more ways to say it.
     'env[ií]o\\s+(?:no\\s+tiene|sin)\\s+(?:ning[uú]n\\s+)?(?:costo|cargo|cobro)',

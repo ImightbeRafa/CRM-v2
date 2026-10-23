@@ -59,7 +59,11 @@ test('sidebar polish: reduced-motion aware, focus rings, display-only tenant blo
   // Links only: the collapse button lives in shell/SidebarToggle.tsx.
   assert.doesNotMatch(side, /cursor-pointer|<button|role=|tabIndex/)
   assert.match(side, /<SidebarToggle collapsed=\{collapsed\} onToggle=\{toggle\} \/>/)
-  // Collapsed rail: every link is named, tooltips are CSS (hover + keyboard focus).
+  // Collapsed rail: every link is named; the rail keeps scrolling (short screens) and the tooltip is
+  // fixed-position on hover + keyboard focus, so it is never clipped by the scroll box.
   assert.match(side, /aria-label=\{collapsed \? item\.label : undefined\}/)
-  assert.match(side, /group-hover:opacity-100 group-focus-visible:opacity-100/)
+  assert.match(side, /min-h-0 flex-1 overflow-y-auto/)
+  assert.doesNotMatch(side, /overflow-visible/)
+  assert.match(side, /onFocus=\{collapsed \? \(e\) => showTip\(item\.label, e\.currentTarget\) : undefined\}/)
+  assert.match(side, /pointer-events-none fixed z-\[70\]/)
 })

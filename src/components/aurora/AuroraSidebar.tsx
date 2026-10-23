@@ -17,9 +17,11 @@ import { useAuroraViewer } from './shell/useAuroraViewer'
 const FOCUS_RING =
   'outline-none focus-visible:ring-2 focus-visible:ring-[#8F7BFF]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-au-sidebar'
 
-/** Collapsed-rail tooltip: CSS only (hover or keyboard focus); the link's aria-label carries the name. */
-const RAIL_TIP =
-  'pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[12px] font-medium text-white opacity-0 shadow-lg ring-1 ring-static-white/10 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none'
+/**
+ * Collapsed-rail tooltip: fixed-position (the rail scrolls, so an absolute tooltip would be clipped),
+ * shown on hover or keyboard focus. Decorative: the link's aria-label carries the name.
+ */
+type RailTip = { label: string; top: number; left: number }
 
 const ROLE_LABELS: Record<string, string> = {
   OWNER: 'Owner',
@@ -65,6 +67,12 @@ export function AuroraSidebar() {
   // Server render uses the route default (no layout jump on /chats); a saved choice wins after mount.
   const scope = sidebarScope(pathname)
   const [collapsed, setCollapsed] = useState(() => defaultCollapsed(scope))
+  const [tip, setTip] = useState<RailTip | null>(null)
+  const showTip = (label: string, el: HTMLElement) => {
+    const r = el.getBoundingClientRect()
+    setTip({ label, top: r.top + r.height / 2, left: r.right + 12 })
+  }
+  const hideTip = () => setTip(null)
   useEffect(() => {
     const pref = readPref()
     setCollapsed(pref[scope] ?? defaultCollapsed(scope))
@@ -109,9 +117,9 @@ export function AuroraSidebar() {
       {/* Business header; a switcher when the user belongs to several businesses (Phase 2b). */}
       <BusinessSwitcher tenantName={tenantName} collapsed={collapsed} />
 
-      {/* The rail does not scroll sideways, so its tooltips can leave the column. */}
       <nav
-        className={`min-h-0 flex-1 ${collapsed ? 'overflow-visible px-2' : 'overflow-y-auto px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'}`}
+        className={`min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${collapsed ? 'px-2' : 'px-3'}`}
+        onScroll={hideTip}
         aria-label="Navegación principal"
       >
         {AURORA_NAV.map((section, sectionIndex) => {
@@ -136,6 +144,10 @@ export function AuroraSidebar() {
                         href={item.href}
                         aria-current={active ? 'page' : undefined}
                         aria-label={collapsed ? item.label : undefined}
+                        onMouseEnter={collapsed ? (e) => showTip(item.label, e.currentTarget) : undefined}
+                        onMouseLeave={collapsed ? hideTip : undefined}
+                        onFocus={collapsed ? (e) => showTip(item.label, e.currentTarget) : undefined}
+                        onBlur={collapsed ? hideTip : undefined}
                         className={`group relative flex items-center rounded-[10px] text-[13px] font-medium transition-colors duration-150 motion-reduce:transition-none ${FOCUS_RING} ${
                           collapsed ? 'mx-auto h-10 w-10 justify-center' : 'h-9 gap-2.5 px-2.5'
                         } ${
@@ -157,13 +169,7 @@ export function AuroraSidebar() {
                           strokeWidth={active ? 2.2 : 1.9}
                           aria-hidden
                         />
-                        {collapsed ? (
-                          <span className={RAIL_TIP} aria-hidden>
-                            {item.label}
-                          </span>
-                        ) : (
-                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                        )}
+                        {collapsed ? null : <span className="min-w-0 flex-1 truncate">{item.label}</span>}
                         {!collapsed && item.shortcut && (
                           <ArrowUpRight className="h-3 w-3 shrink-0 text-white/30 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
                         )}
@@ -176,6 +182,16 @@ export function AuroraSidebar() {
           )
         })}
       </nav>
+      {collapsed && tip ? (
+        <span
+          aria-hidden
+          className="pointer-events-none fixed z-[70] -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[12px] font-medium text-white shadow-lg ring-1 ring-static-white/10"
+          style={{ top: tip.top, left: tip.left }}
+          data-testid="sidebar-rail-tip"
+        >
+          {tip.label}
+        </span>
+      ) : null}
 
       <div className={`border-t border-static-white/10 ${collapsed ? 'flex flex-col items-center gap-2 px-2 py-3' : 'p-3'}`}>
         {collapsed ? (

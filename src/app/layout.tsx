@@ -35,11 +35,20 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 }
 
+/** Absolute base for share images; a malformed env value must never break every page. */
+function siteUrl(): URL {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://www.betsycrm.com')
+  } catch {
+    return new URL('https://www.betsycrm.com')
+  }
+}
+
 /** Official Betsy mark (docs/design/betsy-mascot-handoff): favicons + the default share image. */
 const OG_DARK = { url: '/brand/betsy/og-dark-1200x630.png', width: 1200, height: 630, alt: 'Betsy' }
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://www.betsycrm.com'),
+  metadataBase: siteUrl(),
   icons: {
     icon: [
       { url: '/brand/betsy/favicon.svg', type: 'image/svg+xml' },

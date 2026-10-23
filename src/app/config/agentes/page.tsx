@@ -1023,11 +1023,14 @@ export default function AgentesConfigPage() {
                     onApplied={() => setSetupRefresh((value) => value + 1)}
                   />
 
-                  <AgentAppearanceCard
-                    agent={{ ...selected, appearance: appearances[selected.id] ?? null }}
-                    canEdit={canEdit}
-                    onSaved={onAppearanceSaved}
-                  />
+                  {/* Team-only lanes are not an AI persona: no Betsy face to dress. */}
+                  {selected.operationMode !== 'human_only' ? (
+                    <AgentAppearanceCard
+                      agent={{ ...selected, appearance: appearances[selected.id] ?? null }}
+                      canEdit={canEdit}
+                      onSaved={onAppearanceSaved}
+                    />
+                  ) : null}
 
                   {/* Identidad */}
                   <div className={CARD}>

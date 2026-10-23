@@ -102,8 +102,11 @@ export function AgentQualityCard({ agentId, canEdit }: { agentId: string; canEdi
                 <th className="px-2 py-1 text-right">Tomadas por persona</th>
                 <th className="px-2 py-1 text-right">Con pedido en 7 días</th>
                 <th className="px-2 py-1 text-right">
-                  <span className="inline-flex items-center gap-1" aria-label="Bien / Mal">
-                    <ThumbsUp className="h-3 w-3" aria-hidden /> / <ThumbsDown className="h-3 w-3" aria-hidden />
+                  <span className="inline-flex items-center gap-1">
+                    <ThumbsUp className="h-3 w-3" aria-hidden />
+                    <span aria-hidden>/</span>
+                    <ThumbsDown className="h-3 w-3" aria-hidden />
+                    <span className="sr-only">Bien / Mal</span>
                   </span>
                 </th>
               </tr>

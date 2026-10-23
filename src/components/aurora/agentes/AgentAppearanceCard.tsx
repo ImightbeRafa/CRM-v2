@@ -50,7 +50,7 @@ export function AgentAppearanceCard({ agent, canEdit, onSaved }: Props) {
           <h3 className="text-[14px] font-semibold text-slate-900">Apariencia</h3>
           <p className="mt-0.5 text-[12px] text-slate-500">Cómo se ve este agente dentro de Betsy. Tus clientes no lo ven.</p>
         </div>
-        <AgentFace agent={agent} size={52} />
+        <AgentFace agent={agent} size={52} animated={false} />
       </div>
 
       <p className="mt-4 text-xs font-medium text-slate-700">Color</p>

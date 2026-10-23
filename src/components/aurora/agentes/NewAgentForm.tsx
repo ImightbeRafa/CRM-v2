@@ -70,6 +70,7 @@ export function NewAgentForm({
             <AgentFace
               agent={{ name: draft.name || 'Nuevo agente', introductionNames: parseIntroductionNames(draft.introductionNames) }}
               size={44}
+              animated={false}
             />
           </div>
         </div>

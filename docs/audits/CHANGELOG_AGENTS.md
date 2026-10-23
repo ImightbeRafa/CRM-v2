@@ -4,23 +4,24 @@
   - `src/components/brand/BetsyMark.tsx` plus `useBetsyState.ts`. It is the designer's component; its per-instance `<style>` became `betsy-mark.module.css`.
   - It is server-safe and only animates transform/opacity. Reduced motion gives a still pose.
   - The designer's test runs as `src/lib/__tests__/betsy-mark.test.tsx`.
-- `<BetsyLogo />` renders the lockup's outlined wordmark (`betsy-wordmark.ts`, no font needed). Options: `lockup` (mark + word in the official proportions) and `mark`. It replaced the four different wordmarks: sidebar, auth, old `/home`, `/soporte`, and the dashboard fallback (which imported a `@/BetsyLogo.png` missing from the repo).
+- `<BetsyLogo />` renders the lockup's outlined wordmark (`betsy-wordmark.ts`, no font needed). Options: `lockup` (mark + word in the official proportions) and `mark`. It replaced the four different wordmarks: sidebar, auth, old `/home`, `/soporte`, and the dashboard fallback (a `@/BetsyLogo.png` image import).
 - Agents: the same official mark on a per-agent plate (the "costume"; the mark is never recolored).
   - Choices: 8 palette ids, an optional ring (off by default), and a UI-only display label.
   - Defaults are curated for the live personas by first name. Others get a stable pick from their name.
   - Config › Agentes › Personalidad › "Apariencia" edits it.
-  - The list keeps marks still; only the detail header animates (`think` while publishing).
+  - The list, the appearance preview and the new-agent preview keep marks still; only the detail header animates (`think` while publishing). Human-only agents have no appearance card (no Betsy face).
   - Storage: `GET/PUT /api/chat/agents/appearance`, one `TenantFeatureFlag` row per agent (scope = tenant, key `agent_appearance:<id>`, `enabled=false`), the same convention as `meta-attribution/settings.ts`. It uses the custom_agents gate, update_config, same-origin, a rate limit and an audit entry. It accepts palette ids only and the business's own agents only. No schema change, no soft-ai edit, never read by the agent runtime (test-enforced).
 - Agents UI: no emoji chrome. Status pills have lucide icons, the buttons are pills, and the human-only agent goes last and muted. The emoji inputs were removed; the column stays.
 - Sidebar:
   - The mark on the collapsed rail, the lockup when expanded.
   - The business block is a quiet initials plate with an active dot.
   - Nav pills, CSS tooltips on the rail (hover + keyboard focus).
+  - The rail keeps scrolling on short screens; its tooltip is fixed-position (hover + keyboard focus) so it is never clipped.
   - The collapse button moved to `shell/SidebarToggle.tsx`.
   - `aurora-shell-polish.test.ts` updated to the new truth and added to `test:site-ui`; it was stale and in no suite.
 - Floating "Ayuda" pill (mark, `listen` on hover, links to `/soporte`): legal/docs pages only (the homes carry their own mark, Lane H). Inside the app the sidebar already shows the mark (one per view), and Ayuda is in the nav.
 - Agents empty state uses the 64 px mark (`AuroraEmptyState betsy`).
-- Favicons from the pack: `favicon.ico` rebuilt from the 16/32/48 PNGs, plus an SVG and the apple-touch icon. OG images: dark by default, cream on `/soporte`. Files live in `public/brand/betsy/`; ads, motion and social stay in docs.
+- Favicons from the pack (Rafael asked for them via the main session's brief, item 4): `favicon.ico` rebuilt from the 16/32/48 PNGs, plus an SVG and the apple-touch icon. OG images: dark by default, cream on `/soporte`. Files live in `public/brand/betsy/`; ads, motion and social stay in docs.
 - `/super-admin/avatar`: showcase of every state, size, plate color and the lockup, on dark and cream.
 - Tests: `scripts/shim-css-modules.mjs` lets node tests import CSS modules (used by `test:agentes-ui` and `test:chat-feedback`). `betsy-brand.test.ts` covers appearance parsing and defaults, route guards, no soft-ai reference, no emoji and the help routes.
 - Hand-off for Lanes A/H: `side-session-notes/.../laneI-notes.md`. Lane I does not edit `src/components/chats/**`.

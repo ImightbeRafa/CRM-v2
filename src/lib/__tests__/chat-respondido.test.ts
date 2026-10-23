@@ -34,7 +34,9 @@ describe('Respondido (Rafael 2026-10-22)', () => {
   it('gives a handed-off chat back to the agent only on a line that answers, and never answers the waiting message', () => {
     assert.match(route, /if \(convo\.aiMode && PERSON_MODES\.has\(convo\.aiMode\)\)/)
     // SecureDog INT-RSP-1: only an OPEN agent hand-off (no person wrote since) that nobody took on after it.
-    assert.match(route, /if \(lineOn && handoffSince && !\(await staffControlledAfter\(auth\.tenantId, conversationKey, handoffSince\)\)\)/)
+    assert.match(route, /if \(lineOn && handoffSince && sawHandoff && !\(await staffControlledAfter\(auth\.tenantId, conversationKey, handoffSince\)\)\)/)
+    // Never for a hand-off newer than the screen the person saw.
+    assert.match(route, /const sawHandoff = !seenThrough \|\| seenThrough\.getTime\(\) >= \(handoffSince\?\.getTime\(\) \?\? 0\)/)
     assert.match(read('src/lib/chat-unanswered-server.ts'), /WHERE \$\{HANDOFF_MARKERS_SQL\} AND NOT \$\{PERSON_WROTE_SINCE_SQL\}/)
     // INT-RSP-2: conditional on the chat still being with a person (a concurrent Pausar wins).
     assert.match(route, /onlyIfAiModeIn: \[\.\.\.PERSON_MODES\]/)

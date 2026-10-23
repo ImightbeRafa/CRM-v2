@@ -93,7 +93,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     // Back to the agent only for an OPEN agent hand-off that no person took on after it (INT-RSP-1).
     let returnedToAi = false
     let resumeError = false
-    if (lineOn && handoffSince && !(await staffControlledAfter(auth.tenantId, conversationKey, handoffSince))) {
+    // Not for a hand-off newer than the screen the person saw (it stays with the person, still in Sin responder).
+    const sawHandoff = !seenThrough || seenThrough.getTime() >= (handoffSince?.getTime() ?? 0)
+    if (lineOn && handoffSince && sawHandoff && !(await staffControlledAfter(auth.tenantId, conversationKey, handoffSince))) {
       try {
         const res = await setConversationAgentMode({
           tenantId: auth.tenantId,

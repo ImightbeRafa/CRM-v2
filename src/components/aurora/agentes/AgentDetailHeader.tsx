@@ -1,13 +1,14 @@
 'use client'
 
-import { ArrowLeft, Check, FlaskConical } from 'lucide-react'
+import { ArrowLeft, Check, FlaskConical, UserRound } from 'lucide-react'
 import { AgentModeChip, AgentStatusPill } from './AgentChips'
 import { AgentTabBar } from './AgentTabBar'
+import { AgentFace, agentTitleParts, type FaceSource } from './AgentFace'
 import type { AgentTab } from './agent-url'
 
 type Props = {
-  emoji: string
-  name: string
+  /** Agent identity for its face + title (`introductionNames[0]` is the customer-facing name). */
+  agent: FaceSource
   status: string
   /** Operation mode chip (saved agents only). */
   mode?: string
@@ -28,8 +29,7 @@ type Props = {
 
 /** Aurora agent header (frame 192:2569): avatar, name, status pill, lines it serves, actions, tabs. */
 export function AgentDetailHeader({
-  emoji,
-  name,
+  agent,
   status,
   mode,
   subtitle,
@@ -44,6 +44,7 @@ export function AgentDetailHeader({
   publishDisabled = false,
   publishNote,
 }: Props) {
+  const { persona, internal } = agentTitleParts(agent)
   return (
     <div data-testid="agent-detail-header">
       <button
@@ -56,15 +57,29 @@ export function AgentDetailHeader({
       </button>
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="flex min-w-0 items-center gap-3.5">
-          <span
-            className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#5B6CFF] to-[#A855F7] text-2xl shadow-sm"
-            aria-hidden
-          >
-            {emoji || '🤖'}
-          </span>
+          {mode === 'human_only' ? (
+            <span
+              className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[30%] bg-slate-100 text-slate-500"
+              aria-hidden
+            >
+              <UserRound className="h-6 w-6" />
+            </span>
+          ) : (
+            <AgentFace agent={agent} size={52} state={publishing ? 'think' : 'idle'} />
+          )}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-[22px] font-semibold leading-tight text-au-ink-0e0d17">{name}</h2>
+              <h2 className="truncate text-[22px] font-semibold leading-tight text-au-ink-0e0d17">
+                {persona ? (
+                  <>
+                    {persona}
+                    <span className="font-normal text-slate-400"> · </span>
+                    <span className="font-medium text-slate-600">{internal}</span>
+                  </>
+                ) : (
+                  internal
+                )}
+              </h2>
               <AgentStatusPill status={status} />
               {mode ? <AgentModeChip mode={mode} /> : null}
             </div>

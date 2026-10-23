@@ -1,0 +1,32 @@
+/* Official Betsy wordmark (outlined paths) and lockup. Colors live in the SVG (#2F6BFF → #5644E4 → #7A3FF0). */
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  /* Never stretch inside flex/grid parents. */
+  width: max-content;
+  max-width: 100%;
+  line-height: 0;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.word {
+  display: block;
+  overflow: visible;
+}
+
+/* In the lockup the wordmark sits slightly below the mark's center (the tail hangs low). */
+.lockWord {
+  display: inline-flex;
+  transform: translateY(6%);
+}
+
+.link {
+  text-decoration: none;
+  border-radius: 8px;
+}
+.link:focus-visible {
+  outline: 2px solid #5644e4;
+  outline-offset: 3px;
+}

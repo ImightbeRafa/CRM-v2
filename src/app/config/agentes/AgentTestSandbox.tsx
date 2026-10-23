@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { ThumbsUp } from 'lucide-react'
 import { AgentInternalTests } from '@/app/config/agentes/AgentInternalTests'
 import { AgentActivationCard } from '@/app/config/agentes/AgentActivationCard'
 import { selectWhatsappTestChannel, type TestChannelOption } from '@/lib/soft-ai/test-channel'
@@ -34,7 +35,7 @@ export type WaBubble = {
   partCount?: number
 }
 
-/** The bubble that carries the "Corregir" / 👍 actions of its reply (the last part, or a single bubble). */
+/** The bubble that carries the "Corregir" / thumbs-up actions of its reply (the last part, or a single bubble). */
 function isLastPart(bubble: WaBubble): boolean {
   return bubble.partIndex === undefined || bubble.partCount === undefined || bubble.partIndex === bubble.partCount - 1
 }
@@ -161,7 +162,7 @@ export function AgentTestSandbox({
   const [last, setLast] = useState<TurnResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  /** "Corregir" open under this agent bubble; 👍 given on these. */
+  /** "Corregir" open under this agent bubble; thumbs-up given on these. */
   const [correcting, setCorrecting] = useState<WaBubble | null>(null)
   const [liked, setLiked] = useState<WaBubble[]>([])
 
@@ -404,10 +405,12 @@ export function AgentTestSandbox({
                   <div className="ml-1 mt-0.5 flex gap-3 text-[11px]" data-testid="probar-tune-actions">
                     {/* V11: nothing is saved — the label says so instead of "Anotado". */}
                     {liked.includes(bubble) ? (
-                      <span className="text-emerald-700">👍 Ok, sin cambios</span>
+                      <span className="inline-flex items-center gap-1 text-emerald-700">
+                        <ThumbsUp className="h-3 w-3" aria-hidden /> Ok, sin cambios
+                      </span>
                     ) : (
-                      <button type="button" onClick={() => setLiked((prev) => [...prev, bubble])} className="text-slate-500 hover:text-slate-800">
-                        👍 Está bien
+                      <button type="button" onClick={() => setLiked((prev) => [...prev, bubble])} className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-800">
+                        <ThumbsUp className="h-3 w-3" aria-hidden /> Está bien
                       </button>
                     )}
                     {bubble.decidedByCode ? (

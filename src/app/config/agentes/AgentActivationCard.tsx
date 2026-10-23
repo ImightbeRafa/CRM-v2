@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Check, Dot, X } from 'lucide-react'
 
 type CaseResult = { id: string; title: string; group: string; grading: 'rule' | 'judge'; pass: boolean; reply: string; notes: string[]; error?: string | null; why?: string | null; retried?: boolean }
 type Run = {
@@ -139,7 +140,7 @@ export function AgentActivationCard({
           <ul className="mt-2 space-y-1">
             {run.cases.map((c) => {
               const r = resultsById.get(c.id)
-              const mark = !r ? '·' : r.pass ? '✓' : '✗'
+              const Mark = !r ? Dot : r.pass ? Check : X
               return (
                 <li key={c.id} className="text-[12.5px]">
                   <button
@@ -147,7 +148,7 @@ export function AgentActivationCard({
                     onClick={() => setOpen(open === c.id ? null : c.id)}
                     className={`flex w-full items-center gap-2 text-left ${!r ? 'text-slate-400' : r.pass ? 'text-slate-800' : 'text-red-800'}`}
                   >
-                    <span className="w-4 shrink-0 text-center">{mark}</span>
+                    <Mark className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} aria-hidden />
                     <span className="min-w-0 flex-1 truncate">
                       {GROUP_LABEL[c.group] || c.group} · {c.title}
                     </span>

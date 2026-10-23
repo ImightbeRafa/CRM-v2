@@ -1,3 +1,7 @@
+import { Archive, PencilLine, Radio, type LucideIcon } from 'lucide-react'
+
+const STATUS_ICON: Record<string, LucideIcon> = { live: Radio, draft: PencilLine, archived: Archive }
+
 const STATUS: Record<string, { label: string; cls: string }> = {
   live: { label: 'En vivo', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-100' },
   draft: { label: 'Borrador', cls: 'bg-slate-100 text-slate-600 ring-slate-200' },
@@ -36,7 +40,7 @@ export function AgentNoChannelsChip() {
   )
 }
 
-const PILL_BASE = 'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium'
+const PILL_BASE = 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium'
 
 /** Header pill (rounded-full). Only real `ChatAgent.status` values; there is no "Pausado" status. */
 export function AgentStatusPill({ status }: { status: string }) {
@@ -46,8 +50,10 @@ export function AgentStatusPill({ status }: { status: string }) {
     archived: { label: 'Archivado', cls: 'bg-amber-50 text-amber-700' },
   }
   const s = map[status] ?? { label: status, cls: 'bg-slate-100 text-slate-600' }
+  const Icon = STATUS_ICON[status]
   return (
     <span className={`${PILL_BASE} ${s.cls}`} data-testid="agent-status-pill">
+      {Icon ? <Icon className="h-3 w-3" strokeWidth={2.25} aria-hidden /> : null}
       {s.label}
     </span>
   )

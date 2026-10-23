@@ -5,15 +5,23 @@ import Link from 'next/link'
 import { staffDisplayName } from '@/lib/display-name'
 import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { ArrowUpRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { ArrowUpRight } from 'lucide-react'
 import { AURORA_NAV, getActiveAuroraHref } from './aurora-nav'
 import { AuroraAvatar } from './shell/AuroraAvatar'
 import { AuroraProfileMenu } from './shell/AuroraProfileMenu'
+import { SidebarToggle } from './shell/SidebarToggle'
 import { BusinessSwitcher } from './BusinessSwitcher'
+import { BetsyLogo } from '@/components/brand/BetsyLogo'
 import { useAuroraViewer } from './shell/useAuroraViewer'
 
 const FOCUS_RING =
   'outline-none focus-visible:ring-2 focus-visible:ring-[#8F7BFF]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-au-sidebar'
+
+/**
+ * Collapsed-rail tooltip: fixed-position (the rail scrolls, so an absolute tooltip would be clipped),
+ * shown on hover or keyboard focus. Decorative: the link's aria-label carries the name.
+ */
+type RailTip = { label: string; top: number; left: number }
 
 const ROLE_LABELS: Record<string, string> = {
   OWNER: 'Owner',
@@ -59,6 +67,12 @@ export function AuroraSidebar() {
   // Server render uses the route default (no layout jump on /chats); a saved choice wins after mount.
   const scope = sidebarScope(pathname)
   const [collapsed, setCollapsed] = useState(() => defaultCollapsed(scope))
+  const [tip, setTip] = useState<RailTip | null>(null)
+  const showTip = (label: string, el: HTMLElement) => {
+    const r = el.getBoundingClientRect()
+    setTip({ label, top: r.top + r.height / 2, left: r.right + 12 })
+  }
+  const hideTip = () => setTip(null)
   useEffect(() => {
     const pref = readPref()
     setCollapsed(pref[scope] ?? defaultCollapsed(scope))
@@ -75,55 +89,39 @@ export function AuroraSidebar() {
     })
   }, [scope])
 
-  const ToggleIcon = collapsed ? ChevronsRight : ChevronsLeft
-  const toggleButton = (
-    <button
-      type="button"
-      onClick={toggle}
-      aria-label={collapsed ? 'Expandir menú' : 'Contraer menú'}
-      title={collapsed ? 'Expandir menú' : 'Contraer menú'}
-      aria-expanded={!collapsed}
-      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-static-white/10 hover:text-white ${FOCUS_RING}`}
-      data-testid="sidebar-toggle"
-    >
-      <ToggleIcon className="h-4 w-4" aria-hidden />
-    </button>
-  )
-
   return (
     <aside
       data-collapsed={collapsed ? 'true' : 'false'}
       className={`hidden h-full shrink-0 flex-col bg-au-sidebar text-white motion-safe:transition-[width] motion-safe:duration-200 md:flex ${
-        collapsed ? 'w-[68px]' : 'w-[176px] lg:w-[200px]'
+        collapsed ? 'w-[68px]' : 'w-[188px] lg:w-[212px]'
       }`}
     >
+      {/* Brand: the official mark on the rail, the lockup when expanded (one mark per view). */}
       {collapsed ? (
-        <div className="flex h-16 shrink-0 flex-col items-center justify-center gap-1">
-          <Link
-            href="/dashboard"
-            aria-label="Betsy — Inicio"
-            className={`rounded-md text-[20px] font-bold leading-none tracking-tight text-[#8F7BFF] ${FOCUS_RING}`}
-          >
-            B
+        <div className="flex h-16 shrink-0 items-center justify-center">
+          <Link href="/dashboard" aria-label="Betsy — Inicio" className={`rounded-lg p-1 ${FOCUS_RING}`}>
+            <BetsyLogo mark size={24} />
           </Link>
         </div>
       ) : (
-        /* Same left inset as the tenant block below (mx-3 + 1px border + px-2.5). */
-        <div className="mx-3 flex h-16 shrink-0 items-center gap-2 px-[calc(0.625rem+1px)]">
-          <Link
-            href="/dashboard"
-            className={`rounded-md text-[22px] font-bold leading-none tracking-tight text-[#8F7BFF] ${FOCUS_RING}`}
-          >
-            Betsy
+        <div className="mx-3 flex h-16 shrink-0 items-center gap-2 pl-1.5">
+          <Link href="/dashboard" aria-label="Betsy — Inicio" className={`rounded-lg ${FOCUS_RING}`}>
+            <BetsyLogo lockup size={17} />
           </Link>
-          <span className="ml-auto">{toggleButton}</span>
+          <span className="ml-auto">
+            <SidebarToggle collapsed={collapsed} onToggle={toggle} />
+          </span>
         </div>
       )}
 
       {/* Business header; a switcher when the user belongs to several businesses (Phase 2b). */}
       <BusinessSwitcher tenantName={tenantName} collapsed={collapsed} />
 
-      <nav className={`min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${collapsed ? 'px-2' : 'px-3'}`} aria-label="Navegación principal">
+      <nav
+        className={`min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${collapsed ? 'px-2' : 'px-3'}`}
+        onScroll={hideTip}
+        aria-label="Navegación principal"
+      >
         {AURORA_NAV.map((section, sectionIndex) => {
           const items = section.items.filter((i) => !i.adminOnly || isAdmin)
           if (items.length === 0) return null
@@ -132,7 +130,7 @@ export function AuroraSidebar() {
               {collapsed ? (
                 sectionIndex > 0 ? <div className="mx-3 mb-3 h-px bg-static-white/10" aria-hidden /> : null
               ) : (
-                <p className="mb-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55">
+                <p className="mb-1.5 px-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/40">
                   {section.title}
                 </p>
               )}
@@ -146,33 +144,35 @@ export function AuroraSidebar() {
                         href={item.href}
                         aria-current={active ? 'page' : undefined}
                         aria-label={collapsed ? item.label : undefined}
-                        title={collapsed ? item.label : undefined}
-                        className={`group relative flex items-center rounded-lg text-[13px] font-medium transition-colors duration-150 motion-reduce:transition-none ${FOCUS_RING} ${
-                          collapsed ? 'h-10 justify-center' : 'gap-2.5 px-2.5 py-2'
+                        onMouseEnter={collapsed ? (e) => showTip(item.label, e.currentTarget) : undefined}
+                        onMouseLeave={collapsed ? hideTip : undefined}
+                        onFocus={collapsed ? (e) => showTip(item.label, e.currentTarget) : undefined}
+                        onBlur={collapsed ? hideTip : undefined}
+                        className={`group relative flex items-center rounded-[10px] text-[13px] font-medium transition-colors duration-150 motion-reduce:transition-none ${FOCUS_RING} ${
+                          collapsed ? 'mx-auto h-10 w-10 justify-center' : 'h-9 gap-2.5 px-2.5'
                         } ${
                           active
-                            ? 'bg-static-white/10 text-white'
-                            : 'text-white/60 hover:bg-static-white/[0.06] hover:text-white'
+                            ? 'bg-static-white/[0.09] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
+                            : 'text-white/60 hover:bg-static-white/[0.05] hover:text-white'
                         }`}
                       >
                         <span
                           aria-hidden
-                          className={`absolute top-1/2 h-5 w-[3px] -translate-y-1/2 origin-center rounded-full bg-[#8F7BFF] transition-[opacity,transform] duration-200 motion-reduce:transition-none ${
+                          className={`absolute top-1/2 h-4 w-[3px] -translate-y-1/2 origin-center rounded-full bg-[#8F7BFF] transition-[opacity,transform] duration-200 motion-reduce:transition-none ${
                             collapsed ? '-left-2' : '-left-1.5'
-                          } ${
-                            active
-                              ? 'scale-y-100 opacity-100 shadow-[0_0_10px_rgba(143,123,255,0.5)]'
-                              : 'scale-y-50 opacity-0'
-                          }`}
+                          } ${active ? 'scale-y-100 opacity-100' : 'scale-y-50 opacity-0'}`}
                         />
                         <Icon
-                          className={`shrink-0 transition-[color,transform] duration-150 motion-reduce:transition-none ${
-                            collapsed ? 'h-[18px] w-[18px]' : 'h-4 w-4 motion-safe:group-hover:translate-x-0.5'
+                          className={`shrink-0 transition-colors duration-150 motion-reduce:transition-none ${
+                            collapsed ? 'h-[18px] w-[18px]' : 'h-4 w-4'
                           } ${active ? 'text-[#B3A6FF]' : 'text-white/45 group-hover:text-white'}`}
+                          strokeWidth={active ? 2.2 : 1.9}
                           aria-hidden
                         />
                         {collapsed ? null : <span className="min-w-0 flex-1 truncate">{item.label}</span>}
-                        {!collapsed && item.shortcut && <ArrowUpRight className="h-3 w-3 shrink-0 text-white/35" aria-hidden />}
+                        {!collapsed && item.shortcut && (
+                          <ArrowUpRight className="h-3 w-3 shrink-0 text-white/30 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
+                        )}
                       </Link>
                     </li>
                   )
@@ -182,11 +182,21 @@ export function AuroraSidebar() {
           )
         })}
       </nav>
+      {collapsed && tip ? (
+        <span
+          aria-hidden
+          className="pointer-events-none fixed z-[70] -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[12px] font-medium text-white shadow-lg ring-1 ring-static-white/10"
+          style={{ top: tip.top, left: tip.left }}
+          data-testid="sidebar-rail-tip"
+        >
+          {tip.label}
+        </span>
+      ) : null}
 
       <div className={`border-t border-static-white/10 ${collapsed ? 'flex flex-col items-center gap-2 px-2 py-3' : 'p-3'}`}>
         {collapsed ? (
           <>
-            {toggleButton}
+            <SidebarToggle collapsed={collapsed} onToggle={toggle} />
             <div title={userName}>
               <AuroraAvatar name={userName} image={image} className="h-8 w-8 text-[11px]" />
             </div>

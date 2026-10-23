@@ -1,6 +1,6 @@
 'use client'
 
-import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus } from 'lucide-react'
@@ -39,6 +39,8 @@ import {
 } from '@/components/aurora/states'
 import { AuroraToggle } from '@/components/aurora/agentes/AuroraToggle'
 import { AgentListPanel } from '@/components/aurora/agentes/AgentListPanel'
+import { AgentAppearanceCard } from '@/components/aurora/agentes/AgentAppearanceCard'
+import type { AgentAppearance } from '@/lib/agent-appearance'
 import { AgentDetailHeader } from '@/components/aurora/agentes/AgentDetailHeader'
 import { AgentKnowledgeTab } from '@/components/aurora/agentes/AgentKnowledgeTab'
 import {
@@ -196,6 +198,24 @@ export default function AgentesConfigPage() {
   const [studioApplied, setStudioApplied] = useState(0)
   const [history, setHistory] = useState<unknown[]>([])
   const [introDraft, setIntroDraft] = useState('')
+  // Owner-UI look of each agent (plate / ring / label), one read for the whole list; missing = defaults.
+  const [appearances, setAppearances] = useState<Record<string, Partial<AgentAppearance>>>({})
+  useEffect(() => {
+    let alive = true
+    fetch('/api/chat/agents/appearance', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (alive && json?.appearances && typeof json.appearances === 'object') setAppearances(json.appearances)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+  const agentsWithLook = useMemo(() => agents.map((a) => ({ ...a, appearance: appearances[a.id] ?? null })), [agents, appearances])
+  const onAppearanceSaved = useCallback((agentId: string, look: Partial<AgentAppearance>) => {
+    setAppearances((prev) => ({ ...prev, [agentId]: look }))
+  }, [])
   const [checklist, setChecklist] = useState<KnowledgeCard[]>([])
   const [knowledgeSchemaReady, setKnowledgeSchemaReady] = useState(true)
   const savingRef = useRef(false)
@@ -449,7 +469,6 @@ export default function AgentesConfigPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newDraft.name.trim(),
-          emoji: newDraft.emoji.trim() || undefined,
           description: newDraft.description.trim() || null,
           tonePreset: newDraft.tonePreset,
           introductionNames: parseIntroductionNames(newDraft.introductionNames),
@@ -593,8 +612,11 @@ export default function AgentesConfigPage() {
       {draftMode ? (
         <div className="border-b border-slate-200/70 bg-white px-4 pt-5 md:px-6">
           <AgentDetailHeader
-            emoji={newDraft.emoji}
-            name={newDraft.name.trim() || 'Nuevo agente'}
+            agent={{
+              id: null,
+              name: newDraft.name.trim() || 'Nuevo agente',
+              introductionNames: parseIntroductionNames(newDraft.introductionNames),
+            }}
             status="draft"
             subtitle="Guardá el agente para elegir qué líneas atiende"
             tab={tab}
@@ -612,8 +634,7 @@ export default function AgentesConfigPage() {
       ) : inDetail && selected ? (
         <div className="border-b border-slate-200/70 bg-white px-4 pt-5 md:px-6">
           <AgentDetailHeader
-            emoji={selected.emoji}
-            name={selected.name}
+            agent={{ ...selected, appearance: appearances[selected.id] ?? null }}
             status={selected.status}
             mode={selected.operationMode}
             subtitle={detailLinesSubtitle}
@@ -698,7 +719,7 @@ export default function AgentesConfigPage() {
         ) : isEmpty && !draftMode ? (
           <div className="rounded-2xl bg-white ring-1 ring-slate-200/70">
             <AuroraEmptyState
-              icon="✨"
+              betsy
               title="Todavía no hay agentes"
               description={
                 !canEdit
@@ -735,7 +756,7 @@ export default function AgentesConfigPage() {
           <>
             {view === 'list' && !draftMode ? (
               <AgentListPanel
-                agents={agents}
+                agents={agentsWithLook}
                 selectedId={null}
                 onConfigure={(id) => openAgent(id)}
                 onProbar={(id) => probar(id)}
@@ -1002,6 +1023,15 @@ export default function AgentesConfigPage() {
                     onApplied={() => setSetupRefresh((value) => value + 1)}
                   />
 
+                  {/* Team-only lanes are not an AI persona: no Betsy face to dress. */}
+                  {selected.operationMode !== 'human_only' ? (
+                    <AgentAppearanceCard
+                      agent={{ ...selected, appearance: appearances[selected.id] ?? null }}
+                      canEdit={canEdit}
+                      onSaved={onAppearanceSaved}
+                    />
+                  ) : null}
+
                   {/* Identidad */}
                   <div className={CARD}>
                     <div className="mb-3 flex items-baseline justify-between gap-2">
@@ -1017,17 +1047,6 @@ export default function AgentesConfigPage() {
                           key={`name-${selected.id}-${selected.version}`}
                           disabled={!canEdit || saving}
                           onBlur={(e) => void patch({ name: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-700">Emoji</label>
-                        <input
-                          className={`mt-1 w-20 text-center ${FIELD_CLASS}`}
-                          defaultValue={selected.emoji}
-                          key={`emoji-${selected.id}-${selected.version}`}
-                          disabled={!canEdit || saving}
-                          onBlur={(e) => void patch({ emoji: e.target.value })}
-                          maxLength={8}
                         />
                       </div>
                     </div>

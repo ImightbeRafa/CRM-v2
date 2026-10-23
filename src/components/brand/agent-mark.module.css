@@ -1,0 +1,68 @@
+/* Agent plates: soft tints that let the official gradient mark read on light and dark surfaces. */
+
+.plate {
+  --plate-bg: #eef0ff;
+  --plate-ring: #5b6cff;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 30%;
+  background: var(--plate-bg);
+  box-shadow: inset 0 0 0 1px rgba(15, 18, 40, 0.05);
+}
+.plate[data-ring] {
+  box-shadow:
+    0 0 0 2px var(--plate-ring),
+    0 0 0 4px rgba(255, 255, 255, 0.9);
+}
+/* The mark's bubble sits a touch left of its box (tail side); nudge it to look centered. */
+.plate > span {
+  transform: translateX(-3%);
+}
+
+.plate[data-plate='indigo'],
+.swatch[data-plate='indigo'] { --plate-bg: #eef0ff; --plate-ring: #5b6cff; }
+.plate[data-plate='violet'],
+.swatch[data-plate='violet'] { --plate-bg: #f3eeff; --plate-ring: #8b5cf6; }
+.plate[data-plate='sky'],
+.swatch[data-plate='sky'] { --plate-bg: #e6f4ff; --plate-ring: #38a0f5; }
+.plate[data-plate='teal'],
+.swatch[data-plate='teal'] { --plate-bg: #e2f7f3; --plate-ring: #14b8a6; }
+.plate[data-plate='green'],
+.swatch[data-plate='green'] { --plate-bg: #e8f7ec; --plate-ring: #22c55e; }
+.plate[data-plate='amber'],
+.swatch[data-plate='amber'] { --plate-bg: #fff3dc; --plate-ring: #f59e0b; }
+.plate[data-plate='rose'],
+.swatch[data-plate='rose'] { --plate-bg: #ffecf0; --plate-ring: #f43f5e; }
+.plate[data-plate='slate'],
+.swatch[data-plate='slate'] { --plate-bg: #f0f2f6; --plate-ring: #94a3b8; }
+
+/* Dark theme (same rule as Tailwind's dark variant: not inside forced-light islands). */
+:global(.dark) .plate:not(:is(:global(.theme-light), :global(.theme-light) *)) {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+:global(.dark) .plate[data-ring]:not(:is(:global(.theme-light), :global(.theme-light) *)) {
+  box-shadow:
+    0 0 0 2px var(--plate-ring),
+    0 0 0 4px #16161f;
+}
+:global(.dark) .plate[data-plate='indigo']:not(:is(:global(.theme-light), :global(.theme-light) *)) { --plate-bg: #1f2246; }
+:global(.dark) .plate[data-plate='violet']:not(:is(:global(.theme-light), :global(.theme-light) *)) { --plate-bg: #261d45; }
+:global(.dark) .plate[data-plate='sky']:not(:is(:global(.theme-light), :global(.theme-light) *)) { --plate-bg: #142a3f; }
+:global(.dark) .plate[data-plate='teal']:not(:is(:global(.theme-light), :global(.theme-light) *)) { --plate-bg: #112e2d; }
+:global(.dark) .plate[data-plate='green']:not(:is(:global(.theme-light), :global(.theme-light) *)) { --plate-bg: #142e1e; }
+:global(.dark) .plate[data-plate='amber']:not(:is(:global(.theme-light), :global(.theme-light) *)) { --plate-bg: #33270f; }
+:global(.dark) .plate[data-plate='rose']:not(:is(:global(.theme-light), :global(.theme-light) *)) { --plate-bg: #361a24; }
+:global(.dark) .plate[data-plate='slate']:not(:is(:global(.theme-light), :global(.theme-light) *)) { --plate-bg: #232733; }
+
+/* Palette swatch (appearance picker): the plate's accent color as a dot. */
+.swatch {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--plate-ring);
+  box-shadow: inset 0 0 0 1px rgba(15, 18, 40, 0.08);
+}

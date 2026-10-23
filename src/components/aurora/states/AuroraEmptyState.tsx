@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { CheckCircle2 } from 'lucide-react'
+import { BetsyMark } from '@/components/brand/BetsyMark'
 
 type Tone = 'brand' | 'neutral' | 'danger'
 
@@ -13,6 +14,8 @@ type AuroraEmptyStateProps = {
   title: string
   description?: string
   icon?: ReactNode
+  /** Betsy's own empty states: the official mark (64 px) instead of the icon circle. One per view. */
+  betsy?: boolean
   tone?: Tone
   /** Primary / secondary actions rendered under the copy. */
   actions?: ReactNode
@@ -24,6 +27,7 @@ export function AuroraEmptyState({
   title,
   description,
   icon,
+  betsy = false,
   tone = 'brand',
   actions,
   className = '',
@@ -33,12 +37,18 @@ export function AuroraEmptyState({
       className={`flex flex-col items-center px-6 py-12 text-center ${className}`}
       data-testid="aurora-empty-state"
     >
-      <div
-        className={`mb-4 flex h-14 w-14 items-center justify-center rounded-full text-xl ring-8 ${TONE_CLASS[tone]}`}
-        aria-hidden
-      >
-        {icon ?? <CheckCircle2 className="h-6 w-6" aria-hidden />}
-      </div>
+      {betsy ? (
+        <div className="mb-4">
+          <BetsyMark size={64} decorative />
+        </div>
+      ) : (
+        <div
+          className={`mb-4 flex h-14 w-14 items-center justify-center rounded-full text-xl ring-8 ${TONE_CLASS[tone]}`}
+          aria-hidden
+        >
+          {icon ?? <CheckCircle2 className="h-6 w-6" aria-hidden />}
+        </div>
+      )}
       <p className="text-[15px] font-semibold text-slate-900">{title}</p>
       {description ? (
         <p className="mt-1.5 max-w-[260px] text-[12px] leading-relaxed text-slate-500">

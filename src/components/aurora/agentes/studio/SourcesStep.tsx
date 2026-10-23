@@ -1,9 +1,10 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { FileText, Globe, Image as ImageIcon, Instagram, MessageCircle, Paperclip, StickyNote, X, type LucideIcon } from 'lucide-react'
 import type { StudioSource } from './studio-types'
 
-const KIND_ICON: Record<string, string> = { url: '🌐', file: '📄', image: '🖼️', instagram: '📸', text: '📝', wa_export: '💬' }
+const KIND_ICON: Record<string, LucideIcon> = { url: Globe, file: FileText, image: ImageIcon, instagram: Instagram, text: StickyNote, wa_export: MessageCircle }
 type Mode = 'url' | 'file' | 'instagram' | 'text'
 const MODES: Array<{ key: Mode; label: string }> = [
   { key: 'url', label: 'Sitio web' },
@@ -189,9 +190,11 @@ export function SourcesStep({
 
       {sources.length ? (
         <ul className="divide-y divide-slate-100 rounded-xl ring-1 ring-slate-200/70" data-testid="studio-sources">
-          {sources.map((s) => (
+          {sources.map((s) => {
+            const KindIcon = KIND_ICON[s.kind] ?? Paperclip
+            return (
             <li key={s.id} className="flex items-center gap-3 px-3 py-2">
-              <span aria-hidden className="text-[16px]">{KIND_ICON[s.kind] || '📎'}</span>
+              <KindIcon className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px] font-medium text-slate-800">{s.label}</p>
                 <p className={`text-[11px] ${s.status === 'failed' ? 'text-amber-700' : 'text-slate-500'}`}>{sourceDetail(s)}</p>
@@ -207,13 +210,14 @@ export function SourcesStep({
                     </button>
                   </span>
                 ) : (
-                  <button type="button" onClick={() => setConfirmRemove(s.id)} className="text-[12px] text-slate-400 hover:text-rose-600" aria-label={`Quitar ${s.label}`}>
-                    ✕
+                  <button type="button" onClick={() => setConfirmRemove(s.id)} className="text-slate-400 hover:text-rose-600" aria-label={`Quitar ${s.label}`}>
+                    <X className="h-3.5 w-3.5" aria-hidden />
                   </button>
                 )
               ) : null}
             </li>
-          ))}
+            )
+          })}
         </ul>
       ) : (
         <p className="text-[12px] text-slate-500">Todavía no hay fuentes. Empezá por el sitio web o un catálogo.</p>

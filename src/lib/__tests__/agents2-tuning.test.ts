@@ -582,7 +582,7 @@ describe('V5 / V10 / V11 / concurrency', () => {
   it('V11: the thumbs-up no longer claims to save; code-sent replies point to Respuestas guardadas', () => {
     const sandbox = read(SANDBOX)
     assert.doesNotMatch(sandbox, /👍 Anotado/)
-    assert.match(sandbox, /👍 Está bien/)
+    assert.match(sandbox, /<ThumbsUp[^>]*\/> Está bien/)
     assert.match(sandbox, /bubble\.decidedByCode \?/)
     assert.match(TUNE_CODE_REPLY_NOTE, /Respuestas guardadas/)
     assert.match(read('src/lib/soft-ai/agent-turn.ts'), /decidedByCode: !notBound && !needsModel && Boolean\(text\)/)

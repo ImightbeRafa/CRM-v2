@@ -271,7 +271,7 @@ const MONEY_RE = /[₡¢$]\s?\d|\d[\d.,]*\s*(colones|crc|usd)/i
 /** Deals the agent may never invent (fixed rule 12, INT-72): discounts, promos, free shipping, gifts, "te lo dejo en". */
 const DEAL_RE =
   // No bare "gratis" / "%" (free pickup, "100% algodón" are fine); deal phrasing only.
-  /(?<![\p{L}])(descuentos?|promoci[oó]n(es)?\s+especial|oferta\s+especial|precio\s+especial|rebaj\p{L}*|env[ií]os?\s+(gratis|gratuitos?|sin\s+costo|de\s+regalo|por\s+la\s+casa)|(sale|va|queda)\s+gratis\s+el\s+env[ií]o|dos\s+por\s+uno|tres\s+por\s+dos|mitad\s+de\s+precio|medio\s+precio|te (lo|la|los|las) (dejo|rebajo|regalo)|te regalo|de regalo|por la casa|sin cobrarte|te hago (un )?precio|2x1|3x2|\d{1,2}\s?%\s*(de\s+)?(descuento|off|menos))(?![\p{L}])/iu
+  /(?<![\p{L}])(descuentos?|promoci[oó]n(es)?\s+especial|oferta\s+especial|precio\s+especial|rebaj\p{L}*|env[ií]os?\s+(gratis|gratuitos?|sin\s+costo|de\s+regalo|por\s+la\s+casa)|(sale|va|queda)\s+gratis\s+el\s+env[ií]o|dos\s+por\s+uno|tres\s+por\s+dos|mitad\s+de\s+precio|medio\s+precio|te (lo|la|los|las) (dejo|rebajo|regalo)|te regalo|de regalo|por la casa|sin cobrarte|te hago (un )?precio|te\s+(?:hago|dejo|doy)\s+(?:un\s+)?\d{1,2}\s?%|2x1|3x2|\d{1,2}\s?%\s*(de\s+)?(descuento|off|menos))(?![\p{L}])/iu
 const DEAL_ALL_RE = new RegExp(DEAL_RE.source, 'giu')
 const FREE_SHIPPING_DEAL_RE = /^(env[ií]os?\s+(gratis|gratuitos?|sin\s+costo)|(sale|va|queda)\s+gratis\s+el\s+env[ií]o)$/iu
 const SPECIAL_PRICE_DEAL_RE = /^(precio\s+especial|promoci[oó]n(es)?\s+especial|oferta\s+especial)$/iu
@@ -317,11 +317,8 @@ export function freeShippingWording(text: string): Array<{ index: number; end: n
   return out
 }
 
-/**
- * Deal wording is blocked unless the owner's active promo enables that exact kind (B1): free shipping and a special
- * price can be enabled; discounts, %, 2x1, "te lo dejo en", gifts are always blocked.
- */
-export function dealProblem(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
+/** Deal wording in one form of the text (raw, or as the customer reads it). */
+function dealProblemIn(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
   for (const m of text.matchAll(DEAL_ALL_RE)) {
     const phrase = m[1].trim()
     // Free-shipping phrasing is judged below with the wider wording list.
@@ -331,6 +328,23 @@ export function dealProblem(text: string, allowed: ReadonlyArray<'free_shipping'
   }
   if (!allowed.includes('free_shipping') && freeShippingWording(text).length > 0) return true
   return false
+}
+
+/** SecureDog #128: the text as the customer reads it (soft hyphens / zero-width removed; NFKC). */
+export function dealReadForm(text: string): string {
+  return stripFormatChars((text || '').normalize('NFKC'))
+}
+
+/**
+ * Deal wording is blocked unless the owner's active promo enables that exact kind (B1): free shipping and a special
+ * price can be enabled; discounts, %, 2x1, "te lo dejo en", gifts are always blocked. Fail closed (Rafael 2026-10-22):
+ * a reply that mentions a deal word is held even when it says there is none ("No manejamos descuentos") — a held reply
+ * costs a person a click, an invented discount costs money. Judged on the raw text AND on the text as read: a deal in
+ * either form is a deal ("descuento™" or a soft hyphen can hide a word in one form, never in both).
+ */
+export function dealProblem(rawText: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
+  const raw = rawText || ''
+  return dealProblemIn(raw, allowed) || dealProblemIn(dealReadForm(raw), allowed)
 }
 
 /** Wording that turns a combo fact into a promise for this customer or this order. */
@@ -627,7 +641,7 @@ function dealProblemWithRule(text: string, allowed: ReadonlyArray<'free_shipping
   if (!dealProblem(text, allowed)) return false
   if (!rule || allowed.includes('free_shipping')) return true
   // Only free-shipping wording is the problem, and every phrase is an included-combo fact.
-  return dealProblem(text, [...allowed, 'free_shipping']) || !freeShippingRuleOk(text, rule)
+  return dealProblem(text, [...allowed, 'free_shipping']) || !freeShippingRuleOk(text, rule) || !freeShippingRuleOk(dealReadForm(text), rule)
 }
 
 // Everywhere: "ya creé / registré", and (N3) "tu pedido / tu orden / tu compra" + a confirmation verb. Not "sale

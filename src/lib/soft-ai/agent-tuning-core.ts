@@ -16,7 +16,7 @@ import { stripBetsyLookalikes } from '@/lib/soft-ai/sales-state'
 import { redactPiiText, redactSensitiveForProvider } from '@/lib/soft-ai/llm/redact'
 import { DATA_FENCE_TAG_RE, stripFormatChars } from '@/lib/soft-ai/prompt-fence'
 import { commaPaymentNumbers, CR_IBAN_RE, DIGIT_SEP, LONG_NUMBER_RE, PAY_WORDS_RE } from '@/lib/soft-ai/payment-guard'
-import { bareMilAmounts, dealProblem, freeShippingRuleOk, hasThousandsSeparator, type FreeShippingRule } from '@/lib/soft-ai/llm/output-validator'
+import { bareMilAmounts, dealProblem, dealReadForm, freeShippingRuleOk, hasThousandsSeparator, type FreeShippingRule } from '@/lib/soft-ai/llm/output-validator'
 import { foreignLinks, linkRegex, type LinkAllowlist } from '@/lib/soft-ai/links'
 import { isAgentTuningSource } from '@/lib/soft-ai/knowledge-types'
 
@@ -439,7 +439,7 @@ export type CorrectionCheckOptions = {
 export function correctionDealProblem(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>, rule?: FreeShippingRule | null): boolean {
   if (!dealProblem(text, allowed)) return false
   if (!rule || allowed.includes('free_shipping')) return true
-  return dealProblem(text, [...allowed, 'free_shipping']) || !freeShippingRuleOk(text, rule)
+  return dealProblem(text, [...allowed, 'free_shipping']) || !freeShippingRuleOk(text, rule) || !freeShippingRuleOk(dealReadForm(text), rule)
 }
 
 /** Refusals in plain Spanish (shown as-is in the panel). `allowedAmounts` = the agent's own prices. */

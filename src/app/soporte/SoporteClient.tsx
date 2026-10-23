@@ -32,7 +32,7 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleString('es-CR', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-/** `/soporte?tema=agente` (landing "Quiero mi agente") starts the form as an agent lead. */
+/** `/soporte?tema=agente` (older links) starts the form as an agent lead; public CTAs now go to the app's Agentes tab. */
 const AGENT_LEAD = { subject: 'Quiero mi agente de IA', placeholder: 'Qué vendés, por dónde te escriben (WhatsApp, Instagram) y cuántos chats recibís más o menos.' };
 
 function ContactForm({ topic }: { topic: 'agent' | null }) {

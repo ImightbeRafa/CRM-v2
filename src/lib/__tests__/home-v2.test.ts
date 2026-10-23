@@ -92,8 +92,25 @@ test('copy is honest: coming-soon is labeled, no dates, store badges, logos, par
 test('CTAs: sign-up, agent request and support', () => {
   const content = read(`${DIR}/content.ts`)
   assert.match(content, /signup: '\/auth\/signin\?signup=true'/)
-  assert.match(content, /agent: '\/soporte\?tema=agente'/)
+  // Rafael 2026-10-23: custom agents only for existing Betsy users, requested in the app (Agentes tab)
+  assert.match(content, /agent: '\/config\/agentes'/)
   assert.match(content, /support: '\/soporte'/)
+})
+
+test('agents are for existing Betsy users: every public agent CTA goes to the app, non-users are sent to the trial', () => {
+  assert.doesNotMatch(source, /tema=agente|Quiero mi agente|te armamos un agente|Contanos qué vendés <ArrowRight/)
+  assert.match(read(`${DIR}/sections/Hero.tsx`), /href=\{LINKS\.agent\}>\s*Ya uso Betsy: pedir mi agente/)
+  const agent = read(`${DIR}/sections/Agent.tsx`)
+  assert.match(agent, /href=\{LINKS\.agent\}[\s\S]*Pedí tu agente desde la app/)
+  assert.match(agent, /href=\{LINKS\.signup\}[\s\S]*Probá Betsy \{BETSY_PLAN\.trialDays\} días gratis/)
+  const closing = read(`${DIR}/sections/Closing.tsx`)
+  assert.match(closing, /href=\{LINKS\.agent\}>\s*Ya uso Betsy: pedir mi agente/)
+  assert.match(closing, /href=\{LINKS\.signup\}>\s*Probar Betsy \{trialDays\} días gratis/)
+  assert.match(read(`${DIR}/content.ts`), /solo para negocios que ya usan Betsy/)
+  const page = read('src/app/soporte/page.tsx')
+  assert.doesNotMatch(page, /href="\/soporte\?tema=agente"|te armamos un agente/)
+  assert.match(page, /href="\/config\/agentes"[\s\S]*Pedí tu agente desde la app/)
+  assert.match(page, /href="\/auth\/signin\?signup=true"[\s\S]*Probá Betsy \{BETSY_PLAN\.trialDays\} días gratis/)
 })
 
 test('no emoji as UI chrome (chips, status bars, meta): icons instead; no background grid texture', () => {
@@ -231,7 +248,7 @@ test('/soporte: night-sky band, Betsy listening by the form, side panel; form + 
   assert.match(page, /getSupportContactConfig\(\)/)
   // theme-light wraps .page (never on the same element: it redefines --muted)
   assert.match(page, /<div className="theme-light">\s*<div className=\{s\.page\}>/)
-  assert.match(page, /href="\/soporte\?tema=agente"/)
+  assert.match(page, /Agentes de IA/)
   // a case number is only promised when the ticket pipeline is on
   assert.equal((page.match(/te damos un número/g) ?? []).length, 2)
   assert.equal((page.match(/ticketsEnabled \?|ticketsEnabled &&/g) ?? []).length, 2)

@@ -6,6 +6,7 @@ import { supportPipelineEnabled } from '@/lib/support/config';
 import { SoporteClient } from './SoporteClient';
 import { BetsyLogo } from '@/components/brand/BetsyLogo';
 import { NightSky } from '@/components/sky/NightSky';
+import { BETSY_PLAN } from '@/lib/pricing/plan';
 import s from './soporte.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -145,16 +146,22 @@ export default async function SoportePage({ searchParams }: { searchParams: Prom
                 </ol>
               </section>
 
-              {topic !== 'agent' && (
-                <a href="/soporte?tema=agente" className={s.agentCta}>
-                  <Sparkles aria-hidden />
-                  <span>
-                    <b>Quiero mi agente de IA</b>
-                    <span>Contanos qué vendés y te armamos un agente con tu información.</span>
-                  </span>
-                  <ArrowRight className={s.channelGo} aria-hidden />
-                </a>
-              )}
+              {/* Custom AI agents are only for businesses that already use Betsy (Rafael 2026-10-23): requested in the
+                  app's Agentes tab (logged out, the middleware signs you in and brings you back). Shown on every
+                  /soporte, also on old ?tema=agente links. */}
+              <section className={s.agentCta} aria-labelledby="soporte-agent-title">
+                <Sparkles aria-hidden />
+                <span>
+                  <b id="soporte-agent-title">Agentes de IA</b>
+                  <span>Por ahora son solo para negocios que ya usan Betsy.</span>
+                  <Link href="/config/agentes" className={s.agentLink}>
+                    ¿Ya usás Betsy? Pedí tu agente desde la app <ArrowRight aria-hidden />
+                  </Link>
+                  <a href="/auth/signin?signup=true" className={s.agentLink}>
+                    ¿Todavía no? Probá Betsy {BETSY_PLAN.trialDays} días gratis <ArrowRight aria-hidden />
+                  </a>
+                </span>
+              </section>
             </aside>
           </div>
         </main>

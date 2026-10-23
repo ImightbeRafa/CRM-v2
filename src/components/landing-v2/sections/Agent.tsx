@@ -1,6 +1,7 @@
 import { ArrowRight } from 'lucide-react'
 import s from '../landing.module.css'
 import { AGENT, LINKS } from '../content'
+import { BETSY_PLAN } from '@/lib/pricing/plan'
 import { AgentStage, AgentSteps } from '../demos/AgentStage'
 import { DemoFrame } from '../demos/DemoFrame'
 import { LazyDemo } from '../demos/LazyDemo'
@@ -54,9 +55,14 @@ export function Agent() {
           </p>
           <NicheTabs />
           <p className={s.small} style={{ marginTop: 20 }}>
-            ¿Tu negocio no está en la lista?{' '}
+            ¿Ya usás Betsy?{' '}
             <a href={LINKS.agent} className={s.inlineIcon} style={{ color: 'var(--indigo-ink)', fontWeight: 650 }}>
-              Contanos qué vendés <ArrowRight size={14} aria-hidden />
+              Pedí tu agente desde la app <ArrowRight size={14} aria-hidden />
+            </a>
+            <br />
+            ¿Todavía no?{' '}
+            <a href={LINKS.signup} className={s.inlineIcon} style={{ color: 'var(--indigo-ink)', fontWeight: 650 }}>
+              Probá Betsy {BETSY_PLAN.trialDays} días gratis <ArrowRight size={14} aria-hidden />
             </a>
           </p>
         </div>

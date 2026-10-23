@@ -1,3 +1,9 @@
+## 2026-10-23 — Agents only for existing Betsy users: public CTAs (Lane H, claude/wave-agent-cta-4ad5c6)
+
+- Rafael: custom AI agents are only for businesses that already use Betsy. Every public agent CTA now goes to the app's Agentes tab (`/config/agentes`; logged out, the middleware sends it to sign-in and back to `/config?tab=agentes`), and non-users get "Probá Betsy N días gratis" (trial days from BETSY_PLAN).
+- Home: hero ghost button "Ya uso Betsy: pedir mi agente", hero lead and agent lead say it is requested from the app, agent section links (app + trial), pricing agent card (app + trial instead of "Tengo una pregunta"). /soporte: the agent card is now "Agentes de IA · solo para negocios que ya usan Betsy" with both links, shown on every /soporte. In-app request paths unchanged; old `/soporte?tema=agente` links still prefill the form.
+- Tests: home-v2 (+1, CTA rule), home-pricing updated.
+
 ## 2026-10-23 — Home v5: night sky, new nav, agent plate fix, /soporte redesign (Lane H, claude/wave-home-v5-4ad5c6)
 
 - New `src/components/sky/NightSky.tsx` (server-rendered, seeded, no canvas): twinkling stars, one constellation that draws itself, a nebula in the Betsy gradient, and two cloud banks drifting at the dark→light edges. Only transform/opacity animate; `SkyWatch` runs it only on screen with the tab visible; still under reduced motion. Used on the hero, Build, Próximamente and the /soporte band.

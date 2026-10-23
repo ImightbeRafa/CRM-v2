@@ -166,7 +166,6 @@
   transform: translateY(-1px);
 }
 .channel:focus-visible,
-.agentCta:focus-visible,
 .barLinks a:focus-visible {
   outline: 2px solid var(--indigo);
   outline-offset: 2px;
@@ -254,7 +253,7 @@
 }
 .agentCta {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 14px;
   padding: 18px 20px;
   border-radius: 22px;
@@ -262,10 +261,6 @@
   text-decoration: none;
   background: linear-gradient(120deg, #2f6bff, #5644e4 55%, #7a3ff0);
   box-shadow: 0 24px 48px -28px rgba(86, 68, 228, 0.9);
-  transition: transform 0.2s;
-}
-.agentCta:hover {
-  transform: translateY(-1px);
 }
 .agentCta > svg:first-child {
   flex: none;
@@ -284,12 +279,33 @@
   font-size: 13px;
   color: rgba(255, 255, 255, 0.82);
 }
-.agentCta .channelGo {
+.agentLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
   color: #fff;
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.45);
+  text-underline-offset: 3px;
+}
+.agentLink:hover {
+  text-decoration-color: #fff;
+}
+.agentLink svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+.agentLink:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .channel,
-  .agentCta {
+  .channel {
     transition: none;
   }
 }

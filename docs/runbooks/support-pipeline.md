@@ -16,6 +16,7 @@ these are listed, so they reach the app after the next Worker deploy. Set secret
 | Name | Kind | Value to set | Notes |
 |---|---|---|---|
 | `SUPPORT_PIPELINE_ENABLED` | var | `false` now, `true` at step 6 | kill switch; only the literal `true` turns it on |
+| `SUPPORT_AI_CHAT_TENANTS` | var | empty | businesses (tenant ids, comma-separated) whose inbox agent may open a support ticket on a hand-off (needs the agent's `salesRules.escalateToSupport: true`); set it to Betsy's own business (DeepSleep `cmhsibjue0004js04gie724nx`) for Emma |
 | `SUPPORT_MCP_TOKEN` | **secret** | generate (below), ≥ 32 chars | bearer for `/api/mcp`; unset/short → `/api/mcp` answers 503 |
 | `SUPPORT_WEBHOOK_SECRET` | **secret** | generate (below) | push only: `Authorization: Bearer` + `X-Betsy-Signature` HMAC (`sha256=HMAC(secret, timestamp + "." + body)`) |
 | `SUPPORT_POLL_TOKEN` | **secret** | generate (below), ≥ 32 chars | bearer for the poll fallback `GET /api/support/events` (its own token, so a leaked push secret cannot read history) |

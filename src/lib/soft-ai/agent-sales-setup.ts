@@ -35,6 +35,11 @@ export type SalesRules = {
   handoffWhen: string | null
   mustSay: string[]
   neverSay: string[]
+  /**
+   * Betsy's own agent (Rafael 2026-10-23): a true hand-off also opens a ticket in Betsy's support pipeline
+   * (support-escalation.ts). Default off; only honoured for businesses listed in SUPPORT_AI_CHAT_TENANTS.
+   */
+  escalateToSupport?: boolean
   /** Owner-configured active promotion (promo.ts). Part of the type so saving the script never wipes it. */
   promo: AgentPromo
   /** Owner's combos at a fixed total (quoted only as listed). Optional so older callers keep compiling. */
@@ -115,6 +120,7 @@ export const EMPTY_SALES_RULES: SalesRules = {
   neverSay: [],
   promo: EMPTY_PROMO,
   bundles: [],
+  escalateToSupport: false,
 }
 
 const text = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
@@ -139,6 +145,7 @@ export function parseSalesRules(raw: unknown): SalesRules {
     neverSay: list(r.neverSay, 10, 200),
     promo: parsePromo(r.promo),
     bundles: parseBundles(r.bundles),
+    escalateToSupport: r.escalateToSupport === true,
   }
 }
 

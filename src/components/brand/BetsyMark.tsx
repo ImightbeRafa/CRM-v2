@@ -170,7 +170,8 @@ export function BetsyMark({
           )}
         </defs>
         <g className={s.lean} style={{ transform: lean }}>
-          <g className={s.hop} key={`h${state}`}>
+          {/* Remount only to replay the hop on entering "yes" (a state-keyed remount would restart the blink). */}
+          <g className={s.hop} key={state === 'yes' ? 'hop-yes' : 'hop'}>
             <g className={s.breath}>
               <path d={BETSY_BODY_PATH} fill={bodyFill} />
               {showLight && <path d={BETSY_BODY_PATH} fill={`url(#${wid})`} />}

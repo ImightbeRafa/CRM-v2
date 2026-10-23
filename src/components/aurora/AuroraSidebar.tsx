@@ -11,7 +11,7 @@ import { AuroraAvatar } from './shell/AuroraAvatar'
 import { AuroraProfileMenu } from './shell/AuroraProfileMenu'
 import { SidebarToggle } from './shell/SidebarToggle'
 import { BusinessSwitcher } from './BusinessSwitcher'
-import { BetsyLogo } from '@/components/brand/BetsyLogo'
+import { LiveBetsyLogo } from '@/components/brand/LiveBetsyLogo'
 import { useAuroraViewer } from './shell/useAuroraViewer'
 
 const FOCUS_RING =
@@ -100,13 +100,13 @@ export function AuroraSidebar() {
       {collapsed ? (
         <div className="flex h-16 shrink-0 items-center justify-center">
           <Link href="/dashboard" aria-label="Betsy — Inicio" className={`rounded-lg p-1 ${FOCUS_RING}`}>
-            <BetsyLogo mark size={24} />
+            <LiveBetsyLogo mark size={26} />
           </Link>
         </div>
       ) : (
         <div className="mx-3 flex h-16 shrink-0 items-center gap-2 pl-1.5">
           <Link href="/dashboard" aria-label="Betsy — Inicio" className={`rounded-lg ${FOCUS_RING}`}>
-            <BetsyLogo lockup size={17} />
+            <LiveBetsyLogo lockup size={18} />
           </Link>
           <span className="ml-auto">
             <SidebarToggle collapsed={collapsed} onToggle={toggle} />

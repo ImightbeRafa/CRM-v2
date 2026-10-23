@@ -14,7 +14,7 @@ type AuroraEmptyStateProps = {
   title: string
   description?: string
   icon?: ReactNode
-  /** Betsy's own empty states: the official mark (64 px) instead of the icon circle. One per view. */
+  /** Betsy's own empty states: the official mark (64 px, breathing, eyes down toward the action) instead of the icon circle. One per view. */
   betsy?: boolean
   tone?: Tone
   /** Primary / secondary actions rendered under the copy. */
@@ -39,7 +39,7 @@ export function AuroraEmptyState({
     >
       {betsy ? (
         <div className="mb-4">
-          <BetsyMark size={64} decorative />
+          <BetsyMark size={64} decorative gaze={{ x: 0, y: 4 }} />
         </div>
       ) : (
         <div

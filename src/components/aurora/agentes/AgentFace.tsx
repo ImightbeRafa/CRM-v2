@@ -26,7 +26,7 @@ export function agentTitle(a: FaceSource): string {
 
 /**
  * The agent's face: the official Betsy mark on its own colored plate ("costume").
- * Lists pass `animated={false}` so only one mark moves per view (the detail header).
+ * Lists keep plates still except the hovered / focused card (listen); drafts show the paused mark.
  */
 export function AgentFace({
   agent,

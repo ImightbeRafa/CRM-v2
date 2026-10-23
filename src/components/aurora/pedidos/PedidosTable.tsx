@@ -137,7 +137,8 @@ export function PedidosTable({
                 <td className="px-3 py-3">
                   <div className="flex flex-col items-start gap-1">
                     <ShipPill chip={shipChip(o)} />
-                    <ShippingMethodBadge order={o} size="xs" showCod={false} />
+                    {/* Pickup already reads "Retiro en tienda" in the status chip. */}
+                    {o.orderType !== 'RA' ? <ShippingMethodBadge order={o} size="xs" showCod={false} /> : null}
                   </div>
                 </td>
                 <td className="px-3 py-3">

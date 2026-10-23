@@ -65,12 +65,13 @@ export function Chip({
     <span
       title={title}
       data-chip-tone={tone}
-      className={`inline-flex max-w-full shrink-0 items-center whitespace-nowrap rounded-full border font-medium leading-none ${s.box} ${toneClass} ${className}`}
+      className={`inline-flex max-w-full shrink-0 items-center whitespace-nowrap rounded-full border font-medium leading-tight ${s.box} ${toneClass} ${className}`}
       style={toneStyle || style ? { ...toneStyle, ...style } : undefined}
     >
       {Icon ? <Icon size={s.icon} strokeWidth={2} aria-hidden className="shrink-0" /> : null}
       {!Icon && dot ? <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-80" /> : null}
-      <span className="truncate">{children}</span>
+      {/* leading-tight + a 1px pad so descenders (g, p) are not clipped by truncate. */}
+      <span className="truncate py-px">{children}</span>
     </span>
   );
 }

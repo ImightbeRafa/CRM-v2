@@ -1,3 +1,5 @@
+import { exactItemDetail, pickedItemFields } from '@/lib/orders/exact-item';
+import { orderLabelHash } from '@/lib/orders/order-label';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui/card";
@@ -26,6 +28,8 @@ export interface CreatedOrderRef {
   id?: string;
   /** Public order id (e.g. `ORDER-123…`). */
   orderId: string;
+  /** Short per-business number (#1042, SQL 062), when assigned. */
+  orderNo?: number | null;
 }
 
 export interface OrderFormPrefill {
@@ -354,6 +358,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
           ? initial.products.map((p, i) => ({
               id: `product_${Date.now()}_${i}`,
               type: p.type,
+              ...pickedItemFields({ id: p.id, name: p.name }, p.type),
               color: '',
               packaging: '',
               comments: '',
@@ -504,7 +509,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
       // --- Gather ProductField custom fields from products ---
       // Known standard keys on ProductInfo that should NOT go into customFields
-      const standardProductKeys = new Set(['id', 'type', 'color', 'packaging', 'comments', 'cantidad', 'productCost', 'shippingCost', 'iva', 'total', 'vendedor', 'mensajeria', 'tamano', 'personalizado', 'optionDeltas']);
+      const standardProductKeys = new Set(['id', 'type', 'color', 'packaging', 'comments', 'cantidad', 'productCost', 'shippingCost', 'iva', 'total', 'vendedor', 'mensajeria', 'tamano', 'personalizado', 'optionDeltas', 'inventoryItemId', 'itemName', 'pickedType']);
       const productFieldKeys = productFieldConfigs.map((f: any) => f.key).filter(Boolean);
 
       orderInfo.products.forEach((p: any) => {
@@ -568,7 +573,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
             cantidad: p.cantidad,
             color: p.color,
             tamano: p.tamano,
-            productCost: p.productCost
+            productCost: p.productCost,
+            ...exactItemDetail(p)
           };
           // Include ProductField custom values in productDetails
           for (const key of productFieldKeys) {
@@ -650,7 +656,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
       setSubmitStatus({
         type: 'success',
-        message: `Pedido guardado exitosamente con ${orderInfo.products.length} producto(s) - ID: ${result.data.orderId}`
+        message: `Pedido guardado exitosamente con ${orderInfo.products.length} producto(s) - ${orderLabelHash(result.data)}`
       });
 
       // Clear auto-save data after successful submission
@@ -671,7 +677,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
       if (onCreated) {
         try {
-          await onCreated({ id: result.data?.id, orderId: result.data?.orderId });
+          await onCreated({ id: result.data?.id, orderId: result.data?.orderId, orderNo: result.data?.orderNo ?? null });
         } catch (hookError) {
           // The order already exists; a hand-off failure must never look like a failed save.
           console.warn('onCreated hand-off failed:', hookError);
@@ -744,6 +750,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
     const newProduct: ProductInfo = {
       id: `product_${Date.now()}`,
       type: productTemplate.type,
+      // Exact item next to the category (display only; stock matching keeps reading `type`).
+      ...pickedItemFields({ id: productTemplate.id, name: productTemplate.name }, productTemplate.type),
       color: productTemplate.color,
       packaging: '',
       comments: '',

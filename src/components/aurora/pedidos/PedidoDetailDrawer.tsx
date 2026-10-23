@@ -16,6 +16,7 @@ import type { Sale } from '@/app/produccion/types/sales'
 import { isSinpeOrder, paymentChip, shipChip } from '@/lib/pedidos-aurora'
 import { isCancelledFulfillment } from '@/lib/order-payment-status'
 import { canalLabel, type OrderLine } from '@/lib/order-channel-line'
+import { orderLabel, orderLabelHash, orderSecondaryId } from '@/lib/orders/order-label'
 
 const CR_TZ = 'America/Costa_Rica'
 
@@ -28,7 +29,8 @@ type Guia = {
   createdAt: string
 }
 
-type ProductRow = { type?: string; cantidad?: number; color?: string; tamano?: string; productCost?: number }
+/** `itemName` = exact inventory item (lane J), shown instead of a generic `type` like "Parche". */
+type ProductRow = { type?: string; itemName?: string; cantidad?: number; color?: string; tamano?: string; productCost?: number }
 
 function fmtDateTime(value: string | undefined | null): string | null {
   if (!value) return null
@@ -153,7 +155,7 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'No se pudo confirmar el pago')
       }
-      toast({ variant: 'success' as any, title: 'Pago confirmado', description: `Pedido ${sale.orderId}` })
+      toast({ variant: 'success' as any, title: 'Pago confirmado', description: `Pedido ${orderLabel(sale)}` })
       onUpdated()
     } catch (error) {
       toast({ variant: 'destructive', title: 'No se pudo confirmar el pago', description: error instanceof Error ? error.message : undefined })
@@ -194,9 +196,9 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
     <AuroraDrawer
       open
       onOpenChange={(open) => !open && onClose()}
-      title={`#${sale.orderId}`}
-      ariaTitle={`Pedido ${sale.orderId}`}
-      subtitle={fmtDateTime(sale.timestamp) ?? undefined}
+      title={orderLabelHash(sale)}
+      ariaTitle={`Pedido ${orderLabel(sale)}`}
+      subtitle={[fmtDateTime(sale.timestamp), orderSecondaryId(sale)].filter(Boolean).join(' · ') || undefined}
       headerRight={
         <span className="hidden items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[12px] font-semibold text-slate-700 sm:inline-flex">
           <span className="h-1.5 w-1.5 rounded-full bg-[#7C5CFF]" aria-hidden />
@@ -304,7 +306,7 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
                 <li key={i} className="flex items-start justify-between gap-3 py-2 text-[13px]">
                   <span className="min-w-0">
                     <span className="block font-medium text-slate-900">
-                      {p.type || 'Producto'} <span className="text-slate-400">×{p.cantidad ?? 1}</span>
+                      {(typeof p.itemName === 'string' && p.itemName.trim()) || p.type || 'Producto'} <span className="text-slate-400">×{p.cantidad ?? 1}</span>
                     </span>
                     {[p.color, p.tamano].filter(Boolean).length > 0 ? (
                       <span className="block text-[12px] text-slate-500">{[p.color, p.tamano].filter(Boolean).join(' · ')}</span>

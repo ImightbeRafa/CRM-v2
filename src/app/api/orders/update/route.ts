@@ -169,6 +169,8 @@ export async function POST(request: NextRequest) {
       'orderId','orderType','status','delivery','timestamp','customerName','username','phone','email','business','product','quantity','size','color','packaging','customization','comments','total','iva','shippingCost','productCost','funnel','address','province','canton','district','courier','expectedDate','saleDate','agreedDate','pickupDate','seller','productDetails','customFields','contraEntrega','cePaymentConfirmed',
       // Display-only list field (GET /api/orders); never store it in customFields.
       'itemLines',
+      // Short order number: assigned by the database (SQL 062), read-only, never a custom field.
+      'orderNo',
       ...ORDER_COMMENT_FIELD_ALIASES
     ])
     const additions: Record<string, any> = {}

@@ -95,6 +95,8 @@ export async function sendGuiaToChat(input: SendGuiaToChatInput): Promise<SendGu
     recipient: conversation.peerId,
     bytes: new Uint8Array(guia.pdfData),
     filename: guiaPdfFilename(number, order.orderId),
+    // Customer-facing text keeps the long id for now: the inbox agent's order lookup (soft-ai order-ownership)
+    // only understands it, and showing customers the per-business sequence is Rafael's call (DATA-66).
     caption: guiaCaption({ customerName: conversation.peerName || order.customerName, orderNumber: order.orderId, guiaNumber: number }),
     // Same guía to the same chat is deduplicated (double click); "Reenviar" is a new send.
     clientRequestId: input.resend === true ? `guia:${guia.id}:${conversation.id}:${Date.now()}` : `guia:${guia.id}:${conversation.id}`,

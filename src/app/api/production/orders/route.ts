@@ -6,6 +6,8 @@ import { decodeTimestampCursor, encodeTimestampCursor, parsePageLimit } from '@/
 import { buildProductionWhere, parseProductionQuery, productionCursorScope } from '@/lib/production-query';
 import { PII_NO_STORE_HEADERS } from '@/lib/security';
 import { orderItemLabels } from '@/lib/orders/order-items';
+import { loadOrderNos, orderIdForSearch } from '@/lib/orders/order-number-server';
+import { withInventoryItemNames } from '@/lib/orders/item-names-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +46,7 @@ export async function GET(request: NextRequest) {
       selectedStatus,
       terminalClassifications: classifications,
       terminalFilteringEnabled: readiness.terminalFilteringEnabled,
+      searchOrderNoId: await orderIdForSearch(auth.tenantId, input.search),
     });
     const scope = productionCursorScope(input, selectedStatus, readiness.mappingRevision);
     const cursor = decodeTimestampCursor(searchParams.get('cursor'), scope);
@@ -81,9 +84,15 @@ export async function GET(request: NextRequest) {
       tenantPrisma.order.count({ where: baseWhere }),
     ]);
     const hasMore = rows.length > limit;
-    const items = (hasMore ? rows.slice(0, limit) : rows).map(({ productDetails, ...order }) => {
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const [orderNos, named] = await Promise.all([
+      loadOrderNos(auth.tenantId, page.map((o) => o.id)),
+      withInventoryItemNames(auth.tenantId, page),
+    ]);
+    const items = named.map(({ productDetails, ...order }) => {
       const itemLines = orderItemLabels({ productDetails, product: order.product, quantity: order.quantity });
-      return itemLines ? { ...order, itemLines } : order;
+      const withNo = { ...order, orderNo: orderNos.get(order.id) ?? null };
+      return itemLines ? { ...withNo, itemLines } : withNo;
     });
     const last = items.at(-1);
     return NextResponse.json({

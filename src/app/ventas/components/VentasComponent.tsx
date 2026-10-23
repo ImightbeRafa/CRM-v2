@@ -1,5 +1,6 @@
 'use client';
 
+import { orderLabelHash } from '@/lib/orders/order-label';
 import React, { Suspense, useCallback } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AuroraShell } from '@/components/aurora/AuroraShell';
@@ -77,7 +78,7 @@ function VentasInner() {
         onCreated={(order) => {
           queryClient.invalidateQueries({ queryKey: ['sales'] });
           queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-          toast({ variant: 'success' as any, title: 'Pedido creado', description: `#${order.orderId}` });
+          toast({ variant: 'success' as any, title: 'Pedido creado', description: orderLabelHash(order) });
         }}
       />
     </AuroraShell>

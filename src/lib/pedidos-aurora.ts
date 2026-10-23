@@ -1,8 +1,11 @@
 import { derivePaymentState, isSinpeEvidence, type PaymentStateKey } from './order-payment-status'
+import { normalizeOrderNo, parseOrderNoQuery } from './orders/order-label'
 
 /** Minimal order shape the Pedidos (ORD-01) list needs. Compatible with `Sale`. */
 export interface PedidoRow {
   orderId: string
+  /** Short per-business number (#1042, SQL 062); null/absent → show orderId. */
+  orderNo?: number | null
   orderType: 'EA' | 'RA'
   status: string
   total: number
@@ -208,8 +211,10 @@ export function channelChip(order: Pick<PedidoRow, 'salesChannel' | 'funnel'>): 
 export function searchPedidos<T extends PedidoRow>(orders: T[], term: string): T[] {
   const q = norm(term)
   if (!q) return orders
+  const no = parseOrderNoQuery(term)
   return orders.filter(
     (o) =>
+      (no !== null && normalizeOrderNo(o.orderNo) === no) ||
       norm(o.customerName).includes(q) ||
       norm(o.orderId).includes(q) ||
       norm(o.product).includes(q) ||

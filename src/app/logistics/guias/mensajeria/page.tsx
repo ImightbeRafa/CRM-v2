@@ -1,5 +1,6 @@
 'use client';
 
+import { orderLabelHash } from '@/lib/orders/order-label';
 import { useState, useEffect, useCallback } from 'react';
 import { Truck, Printer, CheckSquare, Square, Search, RefreshCw, Package, Banknote, Phone, MapPin } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
@@ -121,7 +122,7 @@ export default function GuiaMensajeriaPage() {
                                             <td style={{ padding: '9px 12px', width: 32 }}>
                                                 {selected.has(o.id) ? <CheckSquare size={14} style={{ color: '#8b87ff' }} /> : <Square size={14} style={{ color: 'rgba(255,255,255,0.2)' }} />}
                                             </td>
-                                            <td style={{ padding: '9px 12px', color: '#F2F2F2', fontWeight: 600 }}>{o.customerName}<div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>#{o.orderId}</div></td>
+                                            <td style={{ padding: '9px 12px', color: '#F2F2F2', fontWeight: 600 }}>{o.customerName}<div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }} title={o.orderId}>{orderLabelHash(o)}</div></td>
                                             <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.45)', fontSize: 11 }}>{getTenantName(o.tenantId)}</td>
                                             <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.5)', minWidth: 140, maxWidth: 240 }}><OrderItemsList order={o} maxItems={2} emptyLabel="—" /></td>
                                             <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.4)' }}>{o.province || '—'}</td>

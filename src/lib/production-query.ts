@@ -71,6 +71,8 @@ export function buildProductionWhere(args: {
   terminalClassifications: TerminalClassificationReference[];
   terminalFilteringEnabled: boolean;
   now?: Date;
+  /** Order.id whose short number (#1042, SQL 062) equals the search, resolved by the route (tenant-scoped). */
+  searchOrderNoId?: string | null;
 }): Prisma.OrderWhereInput {
   const { input, configuredStatuses, selectedStatus, terminalClassifications, terminalFilteringEnabled } = args;
   const and: Prisma.OrderWhereInput[] = [];
@@ -102,6 +104,7 @@ export function buildProductionWhere(args: {
         { phone: { contains: input.search, mode: 'insensitive' } },
         { product: { contains: input.search, mode: 'insensitive' } },
         { business: { contains: input.search, mode: 'insensitive' } },
+        ...(args.searchOrderNoId ? [{ id: args.searchOrderNoId }] : []),
       ],
     });
   }

@@ -9,6 +9,7 @@ import { workspaceWriteRateLimit } from '@/lib/rate-limit'
 import { maskPhone } from '@/lib/chat-order-flow'
 import { phoneTails } from '@/lib/chat-order-attach'
 import { orderIdsByPhoneTails } from '@/lib/chat-order-attach-server'
+import { loadOrderNos } from '@/lib/orders/order-number-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -122,6 +123,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     : []
   // Linked first (they are this chat's), then the rest newest first; 12 max.
   const orders = [...fetched.filter((o) => linkedSet.has(o.id)), ...fetched.filter((o) => !linkedSet.has(o.id))].slice(0, 12)
+  const orderNos = await loadOrderNos(tenantId, orders.map((o) => o.id))
 
   // Guía per order (latest) and whether it was already sent in this chat.
   const peerPhone =
@@ -203,6 +205,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         const orderPhone = normalizeClientPhone(phone)
         return {
           ...rest,
+          orderNo: orderNos.get(o.id) ?? null,
           linked: linkedSet.has(o.id),
           phoneMasked: maskPhone(phone),
           phoneMatchesChat: Boolean(orderPhone && peerPhone && orderPhone === peerPhone),

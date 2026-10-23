@@ -1,4 +1,5 @@
 "use client";
+import { orderLabelHash } from '@/lib/orders/order-label';
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
@@ -236,7 +237,7 @@ export function MobileProductionWorkflow({
           {/* Summary row: always visible */}
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-sm">#{order.orderId}</h3>
+              <h3 className="font-semibold text-sm" title={order.orderId}>{orderLabelHash(order)}</h3>
               {orderAge.urgent && (
                 <AlertCircle className="h-4 w-4 text-red-500" />
               )}

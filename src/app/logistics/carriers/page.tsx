@@ -1,5 +1,6 @@
 'use client';
 
+import { orderLabelHash } from '@/lib/orders/order-label';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Package, PackageCheck, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X, Archive, ArchiveRestore, Copy, CheckCircle2, FileText, Download, Banknote, Check, MapPin, Phone, Printer, StickyNote, Zap, ArrowRightLeft, Circle, type LucideIcon } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
@@ -15,6 +16,8 @@ import {
 
 interface Order {
     id: string; orderId: string; tenantId: string; orderType: string; status: string; timestamp: string;
+    /** Short per-business number (#1042, SQL 062); null → orderId. */
+    orderNo?: number | null;
     customerName: string; phone: string | null; email: string | null; product: string | null;
     quantity: number | null; province: string | null; canton: string | null; district: string | null;
     address: string | null; total: number; comments: string | null; delivery: string | null;
@@ -131,6 +134,7 @@ function orderMatchesColumnSearch(order: Order, query: string, getTenantName: (i
     const haystack = [
         order.customerName,
         order.orderId,
+        order.orderNo ? `#${order.orderNo}` : null,
         order.phone,
         order.email,
         order.product,
@@ -283,7 +287,7 @@ function LocationRow({ order, onChange }: { order: VerifiedOrder; onChange: (upd
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                 {isValid ? <CheckCircle2 size={14} style={{ color: '#34d399', flexShrink: 0 }} /> : <Clock size={14} style={{ color: '#fbbf24', flexShrink: 0 }} />}
                 <span style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13 }}>{order.customerName}</span>
-                <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>#{order.orderId}</span>
+                <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }} title={order.orderId}>{orderLabelHash(order)}</span>
                 {hasChanges && <span style={{ marginLeft: 'auto', color: '#fbbf24', fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 10, background: 'rgba(251,191,36,0.12)' }}>Modificado</span>}
             </div>
 
@@ -418,7 +422,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onConfirmC
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <p title={order.customerName} style={{ ...compactOrderNameStyle, fontSize: 12.5 }}>{order.customerName}</p>
                             <p style={{ color: 'rgba(255,255,255,0.3)', margin: '1px 0 0', fontSize: 10 }}>
-                                #{order.orderId} · {new Date(order.timestamp).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}
+                                {orderLabelHash(order)} · {new Date(order.timestamp).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}
                                 {age && <span style={{ color: '#fbbf24', fontWeight: 600 }}> · {age}</span>}
                             </p>
                         </div>
@@ -514,7 +518,7 @@ function ArchivedOrderRow({ order, onRestore, getTenantName, getTenantColor }: {
                     <div style={{ minWidth: 0, flex: 1 }}>
                         <p title={order.customerName} style={{ ...compactOrderNameStyle, fontSize: 12.5 }}>{order.customerName || 'Cliente sin nombre'}</p>
                         <p style={{ color: 'rgba(255,255,255,0.3)', margin: '1px 0 0', fontSize: 10 }}>
-                            #{order.orderId} · {new Date(order.timestamp).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}
+                            {orderLabelHash(order)} · {new Date(order.timestamp).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}
                         </p>
                     </div>
                     <span style={{ padding: '1px 7px', borderRadius: 20, background: `${tenantColor}22`, color: tenantColor, fontSize: 9.5, fontWeight: 700, flexShrink: 0 }}>{getTenantName(order.tenantId)}</span>
@@ -1458,7 +1462,7 @@ export default function CarriersPage() {
                                                     </button>
                                                     <div style={{ minWidth: 0, flex: 1 }}>
                                                         <p title={o.customerName} style={{ ...compactOrderNameStyle, fontSize: 12 }}>{o.customerName}</p>
-                                                        <p style={{ color: 'rgba(255,255,255,0.3)', margin: '1px 0 0', fontSize: 9.5 }}>#{o.orderId}</p>
+                                                        <p style={{ color: 'rgba(255,255,255,0.3)', margin: '1px 0 0', fontSize: 9.5 }} title={o.orderId}>{orderLabelHash(o)}</p>
                                                     </div>
                                                 </div>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end' }}>
@@ -1585,7 +1589,7 @@ export default function CarriersPage() {
             <PaymentMethodWizard
                 open={!!ceWizardOrder}
                 title="Confirmar cobro contra entrega"
-                subtitle={ceWizardOrder ? `#${ceWizardOrder.orderId} · ${ceWizardOrder.customerName}` : undefined}
+                subtitle={ceWizardOrder ? `${orderLabelHash(ceWizardOrder)} · ${ceWizardOrder.customerName}` : undefined}
                 amountLabel="Monto del pedido"
                 amount={ceWizardOrder?.total || 0}
                 employeeLabel="Quién confirma el cobro"

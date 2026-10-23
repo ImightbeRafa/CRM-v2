@@ -1,5 +1,6 @@
 'use client';
 
+import { orderLabelHash } from '@/lib/orders/order-label';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   PackageCheck, Search, RefreshCw, Phone, Calendar, Clock, User, Copy, Check,
@@ -736,7 +737,7 @@ export default function RetirosPage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 13 }}>{o.customerName}</span>
-                      <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10 }}>#{o.orderId}</span>
+                      <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10 }} title={o.orderId}>{orderLabelHash(o)}</span>
                       {unmappedCount > 0 && (
                         <span
                           title="Solo bloquea confirmación si el retiro es en Laura Escazu"

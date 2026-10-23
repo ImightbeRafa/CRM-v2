@@ -1,5 +1,6 @@
 "use client";
 
+import { orderLabel } from '@/lib/orders/order-label';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Card,
@@ -331,7 +332,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                     <TableRow key={sale.orderId} className="hover:bg-muted/50 transition-colors">
                       <TableCell>
                         <div className="flex items-center gap-2 relative z-10" style={{ position: 'relative', zIndex: 10 }}>
-                          <span className="relative z-10 font-mono text-sm">{sale.orderId}</span>
+                          <span className="relative z-10 font-mono text-sm" title={sale.orderId}>{orderLabel(sale)}</span>
                           <Badge 
                             variant={sale.orderType === 'EA' ? 'default' : 'secondary'} 
                             className="relative z-10 text-xs"

@@ -1,4 +1,5 @@
 "use client";
+import { orderLabelHash } from '@/lib/orders/order-label';
 import React, { useState } from 'react';
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -233,7 +234,7 @@ function EnhancedOrderCardComponent({
               className="border-white/20 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
             />
             <div>
-              <h3 className="font-semibold text-sm tracking-tight">#{order.orderId}</h3>
+              <h3 className="font-semibold text-sm tracking-tight" title={order.orderId}>{orderLabelHash(order)}</h3>
               <p className={`text-[11px] font-medium ${orderAge.color}`}>{orderAge.label}</p>
             </div>
           </div>

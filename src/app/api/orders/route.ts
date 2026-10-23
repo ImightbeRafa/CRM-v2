@@ -9,6 +9,8 @@ import { ORDER_COMMENT_FIELD_ALIASES, resolveOrderComment } from '@/lib/order-co
 import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags'
 import { createLifecycleOrder, lifecycleIdempotencyKey, OrderLifecycleError } from '@/lib/order-lifecycle'
 import { orderItemLabels } from '@/lib/orders/order-items'
+import { loadOrderNo, loadOrderNos, orderIdForSearch } from '@/lib/orders/order-number-server'
+import { withInventoryItemNames } from '@/lib/orders/item-names-server'
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic'
@@ -144,11 +146,14 @@ export async function GET(request: NextRequest) {
       
       // Add search filter
       if (search) {
+        // "#1042" / "1042" also finds the order with that short number (SQL 062; none before it).
+        const idForNo = await orderIdForSearch(tenantId, search)
         whereClause.OR = [
           { customerName: { contains: search, mode: 'insensitive' } },
           { orderId: { contains: search, mode: 'insensitive' } },
           { phone: { contains: search, mode: 'insensitive' } },
           { product: { contains: search, mode: 'insensitive' } },
+          ...(idForNo ? [{ id: idForNo }] : []),
         ]
       }
       
@@ -229,9 +234,14 @@ export async function GET(request: NextRequest) {
       }
     }
       
-      const data = orders.map(({ productDetails, ...order }: any) => {
+      const [orderNos, named] = await Promise.all([
+        loadOrderNos(tenantId, orders.map((o: any) => o.id)),
+        withInventoryItemNames(tenantId, orders),
+      ])
+      const data = named.map(({ productDetails, ...order }: any) => {
         const itemLines = orderItemLabels({ productDetails, product: order.product, quantity: order.quantity })
-        return itemLines ? { ...order, itemLines } : order
+        const withNo = { ...order, orderNo: orderNos.get(order.id) ?? null }
+        return itemLines ? { ...withNo, itemLines } : withNo
       })
 
       // Return orders with pagination metadata - NO CACHE HEADERS
@@ -274,6 +284,8 @@ export async function POST(request: NextRequest) {
     // Separate known order fields from dynamic custom fields
     const knownKeys = new Set([
       'orderId','orderType','status','delivery','customerName','username','phone','email','business','product','quantity','size','color','packaging','customization','comments','total','iva','shippingCost','productCost','funnel','address','province','canton','district','courier','expectedDate','saleDate','agreedDate','pickupDate','seller','productDetails','timestamp','customFields','contraEntrega','cePaymentConfirmed',
+      // Assigned by the database (SQL 062); a client value is ignored, never stored as a custom field.
+      'orderNo',
       ...ORDER_COMMENT_FIELD_ALIASES
     ])
     const customFields: Record<string, any> = {}
@@ -315,6 +327,8 @@ export async function POST(request: NextRequest) {
          })
          return createSuccessResponse({
            ...lifecycle.order,
+           // Assigned by the 062 trigger; read after the create transaction committed.
+           orderNo: await loadOrderNo(tenantId, lifecycle.order.id),
            idempotentReplay: lifecycle.idempotentReplay,
            unresolvedInventory: lifecycle.unresolvedInventory,
          }, lifecycle.idempotentReplay ? 'Order already created' : 'Order created successfully')
@@ -423,7 +437,7 @@ export async function POST(request: NextRequest) {
       ]).catch(() => {}) // Ignore errors, don't block response
     })
 
-    return createSuccessResponse(order, 'Order created successfully')
+    return createSuccessResponse({ ...order, orderNo: await loadOrderNo(tenantId, order.id) }, 'Order created successfully')
   } catch (error) {
     return handleApiError(error)
   }

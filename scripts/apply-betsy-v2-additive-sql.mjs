@@ -41,6 +41,8 @@
  * 055 out-of-stock switch: InventoryItemAvailability (BETSY_V2_APPLY_FILES=055; new table only, safe any time).
  * 056 Instagram customer profile: ChatConversation.peerUsername + peerProfileCheckedAt
  * (BETSY_V2_APPLY_FILES=056; two nullable columns, apply BEFORE the code that reads them).
+ * 062 short order numbers: Order.orderNo + OrderNumberCounter + BEFORE INSERT trigger (BETSY_V2_APPLY_FILES=062;
+ * code works before it). Then run scripts/order-number-backfill.ts (dry-run first).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

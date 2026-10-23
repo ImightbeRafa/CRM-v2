@@ -10,6 +10,8 @@ export interface ExternalOrderData {
     name: string;
     quantity: number;
     unitPrice: string;
+    /** Optional: inventory SKU of the exact item (display; stock matching still uses `name`). */
+    sku?: string;
   };
   /** Omit or EA = envío (current websites). RA = retiro; shipping may be omitted. */
   orderType?: 'EA' | 'RA';

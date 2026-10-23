@@ -9,6 +9,7 @@ import 'server-only'
 
 import { prisma } from '@/lib/db'
 import type { ChatConversationListItemDto } from '@/lib/chat-conversation-api'
+import { loadOrderNos } from '@/lib/orders/order-number-server'
 
 export type LinkedOrderSummary = {
   id: string
@@ -62,7 +63,12 @@ export async function enrichConversationDtosWithLinkedOrders(
       select: { conversationId: true, orderId: true, order: { select: { orderId: true, status: true, total: true, product: true } } },
     })
     const linked = pickLatestLinkedOrders(rows)
-    return items.map((item) => ({ ...item, linkedOrder: linked.get(item.id) ?? null }))
+    // Short number (#1042, SQL 062) next to the long orderNumber; empty before 062.
+    const orderNos = await loadOrderNos(tenantId, [...linked.values()].map((order) => order.id))
+    return items.map((item) => {
+      const order = linked.get(item.id)
+      return { ...item, linkedOrder: order ? { ...order, orderNo: orderNos.get(order.id) ?? null } : null }
+    })
   } catch (error) {
     console.warn('[chat] linked-order enrichment skipped', error instanceof Error ? error.message : error)
     return items

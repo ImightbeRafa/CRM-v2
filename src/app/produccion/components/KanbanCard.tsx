@@ -1,5 +1,6 @@
 'use client';
 
+import { orderLabel, orderLabelHash } from '@/lib/orders/order-label';
 import React, { useEffect, useState } from 'react';
 import type { Sale } from '../types/sales';
 import { Badge } from '@/app/components/ui/badge';
@@ -29,7 +30,7 @@ export function KanbanCard({ order, statuses, onClick, onMove, moving }: KanbanC
       <div className="absolute inset-x-0 top-0 h-[3px]" style={{ background: `linear-gradient(90deg, ${accentColor}, ${accentColor}88)` }} />
       <button type="button" className="w-full p-3.5 pt-4 text-left space-y-2.5 hover:bg-white/[0.02]" onClick={onClick}>
         <div className="flex items-center justify-between gap-2">
-          <p className="font-semibold text-sm">#{order.orderId}</p>
+          <p className="font-semibold text-sm" title={order.orderId}>{orderLabelHash(order)}</p>
           {highPriority && <Badge className="bg-red-500/15 text-red-600 text-[10px]">Urgente</Badge>}
         </div>
         <div className="flex items-center text-[13px] font-medium"><User className="h-3 w-3 mr-1.5 shrink-0" /><span className="break-words whitespace-normal">{order.customerName}</span></div>
@@ -47,7 +48,7 @@ export function KanbanCard({ order, statuses, onClick, onMove, moving }: KanbanC
       </button>
       <div className="p-3 pt-0 flex gap-2" onClick={event => event.stopPropagation()}>
         <select
-          aria-label={`Nuevo estado para ${order.orderId}`}
+          aria-label={`Nuevo estado para ${orderLabel(order)}`}
           value={targetStatus}
           onChange={event => setTargetStatus(event.target.value)}
           className="h-11 md:h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs"
@@ -62,7 +63,7 @@ export function KanbanCard({ order, statuses, onClick, onMove, moving }: KanbanC
           className="h-11 w-11 md:h-9 md:w-auto"
           disabled={moving || targetStatus === order.status}
           onClick={() => void onMove(order, targetStatus)}
-          aria-label={`Mover ${order.orderId} a ${targetStatus}`}
+          aria-label={`Mover ${orderLabel(order)} a ${targetStatus}`}
         >
           <ArrowRight className="h-4 w-4" />
         </Button>

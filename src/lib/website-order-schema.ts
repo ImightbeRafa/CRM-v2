@@ -22,6 +22,18 @@ export const externalOrderIntakeSchema = z.object({
     name: z.string().min(1),
     quantity: z.number().positive(),
     unitPrice: z.string().min(1),
+    /**
+     * Optional (lane J): the store's SKU, so the order shows the exact inventory item. Never rejects an order:
+     * anything that is not a usable SKU ("", null, a number, > 64 chars) is treated as "no SKU", as before.
+     */
+    sku: z.preprocess(
+      (value) => {
+        if (typeof value !== 'string') return undefined;
+        const trimmed = value.trim();
+        return trimmed && trimmed.length <= 64 ? trimmed : undefined;
+      },
+      z.string().optional(),
+    ),
   }),
   orderType: z.enum(['EA', 'RA']).optional(),
   pickupDate: z.string().optional(),

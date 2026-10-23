@@ -3,6 +3,7 @@ import { ExternalOrderData } from '@/types/integration';
 import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags';
 import { createLifecycleOrder } from '@/lib/order-lifecycle';
 import { mapWebsiteOrderCreate } from '@/lib/website-order-map';
+import { websiteProductDetails } from '@/lib/orders/exact-item';
 
 export async function createExternalOrder(tenantId: string, orderData: ExternalOrderData) {
   console.log(`[createExternalOrder] Starting for tenant ${tenantId}, order ${orderData.orderId}`);
@@ -11,6 +12,7 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
     // Use tenant-isolated Prisma client for security
     const tenantPrisma = getTenantPrisma(tenantId);
     const mapped = mapWebsiteOrderCreate(orderData);
+    const productDetails = await websiteExactDetails(tenantId, orderData);
     const customFields = {
       external: true,
       source: orderData.source,
@@ -35,6 +37,7 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
           email: orderData.customer.email || '',
           product: orderData.product.name,
           quantity: orderData.product.quantity,
+          ...(productDetails ? { productDetails } : {}),
           productCost: mapped.productCost,
           total: mapped.total,
           shippingCost: mapped.shippingCost,
@@ -71,6 +74,7 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
         email: orderData.customer.email,
         product: orderData.product.name,
         quantity: orderData.product.quantity,
+        ...(productDetails ? { productDetails } : {}),
         productCost: mapped.productCost,
         total: mapped.total,
         shippingCost: mapped.shippingCost,
@@ -101,6 +105,30 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
   } catch (error) {
     console.error(`[createExternalOrder] Failed to create order:`, error);
     throw error;
+  }
+}
+
+/**
+ * Optional `product.sku` from the store → the exact inventory item of THIS business (one active match only),
+ * stored for display next to the site's own name. No sku, no match or ambiguous → no productDetails (as before).
+ */
+async function websiteExactDetails(tenantId: string, orderData: ExternalOrderData): Promise<string | null> {
+  const sku = orderData.product.sku?.trim();
+  if (!sku) return null;
+  try {
+    // Case-insensitive equals may become ILIKE: escape % _ \ so a sku is never a wildcard (INT-237), and
+    // re-check the exact match here.
+    const escaped = sku.replace(/[\\%_]/g, (c) => `\\${c}`);
+    const rows = await getTenantPrisma(tenantId).inventoryItem.findMany({
+      where: { tenantId, isActive: true, sku: { equals: escaped, mode: 'insensitive' } },
+      select: { id: true, name: true, sku: true },
+      take: 2,
+    });
+    const matches = rows.filter((row) => row.sku.toLowerCase() === sku.toLowerCase());
+    return websiteProductDetails(orderData.product, matches.length === 1 && rows.length === 1 ? matches[0] : null);
+  } catch (error) {
+    console.warn('[createExternalOrder] sku lookup skipped', error instanceof Error ? error.message : error);
+    return null;
   }
 }
 

@@ -125,10 +125,9 @@ describe('B1 never a silent draft; only TRUE hand-offs flip the chat', () => {
     const unknown = planModelTurnDelivery({ text: '', textOk: true, llmHandoff: { kind: 'handoff', reason: 'unknown_answer' } })
     assert.equal(unknown.text, SAFE_LINE.review)
     // A money hand-off keeps the payment line (payment / refund-complaint reasons), even with no model escalate reason.
-    for (const reason of ['payment', 'complaint']) {
-      const money = planModelTurnDelivery({ text: 'x', textOk: false, llmHandoff: { kind: 'handoff', reason } })
-      assert.equal(money.text, SAFE_LINE.payment, reason)
-    }
+    // Lane C D3: payment keeps the payment line; a refund / complaint gets the empathetic line.
+    assert.equal(planModelTurnDelivery({ text: 'x', textOk: false, llmHandoff: { kind: 'handoff', reason: 'payment' } }).text, SAFE_LINE.payment)
+    assert.equal(planModelTurnDelivery({ text: 'x', textOk: false, llmHandoff: { kind: 'handoff', reason: 'complaint' } }).text, SAFE_LINE.complaint)
     const receipt = planModelTurnDelivery({ text: 'Perfecto', textOk: true, llmHandoff: null, receiptCue: true })
     assert.deepEqual(receipt, { text: SAFE_LINE.payment, handoff: { kind: 'handoff', reason: 'payment' } })
   })

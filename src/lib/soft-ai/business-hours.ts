@@ -270,6 +270,41 @@ export function afterHoursTeamLine(label: string): string {
   return `El equipo te escribe ${sentenceEnd(label)}`
 }
 
+/**
+ * Lane C D3 (2026-10-22): a complaint, a late order or a refund gets an empathetic hand-off line — never "¡Gracias!".
+ * In the agent's voice (fixed rule 10: no "te paso con otra persona").
+ */
+export const COMPLAINT_HANDOFF_LINE = 'Lamento mucho lo que pasó 🙏 Ya lo estoy revisando y te escribo en cuanto tenga noticias.'
+
+export function afterHoursComplaintLine(label: string, transparent = false): string {
+  return `Lamento mucho lo que pasó 🙏 ${afterHoursHandoffLine('person', label, transparent)}`
+}
+
+/**
+ * Lane C P8: a sentence that promises a person answers right now ("en un momento te escribe alguien") — false after
+ * hours. Both an immediacy word and a reply verb (Verifier #128-3: "Ahorita tenemos el kit en ₡14 900" is a fact).
+ */
+const IMMEDIATE_WORD_RE =
+  /(?<![\p{L}])(?:en\s+un\s+(?:momento|momentito|ratito|toque)|enseguida|en\s+seguida|ahorita|ahora\s+mismo|en\s+breve|ya\s+mismo|de\s+inmediato|inmediatamente)(?![\p{L}])/iu
+const REPLY_VERB_RE =
+  /(?<![\p{L}])(?:te|le|les|lo|la)\s+(?:escrib\p{L}*|atiend\p{L}*|atender\p{L}*|contest\p{L}*|respond\p{L}*|ayud\p{L}*|llam\p{L}*|habl\p{L}*)|(?<![\p{L}])alguien(?![\p{L}])|(?<![\p{L}])(?:te|le)\s+paso\s+con/iu
+
+const KEEP_SENTENCE_RE =
+  /@|https?:\/\/|www\.|\d[\d\s-]{6,}\d|(?<![\p{L}])(?:suspend\p{L}*|dej[aá]\s+de\s+usar|m[eé]dico|emergencia|urgencias|911)(?![\p{L}])/iu
+
+/**
+ * The text without its sentences that promise an immediate answer. Verifier #128-2: sentences end only at . ! ? followed
+ * by a space or the end (never inside "2.5 ml", "₡14.900", a link or an e-mail) or at a line break; separators are kept;
+ * a text with nothing to drop comes back exactly as it was.
+ */
+export function dropImmediatePromises(text: string): string {
+  const parts = text.split(/(?<=[.!?](?=\s|$))|(?<=\n)/u)
+  // SecureDog #128 r1: a sentence with an e-mail, a link, a phone number or a safety instruction is always kept.
+  const kept = parts.filter((p) => KEEP_SENTENCE_RE.test(p) || !(IMMEDIATE_WORD_RE.test(p) && REPLY_VERB_RE.test(p)))
+  if (kept.length === parts.length) return text
+  return kept.join('').replace(/[ \t]+\n/g, '\n').trim()
+}
+
 export type AfterHoursTextOptions = {
   /** SAFE_LINE.review ("Dame un momento y te confirmo 😊"). */
   safeReview: string
@@ -301,9 +336,17 @@ export function applyAfterHoursText(
     const kind = afterHoursHandoffKind(plan.handoff.reason)
     if (!kind) return plan.text
     // A "no lo tengo" answer (unknown_answer) keeps what the agent did know, then says when the team writes.
-    if (kind === 'person' && (plan.handoff.reason === 'human_request' || plan.handoff.reason === 'unknown_answer') && text && text !== opts.safeReview.trim()) {
+    // Lane C D3: the empathetic complaint line keeps its empathy at night ("Lamento mucho… te escriben mañana").
+    const complaint = text === COMPLAINT_HANDOFF_LINE
+    // Lane C P8: "en un momento te escribe alguien" + "El equipo te escribe mañana" contradicted each other: the
+    // sentences that promise right now are dropped at night (the owner's other words are kept).
+    // Verifier #128-3: only the opt-out / "me atiende alguien" text; an unknown_answer reply keeps every fact.
+    const kept = complaint ? '' : plan.handoff.reason === 'human_request' ? dropImmediatePromises(text) : text
+    if (complaint) {
+      body = afterHoursComplaintLine(state.label, state.transparent)
+    } else if (kind === 'person' && (plan.handoff.reason === 'human_request' || plan.handoff.reason === 'unknown_answer') && kept && text !== opts.safeReview.trim()) {
       // luna-10: the model already said when the team writes ("…hoy a las 8:00 a. m.") → never a second line.
-      body = text.includes(state.label.replace(/\.$/, '')) ? text : `${text}\n${afterHoursTeamLine(state.label)}`
+      body = kept.includes(state.label.replace(/\.$/, '')) ? kept : `${kept}\n${afterHoursTeamLine(state.label)}`
     } else {
       const line = afterHoursHandoffLine(kind, state.label, state.transparent)
       const keep = kind === 'order' && text && text !== opts.safeReview.trim()

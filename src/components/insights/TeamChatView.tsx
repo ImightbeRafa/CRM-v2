@@ -11,7 +11,7 @@ import { AuroraEmptyState } from '@/components/aurora/states'
 import { formatDayLabel } from '@/lib/statistics-aurora'
 import { formatDurationEs, formatPercent } from '@/lib/insights/stats-math'
 import type { ChannelMetrics, TeamChatReport } from '@/lib/insights/team-chat-metrics'
-import { InsightsHeader, SourceNote, nf, useInsightsJson, useUrlPeriod } from './InsightsShared'
+import { InsightsHeader, SourceNote, STATS_CONTAINER, nf, useInsightsJson, useUrlPeriod } from './InsightsShared'
 import { AreaChart, InsightCard, Meter, SERIES, StatTile, StatusChip, Swatch, type ChipTone } from './charts'
 
 type Payload = {
@@ -86,7 +86,7 @@ function View() {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="insights-team">
       <InsightsHeader title="Equipo y chats" subtitle="Qué tan rápido respondemos, qué está esperando y qué canal vende" spec={spec} range={range} onPeriod={setSpec} />
-      <div className="mx-auto w-full max-w-[1200px] space-y-4 px-4 pb-8 pt-5 md:px-7">
+      <div className={STATS_CONTAINER}>
         <InsightCard
           icon={Timer}
           title="Velocidad del equipo"
@@ -145,6 +145,8 @@ function View() {
           ) : null}
         </InsightCard>
 
+        {/* Channels next to people on wide screens; stacked on laptops and phones. */}
+        <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] 2xl:items-start">
         <InsightCard
           icon={Radio}
           title="Por canal"
@@ -233,6 +235,7 @@ function View() {
             )
           ) : null}
         </InsightCard>
+        </div>
       </div>
     </div>
   )

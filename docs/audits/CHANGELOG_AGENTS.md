@@ -4,6 +4,7 @@
 - Nav: official lockup with the animated mark, pill links with the section on screen marked (aria-current), quiet "Iniciar sesión" + primary "Probar gratis", glass blur once scrolled, a full mobile sheet (Escape, scroll lock, focus) rendered outside the blurred header (backdrop-filter traps fixed children).
 - Agent plate bug: the "typing" dots sat beside the mark and pushed it off the plate; AgentMark now shows the think light instead (same rule as BetsyLogo). The plate stayed dark under the app's dark theme; the block is `theme-light`. The mini-chat opens with a greeting and reads top-down until it fills.
 - /soporte: night-sky band, Betsy listening next to the form (think while sending, yes on success), side panel (channels from config, what happens after you write, Centro de ayuda, Quiero mi agente). Form, honeypot, Turnstile and API unchanged.
+- Verifier: PASS WITH NOTES, all 9 fixed: theme-light only on the plate / around .page (it redefines --muted); nav links 0.78 on 0.8 glass (AA); the lockup mark breathes only at the top (still once scrolled: one live mark per view); sheet is a modal (inert page, Escape returns focus); aria-current from scroll position; phone headings opt out of globals-mobile; case number only promised with the ticket pipeline on; SkyWatch keeps the right timer id and the newest observer entry; no blur on the opaque sheet.
 - Tests: home-v2 (+4: sky, nav, plate, soporte).
 
 ## 2026-10-23 — Animated Betsy mark: live sidebar mark, agent plates react (Lane I, claude/wave-betsy-motion)

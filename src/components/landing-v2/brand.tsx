@@ -8,10 +8,18 @@ import { BetsyMark, type BetsyGaze, type BetsyState } from '@/components/brand/B
  * gaze toward the content/CTA, the mark is never recolored (agent costumes color the plate, see AgentCostumes).
  */
 
-export function Logo({ tone = 'dark', lockup = false }: { tone?: 'dark' | 'light'; lockup?: boolean }) {
+export function Logo({
+  tone = 'dark',
+  lockup = false,
+  animated = true,
+}: {
+  tone?: 'dark' | 'light'
+  lockup?: boolean
+  animated?: boolean
+}) {
   // The outlined official wordmark (gradient on dark and cream alike). The nav uses the lockup: the mark breathes and
   // blinks next to the wordmark (Rafael 2026-10-23: make the logo pop); still under reduced motion.
-  if (lockup) return <BetsyLogo size={22} lockup animated tone={tone} ariaLabel="Betsy" />
+  if (lockup) return <BetsyLogo size={22} lockup animated={animated} tone={tone} ariaLabel="Betsy" />
   return <BetsyLogo size={tone === 'light' ? 19 : 23} tone={tone} ariaLabel="Betsy" />
 }
 

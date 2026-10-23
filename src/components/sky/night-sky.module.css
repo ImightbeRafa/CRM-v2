@@ -102,6 +102,7 @@
 /* ── Constellation: segments appear one after another, hold, then fade together ── */
 .constellation {
   position: absolute;
+  max-width: 30vw;
   height: auto;
   overflow: visible;
   opacity: 0.85;

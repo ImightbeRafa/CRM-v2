@@ -132,7 +132,7 @@ test('one spacing system and brand slots for Lane I (logo + avatar)', () => {
 test('agent in action: mark on a colored plate acts out the mini-chat; no name input; one mark in the view', () => {
   const c = read(`${DIR}/islands/AgentCostumes.tsx`)
   // Lane I's official costume: AgentMark with a named plate; swatches never render a mark.
-  assert.match(c, /<AgentMark appearance=\{\{ plate, ring: false \}\}/)
+  assert.match(c, /<AgentMark\s+appearance=\{\{ plate, ring: false \}\}/)
   assert.equal((c.match(/<AgentMark\b|<Mark\b|<BetsyMark\b/g) ?? []).length, 1)
   assert.match(c, /AGENT_PLATES\.map/)
   assert.match(c, /role="radiogroup"/)
@@ -201,10 +201,15 @@ test('night sky on every dark band: server-rendered, transform/opacity only, pau
 
 test('nav: official lockup with the animated mark, section highlight, glass, mobile sheet outside the blurred header', () => {
   const nav = read(`${DIR}/islands/Nav.tsx`)
-  assert.match(nav, /<Logo lockup \/>/)
-  assert.match(read(`${DIR}/brand.tsx`), /<BetsyLogo size=\{22\} lockup animated/)
+  // the lockup's mark breathes only at the top; once scrolled it holds still (one live mark per view)
+  assert.match(nav, /<Logo lockup animated=\{!solid\} \/>/)
+  assert.match(read(`${DIR}/brand.tsx`), /<BetsyLogo size=\{22\} lockup animated=\{animated\}/)
   assert.match(nav, /aria-current=\{active === l\.href \? 'location' : undefined\}/)
-  assert.match(nav, /e\.key === 'Escape'/)
+  assert.match(nav, /setActive\(hit\)/)
+  // modal sheet: Escape returns focus to the button, the page behind is inert
+  assert.match(nav, /e\.key !== 'Escape'[\s\S]*menuBtn\.current\?\.focus\(\)/)
+  assert.match(nav, /el\.inert = true/)
+  assert.match(nav, /role="dialog" aria-modal="true"/)
   // the sheet is a sibling of <header> (backdrop-filter would trap a fixed child)
   assert.ok(nav.indexOf('</header>') < nav.indexOf('id="lv2-menu"'))
   assert.match(read(`${DIR}/landing.module.css`), /\.navSolid \{[\s\S]*?backdrop-filter: blur/)
@@ -213,7 +218,9 @@ test('nav: official lockup with the animated mark, section highlight, glass, mob
 test('agent plate: the mark stays centered (no typing dots on a plate) and light in a dark app theme', () => {
   assert.match(read('src/components/brand/AgentMark.tsx'), /state=\{state === 'typing' \? 'think' : state\}/)
   const c = read(`${DIR}/islands/AgentCostumes.tsx`)
-  assert.match(c, /className=\{`\$\{s\.costumes\} theme-light`\}/)
+  // theme-light on the plate only (on the block it would also redefine --muted and turn muted text to ink)
+  assert.match(c, /className="theme-light"/)
+  assert.doesNotMatch(c, /s\.costumes\} theme-light/)
   assert.match(c, /data-full=\{full \|\| undefined\}/)
   assert.match(c, /Hola, buenas/)
 })
@@ -222,8 +229,15 @@ test('/soporte: night-sky band, Betsy listening by the form, side panel; form + 
   const page = read('src/app/soporte/page.tsx')
   assert.match(page, /<NightSky /)
   assert.match(page, /getSupportContactConfig\(\)/)
-  assert.match(page, /theme-light/)
+  // theme-light wraps .page (never on the same element: it redefines --muted)
+  assert.match(page, /<div className="theme-light">\s*<div className=\{s\.page\}>/)
   assert.match(page, /href="\/soporte\?tema=agente"/)
+  // a case number is only promised when the ticket pipeline is on
+  assert.equal((page.match(/te damos un número/g) ?? []).length, 2)
+  assert.equal((page.match(/ticketsEnabled \?|ticketsEnabled &&/g) ?? []).length, 2)
+  // phone headings opt out of globals-mobile.css overrides
+  assert.match(page, /landing-hero/)
+  assert.match(page, /landing-h2/)
   const client = read('src/app/soporte/SoporteClient.tsx')
   assert.match(client, /<TurnstileWidget onToken=\{setToken\} resetKey=\{resetKey\} \/>/)
   assert.match(client, /<BetsyMark size=\{44\} state=\{sending \? 'think' : 'listen'\}/)

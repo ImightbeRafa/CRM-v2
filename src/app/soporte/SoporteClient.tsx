@@ -103,7 +103,7 @@ function ContactForm({ topic }: { topic: 'agent' | null }) {
       <div className="flex items-center gap-3">
         <BetsyMark size={44} state={sending ? 'think' : 'listen'} decorative />
         <div>
-          <h2 className="!text-[18px] !leading-tight font-semibold">Escribinos</h2>
+          <h2 className="landing-h2 !text-[18px] !font-semibold !leading-tight !tracking-normal">Escribinos</h2>
           <p className="text-[13px] text-slate-500">Contanos con detalle y te respondemos por correo.</p>
         </div>
       </div>

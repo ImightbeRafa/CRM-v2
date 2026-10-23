@@ -97,11 +97,18 @@ export function AgentCostumes() {
   }
 
   return (
-    // theme-light: the plate keeps its light tint even when the visitor's app theme is dark (it was a dark square).
-    <div ref={ref} className={`${s.costumes} theme-light`}>
+    <div ref={ref} className={s.costumes}>
       <div className={s.costumePreview}>
         <div className={s.costumeHead}>
-          <AgentMark appearance={{ plate, ring: false }} size={64} state={BEATS[step].mark} animated={!reduced} />
+          {/* theme-light on the plate only: it keeps its light tint when the visitor's app theme is dark (it was a dark
+              square). Not on the block: theme-light also redefines --muted. */}
+          <AgentMark
+            appearance={{ plate, ring: false }}
+            size={64}
+            state={BEATS[step].mark}
+            animated={!reduced}
+            className="theme-light"
+          />
           <div className={s.costumeId}>
             <b>{p.name}</b>
             <span>Agente de ventas · {p.business}</span>

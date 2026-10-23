@@ -18,41 +18,55 @@ export function Nav() {
   const [active, setActive] = useState<string | null>(null)
   const sheet = useRef<HTMLDivElement>(null)
 
+  const menuBtn = useRef<HTMLButtonElement>(null)
+
+  // Glass once scrolled, and the link of the section crossing the middle of the screen (aria-current); sections
+  // that are not in the nav clear it.
   useEffect(() => {
-    const on = () => setSolid(window.scrollY > 12)
+    let frame = 0
+    const on = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        setSolid(window.scrollY > 12)
+        const mid = window.innerHeight / 2
+        let hit: string | null = null
+        for (const l of NAV) {
+          const r = document.getElementById(l.href.slice(1))?.getBoundingClientRect()
+          if (r && r.top <= mid && r.bottom >= mid) hit = l.href
+        }
+        setActive(hit)
+      })
+    }
     on()
     window.addEventListener('scroll', on, { passive: true })
-    return () => window.removeEventListener('scroll', on)
-  }, [])
-
-  // The section in the middle of the screen marks its link (aria-current).
-  useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined') return
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) if (e.isIntersecting) setActive(`#${e.target.id}`)
-      },
-      { rootMargin: '-45% 0px -50% 0px' },
-    )
-    for (const l of NAV) {
-      const el = document.getElementById(l.href.slice(1))
-      if (el) io.observe(el)
+    window.addEventListener('resize', on)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', on)
+      window.removeEventListener('resize', on)
     }
-    return () => io.disconnect()
   }, [])
 
+  // Mobile sheet: a modal. Page behind is inert and does not scroll; Escape closes and returns focus to the button.
   useEffect(() => {
     if (!open) return
     const root = document.documentElement
     const prev = root.style.overflow
     root.style.overflow = 'hidden'
+    const behind = Array.from(document.querySelectorAll<HTMLElement>('main, footer'))
+    for (const el of behind) el.inert = true
     sheet.current?.querySelector('a')?.focus()
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setOpen(false)
+      menuBtn.current?.focus()
+    }
     const onWide = () => window.innerWidth >= 1024 && setOpen(false)
     window.addEventListener('keydown', onKey)
     window.addEventListener('resize', onWide)
     return () => {
       root.style.overflow = prev
+      for (const el of behind) el.inert = false
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', onWide)
     }
@@ -63,7 +77,8 @@ export function Nav() {
       <header className={`${s.nav} ${solid || open ? s.navSolid : ''}`}>
         <nav aria-label="Principal" className={`${s.wrap} ${s.navInner}`}>
           <a href="#inicio" className={s.logoLink} aria-label="Betsy, inicio">
-            <Logo lockup />
+            {/* The mark breathes at the top of the page; once you scroll it holds still (one live mark per view). */}
+            <Logo lockup animated={!solid} />
           </a>
           <ul className={s.navLinks}>
             {NAV.map((l) => (
@@ -83,6 +98,7 @@ export function Nav() {
             </a>
           </div>
           <button
+            ref={menuBtn}
             type="button"
             className={s.menuBtn}
             aria-label={open ? 'Cerrar menú' : 'Abrir menú'}
@@ -96,7 +112,7 @@ export function Nav() {
       </header>
       {/* Outside the header: its backdrop-filter would make it the containing block of this fixed sheet. */}
       {open && (
-        <div id="lv2-menu" ref={sheet} className={s.mobileMenu}>
+        <div id="lv2-menu" ref={sheet} className={s.mobileMenu} role="dialog" aria-modal="true" aria-label="Menú">
           <div className={s.wrap}>
             <ul className={s.mobileLinks}>
               {NAV.map((l) => (

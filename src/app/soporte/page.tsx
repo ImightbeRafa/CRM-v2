@@ -28,129 +28,137 @@ export default async function SoportePage({ searchParams }: { searchParams: Prom
   const ticketsEnabled = supportPipelineEnabled();
 
   return (
-    <div className={`theme-light ${s.page}`}>
-      <header className={s.band}>
-        <NightSky seed={11} bottom="canvas" stars={40} constellation={{ x: 76, y: 22, w: 120 }} />
-        <div className={s.bar}>
-          <BetsyLogo size={21} href="/home" ariaLabel="Betsy, inicio" />
-          <nav aria-label="Soporte" className={s.barLinks}>
-            <Link href="/help">Centro de ayuda</Link>
-            <Link href="/auth/signin" className={s.barSignin}>
-              Iniciar sesión
-            </Link>
-          </nav>
-        </div>
-        <div className={s.intro}>
-          <p className={s.eyebrow}>Soporte y contacto</p>
-          <h1 className={s.title}>¿En qué te ayudamos?</h1>
-          <p className={s.lead}>
-            Escribinos por donde te quede más cómodo. Si abrís un caso, te damos un número para darle seguimiento.
-          </p>
-        </div>
-      </header>
-
-      <main className={s.main}>
-        <div className={s.grid}>
-          <div className={s.formCol}>
-            <SoporteClient ticketsEnabled={ticketsEnabled} topic={topic} />
+    // theme-light outside .page: it redefines --muted, so the page's own tokens must win (nested inside it).
+    <div className="theme-light">
+      <div className={s.page}>
+        <header className={s.band}>
+          <NightSky seed={11} bottom="canvas" stars={40} constellation={{ x: 76, y: 22, w: 120 }} />
+          <div className={s.bar}>
+            <BetsyLogo size={21} href="/home" ariaLabel="Betsy, inicio" />
+            <nav aria-label="Soporte" className={s.barLinks}>
+              <Link href="/docs">Centro de ayuda</Link>
+              <Link href="/auth/signin" className={s.barSignin}>
+                Iniciar sesión
+              </Link>
+            </nav>
           </div>
+          <div className={s.intro}>
+            <p className={s.eyebrow}>Soporte y contacto</p>
+            <h1 className={`landing-hero ${s.title}`}>¿En qué te ayudamos?</h1>
+            <p className={s.lead}>
+              Escribinos por donde te quede más cómodo.
+              {ticketsEnabled ? ' Si abrís un caso, te damos un número para darle seguimiento.' : ''}
+            </p>
+          </div>
+        </header>
 
-          <aside className={s.side} aria-label="Más formas de contacto">
-            {(contact.whatsapp || contact.instagram || contact.emails.length > 0 || contact.hours) && (
+        <main className={s.main}>
+          <div className={s.grid}>
+            <div className={s.formCol}>
+              <SoporteClient ticketsEnabled={ticketsEnabled} topic={topic} />
+            </div>
+
+            <aside className={s.side} aria-label="Más formas de contacto">
+              {(contact.whatsapp || contact.instagram || contact.emails.length > 0 || contact.hours) && (
+                <section className={s.card}>
+                  <h2 className={`landing-h2 ${s.cardTitle}`}>Otras formas de escribirnos</h2>
+                  <div className={s.channels}>
+                    {contact.whatsapp && (
+                      <a
+                        href={contact.whatsapp.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={s.channel}
+                        data-kind="wa"
+                      >
+                        <span className={s.channelIcon}>
+                          <MessageCircle aria-hidden />
+                        </span>
+                        <span className={s.channelText}>
+                          <span>WhatsApp</span>
+                          <b>{contact.whatsapp.display}</b>
+                        </span>
+                        <ArrowRight className={s.channelGo} aria-hidden />
+                      </a>
+                    )}
+                    {contact.instagram && (
+                      <a
+                        href={contact.instagram.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={s.channel}
+                        data-kind="ig"
+                      >
+                        <span className={s.channelIcon}>
+                          <Instagram aria-hidden />
+                        </span>
+                        <span className={s.channelText}>
+                          <span>Instagram</span>
+                          <b>{contact.instagram.display}</b>
+                        </span>
+                        <ArrowRight className={s.channelGo} aria-hidden />
+                      </a>
+                    )}
+                    {contact.emails.map((email) => (
+                      <a key={email} href={`mailto:${email}`} className={s.channel} data-kind="mail">
+                        <span className={s.channelIcon}>
+                          <Mail aria-hidden />
+                        </span>
+                        <span className={s.channelText}>
+                          <span>Correo</span>
+                          <b>{email}</b>
+                        </span>
+                        <ArrowRight className={s.channelGo} aria-hidden />
+                      </a>
+                    ))}
+                  </div>
+                  {contact.hours && (
+                    <p className={s.hours}>
+                      <Clock aria-hidden /> Horario: {contact.hours}
+                    </p>
+                  )}
+                </section>
+              )}
+
               <section className={s.card}>
-                <h2 className={s.cardTitle}>Otras formas de escribirnos</h2>
-                <div className={s.channels}>
-                  {contact.whatsapp && (
-                    <a
-                      href={contact.whatsapp.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={s.channel}
-                      data-kind="wa"
-                    >
-                      <span className={s.channelIcon}>
-                        <MessageCircle aria-hidden />
-                      </span>
-                      <span className={s.channelText}>
-                        <span>WhatsApp</span>
-                        <b>{contact.whatsapp.display}</b>
-                      </span>
-                      <ArrowRight className={s.channelGo} aria-hidden />
-                    </a>
+                <h2 className={`landing-h2 ${s.cardTitle}`}>Qué pasa cuando nos escribís</h2>
+                <ol className={s.steps}>
+                  {ticketsEnabled && (
+                    <li>
+                      <Ticket aria-hidden />
+                      <span>Si abrís un caso, te damos un número para darle seguimiento.</span>
+                    </li>
                   )}
-                  {contact.instagram && (
-                    <a
-                      href={contact.instagram.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={s.channel}
-                      data-kind="ig"
-                    >
-                      <span className={s.channelIcon}>
-                        <Instagram aria-hidden />
-                      </span>
-                      <span className={s.channelText}>
-                        <span>Instagram</span>
-                        <b>{contact.instagram.display}</b>
-                      </span>
-                      <ArrowRight className={s.channelGo} aria-hidden />
-                    </a>
-                  )}
-                  {contact.emails.map((email) => (
-                    <a key={email} href={`mailto:${email}`} className={s.channel} data-kind="mail">
-                      <span className={s.channelIcon}>
-                        <Mail aria-hidden />
-                      </span>
-                      <span className={s.channelText}>
-                        <span>Correo</span>
-                        <b>{email}</b>
-                      </span>
-                      <ArrowRight className={s.channelGo} aria-hidden />
-                    </a>
-                  ))}
-                </div>
-                {contact.hours && (
-                  <p className={s.hours}>
-                    <Clock aria-hidden /> Horario: {contact.hours}
-                  </p>
-                )}
+                  <li>
+                    <Mail aria-hidden />
+                    <span>
+                      Te respondemos por correo lo antes posible{contact.hours ? ', en nuestro horario' : ''}.
+                    </span>
+                  </li>
+                  <li>
+                    <BookOpen aria-hidden />
+                    <span>
+                      ¿Ya usás Betsy? En el <Link href="/help">Centro de ayuda</Link> hay guías paso a paso (con tu
+                      cuenta).
+                    </span>
+                  </li>
+                </ol>
               </section>
-            )}
 
-            <section className={s.card}>
-              <h2 className={s.cardTitle}>Qué pasa cuando nos escribís</h2>
-              <ol className={s.steps}>
-                <li>
-                  <Ticket aria-hidden />
-                  <span>Si abrís un caso, te damos un número para darle seguimiento.</span>
-                </li>
-                <li>
-                  <Mail aria-hidden />
-                  <span>Te respondemos por correo lo antes posible{contact.hours ? ', en nuestro horario' : ''}.</span>
-                </li>
-                <li>
-                  <BookOpen aria-hidden />
+              {topic !== 'agent' && (
+                <a href="/soporte?tema=agente" className={s.agentCta}>
+                  <Sparkles aria-hidden />
                   <span>
-                    ¿Ya usás Betsy? En el <Link href="/help">Centro de ayuda</Link> hay guías paso a paso (con tu
-                    cuenta).
+                    <b>Quiero mi agente de IA</b>
+                    <span>Contanos qué vendés y te armamos un agente con tu información.</span>
                   </span>
-                </li>
-              </ol>
-            </section>
-
-            {topic !== 'agent' && (
-              <a href="/soporte?tema=agente" className={s.agentCta}>
-                <Sparkles aria-hidden />
-                <span>
-                  <b>Quiero mi agente de IA</b>
-                  <span>Contanos qué vendés y te armamos un agente con tu información.</span>
-                </span>
-                <ArrowRight className={s.channelGo} aria-hidden />
-              </a>
-            )}
-          </aside>
-        </div>
-      </main>
+                  <ArrowRight className={s.channelGo} aria-hidden />
+                </a>
+              )}
+            </aside>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

@@ -86,10 +86,10 @@
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
-.title {
+.band .title {
   margin: 0;
-  font-size: clamp(32px, 6vw, 52px) !important;
-  line-height: 1.05 !important;
+  font-size: clamp(32px, 6vw, 52px);
+  line-height: 1.05;
   font-weight: 650;
   letter-spacing: -0.025em;
 }
@@ -136,11 +136,12 @@
   padding: 20px;
   box-shadow: 0 24px 60px -40px rgba(11, 11, 18, 0.35);
 }
-/* !important: globals-mobile.css resizes every h2 on phones. */
-.cardTitle {
+/* The h1/h2 carry landing-hero / landing-h2 so globals-mobile.css leaves them alone; the band/card prefix outranks
+   those global classes' own sizes. */
+.card .cardTitle {
   margin: 0 0 12px;
-  font-size: 15px !important;
-  line-height: 1.35 !important;
+  font-size: 15px;
+  line-height: 1.35;
   font-weight: 650;
 }
 .channels {

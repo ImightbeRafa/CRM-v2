@@ -13,28 +13,32 @@ export function SkyWatch() {
     if (!sky) return
     let onScreen = false
     let ready = false
-    let idle: number | undefined
+    // Idle-callback ids and timer ids are separate pools: remember which one we hold.
+    let pending: { kind: 'idle' | 'timer'; id: number } | null = null
     const sync = () => {
       if (ready && onScreen && !document.hidden) sky.setAttribute('data-run', '')
       else sky.removeAttribute('data-run')
     }
     const start = () => {
       const go = () => {
+        pending = null
         ready = true
         sync()
       }
-      idle =
+      pending =
         typeof window.requestIdleCallback === 'function'
-          ? window.requestIdleCallback(go, { timeout: 2500 })
-          : window.setTimeout(go, 1200)
+          ? { kind: 'idle', id: window.requestIdleCallback(go, { timeout: 2500 }) }
+          : { kind: 'timer', id: window.setTimeout(go, 1200) }
     }
     if (document.readyState === 'complete') start()
     else window.addEventListener('load', start, { once: true })
     const io =
       typeof IntersectionObserver === 'undefined'
         ? null
-        : new IntersectionObserver(([e]) => {
-            onScreen = e.isIntersecting
+        : new IntersectionObserver((entries) => {
+            // the newest entry wins when several crossings arrive in one batch (fast fling, anchor jump)
+            const last = entries[entries.length - 1]
+            if (last) onScreen = last.isIntersecting
             sync()
           })
     if (io) io.observe(sky)
@@ -43,10 +47,8 @@ export function SkyWatch() {
     return () => {
       io?.disconnect()
       window.removeEventListener('load', start)
-      if (idle !== undefined) {
-        if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idle)
-        window.clearTimeout(idle)
-      }
+      if (pending?.kind === 'idle') window.cancelIdleCallback(pending.id)
+      else if (pending?.kind === 'timer') window.clearTimeout(pending.id)
       document.removeEventListener('visibilitychange', sync)
     }
   }, [])

@@ -1,3 +1,11 @@
+## 2026-10-23 — Home v4: soft section blends, agent in action, generic examples, animated mark (Lane H, claude/wave-home-v4-4ad5c6)
+
+- Dark sections (hero bottom, Build, Próximamente) fade into the light neighbour inside their own padding with an eased gradient (.fadeTop / .fadeBottom, paper or canvas): no hard dark/light edge in either direction. Static, nothing animates.
+- "Tu agente" is now "Así trabaja, con tus colores": the name input is gone; a looping mini-chat (answers with the store info, receipt, Pago verificado por tu equipo, Necesita persona, follow-up al día siguiente) next to the AgentMark on its colored plate, whose state follows each beat (listen/typing/speak/yes/paused). Color swatches and 4 example agents kept; fixed-height thread (no CLS), stops off-screen, reduced motion = final frame.
+- Examples across the home are generic CR small businesses (ropa, cosméticos, repostería, tecnología, mascotas, servicios); story is a sérum de vitamina C. Nothing from Rafael's stores; a test blocks those words.
+- The demo's Betsy mark follows finer beats while the story plays (listen as the message lands, typing, speak, idle; yes at Pago verificado). Contact mark keeps its idle breath/blink.
+- Tests: home-v2 (new assertions for fades, mark beats, no name input, generic examples).
+
 ## 2026-10-22 — Premium chips and lucide icons instead of emoji (Lane B, claude/wave-icons-chips, PR #133)
 
 - One shared `Chip` (`src/components/ui/Chip.tsx`): tone (neutral/brand/violet/info/success/warning/danger), size sm/md, `surface` aurora (palette classes, follows dark mode) or dark (Logística), optional lucide `icon` or status `dot`. Keep this API stable; other lanes reuse it.

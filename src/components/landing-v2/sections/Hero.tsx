@@ -8,7 +8,7 @@ import { StorySteps, StoryStage } from '../demos/StoryStage'
 /** Dark hero: static headline (the LCP element never animates in) + the story demo poster, swapped for the player. */
 export function Hero({ priceShort, trialDays }: { priceShort: string; trialDays: number }) {
   return (
-    <section id="inicio" className={s.hero} aria-labelledby="lv2-hero-title">
+    <section id="inicio" className={`${s.hero} ${s.fadeBottom}`} aria-labelledby="lv2-hero-title">
       <div className={s.lightField} aria-hidden />
       <div className={`${s.wrap} ${s.heroGrid}`}>
         <div className={s.heroCopy}>

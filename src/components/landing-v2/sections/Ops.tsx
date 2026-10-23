@@ -38,7 +38,7 @@ export function Ops() {
               <div className={s.inboxMini} aria-hidden>
                 {(
                   [
-                    ['DR', 'Daniela R.', '¿Tienen los parches para dormir?', 'ig', 'ia', 'IA'],
+                    ['DR', 'Daniela R.', '¿Tienen el sérum de vitamina C?', 'ig', 'ia', 'IA'],
                     ['CM', 'Carlos M.', 'Ya hice el SINPE', 'wa', 'pago', 'Revisar pago'],
                     ['AV', 'Andrea V.', 'Quiero hablar con alguien', 'wa', 'persona', 'Persona'],
                     ['JS', 'José S.', 'Gracias, me llegó perfecto', 'ig', 'pedido', 'Pedido'],
@@ -189,7 +189,7 @@ export function Ops() {
                   </thead>
                   <tbody>
                     <tr>
-                      <td>Reel parches</td>
+                      <td>Reel colección verano</td>
                       <td>48</td>
                       <td>20</td>
                     </tr>

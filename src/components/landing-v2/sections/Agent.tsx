@@ -36,9 +36,10 @@ export function Agent() {
 
         <div style={{ marginTop: 'var(--section-y)' }}>
           <p className={s.eyebrow}>Tu agente</p>
-          <h3 className={`${s.cardTitle} ${s.h3Big}`}>Con tu nombre y tus colores.</h3>
+          <h3 className={`${s.cardTitle} ${s.h3Big}`}>Así trabaja, con tus colores.</h3>
           <p className={s.small} style={{ maxWidth: 560 }}>
-            Cada negocio tiene su propio agente, con el nombre y el color que elijás. Probá cambiarlos.
+            Cada negocio tiene su propio agente, con su nombre y su color. Mirá cómo atiende un chat de principio a fin,
+            y probá otro ejemplo u otro color.
           </p>
           <AgentCostumes />
         </div>

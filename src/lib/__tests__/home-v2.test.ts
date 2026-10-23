@@ -115,22 +115,48 @@ test('one spacing system and brand slots for Lane I (logo + avatar)', () => {
   assert.doesNotMatch(read(`${DIR}/sections/Hero.tsx`), /<Mark\b/)
   assert.equal((read(`${DIR}/demos/StoryStage.tsx`).match(/<Mark\b/g) ?? []).length, 1)
   assert.match(read(`${DIR}/demos/StoryStage.tsx`), /if \(step === 3\) return 'yes'/)
+  // While playing, the mark follows finer beats (listen / typing / speak) inside each step.
+  assert.match(read(`${DIR}/demos/StoryStage.tsx`), /state=\{mark \?\? markState\(step\)\}/)
+  assert.match(read(`${DIR}/demos/StoryPlayer.tsx`), /STORY_MARK_BEATS\[t\.step\]/)
+  // Soft blends between dark and light sections, both directions (Rafael 2026-10-23: no hard edges).
+  assert.match(css, /\.fadeTop::before,\n\.fadeBottom::after \{/)
+  assert.match(read(`${DIR}/sections/Hero.tsx`), /s\.fadeBottom/)
+  assert.equal((read(`${DIR}/sections/Story.tsx`).match(/s\.fadeTop\b/g) ?? []).length, 2)
+  assert.equal((read(`${DIR}/sections/Story.tsx`).match(/s\.fadeBottom\b/g) ?? []).length, 2)
   // Logo / mark only come from brand.tsx (the swap point for Lane I's BetsyMark / BetsyLogo).
   for (const f of files.filter((x) => x.endsWith('.tsx') && !x.endsWith('brand.tsx'))) {
     assert.doesNotMatch(read(f), /className=\{s\.logo\}>\s*Betsy/, f)
   }
 })
 
-test('agent costumes: mark on a colored plate + name; the mark itself is never recolored; one mark in the view', () => {
+test('agent in action: mark on a colored plate acts out the mini-chat; no name input; one mark in the view', () => {
   const c = read(`${DIR}/islands/AgentCostumes.tsx`)
   // Lane I's official costume: AgentMark with a named plate; swatches never render a mark.
   assert.match(c, /<AgentMark appearance=\{\{ plate, ring: false \}\}/)
   assert.equal((c.match(/<AgentMark\b|<Mark\b|<BetsyMark\b/g) ?? []).length, 1)
   assert.match(c, /AGENT_PLATES\.map/)
   assert.match(c, /role="radiogroup"/)
-  assert.match(c, /maxLength=\{16\}/)
+  // Rafael 2026-10-23: keep the color, drop the name input; the mark follows the chat's beats.
+  assert.doesNotMatch(c, /<input\b|maxLength/)
+  assert.match(c, /state=\{BEATS\[step\]\.mark\}/)
+  for (const st of ['listen', 'typing', 'speak', 'yes', 'paused']) assert.match(c, new RegExp(`mark: '${st}'`))
+  assert.match(c, /Necesita persona/)
+  assert.match(c, /Al día siguiente/)
+  // Same timeline rules as the other demos: stops off-screen, reduced motion = final state.
+  assert.match(c, /useTimeline\(DURATIONS, \{ restStep: LAST, reduced, visible \}\)/)
   assert.match(read(`${DIR}/sections/Agent.tsx`), /<AgentCostumes \/>/)
   assert.doesNotMatch(read(`${DIR}/sections/Agent.tsx`), /→/)
+})
+
+test("examples are generic small businesses, never Rafael's own stores or real store names", () => {
+  assert.doesNotMatch(
+    source,
+    /\b(parches?|dormir|sueño|arnés|colágeno|blanqueamiento|suplementos?|PatchHouse|DeepSleep|PuraSonrisa)\b/i,
+  )
+  const content = read(`${DIR}/content.ts`)
+  for (const k of ['ropa', 'cosmeticos', 'reposteria', 'tecnologia', 'mascotas', 'servicios']) {
+    assert.match(content, new RegExp(`key: '${k}'`))
+  }
 })
 
 test('examples never use live client agent personas (Sofi, Vale, Laura, Andrés, Dani, Caro)', () => {

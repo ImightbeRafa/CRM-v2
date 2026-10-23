@@ -8,7 +8,7 @@ import { Chip, type ChipKind } from '../ui/Chip'
 
 export function Build() {
   return (
-    <section className={`${s.section} ${s.dark} ${s.cv}`} aria-labelledby="lv2-build-title">
+    <section className={`${s.section} ${s.dark} ${s.cv} ${s.fadeTop} ${s.fromPaper} ${s.fadeBottom}`} aria-labelledby="lv2-build-title">
       <div className={s.wrap}>
         <div className={s.sectionHead}>
           <p className={s.eyebrow}>{BUILD.label}</p>
@@ -123,7 +123,7 @@ function SoonVisual({ k }: { k: string }) {
 
 export function ComingSoon() {
   return (
-    <section className={`${s.section} ${s.dark} ${s.cv}`} aria-labelledby="lv2-soon-title">
+    <section className={`${s.section} ${s.dark} ${s.cv} ${s.fadeTop} ${s.fadeBottom} ${s.toPaper}`} aria-labelledby="lv2-soon-title">
       <div className={s.wrap}>
         <div className={s.sectionHead}>
           <p className={s.eyebrow}>{COMING_SOON.label}</p>

@@ -1,8 +1,7 @@
 'use client';
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import Image from "next/image";
-import BetsyLogo from "@/BetsyLogo.png";
+import { BetsyLogo } from "@/components/brand/BetsyLogo";
 import { AuroraShell } from "@/components/aurora/AuroraShell";
 import { AuroraMobileNav } from "@/components/aurora/AuroraMobileNav";
 import { AuroraHome } from "./components/AuroraHome";
@@ -35,14 +34,7 @@ export default function EnhancedHomeContent() {
       <div className="min-h-full flex items-center justify-center bg-background py-16">
         <div className="text-center">
           <div className="flex justify-center mb-6">
-            <Image
-              src={BetsyLogo}
-              alt="Betsy CRM"
-              width={140}
-              height={140}
-              className="object-contain"
-              priority
-            />
+            <BetsyLogo tone="auto" size={44} />
           </div>
 
           <p className="text-muted-foreground mb-8">Por favor, inicia sesión para continuar</p>

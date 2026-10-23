@@ -4,12 +4,21 @@ import { useEffect, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { Check, ChevronsUpDown, Loader2 } from 'lucide-react'
 import { clearBusinessScopedBrowserState } from '@/lib/business-switch-client'
+import { avatarInitials } from '@/lib/aurora-avatar'
 
 type Business = { id: string; name: string; role: string; current: boolean }
 
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || 'B'
+/** Business plate: initials on a quiet rounded tile (dark rail), with a small "active" dot. */
+function BusinessPlate({ name }: { name: string }) {
+  return (
+    <span
+      className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-static-white/[0.12] text-[11px] font-semibold tracking-wide text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+      aria-hidden
+    >
+      {avatarInitials(name)}
+      <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-au-sidebar" />
+    </span>
+  )
 }
 
 /**
@@ -98,21 +107,21 @@ export function BusinessSwitcher({ tenantName, collapsed }: { tenantName: string
 
   const header = (
     <>
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#5B6CFF] to-[#A855F7] text-[11px] font-bold">
-        {initials(tenantName)}
-      </span>
+      <BusinessPlate name={tenantName} />
       {collapsed ? null : (
         <span className="min-w-0 flex-1 text-left">
           <span className="block truncate text-[13px] font-semibold leading-tight">{tenantName}</span>
-          {canSwitch ? <span className="block text-[10.5px] text-static-white/50">{businesses!.length} negocios</span> : null}
+          <span className="block text-[10.5px] leading-tight text-static-white/45">
+            {canSwitch ? `${businesses!.length} negocios` : 'Tu negocio'}
+          </span>
         </span>
       )}
       {canSwitch && !collapsed ? <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-static-white/50" aria-hidden /> : null}
     </>
   )
 
-  const boxClass = `mb-5 flex items-center rounded-xl border border-static-white/10 bg-static-white/[0.04] motion-safe:transition-colors motion-safe:duration-200 hover:bg-static-white/[0.07] ${
-    collapsed ? 'mx-auto h-11 w-11 justify-center' : 'mx-3 gap-2.5 px-2.5 py-2'
+  const boxClass = `mb-5 flex items-center rounded-xl motion-safe:transition-colors motion-safe:duration-200 hover:bg-static-white/[0.06] ${
+    collapsed ? 'mx-auto h-11 w-11 justify-center' : 'mx-3 gap-2.5 px-2 py-1.5'
   }`
 
   if (!canSwitch) {
@@ -149,8 +158,8 @@ export function BusinessSwitcher({ tenantName, collapsed }: { tenantName: string
               onClick={() => void switchTo(b)}
               className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] ${b.current ? 'bg-au-tint-eef0ff' : 'hover:bg-slate-50'}`}
             >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-[#5B6CFF] to-[#A855F7] text-[10px] font-bold text-white">
-                {initials(b.name)}
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-slate-100 text-[10px] font-semibold text-slate-700" aria-hidden>
+                {avatarInitials(b.name)}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{b.name}</span>

@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NavigationProgress } from './NavigationProgress';
 import { FeedbackWidget } from './FeedbackWidget';
+import { BetsyHelpButton } from '@/components/brand/BetsyHelpButton';
 
 function makeQueryClient() {
   return new QueryClient({
@@ -33,6 +34,7 @@ export function ClientProviders({ children }: { children: React.ReactNode }) {
       <NavigationProgress />
       {children}
       <FeedbackWidget />
+      <BetsyHelpButton />
     </QueryClientProvider>
   );
 }

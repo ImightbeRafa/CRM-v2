@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import { BetsyLogo } from '@/components/brand/BetsyLogo'
 
 type BetsyWordmarkProps = {
   /** `dark` for the dark brand panel, `light` (default) for cream/white surfaces. */
@@ -8,17 +8,15 @@ type BetsyWordmarkProps = {
   asText?: boolean
 }
 
-/** Gradient "Betsy" wordmark used on Aurora auth / onboarding / error screens. */
+/** Auth / onboarding / error screens: the shared Betsy wordmark (see `@/components/brand/BetsyLogo`). */
 export function BetsyWordmark({ tone = 'light', className = '', asText = false }: BetsyWordmarkProps) {
-  const gradient =
-    tone === 'dark'
-      ? 'from-[#A99BFF] to-[#D6A8FF]'
-      : 'from-[#5B6CFF] to-[#8B5CF6]'
-  const cls = `bg-gradient-to-r ${gradient} bg-clip-text text-[28px] font-bold leading-none tracking-tight text-transparent ${className}`
-  if (asText) return <span className={cls}>Betsy</span>
   return (
-    <Link href="/" className={cls} aria-label="Betsy CRM">
-      Betsy
-    </Link>
+    <BetsyLogo
+      tone={tone}
+      size={28}
+      className={className}
+      href={asText ? undefined : '/'}
+      ariaLabel={asText ? undefined : 'Betsy CRM'}
+    />
   )
 }

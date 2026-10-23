@@ -43,7 +43,11 @@ test('sidebar footer, profile menu and mobile profile use AuroraAvatar; tenant b
   assert.match(read('src/components/aurora/shell/AuroraProfileMenu.tsx'), /<AuroraAvatar name=\{viewer\.name\} image=\{viewer\.image\}/)
   assert.match(read('src/components/aurora/AuroraMobileNav.tsx'), /<AuroraAvatar name=\{viewer\.name\} image=\{viewer\.image\}/)
   assert.doesNotMatch(side, /<AuroraAvatar name=\{tenantName\}/)
-  assert.match(side, /avatarInitials\(tenantName\)/)
+  // The business block lives in BusinessSwitcher: an initials plate, never the user's photo.
+  const biz = read('src/components/aurora/BusinessSwitcher.tsx')
+  assert.match(biz, /<BusinessPlate name=\{tenantName\} \/>/)
+  assert.match(biz, /\{avatarInitials\(name\)\}/)
+  assert.doesNotMatch(biz, /AuroraAvatar/)
 })
 
 test('sidebar polish: reduced-motion aware, focus rings, display-only tenant block', () => {
@@ -52,5 +56,14 @@ test('sidebar polish: reduced-motion aware, focus rings, display-only tenant blo
   assert.match(side, /motion-reduce:/)
   assert.match(side, /focus-visible:ring-2/)
   assert.match(side, /aria-current=\{active \? 'page' : undefined\}/)
+  // Links only: the collapse button lives in shell/SidebarToggle.tsx.
   assert.doesNotMatch(side, /cursor-pointer|<button|role=|tabIndex/)
+  assert.match(side, /<SidebarToggle collapsed=\{collapsed\} onToggle=\{toggle\} \/>/)
+  // Collapsed rail: every link is named; the rail keeps scrolling (short screens) and the tooltip is
+  // fixed-position on hover + keyboard focus, so it is never clipped by the scroll box.
+  assert.match(side, /aria-label=\{collapsed \? item\.label : undefined\}/)
+  assert.match(side, /min-h-0 flex-1 overflow-y-auto/)
+  assert.doesNotMatch(side, /overflow-visible/)
+  assert.match(side, /onFocus=\{collapsed \? \(e\) => showTip\(item\.label, e\.currentTarget\) : undefined\}/)
+  assert.match(side, /pointer-events-none fixed z-\[70\]/)
 })

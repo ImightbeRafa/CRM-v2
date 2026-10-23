@@ -170,7 +170,7 @@ describe('AI allowance: credits source (Lane H, SQL 060)', () => {
     assert.ok(src.includes('alert: (nowMs) => alertCreditMeterDown(nowMs),'))
     assert.ok(src.includes("where: { tenantId, role: 'OWNER', isActive: true, invitedBy: null, invitedAt: null, user: { isSuperAdmin: true, active: true } },"))
     // An owner read error counts as the owner's business: answer, never a silent stop.
-    assert.match(src, /owner read failed[^\n]*\n\s*void alertCreditMeterDown\(nowMs\)\n\s*return true/)
+    assert.match(src, /owner read failed[^\n]*\r?\n\s*void alertCreditMeterDown\(nowMs\)\r?\n\s*return true/)
     const billing = read('src/lib/ai-billing/allowance.ts')
     assert.ok(billing.includes('const configured = (await listRates()).some((r) => r.periodKey <= s.periodKey)'))
     assert.ok(billing.includes('const value: CreditAllowance = d.enforced && configured'))

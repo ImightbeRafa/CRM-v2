@@ -135,6 +135,15 @@ describe('ad → chat → sale', () => {
     const oct5 = report.daily.find((p) => p.date === '2026-10-05')!
     assert.deepEqual([oct5.adOrders, oct5.organicOrders, oct5.adBooked], [2, 2, 23000])
     assert.equal(report.daily.find((p) => p.date === '2026-10-04')!.adOrders, 1)
+    // the sale day wins over the creation day (same rule as the period filter)
+    const bySale = buildAdSalesReport({
+      touches: [touch('c1', 'A', '2026-10-02T10:00:00Z')],
+      chats: [],
+      orders: [{ id: 'x', conversationId: 'c1', platform: 'whatsapp', createdAt: d('2026-10-05T10:00:00Z'), dayKey: '2026-10-03', total: 1, collected: false, cancelled: false }],
+      range,
+    })
+    assert.equal(bySale.daily.find((p) => p.date === '2026-10-03')!.adOrders, 1)
+    assert.equal(bySale.daily.find((p) => p.date === '2026-10-05')!.adOrders, 0)
     assert.equal(report.daily.reduce((n, p) => n + p.adOrders + p.organicOrders, 0), report.totals.adOrders + report.organic.orders)
     assert.equal(report.withoutChat.orders, 2)
   })

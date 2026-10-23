@@ -79,6 +79,9 @@ function View() {
   const maxReplies = teammates.reduce((m, t) => Math.max(m, t.replies), 0)
   const daily = report?.daily ?? []
   const hasDaily = daily.some((d) => d.medianMs !== null)
+  // Plot in the unit that gives round gridlines: hours for slow days, minutes, or seconds when everything is fast.
+  const maxDailyMs = daily.reduce((m, d) => Math.max(m, d.medianMs ?? 0), 0)
+  const unit = maxDailyMs >= 2 * 3_600_000 ? { ms: 3_600_000, label: 'h' } : maxDailyMs >= 120_000 ? { ms: 60_000, label: 'min' } : { ms: 1000, label: 's' }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="insights-team">
@@ -129,9 +132,9 @@ function View() {
                   <AreaChart
                     labels={daily.map((d) => d.date)}
                     tickLabel={(d) => formatDayLabel(d)}
-                    series={[{ key: 'median', label: 'Mediana', cls: SERIES[0], values: daily.map((d) => (d.medianMs === null ? null : d.medianMs / 60_000)) }]}
-                    format={(v) => formatDurationEs(v * 60_000)}
-                    axisFormat={(v) => (v >= 120 ? `${nf.format(Math.round(v / 60))} h` : `${nf.format(Math.round(v))} min`)}
+                    series={[{ key: 'median', label: 'Mediana', cls: SERIES[0], values: daily.map((d) => (d.medianMs === null ? null : d.medianMs / unit.ms)) }]}
+                    format={(v) => formatDurationEs(v * unit.ms)}
+                    axisFormat={(v) => `${nf.format(Math.round(v * 10) / 10)} ${unit.label}`}
                     ariaLabel="Mediana de la primera respuesta por día"
                   />
                 ) : (

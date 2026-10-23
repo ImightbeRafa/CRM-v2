@@ -122,8 +122,15 @@ export function buildTeamChatReport(input: {
   })
   teammates.sort((a, b) => b.replies - a.replies || b.openAssigned - a.openAssigned || a.userId.localeCompare(b.userId))
 
+  const byDay = new Map<string, number[]>()
+  for (const s of valid) {
+    if (!s.day) continue
+    const list = byDay.get(s.day) ?? []
+    list.push(s.ms)
+    byDay.set(s.day, list)
+  }
   const daily: FirstResponseDay[] = (input.dayKeys ?? []).map((date) => {
-    const day = valid.filter((s) => s.day === date).map((s) => s.ms)
+    const day = byDay.get(date) ?? []
     return { date, medianMs: median(day), samples: day.length }
   })
   const all = valid.map((s) => s.ms)

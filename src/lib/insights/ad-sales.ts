@@ -48,6 +48,8 @@ export type AdOrderRow = {
   /** isCollectedRevenue(order) — paid (or contra-entrega confirmed). */
   collected: boolean
   cancelled: boolean
+  /** CR day the order counts on (its sale date, as the period filter); defaults to the creation day. */
+  dayKey?: string
 }
 
 export type AdSalesRow = {
@@ -66,7 +68,7 @@ export type AdSalesRow = {
   conversion: number | null
 }
 
-/** Chat-linked orders per Costa Rica day: from an ad vs without one (for the trend chart). */
+/** Chat-linked orders per Costa Rica sale day: from an ad vs without one (for the trend chart). */
 export type AdDailyPoint = { date: string; adOrders: number; organicOrders: number; adBooked: number; organicBooked: number }
 
 export type UnlinkedOrderTotals = { orders: number; paidOrders: number; booked: number; collected: number }
@@ -235,7 +237,7 @@ export function buildAdSalesReport(input: {
     const total = money(order.total)
     row.orders += 1
     row.booked += total
-    const day = daily.get(formatStatsDateKey(order.createdAt))
+    const day = daily.get(order.dayKey || formatStatsDateKey(order.createdAt))
     if (day) {
       if (touch) {
         day.adOrders += 1

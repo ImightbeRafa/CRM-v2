@@ -176,21 +176,30 @@ export function StatTile({
 
 export type ChipTone = 'good' | 'warning' | 'critical' | 'neutral' | 'info'
 
+/**
+ * Same look and tone classes as the shared `Chip` (src/components/ui/Chip.tsx, Lane B #133: 1px border,
+ * tinted fill, h-6, 12px lucide icon) so order chips and report chips match. Tone map to Chip:
+ * good → success, critical → danger, info → brand, warning / neutral unchanged. Once #133 is merged this
+ * becomes a thin wrapper around Chip.
+ */
 const CHIP: Record<ChipTone, { cls: string; icon: LucideIcon }> = {
-  good: { cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200/70', icon: CheckCircle2 },
-  warning: { cls: 'bg-amber-50 text-amber-700 ring-amber-200/70', icon: Clock },
-  critical: { cls: 'bg-red-50 text-red-700 ring-red-200/70', icon: AlertTriangle },
-  neutral: { cls: 'bg-slate-100 text-slate-600 ring-slate-200/70', icon: XCircle },
-  info: { cls: 'bg-au-tint-eef0ff text-au-ink-5b6cff ring-[#5B6CFF]/15', icon: Info },
+  good: { cls: 'border-emerald-200 bg-emerald-50 text-emerald-700', icon: CheckCircle2 },
+  warning: { cls: 'border-amber-200 bg-amber-50 text-amber-700', icon: Clock },
+  critical: { cls: 'border-red-200 bg-red-50 text-red-700', icon: AlertTriangle },
+  neutral: { cls: 'border-slate-200 bg-slate-50 text-slate-600', icon: XCircle },
+  info: { cls: 'border-indigo-200 bg-indigo-50 text-indigo-700', icon: Info },
 }
 
 /** Status chip: color + icon + words (never color alone). `icon={null}` for a plain value chip. */
 export function StatusChip({ tone, icon, children }: { tone: ChipTone; icon?: LucideIcon | null; children: ReactNode }) {
   const Icon = icon === null ? null : (icon ?? CHIP[tone].icon)
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums ring-1 ${CHIP[tone].cls}`}>
-      {Icon ? <Icon className="h-3 w-3 shrink-0" aria-hidden /> : null}
-      {children}
+    <span
+      data-chip-tone={tone}
+      className={`inline-flex h-6 max-w-full shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 text-[11.5px] font-medium leading-tight tabular-nums ${CHIP[tone].cls}`}
+    >
+      {Icon ? <Icon size={12} strokeWidth={2} className="shrink-0" aria-hidden /> : null}
+      <span className="truncate py-px">{children}</span>
     </span>
   )
 }
@@ -311,6 +320,7 @@ export function AreaChart({
   axisFormat,
   height = 180,
   ariaLabel,
+  integer = false,
 }: {
   labels: string[]
   tickLabel: (label: string) => string
@@ -319,6 +329,8 @@ export function AreaChart({
   axisFormat?: (value: number) => string
   height?: number
   ariaLabel: string
+  /** Counts: the axis top is an even whole number so the middle gridline is whole too (0 / 1 / 2, 0 / 3 / 6). */
+  integer?: boolean
 }) {
   const [ref, width] = useWidth<HTMLDivElement>()
   const [hover, setHover] = useState<number | null>(null)
@@ -327,10 +339,20 @@ export function AreaChart({
   const padT = 8
   const padB = 22
   const n = labels.length
-  const maxVal = useMemo(
-    () => niceMax(series.reduce((m, s) => Math.max(m, ...s.values.map((v) => (v == null || !Number.isFinite(v) ? 0 : v))), 0)),
-    [series],
-  )
+  const maxVal = useMemo(() => {
+    const top = niceMax(series.reduce((m, s) => Math.max(m, ...s.values.map((v) => (v == null || !Number.isFinite(v) ? 0 : v))), 0))
+    return integer ? Math.max(2, Math.ceil(top / 2) * 2) : top
+  }, [series, integer])
+  // Touch: the tooltip stays after a tap (browsers fire pointerleave right after pointerup); a tap
+  // outside the chart dismisses it.
+  useEffect(() => {
+    if (hover === null) return
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setHover(null)
+    }
+    document.addEventListener('pointerdown', onDown)
+    return () => document.removeEventListener('pointerdown', onDown)
+  }, [hover, ref])
   const innerW = Math.max(0, width - padL - padR)
   const innerH = height - padT - padB
   const x = (i: number) => padL + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW)
@@ -386,7 +408,9 @@ export function AreaChart({
         style={{ height }}
         onPointerMove={(e) => pick(e.clientX)}
         onPointerDown={(e) => pick(e.clientX)}
-        onPointerLeave={() => setHover(null)}
+        onPointerLeave={(e) => {
+          if (e.pointerType === 'mouse') setHover(null)
+        }}
         data-testid="insight-area-chart"
       >
         {width > 0 ? (

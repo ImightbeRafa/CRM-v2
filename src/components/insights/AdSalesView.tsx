@@ -135,28 +135,40 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="rounded-xl border border-slate-100 p-3.5">
           <p className="text-[12.5px] font-semibold text-slate-800">Pedidos por día</p>
-          <p className="mb-3 text-[11px] text-slate-400">Pedidos vinculados a un chat, por día en que se crearon</p>
+          <p className="mb-3 text-[11px] text-slate-400">Pedidos vinculados a un chat, por día de venta</p>
+          {report.daily.every((d) => d.adOrders + d.organicOrders === 0) ? (
+            <p className="py-10 text-center text-[12px] text-slate-400">Todavía no hay pedidos vinculados a un chat en este período.</p>
+          ) : (
           <AreaChart
             labels={report.daily.map((d) => d.date)}
             tickLabel={(d) => formatDayLabel(d)}
             series={[
               { key: 'ads', label: 'Desde anuncios', cls: SERIES[0], values: report.daily.map((d) => d.adOrders) },
-              { key: 'organic', label: 'Sin anuncio', cls: NEUTRAL_SERIES, values: report.daily.map((d) => d.organicOrders), area: false },
+              { key: 'organic', label: 'Sin anuncio', cls: SERIES[1], values: report.daily.map((d) => d.organicOrders), area: false },
             ]}
             format={(v) => nf.format(Math.round(v))}
             ariaLabel="Pedidos por día desde anuncios y sin anuncio"
+            integer
           />
+          )}
         </div>
         <div className="rounded-xl border border-slate-100 p-3.5">
           <p className="text-[12.5px] font-semibold text-slate-800">De dónde vienen los pedidos</p>
-          <p className="mb-3 text-[11px] text-slate-400">Todos los pedidos del período</p>
+          <p className="mb-3 text-[11px] text-slate-400">
+            {data.platform ? `Pedidos del período vinculados a un chat de ${data.platform === 'instagram' ? 'Instagram' : 'WhatsApp'}` : 'Todos los pedidos del período'}
+          </p>
           <SplitBar
             label="Pedidos por origen"
             parts={[
               { key: 'ads', label: 'Anuncios', value: report.totals.adOrders, display: nf.format(report.totals.adOrders), cls: SERIES[0] },
               { key: 'organic', label: 'Sin anuncio', value: report.organic.orders, display: nf.format(report.organic.orders), cls: SERIES[1] },
-              { key: 'nochat', label: 'Sin chat', value: noChat.orders, display: nf.format(noChat.orders), cls: SERIES[2] },
-              { key: 'cancelled', label: 'Cancelados', value: cancelled.orders, display: nf.format(cancelled.orders), cls: NEUTRAL_SERIES },
+              // Orders without a chat have no channel: only in the unfiltered view.
+              ...(data.platform
+                ? []
+                : [
+                    { key: 'nochat', label: 'Sin chat', value: noChat.orders, display: nf.format(noChat.orders), cls: SERIES[2] },
+                    { key: 'cancelled', label: 'Cancelados', value: cancelled.orders, display: nf.format(cancelled.orders), cls: NEUTRAL_SERIES },
+                  ]),
             ]}
           />
         </div>

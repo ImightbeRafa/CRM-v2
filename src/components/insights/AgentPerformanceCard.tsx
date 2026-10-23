@@ -96,7 +96,7 @@ function AgentBlock({ row, symbol }: { row: Row; symbol: string }) {
           </div>
           <p className="mb-2.5 text-[11px] text-slate-400">Motivos de los pases y revisiones</p>
           <BarList
-            rows={row.handoffReasons.slice(0, 5).map((r, i) => ({
+            rows={row.handoffReasons.slice(0, 8).map((r, i) => ({
               key: r.reason,
               label: handoffReasonLabel(r.reason),
               value: r.count,

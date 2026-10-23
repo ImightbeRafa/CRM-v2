@@ -32,7 +32,7 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleString('es-CR', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-/** `/soporte?tema=agente` (landing "Quiero mi agente") starts the form as an agent lead. */
+/** `/soporte?tema=agente` (older links) starts the form as an agent lead; public CTAs now go to the app's Agentes tab. */
 const AGENT_LEAD = { subject: 'Quiero mi agente de IA', placeholder: 'Qué vendés, por dónde te escriben (WhatsApp, Instagram) y cuántos chats recibís más o menos.' };
 
 function ContactForm({ topic }: { topic: 'agent' | null }) {
@@ -107,6 +107,13 @@ function ContactForm({ topic }: { topic: 'agent' | null }) {
           <p className="text-[13px] text-slate-500">Contanos con detalle y te respondemos por correo.</p>
         </div>
       </div>
+      {/* Older ?tema=agente links: agents are only for businesses that already use Betsy (Rafael 2026-10-23). */}
+      {topic === 'agent' && (
+        <p className="rounded-xl bg-indigo-50 px-3 py-2 text-[13px] text-indigo-950">
+          Los agentes de IA son por ahora solo para negocios que ya usan Betsy: pedilo desde la app, en Agentes. Si
+          tenés una pregunta antes, escribinos acá.
+        </p>
+      )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="block">
           <span className={auroraLabelClass}>Nombre</span>

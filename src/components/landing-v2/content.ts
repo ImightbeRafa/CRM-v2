@@ -9,7 +9,9 @@ import { BETSY_PLAN } from '@/lib/pricing/plan'
 export const LINKS = {
   signup: '/auth/signin?signup=true',
   signin: '/auth/signin',
-  agent: '/soporte?tema=agente',
+  // Custom AI agents are only for businesses that already use Betsy (Rafael 2026-10-23): they are requested in the
+  // app (Agentes tab). Logged out, the middleware sends this to sign-in and back.
+  agent: '/config/agentes',
   support: '/soporte',
   docs: '/docs',
 }
@@ -25,7 +27,7 @@ export const NAV = [
 export const HERO = {
   pill: 'Hecho en Costa Rica para negocios que venden por chat',
   lead:
-    'Betsy junta WhatsApp e Instagram en una bandeja, convierte cada conversación en un pedido y lo sigue hasta la entrega. Y si querés, construimos un agente de IA que atiende como tu mejor vendedor.',
+    'Betsy junta WhatsApp e Instagram en una bandeja, convierte cada conversación en un pedido y lo sigue hasta la entrega. Y cuando ya usás Betsy, pedís desde la app un agente de IA que atiende como tu mejor vendedor.',
 }
 
 /** One chat, start to finish. Each step is one frame of the hero demo; `caption` is also the accessible step list. */
@@ -62,7 +64,7 @@ export const AGENT = {
   title: 'Un vendedor que conoce tu negocio, ',
   titleEm: 'hecho para vos.',
   lead:
-    'No es un bot genérico. Lo construimos con modelos de OpenAI sobre tu información real: precios, envíos, formas de pago y la manera en que tu equipo le habla a tus clientes.',
+    'No es un bot genérico. Lo construimos con modelos de OpenAI sobre tu información real: precios, envíos, formas de pago y la manera en que tu equipo le habla a tus clientes. Por ahora es solo para negocios que ya usan Betsy: lo pedís desde la app.',
   steps: [
     {
       key: 'info',
@@ -251,7 +253,8 @@ export const PRICING = {
   ],
   agentTitle: 'Agente de IA',
   agentPrice: 'Hecho para vos',
-  agentLead: 'Construimos y afinamos tu agente. Pagás solo la IA que usa, con créditos que recargás cuando querés.',
+  agentLead:
+    'Para negocios que ya usan Betsy: lo pedís desde la app y lo construimos y afinamos con vos. Pagás solo la IA que usa, con créditos que recargás cuando querés.',
   agent: [
     'Diseño, conocimiento y pruebas del agente',
     'Créditos prepagados, sin vencimiento',

@@ -95,7 +95,8 @@ test('landing is honest: no fake testimonials, no raw payment link, real contact
   assert.doesNotMatch(all, /tp\.cr\/l\//, 'subscribe happens in Facturación, not from a raw link on the landing')
   assert.doesNotMatch(all, /wa\.me\/50661498470|betsycrm\.cr@gmail\.com/, 'old contact details')
   assert.match(page, /getSupportContactConfig\(\)/)
-  assert.match(content, /\/soporte\?tema=agente/)
+  // public agent CTAs go to the app (Agentes tab): agents are for existing Betsy users only
+  assert.match(content, /agent: '\/config\/agentes'/)
   assert.match(all, /OpenAI/)
   assert.match(all, /WhatsApp/)
   assert.match(all, /Instagram/)

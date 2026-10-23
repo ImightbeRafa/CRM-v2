@@ -70,10 +70,10 @@ export function Pricing({
             </ul>
             <div className={s.priceCta}>
               <a className={s.btn} href={LINKS.agent}>
-                Quiero mi agente
+                Ya uso Betsy: pedir mi agente
               </a>
-              <a className={s.btnGhost} href={LINKS.support}>
-                Tengo una pregunta
+              <a className={s.btnGhost} href={LINKS.signup}>
+                Probar Betsy {trialDays} días gratis
               </a>
             </div>
           </div>

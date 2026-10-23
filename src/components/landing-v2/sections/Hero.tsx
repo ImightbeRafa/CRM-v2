@@ -27,7 +27,7 @@ export function Hero({ priceShort, trialDays }: { priceShort: string; trialDays:
               Probar {trialDays} días gratis <ArrowRight size={16} aria-hidden />
             </a>
             <a className={s.btnGhost} href={LINKS.agent}>
-              Quiero mi agente de IA
+              Ya uso Betsy: pedir mi agente
             </a>
           </div>
           <p className={s.fine}>{priceShort} · sin tarjeta para la prueba</p>

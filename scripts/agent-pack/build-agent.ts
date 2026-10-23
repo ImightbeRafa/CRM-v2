@@ -384,11 +384,14 @@ async function main() {
 
   // Selling script + combos
   const setup = await loadSalesSetup(tenantId, agentId)
-  // The owner's promo and "¿sos un bot?" choice (UI) stay unless the pack sets them.
+  // The owner's promo and "¿sos un bot?" choice (UI) stay unless the pack sets them; so does the support escalation
+  // flag (Verifier #146: a rebuild must never silently turn it off).
+  const keepEscalation = 'escalateToSupport' in pack.salesRules ? rules.escalateToSupport : setup.salesRules.escalateToSupport
   const wantedRules = {
     ...rules,
     promo: setup.salesRules.promo,
     aiDisclosure: pack.salesRules.aiDisclosure ? rules.aiDisclosure : setup.salesRules.aiDisclosure,
+    ...(keepEscalation ? { escalateToSupport: true } : {}),
   }
   if (!same(setup.salesRules, wantedRules)) {
     await saveSalesSetup(tenantId, agentId, { salesRules: wantedRules }, actor.actorUserId)

@@ -120,7 +120,6 @@ export const EMPTY_SALES_RULES: SalesRules = {
   neverSay: [],
   promo: EMPTY_PROMO,
   bundles: [],
-  escalateToSupport: false,
 }
 
 const text = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
@@ -145,7 +144,8 @@ export function parseSalesRules(raw: unknown): SalesRules {
     neverSay: list(r.neverSay, 10, 200),
     promo: parsePromo(r.promo),
     bundles: parseBundles(r.bundles),
-    escalateToSupport: r.escalateToSupport === true,
+    // Stored only when on (the 8 KB CHECK): Betsy's own agent → support pipeline (support-escalation.ts).
+    ...(r.escalateToSupport === true ? { escalateToSupport: true } : {}),
   }
 }
 

@@ -202,9 +202,9 @@ describe('Sin responder · server wiring (Lane A 2026-10-22)', () => {
     has(route, 'attachWaitingFlags(auth.tenantId, base)')
     has(read('src/app/api/chat/conversations/changes/route.ts'), 'attachWaitingFlags(auth.tenantId')
     // Respondido (SQL 062): the marker only counts once the columns exist; the queue is oldest first.
-    has(rule, 'AND (c."answeredAt" IS NULL OR c."answeredAt" < lt.since)')
-    has(rule, 'c."answeredAt" < COALESCE(c."lastInboundAt", c."lastMessageAt")')
+    has(rule, 'AND (c."answeredThroughAt" IS NULL OR c."answeredThroughAt" < lt.since)')
+    has(rule, 'c."answeredThroughAt" < COALESCE(c."lastInboundAt", c."lastMessageAt")')
     has(rule, 'ORDER BY COALESCE(c."lastInboundAt", c."lastMessageAt") ASC, c.id ASC')
-    has(rule, "AND column_name IN ('answeredAt', 'answeredByUserId')")
+    has(rule, "AND column_name IN ('answeredAt', 'answeredByUserId', 'answeredThroughAt')")
   })
 })

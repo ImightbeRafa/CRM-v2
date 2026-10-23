@@ -5,8 +5,8 @@ import { isSameOriginRequest } from '@/lib/same-origin'
 import { workspaceWriteRateLimit } from '@/lib/rate-limit'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { conversationStorageKey } from '@/lib/chat-soft-copilot'
-import { agentHandoffOpen, answeredMarkerReady } from '@/lib/chat-unanswered-server'
-import { setConversationAgentMode } from '@/lib/chat-agent-control'
+import { answeredMarkerReady, openAgentHandoffSince } from '@/lib/chat-unanswered-server'
+import { setConversationAgentMode, staffControlledAfter } from '@/lib/chat-agent-control'
 import { aiOnLineIds } from '@/lib/soft-ai/agent-inbox-enrich'
 
 export const runtime = 'nodejs'
@@ -21,9 +21,10 @@ const PERSON_MODES = new Set(['human', 'human_takeover'])
  * POST — "Respondido" (Rafael 2026-10-22): a person says this chat in "Sin responder" is handled.
  * - Stamps ChatConversation.answeredAt / answeredByUserId (SQL 062): the chat leaves Sin responder and "Necesita
  *   persona" until the customer writes again or the agent hands it off again (a newer message / turn wins).
- * - If the agent had handed it to a person (latest real turn = hand-off) and its line answers, the chat goes back to
- *   the agent (aiMode ai_active), WITHOUT answering the waiting message (unlike "Devolver a IA"): the agent attends
- *   the customer's NEXT message. Lines without an active agent: only marked answered.
+ * - If the agent had handed it to a person and that hand-off is still open (no person wrote since, nobody pressed
+ *   Tomar control / Pausar after it) and its line answers, the chat goes back to the agent (aiMode ai_active, only if
+ *   it is still human), WITHOUT answering the waiting message (unlike "Devolver a IA"): the agent attends the
+ *   customer's NEXT message. A person working the chat keeps it. Lines without an active agent: only marked answered.
  * - Audited (who, when, whether it went back to the agent).
  */
 export async function POST(request: NextRequest, context: RouteContext) {
@@ -53,26 +54,43 @@ export async function POST(request: NextRequest, context: RouteContext) {
     })
     if (!convo) return NextResponse.json({ success: false, error: 'Chat no encontrado' }, { status: 404 })
 
+    // Decide BEFORE stamping the marker (the open hand-off is read from the same state the person saw).
+    const conversationKey = conversationStorageKey(convo.socialAccountId, convo.peerId)
+    let handoffSince: Date | null = null
+    let lineOn = false
+    if (convo.aiMode && PERSON_MODES.has(convo.aiMode)) {
+      ;[lineOn, handoffSince] = await Promise.all([
+        aiOnLineIds(auth.tenantId, [convo.socialAccountId]).then((ids) => ids.length > 0),
+        openAgentHandoffSince(auth.tenantId, convo.id),
+      ])
+    }
+
+    // Marker: the click time for the audit, and the last customer message it covers in Meta's own clock
+    // (answeredThroughAt) so a message stamped a second earlier than the click is never hidden (DATA-RSP-1).
     const at = new Date()
     await prisma.$executeRaw`
       UPDATE "ChatConversation"
-      SET "answeredAt" = ${at}, "answeredByUserId" = ${auth.userId}, "updatedAt" = ${at}
+      SET "answeredAt" = ${at},
+          "answeredByUserId" = ${auth.userId},
+          "answeredThroughAt" = GREATEST(COALESCE("lastInboundAt", "lastMessageAt"), COALESCE(${handoffSince}::timestamp(3), "lastMessageAt")),
+          "updatedAt" = ${at}
       WHERE id = ${convo.id} AND "tenantId" = ${auth.tenantId}`
 
-    // Back to the agent only when the agent itself handed it over and its line still answers.
+    // Back to the agent only for an OPEN agent hand-off that no person took on after it (INT-RSP-1).
     let returnedToAi = false
-    if (convo.aiMode && PERSON_MODES.has(convo.aiMode)) {
-      const [lineOn, handoff] = await Promise.all([
-        aiOnLineIds(auth.tenantId, [convo.socialAccountId]).then((ids) => ids.length > 0),
-        agentHandoffOpen(auth.tenantId, convo.id),
-      ])
-      if (lineOn && handoff) {
-        await setConversationAgentMode({
+    let resumeError = false
+    if (lineOn && handoffSince && !(await staffControlledAfter(auth.tenantId, conversationKey, handoffSince))) {
+      try {
+        const res = await setConversationAgentMode({
           tenantId: auth.tenantId,
-          conversationKey: conversationStorageKey(convo.socialAccountId, convo.peerId),
+          conversationKey,
           action: 'resume',
+          onlyIfAiModeIn: [...PERSON_MODES],
         })
-        returnedToAi = true
+        returnedToAi = res.applied
+      } catch {
+        // The marker is stored: still audited below; the chat simply stays with the person.
+        resumeError = true
       }
     }
 
@@ -82,7 +100,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       entityId: convo.id,
       description: returnedToAi ? 'Chat marcado como respondido y devuelto al agente' : 'Chat marcado como respondido',
       oldValues: { aiMode: convo.aiMode },
-      newValues: { answeredAt: at.toISOString(), returnedToAi, aiMode: returnedToAi ? 'ai_active' : convo.aiMode },
+      newValues: { answeredAt: at.toISOString(), returnedToAi, resumeError, aiMode: returnedToAi ? 'ai_active' : convo.aiMode },
       userId: auth.userId,
       userRole: auth.role,
       tenantId: auth.tenantId,

@@ -39,14 +39,31 @@ const HANDOFF_MARKERS_SQL = Prisma.sql`(
   OR lt.om ->> 'handoffKind' IN ('handoff', 'review')
 )`
 
+/** A person (desk send, phone app; not the AI, not a follow-up, not failed) wrote after `lt.since`. */
+const PERSON_WROTE_SINCE_SQL = Prisma.sql`EXISTS (
+  SELECT 1
+  FROM "ChatMessage" hm
+  WHERE hm."conversationId" = c.id
+    AND hm."tenantId" = c."tenantId"
+    AND hm.direction = 'outbound'
+    AND hm."sentAt" > lt.since
+    AND COALESCE(hm.metadata ->> 'softAi', '') <> 'true'
+    AND hm.metadata -> 'followUp' IS NULL
+    AND COALESCE(hm."deliveryStatus", '') <> 'failed'
+)`
+
 /**
  * True for conversation alias `c` whose latest real agent turn left it to a person and no person (desk, phone app)
  * has written since, nor marked it "Respondido".
+ *  - "Respondido" covers the customer messages up to `answeredThroughAt` (the last customer message seen at the
+ *    click, Meta's clock — SecureDog DATA-RSP-1): a later message / hand-off is newer and shows again.
  *  - "Since" = the customer message the turn answered (a person replying while the model was thinking counts).
  *  - A person = an outbound that is not the AI's, not a follow-up, and did not fail.
  */
 export function needsPersonSql(answeredReady: boolean): Prisma.Sql {
-  const notAnswered = answeredReady ? Prisma.sql`AND (c."answeredAt" IS NULL OR c."answeredAt" < lt.since)` : Prisma.empty
+  const notAnswered = answeredReady
+    ? Prisma.sql`AND (c."answeredThroughAt" IS NULL OR c."answeredThroughAt" < lt.since)`
+    : Prisma.empty
   return Prisma.sql`(
   c."lastMessageDirection" = 'outbound'
   AND EXISTS (
@@ -54,17 +71,7 @@ export function needsPersonSql(answeredReady: boolean): Prisma.Sql {
     FROM ${LATEST_REAL_TURN_SQL}
     WHERE ${HANDOFF_MARKERS_SQL}
       ${notAnswered}
-      AND NOT EXISTS (
-        SELECT 1
-        FROM "ChatMessage" hm
-        WHERE hm."conversationId" = c.id
-          AND hm."tenantId" = c."tenantId"
-          AND hm.direction = 'outbound'
-          AND hm."sentAt" > lt.since
-          AND COALESCE(hm.metadata ->> 'softAi', '') <> 'true'
-          AND hm.metadata -> 'followUp' IS NULL
-          AND COALESCE(hm."deliveryStatus", '') <> 'failed'
-      )
+      AND NOT ${PERSON_WROTE_SINCE_SQL}
   )
 )`
 }
@@ -72,7 +79,7 @@ export function needsPersonSql(answeredReady: boolean): Prisma.Sql {
 /** Customer waiting: wrote last (after any "Respondido"), or the agent left it to a person (needsPersonSql). */
 export function unansweredSql(answeredReady: boolean): Prisma.Sql {
   const inbound = answeredReady
-    ? Prisma.sql`(c."lastMessageDirection" = 'inbound' AND (c."answeredAt" IS NULL OR c."answeredAt" < COALESCE(c."lastInboundAt", c."lastMessageAt")))`
+    ? Prisma.sql`(c."lastMessageDirection" = 'inbound' AND (c."answeredThroughAt" IS NULL OR c."answeredThroughAt" < COALESCE(c."lastInboundAt", c."lastMessageAt")))`
     : Prisma.sql`c."lastMessageDirection" = 'inbound'`
   return Prisma.sql`(${inbound} OR ${needsPersonSql(answeredReady)})`
 }
@@ -88,8 +95,8 @@ export async function answeredMarkerReady(): Promise<boolean> {
       SELECT COUNT(*) AS n
       FROM information_schema.columns
       WHERE table_schema = 'public' AND table_name = 'ChatConversation'
-        AND column_name IN ('answeredAt', 'answeredByUserId')`
-    answeredCache = { at: now, ready: Number(rows[0]?.n ?? 0) === 2 }
+        AND column_name IN ('answeredAt', 'answeredByUserId', 'answeredThroughAt')`
+    answeredCache = { at: now, ready: Number(rows[0]?.n ?? 0) === 3 }
   } catch {
     answeredCache = { at: now, ready: false }
   }
@@ -159,16 +166,22 @@ export async function listUnansweredIds(
   }
 }
 
-/** The chat's latest real agent turn handed it to a person (Respondido then gives it back to the agent). */
-export async function agentHandoffOpen(tenantId: string, conversationId: string): Promise<boolean> {
+/**
+ * When the chat's latest real agent turn handed it to a person and that hand-off is still OPEN (no person wrote
+ * since): the message time it started from. Null = no open agent hand-off (Respondido then never gives the chat back
+ * to the agent — SecureDog INT-RSP-1: a person who is working the chat keeps it).
+ */
+export async function openAgentHandoffSince(tenantId: string, conversationId: string): Promise<Date | null> {
   try {
-    const rows = await prisma.$queryRaw<Array<{ ok: number }>>`
-      SELECT 1 AS ok
+    const rows = await prisma.$queryRaw<Array<{ since: Date | null }>>`
+      SELECT (
+        SELECT lt.since FROM ${LATEST_REAL_TURN_SQL}
+        WHERE ${HANDOFF_MARKERS_SQL} AND NOT ${PERSON_WROTE_SINCE_SQL}
+      ) AS since
       FROM "ChatConversation" c
-      WHERE c."tenantId" = ${tenantId} AND c.id = ${conversationId}
-        AND EXISTS (SELECT 1 FROM ${LATEST_REAL_TURN_SQL} WHERE ${HANDOFF_MARKERS_SQL})`
-    return rows.length > 0
+      WHERE c."tenantId" = ${tenantId} AND c.id = ${conversationId}`
+    return rows[0]?.since ?? null
   } catch {
-    return false
+    return null
   }
 }

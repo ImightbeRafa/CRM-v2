@@ -125,7 +125,7 @@ export const EXPECTED_COLUMNS = {
   '057': [['ChatSendClaim', 'clientRequestId'], ['ChatSendClaim', 'providerMessageId']],
   '058': [['SocialAccount', 'metaUserId'], ['MetaDataDeletionRequest', 'pendingPaths']],
   '059': [['SupportTicket', 'number'], ['SupportTicket', 'contactEmail'], ['SupportTicketMessage', 'isDraft'], ['SupportTicketEvent', 'nextAttemptAt'], ['SupportMcpAudit', 'tool']],
-  '062': [['ChatConversation', 'answeredAt'], ['ChatConversation', 'answeredByUserId']],
+  '062': [['ChatConversation', 'answeredAt'], ['ChatConversation', 'answeredByUserId'], ['ChatConversation', 'answeredThroughAt']],
   '060': [['AiBillingRate', 'markupBps'], ['AiCreditLedger', 'sourceKey'], ['AiCreditPurchase', 'ref'], ['AiCreditPurchase', 'lastEvent'], ['AiTenantSpendLimit', 'monthlyLimitMicros']],
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],

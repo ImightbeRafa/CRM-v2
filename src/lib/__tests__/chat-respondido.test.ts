@@ -33,7 +33,14 @@ describe('Respondido (Rafael 2026-10-22)', () => {
 
   it('gives a handed-off chat back to the agent only on a line that answers, and never answers the waiting message', () => {
     assert.match(route, /if \(convo\.aiMode && PERSON_MODES\.has\(convo\.aiMode\)\)/)
-    assert.match(route, /if \(lineOn && handoff\)/)
+    // SecureDog INT-RSP-1: only an OPEN agent hand-off (no person wrote since) that nobody took on after it.
+    assert.match(route, /if \(lineOn && handoffSince && !\(await staffControlledAfter\(auth\.tenantId, conversationKey, handoffSince\)\)\)/)
+    assert.match(read('src/lib/chat-unanswered-server.ts'), /WHERE \$\{HANDOFF_MARKERS_SQL\} AND NOT \$\{PERSON_WROTE_SINCE_SQL\}/)
+    // INT-RSP-2: conditional on the chat still being with a person (a concurrent Pausar wins).
+    assert.match(route, /onlyIfAiModeIn: \[\.\.\.PERSON_MODES\]/)
+    assert.match(read('src/lib/chat-agent-control.ts'), /if \(args\.onlyIfAiModeIn && res\.count === 0\) return \{ mode, keyParts, applied: false \}/)
+    // Audit always written, even when the resume fails.
+    assert.match(route, /resumeError = true/)
     assert.match(route, /action: 'resume'/)
     // Unlike "Devolver a IA" (control route), no sweep: the agent attends the customer's NEXT message.
     assert.doesNotMatch(route, /sweepWaitingConversation/)
@@ -53,6 +60,10 @@ describe('Respondido (Rafael 2026-10-22)', () => {
     const sql = read('supabase/migrations/062_chat_answered_marker.sql').replace(/--.*$/gm, '')
     assert.match(sql, /ADD COLUMN IF NOT EXISTS "answeredAt" TIMESTAMP\(3\)/)
     assert.match(sql, /ADD COLUMN IF NOT EXISTS "answeredByUserId" TEXT/)
+    // DATA-RSP-1: the covered customer message, same clock as the message times.
+    assert.match(sql, /ADD COLUMN IF NOT EXISTS "answeredThroughAt" TIMESTAMP\(3\)/)
+    assert.match(route, /"answeredThroughAt" = GREATEST\(COALESCE\("lastInboundAt", "lastMessageAt"\)/)
+    assert.match(read('src/lib/rbac.ts'), /'POST \/api\/chat\/conversations\/\*\/answered': 'update_sales'/)
     assert.doesNotMatch(sql, /\bDROP\b|\bDELETE\b|\bUPDATE\b|\bTRUNCATE\b/i)
     assert.doesNotMatch(read('prisma/schema.prisma'), /answeredAt/)
   })

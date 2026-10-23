@@ -4,7 +4,7 @@
  *  - the agent's latest real reply was a safe line / hand-off / provider failure (outcome markers of the chat's latest
  *    DELIVERED ChatAgentTurn: needsHuman, fallbackUsed, escalate or handoffKind) and no person wrote since.
  * The second case is also the "Necesita persona" state: such a chat must never read as handled by the IA.
- * "Respondido" (SQL 062, ChatConversation.answeredAt) clears both until the customer writes again / a newer hand-off.
+ * "Respondido" (SQL 063, ChatConversation.answeredAt) clears both until the customer writes again / a newer hand-off.
  * One SQL rule feeds the list, the counts and the row flags, so they agree. Tenant-scoped.
  */
 import 'server-only'
@@ -86,7 +86,7 @@ export function unansweredSql(answeredReady: boolean): Prisma.Sql {
 
 let answeredCache: { at: number; ready: boolean } | null = null
 
-/** SQL 062 applied? (columns exist). Cached: 10 min once true, 60 s while missing. Errors read as missing. */
+/** SQL 063 applied? (columns exist). Cached: 10 min once true, 60 s while missing. Errors read as missing. */
 export async function answeredMarkerReady(): Promise<boolean> {
   const now = Date.now()
   if (answeredCache && now - answeredCache.at < (answeredCache.ready ? 600_000 : 60_000)) return answeredCache.ready

@@ -171,7 +171,7 @@ export async function GET(request: NextRequest) {
       maxRevision: (maxRevisionAgg._max.revision ?? BigInt(0)).toString(),
       // Phase 2b: false until migration 036 is applied (the inbox hides "Posponer").
       snoozeAvailable: conversations.length ? !workStateKnownMissing() : await probeWorkState(auth.tenantId),
-      // SQL 062: "Respondido" shows only once the marker columns exist.
+      // SQL 063: "Respondido" shows only once the marker columns exist.
       answeredAvailable: await answeredMarkerReady(),
     })
   } catch (error) {

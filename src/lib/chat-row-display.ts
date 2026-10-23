@@ -26,6 +26,12 @@ export function shortOrderNumber(orderNumber: string | null | undefined): string
   return raw.length > 10 ? `#…${raw.slice(-6)}` : `#${raw}`
 }
 
+/** The chip's number: Lane J's short order number ("#1042") when known, else the shortened long id. */
+export function orderChipNumber(order: { orderNumber?: string | null; orderNo?: number | null }): string {
+  if (typeof order.orderNo === 'number' && Number.isFinite(order.orderNo) && order.orderNo > 0) return `#${order.orderNo}`
+  return shortOrderNumber(order.orderNumber)
+}
+
 export type OrderTone = 'open' | 'shipped' | 'done' | 'cancelled'
 
 /** Status → chip tone (mixed-case statuses across tenants). */

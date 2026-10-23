@@ -13,7 +13,7 @@ import {
   ORDER_TONE_CLASS,
   orderStatusTone,
   orderTotalLabel,
-  shortOrderNumber,
+  orderChipNumber,
   withoutEmoji,
 } from '@/lib/chat-row-display'
 
@@ -25,7 +25,7 @@ import {
 /** Linked order: inline pill for the header, full card (with items) for the details panel. */
 export function LinkedOrderCard({ conversation, variant = 'card' }: { conversation: SoftConversation; variant?: 'inline' | 'card' }) {
   if (!conversation.orderId) return null
-  const number = conversation.orderNumber ? shortOrderNumber(conversation.orderNumber) : 'Pedido'
+  const number = conversation.orderNumber || conversation.orderNo ? orderChipNumber(conversation) : 'Pedido'
   const tone = orderStatusTone(conversation.orderStatus)
   const status = conversation.orderStatus ? withoutEmoji(conversation.orderStatus) : null
   const total = orderTotalLabel(conversation.orderTotal)

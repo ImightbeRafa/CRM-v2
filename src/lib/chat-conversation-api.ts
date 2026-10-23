@@ -144,7 +144,15 @@ export type ChatConversationListItemDto = {
   /** Snoozed until (Phase 2b); set by the list/changes routes only while it is in effect. */
   snooze?: { until: string; at: string } | null
   /** Latest order linked from this chat (internal id + human number); set by the list/changes routes. */
-  linkedOrder?: { id: string; orderNumber: string; status?: string | null; total?: number | null; items?: string | null } | null
+  linkedOrder?: {
+    id: string
+    orderNumber: string
+    /** Lane J short order number ("#1042"), when that lane's data is present. */
+    orderNo?: number | null
+    status?: string | null
+    total?: number | null
+    items?: string | null
+  } | null
   /** True when this chat has an order that is not delivered or cancelled. Set by list/changes. */
   hasOpenOrder?: boolean
   channel: {

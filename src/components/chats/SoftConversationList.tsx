@@ -31,7 +31,7 @@ import {
   ORDER_TONE_CLASS,
   orderStatusTone,
   orderTotalLabel,
-  shortOrderNumber,
+  orderChipNumber,
   withoutEmoji,
 } from '@/lib/chat-row-display'
 import {
@@ -159,7 +159,7 @@ function OrderChip({ conv, small = false }: { conv: SoftConversation; small?: bo
       data-testid="conv-order-chip"
     >
       <Package className={small ? 'h-2.5 w-2.5' : 'h-3 w-3'} aria-hidden />
-      <span className="shrink-0 tabular-nums">{shortOrderNumber(conv.orderNumber)}</span>
+      <span className="shrink-0 tabular-nums">{orderChipNumber(conv)}</span>
       {status ? <span className="min-w-0 truncate font-medium">· {status}</span> : null}
       {total ? <span className="shrink-0 tabular-nums font-medium">· {total}</span> : null}
     </span>
@@ -557,7 +557,7 @@ export function SoftConversationList({
                   className={
                     compact
                       ? 'absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[12px] font-semibold text-white shadow-sm active:bg-emerald-700'
-                      : 'absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-sm transition-opacity hover:bg-emerald-700 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 group-hover:opacity-100'
+                      : 'pointer-events-none absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-sm transition-opacity hover:bg-emerald-700 focus:pointer-events-auto focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 group-hover:pointer-events-auto group-hover:opacity-100'
                   }
                   data-testid="conv-mark-answered"
                 >

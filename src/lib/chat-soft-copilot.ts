@@ -65,6 +65,8 @@ export interface SoftConversation extends ChatConversation {
   orderStatus?: string | null
   orderTotal?: number | null
   orderItems?: string | null
+  /** Lane J short order number (#1042); null before it is assigned. */
+  orderNo?: number | null
   /** Sin responder server truth (incl. "Respondido"). */
   waiting?: boolean
 }

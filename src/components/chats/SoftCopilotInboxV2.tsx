@@ -195,7 +195,7 @@ export function SoftCopilotInboxV2() {
   const presenceText = useChatPresence(selectedConversationId, messageInput)
   // Shown once the list says snooze works (false before migration 036 is applied).
   const [snoozeAvailable, setSnoozeAvailable] = useState(false)
-  /** "Respondido" (SQL 062): shown only once the server says the marker exists. */
+  /** "Respondido" (SQL 063): shown only once the server says the marker exists. */
   const [answeredAvailable, setAnsweredAvailable] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [failedOutboundId, setFailedOutboundId] = useState<string | null>(null)
@@ -1467,6 +1467,8 @@ export function SoftCopilotInboxV2() {
       const res = await fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}/answered`, {
         method: 'POST',
         credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seenThrough: before.lastMessageAt }),
       })
       const json = (await res.json().catch(() => null)) as { success?: boolean; returnedToAi?: boolean; error?: string } | null
       if (!res.ok || !json?.success) {
@@ -1813,7 +1815,7 @@ export function SoftCopilotInboxV2() {
         const next = new Map(prev)
         next.set(
           conversationId,
-          projectOptimisticListPreview(row, content, optimistic.sentAt),
+          { ...projectOptimisticListPreview(row, content, optimistic.sentAt), waiting: false, needsPerson: false },
         )
         return next
       })
@@ -2027,7 +2029,11 @@ export function SoftCopilotInboxV2() {
       const row = prev.get(job.conversationId)
       if (!row) return prev
       const next = new Map(prev)
-      next.set(job.conversationId, projectOptimisticListPreview(row, job.caption || `Archivo · ${preview.filename}`, optimistic.sentAt))
+      next.set(job.conversationId, {
+        ...projectOptimisticListPreview(row, job.caption || `Archivo · ${preview.filename}`, optimistic.sentAt),
+        waiting: false,
+        needsPerson: false,
+      })
       return next
     })
     nearBottomRef.current = true
@@ -2383,7 +2389,7 @@ export function SoftCopilotInboxV2() {
     },
     // "Corregir" on AI messages: only people who can edit agents (the API checks update_config again).
     canTuneAgent: canManageQuickReplies,
-    // Respondido in the thread header: only while this chat is waiting on us (and SQL 062 is applied).
+    // Respondido in the thread header: only while this chat is waiting on us (and SQL 063 is applied).
     onMarkAnswered:
       answeredAvailable && selectedConversationId && selectedDtoWaiting(dtoMap.get(selectedConversationId))
         ? () => void markAnswered(selectedConversationId)
@@ -2553,6 +2559,7 @@ export function SoftCopilotInboxV2() {
                 >
                   <ChatContextRail
                     conversation={railConversation}
+                    detailConversation={selectedConversation ?? undefined}
                     tab={railTab}
                     onTabChange={setRailTab}
                     onStatusChange={updateStatus}
@@ -2651,6 +2658,7 @@ export function SoftCopilotInboxV2() {
               </div>
               <ChatContextRail
                 conversation={railConversation}
+                detailConversation={selectedConversation ?? undefined}
                 tab={railTab}
                 onTabChange={setRailTab}
                 onStatusChange={updateStatus}

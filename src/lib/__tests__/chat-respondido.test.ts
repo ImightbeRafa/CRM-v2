@@ -19,7 +19,7 @@ const read = (p: string) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
 describe('Respondido (Rafael 2026-10-22)', () => {
   const route = read('src/app/api/chat/conversations/[id]/answered/route.ts')
 
-  it('is a same-origin, update_sales, rate-limited, tenant-scoped write; hidden until SQL 062', () => {
+  it('is a same-origin, update_sales, rate-limited, tenant-scoped write; hidden until SQL 063', () => {
     assert.match(route, /authenticateAPIWithPermission\(request, 'update_sales'\)/)
     assert.match(route, /if \(!isSameOriginRequest\(request\)\)/)
     assert.match(route, /workspaceWriteRateLimit\(`\$\{auth\.tenantId\}:\$\{auth\.userId\}`\)/)
@@ -56,13 +56,17 @@ describe('Respondido (Rafael 2026-10-22)', () => {
     assert.match(inbox, /if \(res\.status === 409\) setAnsweredAvailable\(false\)/)
   })
 
-  it('SQL 062 is additive only', () => {
-    const sql = read('supabase/migrations/062_chat_answered_marker.sql').replace(/--.*$/gm, '')
+  it('SQL 063 is additive only', () => {
+    const sql = read('supabase/migrations/063_chat_answered_marker.sql').replace(/--.*$/gm, '')
     assert.match(sql, /ADD COLUMN IF NOT EXISTS "answeredAt" TIMESTAMP\(3\)/)
     assert.match(sql, /ADD COLUMN IF NOT EXISTS "answeredByUserId" TEXT/)
     // DATA-RSP-1: the covered customer message, same clock as the message times.
     assert.match(sql, /ADD COLUMN IF NOT EXISTS "answeredThroughAt" TIMESTAMP\(3\)/)
-    assert.match(route, /"answeredThroughAt" = GREATEST\(COALESCE\("lastInboundAt", "lastMessageAt"\)/)
+    assert.match(route, /"answeredThroughAt" = LEAST\(\s*GREATEST\(COALESCE\("lastInboundAt", "lastMessageAt"\)/)
+    // Verifier #4/#5: never covers more than the person saw; a chat that is no longer waiting is a no-op.
+    assert.match(route, /COALESCE\(\$\{seenThrough\}::timestamp\(3\), 'infinity'::timestamp\)/)
+    assert.match(route, /if \(flags\.get\(convo\.id\)\?\.waiting === false\)/)
+    assert.match(read('src/components/chats/SoftCopilotInboxV2.tsx'), /body: JSON\.stringify\(\{ seenThrough: before\.lastMessageAt \}\)/)
     assert.match(read('src/lib/rbac.ts'), /'POST \/api\/chat\/conversations\/\*\/answered': 'update_sales'/)
     assert.doesNotMatch(sql, /\bDROP\b|\bDELETE\b|\bUPDATE\b|\bTRUNCATE\b/i)
     assert.doesNotMatch(read('prisma/schema.prisma'), /answeredAt/)

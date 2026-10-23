@@ -280,7 +280,11 @@ describe('verifier fixes (Lane A)', () => {
     assert.match(inbox, /if \(attempt > IN_FLIGHT_RECHECKS\)/)
     assert.match(inbox, /scheduleInFlightRecheck\(conversationId, clientRequestId, \(\) => deliverMedia\(job\)\)/)
     const media = inbox.slice(inbox.indexOf('async function deliverMedia'))
-    assert.ok(media.indexOf('scheduleInFlightRecheck') < media.indexOf('mediaJobsRef.current.delete(clientRequestId)\n') || media.includes('mediaJobsRef.current.delete(clientRequestId)\r\n'))
+    // The in-flight branch re-checks and returns BEFORE the job is dropped (Reintentar still has it).
+    assert.match(
+      media,
+      /parsed\.data\.inFlight === true\) \{[\s\S]*?scheduleInFlightRecheck\([\s\S]*?return\s*\}\s*inFlightChecksRef\.current\.delete\(clientRequestId\)\s*mediaJobsRef\.current\.delete\(clientRequestId\)/,
+    )
   })
 
   it('a Meta timeout keeps the claim (ambiguous), uploads time out', () => {

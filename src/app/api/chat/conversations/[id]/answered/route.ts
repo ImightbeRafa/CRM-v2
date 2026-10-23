@@ -5,7 +5,7 @@ import { isSameOriginRequest } from '@/lib/same-origin'
 import { workspaceWriteRateLimit } from '@/lib/rate-limit'
 import { logAuditEvent } from '@/lib/auditLogger'
 import { conversationStorageKey } from '@/lib/chat-soft-copilot'
-import { answeredMarkerReady, openAgentHandoffSince } from '@/lib/chat-unanswered-server'
+import { answeredMarkerReady, openAgentHandoffSince, waitingFlags } from '@/lib/chat-unanswered-server'
 import { setConversationAgentMode, staffControlledAfter } from '@/lib/chat-agent-control'
 import { aiOnLineIds } from '@/lib/soft-ai/agent-inbox-enrich'
 
@@ -19,7 +19,7 @@ const PERSON_MODES = new Set(['human', 'human_takeover'])
 
 /**
  * POST — "Respondido" (Rafael 2026-10-22): a person says this chat in "Sin responder" is handled.
- * - Stamps ChatConversation.answeredAt / answeredByUserId (SQL 062): the chat leaves Sin responder and "Necesita
+ * - Stamps ChatConversation.answeredAt / answeredByUserId (SQL 063): the chat leaves Sin responder and "Necesita
  *   persona" until the customer writes again or the agent hands it off again (a newer message / turn wins).
  * - If the agent had handed it to a person and that hand-off is still open (no person wrote since, nobody pressed
  *   Tomar control / Pausar after it) and its line answers, the chat goes back to the agent (aiMode ai_active, only if
@@ -54,6 +54,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
     })
     if (!convo) return NextResponse.json({ success: false, error: 'Chat no encontrado' }, { status: 404 })
 
+    // A stale screen (a teammate already replied / it is not waiting any more): nothing to mark, nothing to hand back.
+    const flags = await waitingFlags(auth.tenantId, [convo.id])
+    if (flags.get(convo.id)?.waiting === false) {
+      return NextResponse.json({ success: true, alreadyAnswered: true, returnedToAi: false })
+    }
+
+    // The row time the person was looking at: a message that reached the server after it stays in Sin responder.
+    const body = (await request.json().catch(() => null)) as { seenThrough?: unknown } | null
+    const seenMs = typeof body?.seenThrough === 'string' ? Date.parse(body.seenThrough) : NaN
+    const seenThrough = Number.isFinite(seenMs) && seenMs <= Date.now() + 60_000 ? new Date(seenMs) : null
+
     // Decide BEFORE stamping the marker (the open hand-off is read from the same state the person saw).
     const conversationKey = conversationStorageKey(convo.socialAccountId, convo.peerId)
     let handoffSince: Date | null = null
@@ -72,7 +83,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
       UPDATE "ChatConversation"
       SET "answeredAt" = ${at},
           "answeredByUserId" = ${auth.userId},
-          "answeredThroughAt" = GREATEST(COALESCE("lastInboundAt", "lastMessageAt"), COALESCE(${handoffSince}::timestamp(3), "lastMessageAt")),
+          "answeredThroughAt" = LEAST(
+            GREATEST(COALESCE("lastInboundAt", "lastMessageAt"), COALESCE(${handoffSince}::timestamp(3), "lastMessageAt")),
+            COALESCE(${seenThrough}::timestamp(3), 'infinity'::timestamp)
+          ),
           "updatedAt" = ${at}
       WHERE id = ${convo.id} AND "tenantId" = ${auth.tenantId}`
 

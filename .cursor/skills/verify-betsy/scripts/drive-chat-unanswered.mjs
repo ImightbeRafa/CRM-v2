@@ -78,7 +78,7 @@ try {
         const extra = fakeRows(real)
         const marked = body.conversations.map((c) => (c.id === realId ? { ...c, needsPerson: true, waiting: true, lastMessageDirection: 'outbound' } : c))
         body.conversations = view && view !== 'sin_responder' ? marked : [...marked, ...extra]
-        // "Respondido" shows as if SQL 062 were applied (its POST is answered below, never reaches the server).
+        // "Respondido" shows as if SQL 063 were applied (its POST is answered below, never reaches the server).
         body.answeredAvailable = true
       }
       await route.fulfill({ response: res, json: body })

@@ -149,6 +149,7 @@ export function listDtoToSoftConversation(
     orderStatus: orderId && dto.linkedOrder?.id === orderId ? dto.linkedOrder.status ?? null : null,
     orderTotal: orderId && dto.linkedOrder?.id === orderId ? dto.linkedOrder.total ?? null : null,
     orderItems: orderId && dto.linkedOrder?.id === orderId ? dto.linkedOrder.items ?? null : null,
+    orderNo: orderId && dto.linkedOrder?.id === orderId ? dto.linkedOrder.orderNo ?? null : null,
     ...(typeof dto.waiting === 'boolean' ? { waiting: dto.waiting } : {}),
   }
 }

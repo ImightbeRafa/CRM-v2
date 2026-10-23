@@ -41,8 +41,11 @@ export function ChatContextRail({
   onPauseAi,
   onResumeAi,
   clientPanel,
+  detailConversation,
 }: {
   conversation: SoftConversation
+  /** The unmapped chat (real order id) for the identity / order cards; `conversation` is the rail's display copy. */
+  detailConversation?: SoftConversation
   tab: ContextRailTab
   onTabChange: (tab: ContextRailTab) => void
   onStatusChange: (status: ConversationStatus) => void
@@ -89,8 +92,8 @@ export function ChatContextRail({
           <div className="space-y-4">
             {/* Who, on which line / channel, and the linked order (short number, status, total, items). */}
             <div className="space-y-2">
-              <ChatIdentityCard conversation={conversation} />
-              <LinkedOrderCard conversation={conversation} />
+              <ChatIdentityCard conversation={detailConversation ?? conversation} />
+              <LinkedOrderCard conversation={detailConversation ?? conversation} />
             </div>
             <div>
               <p className="mb-1.5 text-[11px] font-medium text-slate-400">Etapa del chat</p>

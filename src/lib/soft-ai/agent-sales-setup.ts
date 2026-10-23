@@ -126,6 +126,14 @@ const text = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v
 const list = (v: unknown, n: number, max: number) =>
   Array.isArray(v) ? v.map((x) => text(x, max)).filter((x): x is string => Boolean(x)).slice(0, n) : []
 
+/**
+ * The support-escalation flag after a pack rebuild (build-agent): the pack's value when the pack names the key (true or
+ * false), else the live one — a rebuild never silently turns it off (Verifier #146).
+ */
+export function packEscalationFlag(packSalesRules: Record<string, unknown>, live: SalesRules): boolean {
+  return 'escalateToSupport' in packSalesRules ? packSalesRules.escalateToSupport === true : live.escalateToSupport === true
+}
+
 /** Bounded so the jsonb stays under the 8 KB CHECK. */
 export function parseSalesRules(raw: unknown): SalesRules {
   const r = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}

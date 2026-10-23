@@ -29,7 +29,7 @@ import { createKnowledgeSource, approveKnowledgeSource, bindKnowledgeToAgent, un
 import { hashKnowledgeBody } from '@/lib/soft-ai/knowledge-repository'
 import { KNOWLEDGE_LAYER2_CHAR_BUDGET, KNOWLEDGE_LAYER34_CHAR_BUDGET } from '@/lib/soft-ai/knowledge-types'
 import { loadMappedInventoryIds, setMappedInventory } from '@/lib/soft-ai/agent-inventory-map'
-import { loadSalesSetup, saveSalesSetup, parseSalesRules, salesRulesOctets, SALES_RULES_MAX_OCTETS } from '@/lib/soft-ai/agent-sales-setup'
+import { loadSalesSetup, saveSalesSetup, parseSalesRules, packEscalationFlag, salesRulesOctets, SALES_RULES_MAX_OCTETS } from '@/lib/soft-ai/agent-sales-setup'
 import { parseBrandFacts, parseBrandFactsSafe, parseReplyStyleSafe, ReplyStyleSchema } from '@/lib/soft-ai/brand-facts'
 import { listTestCases, createTestCase, cleanSavedTest } from '@/lib/soft-ai/probar-test-cases'
 import { parseSavedTest } from '@/lib/soft-ai/probar-scenarios'
@@ -386,14 +386,14 @@ async function main() {
   const setup = await loadSalesSetup(tenantId, agentId)
   // The owner's promo and "¿sos un bot?" choice (UI) stay unless the pack sets them; so does the support escalation
   // flag (Verifier #146: a rebuild must never silently turn it off).
-  const keepEscalation = 'escalateToSupport' in pack.salesRules ? rules.escalateToSupport : setup.salesRules.escalateToSupport
   const wantedRules = {
     ...rules,
     promo: setup.salesRules.promo,
     aiDisclosure: pack.salesRules.aiDisclosure ? rules.aiDisclosure : setup.salesRules.aiDisclosure,
-    ...(keepEscalation ? { escalateToSupport: true } : {}),
+    // Explicit false too, so a pack can turn it off (saveSalesSetup merges; the parser stores only true).
+    escalateToSupport: packEscalationFlag(pack.salesRules, setup.salesRules),
   }
-  if (!same(setup.salesRules, wantedRules)) {
+  if (!same(setup.salesRules, parseSalesRules(wantedRules))) {
     await saveSalesSetup(tenantId, agentId, { salesRules: wantedRules }, actor.actorUserId)
     log('✔ guion de venta y combos')
   }

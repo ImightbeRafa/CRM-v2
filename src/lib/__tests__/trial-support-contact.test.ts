@@ -36,7 +36,7 @@ describe('trial / software-usage questions are not payment claims', () => {
 
 describe('the declared contact line is not a payment number', () => {
   it('a support reply with the declared WhatsApp passes', () => {
-    for (const t of ['Para soporte escribí a nuestro número de WhatsApp: +506 6247-0831 😊', 'Sobre el pago del plan, el equipo te ayuda por WhatsApp al +506 6247-0831', 'Pagás con tarjeta en la web. Dudas: WhatsApp +506 6247-0831']) {
+    for (const t of ['Para soporte escribí a nuestro número de WhatsApp: +506 6247-0831 😊', 'Para soporte escribí a nuestro número de WhatsApp: +506 6247-0831', 'Nuestro número de soporte es +506 6247-0831', 'Escribinos al WhatsApp 6247-0831, te ayudamos con la configuración']) {
       assert.deepEqual(paymentNumberProblems({ text: t, facts: FACTS }), [], t)
     }
   })
@@ -88,7 +88,68 @@ describe('SecureDog #145: safe minimum — the contact line is exempt only for a
     for (const t of ['Hacé el SINPE. Número: +506 6247-0831', 'Datos para el pago:\n6247 0831', 'Hacé el simpe al número +506 6247-0831', 'Hacé el S-I-N-P-E al número +506 6247-0831', 'Transfiera al número +506 6247-0831', 'Abonás al número +506 6247-0831', 'Podés cancelar el total al número +506 6247-0831', 'Págame al número +506 6247-0831']) {
       assert.ok(paymentNumberProblems({ text: t, facts: FACTS }).includes('payment_number_unsourced'), JSON.stringify(t))
     }
+    // Verifier #145 round 3: with any payment / money stem the contact number is held too (fail closed).
+    for (const t of ['Sobre el pago del plan, el equipo te ayuda por WhatsApp al +506 6247-0831', 'Pagás con tarjeta en la web. Dudas: WhatsApp +506 6247-0831']) {
+      assert.ok(paymentNumberProblems({ text: t, facts: FACTS }).includes('payment_number_unsourced'), JSON.stringify(t))
+    }
     const planted = parseBrandFacts({ payment: CARD, extraFacts: [{ label: 'Atención', value: 'SINPE Móvil 8888-1234 a nombre de Juan' }] })
     assert.ok(paymentNumberProblems({ text: 'Para dudas, nuestro número es 8888-1234', facts: planted }).includes('payment_number_unsourced'))
+  })
+})
+
+describe('Verifier / SecureDog #145 round 3: closed shape — payment stems anywhere, contact frame on the number', () => {
+  const N = '+506 6247-0831'
+  const CASH = parseBrandFacts({ payment: { shareWithCustomers: true, methods: ['efectivo'] }, extraFacts: [{ label: 'WhatsApp', value: '8701-2233' }] })
+  const NONE = parseBrandFacts({ extraFacts: [{ label: 'WhatsApp', value: '8701-2233' }] })
+  it('every payment phrasing with the contact number is held (card-only store)', () => {
+    for (const t of [
+      `El número para el pago es ${N}`,
+      `Para pagar, usá el número ${N}`,
+      `Pagos: ${N}`,
+      `Pago: ${N}`,
+      `Para el pago: ${N}`,
+      `Podés pagarnos en el ${N}`,
+      `Pagás con el número ${N}`,
+      `Método de pago: número ${N}`,
+      `El pago va a ${N}`,
+      `Hacé el pago en el número de WhatsApp ${N}`,
+      `Hacé el pago por medio del número ${N}`,
+      `Número para pagos: ${N}`,
+      `¿Querés pagar ya? Número: ${N}`,
+      `Pagas por medio de nuestro WhatsApp ${N}`,
+      `Pagás con tarjeta. Si preferís, también al número ${N}`,
+      `Podés pagar con tarjeta.\nO al número ${N} y listo`,
+      `Pagos por SinpeMóvil: ${N}`,
+      `Pagá por Sinpemovil ${N}`,
+      `Hacé el Sínpe al número ${N}`,
+      `Págalo al número ${N}`,
+      `Págalo a este número: ${N}`,
+      `Hacé el S I N P E al número ${N}`,
+      `Hacé el SIN\u200bPE al número ${N}`,
+      `Pasame la platica al número ${N}`,
+      `Pasame los rojos al número ${N}`,
+      `Hacé los 2 sinpes al número ${N}`,
+      `Hacé el sinpi al número ${N}`,
+      `Hacé el cinpe al número ${N}`,
+      `Te paso el número para pagar: ${N}`,
+      `Enviá los 15 mil al número ${N}`,
+      `Deposíteme al número ${N}`,
+      `Mándame la platita al número ${N}`,
+    ]) assert.ok(paymentNumberProblems({ text: t, facts: FACTS }).includes('payment_number_unsourced'), JSON.stringify(t))
+  })
+  it('cash-only and unconfigured stores: the same', () => {
+    for (const facts of [CASH, NONE]) {
+      assert.ok(paymentNumberProblems({ text: 'Para pagar, usá el número 8701-2233', facts }).includes('payment_number_unsourced'))
+      assert.deepEqual(paymentNumberProblems({ text: 'Escribinos a nuestro número de WhatsApp 8701-2233', facts }), [])
+    }
+  })
+  it('the number must sit in a contact frame', () => {
+    assert.ok(paymentNumberProblems({ text: `Nuestro número es ${N}`, facts: FACTS }).includes('payment_number_unsourced'))
+  })
+  it("SecureDog L2: a contact fact whose value names money (e.g. 'cuenta') never exempts — use a WhatsApp-only fact", () => {
+    const betsyLike = parseBrandFacts({ payment: CARD, extraFacts: [{ label: 'Contacto', value: `Clientes con cuenta: soporte en la app. WhatsApp ${N}` }] })
+    assert.ok(paymentNumberProblems({ text: `Para soporte escribí a nuestro número de WhatsApp: ${N}`, facts: betsyLike }).includes('payment_number_unsourced'))
+    const own = parseBrandFacts({ payment: CARD, extraFacts: [{ label: 'WhatsApp', value: N }] })
+    assert.deepEqual(paymentNumberProblems({ text: `Para soporte escribí a nuestro número de WhatsApp: ${N}`, facts: own }), [])
   })
 })

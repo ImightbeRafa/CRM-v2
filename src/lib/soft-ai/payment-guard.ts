@@ -300,8 +300,29 @@ function configuredNumbers(facts: BrandFacts): string[] {
  * Contacto / Soporte / WhatsApp / Teléfono) is not a payment account. Only the declared payment methods are payment numbers.
  */
 const CONTACT_FACT_LABEL_RE = /contact|soporte|support|whats\s*app|tel[eé]fono|celular/iu
-/** A label that also names payment ("Teléfono / SINPE", "Contacto y pagos") is never a contact-only fact. */
-const PAYMENT_LABEL_RE = /pag|sinpe|simpe|cuenta|iban|transfer|dep[oó]sit|cobr/iu
+
+/** Accent-free, lowercase, invisible format characters removed, spaced-out letters joined ("S I N P E" → "sinpe"). */
+function foldPayText(text: string): string {
+  return (text || '')
+    .normalize('NFKD')
+    .replace(/[\p{M}\p{Cf}]/gu, '')
+    .toLowerCase()
+    .replace(/(?<![\p{L}])\p{L}(?:[\s.\-_*·]+\p{L}(?![\p{L}])){2,}/gu, (m) => m.replace(/[^\p{L}]/gu, ''))
+}
+/**
+ * Verifier #145 round 3 (closed shape, fail closed): ANY payment or money stem in the reply — after folding accents and
+ * spacing, with the numbers and the word "número" set aside — means no contact exemption. Stems, not words: "pag…"
+ * covers pago / pagás / págalo / pagos, "sinp…" covers sinpemovil / sinpes, and so on. A reply that is only "escribinos
+ * a nuestro número de WhatsApp: …" has none of them. Also used on the contact fact's own label and value.
+ */
+const PAY_STEM_RE =
+  /(?<![\p{L}])(?:pag|sinp|simp|cinp|synp|sipe|cuent|iban|transf|trasf|tranf|deposit|plat|diner|monto|total|cancel|abon|cobr|mand|envi|pase|pasa|pasam|rojo|colon|dolar|metodo|precio|cost|nombre|comprob|cuot)\p{L}*|[$₡¢]|(?<![\p{L}])(?:mil|plan)(?![\p{L}])/u
+function hasPayStem(text: string): boolean {
+  return PAY_STEM_RE.test(foldPayText(text).replace(LONG_NUMBER_RE, ' ').replace(/(?<![\p{L}])numeros?(?![\p{L}])/gu, ' '))
+}
+/** The number itself must sit in a contact frame ("WhatsApp", "soporte", "escribinos", "llamanos") in its own clause. */
+const CONTACT_CUE_BEFORE_RE =
+  /(?<![\p{L}])(?:whats\s*app|wsp|soporte|support|contacto|contact\p{L}*|escrib\p{L}*|llam\p{L}*|telefono|celular)(?![\p{L}])[^.!?\n]{0,40}$/u
 function contactNumbers(facts: BrandFacts): string[] {
   // SecureDog #145 (safe minimum): only an agent that takes no number-based payment (no SINPE, no transfer) — in Costa
   // Rica a phone number can BE a SINPE account, so a SINPE / transfer store never gets the exemption.
@@ -309,7 +330,8 @@ function contactNumbers(facts: BrandFacts): string[] {
   if (methods.some((m) => m === 'sinpe' || m === 'transferencia') || facts.payment?.sinpe?.number || facts.payment?.transfer?.iban) return []
   const out: string[] = []
   for (const f of facts.extraFacts ?? []) {
-    if (!CONTACT_FACT_LABEL_RE.test(f.label || '') || PAYMENT_LABEL_RE.test(f.label || '') || PAYMENT_LABEL_RE.test(f.value || '')) continue
+    // A label or value that also names payment ("Teléfono / SINPE", "Contacto y pagos") is never a contact-only fact.
+    if (!CONTACT_FACT_LABEL_RE.test(f.label || '') || hasPayStem(f.label || '') || hasPayStem(f.value || '')) continue
     for (const m of (f.value || '').match(LONG_NUMBER_RE) ?? []) {
       const d = digitsOf(m)
       if (d.length >= 8) out.push(d)
@@ -317,13 +339,6 @@ function contactNumbers(facts: BrandFacts): string[] {
   }
   return out
 }
-/**
- * Verifier #145 (fail closed): a payment destination ANYWHERE in the reply ("SINPE", "cuenta", "transferí", "plata", ₡,
- * "a nombre de", "datos para el pago") means the contact line is never exempt — in Costa Rica SINPE Móvil runs on phone
- * numbers, so "el SINPE es el WhatsApp" must stay held whatever the order, line or sentence.
- */
-const PAY_DESTINATION_ANYWHERE_RE =
-  /(?<![\p{L}])(?:sinpe|simpe|s-i-n-p-e|iban|cuenta|cuentas|transfer\p{L}*|trasfer\p{L}*|transfi\p{L}*|dep[oó]sit\p{L}*|plata|dinero|monto|total|cancel\p{L}*|p[aá]game|p[aá]gale|p[aá]guen|cobr\p{L}*|abon\p{L}*|mand[aá]\p{L}*|a\s+nombre\s+de|datos\s+(?:de|para|del)\s+(?:el\s+)?pago)(?![\p{L}])|[₡¢]|colones|(?<![\p{L}])pag\p{L}*[^.!?\n]{0,30}(?<![\p{L}])(?:al|a\s+(?:este|ese|nuestro|mi|tu))(?![\p{L}])/iu
 
 /** Same number, allowing a +506 prefix on either side. */
 function sameNumber(a: string, b: string): boolean {
@@ -355,11 +370,13 @@ export function paymentNumberProblems(input: { text: string; facts: BrandFacts; 
     if (!okNumber(digitsOf(m))) reasons.add('payment_number_unsourced')
   }
   if (PAY_WORDS_RE.test(text)) {
-    // The declared contact line is fine only in a reply that names no payment destination at all.
-    const contacts = PAY_DESTINATION_ANYWHERE_RE.test(text) ? [] : contactNumbers(input.facts)
-    for (const m of text.match(LONG_NUMBER_RE) ?? []) {
-      const d = digitsOf(m)
-      if (okNumber(d) || contacts.some((c) => sameNumber(c, d))) continue
+    // The declared contact line is fine only in a reply with no payment / money stem at all, and only in a contact frame.
+    const contacts = hasPayStem(text) ? [] : contactNumbers(input.facts)
+    for (const m of text.matchAll(LONG_NUMBER_RE)) {
+      const d = digitsOf(m[0])
+      if (okNumber(d)) continue
+      const before = foldPayText(text.slice(Math.max(0, (m.index ?? 0) - 60), m.index ?? 0))
+      if (contacts.some((c) => sameNumber(c, d)) && CONTACT_CUE_BEFORE_RE.test(before)) continue
       reasons.add('payment_number_unsourced')
     }
   }

@@ -9,6 +9,7 @@ import {
     type ProvinceData,
     type CantonData,
 } from '@/app/ventas/components/costaRicaLocations';
+import { StatusBadge } from '@/app/components/ui/StatusBadge';
 
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12 } as const;
 
@@ -413,7 +414,7 @@ export default function GuiaCorreosPage() {
                                                     <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.4)' }}>{o.province || '—'}</td>
                                                     <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.4)' }}>{o.phone || '—'}</td>
                                                     <td style={{ padding: '9px 12px', color: '#34d399', fontWeight: 700 }}>{fmt(o.total)}</td>
-                                                    <td style={{ padding: '9px 12px' }}><span style={{ padding: '2px 8px', borderRadius: 20, background: 'rgba(96,165,250,0.12)', color: '#60a5fa', fontSize: 10.5, fontWeight: 600 }}>{o.lmStatus || 'Pendiente'}</span></td>
+                                                    <td style={{ padding: '9px 12px' }}><StatusBadge status={o.lmStatus || 'Pendiente'} surface="dark" /></td>
                                                 </tr>
                                             ))}
                                         </tbody>

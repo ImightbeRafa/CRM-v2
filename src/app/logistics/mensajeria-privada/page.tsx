@@ -24,6 +24,7 @@ import { FALLBACK_TENANT_CONFIG, useTenantConfig } from '@/hooks/useTenantConfig
 import PaymentMethodWizard, { type PaymentConfirmPayload } from '@/app/logistics/components/PaymentMethodWizard';
 import { csvCell } from '@/lib/csv-safe';
 import OrderItemsList from '@/components/orders/OrderItemsList';
+import { StatusBadge } from '@/app/components/ui/StatusBadge';
 
 const CR_TZ = 'America/Costa_Rica';
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14 } as const;
@@ -117,14 +118,6 @@ function downloadCSV(content: string, filename: string) {
     anchor.download = filename;
     anchor.click();
     URL.revokeObjectURL(url);
-}
-
-function statusColor(status: string | null) {
-    if (status === 'Entregado') return '#34d399';
-    if (status === 'Devuelto') return '#fbbf24';
-    if (status === 'En Tránsito' || status === 'En Transito') return '#c084fc';
-    if (status === 'Pendiente') return '#94a3b8';
-    return '#60a5fa';
 }
 
 function methodLabel(method: string | null | undefined) {
@@ -550,7 +543,6 @@ export default function PrivateDeliveryPage() {
                                                 <tbody>
                                                     {group.orders.map((order, index) => {
                                                         const selected = selectedIds.has(order.id);
-                                                        const color = statusColor(order.lmStatus);
                                                         const ceMethod = methodLabel(order.cePaymentMethod);
                                                         const settleMethod = methodLabel(order.settlementMethod);
                                                         return (
@@ -573,9 +565,7 @@ export default function PrivateDeliveryPage() {
                                                                 </td>
                                                                 <td style={{ padding: '8px 9px', color: 'rgba(255,255,255,0.55)', whiteSpace: 'nowrap' }}>{order.reportTimestampCR}</td>
                                                                 <td style={{ padding: '8px 9px' }}>
-                                                                    <span style={{ padding: '2px 8px', borderRadius: 20, background: `${color}14`, color, border: `1px solid ${color}28`, fontSize: 10, fontWeight: 900 }}>
-                                                                        {order.lmStatus || 'Sin estado'}
-                                                                    </span>
+                                                                    <StatusBadge status={order.lmStatus || 'Sin estado'} surface="dark" />
                                                                 </td>
                                                                 <td style={{ padding: '8px 9px', color: 'rgba(255,255,255,0.48)', minWidth: 140, maxWidth: 240 }}><OrderItemsList order={order} maxItems={2} emptyLabel="—" /></td>
                                                                 <td style={{ padding: '8px 9px', color: 'rgba(255,255,255,0.45)', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

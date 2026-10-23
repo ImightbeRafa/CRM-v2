@@ -1,23 +1,12 @@
 'use client';
 
-import { Chip, type ChipTone } from '@/components/ui/Chip';
+import { Chip } from '@/components/ui/Chip';
+import { statusTone } from '@/lib/orders/status-tone';
 
 // Status names are tenant-defined; known ones get a tone, the rest stay neutral.
-const STATUS_TONE: Record<string, ChipTone> = {
-  pendiente: 'warning',
-  'en proceso': 'info',
-  completado: 'success',
-  entregado: 'violet',
-  enviado: 'violet',
-  cancelado: 'danger',
-  drive: 'warning',
-  impreso: 'neutral',
-  pendientediseño: 'brand',
-};
-
-export function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status, surface = 'aurora' }: { status: string; surface?: 'aurora' | 'dark' }) {
   return (
-    <Chip tone={STATUS_TONE[status.toLowerCase()] ?? 'neutral'} dot>
+    <Chip tone={statusTone(status)} surface={surface} dot>
       {status}
     </Chip>
   );

@@ -260,3 +260,8 @@ test('/soporte: night-sky band, Betsy listening by the form, side panel; form + 
   assert.match(client, /<BetsyMark size=\{44\} state=\{sending \? 'think' : 'listen'\}/)
   assert.match(client, /fetch\('\/api\/support\/contact'/)
 })
+
+test('old /soporte?tema=agente links say agents are for existing Betsy users; the agent card title is a heading', () => {
+  assert.match(read('src/app/soporte/SoporteClient.tsx'), /topic === 'agent' && \([\s\S]*solo para negocios que ya usan Betsy/)
+  assert.match(read('src/app/soporte/page.tsx'), /<h2 id="soporte-agent-title"/)
+})

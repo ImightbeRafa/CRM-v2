@@ -272,8 +272,14 @@
   gap: 2px;
   flex: 1;
 }
-.agentCta b {
+/* .agentCta prefix outranks the global .landing-h2 size (the class only opts out of globals-mobile.css). */
+.agentCta .agentTitle {
+  margin: 0;
   font-size: 15.5px;
+  line-height: 1.35;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #fff;
 }
 .agentCta span span {
   font-size: 13px;

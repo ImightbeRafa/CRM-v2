@@ -152,7 +152,9 @@ export default async function SoportePage({ searchParams }: { searchParams: Prom
               <section className={s.agentCta} aria-labelledby="soporte-agent-title">
                 <Sparkles aria-hidden />
                 <span>
-                  <b id="soporte-agent-title">Agentes de IA</b>
+                  <h2 id="soporte-agent-title" className={`landing-h2 ${s.agentTitle}`}>
+                    Agentes de IA
+                  </h2>
                   <span>Por ahora son solo para negocios que ya usan Betsy.</span>
                   <Link href="/config/agentes" className={s.agentLink}>
                     ¿Ya usás Betsy? Pedí tu agente desde la app <ArrowRight aria-hidden />

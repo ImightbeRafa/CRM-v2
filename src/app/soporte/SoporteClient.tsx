@@ -107,6 +107,13 @@ function ContactForm({ topic }: { topic: 'agent' | null }) {
           <p className="text-[13px] text-slate-500">Contanos con detalle y te respondemos por correo.</p>
         </div>
       </div>
+      {/* Older ?tema=agente links: agents are only for businesses that already use Betsy (Rafael 2026-10-23). */}
+      {topic === 'agent' && (
+        <p className="rounded-xl bg-indigo-50 px-3 py-2 text-[13px] text-indigo-950">
+          Los agentes de IA son por ahora solo para negocios que ya usan Betsy: pedilo desde la app, en Agentes. Si
+          tenés una pregunta antes, escribinos acá.
+        </p>
+      )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="block">
           <span className={auroraLabelClass}>Nombre</span>

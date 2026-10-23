@@ -94,7 +94,7 @@ describe('brand source shape', () => {
       assert.doesNotMatch(read(f), /className=[^>]*\[#[0-9a-fA-F]{3,8}\]/, f)
     }
   })
-  test('agents UI renders plates with the mark, not emojis; lists keep the mark still', () => {
+  test('agents UI renders plates with the mark, not emojis; only the hovered card moves', () => {
     const agentFiles = [...files('src/components/aurora/agentes'), ...files('src/app/config/agentes')]
     for (const f of agentFiles) assert.doesNotMatch(read(f), EMOJI, f)
     const list = read('src/components/aurora/agentes/AgentListPanel.tsx')
@@ -109,7 +109,6 @@ describe('brand source shape', () => {
   })
   test('one shared logo in the shell, auth, old home and soporte (landing-v2 wires it in its own brand.tsx)', () => {
     for (const f of [
-      'src/components/aurora/AuroraSidebar.tsx',
       'src/components/aurora/auth/BetsyWordmark.tsx',
       'src/app/home/components/LandingPage.tsx',
       'src/app/soporte/page.tsx',
@@ -144,38 +143,68 @@ describe('help button placement', () => {
   })
 })
 
-describe('Betsy presence signals (animated mark)', () => {
-  test('each signal maps to the HANDOFF state event; unknown values are ignored', async () => {
-    const { signalToStateEvent, isBetsySignal, BETSY_SIGNALS, emitBetsySignal } = await import('../../components/brand/betsy-signals')
-    assert.deepEqual(
-      BETSY_SIGNALS.map((s) => [s, signalToStateEvent(s)]),
-      [
-        ['read', 'read'],
-        ['replied', 'read'],
-        ['think', 'reply_started'],
-        ['typing', 'reply_streaming'],
-        ['done', 'reply_done'],
-        ['listen', 'message_received'],
-        ['yes', 'payment_verified'],
-      ],
-    )
+describe('Betsy presence (animated mark)', () => {
+  test('signals: only the known names pass; emit is a no-op without a window', async () => {
+    const { isBetsySignal, emitBetsySignal } = await import('../../components/brand/betsy-signals')
     assert.equal(isBetsySignal('read'), true)
     assert.equal(isBetsySignal('hack'), false)
-    assert.doesNotThrow(() => emitBetsySignal('read')) // no window in node: a no-op
+    assert.doesNotThrow(() => emitBetsySignal('read'))
   })
-  test('the sidebar mark is the live one; think/typing have a watchdog; the read blink hands back to idle', () => {
+  test('machine: reactions never cancel a reply in progress; watchdog; read blink hands back to idle', async () => {
+    const { PRESENCE_IDLE, PRESENCE_TIMING: T, presenceReduce: r, presenceView: v, nextDeadline } = await import('../../components/brand/presence-machine')
+    let s = PRESENCE_IDLE
+    assert.equal(v(s, 0).state, 'idle')
+    // think, then a customer message: listen shows, then back to think (not idle).
+    s = r(s, 'think', 1000)
+    s = r(s, 'listen', 1500)
+    assert.equal(v(s, 1600).state, 'listen')
+    assert.equal(v(s, 1500 + T.listenMs + 1).state, 'think')
+    // listen, then typing within 1.2 s: typing is not undone by the listen ending.
+    s = r(PRESENCE_IDLE, 'listen', 0)
+    s = r(s, 'typing', 500)
+    assert.equal(v(s, T.listenMs + 10).state, 'typing')
+    // yes during typing hops, then returns to typing; a listen does not cut the hop.
+    s = r(s, 'yes', 2000)
+    s = r(s, 'listen', 2100)
+    assert.equal(v(s, 2200).state, 'yes')
+    assert.equal(v(s, 2000 + T.yesMs + 1).state, 'typing')
+    // done → idle; the watchdog ends a reply that never got its done.
+    assert.equal(v(r(s, 'done', 5000), 5001).state, 'idle')
+    const lost = r(PRESENCE_IDLE, 'think', 0)
+    assert.equal(v(lost, T.replyWatchdogMs - 1).state, 'think')
+    assert.equal(v(lost, T.replyWatchdogMs + 1).state, 'idle')
+    // Re-sending typing re-arms the watchdog (long streams).
+    const long = r(r(PRESENCE_IDLE, 'typing', 0), 'typing', 15_000)
+    assert.equal(v(long, 25_000).state, 'typing')
+    // read / replied: double blink for 700 ms on top of the current state, then undefined (idle blink back).
+    let b = r(PRESENCE_IDLE, 'think', 0)
+    b = r(b, 'read', 100)
+    assert.deepEqual(v(b, 200), { state: 'think', readSignal: 1 })
+    assert.equal(v(b, 100 + T.readBlinkMs + 1).readSignal, undefined)
+    b = r(b, 'replied', 1000)
+    assert.equal(v(b, 1100).readSignal, 2)
+    // One re-render at the next deadline only.
+    assert.equal(nextDeadline(b, 1100), 1000 + T.readBlinkMs)
+    assert.equal(nextDeadline(PRESENCE_IDLE, 0), null)
+  })
+  test('sidebar: the live mark is its own component (signals re-render only the logo), 32 px+ so think shows', () => {
     const side = read('src/components/aurora/AuroraSidebar.tsx')
-    assert.match(side, /const presence = useBetsyPresence\(\)/)
-    // 32 px+ so the think light shows (HANDOFF: top light and think light from 32 px).
-    assert.match(side, /<BetsyLogo mark size=\{26\} animated markState=\{presence\} \/>/)
-    assert.match(side, /<BetsyLogo lockup size=\{18\} animated markState=\{presence\} \/>/)
-    const hook = read('src/components/brand/useBetsyPresence.ts')
-    assert.match(hook, /THINK_WATCHDOG_MS = 20_000/)
-    assert.match(hook, /setTimeout\(\(\) => setBlink\(undefined\), READ_BLINK_MS\)/)
-    assert.match(hook, /window\.removeEventListener\(BETSY_SIGNAL_EVENT, onSignal\)/)
+    assert.match(side, /<LiveBetsyLogo mark size=\{26\} \/>/)
+    assert.match(side, /<LiveBetsyLogo lockup size=\{18\} \/>/)
+    assert.doesNotMatch(side, /useBetsyPresence/)
+    assert.match(read('src/components/brand/LiveBetsyLogo.tsx'), /const presence = useBetsyPresence\(\)/)
+    assert.match(read('src/components/brand/useBetsyPresence.ts'), /window\.removeEventListener\(BETSY_SIGNAL_EVENT, onSignal\)/)
   })
-})
-
-test('inside a logo the typing state shows the think light (dots would shift the wordmark)', () => {
-  assert.match(read('src/components/brand/BetsyLogo.tsx'), /markState\?\.state === 'typing' \? \{ \.\.\.markState, state: 'think' as const \}/)
+  test('the hop remounts only on entering yes (no blink restart on other state changes)', () => {
+    assert.match(read('src/components/brand/BetsyMark.tsx'), /key=\{state === 'yes' \? 'hop-yes' : 'hop'\}/)
+  })
+  test('inside a logo the typing state shows the think light (dots would shift the wordmark)', () => {
+    assert.match(read('src/components/brand/BetsyLogo.tsx'), /markState\?\.state === 'typing' \? \{ \.\.\.markState, state: 'think' as const \}/)
+  })
+  test('agent cards: no flicker moving focus inside a card; focused card keeps listening on mouse leave', () => {
+    const list = read('src/components/aurora/agentes/AgentListPanel.tsx')
+    assert.match(list, /if \(e\.currentTarget\.contains\(e\.relatedTarget as Node \| null\)\) return/)
+    assert.match(list, /if \(e\.currentTarget\.contains\(document\.activeElement\)\) return/)
+    assert.match(read('src/components/aurora/agentes/NewAgentForm.tsx'), /state="paused"/)
+  })
 })

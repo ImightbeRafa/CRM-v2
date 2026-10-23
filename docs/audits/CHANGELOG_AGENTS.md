@@ -1,3 +1,20 @@
+## 2026-10-23 — Animated Betsy mark: live sidebar mark, agent plates react (Lane I, claude/wave-betsy-motion)
+
+- `emitBetsySignal(type)` (`src/components/brand/betsy-signals.ts`): a window event any screen can fire, with types read, replied, think, typing, done, listen and yes. It only animates the owner UI and is never sent to customers. Lane A wires the inbox calls in PR #142, stacked on this branch: read, Respondido, Pago verificado, and listen/think/done from the `/changes` merge.
+- `presence-machine.ts` is pure and tested. It has two layers:
+  - **reply**: think or typing until `done`, or until a 20 s watchdog fires. Re-sending typing re-arms the watchdog.
+  - **flash**: listen (1.2 s) or yes (2 s) shown on top of the reply layer, which comes back after it. A listen never cuts a yes short.
+  - Read or Respondido plays the double blink for 700 ms, then the slow idle blink returns.
+- `useBetsyPresence` stores the machine state and re-renders once at each deadline. `LiveBetsyLogo` is the sidebar's mark. It is a separate component, so a signal re-renders only the logo, not the whole sidebar.
+- Sidebar: the rail mark and the lockup breathe and blink and react to signals. Both are 32 px or larger, so the think light shows. Inside the logo, typing shows the think light, because the typing dots would push the wordmark.
+- BetsyMark: the hop group now remounts only when entering `yes`. Before, any state change remounted it and restarted the blink.
+- Config › Agentes:
+  - Only the hovered or keyboard-focused card's plate animates, with `listen`. Moving focus between a card's buttons doesn't flicker, and a focused card keeps listening after the mouse leaves.
+  - Drafts show the paused mark, in the list, the detail header and the new-agent preview.
+  - The detail header shows idle, paused, or think while publishing.
+- The empty-state mark looks down toward the action.
+- Verifier: pass with notes, all fixed. The main one: listen or yes could cancel think/typing. That is now covered by machine tests and confirmed in Chromium.
+- Open for Rafael: on the Agents page the sidebar mark plus a moving plate means two moving marks, against HANDOFF's "one per view". His spec asked for both. On phones there is no live mark, since the sidebar is desktop only.
 ## 2026-10-22 — Premium chips and lucide icons instead of emoji (Lane B, claude/wave-icons-chips, PR #133)
 
 - One shared `Chip` (`src/components/ui/Chip.tsx`): tone (neutral/brand/violet/info/success/warning/danger), size sm/md, `surface` aurora (palette classes, follows dark mode) or dark (Logística), optional lucide `icon` or status `dot`. Keep this API stable; other lanes reuse it.

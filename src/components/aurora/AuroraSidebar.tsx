@@ -11,8 +11,7 @@ import { AuroraAvatar } from './shell/AuroraAvatar'
 import { AuroraProfileMenu } from './shell/AuroraProfileMenu'
 import { SidebarToggle } from './shell/SidebarToggle'
 import { BusinessSwitcher } from './BusinessSwitcher'
-import { BetsyLogo } from '@/components/brand/BetsyLogo'
-import { useBetsyPresence } from '@/components/brand/useBetsyPresence'
+import { LiveBetsyLogo } from '@/components/brand/LiveBetsyLogo'
 import { useAuroraViewer } from './shell/useAuroraViewer'
 
 const FOCUS_RING =
@@ -64,9 +63,6 @@ export function AuroraSidebar() {
   const roleLabel = ROLE_LABELS[roleKey] ?? (roleKey ? roleKey.charAt(0) + roleKey.slice(1).toLowerCase() : '')
   const userName = staffDisplayName(user?.name) || user?.email?.split('@')[0] || 'Usuario'
   const activeHref = getActiveAuroraHref(pathname)
-  // The one Betsy mark of the app view: breathes and blinks, double-blinks on read / Respondido,
-  // thinks / types while an AI reply forms (signals from `emitBetsySignal`).
-  const presence = useBetsyPresence()
 
   // Server render uses the route default (no layout jump on /chats); a saved choice wins after mount.
   const scope = sidebarScope(pathname)
@@ -104,13 +100,13 @@ export function AuroraSidebar() {
       {collapsed ? (
         <div className="flex h-16 shrink-0 items-center justify-center">
           <Link href="/dashboard" aria-label="Betsy — Inicio" className={`rounded-lg p-1 ${FOCUS_RING}`}>
-            <BetsyLogo mark size={26} animated markState={presence} />
+            <LiveBetsyLogo mark size={26} />
           </Link>
         </div>
       ) : (
         <div className="mx-3 flex h-16 shrink-0 items-center gap-2 pl-1.5">
           <Link href="/dashboard" aria-label="Betsy — Inicio" className={`rounded-lg ${FOCUS_RING}`}>
-            <BetsyLogo lockup size={18} animated markState={presence} />
+            <LiveBetsyLogo lockup size={18} />
           </Link>
           <span className="ml-auto">
             <SidebarToggle collapsed={collapsed} onToggle={toggle} />

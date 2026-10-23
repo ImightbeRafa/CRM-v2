@@ -53,7 +53,7 @@ export function AgentListPanel({
   createDisabled = false,
   creating = false,
 }: AgentListPanelProps) {
-  // Only the card under the pointer / keyboard focus moves (it listens); the rest stay still (one moving mark).
+  // Only the card under the pointer / keyboard focus moves (it listens); the other plates stay still.
   const [active, setActive] = useState<string | null>(null)
   // The team-only lane is a real agent (it may hold lines), but it is not an AI persona: last, muted.
   const ordered = [...agents.filter((a) => !isHumanOnly(a)), ...agents.filter(isHumanOnly)]
@@ -76,9 +76,17 @@ export function AgentListPanel({
               key={a.id}
               data-testid="agent-card"
               onMouseEnter={() => setActive(a.id)}
-              onMouseLeave={() => setActive((cur) => (cur === a.id ? null : cur))}
+              onMouseLeave={(e) => {
+                // Keyboard focus still inside the card keeps it listening.
+                if (e.currentTarget.contains(document.activeElement)) return
+                setActive((cur) => (cur === a.id ? null : cur))
+              }}
               onFocus={() => setActive(a.id)}
-              onBlur={() => setActive((cur) => (cur === a.id ? null : cur))}
+              onBlur={(e) => {
+                // Moving focus between Configurar and Probar stays inside the card: no flicker.
+                if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+                setActive((cur) => (cur === a.id ? null : cur))
+              }}
               className={`group flex flex-col rounded-[20px] border p-5 transition-shadow ${
                 human ? 'border-dashed border-slate-200 bg-slate-50/60' : 'bg-white hover:shadow-md'
               } ${selected ? 'border-[#5B6CFF]/40' : human ? '' : 'border-slate-200/70'}`}

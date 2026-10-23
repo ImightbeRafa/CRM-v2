@@ -8,25 +8,36 @@ import {
   BETSY_PLAN,
   IVA_BPS,
   LEGACY_SUBSCRIPTION_CRC,
+  formatColones,
   formatUsdCents,
   ivaCents,
-  planPriceBreakdown,
   planPriceLabels,
 } from '../pricing/plan'
 
 // Run from the repo root (npm scripts do).
 const read = (rel: string) => fs.readFileSync(rel, 'utf8').replace(/\r\n/g, '\n')
 
-test('plan price: $20 + 13% IVA = $22.60, in integer cents', () => {
-  assert.equal(BETSY_PLAN.baseUsdCents, 2000)
+test('plan price: ₡10.000/mes, what Tilopay charges (Rafael 2026-10-23); IVA wording waits for his answer', () => {
+  assert.equal(BETSY_PLAN.currency, 'CRC')
+  assert.equal(BETSY_PLAN.amountColones, 10_000)
   assert.equal(IVA_BPS, 1300)
-  assert.deepEqual(planPriceBreakdown(), { baseCents: 2000, ivaCents: 260, totalCents: 2260, ivaPercent: 13 })
+  // Not confirmed yet: the copy says nothing about IVA either way.
+  assert.equal(BETSY_PLAN.ivaIncluded, null)
   const l = planPriceLabels()
-  assert.equal(l.base, '$20')
-  assert.equal(l.iva, '$2.60')
-  assert.equal(l.total, '$22.60')
-  assert.equal(l.short, '$20/mes + IVA')
-  assert.equal(l.math, '$20 + IVA (13%) = $22.60 al mes')
+  assert.equal(l.base, '₡10.000')
+  assert.equal(l.short, '₡10.000/mes')
+  assert.equal(l.math, '₡10.000 al mes')
+  assert.equal(l.ivaNote, '')
+  assert.equal(l.iva, null)
+  // Once Rafael answers, one flag changes every surface:
+  const inc = planPriceLabels({ amountColones: 10_000, ivaIncluded: true })
+  assert.equal(inc.short, '₡10.000/mes (IVA incluido)')
+  assert.equal(inc.math, '₡10.000 al mes, IVA incluido')
+  const plus = planPriceLabels({ amountColones: 10_000, ivaIncluded: false })
+  assert.equal(plus.short, '₡10.000/mes + IVA')
+  assert.equal(plus.iva, '₡1.300')
+  assert.equal(plus.math, '₡10.000 + IVA (13%) = ₡11.300 al mes')
+  assert.equal(formatColones(1234567), '₡1.234.567')
 })
 
 test('IVA rounds half-up to the cent and never goes negative', () => {
@@ -38,8 +49,8 @@ test('IVA rounds half-up to the cent and never goes negative', () => {
   assert.equal(formatUsdCents(100000), '$1,000')
 })
 
-test('the subscription charge stays the legacy CRC 10,000 (Rafael decides any change)', () => {
-  assert.equal(LEGACY_SUBSCRIPTION_CRC, 10_000)
+test('the shown price equals what the Tilopay subscription charges (CRC 10000)', () => {
+  assert.equal(LEGACY_SUBSCRIPTION_CRC, BETSY_PLAN.amountColones)
   assert.match(read('src/app/api/tilopay/create-plan-repeat/route.ts'), /pro: \{ name: 'Pro', amount: 10000, currency: 'CRC' \}/)
 })
 
@@ -48,10 +59,12 @@ test('landing, docs and BillingDashboard read the price from the one source', ()
   const landing = ['src/app/home-preview/page.tsx', 'src/components/landing-v2/LandingV2.tsx', 'src/components/landing-v2/content.ts']
     .map(read)
     .join('\n')
-  assert.doesNotMatch(landing, /\$\s?20\b/, 'no hand-typed $20 on the landing')
+  assert.doesNotMatch(landing, /\$\s?20\b|₡\s?10[.,]000/, 'no hand-typed price on the landing')
   assert.match(read('src/components/landing-v2/LandingV2.tsx'), /planPriceLabels\(\)/)
   const billing = read('src/app/config/components/BillingDashboard.tsx')
-  assert.doesNotMatch(billing, /\$20/)
+  assert.doesNotMatch(billing, /\$20|₡10[.,]000/)
+  assert.doesNotMatch(read('src/app/home/components/SimplePricingSection.tsx'), /"\$20"|₡10[.,]000/)
+  assert.match(read('src/app/home/components/SimplePricingSection.tsx'), /planPriceLabels\(\)/)
   assert.match(billing, /from '@\/lib\/pricing\/plan'/)
   assert.doesNotMatch(billing, /basic: 10000|pro: 10000/)
   for (const file of fs.readdirSync('src/content/docs')) {
@@ -62,11 +75,12 @@ test('landing, docs and BillingDashboard read the price from the one source', ()
 
 test('docs expand <PlanPrice/> to text on load (rendered page and support-agent search see the real price)', async () => {
   const { expandDocPlaceholders, getDocBySlug } = await import('../docs')
-  assert.equal(expandDocPlaceholders('Pro (<PlanPrice />)'), 'Pro ($20/mes + IVA)')
-  assert.equal(expandDocPlaceholders('**<PlanPrice show="math" />**'), '**$20 + IVA (13%) = $22.60 al mes**')
-  assert.equal(expandDocPlaceholders('<PlanPrice show="total"/>'), '$22.60')
+  assert.equal(expandDocPlaceholders('Pro (<PlanPrice />)'), 'Pro (₡10.000/mes)')
+  assert.equal(expandDocPlaceholders('**<PlanPrice show="math" />**'), '**₡10.000 al mes**')
+  assert.equal(expandDocPlaceholders('<PlanPrice show="total"/>'), '₡10.000')
+  assert.equal(expandDocPlaceholders('<PlanPrice show="iva"/>'), '')
   const billing = getDocBySlug('billing')
-  assert.ok(billing && !billing.content.includes('<PlanPrice') && billing.content.includes('$22.60'))
+  assert.ok(billing && !billing.content.includes('<PlanPrice') && billing.content.includes('₡10.000 al mes'))
 })
 
 test('plan copy never promises unlimited users (PRO is capped at 25 in plan-enforcement)', () => {

@@ -9,7 +9,7 @@ export function Pricing({
   price,
   trialDays,
 }: {
-  price: { base: string; iva: string; total: string; ivaPercent: string }
+  price: { base: string; iva: string | null; total: string; ivaPercent: string; ivaNote: string }
   trialDays: number
 }) {
   return (
@@ -27,11 +27,13 @@ export function Pricing({
             <h3 className={s.cardTitle}>Betsy</h3>
             <p className={s.amount}>
               <strong>{price.base}</strong>
-              <span>/mes + IVA</span>
+              <span>/mes{price.ivaNote ? ` ${price.ivaNote}` : ''}</span>
             </p>
-            <p className={s.small}>
-              {price.base} + IVA {price.ivaPercent} ({price.iva}) = <b style={{ color: 'var(--ink)' }}>{price.total} al mes</b>
-            </p>
+            {price.iva && (
+              <p className={s.small}>
+                {price.base} + IVA {price.ivaPercent} ({price.iva}) = <b style={{ color: 'var(--ink)' }}>{price.total} al mes</b>
+              </p>
+            )}
             <ul className={s.feats}>
               {PRICING.plan.map((f) => (
                 <li key={f}>

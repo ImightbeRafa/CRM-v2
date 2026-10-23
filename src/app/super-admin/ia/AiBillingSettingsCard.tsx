@@ -22,7 +22,7 @@ export function AiBillingSettingsCard({ tenants }: { tenants: Array<{ id: string
   const [p, setP] = useState<Payload | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [form, setForm] = useState({ markup: '2', free: '1', packs: '10, 25, 50', ceiling: '', enforce: false, effectiveNow: false })
+  const [form, setForm] = useState({ markup: '1.5', free: '0', packs: '10, 25, 50', ceiling: '', enforce: false, effectiveNow: false })
   const [adj, setAdj] = useState({ tenantId: '', amount: '', note: '' })
 
   const load = useCallback(async () => {

@@ -14,8 +14,11 @@ import { IVA_BPS, ivaCents } from '@/lib/pricing/plan'
 export const MICROS_PER_USD = 1_000_000
 export const MICROS_PER_CENT = 10_000
 
-/** Defaults until the owner saves a rate (Rafael 2026-10-22: markup still open → ×2; "a few" free credits → $1). */
-export const DEFAULT_RATE: AiBillingRate = { periodKey: '2026-01', markupBps: 20_000, freeMonthlyMicros: 1 * MICROS_PER_USD }
+/**
+ * Defaults until the owner saves a rate. Rafael 2026-10-23: markup ×1.5 (live: an agent reply costs ≈ US$0.00077 of
+ * OpenAI) and NO free monthly credit (prepaid top-ups only).
+ */
+export const DEFAULT_RATE: AiBillingRate = { periodKey: '2026-01', markupBps: 15_000, freeMonthlyMicros: 0 }
 export const MIN_MARKUP_BPS = 10_000
 export const MAX_MARKUP_BPS = 100_000
 export const MAX_FREE_MICROS = 1_000 * MICROS_PER_USD

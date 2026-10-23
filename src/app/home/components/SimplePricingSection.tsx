@@ -5,6 +5,10 @@ import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { CheckCircle, Loader2 } from 'lucide-react';
+import { planPriceLabels } from '@/lib/pricing/plan';
+
+// The plan price comes from the single price source (src/lib/pricing/plan.ts).
+const PRICE = planPriceLabels();
 
 interface PricingPlan {
   name: string;
@@ -40,8 +44,8 @@ const pricingPlans: PricingPlan[] = [
   },
   {
     name: "Pro",
-    price: "$20",
-    period: "/mes",
+    price: PRICE.base,
+    period: PRICE.ivaNote ? `/mes ${PRICE.ivaNote}` : "/mes",
     description: "Todo incluido para tu negocio",
     features: [
       "Usuarios ilimitados",

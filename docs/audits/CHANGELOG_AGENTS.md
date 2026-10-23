@@ -1,3 +1,9 @@
+## 2026-10-23 — Pricing: ₡10.000/mes everywhere, no free AI credit, markup ×1.5 (Lane H; no Tilopay change, no SQL)
+
+- Rafael 2026-10-23: the price is what Tilopay charges, ₡10.000/mes. `src/lib/pricing/plan.ts` now holds `amountColones: 10_000` (CRC) and `ivaIncluded: null` (Rafael to confirm whether IVA is included). While it is null the copy says nothing about IVA; `true` → "₡10.000/mes (IVA incluido)", `false` → "₡10.000/mes + IVA" with the 13 % math. `LEGACY_SUBSCRIPTION_CRC` = the plan amount; the Tilopay route is unchanged (test checks both are 10000).
+- Surfaces: /home-preview pricing card + hero, the live /home pricing (`SimplePricingSection` no longer hard-codes "$20"), BillingDashboard (price label, no separate "cobro en Tilopay" line), docs via `<PlanPrice/>`.
+- AI: default rate markup ×1.5 and free monthly credit $0 (`DEFAULT_RATE`; owner card defaults 1.5 / 0). The usage page and the landing only mention a free credit when the owner sets one; landing says "IA por uso, con créditos prepagados".
+- Tests: home-pricing (colones, IVA flag states, /home has no hand-typed price), ai-billing (+1 defaults).
 ## 2026-10-22 — Home v2 at /home-preview: live demos, agent explainer, ops showcase, "Próximamente" (Lane H; preview only, /home unchanged)
 
 - `/home-preview` (noindex, public, no nav link) now renders `src/components/landing-v2/**` instead of the #123 page the wave moved there (0ee42805). `/home` (Release 1 page) is untouched; the swap is one commit when Rafael approves.

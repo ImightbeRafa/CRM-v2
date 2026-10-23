@@ -294,3 +294,14 @@ test('settlement never stalls: settled months are filtered before the 12-per-cal
   assert.match(s, /const todo = periods\.filter\(\(p\) => !settled\.has\(p\)\)\.slice\(0, 12\)/)
   assert.match(s, /const cutover = input\.cutoverPeriod \?\? costaRicaPeriodKey\(now\)/)
 })
+
+test('defaults (Rafael 2026-10-23): markup ×1.5 and no free monthly credit — prepaid only', () => {
+  assert.equal(DEFAULT_RATE.markupBps, 15_000)
+  assert.equal(DEFAULT_RATE.freeMonthlyMicros, 0)
+  assert.match(read('src/app/super-admin/ia/AiBillingSettingsCard.tsx'), /markup: '1\.5', free: '0'/)
+  // A regular account with no balance and no free credit shows 100 % (paused only if enforcement is on).
+  const d = decideCredits({ billedMicros: 0, freeMicros: DEFAULT_RATE.freeMonthlyMicros, balanceMicros: 0, limitMicros: null, ceilingMicros: null, enforce: false, exempt: false })
+  assert.equal(d.exhausted, false)
+  // The usage page only mentions a free credit when the owner sets one.
+  assert.match(read('src/app/config/components/AiUsagePanel.tsx'), /const hasFree = data\.rate\.freeMonthlyMicros > 0/)
+})

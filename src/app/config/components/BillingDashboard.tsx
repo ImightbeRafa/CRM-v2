@@ -26,7 +26,6 @@ import {
 } from 'lucide-react';
 
 const PRICE = planPriceLabels();
-const SUBSCRIPTION_CHARGE_LABEL = `₡${LEGACY_SUBSCRIPTION_CRC.toLocaleString('es-CR')}/mes`;
 
 interface BillingDashboardProps {
   tenantId?: string;
@@ -120,7 +119,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
     {
       id: 'pro',
       name: 'PRO',
-      price: BETSY_PLAN.baseUsdCents / 100,
+      price: BETSY_PLAN.amountColones,
       interval: 'month',
       features: [
         'Usuarios ilimitados',
@@ -521,9 +520,6 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                         : PRICE.short
                       }
                     </p>
-                    {currentPlanDetails.price > 0 && (
-                      <span className="text-sm text-muted-foreground">Cobro en Tilopay: {SUBSCRIPTION_CHARGE_LABEL}</span>
-                    )}
                     {currentPlan.name === 'FREE' && (
                       <Badge variant="default" className="bg-green-100 text-green-800 border-green-300">
                         Activo
@@ -736,12 +732,12 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                     ? 'Contactar' 
                     : plan.price === 0 
                       ? 'Gratis' 
-                      : `${formatCurrency(plan.price)}`
+                      : PRICE.base
                   }
                 </div>
                 {plan.price > 0 && plan.id !== 'enterprise' && (
                   <p className="text-sm text-muted-foreground">
-                    por mes + IVA · cobro en Tilopay: {SUBSCRIPTION_CHARGE_LABEL}
+                    por mes{PRICE.ivaNote ? ` · ${PRICE.ivaNote}` : ''}
                   </p>
                 )}
               </CardHeader>

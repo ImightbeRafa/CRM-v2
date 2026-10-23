@@ -16,7 +16,7 @@ export function BetsyHelpButton() {
     <Link
       href="/soporte"
       aria-label="Ayuda de Betsy"
-      className={`${s.fab} ${placement === 'desktop' ? s.desktopOnly : ''}`}
+      className={s.fab}
       data-testid="betsy-help-button"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}

@@ -120,10 +120,8 @@ describe('help button placement', () => {
   test('public pages: every size', () => {
     for (const p of ['/home', '/home-preview', '/privacy', '/terms', '/docs/inicio']) assert.equal(helpButtonPlacement(p), 'all', p)
   })
-  test('app shell: desktop only, never over composers, sandboxes or dense tables', () => {
-    assert.equal(helpButtonPlacement('/dashboard'), 'desktop')
-    assert.equal(helpButtonPlacement('/config/general'), 'desktop')
-    for (const p of ['/chats', '/chats/abc', '/config/agentes', '/ventas', '/pedidos', '/produccion', '/estadisticas', '/logistics', '/soporte', '/auth/signin', '/work-clock', '/super-admin', '/homework', null]) {
+  test('never inside the app (the sidebar already shows the mark: one per view) nor over soporte/auth/kiosk', () => {
+    for (const p of ['/dashboard', '/config/general', '/chats', '/chats/abc', '/config/agentes', '/ventas', '/pedidos', '/produccion', '/estadisticas', '/logistics', '/soporte', '/auth/signin', '/work-clock', '/super-admin', '/homework', null]) {
       assert.equal(helpButtonPlacement(p), null, String(p))
     }
   })

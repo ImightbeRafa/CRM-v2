@@ -55,14 +55,6 @@
   }
 }
 
-.desktopOnly {
-  display: none;
-}
-@media (min-width: 768px) {
-  .desktopOnly {
-    display: inline-flex;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .fab {

@@ -35,7 +35,20 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 }
 
+/** Official Betsy mark (docs/design/betsy-mascot-handoff): favicons + the default share image. */
+const OG_DARK = { url: '/brand/betsy/og-dark-1200x630.png', width: 1200, height: 630, alt: 'Betsy' }
+
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://www.betsycrm.com'),
+  icons: {
+    icon: [
+      { url: '/brand/betsy/favicon.svg', type: 'image/svg+xml' },
+      { url: '/brand/betsy/favicon-32.png', sizes: '32x32', type: 'image/png' },
+    ],
+    apple: [{ url: '/brand/betsy/apple-touch-icon-180.png', sizes: '180x180' }],
+  },
+  openGraph: { siteName: 'Betsy', type: 'website', locale: 'es_CR', images: [OG_DARK] },
+  twitter: { card: 'summary_large_image', images: [OG_DARK.url] },
   other: {
     'facebook-domain-verification': '0p9ljactuhfpuxjkd46xl1kh5m2tjd',
   },

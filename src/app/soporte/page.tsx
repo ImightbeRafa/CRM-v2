@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   title: 'Soporte y contacto · Betsy',
   description: 'Escribinos por WhatsApp, Instagram o correo, o abrí un caso de soporte.',
+  openGraph: { images: [{ url: '/brand/betsy/og-cream-1200x630.png', width: 1200, height: 630, alt: 'Betsy' }] },
 };
 
 /** Public support / contact page (SPEC §7.1). Contact info from env; empty values are hidden. */

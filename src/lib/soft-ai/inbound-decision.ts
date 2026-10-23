@@ -36,7 +36,7 @@ import {
 } from '@/lib/soft-ai/payment-guard'
 import { parsePaymentMethodChoice, paymentMethodPick, resolvePaymentChoice, type ChosenPaymentMethod } from '@/lib/soft-ai/sales-state'
 import { isOptOutText, mediaInboundPlan, routeInboundSafety } from '@/lib/soft-ai/llm/safety-router'
-import { HANDOFF_REASON, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
+import { HANDOFF_REASON, isComplaintText, SAFE_LINE, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
 import {
   matchVerbatimShortcut,
   PAYMENT_INFO_BODY,
@@ -292,7 +292,13 @@ export function decideInbound(input: {
   if (safety.escalate) {
     steps.push({ step: 'safety', outcome: 'handoff', reason: safety.reason })
     const shortcut = seedShortcut(safety.shortcutKey, input.shortcuts)
-    const text = renderShortcutTemplate(shortcut.body, { facts: input.brandFacts })
+    // Lane C D3: a complaint / late order / refund gets the empathetic line, not "¡Gracias! … ya lo reviso".
+    const moneyComplaint =
+      safety.reason === 'payment_or_sinpe' &&
+      (paymentHandoffReason(input.inboundText) === 'complaint' || isComplaintText([...(input.earlierCustomerTexts || []), input.inboundText].join('\n')))
+    // SecureDog #130 L2: only the seed text is swapped; an owner's own hand-off text (e.g. a fraud notice) is kept.
+    const ownText = shortcut.body.trim() !== reservedShortcutBody(safety.shortcutKey as 'sys_handoff_payment').trim()
+    const text = moneyComplaint && !ownText ? SAFE_LINE.complaint : renderShortcutTemplate(shortcut.body, { facts: input.brandFacts })
     return finish({
       text,
       intent: safety.reason === 'payment_or_sinpe' ? 'payment_proof' : safety.reason === 'opt_out' ? 'human_request' : 'other',

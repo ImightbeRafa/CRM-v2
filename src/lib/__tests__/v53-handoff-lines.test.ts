@@ -37,9 +37,9 @@ describe('1 · the payment line only for payment hand-offs', () => {
     assert.equal(planModelTurnDelivery({ text: 'Ya quedó pagado', textOk: true, llmHandoff: { kind: 'handoff', reason: 'payment' }, llmEscalateReason: 'payment_or_sinpe' }).text, SAFE_LINE.payment)
     assert.equal(planModelTurnDelivery({ text: 'x', textOk: true, llmHandoff: null, llmEscalateReason: 'payment_claim' }).text, SAFE_LINE.payment)
     assert.equal(planModelTurnDelivery({ text: 'x', textOk: true, llmHandoff: null, receiptCue: true }).text, SAFE_LINE.payment)
-    for (const reason of ['payment', 'complaint']) {
-      assert.equal(planModelTurnDelivery({ text: '', textOk: false, llmHandoff: { kind: 'handoff', reason } }).text, SAFE_LINE.payment, reason)
-    }
+    // Lane C D3: a refund / complaint hand-off gets the empathetic line, never "¡Gracias!".
+    assert.equal(planModelTurnDelivery({ text: '', textOk: false, llmHandoff: { kind: 'handoff', reason: 'payment' } }).text, SAFE_LINE.payment)
+    assert.equal(planModelTurnDelivery({ text: '', textOk: false, llmHandoff: { kind: 'handoff', reason: 'complaint' } }).text, SAFE_LINE.complaint)
     assert.equal(isPaymentHandoffReason('payment'), true)
     assert.equal(isPaymentHandoffReason('complaint'), true)
     assert.equal(isPaymentHandoffReason('escalate'), false)

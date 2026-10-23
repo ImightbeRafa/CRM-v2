@@ -1622,6 +1622,7 @@ export async function executeAgentLayerTurn(
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
+      customerText: customerTextSinceLastAnswer(history, burst.inboundText),
     }),
     await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
   )
@@ -2747,6 +2748,7 @@ async function runAgentTestTurnInner(input: {
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
+      customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText),
     })
     text = withNightIntro(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), probarHours, nightIntroWho(runtimeAgent, input.history ?? []))
     handoff = plan.handoff

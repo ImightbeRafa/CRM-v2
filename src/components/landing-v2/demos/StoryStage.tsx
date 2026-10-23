@@ -95,8 +95,7 @@ export function StoryStage({ step }: { step: number }) {
             <span>
               <b className={s.inlineIcon}>
                 <CreditCard size={12} aria-hidden /> Pago por verificar
-              </b>{' '}
-              · el cliente mandó el comprobante
+              </b>
             </span>
           ) : (
             <span>

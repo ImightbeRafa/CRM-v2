@@ -7,9 +7,9 @@ const serif = Instrument_Serif({
   weight: '400',
   style: ['normal', 'italic'],
   variable: '--font-home-serif',
-  // optional, not swap: the preloaded serif is used when it is ready in time; otherwise the fallback stays for this
-  // view instead of re-flowing the hero headline and pushing the CTAs (layout shift).
-  display: 'optional',
+  // swap: the brand serif always shows (optional left first visits on the fallback). next/font's size-adjusted
+  // fallback keeps the headline's box; CLS is measured 0 (the earlier shift came from a 1fr grid, not the font).
+  display: 'swap',
 })
 
 /** Home v2 preview for Rafael: public, not indexed, not linked. Replaces /home only when he says so. */

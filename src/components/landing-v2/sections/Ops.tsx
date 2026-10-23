@@ -1,6 +1,7 @@
 import s from '../landing.module.css'
 import { OPS } from '../content'
 import { Reveal } from '../islands/Reveal'
+import { Chip, type ChipKind } from '../ui/Chip'
 
 /** Ops showcase: bento of real Betsy screens in miniature. Example data, labeled as such. */
 
@@ -36,10 +37,10 @@ export function Ops() {
             <Reveal className={s.tileVisual}>
               <div className={s.inboxMini} aria-hidden>
                 {[
-                  ['DR', 'Daniela R.', '¿Tienen los parches para dormir?', 'ig', s.chipIa, '✦ IA'],
-                  ['CM', 'Carlos M.', 'Ya hice el SINPE 🙌', 'wa', s.chipPago, '💳 Revisar pago'],
-                  ['AV', 'Andrea V.', 'Quiero hablar con alguien', 'wa', s.chipPersona, '👤 Persona'],
-                  ['JS', 'José S.', 'Gracias, me llegó perfecto', 'ig', s.chipPedido, '📦 Pedido'],
+                  ['DR', 'Daniela R.', '¿Tienen los parches para dormir?', 'ig', 'ia', 'IA'],
+                  ['CM', 'Carlos M.', 'Ya hice el SINPE', 'wa', 'pago', 'Revisar pago'],
+                  ['AV', 'Andrea V.', 'Quiero hablar con alguien', 'wa', 'persona', 'Persona'],
+                  ['JS', 'José S.', 'Gracias, me llegó perfecto', 'ig', 'pedido', 'Pedido'],
                 ].map(([ini, name, text, ch, chip, label], n) => (
                   <div key={name} className={`${s.inboxRow} ${s.anim}`} style={i(n)}>
                     <span className={s.avatar}>
@@ -50,7 +51,7 @@ export function Ops() {
                       <b>{name}</b>
                       <small>{text}</small>
                     </span>
-                    <span className={`${s.chip} ${chip}`}>{label}</span>
+                    <Chip kind={chip as ChipKind}>{label}</Chip>
                   </div>
                 ))}
               </div>
@@ -109,9 +110,9 @@ export function Ops() {
             <Reveal className={s.tileVisual}>
               <div aria-hidden>
                 {[
-                  ['#2036 · María F.', '₡18.500', s.chipLive, 'Cobrado ✓ SINPE'],
-                  ['#2039 · Luis P.', '₡9.900', s.chipWait, 'Pendiente'],
-                  ['#2040 · Ana J.', '₡24.000', s.chipLive, 'Cobrado ✓ Efectivo'],
+                  ['#2036 · María F.', '₡18.500', 'live', 'Cobrado · SINPE'],
+                  ['#2039 · Luis P.', '₡9.900', 'wait', 'Pendiente'],
+                  ['#2040 · Ana J.', '₡24.000', 'live', 'Cobrado · Efectivo'],
                 ].map(([who, amt, chip, label], n) => (
                   <div key={who} className={`${s.codRow} ${s.anim}`} style={i(n)}>
                     <span>
@@ -119,7 +120,7 @@ export function Ops() {
                       <br />
                       <span style={{ color: 'var(--muted)' }}>{amt} · contra entrega</span>
                     </span>
-                    <span className={`${s.chip} ${chip}`}>{label}</span>
+                    <Chip kind={chip as ChipKind}>{label}</Chip>
                   </div>
                 ))}
               </div>

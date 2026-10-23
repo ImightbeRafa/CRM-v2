@@ -1,4 +1,6 @@
+import { RotateCw, Sparkles } from 'lucide-react'
 import s from '../landing.module.css'
+import { Chip } from '../ui/Chip'
 import { AGENT } from '../content'
 
 /** Pure frames of the agent explainer (server poster + player). Light UI, the same parts as the real inbox. */
@@ -44,7 +46,7 @@ export function AgentStage({ step }: { step: number }) {
     <div className={`${s.panel} ${s.agentStage}`} key={step}>
       {step === 0 && (
         <>
-          <Head chip={<span className={`${s.chip} ${s.chipIa}`}>✦ IA</span>} />
+          <Head chip={<Chip kind="ia">IA</Chip>} />
           <div className={s.thread}>
             <p className={`${s.bubble} ${s.bubbleIn}`}>¿Hacen envíos a Pérez Zeledón? ¿Cuánto tarda?</p>
             <p className={`${s.bubble} ${s.bubbleOut}`} style={d(0.9)}>
@@ -54,7 +56,7 @@ export function AgentStage({ step }: { step: number }) {
               ¿Querés que te lo aparte?
             </p>
             <span className={s.bubbleMeta} style={d(2.2)}>
-              ✦ Sofi · 3:15 p. m.
+              <Sparkles size={11} aria-hidden /> Sofi · 3:15 p. m.
             </span>
           </div>
           <Bar left={live} right="Tomar control" />
@@ -62,7 +64,7 @@ export function AgentStage({ step }: { step: number }) {
       )}
       {step === 1 && (
         <>
-          <Head chip={<span className={`${s.chip} ${s.chipPersona}`}>👤 Persona</span>} />
+          <Head chip={<Chip kind="persona">Persona</Chip>} />
           <div className={s.thread}>
             <p className={`${s.bubble} ${s.bubbleIn}`}>El paquete me llegó abierto, quiero hablar con alguien</p>
             <p className={`${s.bubble} ${s.bubbleOut}`} style={d(0.9)}>
@@ -79,7 +81,7 @@ export function AgentStage({ step }: { step: number }) {
       )}
       {step === 2 && (
         <>
-          <Head chip={<span className={`${s.chip} ${s.chipWait}`}>↻ Seguimientos</span>} />
+          <Head chip={<Chip kind="seguimiento">Seguimientos</Chip>} />
           <div className={s.thread}>
             <p className={`${s.bubble} ${s.bubbleIn}`}>Dejame pensarlo y te aviso</p>
             <span className={s.bubbleMeta} style={{ alignSelf: 'center' }}>
@@ -89,7 +91,7 @@ export function AgentStage({ step }: { step: number }) {
               ¡Hola! ¿Te quedó alguna duda? Si querés te ayudamos a terminar tu pedido 😊
             </p>
             <span className={s.bubbleMeta} style={d(1.6)}>
-              ↻ Seguimiento automático · no sube el chat en la Bandeja
+              <RotateCw size={11} aria-hidden /> Seguimiento automático · no sube el chat en la Bandeja
             </span>
           </div>
           <Bar left={live} right="Tomar control" />
@@ -97,7 +99,7 @@ export function AgentStage({ step }: { step: number }) {
       )}
       {step === 3 && (
         <>
-          <Head chip={<span className={`${s.chip} ${s.chipPersona}`}>👤 Humano</span>} />
+          <Head chip={<Chip kind="persona">Humano</Chip>} />
           <div className={s.thread}>
             <p className={`${s.bubble} ${s.bubbleIn}`}>¿Me hacen precio por 3?</p>
             <p className={`${s.bubble} ${s.bubbleOut} ${s.bubbleTeam}`} style={d(1.6)}>

@@ -1,3 +1,12 @@
+## 2026-10-22 — Home v3 (/home-preview): Rafael's feedback — spacing, no grid texture, icons not emoji, Grok, brand slots (Lane H)
+
+- One spacing system on the page: `--gutter` (20/32/48 px), `--section-y` (96/128/152 px) and `--head-gap` (48/64/72 px) at 640/900/1280 px; content widens to 1280 px; hero copy column 560 px max with a wider demo (story stage 520 px tall at ≥1280) and more top/bottom air; display headings 62 px at ≥1280.
+- Background grid texture removed (Rafael didn't like it); the indigo light field stays.
+- No emoji as UI chrome: status chips are a shared `ui/Chip` with lucide icons (Sparkles, CreditCard, Package, User, RotateCw, Check, Clock); status bar, guía (Truck), paid mark, niche ticks and the phone toast use icons too. Emojis remain only inside example chat messages (what customers type).
+- Próximamente: "compatibles con MCP, como Claude, ChatGPT o Grok" (Dots / Muse still out until Rafael confirms).
+- Brand slots for Lane I (`landing-v2/brand.tsx`): `Logo` (nav, footer; current wordmark until the shared `<BetsyLogo />` with the original blue→violet gradient lands) and `AvatarSlot` (hero beside the demo, agent section header, contact card; renders nothing until `<BetsyAvatar />` lands). Each becomes one import.
+- Lighthouse mobile (local `next start`): perf 58–74 → 71–79, LCP 6.0–6.5 → 3.9–5.7 s, CLS 0, a11y 100.
+- Tests: `home-v2.test.ts` (+2: no emoji chrome / no grid; spacing system + brand slots); MCP names updated.
 ## 2026-10-22 — Home v2 at /home-preview: live demos, agent explainer, ops showcase, "Próximamente" (Lane H; preview only, /home unchanged)
 
 - `/home-preview` (noindex, public, no nav link) now renders `src/components/landing-v2/**` instead of the #123 page the wave moved there (0ee42805). `/home` (Release 1 page) is untouched; the swap is one commit when Rafael approves.

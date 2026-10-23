@@ -1,4 +1,6 @@
+import { Check, CreditCard, Sparkles, Truck } from 'lucide-react'
 import s from '../landing.module.css'
+import { Chip as StatusChip } from '../ui/Chip'
 import { STORY } from '../content'
 
 /**
@@ -12,9 +14,9 @@ export const STORY_LAST = STORY_STEP_MS.length - 1
 const d = (sec: number) => ({ animationDelay: `${sec}s` })
 
 function Chip({ step }: { step: number }) {
-  if (step >= 4) return <span className={`${s.chip} ${s.chipPedido}`}>📦 Pedido</span>
-  if (step >= 2) return <span className={`${s.chip} ${s.chipPago}`}>💳 Revisar pago</span>
-  return <span className={`${s.chip} ${s.chipIa}`}>✦ IA</span>
+  if (step >= 4) return <StatusChip kind="pedido">Pedido</StatusChip>
+  if (step >= 2) return <StatusChip kind="pago">Revisar pago</StatusChip>
+  return <StatusChip kind="ia">IA</StatusChip>
 }
 
 export function StoryStage({ step }: { step: number }) {
@@ -58,7 +60,7 @@ export function StoryStage({ step }: { step: number }) {
                 {m.a3}
               </p>
               <span className={s.bubbleMeta} style={d(step === 1 ? 2.2 : 0)}>
-                ✦ {STORY.agentName} · 10:42 p. m.
+                <Sparkles size={11} aria-hidden /> {STORY.agentName} · 10:42 p. m.
               </span>
             </>
           )}
@@ -80,7 +82,10 @@ export function StoryStage({ step }: { step: number }) {
         <div className={s.statusBar}>
           {step >= 2 && step < 4 ? (
             <span>
-              <b>💳 Pago por verificar</b> · el cliente mandó el comprobante
+              <b className={s.inlineIcon}>
+                <CreditCard size={12} aria-hidden /> Pago por verificar
+              </b>{' '}
+              · el cliente mandó el comprobante
             </span>
           ) : (
             <span>
@@ -88,7 +93,15 @@ export function StoryStage({ step }: { step: number }) {
               <b>IA activa</b> · Pausar
             </span>
           )}
-          <span className={s.takeover}>{step === 3 ? 'Pago verificado ✓' : 'Tomar control'}</span>
+          <span className={`${s.takeover} ${s.inlineIcon}`}>
+            {step === 3 ? (
+              <>
+                Pago verificado <Check size={12} aria-hidden />
+              </>
+            ) : (
+              'Tomar control'
+            )}
+          </span>
         </div>
       </div>
 
@@ -117,7 +130,7 @@ export function StoryStage({ step }: { step: number }) {
               <div className={s.orderFoot}>
                 <b>{o.total}</b>
                 <span className={s.paidDot} title={o.pay}>
-                  ✓
+                  <Check size={11} strokeWidth={3} aria-hidden />
                 </span>
               </div>
             </div>
@@ -132,7 +145,10 @@ export function StoryStage({ step }: { step: number }) {
             <span className={s.guiaStatus}>
               {step >= 7 ? (
                 <>
-                  <span className={s.truck}>🚚</span> En tránsito
+                  <span className={s.truck}>
+                    <Truck size={14} aria-hidden />
+                  </span>{' '}
+                  En tránsito
                 </>
               ) : (
                 'Guía creada'

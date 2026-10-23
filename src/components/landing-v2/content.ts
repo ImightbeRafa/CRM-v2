@@ -51,7 +51,7 @@ export const STORY = {
     a4: '¡Pago recibido, gracias! Ya preparamos tu pedido 🙌',
     a4By: 'Carlos (equipo)',
   },
-  order: { id: '#2041', item: '1× Parches para dormir ×30', total: '₡12.900', pay: 'SINPE ✓', ship: 'Correos' },
+  order: { id: '#2041', item: '1× Parches para dormir ×30', total: '₡12.900', pay: 'Pagado por SINPE', ship: 'Correos' },
   guia: { number: 'CR 4021 7735 06', to: 'Daniela R. · Heredia 40101', weight: '0,3 kg' },
   columns: ['Pendiente', 'En Proceso', 'Enviado'],
 }
@@ -195,7 +195,7 @@ export const COMING_SOON = {
     {
       key: 'mcp',
       title: 'Tu negocio desde tu asistente de IA',
-      text: 'Configurá y consultá Betsy desde asistentes compatibles con MCP, como Claude o ChatGPT.',
+      text: 'Configurá y consultá Betsy desde asistentes compatibles con MCP, como Claude, ChatGPT o Grok.',
     },
     { key: 'tools', title: 'Más tipos de negocio', text: 'Herramientas para negocios que no solo venden productos: servicios, reservas y más.' },
     { key: 'presets', title: 'Agentes listos para activar', text: 'Agentes de base que vos mismo configurás y encendés, sin esperar a que te armemos uno.' },

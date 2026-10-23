@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { Check } from 'lucide-react'
 import s from '../landing.module.css'
 import { NICHES } from '../content'
 
@@ -68,7 +69,7 @@ export function NicheTabs() {
             {n.notes.map(([title, text]) => (
               <li key={title}>
                 <span className={s.tick} aria-hidden>
-                  ✓
+                  <Check size={13} strokeWidth={3} />
                 </span>
                 <span>
                   <b>{title}:</b> {text}

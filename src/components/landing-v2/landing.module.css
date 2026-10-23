@@ -31,6 +31,10 @@
   --serif: var(--font-home-serif), 'Instrument Serif', Georgia, serif;
   --logo: var(--font-logo), 'Space Grotesk', system-ui, sans-serif;
   --radius: 20px;
+  /* Vertical rhythm + gutters: every section and head uses these, so spacing scales together. */
+  --gutter: 20px;
+  --section-y: 96px;
+  --head-gap: 48px;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   background: var(--canvas);
@@ -40,16 +44,29 @@
   overflow-x: clip;
 }
 
+@media (min-width: 640px) {
+  .root {
+    --gutter: 32px;
+  }
+}
+@media (min-width: 900px) {
+  .root {
+    --section-y: 128px;
+    --head-gap: 64px;
+  }
+}
+@media (min-width: 1280px) {
+  .root {
+    --gutter: 48px;
+    --section-y: 152px;
+    --head-gap: 72px;
+  }
+}
 .wrap {
   width: 100%;
-  max-width: 1180px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 0 20px;
-}
-@media (min-width: 640px) {
-  .wrap {
-    padding: 0 32px;
-  }
+  padding: 0 var(--gutter);
 }
 
 .srOnly {
@@ -89,6 +106,11 @@
 @media (min-width: 640px) {
   .display {
     font-size: 54px !important;
+  }
+}
+@media (min-width: 1280px) {
+  .display {
+    font-size: 62px !important;
   }
 }
 .display em {
@@ -214,6 +236,19 @@
   color: var(--d-text);
   text-decoration: none;
 }
+/* the logo slot (Lane I swaps in <BetsyLogo />) */
+.logoLink {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+.logoOnLight {
+  color: var(--ink);
+  font-size: 18px;
+}
+.heroDemo {
+  position: relative;
+}
 .navLinks {
   display: none;
   gap: 26px;
@@ -282,7 +317,7 @@
 
 /* ── Sections ────────────────────────────────────────────────────────── */
 .section {
-  padding: 88px 0;
+  padding: var(--section-y) 0;
   position: relative;
   scroll-margin-top: 72px;
 }
@@ -291,11 +326,6 @@
 .cv {
   content-visibility: auto;
   contain-intrinsic-size: auto 1100px;
-}
-@media (min-width: 900px) {
-  .section {
-    padding: 120px 0;
-  }
 }
 .dark {
   background: var(--d1);
@@ -320,7 +350,7 @@
 /* ── Hero ────────────────────────────────────────────────────────────── */
 .hero {
   position: relative;
-  padding: 112px 0 72px;
+  padding: 120px 0 var(--section-y);
   background: var(--d1);
   color: var(--d-text);
   isolation: isolate;
@@ -328,10 +358,15 @@
 }
 @media (min-width: 900px) {
   .hero {
-    padding: 148px 0 104px;
+    padding-top: 168px;
   }
 }
-/* Signature: one indigo light field + a faint living grid. Static gradients; only transform animates. */
+@media (min-width: 1280px) {
+  .hero {
+    padding-top: 184px;
+  }
+}
+/* Signature: one indigo light field. A static gradient; only transform animates. */
 .lightField {
   position: absolute;
   z-index: -1;
@@ -344,17 +379,6 @@
   background: radial-gradient(closest-side, rgba(91, 108, 255, 0.36), rgba(91, 63, 224, 0.14) 45%, transparent 72%);
   animation: drift 18s var(--ease) infinite alternate;
   will-change: transform;
-  pointer-events: none;
-}
-.grid {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background-image: linear-gradient(rgba(236, 236, 241, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(236, 236, 241, 0.045) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 30%, transparent 75%);
-  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 30%, transparent 75%);
   pointer-events: none;
 }
 @keyframes drift {
@@ -373,9 +397,17 @@
 }
 @media (min-width: 1080px) {
   .heroGrid {
-    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
-    gap: 56px;
+    grid-template-columns: minmax(0, 0.84fr) minmax(0, 1.16fr);
+    gap: 64px;
   }
+}
+@media (min-width: 1280px) {
+  .heroGrid {
+    gap: 88px;
+  }
+}
+.heroCopy {
+  max-width: 560px;
 }
 .heroPill {
   display: inline-flex;
@@ -551,6 +583,11 @@
     height: 470px;
   }
 }
+@media (min-width: 1280px) {
+  .storyStage {
+    height: 520px;
+  }
+}
 @media (max-width: 719px) {
   .guia {
     padding: 8px 10px;
@@ -673,7 +710,7 @@
 }
 .bubbleMeta {
   align-self: flex-end;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 5px;
   font-size: 10.5px;
@@ -783,6 +820,17 @@
   font-weight: 650;
   white-space: nowrap;
   transition: background-color 0.35s, color 0.35s;
+}
+.chipSmall {
+  font-size: 8px;
+  padding: 2px 5px;
+  gap: 3px;
+}
+/* icon + text on one line (status bar, toast, meta) */
+.inlineIcon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 .chipIa {
   background: rgba(91, 108, 255, 0.18);
@@ -1058,7 +1106,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 28px;
-  margin-top: 48px;
+  margin-top: var(--head-gap);
 }
 @media (min-width: 960px) {
   .agentGrid {
@@ -1349,8 +1397,8 @@
 .bento {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
-  margin-top: 48px;
+  gap: 16px;
+  margin-top: var(--head-gap);
 }
 @media (min-width: 760px) {
   .bento {
@@ -1632,7 +1680,7 @@
 /* ── Build steps ─────────────────────────────────────────────────────── */
 .buildList {
   list-style: none;
-  margin: 56px 0 0;
+  margin: var(--head-gap) 0 0;
   padding: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1692,7 +1740,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
-  margin-top: 40px;
+  margin-top: var(--head-gap);
 }
 @media (min-width: 760px) {
   .trust {
@@ -1716,7 +1764,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 14px;
-  margin-top: 48px;
+  margin-top: var(--head-gap);
 }
 @media (min-width: 760px) {
   .soonGrid {
@@ -1976,8 +2024,8 @@
 .priceGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
-  margin: 48px auto 0;
+  gap: 16px;
+  margin: var(--head-gap) auto 0;
   max-width: 980px;
 }
 @media (min-width: 860px) {

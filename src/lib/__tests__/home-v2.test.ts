@@ -81,9 +81,10 @@ test('copy is honest: coming-soon is labeled, no dates, store badges, logos, par
   assert.match(read(`${DIR}/sections/Story.tsx`), /<span className=\{s\.soonBadge\}>Próximamente<\/span>/)
   const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
   assert.doesNotMatch(code, /App Store|Google Play|Disponible en|2026|2027|testimon|clientes felices|\+\d+ negocios|cientos de negocios/i)
-  assert.doesNotMatch(source, /\bDots\b|\bMuse\b|\bGrok\b/, 'unconfirmed MCP clients are not named')
-  assert.match(content, /compatibles con MCP, como Claude o ChatGPT/)
-  assert.doesNotMatch(content, /integrad[oa] con (Claude|ChatGPT)|alianza|partner/i)
+  // Rafael 2026-10-22: Claude, ChatGPT and Grok yes; Dots / Muse only once he confirms they are MCP clients.
+  assert.doesNotMatch(source, /\bDots\b|\bMuse\b/, 'unconfirmed MCP clients are not named')
+  assert.match(content, /compatibles con MCP, como Claude, ChatGPT o Grok/)
+  assert.doesNotMatch(content, /integrad[oa] con (Claude|ChatGPT|Grok)|alianza|partner/i)
   // Example data in UI mocks is labeled.
   assert.match(read(`${DIR}/sections/Ops.tsx`), /Datos de ejemplo/)
 })
@@ -93,4 +94,24 @@ test('CTAs: sign-up, agent request and support', () => {
   assert.match(content, /signup: '\/auth\/signin\?signup=true'/)
   assert.match(content, /agent: '\/soporte\?tema=agente'/)
   assert.match(content, /support: '\/soporte'/)
+})
+
+test('no emoji as UI chrome (chips, status bars, meta): icons instead; no background grid texture', () => {
+  const ui = files.filter((f) => f.endsWith('.tsx') || f.endsWith('content.ts')).map((f) => read(f)).join('\n')
+  assert.doesNotMatch(ui, /[✦📦💳👤↻🚚✓⏳]/u)
+  assert.match(read(`${DIR}/ui/Chip.tsx`), /from 'lucide-react'/)
+  assert.doesNotMatch(read(`${DIR}/sections/Hero.tsx`), /s\.grid\b/)
+  assert.doesNotMatch(read(`${DIR}/landing.module.css`), /\n\.grid \{/)
+})
+
+test('one spacing system and brand slots for Lane I (logo + avatar)', () => {
+  const css = read(`${DIR}/landing.module.css`)
+  assert.match(css, /--section-y: 96px;/)
+  assert.match(css, /\.section \{\n  padding: var\(--section-y\) 0;/)
+  const brand = read(`${DIR}/brand.tsx`)
+  assert.match(brand, /export function Logo/)
+  assert.match(brand, /export function AvatarSlot/)
+  for (const f of ['sections/Hero.tsx', 'sections/Agent.tsx', 'sections/Closing.tsx']) {
+    assert.match(read(`${DIR}/${f}`), /<AvatarSlot place=/, f)
+  }
 })

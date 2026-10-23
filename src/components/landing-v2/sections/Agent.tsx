@@ -4,6 +4,7 @@ import { AgentStage, AgentSteps } from '../demos/AgentStage'
 import { DemoFrame } from '../demos/DemoFrame'
 import { LazyDemo } from '../demos/LazyDemo'
 import { NicheTabs } from '../islands/NicheTabs'
+import { AvatarSlot } from '../brand'
 
 /** Light section: what the agent does (interactive explainer) + examples per type of business. */
 export function Agent() {
@@ -11,6 +12,7 @@ export function Agent() {
     <section id="agente" className={`${s.section} ${s.light}`} aria-labelledby="lv2-agent-title">
       <div className={s.wrap}>
         <div className={s.sectionHead}>
+          <AvatarSlot place="agent" mood="talking" />
           <p className={s.eyebrow}>{AGENT.label}</p>
           <h2 id="lv2-agent-title" className={`landing-h2 ${s.display}`}>
             {AGENT.title}

@@ -7,7 +7,9 @@ const serif = Instrument_Serif({
   weight: '400',
   style: ['normal', 'italic'],
   variable: '--font-home-serif',
-  display: 'swap',
+  // optional, not swap: the preloaded serif is used when it is ready in time; otherwise the fallback stays for this
+  // view instead of re-flowing the hero headline and pushing the CTAs (layout shift).
+  display: 'optional',
 })
 
 /** Home v2 preview for Rafael: public, not indexed, not linked. Replaces /home only when he says so. */

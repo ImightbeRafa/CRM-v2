@@ -2,7 +2,6 @@ import { Check, Instagram, LifeBuoy, Mail, MessageCircle } from 'lucide-react'
 import s from '../landing.module.css'
 import { FAQ, LINKS, PRICING } from '../content'
 import type { SupportContactConfig } from '@/lib/support/contact-config'
-import { BetsyLogo } from '@/components/brand/BetsyLogo'
 
 /** Pricing (from the single price source), FAQ, contact (from the support contact config) and footer. */
 
@@ -148,7 +147,9 @@ export function Footer() {
     <footer className={s.footer}>
       <div className={`${s.wrap} ${s.footerInner}`}>
         <p style={{ margin: 0 }}>
-          <BetsyLogo tone="light" size={19} />
+          <span className={s.logo} style={{ color: 'var(--ink)', fontSize: 18 }}>
+            Betsy
+          </span>
           <span style={{ marginLeft: 12 }}>Hecho en Costa Rica · © {new Date().getFullYear()}</span>
         </p>
         <nav aria-label="Legal y ayuda" className={s.footerLinks}>

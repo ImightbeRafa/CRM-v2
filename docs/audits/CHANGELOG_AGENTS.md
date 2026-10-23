@@ -4,7 +4,7 @@
   - `src/components/brand/BetsyMark.tsx` plus `useBetsyState.ts`. It is the designer's component; its per-instance `<style>` became `betsy-mark.module.css`.
   - It is server-safe and only animates transform/opacity. Reduced motion gives a still pose.
   - The designer's test runs as `src/lib/__tests__/betsy-mark.test.tsx`.
-- `<BetsyLogo />` renders the lockup's outlined wordmark (`betsy-wordmark.ts`, no font needed). Options: `lockup` (mark + word in the official proportions) and `mark`. It replaced the four different wordmarks: sidebar, auth, old `/home`, landing-v2 nav and footer, `/soporte`, and the dashboard fallback (which imported a `@/BetsyLogo.png` missing from the repo).
+- `<BetsyLogo />` renders the lockup's outlined wordmark (`betsy-wordmark.ts`, no font needed). Options: `lockup` (mark + word in the official proportions) and `mark`. It replaced the four different wordmarks: sidebar, auth, old `/home`, `/soporte`, and the dashboard fallback (which imported a `@/BetsyLogo.png` missing from the repo).
 - Agents: the same official mark on a per-agent plate (the "costume"; the mark is never recolored).
   - Choices: 8 palette ids, an optional ring (off by default), and a UI-only display label.
   - Defaults are curated for the live personas by first name. Others get a stable pick from their name.
@@ -18,7 +18,7 @@
   - Nav pills, CSS tooltips on the rail (hover + keyboard focus).
   - The collapse button moved to `shell/SidebarToggle.tsx`.
   - `aurora-shell-polish.test.ts` updated to the new truth and added to `test:site-ui`; it was stale and in no suite.
-- Floating "Ayuda" pill (mark, `listen` on hover, links to `/soporte`): public pages only. Inside the app the sidebar already shows the mark (one per view), and Ayuda is in the nav.
+- Floating "Ayuda" pill (mark, `listen` on hover, links to `/soporte`): legal/docs pages only (the homes carry their own mark, Lane H). Inside the app the sidebar already shows the mark (one per view), and Ayuda is in the nav.
 - Agents empty state uses the 64 px mark (`AuroraEmptyState betsy`).
 - Favicons from the pack: `favicon.ico` rebuilt from the 16/32/48 PNGs, plus an SVG and the apple-touch icon. OG images: dark by default, cream on `/soporte`. Files live in `public/brand/betsy/`; ads, motion and social stay in docs.
 - `/super-admin/avatar`: showcase of every state, size, plate color and the lockup, on dark and cream.

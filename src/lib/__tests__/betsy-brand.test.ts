@@ -95,13 +95,11 @@ describe('brand source shape', () => {
     assert.doesNotMatch(read('src/app/config/agentes/page.tsx'), /patch\(\{ emoji/)
     assert.match(read('src/app/config/agentes/page.tsx'), /<AgentAppearanceCard/)
   })
-  test('one shared logo in the shell, auth, homes and soporte', () => {
+  test('one shared logo in the shell, auth, old home and soporte (landing-v2 wires it in its own brand.tsx)', () => {
     for (const f of [
       'src/components/aurora/AuroraSidebar.tsx',
       'src/components/aurora/auth/BetsyWordmark.tsx',
       'src/app/home/components/LandingPage.tsx',
-      'src/components/landing-v2/islands/Nav.tsx',
-      'src/components/landing-v2/sections/Closing.tsx',
       'src/app/soporte/page.tsx',
       'src/app/dashboard/enhanced-home-content.tsx',
     ]) {
@@ -118,10 +116,10 @@ describe('brand source shape', () => {
 
 describe('help button placement', () => {
   test('public pages: every size', () => {
-    for (const p of ['/home', '/home-preview', '/privacy', '/terms', '/docs/inicio']) assert.equal(helpButtonPlacement(p), 'all', p)
+    for (const p of ['/privacy', '/terms', '/data-deletion', '/docs/inicio']) assert.equal(helpButtonPlacement(p), 'all', p)
   })
   test('never inside the app (the sidebar already shows the mark: one per view) nor over soporte/auth/kiosk', () => {
-    for (const p of ['/dashboard', '/config/general', '/chats', '/chats/abc', '/config/agentes', '/ventas', '/pedidos', '/produccion', '/estadisticas', '/logistics', '/soporte', '/auth/signin', '/work-clock', '/super-admin', '/homework', null]) {
+    for (const p of ['/home', '/home-preview', '/dashboard', '/config/general', '/chats', '/chats/abc', '/config/agentes', '/ventas', '/pedidos', '/produccion', '/estadisticas', '/logistics', '/soporte', '/auth/signin', '/work-clock', '/super-admin', '/homework', null]) {
       assert.equal(helpButtonPlacement(p), null, String(p))
     }
   })

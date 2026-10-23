@@ -5,7 +5,6 @@ import { Menu, X } from 'lucide-react'
 import s from '../landing.module.css'
 import { LINKS, NAV } from '../content'
 import { BETSY_PLAN } from '@/lib/pricing/plan'
-import { BetsyLogo } from '@/components/brand/BetsyLogo'
 
 export function Nav() {
   const [solid, setSolid] = useState(false)
@@ -21,8 +20,8 @@ export function Nav() {
   return (
     <header className={`${s.nav} ${solid || open ? s.navSolid : ''}`}>
       <nav aria-label="Principal" className={`${s.wrap} ${s.navInner}`}>
-        <a href="#inicio" className={s.logo} aria-label="Betsy, inicio">
-          <BetsyLogo tone="dark" size={23} />
+        <a href="#inicio" className={s.logo}>
+          Betsy
         </a>
         <ul className={s.navLinks}>
           {NAV.map((l) => (

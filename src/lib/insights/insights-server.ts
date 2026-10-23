@@ -11,7 +11,7 @@ import 'server-only'
 
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { buildStatsDateRange } from '@/lib/statistics-dates'
+import { addDaysToStatsDateKey, buildStatsDateRange, formatStatsDateKey, getOrderStatsDateKey } from '@/lib/statistics-dates'
 import { isCancelledFulfillment, isCollectedRevenue } from '@/lib/order-payment-status'
 import { isMissingTable } from '@/lib/meta-attribution/referral-store'
 import { queryWithTimeout } from '@/lib/soft-ai/safe-query'
@@ -86,6 +86,8 @@ export type PeriodOrder = {
   total: number
   collected: boolean
   cancelled: boolean
+  /** CR day the order counts on (sale date, else creation day) — same rule as the period filter. */
+  dayKey: string
   /** Latest linking message's chat (same rule as the CAPI sweep). */
   conversationId: string | null
   channel: ChatChannel | null
@@ -94,6 +96,7 @@ export type PeriodOrder = {
 type OrderRow = {
   id: string
   timestamp: Date
+  saleDate: string | null
   total: number | null
   status: string | null
   contraEntrega: boolean
@@ -113,7 +116,7 @@ export function periodOrdersSql(tenantId: string, range: DateKeyRange, limit: nu
   const endIso = r.end.toISOString()
   const endKeyMax = `${r.endKey}￿`
   return Prisma.sql`
-    SELECT o."id", o."timestamp", o."total", o."status", o."contraEntrega", o."cePaymentConfirmed", o."customFields"
+    SELECT o."id", o."timestamp", o."saleDate", o."total", o."status", o."contraEntrega", o."cePaymentConfirmed", o."customFields"
       FROM public."Order" o
      WHERE o."tenantId" = ${tenantId}
        AND o."deletedAt" IS NULL
@@ -147,6 +150,7 @@ export async function loadPeriodOrders(tenantId: string, range: DateKeyRange): P
     return {
       id: o.id,
       timestamp: o.timestamp,
+      dayKey: getOrderStatsDateKey(o),
       total: money(o.total),
       collected: isCollectedRevenue(o),
       cancelled: isCancelledFulfillment(o.status),
@@ -208,7 +212,7 @@ export async function loadAdSalesReport(input: {
       continue
     }
     if (o.conversationId && o.channel) {
-      linked.push({ id: o.id, conversationId: o.conversationId, platform: o.channel, createdAt: o.timestamp, total: o.total, collected: o.collected, cancelled: false })
+      linked.push({ id: o.id, conversationId: o.conversationId, platform: o.channel, createdAt: o.timestamp, dayKey: o.dayKey, total: o.total, collected: o.collected, cancelled: false })
     } else {
       withoutChat.orders += 1
       withoutChat.booked += o.total
@@ -236,6 +240,13 @@ export async function loadAdSalesReport(input: {
   })
   const adIds = report.rows.map((r) => r.adId).filter((id): id is string => Boolean(id))
   return withCampaignNames(report, await loadCampaignNames(tenantId, adIds))
+}
+
+/** Every CR day key of the range (capped like the periods themselves). */
+export function dayKeysOf(range: DateKeyRange): string[] {
+  const keys: string[] = []
+  for (let k = range.startDate; k <= range.endDate && keys.length < 400; k = addDaysToStatsDateKey(k, 1)) keys.push(k)
+  return keys
 }
 
 // ── 3. Team chat metrics ─────────────────────────────────────────────────────────────────────────
@@ -272,8 +283,8 @@ export async function loadTeamChatReport(input: {
 
   const [firstResponses, openChats, replies, started, orders, team] = await Promise.all([
     optionalRows(() =>
-      queryWithTimeout<Array<{ actorUserId: string | null; props: unknown; platform: string | null }>>(Prisma.sql`
-        SELECT e."actorUserId", e."props", s."platform"
+      queryWithTimeout<Array<{ actorUserId: string | null; props: unknown; platform: string | null; occurredAt: Date }>>(Prisma.sql`
+        SELECT e."actorUserId", e."props", s."platform", e."occurredAt"
           FROM public."ActivityEvent" e
           LEFT JOIN public."ChatConversation" c ON c."id" = e."conversationId" AND c."tenantId" = ${tenantId}
           LEFT JOIN public."SocialAccount" s ON s."id" = c."socialAccountId" AND s."tenantId" = ${tenantId}
@@ -316,7 +327,7 @@ export async function loadTeamChatReport(input: {
     const ms = readFirstResponseMs(row.props)
     const channel = channelOf(row.platform)
     if (ms === null || !channel) continue
-    samples.push({ userId: row.actorUserId, channel, ms })
+    samples.push({ userId: row.actorUserId, channel, ms, day: formatStatsDateKey(row.occurredAt) })
   }
   const teamIds = new Set(team.map((m) => m.userId))
   const linkedByChannel = new Map<ChatChannel, number>()
@@ -337,6 +348,7 @@ export async function loadTeamChatReport(input: {
     chatsStartedByChannel: new Map(started.flatMap((r) => (channelOf(r.platform) ? [[channelOf(r.platform) as ChatChannel, Number(r.chats)] as const] : []))),
     linkedOrdersByChannel: linkedByChannel,
     teamUserIds: [...teamIds],
+    dayKeys: dayKeysOf(input.range),
     now,
   })
   return { report, team }

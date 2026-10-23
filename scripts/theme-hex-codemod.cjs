@@ -9,7 +9,9 @@ const { classifyHex } = require('../src/lib/theme/palette.cjs')
 const ROOT = path.join(__dirname, '..', 'src')
 const SKIP_DIRS = new Set(['logistics', 'home', 'home-preview', '__tests__', 'node_modules'])
 // Brand art drawn on always-dark panels keeps its literal colors.
-const SKIP_FILES = new Set(['ThemeChoice.tsx', 'BetsyWordmark.tsx'])
+// insights/charts.tsx: chart series colors pair each light hex with an explicit `dark:` step validated with
+// the dataviz palette checks (a token here would lighten the dark steps and the surface ring).
+const SKIP_FILES = new Set(['ThemeChoice.tsx', 'BetsyWordmark.tsx', 'charts.tsx'])
 const TOKENS_FILE = path.join(ROOT, 'lib', 'theme', 'aurora-hex-tokens.json')
 const CLASS_RE = /\b(bg|text|border|ring|ring-offset|from|via|to|fill|stroke|divide|outline|placeholder|caret|decoration)-\[#([0-9A-Fa-f]{6})\]/g
 

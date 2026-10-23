@@ -16,6 +16,7 @@
 
 import { money, rate } from '@/lib/insights/stats-math'
 import { isMetaAdUrl } from '@/lib/meta-attribution/referral'
+import { addDaysToStatsDateKey, formatStatsDateKey } from '@/lib/statistics-dates'
 
 export type AdPlatform = 'whatsapp' | 'instagram'
 export const ORGANIC_KEY = 'organic'
@@ -47,6 +48,8 @@ export type AdOrderRow = {
   /** isCollectedRevenue(order) — paid (or contra-entrega confirmed). */
   collected: boolean
   cancelled: boolean
+  /** CR day the order counts on (its sale date, as the period filter); defaults to the creation day. */
+  dayKey?: string
 }
 
 export type AdSalesRow = {
@@ -65,12 +68,17 @@ export type AdSalesRow = {
   conversion: number | null
 }
 
+/** Chat-linked orders per Costa Rica sale day: from an ad vs without one (for the trend chart). */
+export type AdDailyPoint = { date: string; adOrders: number; organicOrders: number; adBooked: number; organicBooked: number }
+
 export type UnlinkedOrderTotals = { orders: number; paidOrders: number; booked: number; collected: number }
 
 export type AdSalesReport = {
   rows: AdSalesRow[]
   /** Ads with activity that are not listed (beyond AD_ROWS_SHOWN). */
   hiddenAds: number
+  /** Every day of the period, by the order's creation day (CR time). */
+  daily: AdDailyPoint[]
   organic: AdSalesRow
   /** Orders of the period that are not linked to any chat (only without a channel filter). */
   withoutChat: UnlinkedOrderTotals
@@ -213,6 +221,12 @@ export function buildAdSalesReport(input: {
   }
 
   // Orders: last touch before the order was created, inside the window.
+  const daily = new Map<string, AdDailyPoint>()
+  const firstDay = formatStatsDateKey(range.start)
+  const lastDay = formatStatsDateKey(range.end)
+  for (let key = firstDay, guard = 0; key && key <= lastDay && guard < 400; key = addDaysToStatsDateKey(key, 1), guard++) {
+    daily.set(key, { date: key, adOrders: 0, organicOrders: 0, adBooked: 0, organicBooked: 0 })
+  }
   const seenOrders = new Set<string>()
   for (const order of input.orders) {
     if (order.cancelled || !platformOk(order.platform) || seenOrders.has(order.id)) continue
@@ -223,6 +237,16 @@ export function buildAdSalesReport(input: {
     const total = money(order.total)
     row.orders += 1
     row.booked += total
+    const day = daily.get(order.dayKey || formatStatsDateKey(order.createdAt))
+    if (day) {
+      if (touch) {
+        day.adOrders += 1
+        day.adBooked += total
+      } else {
+        day.organicOrders += 1
+        day.organicBooked += total
+      }
+    }
     if (order.collected) {
       row.paidOrders += 1
       row.collected += total
@@ -241,6 +265,7 @@ export function buildAdSalesReport(input: {
     // Totals below use every ad; only the list is capped (forged referrals must not blow up the page).
     rows: list.slice(0, AD_ROWS_SHOWN),
     hiddenAds: Math.max(0, list.length - AD_ROWS_SHOWN),
+    daily: [...daily.values()],
     organic,
     withoutChat,
     cancelled,

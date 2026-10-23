@@ -14,7 +14,9 @@ import { median, percentile, rate } from '@/lib/insights/stats-math'
 export type ChatChannel = 'whatsapp' | 'instagram'
 export const CHAT_CHANNELS: readonly ChatChannel[] = ['whatsapp', 'instagram']
 
-export type FirstResponseSample = { userId: string | null; channel: ChatChannel; ms: number }
+export type FirstResponseSample = { userId: string | null; channel: ChatChannel; ms: number; /** CR day key, for the trend. */ day?: string }
+
+export type FirstResponseDay = { date: string; medianMs: number | null; samples: number }
 
 export type OpenChatRow = {
   channel: ChatChannel
@@ -50,6 +52,8 @@ export type TeamChatReport = {
   channels: ChannelMetrics[]
   teammates: TeammateMetrics[]
   overall: { firstResponseMedianMs: number | null; firstResponseP90Ms: number | null; samples: number; waiting: number; waitingUnassigned: number; open: number }
+  /** Median first response per day of the period (null = nobody measured that day). */
+  daily: FirstResponseDay[]
 }
 
 /** The customer wrote last and nobody (team or AI) answered after that. */
@@ -67,6 +71,8 @@ export function buildTeamChatReport(input: {
   linkedOrdersByChannel: ReadonlyMap<ChatChannel, number>
   /** Teammates to list even with no activity (active chat members). */
   teamUserIds?: readonly string[]
+  /** Every day of the period (CR date keys) for the daily trend. */
+  dayKeys?: readonly string[]
   now?: Date
 }): TeamChatReport {
   const now = (input.now ?? new Date()).getTime()
@@ -116,6 +122,17 @@ export function buildTeamChatReport(input: {
   })
   teammates.sort((a, b) => b.replies - a.replies || b.openAssigned - a.openAssigned || a.userId.localeCompare(b.userId))
 
+  const byDay = new Map<string, number[]>()
+  for (const s of valid) {
+    if (!s.day) continue
+    const list = byDay.get(s.day) ?? []
+    list.push(s.ms)
+    byDay.set(s.day, list)
+  }
+  const daily: FirstResponseDay[] = (input.dayKeys ?? []).map((date) => {
+    const day = byDay.get(date) ?? []
+    return { date, medianMs: median(day), samples: day.length }
+  })
   const all = valid.map((s) => s.ms)
   const waitingAll = input.openChats.filter(isWaiting)
   return {
@@ -129,6 +146,7 @@ export function buildTeamChatReport(input: {
       waitingUnassigned: waitingAll.filter((c) => !c.assignedUserId).length,
       open: input.openChats.length,
     },
+    daily,
   }
 }
 

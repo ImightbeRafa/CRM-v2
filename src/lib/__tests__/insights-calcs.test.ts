@@ -129,6 +129,22 @@ describe('ad → chat → sale', () => {
     assert.equal(report.totals.orders, 2 + 1 + 2 + 2 + 1)
     assert.equal(report.totals.booked, 13000 + 20000 + 12000 + 1000 + 9999)
     assert.equal(report.cancelled.orders, 1)
+    // daily trend: every CR day of the period, orders by creation day, ads vs sin anuncio
+    assert.equal(report.daily.length, 7)
+    assert.equal(report.daily[0].date, '2026-10-01')
+    const oct5 = report.daily.find((p) => p.date === '2026-10-05')!
+    assert.deepEqual([oct5.adOrders, oct5.organicOrders, oct5.adBooked], [2, 2, 23000])
+    assert.equal(report.daily.find((p) => p.date === '2026-10-04')!.adOrders, 1)
+    // the sale day wins over the creation day (same rule as the period filter)
+    const bySale = buildAdSalesReport({
+      touches: [touch('c1', 'A', '2026-10-02T10:00:00Z')],
+      chats: [],
+      orders: [{ id: 'x', conversationId: 'c1', platform: 'whatsapp', createdAt: d('2026-10-05T10:00:00Z'), dayKey: '2026-10-03', total: 1, collected: false, cancelled: false }],
+      range,
+    })
+    assert.equal(bySale.daily.find((p) => p.date === '2026-10-03')!.adOrders, 1)
+    assert.equal(bySale.daily.find((p) => p.date === '2026-10-05')!.adOrders, 0)
+    assert.equal(report.daily.reduce((n, p) => n + p.adOrders + p.organicOrders, 0), report.totals.adOrders + report.organic.orders)
     assert.equal(report.withoutChat.orders, 2)
   })
 
@@ -177,8 +193,8 @@ describe('team chat metrics', () => {
   it('first response median / p90 by channel and teammate, backlog and chat → sale', () => {
     const report = buildTeamChatReport({
       firstResponses: [
-        { userId: 'u1', channel: 'whatsapp', ms: 60_000 },
-        { userId: 'u1', channel: 'whatsapp', ms: 120_000 },
+        { userId: 'u1', channel: 'whatsapp', ms: 60_000, day: '2026-10-21' },
+        { userId: 'u1', channel: 'whatsapp', ms: 120_000, day: '2026-10-21' },
         { userId: 'u2', channel: 'instagram', ms: 600_000 },
         { userId: 'u2', channel: 'whatsapp', ms: -5 },
       ],
@@ -191,8 +207,13 @@ describe('team chat metrics', () => {
       chatsStartedByChannel: new Map([['whatsapp', 10]]),
       linkedOrdersByChannel: new Map([['whatsapp', 3], ['instagram', 1]]),
       teamUserIds: ['u4'],
+      dayKeys: ['2026-10-20', '2026-10-21'],
       now,
     })
+    assert.deepEqual(report.daily, [
+      { date: '2026-10-20', medianMs: null, samples: 0 },
+      { date: '2026-10-21', medianMs: 90_000, samples: 2 },
+    ])
     const wa = report.channels.find((c) => c.channel === 'whatsapp')!
     const ig = report.channels.find((c) => c.channel === 'instagram')!
     assert.equal(wa.firstResponseMedianMs, 90_000)

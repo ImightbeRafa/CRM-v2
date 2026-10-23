@@ -3,12 +3,14 @@ import { BUILD, COMING_SOON, TRUST } from '../content'
 import { Package } from 'lucide-react'
 import { Reveal } from '../islands/Reveal'
 import { Chip, type ChipKind } from '../ui/Chip'
+import { NightSky } from '@/components/sky/NightSky'
 
 /** "Cómo creamos tu agente" (dark), "Lo que hay detrás" (light) and "Próximamente" (dark). */
 
 export function Build() {
   return (
     <section className={`${s.section} ${s.dark} ${s.cv} ${s.fadeTop} ${s.fromPaper} ${s.fadeBottom}`} aria-labelledby="lv2-build-title">
+      <NightSky seed={21} top="paper" bottom="canvas" constellation={{ x: 72, y: 16, w: 160 }} />
       <div className={s.wrap}>
         <div className={s.sectionHead}>
           <p className={s.eyebrow}>{BUILD.label}</p>
@@ -124,6 +126,7 @@ function SoonVisual({ k }: { k: string }) {
 export function ComingSoon() {
   return (
     <section className={`${s.section} ${s.dark} ${s.cv} ${s.fadeTop} ${s.fadeBottom} ${s.toPaper}`} aria-labelledby="lv2-soon-title">
+      <NightSky seed={42} top="canvas" bottom="paper" constellation={{ x: 70, y: 18, w: 140 }} />
       <div className={s.wrap}>
         <div className={s.sectionHead}>
           <p className={s.eyebrow}>{COMING_SOON.label}</p>

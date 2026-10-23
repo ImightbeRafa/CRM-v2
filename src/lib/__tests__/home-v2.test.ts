@@ -178,3 +178,54 @@ test("brand slots render Lane I's official BetsyLogo / BetsyMark", () => {
   assert.match(b, /from '@\/components\/brand\/BetsyMark'/)
   assert.doesNotMatch(b, /Sparkles|placeholder/i)
 })
+
+test('night sky on every dark band: server-rendered, transform/opacity only, paused off-screen, still on reduced motion', () => {
+  const sky = read('src/components/sky/NightSky.tsx')
+  const css = read('src/components/sky/night-sky.module.css')
+  const watch = read('src/components/sky/SkyWatch.tsx')
+  assert.doesNotMatch(sky, /'use client'|<canvas/)
+  assert.match(sky, /aria-hidden/)
+  assert.match(watch, /IntersectionObserver/)
+  assert.match(watch, /visibilitychange/)
+  assert.match(css, /\.sky:not\(\[data-run\]\)[\s\S]*animation-play-state: paused/)
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none/)
+  // keyframes only touch transform / opacity
+  for (const kf of css.match(/@keyframes [\w-]+ \{[\s\S]*?\n\}/g) ?? []) {
+    for (const prop of kf.match(/^\s+([a-z-]+):/gm) ?? []) assert.match(prop.trim(), /^(transform|opacity):$/, kf)
+  }
+  assert.match(read(`${DIR}/sections/Hero.tsx`), /<NightSky [^>]*bottom="canvas"/)
+  const story = read(`${DIR}/sections/Story.tsx`)
+  assert.match(story, /<NightSky [^>]*top="paper" bottom="canvas"/)
+  assert.match(story, /<NightSky [^>]*top="canvas" bottom="paper"/)
+})
+
+test('nav: official lockup with the animated mark, section highlight, glass, mobile sheet outside the blurred header', () => {
+  const nav = read(`${DIR}/islands/Nav.tsx`)
+  assert.match(nav, /<Logo lockup \/>/)
+  assert.match(read(`${DIR}/brand.tsx`), /<BetsyLogo size=\{22\} lockup animated/)
+  assert.match(nav, /aria-current=\{active === l\.href \? 'location' : undefined\}/)
+  assert.match(nav, /e\.key === 'Escape'/)
+  // the sheet is a sibling of <header> (backdrop-filter would trap a fixed child)
+  assert.ok(nav.indexOf('</header>') < nav.indexOf('id="lv2-menu"'))
+  assert.match(read(`${DIR}/landing.module.css`), /\.navSolid \{[\s\S]*?backdrop-filter: blur/)
+})
+
+test('agent plate: the mark stays centered (no typing dots on a plate) and light in a dark app theme', () => {
+  assert.match(read('src/components/brand/AgentMark.tsx'), /state=\{state === 'typing' \? 'think' : state\}/)
+  const c = read(`${DIR}/islands/AgentCostumes.tsx`)
+  assert.match(c, /className=\{`\$\{s\.costumes\} theme-light`\}/)
+  assert.match(c, /data-full=\{full \|\| undefined\}/)
+  assert.match(c, /Hola, buenas/)
+})
+
+test('/soporte: night-sky band, Betsy listening by the form, side panel; form + Turnstile + contact config intact', () => {
+  const page = read('src/app/soporte/page.tsx')
+  assert.match(page, /<NightSky /)
+  assert.match(page, /getSupportContactConfig\(\)/)
+  assert.match(page, /theme-light/)
+  assert.match(page, /href="\/soporte\?tema=agente"/)
+  const client = read('src/app/soporte/SoporteClient.tsx')
+  assert.match(client, /<TurnstileWidget onToken=\{setToken\} resetKey=\{resetKey\} \/>/)
+  assert.match(client, /<BetsyMark size=\{44\} state=\{sending \? 'think' : 'listen'\}/)
+  assert.match(client, /fetch\('\/api\/support\/contact'/)
+})

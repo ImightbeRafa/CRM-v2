@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { CreditCard, Pause, Play, RotateCcw } from 'lucide-react'
 import { AgentMark, PlateSwatch } from '@/components/brand/AgentMark'
 import type { BetsyState } from '@/components/brand/BetsyMark'
@@ -13,7 +13,8 @@ import { useOnScreen, usePrefersReducedMotion, useTimeline } from '../demos/useT
  * "Tu agente, en acción" (Rafael 2026-10-23): the agent's costume from the Agents tab (Lane I's AgentMark: Betsy's
  * official mark on a colored plate, never recolored) plus a looping mini-chat of what the agent does — answers with
  * the store's info, follows up once later on a chat that went quiet (only before any order/payment, like
- * soft-ai/follow-up.ts), a person on the team verifies the payment ("yes"), and hands off ("Necesita persona"). The mark's state follows each beat. Swatches change the plate; no name input (Rafael: silly).
+ * soft-ai/follow-up.ts), a person on the team verifies the payment ("yes"), and hands off ("Necesita persona").
+ * The mark's state follows each beat. Swatches change the plate; no name input (Rafael: silly).
  * One mark in this view (example chips and colors are swatches). Names and businesses are made up.
  */
 type Preset = { name: string; business: string; plate: AgentPlate; ask: string; answer: string; human: string }
@@ -78,6 +79,17 @@ export function AgentCostumes() {
   const step = reduced ? LAST : t.step
   const p = PRESETS[preset]
 
+  // The thread reads top-down until it fills, then sticks to the newest message (older ones fade under the head).
+  const thread = useRef<HTMLDivElement>(null)
+  const [full, setFull] = useState(false)
+  useLayoutEffect(() => {
+    const el = thread.current
+    const first = el?.firstElementChild as HTMLElement | null
+    const last = el?.lastElementChild as HTMLElement | null
+    if (!el || !first || !last) return
+    setFull(last.offsetTop + last.offsetHeight - first.offsetTop > el.clientHeight - 16)
+  }, [step, preset])
+
   const pick = (i: number) => {
     setPreset(i)
     setPlate(PRESETS[i].plate)
@@ -85,7 +97,8 @@ export function AgentCostumes() {
   }
 
   return (
-    <div ref={ref} className={s.costumes}>
+    // theme-light: the plate keeps its light tint even when the visitor's app theme is dark (it was a dark square).
+    <div ref={ref} className={`${s.costumes} theme-light`}>
       <div className={s.costumePreview}>
         <div className={s.costumeHead}>
           <AgentMark appearance={{ plate, ring: false }} size={64} state={BEATS[step].mark} animated={!reduced} />
@@ -107,7 +120,13 @@ export function AgentCostumes() {
         </div>
 
         {/* A looping illustration (aria-hidden); the list next to it says the same in words. */}
-        <div className={`${s.thread} ${s.costumeChat} ${s.light}`} aria-hidden key={preset}>
+        <div className={`${s.thread} ${s.costumeChat} ${s.light}`} aria-hidden key={preset} ref={thread} data-full={full || undefined}>
+          {/* The chat opens with a greeting already there, so the thread starts full (no empty box). */}
+          <span className={s.costumeEvent}>
+            <span className={s.costumeDay}>Hoy · Instagram</span>
+          </span>
+          <p className={`${s.bubble} ${s.bubbleIn}`}>Hola, buenas</p>
+          <p className={`${s.bubble} ${s.bubbleOut}`}>¡Hola! Soy {p.name}, de la tienda. ¿En qué te ayudo?</p>
           <p className={`${s.bubble} ${s.bubbleIn}`}>{p.ask}</p>
           {step === 1 && (
             <span className={`${s.typing} ${s.typingOut}`}>

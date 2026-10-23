@@ -35,6 +35,8 @@
   --gutter: 20px;
   --section-y: 96px;
   --head-gap: 48px;
+  /* Cloud banks at dark→light edges (NightSky); they live inside the faded padding. */
+  --cloud-h: calc(var(--section-y) * 1.15);
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   background: var(--canvas);
@@ -213,20 +215,28 @@
   position: fixed;
   inset: 0 0 auto;
   z-index: 50;
-  transition: background-color 0.3s, border-color 0.3s;
+  transition: background-color 0.3s, border-color 0.3s, box-shadow 0.3s;
   border-bottom: 1px solid transparent;
 }
+/* Glass once the page scrolls: dark tint + blur, so it reads over the night sky and the cream sections alike. */
 .navSolid {
-  background: rgba(13, 13, 20, 0.82);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom-color: var(--d-line);
+  background: rgba(10, 10, 18, 0.74);
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  border-bottom-color: rgba(236, 236, 241, 0.08);
+  box-shadow: 0 12px 32px -24px rgba(0, 0, 0, 0.8);
 }
 .navInner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 64px;
+  gap: 24px;
+  height: 68px;
+}
+@media (min-width: 1024px) {
+  .navInner {
+    height: 76px;
+  }
 }
 .logo {
   font-family: var(--logo);
@@ -236,11 +246,21 @@
   color: var(--d-text);
   text-decoration: none;
 }
-/* the logo slot (Lane I swaps in <BetsyLogo />) */
+/* the logo slot (Lane I's lockup) */
 .logoLink {
   display: inline-flex;
   align-items: center;
+  padding: 6px 4px 6px 0;
+  border-radius: 12px;
   text-decoration: none;
+}
+.logoLink:focus-visible,
+.navLinks a:focus-visible,
+.navSignin:focus-visible,
+.menuBtn:focus-visible,
+.mobileLinks a:focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 2px;
 }
 .logoOnLight {
   color: var(--ink);
@@ -251,30 +271,60 @@
 }
 .navLinks {
   display: none;
-  gap: 26px;
+  gap: 2px;
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(236, 236, 241, 0.08);
+  background: rgba(255, 255, 255, 0.03);
 }
 .navLinks a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
   color: var(--d-muted);
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 550;
+  letter-spacing: -0.005em;
   text-decoration: none;
+  transition: color 0.2s, background-color 0.2s;
 }
 .navLinks a:hover {
   color: var(--d-text);
+  background: rgba(255, 255, 255, 0.06);
+}
+.navLinks a[aria-current] {
+  color: var(--d-text);
+  background: rgba(91, 108, 255, 0.18);
 }
 .navCtas {
   display: none;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 }
-.navCtas .btn,
-.navCtas .btnGhost {
+.navSignin {
+  display: inline-flex;
+  align-items: center;
   min-height: 40px;
-  padding: 0 16px;
+  padding: 0 14px;
+  border-radius: 999px;
+  color: var(--d-text);
   font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.2s;
+}
+.navSignin:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+.navCtas .navPrimary {
+  min-height: 40px;
+  padding: 0 16px 0 18px;
+  font-size: 14px;
+  gap: 6px;
 }
 .menuBtn {
   display: inline-flex;
@@ -282,35 +332,65 @@
   height: 44px;
   align-items: center;
   justify-content: center;
-  margin-right: -10px;
+  margin-right: -8px;
+  border-radius: 12px;
   color: var(--d-text);
-  background: none;
-  border: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(236, 236, 241, 0.1);
 }
+/* Mobile sheet: fills the screen under the bar, big tap targets, CTAs at the bottom. */
 .mobileMenu {
-  padding: 8px 20px 20px;
-  background: rgba(13, 13, 20, 0.97);
-  border-bottom: 1px solid var(--d-line);
+  position: fixed;
+  inset: 68px 0 0;
+  overflow-y: auto;
+  padding: 12px 0 32px;
+  background: rgba(10, 10, 18, 0.97);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 49;
+  animation: menuIn 0.28s var(--ease) both;
 }
-.mobileMenu a {
-  display: block;
-  padding: 13px 0;
+@keyframes menuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+.mobileLinks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.mobileLinks a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 60px;
   color: var(--d-text);
-  font-size: 16px;
+  font-family: var(--serif);
+  font-size: 30px;
+  letter-spacing: -0.01em;
   text-decoration: none;
   border-bottom: 1px solid var(--d-line);
 }
-.mobileMenu .btn {
-  margin-top: 16px;
-  width: 100%;
-  border: 0;
+.mobileLinks a svg {
+  color: var(--d-muted);
+}
+.mobileLinks a[aria-current] {
+  color: #aab4ff;
+}
+.mobileCtas {
+  display: grid;
+  gap: 10px;
+  margin-top: 28px;
 }
 @media (min-width: 1024px) {
   .navLinks,
   .navCtas {
     display: flex;
   }
-  .menuBtn {
+  .menuBtn,
+  .mobileMenu {
     display: none;
   }
 }
@@ -319,7 +399,7 @@
 .section {
   padding: var(--section-y) 0;
   position: relative;
-  scroll-margin-top: 72px;
+  scroll-margin-top: 84px;
 }
 /* Non-anchor sections below the fold skip style/layout/paint until near the screen (auto keeps the measured
    height). Not used on #agente / #operacion / #precios / #contacto so anchor jumps land exactly. */
@@ -2371,6 +2451,20 @@
     mask-image: none;
     -webkit-mask-image: none;
   }
+}
+.costumeChat:not([data-full]) {
+  justify-content: flex-start;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+.costumeDay {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(11, 11, 18, 0.05);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
 }
 .costumeEvent {
   align-self: center;

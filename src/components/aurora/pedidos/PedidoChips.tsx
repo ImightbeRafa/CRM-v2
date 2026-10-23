@@ -1,51 +1,40 @@
-import { Banknote, Check, Clock, Store, Truck, Package, X } from 'lucide-react'
+import { Banknote, CheckCircle2, CircleDashed, Clock, Store, Truck, Package, XCircle, type LucideIcon } from 'lucide-react'
+import { Chip, type ChipTone } from '@/components/ui/Chip'
 import { ChannelLogo } from '@/components/social/ChannelLogo'
 import type { ChannelChip, PaymentChip, ShipChip } from '@/lib/pedidos-aurora'
 import type { CanalLabel } from '@/lib/order-channel-line'
 
-const PILL = 'inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium'
-
-const PAYMENT_CLASS: Record<PaymentChip['tone'], string> = {
-  paid: 'bg-emerald-50 text-emerald-700',
-  pending: 'bg-amber-50 text-amber-700',
-  cod: 'bg-slate-100 text-slate-600',
-  none: 'bg-slate-100 text-slate-500',
+// Same shared Chip as the shipping-method and payment badges elsewhere.
+const PAYMENT_LOOK: Record<PaymentChip['tone'], { tone: ChipTone; icon: LucideIcon }> = {
+  paid: { tone: 'success', icon: CheckCircle2 },
+  pending: { tone: 'warning', icon: Clock },
+  cod: { tone: 'warning', icon: Banknote },
+  none: { tone: 'neutral', icon: CircleDashed },
 }
 
 export function PaymentPill({ chip }: { chip: PaymentChip }) {
-  const Icon = chip.tone === 'paid' ? Check : chip.tone === 'pending' ? Clock : Banknote
+  const look = PAYMENT_LOOK[chip.tone]
   return (
-    <span className={`${PILL} ${PAYMENT_CLASS[chip.tone]}`}>
-      <Icon className="h-3 w-3" aria-hidden />
+    <Chip tone={look.tone} icon={look.icon}>
       {chip.label}
-    </span>
+    </Chip>
   )
 }
 
-const SHIP_CLASS: Record<ShipChip['tone'], string> = {
-  prep: 'bg-violet-50 text-violet-700',
-  transit: 'bg-sky-50 text-sky-700',
-  done: 'bg-emerald-50 text-emerald-700',
-  pickup: 'bg-slate-100 text-slate-600',
-  cancelled: 'bg-red-50 text-red-600',
+const SHIP_LOOK: Record<ShipChip['tone'], { tone: ChipTone; icon: LucideIcon }> = {
+  prep: { tone: 'brand', icon: Package },
+  transit: { tone: 'info', icon: Truck },
+  done: { tone: 'success', icon: CheckCircle2 },
+  pickup: { tone: 'neutral', icon: Store },
+  cancelled: { tone: 'danger', icon: XCircle },
 }
 
 export function ShipPill({ chip }: { chip: ShipChip }) {
-  const Icon =
-    chip.tone === 'transit'
-      ? Truck
-      : chip.tone === 'done'
-        ? Check
-        : chip.tone === 'pickup'
-          ? Store
-          : chip.tone === 'cancelled'
-            ? X
-            : Package
+  const look = SHIP_LOOK[chip.tone]
   return (
-    <span className={`${PILL} ${SHIP_CLASS[chip.tone]}`}>
-      <Icon className="h-3 w-3" aria-hidden />
+    <Chip tone={look.tone} icon={look.icon}>
       {chip.label}
-    </span>
+    </Chip>
   )
 }
 

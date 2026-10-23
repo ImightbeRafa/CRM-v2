@@ -313,6 +313,12 @@ const HOW_TO_BUY_V2_BODY = 'Para armar tu pedido pasame:\n- Nombre completo\n- T
  * agents2-format (Rafael 2026-10-16): "¿cómo pago?" lists the method NAMES and asks which one; the chosen method's
  * details go out next ([[PAGO_…]] / inbound-decision). Never every number in one block.
  */
+/**
+ * Lane C scan 2026-10-22: the engine template "Pedido confirmado". The agent never writes an order (fixed rule 2), so it
+ * may never say the order "quedó registrado" (the write_claim check rightly held the old text, which also rendered as
+ * "tu pedido  quedó" with no order number). Honest wording: the data is in, the team confirms.
+ */
+export const ORDER_CONFIRMED_BODY = '¡Gracias! Ya tengo los datos de tu pedido 😊 El equipo lo revisa y te escribe por aquí.'
 export const PAYMENT_INFO_BODY = 'Podés pagar con:\n{{brand.payment.methodsList}}\n\n¿Cómo preferís pagar?'
 /** Purchase summary: shipping + method names (no numbers), each on its own line. */
 export const PURCHASE_SUMMARY_BODY = 'Envío: {{brand.shipping.summary}}\nPago: {{brand.payment.methods}}\n\n¿Lo querés con envío a domicilio o retiro?'
@@ -330,7 +336,9 @@ const LEGACY_DEFAULT_BODIES = new Map<string, string>([
   [HOW_TO_BUY_V2_BODY, HOW_TO_BUY_BODY],
   ['Recibimos tu mensaje de pago. Una persona del equipo lo revisa y te escribe.', '¡Gracias! Ya lo reviso y te confirmo 😊'],
   ['No pudimos aplicar ese pago. Una persona del equipo te explica el siguiente paso.', 'Revisé el pago y todavía no me aparece aplicado. ¿Me reenviás el comprobante? 😊'],
-  ['Tu pedido {{order.orderId}} quedó registrado por el equipo. Te escribimos si falta algún dato.', 'Listo, tu pedido {{order.orderId}} quedó registrado 😊 Te aviso cualquier cosa.'],
+  ['Tu pedido {{order.orderId}} quedó registrado por el equipo. Te escribimos si falta algún dato.', ORDER_CONFIRMED_BODY],
+  // Lane C scan 2026-10-22: the agent never writes an order, so never "quedó registrado".
+  ['Listo, tu pedido {{order.orderId}} quedó registrado 😊 Te aviso cualquier cosa.', ORDER_CONFIRMED_BODY],
   ['El precio sale del inventario. Envío: {{brand.shipping.summary}}. Pago: {{brand.payment.summary}}. ¿Cuál producto te interesa?', 'Envío: {{brand.shipping.summary}}. Pago: {{brand.payment.summary}}. ¿Cuál producto te interesa?'],
   // Agentes IA 2.0: previous default of the safe line (sys_handoff_unavailable).
   ['Perfecto, dame un momento y te confirmo 😊', 'Dame un momento y te confirmo 😊'],
@@ -441,7 +449,7 @@ export const RESERVED_SHORTCUT_SEEDS: ShortcutDraft[] = [
     intents: ['order_status'],
     keywords: [],
     deliveryMode: 'verbatim',
-    body: 'Listo, tu pedido {{order.orderId}} quedó registrado 😊 Te aviso cualquier cosa.',
+    body: ORDER_CONFIRMED_BODY,
   },
   {
     key: 'sys_out_of_hours',

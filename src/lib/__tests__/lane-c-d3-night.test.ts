@@ -92,3 +92,20 @@ describe('Verifier / SecureDog review fixes (D3 / P8)', () => {
     )
   })
 })
+
+describe('Lane C scan: the engine "Pedido confirmado" template never claims a written order', () => {
+  it('the seed and the upgraded legacy bodies pass the final policy; the old text is upgraded', async () => {
+    const { applyFinalOutputPolicy } = await import('@/lib/soft-ai/llm/output-validator')
+    const { ORDER_CONFIRMED_BODY, RESERVED_SHORTCUT_SEEDS, renderShortcutTemplate, upgradeLegacyShortcutBody } = await import('@/lib/soft-ai/shortcuts')
+    const seed = RESERVED_SHORTCUT_SEEDS.find((s) => s.key === 'sys_order_confirmed')
+    assert.equal(seed?.body, ORDER_CONFIRMED_BODY)
+    assert.doesNotMatch(ORDER_CONFIRMED_BODY, /registrad|confirmad|cread/)
+    for (const legacy of ['Listo, tu pedido {{order.orderId}} quedó registrado 😊 Te aviso cualquier cosa.', 'Tu pedido {{order.orderId}} quedó registrado por el equipo. Te escribimos si falta algún dato.']) {
+      assert.equal(upgradeLegacyShortcutBody(legacy), ORDER_CONFIRMED_BODY)
+    }
+    const text = renderShortcutTemplate(ORDER_CONFIRMED_BODY, { facts: FACTS, clientFirstName: null })
+    const policy = applyFinalOutputPolicy({ text, intent: 'order_status', citedToolNames: [], brandFacts: FACTS, shortcuts: [] } as never) as { needsHuman: boolean; reasons: string[] }
+    assert.equal(policy.needsHuman, false)
+    assert.deepEqual(policy.reasons, [])
+  })
+})

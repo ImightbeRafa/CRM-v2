@@ -6,6 +6,7 @@ import type { ChipTone } from '@/components/ui/Chip';
  */
 const TONES: Record<string, ChipTone> = {
   pendiente: 'warning',
+  urgente: 'danger',
   'en proceso': 'brand',
   'pendiente diseño': 'brand',
   'pendientediseño': 'brand',

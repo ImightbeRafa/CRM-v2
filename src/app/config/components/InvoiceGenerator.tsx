@@ -237,7 +237,7 @@ export function InvoiceGenerator({
       
       if (result.status === 'success') {
         setGeneratedInvoices([result.data]);
-        notify('Factura generada exitosamente!');
+        notify('Factura generada exitosamente!', 'success');
         if (onInvoiceGenerated) {
           onInvoiceGenerated([result.data.id]);
         }
@@ -254,7 +254,7 @@ export function InvoiceGenerator({
 
   const handleGenerateBulk = async () => {
     if (selectedOrders.length === 0) {
-      notify('Selecciona al menos una orden');
+      notify('Selecciona al menos una orden', 'error');
       return;
     }
 
@@ -298,7 +298,7 @@ export function InvoiceGenerator({
       
       if (result.status === 'success') {
         setGeneratedInvoices(result.data);
-        notify(`${result.data.length} facturas generadas exitosamente!`);
+        notify(`${result.data.length} facturas generadas exitosamente!`, 'success');
         if (onInvoiceGenerated) {
           onInvoiceGenerated(result.data.map((inv: any) => inv.id));
         }
@@ -315,17 +315,17 @@ export function InvoiceGenerator({
 
   const validateInvoice = (): boolean => {
     if (!currentInvoice.customerName.trim()) {
-      notify('El nombre del cliente es requerido');
+      notify('El nombre del cliente es requerido', 'error');
       return false;
     }
     
     if (currentInvoice.items.length === 0) {
-      notify('Agrega al menos un artículo');
+      notify('Agrega al menos un artículo', 'error');
       return false;
     }
     
     if (currentInvoice.items.some(item => !item.description.trim() || item.quantity <= 0 || item.unitPrice < 0)) {
-      notify('Todos los artículos deben tener descripción, cantidad y precio válidos');
+      notify('Todos los artículos deben tener descripción, cantidad y precio válidos', 'error');
       return false;
     }
     
@@ -362,7 +362,7 @@ export function InvoiceGenerator({
       const result = await response.json();
       
       if (result.status === 'success') {
-        notify('Factura enviada por email!');
+        notify('Factura enviada por email!', 'success');
       } else {
         notify(`Error: ${result.error}`);
       }

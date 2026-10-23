@@ -447,7 +447,7 @@ function ConfigPageInner() {
       if (result.status === 'success') {
         await loadData(); // Reload data
         setSelectedFields([]);
-        notify(`Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
+        notify(`Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`, 'success');
       } else {
         notify(`Error: ${result.error || result.message}`);
       }
@@ -479,7 +479,7 @@ function ConfigPageInner() {
       if (result.status === 'success') {
         await loadData(); // Reload data
         setSelectedOptionSets([]);
-        notify(`Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
+        notify(`Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`, 'success');
       } else {
         notify(`Error: ${result.error || result.message}`);
       }
@@ -511,7 +511,7 @@ function ConfigPageInner() {
       if (result.status === 'success') {
         await loadData(); // Reload data
         setSelectedShipping([]);
-        notify(`Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
+        notify(`Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`, 'success');
       } else {
         notify(`Error: ${result.error || result.message}`);
       }
@@ -1026,7 +1026,7 @@ function ConfigPageInner() {
                   await loadData()
                   setShowFieldForm(false)
                   setEditingField(null)
-                  notify(editingField ? 'Campo actualizado' : 'Campo creado')
+                  notify(editingField ? 'Campo actualizado' : 'Campo creado', 'success')
                 } else {
                   notify(`Error: ${json.error || 'No se pudo guardar el campo'}`)
                 }
@@ -1203,7 +1203,7 @@ function ConfigPageInner() {
                 setShowOptionSetForm(false)
                 setEditingOptionSet(null)
                 setOptionSetOptions([])
-                notify(editingOptionSet ? 'Conjunto actualizado' : 'Conjunto creado')
+                notify(editingOptionSet ? 'Conjunto actualizado' : 'Conjunto creado', 'success')
               } catch (err) {
                 console.error('Option set save error:', err)
                 notify('Error al guardar conjunto de opciones')
@@ -1353,7 +1353,7 @@ function ConfigPageInner() {
                   await loadData()
                   setShowShippingForm(false)
                   setEditingShipping(null)
-                  notify(editingShipping ? 'Método actualizado' : 'Método creado')
+                  notify(editingShipping ? 'Método actualizado' : 'Método creado', 'success')
                 } else {
                   notify(`Error: ${json.error || 'No se pudo guardar el método de envío'}`)
                 }

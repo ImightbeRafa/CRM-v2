@@ -263,7 +263,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         const result = await response.json();
         
         if (result.status === 'success') {
-          notify('Plan cambiado a FREE exitosamente');
+          notify('Plan cambiado a FREE exitosamente', 'success');
           await loadBillingData();
         } else {
           notify(`Error: ${result.error}`);
@@ -353,7 +353,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         if (result.data?.note) {
           message += '\n\n' + result.data.note;
         }
-        notify(message);
+        notify(message, 'success');
         await loadBillingData();
         setShowCancelDialog(false);
       } else {
@@ -461,7 +461,6 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                   paymentMessage.type === 'error' ? 'text-red-900' :
                   'text-yellow-900'
                 }`}>
-                  {paymentMessage.type === 'success' ? '' : paymentMessage.type === 'error' ? '' : ''}
                   {paymentMessage.message}
                 </p>
               </div>

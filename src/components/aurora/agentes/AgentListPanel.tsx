@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { FlaskConical, MessagesSquare, Plus, Settings2, UserRound } from 'lucide-react'
 import { AgentModeChip, AgentStatusPill } from './AgentChips'
 import { AgentFace, agentTitleParts } from './AgentFace'
@@ -52,6 +53,8 @@ export function AgentListPanel({
   createDisabled = false,
   creating = false,
 }: AgentListPanelProps) {
+  // Only the card under the pointer / keyboard focus moves (it listens); the rest stay still (one moving mark).
+  const [active, setActive] = useState<string | null>(null)
   // The team-only lane is a real agent (it may hold lines), but it is not an AI persona: last, muted.
   const ordered = [...agents.filter((a) => !isHumanOnly(a)), ...agents.filter(isHumanOnly)]
   return (
@@ -72,6 +75,10 @@ export function AgentListPanel({
             <li
               key={a.id}
               data-testid="agent-card"
+              onMouseEnter={() => setActive(a.id)}
+              onMouseLeave={() => setActive((cur) => (cur === a.id ? null : cur))}
+              onFocus={() => setActive(a.id)}
+              onBlur={() => setActive((cur) => (cur === a.id ? null : cur))}
               className={`group flex flex-col rounded-[20px] border p-5 transition-shadow ${
                 human ? 'border-dashed border-slate-200 bg-slate-50/60' : 'bg-white hover:shadow-md'
               } ${selected ? 'border-[#5B6CFF]/40' : human ? '' : 'border-slate-200/70'}`}
@@ -85,7 +92,12 @@ export function AgentListPanel({
                     <UserRound className="h-5 w-5" />
                   </span>
                 ) : (
-                  <AgentFace agent={a} size={48} animated={false} />
+                  <AgentFace
+                    agent={a}
+                    size={48}
+                    state={a.status !== 'live' ? 'paused' : active === a.id ? 'listen' : 'idle'}
+                    animated={active === a.id}
+                  />
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">

@@ -65,7 +65,7 @@ export function AgentDetailHeader({
               <UserRound className="h-6 w-6" />
             </span>
           ) : (
-            <AgentFace agent={agent} size={52} state={publishing ? 'think' : 'idle'} />
+            <AgentFace agent={agent} size={52} state={publishing ? 'think' : status === 'live' ? 'idle' : 'paused'} />
           )}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">

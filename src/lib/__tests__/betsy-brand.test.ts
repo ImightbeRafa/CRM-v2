@@ -99,7 +99,10 @@ describe('brand source shape', () => {
     for (const f of agentFiles) assert.doesNotMatch(read(f), EMOJI, f)
     const list = read('src/components/aurora/agentes/AgentListPanel.tsx')
     assert.doesNotMatch(list, /\.emoji\b/)
-    assert.match(list, /<AgentFace agent=\{a\} size=\{48\} animated=\{false\} \/>/)
+    // Only the hovered / focused card moves (listen); drafts show the paused mark.
+    assert.match(list, /state=\{a\.status !== 'live' \? 'paused' : active === a\.id \? 'listen' : 'idle'\}/)
+    assert.match(list, /animated=\{active === a\.id\}/)
+    assert.match(read('src/components/aurora/agentes/AgentDetailHeader.tsx'), /state=\{publishing \? 'think' : status === 'live' \? 'idle' : 'paused'\}/)
     assert.match(read('src/components/aurora/agentes/AgentDetailHeader.tsx'), /<AgentFace agent=\{agent\}/)
     assert.doesNotMatch(read('src/app/config/agentes/page.tsx'), /patch\(\{ emoji/)
     assert.match(read('src/app/config/agentes/page.tsx'), /<AgentAppearanceCard/)
@@ -139,4 +142,40 @@ describe('help button placement', () => {
     assert.match(btn, /state=\{hover \? 'listen' : 'idle'\}/)
     assert.doesNotMatch(btn, /useSession/)
   })
+})
+
+describe('Betsy presence signals (animated mark)', () => {
+  test('each signal maps to the HANDOFF state event; unknown values are ignored', async () => {
+    const { signalToStateEvent, isBetsySignal, BETSY_SIGNALS, emitBetsySignal } = await import('../../components/brand/betsy-signals')
+    assert.deepEqual(
+      BETSY_SIGNALS.map((s) => [s, signalToStateEvent(s)]),
+      [
+        ['read', 'read'],
+        ['replied', 'read'],
+        ['think', 'reply_started'],
+        ['typing', 'reply_streaming'],
+        ['done', 'reply_done'],
+        ['listen', 'message_received'],
+        ['yes', 'payment_verified'],
+      ],
+    )
+    assert.equal(isBetsySignal('read'), true)
+    assert.equal(isBetsySignal('hack'), false)
+    assert.doesNotThrow(() => emitBetsySignal('read')) // no window in node: a no-op
+  })
+  test('the sidebar mark is the live one; think/typing have a watchdog; the read blink hands back to idle', () => {
+    const side = read('src/components/aurora/AuroraSidebar.tsx')
+    assert.match(side, /const presence = useBetsyPresence\(\)/)
+    // 32 px+ so the think light shows (HANDOFF: top light and think light from 32 px).
+    assert.match(side, /<BetsyLogo mark size=\{26\} animated markState=\{presence\} \/>/)
+    assert.match(side, /<BetsyLogo lockup size=\{18\} animated markState=\{presence\} \/>/)
+    const hook = read('src/components/brand/useBetsyPresence.ts')
+    assert.match(hook, /THINK_WATCHDOG_MS = 20_000/)
+    assert.match(hook, /setTimeout\(\(\) => setBlink\(undefined\), READ_BLINK_MS\)/)
+    assert.match(hook, /window\.removeEventListener\(BETSY_SIGNAL_EVENT, onSignal\)/)
+  })
+})
+
+test('inside a logo the typing state shows the think light (dots would shift the wordmark)', () => {
+  assert.match(read('src/components/brand/BetsyLogo.tsx'), /markState\?\.state === 'typing' \? \{ \.\.\.markState, state: 'think' as const \}/)
 })

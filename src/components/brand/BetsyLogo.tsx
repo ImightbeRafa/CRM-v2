@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import Link from 'next/link'
-import { BETSY_COLORS, BetsyMark } from './BetsyMark'
+import { BETSY_COLORS, BetsyMark, type BetsyMarkProps } from './BetsyMark'
 import { BETSY_WORDMARK_BOX, BETSY_WORDMARK_GRADIENT_X2, BETSY_WORDMARK_PATH } from './betsy-wordmark'
 import s from './betsy-logo.module.css'
 
@@ -18,6 +18,8 @@ export type BetsyLogoProps = {
   mark?: boolean
   /** Lockup / mark only: let the mark breathe and blink (default still). */
   animated?: boolean
+  /** Lockup / mark only: live state for the mark (e.g. from `useBetsyPresence`). */
+  markState?: Pick<BetsyMarkProps, 'state' | 'level' | 'readSignal'>
   /** Wrap in a link (e.g. "/", "/dashboard"). Omit for plain content. */
   href?: string
   /** Accessible name (default "Betsy"). */
@@ -59,18 +61,21 @@ export function BetsyLogo({
   lockup = false,
   mark = false,
   animated = false,
+  markState,
   href,
   ariaLabel = 'Betsy',
   className = '',
 }: BetsyLogoProps) {
   const markTone = tone === 'mono-white' || tone === 'mono-ink' ? tone : 'dark'
+  // Inside a logo the typing dots would push the wordmark (layout shift): show the think light instead.
+  const live = markState?.state === 'typing' ? { ...markState, state: 'think' as const } : markState
   // Lockup proportions (HANDOFF.md): mark box = 1.8 × wordmark height, gap = 0.24 × mark height.
   const markSize = mark ? Math.round(size * 1.25) : Math.round(size * 1.8)
   const content = mark ? (
-    <BetsyMark size={markSize} tone={markTone} animated={animated} decorative />
+    <BetsyMark size={markSize} tone={markTone} animated={animated} decorative {...live} />
   ) : lockup ? (
     <>
-      <BetsyMark size={markSize} tone={markTone} animated={animated} decorative />
+      <BetsyMark size={markSize} tone={markTone} animated={animated} decorative {...live} />
       <span className={s.lockWord} style={{ marginLeft: Math.round(markSize * 0.24) }}>
         <Wordmark height={size} tone={tone} />
       </span>

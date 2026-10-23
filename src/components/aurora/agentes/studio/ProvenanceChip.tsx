@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Paperclip } from 'lucide-react'
 
 /** "De dónde salió": the source name, and on click the literal quote the AI used. */
 export function ProvenanceChip({ label, snippet }: { label: string | null; snippet: string | null }) {
@@ -14,7 +15,7 @@ export function ProvenanceChip({ label, snippet }: { label: string | null; snipp
         className="inline-flex max-w-[220px] items-center gap-1 truncate rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600 hover:bg-slate-200"
         aria-expanded={open}
       >
-        <span aria-hidden>📎</span>
+        <Paperclip className="h-3 w-3 shrink-0" aria-hidden />
         <span className="truncate">{label}</span>
       </button>
       {open && snippet ? (

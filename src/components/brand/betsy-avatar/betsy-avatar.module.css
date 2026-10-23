@@ -1,0 +1,172 @@
+/* Betsy avatar motion. Everything is transform/opacity (compositor only), and stops under
+   prefers-reduced-motion or data-still. */
+
+.root {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  line-height: 0;
+  vertical-align: middle;
+}
+.root svg {
+  display: block;
+  overflow: visible;
+}
+.root g,
+.root path,
+.root ellipse {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* idle: gentle float, breathing glow, occasional blink */
+.float {
+  animation: ba-float 4.2s ease-in-out infinite;
+}
+.glow {
+  animation: ba-breathe 3.6s ease-in-out infinite;
+}
+.core {
+  animation: ba-breathe 3.6s ease-in-out infinite;
+}
+.eyes {
+  animation: ba-blink 5.4s ease-in-out infinite;
+}
+
+/* listening: leans in, eyes a little bigger, soft pulse ring */
+.root[data-mood='listening'] .face {
+  transform: translateY(-1.5px) scale(1.06);
+}
+.root[data-mood='listening'] .float {
+  animation-duration: 3s;
+}
+.pulse {
+  opacity: 0;
+  animation: ba-pulse 1.8s ease-out infinite;
+}
+
+/* thinking: eyes look up to the side, light ribbon orbits */
+.root[data-mood='thinking'] .eyes {
+  transform: translate(2.5px, -3px);
+  animation: none;
+}
+.root[data-mood='thinking'] .glow {
+  animation-duration: 1.8s;
+}
+.ribbonDash {
+  animation: ba-orbit 1.9s linear infinite;
+}
+
+/* talking: mouth opens and closes */
+.mouthTalk {
+  animation: ba-talk 0.46s ease-in-out infinite alternate;
+}
+
+/* happy: little bounce */
+.root[data-mood='happy'] .float {
+  animation: ba-bounce 1.3s cubic-bezier(0.3, 0, 0.3, 1) infinite;
+}
+
+/* paused / offline: dim, eyes closed, no motion */
+.root[data-mood='paused'] {
+  opacity: 0.62;
+  filter: saturate(0.35);
+}
+.root[data-mood='paused'] .float,
+.root[data-mood='paused'] .glow,
+.root[data-mood='paused'] .core {
+  animation: none;
+}
+.root[data-mood='paused'] .glow {
+  opacity: 0.35;
+}
+
+/* motion="hover": neutral pose (frame 0) until the card is hovered / focused */
+.root[data-motion='hover'],
+.root[data-motion='hover'] * {
+  animation-play-state: paused;
+}
+:global(.group):hover .root[data-motion='hover'],
+:global(.group):hover .root[data-motion='hover'] *,
+:global(.group):focus-within .root[data-motion='hover'],
+:global(.group):focus-within .root[data-motion='hover'] * {
+  animation-play-state: running;
+}
+
+.root[data-still] *,
+.root[data-still] {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .root *,
+  .root {
+    animation: none !important;
+  }
+}
+
+@keyframes ba-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2.5px);
+  }
+}
+@keyframes ba-breathe {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes ba-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.12);
+  }
+}
+@keyframes ba-pulse {
+  0% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.22);
+  }
+}
+@keyframes ba-orbit {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+@keyframes ba-talk {
+  from {
+    transform: scaleY(0.35);
+  }
+  to {
+    transform: scaleY(1.1);
+  }
+}
+@keyframes ba-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-5px);
+  }
+  55% {
+    transform: translateY(0);
+  }
+  70% {
+    transform: translateY(-1.5px);
+  }
+}

@@ -4,6 +4,7 @@ import { Clock, Instagram, LifeBuoy, Mail, MessageCircle } from 'lucide-react';
 import { getSupportContactConfig } from '@/lib/support/contact-config';
 import { supportPipelineEnabled } from '@/lib/support/config';
 import { SoporteClient } from './SoporteClient';
+import { BetsyLogo } from '@/components/brand/BetsyLogo';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,9 +24,7 @@ export default async function SoportePage({ searchParams }: { searchParams: Prom
     <div className="aurora-light min-h-screen bg-[var(--aurora-canvas,#f7f7fb)] text-slate-900">
       <header className="border-b border-slate-200/70 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 sm:px-6">
-          <Link href="/home" className="text-[15px] font-semibold text-slate-900">
-            Betsy
-          </Link>
+          <BetsyLogo tone="light" size={20} href="/home" ariaLabel="Betsy, inicio" />
           <Link href="/help" className="text-[13px] font-medium text-slate-500 hover:text-slate-800">
             Centro de ayuda
           </Link>

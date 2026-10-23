@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { AlertTriangle, Check, Circle, Loader2, X } from 'lucide-react'
 import { CHAT_AGENT_MODEL_ALLOWLIST, modelLabel } from '@/lib/soft-ai/agent-types'
 import {
   BUILT_IN_SCENARIOS,
@@ -112,14 +113,16 @@ function ScenarioRow({
   onToggle: () => void
   onDelete?: () => void
 }) {
-  const icon = !r || r.status === 'idle' ? '○' : r.status === 'running' ? '…' : r.notRun ? '⚠' : r.pass ? '✓' : '✗'
+  const Icon = !r || r.status === 'idle' ? Circle : r.status === 'running' ? Loader2 : r.notRun ? AlertTriangle : r.pass ? Check : X
   const tone = !r ? 'text-slate-400' : r.status === 'running' ? 'text-slate-500' : r.notRun ? 'text-amber-700' : r.pass ? 'text-emerald-700' : 'text-red-700'
   return (
     <li className="rounded-lg border border-slate-100 p-2" data-testid="probar-scenario">
       <div className="flex items-start gap-2">
-        <span className={`mt-0.5 w-4 text-center text-sm font-semibold ${tone}`} aria-hidden>
-          {icon}
-        </span>
+        <Icon
+          className={`mt-0.5 h-4 w-4 shrink-0 ${tone} ${r?.status === 'running' ? 'motion-safe:animate-spin' : ''}`}
+          strokeWidth={2.25}
+          aria-hidden
+        />
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-medium text-slate-900">
             {s.title}

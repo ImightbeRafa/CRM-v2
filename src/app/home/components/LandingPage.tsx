@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion, type Variants } from 'framer-motion';
 import { trackMetaEvent } from '@/app/components/MetaPixel';
+import { BetsyLogo } from '@/components/brand/BetsyLogo';
 import { Button } from '@/app/components/ui/button';
 import { Card, CardContent } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
@@ -415,9 +416,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16 md:h-20">
             <div className="flex items-center gap-2">
-              <span className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent leading-relaxed pb-0.5">
-                Betsy
-              </span>
+              <BetsyLogo tone="dark" size={30} />
             </div>
             
             <div className="hidden md:flex items-center gap-8">
@@ -1022,7 +1021,7 @@ export default function LandingPage() {
             {/* Brand */}
             <div className="lg:col-span-1">
               <div className="flex items-center gap-2 mb-4">
-                <span className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Betsy</span>
+                <BetsyLogo tone="dark" size={30} />
               </div>
               <p className="text-gray-400 text-sm mb-6">
                 La plataforma de gestión de pedidos más simple para tu negocio. Con AI Assistant en Telegram y WhatsApp.

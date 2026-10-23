@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { formatRealSendStatus, type RealSendStatus } from '@/lib/soft-ai/agent-config'
 import type { AiFullUnlockMismatch } from '@/lib/soft-ai/agent-types'
 import type { LineAiStatus } from '@/lib/soft-ai/agent-status'
-import { Instagram, MessageCircle } from 'lucide-react'
+import { Instagram, MessageCircle, X } from 'lucide-react'
 import { AuroraToggle } from '@/components/aurora/agentes/AuroraToggle'
 import { channelIdentity } from '@/lib/agent-channel-bind'
 
@@ -278,7 +278,10 @@ export function ChannelsEditor({
                       const key = `${row.id}:${r.id}`
                       return (
                         <li key={r.id} className="text-[12px]">
-                          <span className="text-red-800">✗ {r.title}</span>{' '}
+                          <span className="inline-flex items-center gap-1 text-red-800">
+                            <X className="h-3 w-3" strokeWidth={2.5} aria-hidden />
+                            {r.title}
+                          </span>{' '}
                           <button
                             type="button"
                             className="font-medium text-au-ink-5b6cff hover:underline"

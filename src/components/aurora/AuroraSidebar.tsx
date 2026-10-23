@@ -10,6 +10,7 @@ import { AURORA_NAV, getActiveAuroraHref } from './aurora-nav'
 import { AuroraAvatar } from './shell/AuroraAvatar'
 import { AuroraProfileMenu } from './shell/AuroraProfileMenu'
 import { BusinessSwitcher } from './BusinessSwitcher'
+import { BetsyLogo } from '@/components/brand/BetsyLogo'
 import { useAuroraViewer } from './shell/useAuroraViewer'
 
 const FOCUS_RING =
@@ -99,22 +100,15 @@ export function AuroraSidebar() {
     >
       {collapsed ? (
         <div className="flex h-16 shrink-0 flex-col items-center justify-center gap-1">
-          <Link
-            href="/dashboard"
-            aria-label="Betsy — Inicio"
-            className={`rounded-md text-[20px] font-bold leading-none tracking-tight text-[#8F7BFF] ${FOCUS_RING}`}
-          >
-            B
+          <Link href="/dashboard" aria-label="Betsy — Inicio" className={`flex h-7 items-center rounded-md ${FOCUS_RING}`}>
+            <BetsyLogo tone="dark" size={22} mark />
           </Link>
         </div>
       ) : (
         /* Same left inset as the tenant block below (mx-3 + 1px border + px-2.5). */
         <div className="mx-3 flex h-16 shrink-0 items-center gap-2 px-[calc(0.625rem+1px)]">
-          <Link
-            href="/dashboard"
-            className={`rounded-md text-[22px] font-bold leading-none tracking-tight text-[#8F7BFF] ${FOCUS_RING}`}
-          >
-            Betsy
+          <Link href="/dashboard" aria-label="Betsy — Inicio" className={`flex h-7 items-center rounded-md ${FOCUS_RING}`}>
+            <BetsyLogo tone="dark" size={23} />
           </Link>
           <span className="ml-auto">{toggleButton}</span>
         </div>

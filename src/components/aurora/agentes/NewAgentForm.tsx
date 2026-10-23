@@ -2,10 +2,10 @@
 
 import { TONE_PRESET_LABELS, type ChatAgentTonePreset } from '@/lib/soft-ai/agent-types'
 import type { AgentTab } from './agent-url'
+import { AgentFace } from './AgentFace'
 
 export type NewAgentDraft = {
   name: string
-  emoji: string
   description: string
   tonePreset: ChatAgentTonePreset
   introductionNames: string
@@ -14,7 +14,6 @@ export type NewAgentDraft = {
 
 export const EMPTY_NEW_AGENT: NewAgentDraft = {
   name: '',
-  emoji: '🤖',
   description: '',
   tonePreset: 'warm_concise',
   introductionNames: '',
@@ -66,17 +65,12 @@ export function NewAgentForm({
               onChange={(e) => onChange({ name: e.target.value })}
             />
           </div>
-          <div>
-            <label htmlFor="new-agent-emoji" className="text-xs font-medium text-slate-700">
-              Emoji
-            </label>
-            <input autoComplete="off" data-lpignore="true"
-              id="new-agent-emoji"
-              className={`${FIELD} w-20 text-center`}
-              value={draft.emoji}
-              maxLength={8}
-              disabled={disabled}
-              onChange={(e) => onChange({ emoji: e.target.value })}
+          <div className="flex flex-col items-center gap-1" title="La cara sale del nombre de presentación">
+            <span className="text-xs font-medium text-slate-700">Cara</span>
+            <AgentFace
+              agent={{ name: draft.name || 'Nuevo agente', introductionNames: parseIntroductionNames(draft.introductionNames) }}
+              size={40}
+              motion="always"
             />
           </div>
         </div>

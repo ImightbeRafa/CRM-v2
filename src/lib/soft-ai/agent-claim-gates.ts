@@ -19,6 +19,7 @@ import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
 import { agentsServingUnboundChannels } from '@/lib/soft-ai/agent-settings'
 import { resolveAiAllowance } from '@/lib/soft-ai/ai-allowance'
+import { isTableReady } from '@/lib/soft-ai/table-ready'
 
 const AGENT_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000
 
@@ -161,10 +162,44 @@ export function collectDryRunBlockers(input: {
   return blocked
 }
 
+/**
+ * SecureDog #127-2: while a pause can stop the WHOLE business (an enforcing budget or credits), one chat may not spend
+ * it alone: at most CHAT_MODEL_CALLS_PER_HOUR / _PER_DAY billed AI calls per chat (one reply is 1–3 calls: the model, a
+ * tool step, the "¿ya pagó?" check — about 30 / 150 replies); past that only that chat goes to a person.
+ */
+export const CHAT_MODEL_CALLS_PER_HOUR = 90
+export const CHAT_MODEL_CALLS_PER_DAY = 450
+
+async function chatOverModelCap(tenantId: string, conversationId: string, now = Date.now()): Promise<boolean> {
+  const dayAgo = new Date(now - 86_400_000)
+  const hourAgo = new Date(now - 3_600_000)
+  // SecureDog #127 r3: every billed live call of this chat where it is metered (AiUsageEvent, SQL 048): the model, its
+  // tool steps and the "¿ya pagó?" check — also on code-written replies and runs cut short by a provider failure.
+  if (await isTableReady('AiUsageEvent')) {
+    const rows = await prisma.$queryRaw<Array<{ hour: bigint | number; day: bigint | number }>>`
+      SELECT COUNT(*) FILTER (WHERE "createdAt" >= ${hourAgo}) AS "hour", COUNT(*) AS "day"
+        FROM "AiUsageEvent"
+       WHERE "tenantId" = ${tenantId} AND "conversationId" = ${conversationId}
+         AND "feature" IN ('inbox_agent', 'payment_check', 'vision') AND "createdAt" >= ${dayAgo}`
+    const hour = Number(rows[0]?.hour ?? 0)
+    const day = Number(rows[0]?.day ?? 0)
+    return hour >= CHAT_MODEL_CALLS_PER_HOUR || day >= CHAT_MODEL_CALLS_PER_DAY
+  }
+  // Before SQL 048: model runs on the turn rows (a row with tokens, whatever the turn ended as).
+  const live = { tenantId, conversationId, mode: { not: 'test' }, inputTokens: { gt: 0 } }
+  const [hour, day] = await Promise.all([
+    prisma.chatAgentTurn.count({ where: { ...live, createdAt: { gte: hourAgo } } }),
+    prisma.chatAgentTurn.count({ where: { ...live, createdAt: { gte: dayAgo } } }),
+  ])
+  return hour * 3 >= CHAT_MODEL_CALLS_PER_HOUR || day * 3 >= CHAT_MODEL_CALLS_PER_DAY
+}
+
 export async function runPreModelGates(input: {
   tenantId: string
   socialAccountId: string
   agentId?: string
+  /** The live turn's chat: enables the per-chat cap while a business-wide pause is possible. */
+  conversationId?: string
 }): Promise<GatePass | GateFail> {
   const [softFlag, layerFlag] = await Promise.all([
     prisma.tenantFeatureFlag.findFirst({
@@ -198,8 +233,17 @@ export async function runPreModelGates(input: {
   }
   // Live spend cap: the business's AI allowance for the period (owner budget with auto-pause; credits later). Checked
   // once, before the model: a started turn always finishes. Tokens per day are not a cap (dailyTokenCap is unused).
-  if ((await resolveAiAllowance(input.tenantId)).exhausted) {
+  const allowance = await resolveAiAllowance(input.tenantId)
+  if (allowance.exhausted) {
     return { ok: false, status: 'budget_blocked', skipReason: 'ai_allowance_exhausted' }
+  }
+  if (input.conversationId && allowance.guarded) {
+    // A count that cannot be read answers (fail open): the business-wide pause stays the backstop.
+    const over = await chatOverModelCap(input.tenantId, input.conversationId).catch((error) => {
+      console.error('[soft-ai/claim-gates] chat cap count failed', error instanceof Error ? error.name : 'unknown')
+      return false
+    })
+    if (over) return { ok: false, status: 'skipped', skipReason: 'chat_rate_limited' }
   }
   return { ok: true }
 }

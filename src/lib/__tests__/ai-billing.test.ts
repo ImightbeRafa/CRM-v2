@@ -258,8 +258,9 @@ test('tenant routes: tenant from the session, price from the server, owner-only 
 
 test('allowance hook fails open and never enforces before SQL 060 / with enforcement off', () => {
   const a = read('src/lib/ai-billing/allowance.ts')
-  assert.match(a, /catch \(error\)[\s\S]*?: open\(now\)/)
-  assert.match(a, /d\.enforced\s*\?/)
+  // Lane D: a read error answers (open) and says so (failedOpen: the platform owner is alerted); no pause without a saved rate.
+  assert.match(a, /catch \(error\)[\s\S]*?: \{ \.\.\.open\(now\), failedOpen: true \}/)
+  assert.match(a, /d\.enforced && configured\s*\?/)
   const st = read('src/lib/ai-billing/state.ts')
   assert.match(st, /enforce: ready && settings\.enforce/)
   assert.match(st, /aiExemptTenantIds\(\)\.has\(tenantId\)/)

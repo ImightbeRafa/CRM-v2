@@ -12,7 +12,7 @@ import 'server-only'
 import { costaRicaPeriodKey } from '@/lib/ai-usage/period'
 import { aiExemptTenantIds, listFromBilled } from './math'
 import { getCreditState } from './state'
-import { getSettings } from './store'
+import { getSettings, listRates } from './store'
 
 export type CreditAllowance = {
   source: 'credits'
@@ -24,10 +24,13 @@ export type CreditAllowance = {
   renewsAt: Date | null
   /** List micros the business may still spend this month (null when nothing is enforced). */
   remainingListMicros: number | null
+  /** Lane D: the meter could not be read and the answer failed open (the caller alerts the platform owner). */
+  failedOpen?: boolean
 }
 
 const TTL_MS = 30_000
 const NEAR_TTL_MS = 5_000
+const STALE_PAUSE_MS = 2 * 60_000
 const MAX_CACHE = 2_000
 const cache = new Map<string, { at: number; value: CreditAllowance }>()
 
@@ -51,7 +54,10 @@ export async function resolveCreditAllowance(tenantId: string, now = new Date())
     if (aiExemptTenantIds().has(tenantId) || !(await getSettings()).enforce) return open(now)
     const s = await getCreditState(tenantId, now)
     const d = s.decision
-    const value: CreditAllowance = d.enforced
+    // Lane D (Rafael 2026-10-22): nothing pauses until the owner saved a credit rate IN FORCE this month (no config =
+    // answer; a rate saved for next month never enforces this month on the code defaults — Verifier #1).
+    const configured = (await listRates()).some((r) => r.periodKey <= s.periodKey)
+    const value: CreditAllowance = d.enforced && configured
       ? {
           source: 'credits',
           enforce: true,
@@ -67,6 +73,9 @@ export async function resolveCreditAllowance(tenantId: string, now = new Date())
     return value
   } catch (error) {
     console.error('[ai-billing/allowance] read failed', error instanceof Error ? error.name : 'unknown')
-    return hit && hit.value.periodKey === costaRicaPeriodKey(now) ? hit.value : open(now)
+    // Verifier #3: the last value this month still answers as it did, but the read failure is reported either way.
+    // SecureDog #127-4: a cached "used up" older than 2 min is not served on a read error (answer, never a stale pause).
+    const usable = hit && hit.value.periodKey === costaRicaPeriodKey(now) && (!hit.value.exhausted || now.getTime() - hit.at < STALE_PAUSE_MS)
+    return usable ? { ...hit.value, failedOpen: true } : { ...open(now), failedOpen: true }
   }
 }

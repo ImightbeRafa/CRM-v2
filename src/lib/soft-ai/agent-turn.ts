@@ -1154,11 +1154,12 @@ export async function executeAgentLayerTurn(
     tenantId: row.tenantId,
     socialAccountId: row.socialAccountId,
     agentId: resolved.agent.id,
+    conversationId: row.conversationId,
   })
   // The AI allowance is the last pre-model gate, so every other gate passed. It only applies to a line that answers
   // (not activated: the not_activated skip below keeps the chat's mode) and never to a reply already generated and
   // paid for (a retried send / reclaimed lease finishes it: never a half reply).
-  if (!preModel.ok && preModel.skipReason === 'ai_allowance_exhausted') {
+  if (!preModel.ok && (preModel.skipReason === 'ai_allowance_exhausted' || preModel.skipReason === 'chat_rate_limited')) {
     const lineAnswers = resolved.agent.operationMode === 'ai_full' && resolved.unlockedForSend
     const generated = lineAnswers
       ? await prisma.chatAgentTurn.findUnique({ where: { automationDeliveryKey: row.deliveryKey }, select: { status: true, outputText: true, outputHash: true } })
@@ -1177,12 +1178,16 @@ export async function executeAgentLayerTurn(
       skipReason: preModel.skipReason || 'flag_off',
       status: preModel.status,
     })
-    if (preModel.skipReason === 'ai_allowance_exhausted') {
+    if (preModel.skipReason === 'ai_allowance_exhausted' || preModel.skipReason === 'chat_rate_limited') {
       // Out of AI allowance: no model call, no reply. The chat goes to a person (aiMode human, assigned, bell with the
       // reason), so the waiting sweep leaves it alone until someone sends it back to IA.
       const hoursSetup = await loadHoursSetup(row.tenantId, resolved.agent.id).catch(() => null)
       const hours = hoursSetup ? afterHoursState(hoursSetup.hours, new Date(), { aiDisclosure: hoursSetup.aiDisclosure }) : IN_HOURS
-      await settleHandoff(row, { kind: 'handoff', reason: HANDOFF_REASON.aiAllowance }, hours)
+      await settleHandoff(
+        row,
+        { kind: 'handoff', reason: preModel.skipReason === 'chat_rate_limited' ? HANDOFF_REASON.chatLimit : HANDOFF_REASON.aiAllowance },
+        hours,
+      )
     } else if (preModel.status === 'budget_blocked') {
       void notifyAiNoReply({ tenantId: row.tenantId, conversationId: row.conversationId, reason: 'budget_blocked' })
     }

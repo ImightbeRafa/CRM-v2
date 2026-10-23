@@ -295,6 +295,25 @@ function configuredNumbers(facts: BrandFacts): string[] {
   return [facts.payment?.sinpe?.number, facts.payment?.transfer?.iban].map((n) => digitsOf(n || '')).filter((d) => d.length >= 8)
 }
 
+/**
+ * Betsy exam 2026-10-23: the business's own CONTACT line (a support WhatsApp the owner declared in a brand fact labelled
+ * Contacto / Soporte / WhatsApp / Teléfono) is not a payment account. Only the declared payment methods are payment numbers.
+ */
+const CONTACT_FACT_LABEL_RE = /contact|soporte|support|whats\s*app|tel[eé]fono|celular|llamar|atenci[oó]n/iu
+function contactNumbers(facts: BrandFacts): string[] {
+  const out: string[] = []
+  for (const f of facts.extraFacts ?? []) {
+    if (!CONTACT_FACT_LABEL_RE.test(f.label || '')) continue
+    for (const m of (f.value || '').match(LONG_NUMBER_RE) ?? []) {
+      const d = digitsOf(m)
+      if (d.length >= 8) out.push(d)
+    }
+  }
+  return out
+}
+/** A payment-destination word right before a number ("SINPE al …", "depositá a la cuenta …"): never a contact line. */
+const PAY_DESTINATION_BEFORE_RE = /(?:sinpe|iban|cuenta|transfer\p{L}*|dep[oó]sit\p{L}*|pag\p{L}*|plata|dinero|monto|cobr\p{L}*)[^\n]{0,40}$/iu
+
 /** Same number, allowing a +506 prefix on either side. */
 function sameNumber(a: string, b: string): boolean {
   const strip = (d: string) => (d.length === 11 && d.startsWith('506') ? d.slice(3) : d)
@@ -325,8 +344,15 @@ export function paymentNumberProblems(input: { text: string; facts: BrandFacts; 
     if (!okNumber(digitsOf(m))) reasons.add('payment_number_unsourced')
   }
   if (PAY_WORDS_RE.test(text)) {
-    for (const m of text.match(LONG_NUMBER_RE) ?? []) {
-      if (!okNumber(digitsOf(m))) reasons.add('payment_number_unsourced')
+    const contacts = contactNumbers(input.facts)
+    for (const m of text.matchAll(LONG_NUMBER_RE)) {
+      const d = digitsOf(m[0])
+      if (okNumber(d)) continue
+      // The declared contact line is fine on its own — never right after a payment-destination word.
+      // Its own sentence only ("Pagás con tarjeta. Dudas: WhatsApp +506 …" is a contact line).
+      const before = text.slice(Math.max(0, (m.index ?? 0) - 60), m.index ?? 0).split(/[.!?](?=\s)|\n/u).pop() ?? ''
+      if (contacts.some((c) => sameNumber(c, d)) && !PAY_DESTINATION_BEFORE_RE.test(before)) continue
+      reasons.add('payment_number_unsourced')
     }
   }
   for (const m of commaPaymentNumbers(text)) {

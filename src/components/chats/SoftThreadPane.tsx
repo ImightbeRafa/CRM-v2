@@ -93,6 +93,8 @@ interface SoftThreadPaneProps {
   presence?: string
   /** "Corregir" on AI messages (update_config). Undefined = shown; the API's 403 explains. */
   canTuneAgent?: boolean
+  /** "Respondido": the chat leaves Sin responder (and goes back to the agent after a hand-off). Hidden when absent. */
+  onMarkAnswered?: () => void
   /** "Posponer" (Phase 2b). Hidden when absent (e.g. before migration 036). */
   snooze?: {
     until: string | null
@@ -335,6 +337,7 @@ export function SoftThreadPane({
   quickReplies,
   presence,
   snooze,
+  onMarkAnswered,
   canTuneAgent = true,
   reviewTags,
 }: SoftThreadPaneProps) {
@@ -668,6 +671,18 @@ export function SoftThreadPane({
               ) : null}
             </button>
           ) : null}
+          {onMarkAnswered && !conversation.isDemo ? (
+            <button
+              type="button"
+              onClick={onMarkAnswered}
+              aria-label="Marcar como respondido"
+              title="Respondido"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white active:bg-emerald-700"
+              data-testid="soft-thread-mark-answered-compact"
+            >
+              <CheckCheck className="h-5 w-5" aria-hidden />
+            </button>
+          ) : null}
           {onOpenDetails ? (
             <button
               type="button"
@@ -790,6 +805,18 @@ export function SoftThreadPane({
                     {orderDraftPending ? (
                       <span className="rounded bg-static-white/25 px-1.5 py-px text-[10px] font-semibold">Borrador</span>
                     ) : null}
+                  </button>
+                ) : null}
+                {onMarkAnswered && !conversation.isDemo ? (
+                  <button
+                    type="button"
+                    onClick={onMarkAnswered}
+                    title={needsPerson ? 'Respondido: sale de Sin responder y vuelve al agente' : 'Respondido: sale de Sin responder'}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                    data-testid="soft-thread-mark-answered"
+                  >
+                    <CheckCheck className="h-3.5 w-3.5" aria-hidden />
+                    Respondido
                   </button>
                 ) : null}
                 {snooze && !conversation.isDemo ? (

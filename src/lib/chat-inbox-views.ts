@@ -44,10 +44,13 @@ export type InboxViewRow = {
   hasOpenOrder?: boolean
   /** The agent's last reply left it to a person (safe line / hand-off / provider failure), nobody wrote since. */
   needsPerson?: boolean
+  /** Server truth for Sin responder (includes "Respondido"); older servers leave it unset. */
+  waiting?: boolean
 }
 
-/** The customer is waiting on us: wrote last, or the agent left the chat to a person. */
-export function isWaitingOnUs(row: { lastMessageDirection: string | null; needsPerson?: boolean }): boolean {
+/** The customer is waiting on us: wrote last, or the agent left the chat to a person (the server flag wins). */
+export function isWaitingOnUs(row: { lastMessageDirection: string | null; needsPerson?: boolean; waiting?: boolean }): boolean {
+  if (typeof row.waiting === 'boolean') return row.waiting
   return row.lastMessageDirection === 'inbound' || row.needsPerson === true
 }
 
@@ -107,12 +110,17 @@ export function sumInboxViewCounts(
 }
 
 /**
- * Every view is newest activity first (Rafael 2026-10-22). "Seguimientos" orders by the follow-up send itself (a
- * follow-up keeps the chat's place in the Bandeja on purpose, so its list time is the older message).
+ * Every view is newest activity first (Rafael 2026-10-22), except "Sin responder": OLDEST wait on top, a queue the
+ * team clears top-down. "Seguimientos" orders by the follow-up send itself (a follow-up keeps the chat's place in the
+ * Bandeja on purpose, so its list time is the older message).
  */
 export function sortForInboxView<
-  T extends { lastMessageAt: string; lastOutboundAt?: string | null; id?: string },
+  T extends { lastMessageAt: string; lastOutboundAt?: string | null; lastInboundAt?: string | null; id?: string },
 >(rows: T[], view: InboxView): T[] {
+  if (view === 'sin_responder') {
+    const since = (r: T) => r.lastInboundAt || r.lastMessageAt
+    return [...rows].sort((a, b) => since(a).localeCompare(since(b)) || String(a.id ?? '').localeCompare(String(b.id ?? '')))
+  }
   const at = (r: T) => (view === 'seguimientos' && r.lastOutboundAt ? r.lastOutboundAt : r.lastMessageAt)
   return [...rows].sort((a, b) => at(b).localeCompare(at(a)) || String(b.id ?? '').localeCompare(String(a.id ?? '')))
 }
@@ -135,6 +143,7 @@ export function inboxViewRowFromDto(d: {
   stageCategory?: StageCategory | null
   hasOpenOrder?: boolean
   needsPerson?: boolean
+  waiting?: boolean
 }): InboxViewRow {
   return {
     aiMode: d.aiMode,
@@ -144,6 +153,7 @@ export function inboxViewRowFromDto(d: {
     lineAiOn: d.aiLine?.state === 'on',
     hasOpenOrder: d.hasOpenOrder === true,
     needsPerson: d.needsPerson === true,
+    ...(typeof d.waiting === 'boolean' ? { waiting: d.waiting } : {}),
     closed: isClosedCategory(d.stageCategory ?? 'open'),
   }
 }

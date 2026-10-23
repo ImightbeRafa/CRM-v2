@@ -10,15 +10,26 @@ import 'server-only'
 import { prisma } from '@/lib/db'
 import type { ChatConversationListItemDto } from '@/lib/chat-conversation-api'
 
-/** Newest linked message per conversation wins (rows arrive sentAt desc). */
+export type LinkedOrderSummary = { id: string; orderNumber: string; status?: string | null; total?: number | null }
+
+/** Newest linked message per conversation wins (rows arrive sentAt desc). Status + total for a readable chip. */
 export function pickLatestLinkedOrders(
-  rows: Array<{ conversationId: string | null; orderId: string | null; order: { orderId: string } | null }>,
-): Map<string, { id: string; orderNumber: string }> {
-  const byConversation = new Map<string, { id: string; orderNumber: string }>()
+  rows: Array<{
+    conversationId: string | null
+    orderId: string | null
+    order: { orderId: string; status?: string | null; total?: number | null } | null
+  }>,
+): Map<string, LinkedOrderSummary> {
+  const byConversation = new Map<string, LinkedOrderSummary>()
   for (const row of rows) {
     if (!row.conversationId || !row.orderId || !row.order?.orderId) continue
     if (!byConversation.has(row.conversationId)) {
-      byConversation.set(row.conversationId, { id: row.orderId, orderNumber: row.order.orderId })
+      byConversation.set(row.conversationId, {
+        id: row.orderId,
+        orderNumber: row.order.orderId,
+        status: row.order.status ?? null,
+        total: typeof row.order.total === 'number' ? row.order.total : null,
+      })
     }
   }
   return byConversation
@@ -40,7 +51,7 @@ export async function enrichConversationDtosWithLinkedOrders(
       },
       orderBy: { sentAt: 'desc' },
       take: 500,
-      select: { conversationId: true, orderId: true, order: { select: { orderId: true } } },
+      select: { conversationId: true, orderId: true, order: { select: { orderId: true, status: true, total: true } } },
     })
     const linked = pickLatestLinkedOrders(rows)
     return items.map((item) => ({ ...item, linkedOrder: linked.get(item.id) ?? null }))

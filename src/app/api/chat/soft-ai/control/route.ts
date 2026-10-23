@@ -5,11 +5,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
-import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
-import { parseConversationKey } from '@/lib/chat-conversation-api'
-import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
+import { setConversationAgentMode, type AgentControlAction } from '@/lib/chat-agent-control'
 import { sweepWaitingConversation } from '@/lib/soft-ai/waiting-sweep'
 import { isSameOriginRequest } from '@/lib/same-origin'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
@@ -20,15 +17,7 @@ const controlRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxReques
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-type ControlAction = 'take_over' | 'pause' | 'resume'
-
-function modeForAction(action: ControlAction): SoftAiAgentMode {
-  if (action === 'take_over') return 'human'
-  if (action === 'pause') return 'paused'
-  if (action === 'resume') return 'ai_active'
-  const _exhaustive: never = action
-  return _exhaustive
-}
+type ControlAction = AgentControlAction
 
 export async function POST(request: NextRequest) {
   try {
@@ -54,61 +43,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const mode = modeForAction(action)
-    const db = prisma as any
-    const existing = await db.tenantFeatureFlag.findFirst({
-      where: { tenantId, scope: tenantId, key: SOFT_TENANT_AI_V1_FLAG },
-      select: { id: true, enabled: true, config: true },
-    })
-
-    const prevConfig =
-      existing?.config && typeof existing.config === 'object' && !Array.isArray(existing.config)
-        ? (existing.config as Record<string, unknown>)
-        : {}
-    const agentState =
-      prevConfig.agentState && typeof prevConfig.agentState === 'object'
-        ? { ...(prevConfig.agentState as Record<string, unknown>) }
-        : {}
-
-    agentState[conversationKey] = {
-      mode,
-      updatedAt: new Date().toISOString(),
-      action,
-      // Staff-driven controls must be visible to inbound (F37-02 server truth)
-      staffControlled: action === 'take_over' || action === 'pause' || action === 'resume',
-    }
-
-    const nextConfig = { ...prevConfig, agentState }
-
-    const keyParts = parseConversationKey(conversationKey)
-    if (keyParts) {
-      await db.chatConversation.updateMany({
-        where: {
-          tenantId,
-          socialAccountId: keyParts.socialAccountId,
-          peerId: keyParts.peerId,
-        },
-        data: { aiMode: mode },
-      })
-    }
-
-    if (existing?.id) {
-      await db.tenantFeatureFlag.update({
-        where: { id: existing.id },
-        data: { config: nextConfig },
-      })
-    } else {
-      // Control without enabling worker — skeleton row stays disabled
-      await db.tenantFeatureFlag.create({
-        data: {
-          scope: tenantId,
-          tenantId,
-          key: SOFT_TENANT_AI_V1_FLAG,
-          enabled: false,
-          config: nextConfig,
-        },
-      })
-    }
+    const { mode, keyParts } = await setConversationAgentMode({ tenantId, conversationKey, action })
 
     // Devolver a IA: if the customer's last message is still unanswered (and the line answers), answer it now.
     // Same job path as the webhook (same delivery key), so it is never answered twice.

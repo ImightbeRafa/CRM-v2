@@ -61,6 +61,11 @@ export interface SoftConversation extends ChatConversation {
   waitingSince?: string | null
   /** The newest message is our follow-up (it keeps the chat's place in the Bandeja on purpose). */
   lastIsFollowUp?: boolean
+  /** Linked order status / total for the readable order chip (server's latest linked order). */
+  orderStatus?: string | null
+  orderTotal?: number | null
+  /** Sin responder server truth (incl. "Respondido"). */
+  waiting?: boolean
 }
 
 export interface SoftSocialAccount {

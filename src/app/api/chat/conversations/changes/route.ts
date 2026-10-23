@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { enrichConversationDtosWithLinkedOrders } from '@/lib/chat-linked-orders'
 import { attachSnoozeState } from '@/lib/chat-work-state-server'
 import { attachFollowUpFlag, attachOpenOrderFlag } from '@/lib/chat-inbox-views-server'
-import { attachNeedsPersonFlag } from '@/lib/chat-unanswered-server'
+import { attachWaitingFlags } from '@/lib/chat-unanswered-server'
 import { prisma } from '@/lib/db'
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers'
 import { parsePageLimit } from '@/lib/cursor-pagination'
@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
 
     // Only when something changed (most 5 s polls return no rows).
     const chatStages = rows.length ? (await loadStages(auth.tenantId, 'chat')).stages : []
-    const conversations = await attachNeedsPersonFlag(auth.tenantId, await attachOpenOrderFlag(auth.tenantId, await attachFollowUpFlag(auth.tenantId, await attachSnoozeState(auth.tenantId, await enrichConversationDtosWithLinkedOrders(
+    const conversations = await attachWaitingFlags(auth.tenantId, await attachOpenOrderFlag(auth.tenantId, await attachFollowUpFlag(auth.tenantId, await attachSnoozeState(auth.tenantId, await enrichConversationDtosWithLinkedOrders(
       auth.tenantId,
       await enrichConversationDtosWithAgents(
       auth.tenantId,

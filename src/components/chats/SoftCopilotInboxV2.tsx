@@ -40,6 +40,7 @@ import type { ChatConversationListItemDto } from '@/lib/chat-conversation-api'
 import {
   INBOX_VIEW_STORAGE_KEY,
   inboxViewRowFromDto,
+  isWaitingOnUs,
   matchesInboxView,
   parseInboxView,
   sortForInboxView,
@@ -122,6 +123,12 @@ const CrearPedidoDrawer = dynamic(
 )
 
 
+/** The open chat is waiting on us (server flag, else the same fallback as the Sin responder view). */
+function selectedDtoWaiting(dto: ChatConversationListItemDto | undefined): boolean {
+  if (!dto || dto.stageCategory === 'won' || dto.stageCategory === 'lost') return false
+  return isWaitingOnUs({ lastMessageDirection: dto.lastMessageDirection, needsPerson: dto.needsPerson, waiting: dto.waiting })
+}
+
 const IN_FLIGHT_RECHECKS = 5
 const IN_FLIGHT_RECHECK_MS = 4000
 
@@ -188,6 +195,8 @@ export function SoftCopilotInboxV2() {
   const presenceText = useChatPresence(selectedConversationId, messageInput)
   // Shown once the list says snooze works (false before migration 036 is applied).
   const [snoozeAvailable, setSnoozeAvailable] = useState(false)
+  /** "Respondido" (SQL 062): shown only once the server says the marker exists. */
+  const [answeredAvailable, setAnsweredAvailable] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [failedOutboundId, setFailedOutboundId] = useState<string | null>(null)
   // Cliente · Agente (Phase 2a). Remembered; old 'detalle' / 'copilot' values map onto them.
@@ -338,11 +347,13 @@ export function SoftCopilotInboxV2() {
       nextCursor?: string | null
       maxRevision?: string
       snoozeAvailable?: boolean
+      answeredAvailable?: boolean
     }>(res)
     if (!parsed.ok || !res.ok || !parsed.data.success || !parsed.data.conversations) {
       throw new Error('list_failed')
     }
     if (typeof parsed.data.snoozeAvailable === 'boolean') setSnoozeAvailable(parsed.data.snoozeAvailable)
+    if (typeof parsed.data.answeredAvailable === 'boolean') setAnsweredAvailable(parsed.data.answeredAvailable)
     setDtoMap((prev) =>
       opts?.replace
         ? (() => {
@@ -1153,7 +1164,7 @@ export function SoftCopilotInboxV2() {
   const visibleConversations = useMemo(() => {
     if (inboxView !== 'todos') {
       const q = search.trim().toLowerCase()
-      const rows: Array<{ c: SoftConversation; id: string; lastMessageAt: string; lastOutboundAt: string | null }> = []
+      const rows: Array<{ c: SoftConversation; id: string; lastMessageAt: string; lastOutboundAt: string | null; lastInboundAt: string | null }> = []
       for (const c of conversations) {
         const dto = dtoByKey.get(`${c.socialAccountId}|${c.recipientId}`)
         if (!dto) continue
@@ -1169,6 +1180,7 @@ export function SoftCopilotInboxV2() {
           closed: isConversationClosed(c),
           hasOpenOrder: dto.hasOpenOrder === true,
           needsPerson: dto.needsPerson === true,
+          ...(typeof dto.waiting === 'boolean' ? { waiting: dto.waiting } : {}),
         }
         if (!matchesInboxView(row, inboxView)) continue
         if (
@@ -1186,7 +1198,7 @@ export function SoftCopilotInboxV2() {
         ) {
           continue
         }
-        rows.push({ c, id: dto.id, lastMessageAt: dto.lastMessageAt, lastOutboundAt: dto.lastOutboundAt ?? null })
+        rows.push({ c, id: dto.id, lastMessageAt: dto.lastMessageAt, lastOutboundAt: dto.lastOutboundAt ?? null, lastInboundAt: dto.lastInboundAt ?? null })
       }
       return sortForInboxView(rows, inboxView).map((r) => r.c)
     }
@@ -1436,6 +1448,65 @@ export function SoftCopilotInboxV2() {
     }
     return false
   }
+
+  /**
+   * "Respondido": the chat leaves Sin responder at once (optimistic); the server stamps the marker and, when the agent
+   * had handed it over and its line answers, gives it back to the agent for the customer's next message.
+   */
+  async function markAnswered(conversationId: string): Promise<void> {
+    const before = dtoMapRef.current.get(conversationId)
+    if (!before) return
+    setDtoMap((prev) => {
+      const row = prev.get(conversationId)
+      if (!row) return prev
+      const next = new Map(prev)
+      next.set(conversationId, { ...row, waiting: false, needsPerson: false })
+      return next
+    })
+    try {
+      const res = await fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}/answered`, {
+        method: 'POST',
+        credentials: 'same-origin',
+      })
+      const json = (await res.json().catch(() => null)) as { success?: boolean; returnedToAi?: boolean; error?: string } | null
+      if (!res.ok || !json?.success) {
+        if (res.status === 409) setAnsweredAvailable(false)
+        setDtoMap((prev) => {
+          const next = new Map(prev)
+          next.set(conversationId, prev.get(conversationId) ? { ...prev.get(conversationId)!, waiting: before.waiting, needsPerson: before.needsPerson } : before)
+          return next
+        })
+        toast({ variant: 'destructive', title: json?.error || 'No se pudo marcar como respondido' })
+        return
+      }
+      if (json.returnedToAi) {
+        setDtoMap((prev) => {
+          const row = prev.get(conversationId)
+          if (!row) return prev
+          const next = new Map(prev)
+          next.set(conversationId, { ...row, aiMode: 'ai_active' })
+          return next
+        })
+      }
+      toast({ title: json.returnedToAi ? 'Respondido · el agente vuelve a atender este chat' : 'Marcado como respondido' })
+      scheduleRefreshAfterSend()
+    } catch {
+      setDtoMap((prev) => {
+        const next = new Map(prev)
+        next.set(conversationId, before)
+        return next
+      })
+      toast({ variant: 'destructive', title: 'Sin conexión' })
+    }
+  }
+
+  /** Row quick action (list rows carry the line + peer; the server id comes from the DTO). */
+  const markAnsweredFromRow = answeredAvailable
+    ? (c: SoftConversation) => {
+        const dto = dtoByKey.get(`${c.socialAccountId}|${c.recipientId}`)
+        if (dto) void markAnswered(dto.id)
+      }
+    : undefined
 
   /** Posponer / despertar the open chat. Updates the list right away; the server bumps the revision. */
   async function setSnoozeFor(untilIso: string | null): Promise<boolean> {
@@ -2312,6 +2383,11 @@ export function SoftCopilotInboxV2() {
     },
     // "Corregir" on AI messages: only people who can edit agents (the API checks update_config again).
     canTuneAgent: canManageQuickReplies,
+    // Respondido in the thread header: only while this chat is waiting on us (and SQL 062 is applied).
+    onMarkAnswered:
+      answeredAvailable && selectedConversationId && selectedDtoWaiting(dtoMap.get(selectedConversationId))
+        ? () => void markAnswered(selectedConversationId)
+        : undefined,
     snooze: snoozeAvailable
       ? {
           until: selectedConversationId ? dtoMap.get(selectedConversationId)?.snooze?.until ?? null : null,
@@ -2447,6 +2523,7 @@ export function SoftCopilotInboxV2() {
             inboxView={inboxView}
             inboxViewCounts={inboxViewCounts}
             onInboxViewChange={setInboxView}
+            onMarkAnswered={markAnsweredFromRow}
           />
           <SoftThreadPane
             {...threadSharedProps}
@@ -2536,6 +2613,7 @@ export function SoftCopilotInboxV2() {
               inboxView={inboxView}
               inboxViewCounts={inboxViewCounts}
               onInboxViewChange={setInboxView}
+              onMarkAnswered={markAnsweredFromRow}
             />
           ) : (
             // Pinned to the visual viewport: the composer sits right above the phone keyboard.

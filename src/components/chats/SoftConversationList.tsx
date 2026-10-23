@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { Clock, Search, Sparkles, X } from 'lucide-react'
+import { CheckCheck, CheckCircle2, CircleSlash, Clock, Package, RefreshCw, Search, SearchX, Sparkles, UserPlus, UserRound, X } from 'lucide-react'
 import {
   formatRelativeEs,
   initialsFromName,
@@ -25,7 +25,15 @@ import { ChatTagFilter, ChatViewMenu } from '@/components/chats/ChatViewMenu'
 import { SyncAgeLabel } from '@/components/chats/SyncAgeLabel'
 import { SoundToggle } from '@/components/chats/SoundToggle'
 import { InboxViewTabs } from '@/components/chats/InboxViewTabs'
-import { waitTone, type InboxView, type InboxViewCounts } from '@/lib/chat-inbox-views'
+import { isWaitingOnUs, waitTone, type InboxView, type InboxViewCounts } from '@/lib/chat-inbox-views'
+import {
+  lineChannelLabel,
+  ORDER_TONE_CLASS,
+  orderStatusTone,
+  orderTotalLabel,
+  shortOrderNumber,
+  withoutEmoji,
+} from '@/lib/chat-row-display'
 import {
   AuroraEmptyState,
   AuroraErrorState,
@@ -80,6 +88,8 @@ interface SoftConversationListProps {
   inboxView?: InboxView
   inboxViewCounts?: InboxViewCounts | null
   onInboxViewChange?: (view: InboxView) => void
+  /** "Respondido" quick action on rows waiting on us (desktop hover, phone button in Sin responder). */
+  onMarkAnswered?: (conversation: SoftConversation) => void
 }
 
 /** CHAT-M01 segmented tabs → existing inbox buckets (no new staffing model). */
@@ -107,11 +117,54 @@ function avatarTint(seed: string) {
 
 const FOLLOW_UP_TITLE = 'Seguimiento automático: no sube el chat en la Bandeja (míralo en Seguimientos)'
 
+/** One chip look for the whole list (same radius, ring, padding; tones from the Aurora palette). */
+const CHIP_BASE = 'inline-flex shrink-0 items-center gap-1 rounded-md font-semibold ring-1'
+const CHIP_SM = 'px-1.5 py-px text-[10.5px]'
+const CHIP_MD = 'px-2 py-0.5 text-[12px]'
+
 const WAIT_TONE_CLASS = {
-  fresh: 'bg-slate-100 text-slate-600 ring-slate-200',
+  fresh: 'bg-slate-50 text-slate-600 ring-slate-200',
   warn: 'bg-amber-50 text-amber-800 ring-amber-300',
   late: 'bg-red-50 text-red-700 ring-red-300',
 } as const
+
+/** Waiting on us: the server flag (incl. "Respondido") when present, else wrote last / left to a person. */
+function rowWaiting(conv: SoftConversation): boolean {
+  if (conv.closed) return false
+  const last = conv.messages.length ? conv.messages[conv.messages.length - 1]?.direction ?? null : null
+  return isWaitingOnUs({ lastMessageDirection: last, needsPerson: conv.needsPerson, waiting: conv.waiting })
+}
+
+/** Which business line + channel the chat belongs to: "Sleeping Patches · WhatsApp". */
+function LineLabel({ conv, className = '' }: { conv: SoftConversation; className?: string }) {
+  const label = lineChannelLabel(conv.accountLabel, conv.platform)
+  return (
+    <p className={`flex min-w-0 items-center gap-1 text-slate-500 ${className}`} title={label} data-testid="conv-line-label">
+      <ChannelLogo platform={conv.platform} size={12} className="shrink-0" />
+      <span className="truncate">{label}</span>
+    </p>
+  )
+}
+
+/** Linked order, readable: short number, status and total (full number on hover). */
+function OrderChip({ conv, small = false }: { conv: SoftConversation; small?: boolean }) {
+  if (!conv.orderNumber) return null
+  const tone = orderStatusTone(conv.orderStatus)
+  const total = orderTotalLabel(conv.orderTotal)
+  const status = conv.orderStatus ? withoutEmoji(conv.orderStatus) : null
+  return (
+    <span
+      className={`${CHIP_BASE} ${small ? CHIP_SM : CHIP_MD} max-w-full ${ORDER_TONE_CLASS[tone]}`}
+      title={`Pedido ${conv.orderNumber}${status ? ` · ${status}` : ''}${total ? ` · ${total}` : ''}`}
+      data-testid="conv-order-chip"
+    >
+      <Package className={small ? 'h-2.5 w-2.5' : 'h-3 w-3'} aria-hidden />
+      <span className="tabular-nums">{shortOrderNumber(conv.orderNumber)}</span>
+      {status ? <span className="truncate font-medium">· {status}</span> : null}
+      {total ? <span className="tabular-nums font-medium">· {total}</span> : null}
+    </span>
+  )
+}
 
 /** "Sin responder": how long the customer has waited; amber after 1 h, red after 4 h. */
 function WaitBadge({ since, small = false }: { since?: string | null; small?: boolean }) {
@@ -119,9 +172,7 @@ function WaitBadge({ since, small = false }: { since?: string | null; small?: bo
   const tone = waitTone(since)
   return (
     <span
-      className={`flex shrink-0 items-center gap-1 rounded-lg font-semibold ring-1 ${WAIT_TONE_CLASS[tone]} ${
-        small ? 'px-1.5 py-px text-[10px]' : 'px-2 py-1 text-[12px]'
-      }`}
+      className={`${CHIP_BASE} ${small ? CHIP_SM : CHIP_MD} ${WAIT_TONE_CLASS[tone]}`}
       title="Tiempo desde el último mensaje del cliente"
       data-testid="conv-wait-badge"
       data-tone={tone}
@@ -136,12 +187,11 @@ function WaitBadge({ since, small = false }: { since?: string | null; small?: bo
 function NeedsPersonChip({ small = false }: { small?: boolean }) {
   return (
     <span
-      className={`shrink-0 rounded-lg bg-amber-100 font-semibold text-amber-900 ring-1 ring-amber-300 ${
-        small ? 'ml-1 px-1 py-px text-[9px]' : 'px-2 py-1 text-[12px]'
-      }`}
+      className={`${CHIP_BASE} ${small ? CHIP_SM : CHIP_MD} bg-amber-100 text-amber-900 ring-amber-300`}
       title="El agente le pasó este chat a una persona: nadie le ha respondido todavía"
       data-testid="conv-needs-person"
     >
+      <UserRound className={small ? 'h-2.5 w-2.5' : 'h-3 w-3'} aria-hidden />
       Necesita persona
     </span>
   )
@@ -165,7 +215,7 @@ function UnansweredSummary({ conversations, total }: { conversations: SoftConver
       {late ? <span className="font-semibold text-red-700"> · {late} hace más de 4 h</span> : null}
       {oldest ? <> · el que más: {waitLabel(oldest)}</> : null}
       {typeof total === 'number' && total > conversations.length ? (
-        <span className="text-slate-500"> · mostrando los {conversations.length} más recientes de {total}</span>
+        <span className="text-slate-500"> · mostrando los {conversations.length} que más esperan de {total}</span>
       ) : null}
     </p>
   )
@@ -217,6 +267,7 @@ export function SoftConversationList({
   inboxView,
   inboxViewCounts,
   onInboxViewChange,
+  onMarkAnswered,
 }: SoftConversationListProps) {
   // ⌘K on Mac, Ctrl K elsewhere (set after mount so SSR and client markup match).
   const [shortcutHint, setShortcutHint] = useState('Ctrl K')
@@ -429,7 +480,7 @@ export function SoftConversationList({
         ) : emptyReason === 'no-channels' ? (
           <AuroraEmptyState
             tone="neutral"
-            icon="∅"
+            icon={<CircleSlash className="h-6 w-6" aria-hidden />}
             title="No hay canales conectados"
             description="Conectá WhatsApp o Instagram para ver acá los chats de tus clientes."
             actions={
@@ -449,20 +500,20 @@ export function SoftConversationList({
           // All clear only when the server count agrees (never while the view is loading or failed).
           <AuroraEmptyState
             tone="neutral"
-            icon="✓"
+            icon={<CheckCircle2 className="h-6 w-6" aria-hidden />}
             title="Nadie espera respuesta"
             description="Todos los clientes ya tienen respuesta."
           />
         ) : emptyReason === 'no-results' ? (
           <AuroraEmptyState
             tone="neutral"
-            icon="⌕"
+            icon={<SearchX className="h-6 w-6" aria-hidden />}
             title="Sin resultados"
             description="Probá otra búsqueda, quitá etiquetas o cambiá de bandeja o de línea."
           />
         ) : emptyReason === 'no-chats' ? (
           <AuroraEmptyState
-            icon="✓"
+            icon={<CheckCircle2 className="h-6 w-6" aria-hidden />}
             title="Todo al día"
             description="No hay conversaciones abiertas. Cuando un cliente escriba por WhatsApp o Instagram, aparece acá."
             actions={
@@ -491,19 +542,55 @@ export function SoftConversationList({
               const selected = selectedKey === key
               const unread = conv.unreadCount || 0
               const isDemo = Boolean(conv.isDemo)
+              // Agentes IA 2.0: "IA" only when the line answers this chat; otherwise who has it ("Con Ana", "Sin IA").
+              const aiHandled = conv.aiStatus ? conv.aiStatus.state === 'ia' : conv.agentStateDot === 'IA'
+              const aiChip = conv.aiStatus ? conv.aiStatus.label : conv.agentStateDot
+              // "Respondido" on rows still waiting on us: desktop on hover, phone as a visible button in Sin responder.
+              const canAnswer = Boolean(onMarkAnswered) && !isDemo && rowWaiting(conv)
+              const showAnswer = canAnswer && (!compact || inboxView === 'sin_responder')
+              const answerButton = showAnswer ? (
+                <button
+                  type="button"
+                  onClick={() => onMarkAnswered?.(conv)}
+                  aria-label={`Marcar como respondido: ${conversationDisplayName(conv)}`}
+                  title={conv.needsPerson ? 'Respondido: sale de Sin responder y vuelve al agente' : 'Respondido: sale de Sin responder'}
+                  className={
+                    compact
+                      ? 'absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[12px] font-semibold text-white shadow-sm active:bg-emerald-700'
+                      : 'absolute right-3 top-2.5 inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-sm transition-opacity hover:bg-emerald-700 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 group-hover:opacity-100'
+                  }
+                  data-testid="conv-mark-answered"
+                >
+                  <CheckCheck className={compact ? 'h-3.5 w-3.5' : 'h-3 w-3'} aria-hidden />
+                  Respondido
+                </button>
+              ) : null
+              const agentChip = conv.needsPerson ? (
+                <NeedsPersonChip small={!compact} />
+              ) : aiHandled ? (
+                <span className={`${CHIP_BASE} ${compact ? CHIP_MD : CHIP_SM} bg-au-tint-f1eeff text-au-ink-5b3fe0 ring-[#5B6CFF]/20`} data-testid="soft-agent-dot">
+                  <Sparkles className={compact ? 'h-3 w-3' : 'h-2.5 w-2.5'} aria-hidden />
+                  IA
+                </span>
+              ) : aiChip ? (
+                <span
+                  className={`${CHIP_BASE} ${compact ? CHIP_MD : CHIP_SM} max-w-[9rem] bg-slate-50 text-slate-600 ring-slate-200`}
+                  data-testid="soft-agent-dot"
+                  title={conv.aiStatus?.reason}
+                >
+                  <span className="truncate">{withoutEmoji(aiChip)}</span>
+                </span>
+              ) : null
               if (compact) {
                 const name = conversationDisplayName(conv)
-                // Agentes IA 2.0: "IA" only when the line answers this chat; otherwise who has it ("Con Ana", "Sin IA").
-                const aiHandled = conv.aiStatus ? conv.aiStatus.state === 'ia' : conv.agentStateDot === 'IA'
-                const aiChip = conv.aiStatus ? conv.aiStatus.label : conv.agentStateDot
                 return (
-                  <li key={key}>
+                  <li key={key} className="relative">
                     <button
                       type="button"
                       data-soft-conv-key={key}
                       aria-current={selected ? 'true' : undefined}
                       onClick={() => onSelect(conv)}
-                      className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors ${
+                      className={`flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition-colors ${
                         selected ? 'bg-white shadow-[0_1px_4px_rgba(15,23,42,0.08)]' : 'active:bg-white/70'
                       }`}
                     >
@@ -523,60 +610,23 @@ export function SoftConversationList({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
                           <p className="truncate text-[16px] font-semibold text-slate-900">{name}</p>
-                          <span
-                            className={`shrink-0 text-[12px] ${
-                              unread > 0 ? 'font-semibold text-au-ink-5b3fe0' : 'text-slate-500'
-                            }`}
-                          >
+                          <span className={`shrink-0 text-[12px] ${unread > 0 ? 'font-semibold text-au-ink-5b3fe0' : 'text-slate-500'}`}>
                             {formatRelativeEs(conv.lastMessageAt)}
                           </span>
                         </div>
-                        {/* Sin responder: the waiting message gets its own line; the chips wrap under it. */}
-                        <div className={`mt-1 flex items-center gap-2 ${inboxView === 'sin_responder' ? 'flex-wrap' : ''}`}>
-                          <p
-                            className={`min-w-0 flex-1 truncate text-[14px] text-slate-500 ${inboxView === 'sin_responder' ? 'basis-full' : ''}`}
-                            title={conv.lastIsFollowUp ? FOLLOW_UP_TITLE : undefined}
-                          >
-                            {conv.lastIsFollowUp ? '↻ ' : ''}
-                            {chatPreviewText(conv.lastMessage) || '—'}
-                          </p>
-                          {conv.orderNumber ? (
-                            <span
-                              className="shrink-0 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200"
-                              title="Pedido vinculado"
-                              data-testid="conv-order-chip"
-                            >
-                              #{conv.orderNumber}
-                            </span>
-                          ) : null}
-                          {isDemo ? (
-                            <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900">
-                              Demo
-                            </span>
-                          ) : null}
+                        <LineLabel conv={conv} className="mt-0.5 text-[12px]" />
+                        <p className="mt-1 flex min-w-0 items-center gap-1 text-[14px] text-slate-600" title={conv.lastIsFollowUp ? FOLLOW_UP_TITLE : undefined}>
+                          {conv.lastIsFollowUp ? <RefreshCw className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-label="Seguimiento" /> : null}
+                          <span className="truncate">{chatPreviewText(conv.lastMessage) || '—'}</span>
+                        </p>
+                        <div className={`mt-1.5 flex flex-wrap items-center gap-1.5 ${showAnswer ? 'pr-28' : ''}`}>
+                          <OrderChip conv={conv} />
+                          {isDemo ? <span className={`${CHIP_BASE} ${CHIP_MD} bg-amber-50 text-amber-900 ring-amber-200`}>Demo</span> : null}
                           {inboxView === 'sin_responder' ? <WaitBadge since={conv.waitingSince} /> : null}
-                          {conv.needsPerson ? (
-                            <NeedsPersonChip />
-                          ) : aiHandled ? (
-                            <span
-                              className="flex shrink-0 items-center gap-1 rounded-lg bg-au-tint-f1eeff px-2 py-1 text-[12px] font-semibold text-au-ink-5b3fe0"
-                              data-testid="soft-agent-dot"
-                            >
-                              <Sparkles className="h-3 w-3" aria-hidden />
-                              IA
-                            </span>
-                          ) : aiChip ? (
-                            <span
-                              className="max-w-[9rem] shrink-0 truncate rounded-lg bg-slate-100 px-2 py-1 text-[12px] font-semibold text-slate-600"
-                              data-testid="soft-agent-dot"
-                              title={conv.aiStatus?.reason}
-                            >
-                              {aiChip}
-                            </span>
-                          ) : null}
+                          {agentChip}
                           {conv.status === 'nuevo' && !conv.assignee ? (
-                            <span className="flex shrink-0 items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-[12px] font-semibold text-amber-700 ring-1 ring-amber-200">
-                              <Clock className="h-3 w-3" aria-hidden />
+                            <span className={`${CHIP_BASE} ${CHIP_MD} bg-amber-50 text-amber-700 ring-amber-200`}>
+                              <UserPlus className="h-3 w-3" aria-hidden />
                               Sin asignar
                             </span>
                           ) : null}
@@ -591,11 +641,12 @@ export function SoftConversationList({
                         </div>
                       </div>
                     </button>
+                    {answerButton}
                   </li>
                 )
               }
               return (
-                <li key={key}>
+                <li key={key} className="group relative">
                   <button
                     type="button"
                     data-soft-conv-key={key}
@@ -613,67 +664,37 @@ export function SoftConversationList({
                     </PeerAvatar>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-[13px] font-semibold text-slate-900">
-                          {conversationDisplayName(conv)}
-                        </p>
-                        <span className="shrink-0 text-[11px] text-slate-500">
+                        <p className="truncate text-[13px] font-semibold text-slate-900">{conversationDisplayName(conv)}</p>
+                        <span className={`shrink-0 text-[11px] text-slate-500 ${showAnswer ? 'group-hover:invisible' : ''}`}>
                           {formatRelativeEs(conv.lastMessageAt)}
                         </span>
                       </div>
-                      <p className="mt-0.5 truncate text-xs text-slate-500" title={conv.lastIsFollowUp ? FOLLOW_UP_TITLE : undefined}>
-                        {conv.lastIsFollowUp ? '↻ ' : ''}
-                        {chatPreviewText(conv.lastMessage) || '—'}
+                      <p className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-slate-600" title={conv.lastIsFollowUp ? FOLLOW_UP_TITLE : undefined}>
+                        {conv.lastIsFollowUp ? <RefreshCw className="h-3 w-3 shrink-0 text-slate-400" aria-label="Seguimiento" /> : null}
+                        <span className="truncate">{chatPreviewText(conv.lastMessage) || '—'}</span>
                       </p>
-                      <div className="mt-1 flex items-center justify-between gap-2">
-                        <p className="flex min-w-0 items-center gap-1 truncate text-[11px] text-slate-500">
-                          {isDemo ? (
-                            <span className="mr-1 rounded bg-amber-100 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-amber-900">
-                              Demo
-                            </span>
-                          ) : null}
-                          <ChannelLogo platform={conv.platform} size={12} className="shrink-0" />
-                          <span className="truncate">{conv.accountLabel}</span>
-                          {conv.assignee ? (
-                            <span className="ml-1 shrink-0" title={`Responsable: ${conv.assignee.name || 'asignado'}`}>
-                              <AuroraAvatar
-                                name={conv.assignee.name || '?'}
-                                image={conv.assignee.image}
-                                className="h-4 w-4 text-[8px]"
-                              />
-                            </span>
-                          ) : null}
-                          {conv.orderNumber ? (
-                            <span
-                              className="ml-1 shrink-0 rounded bg-emerald-50 px-1 py-px text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-200"
-                              title="Pedido vinculado"
-                              data-testid="conv-order-chip"
-                            >
-                              #{conv.orderNumber}
-                            </span>
-                          ) : null}
-                          {conv.needsPerson ? (
-                            <NeedsPersonChip small />
-                          ) : conv.agentEmoji || conv.agentStateDot || conv.aiStatus ? (
-                            <span
-                              className="ml-1 shrink-0 rounded bg-slate-100 px-1 py-px text-[9px] font-semibold text-slate-600"
-                              data-testid="soft-agent-dot"
-                              title={conv.aiStatus?.reason}
-                            >
-                              {conv.agentEmoji ? `${conv.agentEmoji} ` : ''}
-                              {/* Agentes IA 2.0: "IA" only when the line answers it; else "Con Ana" / "Sin IA". */}
-                              {conv.aiStatus ? conv.aiStatus.label : conv.agentStateDot || ''}
-                            </span>
-                          ) : null}
-                        </p>
+                      <div className="mt-1 flex min-w-0 items-center gap-1.5">
+                        <LineLabel conv={conv} className="min-w-0 flex-1 text-[11px]" />
+                        {conv.assignee ? (
+                          <span className="shrink-0" title={`Responsable: ${conv.assignee.name || 'asignado'}`}>
+                            <AuroraAvatar name={conv.assignee.name || '?'} image={conv.assignee.image} className="h-4 w-4 text-[8px]" />
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                        <OrderChip conv={conv} small />
+                        {isDemo ? <span className={`${CHIP_BASE} ${CHIP_SM} bg-amber-50 text-amber-900 ring-amber-200`}>Demo</span> : null}
+                        {agentChip}
                         {inboxView === 'sin_responder' ? <WaitBadge since={conv.waitingSince} small /> : null}
                         {unread > 0 ? (
-                          <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#5B6CFF] px-1 text-[10px] font-bold text-white">
+                          <span className="ml-auto flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#5B6CFF] px-1 text-[10px] font-bold text-white">
                             {unread > 9 ? '9+' : unread}
                           </span>
                         ) : null}
                       </div>
                     </div>
                   </button>
+                  {answerButton}
                 </li>
               )
             })}

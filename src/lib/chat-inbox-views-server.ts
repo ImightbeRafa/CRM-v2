@@ -10,7 +10,7 @@ import { isClosedCategory, ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG, type StageDef }
 import { PERSON_AI_MODES, type InboxCountedView, type InboxViewCounts } from '@/lib/chat-inbox-views'
 import { closedOrderStatuses } from '@/lib/open-order'
 import { aiOnLineIds } from '@/lib/soft-ai/agent-inbox-enrich'
-import { NEEDS_PERSON_SQL, UNANSWERED_SQL } from '@/lib/chat-unanswered-server'
+import { answeredMarkerReady, needsPersonSql, unansweredSql } from '@/lib/chat-unanswered-server'
 
 /** Stage keys that close a chat (won / lost; 'hecho' unless the tenant redefined it). */
 export function closedStageKeys(stages: StageDef[]): string[] {
@@ -188,12 +188,13 @@ async function queryInboxViewCounts(
   const closedKeys = closedStageKeys(stages)
   const accounts = await prisma.socialAccount.findMany({ where: { tenantId }, select: { id: true } })
   const aiLines = await aiOnLineIds(tenantId, accounts.map((a) => a.id))
+  const answered = await answeredMarkerReady()
   const person = [...PERSON_AI_MODES]
   const rows = await prisma.$queryRaw<
     Array<{ socialAccountId: string; sin_responder: bigint; persona: bigint; pago: bigint; pedido: bigint; ia: bigint; seguimientos: bigint }>
   >`
     SELECT c."socialAccountId",
-      COUNT(*) FILTER (WHERE ${UNANSWERED_SQL}) AS sin_responder,
+      COUNT(*) FILTER (WHERE ${unansweredSql(answered)}) AS sin_responder,
       COUNT(*) FILTER (WHERE c."aiMode" = ANY(${person}::text[])) AS persona,
       COUNT(*) FILTER (WHERE ${PAYMENT_REVIEW_TAG} = ANY(c.tags)) AS pago,
       COUNT(*) FILTER (
@@ -210,7 +211,7 @@ async function queryInboxViewCounts(
         WHERE c."socialAccountId" = ANY(${aiLines}::text[])
           AND (c."aiMode" IS NULL OR NOT (c."aiMode" = ANY(${person}::text[])))
           AND NOT (c.tags && ARRAY[${PAYMENT_REVIEW_TAG}, ${ORDER_REVIEW_TAG}]::text[])
-          AND NOT ${NEEDS_PERSON_SQL}
+          AND NOT ${needsPersonSql(answered)}
       ) AS ia,
       COUNT(*) FILTER (
         WHERE c."lastMessageDirection" = 'outbound' AND m.metadata -> 'followUp' IS NOT NULL

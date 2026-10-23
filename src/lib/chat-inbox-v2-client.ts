@@ -146,6 +146,9 @@ export function listDtoToSoftConversation(
     // "Sin responder" wait: since the customer's last message.
     waitingSince: dto.lastInboundAt ?? null,
     lastIsFollowUp: dto.lastIsFollowUp === true,
+    orderStatus: orderId && dto.linkedOrder?.id === orderId ? dto.linkedOrder.status ?? null : null,
+    orderTotal: orderId && dto.linkedOrder?.id === orderId ? dto.linkedOrder.total ?? null : null,
+    ...(typeof dto.waiting === 'boolean' ? { waiting: dto.waiting } : {}),
   }
 }
 

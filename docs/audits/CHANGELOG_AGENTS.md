@@ -1,7 +1,7 @@
 ## 2026-10-23 — Estadísticas uses the whole screen (Lane E2, claude/wave-stats-fullwidth)
 
 - Resumen, Anuncios, Equipo y chats and Clientes: the 1200 px centered column is gone. One shared container (`STATS_CONTAINER` in src/components/insights/InsightsShared.tsx) uses the full content width with the headers' side padding, capped at 1760 px only on very wide screens.
-- Grids: 4 KPI cards across from 1024 px; main chart + side card (`STATS_SPLIT`) with a fixed 340 px side card on laptops and 2:1 on ≥1536 px; Equipo puts "Por canal" next to "Por persona" and Clientes puts "Por recomprar" next to "Clientes que repiten" on ≥1536 px; tables full width. Phones unchanged (one column). Layout only, no data changes.
+- Grids: 4 KPI cards across from 1024 px; main chart + side card (`STATS_SPLIT`) with a fixed 340 px side card on laptops and 2:1 on ≥1536 px; Equipo puts "Por canal" next to "Por persona" and Clientes puts "Por recomprar" next to "Clientes que repiten" on ≥1536 px; tables full width. Phones unchanged (one column). Layout only, no data changes. Verifier fixes: the body stays left-aligned with the header when capped (no drift on very wide screens), and /estadisticas loading uses a matching full-width "stats" skeleton (shared "page" skeleton unchanged for Home).
 ## 2026-10-22 — Premium chips and lucide icons instead of emoji (Lane B, claude/wave-icons-chips, PR #133)
 
 - One shared `Chip` (`src/components/ui/Chip.tsx`): tone (neutral/brand/violet/info/success/warning/danger), size sm/md, `surface` aurora (palette classes, follows dark mode) or dark (Logística), optional lucide `icon` or status `dot`. Keep this API stable; other lanes reuse it.

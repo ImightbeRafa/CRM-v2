@@ -61,7 +61,7 @@ export function maskForSupport(text: string): string {
   return redactSecrets((text || '').normalize('NFKC').replace(/[\p{Cf}]/gu, '').replace(/\s+/g, ' '))
     // SecureDog / Verifier #146 round 2: the customer can never draw the fence lines of the unverified block.
     .replace(/[-–—‐‑−_=*]{3,}/g, '—')
-    .replace(/[^\s@]+\s+@\s+[^\s@]+\s*\.\s*[a-z]{2,}/giu, '[REDACTED_EMAIL]')
+    .replace(/[^\s@]+(?:\s*@\s+)[^\s@]+\s*\.\s*[a-z]{2,}/giu, '[REDACTED_EMAIL]')
     .replace(/[^\s@]+\s+arroba\s+\S+(?:\s+(?:punto|dot)\s+\S+)+/giu, '[REDACTED_EMAIL]')
     .replace(/(?<![\p{L}])(contrase(?:ñ|n)a|password)\s*(?:(?:es|is|:|=)\s*\S+|\s(?=\S*\d)\S+)/giu, '$1 [REDACTED]')
     .replace(/\bCR\s?\d[\d\s-]{14,}\d\b/gi, '[cuenta]')
@@ -147,7 +147,7 @@ export async function escalateHandoffToSupport(
     const messages = recent.reverse()
     // "No me escriban más" is a hand-off too (human_request): an opt-out is never copied out of the inbox — in any bubble
     // of the last burst ("No me escriban más" + "gracias"), or as the burst's own opt-out (from the turn trace).
-    if (input.reason === 'human_request' && (input.optOut || optOutInLastBurst(messages))) return 'skipped'
+    if (input.optOut || optOutInLastBurst(messages)) return 'skipped'
     const platform = conversation.socialAccount?.platform === 'instagram' ? 'Instagram' : 'WhatsApp'
     const handle = conversation.peerUsername ? `@${conversation.peerUsername}` : conversation.peerName
     const reasonLabel = (HANDOFF_REASON_LABELS as Record<string, string>)[input.reason] || 'Necesita una persona'
@@ -162,7 +162,7 @@ export async function escalateHandoffToSupport(
     const now = Date.now()
     const forChat = { source: 'ai_chat', meta: { path: ['conversationId'], equals: conversation.id } }
     // Only a spam mark a PERSON gave (or the old rule): our own heuristic spam tickets do not lock the chat for 30 days.
-    const spamTickets = await prisma.supportTicket.findMany({ where: { ...forChat, status: 'spam', createdAt: { gte: new Date(now - SPAM_MEMORY_MS) } }, select: { meta: true }, take: 5 })
+    const spamTickets = await prisma.supportTicket.findMany({ where: { ...forChat, status: 'spam', createdAt: { gte: new Date(now - SPAM_MEMORY_MS) } }, select: { meta: true }, orderBy: { updatedAt: 'desc' }, take: 20 })
     if (spamTickets.some((t) => (t.meta as { spamReason?: unknown } | null)?.spamReason !== 'heuristic')) return 'skipped'
     // One recent open ticket per chat: a later hand-off is an internal note on it (no new webhook / e-mail).
     const open = await prisma.supportTicket.findFirst({

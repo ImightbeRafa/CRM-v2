@@ -93,7 +93,7 @@ describe('support escalation: what leaves the inbox', () => {
     const card = maskForSupport('tarjeta 4111 1111 1111 1111 exp 12/27 código 123, pin 1234, codigo 4829')
     assert.doesNotMatch(card, /4111|12\/27|123\b|1234|4829/)
     assert.doesNotMatch(maskForSupport('IBAN CR05-0152-0200-1026-2840-66'), /0152|2840/)
-    assert.doesNotMatch(maskForSupport('escribime a ana @ gmail.com'), /gmail/)
+    for (const e of ['escribime a ana @ gmail.com', 'ana@ gmail.com', 'ana@gmail.com']) assert.doesNotMatch(maskForSupport(e), /gmail/, e)
     assert.equal(maskForSupport('envío de 2 a 3 días, plan de ₡10.000 o ₡125.000 al mes'), 'envío de 2 a 3 días, plan de ₡10.000 o ₡125.000 al mes')
   })
   it('SecureDog / Verifier #146 round 2: the remaining phone, code, password and e-mail forms are masked', () => {
@@ -173,7 +173,7 @@ describe('support escalation: wiring (source)', () => {
     assert.equal(optOutInLastBurst([{ direction: 'outbound', content: 'Hola' }, { direction: 'inbound', content: 'No me escriban más' }, { direction: 'inbound', content: 'por favor' }]), true)
     assert.equal(optOutInLastBurst([{ direction: 'inbound', content: 'No me escriban más' }, { direction: 'outbound', content: 'Listo' }, { direction: 'inbound', content: 'quiero hablar con una persona' }]), false)
     assert.equal(optOutInLastBurst([{ direction: 'inbound', content: 'Quiero hablar con una persona' }]), false)
-    assert.ok(src.includes("if (input.reason === 'human_request' && (input.optOut || optOutInLastBurst(messages))) return 'skipped'"))
+    assert.ok(src.includes("if (input.optOut || optOutInLastBurst(messages)) return 'skipped'"))
     assert.ok(src.includes('optOut: burstOptOutIn(turn.decisionTrace)'))
   })
   it('the chat customer is never e-mailed (contact = Betsy support inbox), no tenant / user on the ticket', () => {

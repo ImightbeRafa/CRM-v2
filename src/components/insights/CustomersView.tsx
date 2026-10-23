@@ -7,14 +7,32 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
-import { Check, Copy, MessageCircle, Plus, RefreshCw, Repeat, Trash2 } from 'lucide-react'
+import {
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Copy,
+  Lock,
+  MessageCircle,
+  MessageSquareText,
+  Moon,
+  Plus,
+  RefreshCw,
+  Repeat,
+  Settings2,
+  ShoppingBag,
+  Trash2,
+} from 'lucide-react'
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext'
-import { StatsCard } from '@/components/aurora/estadisticas/StatsCard'
 import { AuroraEmptyState } from '@/components/aurora/states'
 import { hasSessionPermission } from '@/lib/session-permissions'
 import { formatCompactMoney, formatDayLabel } from '@/lib/statistics-aurora'
-import { REORDER_LIMITS, type ReorderRule } from '@/lib/insights/reorder'
+import { daysBetweenKeys, REORDER_LIMITS, type ReorderRule } from '@/lib/insights/reorder'
 import { InsightsHeader, SourceNote, nf, useInsightsJson } from './InsightsShared'
+import { InsightCard, Meter, SERIES, Segmented, StatTile, StatusChip, type ChipTone } from './charts'
 
 type DueRow = {
   key: string
@@ -45,13 +63,19 @@ type RepeatRow = {
 }
 type RepeatPayload = { total: number; page: number; pageSize: number; rows: RepeatRow[] }
 
-const WINDOWS = [7, 14, 30] as const
+const WINDOWS = [
+  { key: '7', label: '7 días' },
+  { key: '14', label: '14 días' },
+  { key: '30', label: '30 días' },
+] as const
+type WindowKey = (typeof WINDOWS)[number]['key']
 const SORTS = [
   { key: 'recientes', label: 'Compraron hace poco' },
   { key: 'gasto', label: 'Más gastaron' },
   { key: 'pedidos', label: 'Más pedidos' },
   { key: 'dormidos', label: 'Hace rato no compran' },
 ] as const
+type SortKey = (typeof SORTS)[number]['key']
 
 function dueLabel(daysLeft: number): string {
   if (daysLeft < 0) return `Se le acabó hace ${-daysLeft} ${daysLeft === -1 ? 'día' : 'días'}`
@@ -273,36 +297,57 @@ function RulesEditor({ onSaved }: { onSaved: () => void }) {
 
 // ── Reorder list ─────────────────────────────────────────────────────────────────────────────────
 
+function dueTone(daysLeft: number): ChipTone {
+  if (daysLeft < 0) return 'critical'
+  if (daysLeft <= 3) return 'warning'
+  return 'info'
+}
+
+/** How much of the supply is used up (1 = ran out), for the meter. */
+function supplyUsed(row: DueRow, todayKey: string): number {
+  const total = daysBetweenKeys(row.lastOrderDate, row.runsOutOn)
+  const used = daysBetweenKeys(row.lastOrderDate, todayKey)
+  return total > 0 ? Math.min(1, Math.max(0, used / total)) : 1
+}
+
+function Initial({ name }: { name: string }) {
+  const letter = name.replace(/^@/, '').trim().charAt(0).toUpperCase() || '?'
+  return (
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-au-tint-eef0ff text-[13px] font-semibold text-au-ink-5b6cff" aria-hidden>
+      {letter}
+    </span>
+  )
+}
+
 function ReorderSection({ canEditRules }: { canEditRules: boolean }) {
-  const [days, setDays] = useState<number>(7)
+  const [days, setDays] = useState<WindowKey>('7')
   const [showRules, setShowRules] = useState(false)
   const [res, reload] = useInsightsJson<DuePayload>(`/api/estadisticas/clientes/recompra?dias=${days}`)
   const [openMsg, setOpenMsg] = useState<string | null>(null)
   const data = res.data
   const noRules = data ? data.rules.length === 0 : false
+  const overdue = data ? data.rows.filter((r) => r.daysLeft < 0).length : 0
+  const soon = data ? data.rows.length - overdue : 0
 
   return (
-    <StatsCard
+    <InsightCard
+      icon={RefreshCw}
       title="Por recomprar"
       subtitle="Clientes a los que se les acaba el producto pronto"
       state={res.state}
       onRetry={reload}
-      skeletonClass="h-[200px]"
-      right={
-        <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5" role="group" aria-label="Próximos días">
-          {WINDOWS.map((w) => (
-            <button
-              key={w}
-              type="button"
-              aria-pressed={days === w}
-              onClick={() => setDays(w)}
-              className={`min-h-[32px] rounded-md px-2.5 text-[12px] font-medium ${days === w ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
-            >
-              {w} días
-            </button>
-          ))}
-        </div>
+      skeletonClass="h-[220px]"
+      right={<Segmented value={days} options={WINDOWS} onChange={setDays} label="Próximos días" />}
+      footer={
+        data ? (
+          <SourceNote>
+            último pedido de cada cliente con ese producto (pedidos de los últimos {nf.format(data.lookbackDays)} días, sin cancelados) + la
+            duración que configuraste; también muestra a quienes se les acabó hace hasta {nf.format(data.overdueDays)} días. Nada se envía
+            solo.
+          </SourceNote>
+        ) : undefined
       }
+      testId="reorder-card"
     >
       {data ? (
         <>
@@ -314,8 +359,8 @@ function ReorderSection({ canEditRules }: { canEditRules: boolean }) {
               className="py-6"
               actions={
                 canEditRules && !showRules ? (
-                  <button type="button" onClick={() => setShowRules(true)} className="mt-3 inline-flex min-h-[40px] items-center rounded-xl bg-[#5B6CFF] px-4 text-[12.5px] font-semibold text-white">
-                    Configurar duración
+                  <button type="button" onClick={() => setShowRules(true)} className="mt-3 inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-[#5B6CFF] px-4 text-[12.5px] font-semibold text-white">
+                    <Settings2 className="h-4 w-4" aria-hidden /> Configurar duración
                   </button>
                 ) : !canEditRules ? (
                   <p className="mt-2 text-[11.5px] text-slate-400">Pedile a quien administra Betsy que configure la duración.</p>
@@ -325,52 +370,71 @@ function ReorderSection({ canEditRules }: { canEditRules: boolean }) {
           ) : data.rows.length === 0 ? (
             <AuroraEmptyState
               tone="neutral"
-              icon={<Check className="h-6 w-6" />}
+              icon={<CheckCircle2 className="h-6 w-6" />}
               title={`Nadie se queda sin producto en los próximos ${data.windowDays} días`}
               description="Probá con un rango más largo o revisá la duración de tus productos."
               className="py-6"
             />
           ) : (
-            <ul className="divide-y divide-slate-100" data-testid="reorder-list">
-              {data.rows.map((row) => (
-                <li key={row.key} className="py-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="truncate text-[13.5px] font-semibold text-slate-900">{row.customerName}</p>
-                      <p className="text-[12px] text-slate-500">
-                        {row.ruleLabel} · {nf.format(row.units)} {row.units === 1 ? 'unidad' : 'unidades'} · pedido #{row.lastOrderNumber} del{' '}
-                        {formatDayLabel(row.lastOrderDate)}
-                      </p>
-                      <p className={`text-[12px] font-medium ${row.daysLeft < 0 ? 'text-red-600' : row.daysLeft <= 3 ? 'text-amber-600' : 'text-slate-600'}`}>
-                        {dueLabel(row.daysLeft)}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <ChatLink href={row.chatHref} whatsappHref={row.whatsappHref} />
-                      <button
-                        type="button"
-                        onClick={() => setOpenMsg((k) => (k === row.key ? null : row.key))}
-                        aria-expanded={openMsg === row.key}
-                        className="inline-flex min-h-[40px] items-center rounded-xl border border-slate-200 bg-white px-3 text-[12.5px] font-medium text-slate-700"
-                      >
-                        Mensaje sugerido
-                      </button>
-                    </div>
-                  </div>
-                  {openMsg === row.key ? (
-                    <div className="mt-2 rounded-xl bg-slate-50 p-3">
-                      <p className="whitespace-pre-wrap text-[12.5px] text-slate-700">{row.suggestedMessage}</p>
-                      <div className="mt-2">
-                        <CopyButton text={row.suggestedMessage} />
+            <>
+              <dl className="mb-4 grid grid-cols-2 gap-2.5">
+                <StatTile icon={AlertTriangle} tone="pink" label="Ya se les acabó" value={nf.format(overdue)} hint={`hasta ${nf.format(data.overdueDays)} días atrás`} />
+                <StatTile icon={Clock} tone="amber" label="Se les acaba pronto" value={nf.format(soon)} hint={`en los próximos ${nf.format(data.windowDays)} días`} />
+              </dl>
+              <ul className="divide-y divide-slate-100" data-testid="reorder-list">
+                {data.rows.map((row) => (
+                  <li key={row.key} className="py-3.5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <Initial name={row.customerName} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="truncate text-[13.5px] font-semibold text-slate-900">{row.customerName}</p>
+                            <StatusChip tone={dueTone(row.daysLeft)}>{dueLabel(row.daysLeft)}</StatusChip>
+                          </div>
+                          <p className="mt-0.5 text-[12px] text-slate-500">
+                            {row.ruleLabel} · {nf.format(row.units)} {row.units === 1 ? 'unidad' : 'unidades'} · pedido #{row.lastOrderNumber} del{' '}
+                            {formatDayLabel(row.lastOrderDate)}
+                          </p>
+                          <div className="mt-2 max-w-[320px]">
+                            <Meter
+                              value={supplyUsed(row, data.todayKey)}
+                              tone={row.daysLeft < 0 ? 'critical' : row.daysLeft <= 3 ? 'warning' : 'brand'}
+                              label={`Producto usado de ${row.customerName}`}
+                            />
+                            <p className="mt-1 text-[10.5px] text-slate-400">Se acaba el {formatDayLabel(row.runsOutOn)}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2 pl-12 sm:pl-0">
+                        <ChatLink href={row.chatHref} whatsappHref={row.whatsappHref} />
+                        <button
+                          type="button"
+                          onClick={() => setOpenMsg((k) => (k === row.key ? null : row.key))}
+                          aria-expanded={openMsg === row.key}
+                          className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <MessageSquareText className="h-4 w-4" aria-hidden />
+                          Mensaje sugerido
+                        </button>
                       </div>
                     </div>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+                    {openMsg === row.key ? (
+                      <div className="ml-0 mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3 sm:ml-12">
+                        <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-slate-700">{row.suggestedMessage}</p>
+                        <div className="mt-2">
+                          <CopyButton text={row.suggestedMessage} />
+                        </div>
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
           {canEditRules && !noRules ? (
-            <button type="button" onClick={() => setShowRules((s) => !s)} className="mt-3 text-[12px] font-medium text-au-ink-5b6cff">
+            <button type="button" onClick={() => setShowRules((s) => !s)} className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-medium text-au-ink-5b6cff">
+              <Settings2 className="h-3.5 w-3.5" aria-hidden />
               {showRules ? 'Ocultar duración de productos' : 'Editar duración de productos'}
             </button>
           ) : null}
@@ -379,14 +443,9 @@ function ReorderSection({ canEditRules }: { canEditRules: boolean }) {
               <RulesEditor onSaved={reload} />
             </div>
           ) : null}
-          <SourceNote>
-            último pedido de cada cliente con ese producto (pedidos de los últimos {nf.format(data.lookbackDays)} días, sin cancelados) + la
-            duración que configuraste; también muestra a quienes se les acabó hace hasta {nf.format(data.overdueDays)} días. Nada se envía
-            solo.
-          </SourceNote>
         </>
       ) : null}
-    </StatsCard>
+    </InsightCard>
   )
 }
 
@@ -395,79 +454,107 @@ function ReorderSection({ canEditRules }: { canEditRules: boolean }) {
 function RepeatSection() {
   const { settings } = useTenantSettings()
   const symbol = settings.currencySymbol || '₡'
-  const [sort, setSort] = useState<string>('recientes')
+  const [sort, setSort] = useState<SortKey>('recientes')
   const [page, setPage] = useState(0)
   const [res, reload] = useInsightsJson<RepeatPayload>(`/api/estadisticas/clientes/recurrentes?orden=${sort}&pagina=${page}`)
   const data = res.data
   const pages = data ? Math.ceil(data.total / data.pageSize) : 0
-  const choose = useCallback((key: string) => {
+  const maxSpent = data ? data.rows.reduce((m, r) => Math.max(m, r.totalSpent), 0) : 0
+  const choose = useCallback((key: SortKey) => {
     setSort(key)
     setPage(0)
   }, [])
 
   return (
-    <StatsCard title="Clientes que repiten" subtitle="Compraron 2 veces o más" state={res.state} onRetry={reload} skeletonClass="h-[220px]">
+    <InsightCard
+      icon={Repeat}
+      title="Clientes que repiten"
+      subtitle={data ? `${nf.format(data.total)} clientes compraron 2 veces o más` : 'Compraron 2 veces o más'}
+      state={res.state}
+      onRetry={reload}
+      skeletonClass="h-[240px]"
+      right={<Segmented value={sort} options={SORTS} onChange={choose} label="Ordenar" />}
+      footer={<SourceNote>ficha de cada cliente (pedidos y total gastado que Betsy lleva por cliente; puede no incluir pedidos sin cliente asignado)</SourceNote>}
+      testId="repeat-card"
+    >
       {data ? (
-        <>
-          <div className="-mx-1 mb-3 flex gap-1 overflow-x-auto px-1 [scrollbar-width:none]" role="group" aria-label="Ordenar">
-            {SORTS.map((s) => (
-              <button
-                key={s.key}
-                type="button"
-                aria-pressed={sort === s.key}
-                onClick={() => choose(s.key)}
-                className={`min-h-[34px] shrink-0 whitespace-nowrap rounded-lg px-3 text-[12px] font-medium ${sort === s.key ? 'bg-au-tint-eef0ff text-au-ink-5b6cff' : 'text-slate-500 hover:bg-slate-50'}`}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-          {data.rows.length === 0 ? (
-            <AuroraEmptyState
-              tone="neutral"
-              icon={<Repeat className="h-6 w-6" />}
-              title="Todavía nadie ha comprado dos veces"
-              description="Cuando un cliente haga su segundo pedido, aparece aquí para que no se te pierda."
-              className="py-6"
-            />
-          ) : (
-            <>
-              <p className="mb-2 text-[12px] text-slate-500">{nf.format(data.total)} clientes</p>
-              <ul className="divide-y divide-slate-100" data-testid="repeat-list">
-                {data.rows.map((row) => (
-                  <li key={row.clientId} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="truncate text-[13.5px] font-semibold text-slate-900">{row.name}</p>
-                      <p className="text-[12px] text-slate-500">
-                        {nf.format(row.totalOrders)} pedidos · {formatCompactMoney(row.totalSpent, symbol)} en total · último{' '}
-                        {formatDayLabel(row.lastOrder)} ({row.daysSinceLast === 0 ? 'hoy' : `hace ${nf.format(row.daysSinceLast)} días`})
-                      </p>
+        data.rows.length === 0 ? (
+          <AuroraEmptyState
+            tone="neutral"
+            icon={<Repeat className="h-6 w-6" />}
+            title="Todavía nadie ha comprado dos veces"
+            description="Cuando un cliente haga su segundo pedido, aparece aquí para que no se te pierda."
+            className="py-6"
+          />
+        ) : (
+          <>
+            <ul className="divide-y divide-slate-100" data-testid="repeat-list">
+              {data.rows.map((row) => (
+                <li key={row.clientId} className="flex flex-col gap-3 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <Initial name={row.name} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-[13.5px] font-semibold text-slate-900">{row.name}</p>
+                        <StatusChip tone="info" icon={ShoppingBag}>
+                          {nf.format(row.totalOrders)} pedidos
+                        </StatusChip>
+                        {row.daysSinceLast > 60 ? (
+                          <StatusChip tone="neutral" icon={Moon}>
+                            Hace rato no compra
+                          </StatusChip>
+                        ) : null}
+                      </div>
+                      <div className="mt-2 max-w-[360px]">
+                        <div className="flex items-baseline justify-between text-[12px]">
+                          <span className="text-slate-500">Total gastado</span>
+                          <span className="font-semibold tabular-nums text-slate-900">{formatCompactMoney(row.totalSpent, symbol)}</span>
+                        </div>
+                        <div className="mt-1 h-1.5 w-full rounded-r-[4px] bg-slate-100/80">
+                          <div
+                            className={`${SERIES[1]} h-full rounded-r-[4px] bg-current`}
+                            style={{ width: `${maxSpent > 0 ? Math.max(row.totalSpent > 0 ? 2 : 0, (row.totalSpent / maxSpent) * 100) : 0}%` }}
+                          />
+                        </div>
+                        <p className="mt-1 text-[10.5px] text-slate-400">
+                          Último pedido el {formatDayLabel(row.lastOrder)} ({row.daysSinceLast === 0 ? 'hoy' : `hace ${nf.format(row.daysSinceLast)} días`})
+                        </p>
+                      </div>
                     </div>
-                    <div className="shrink-0">
-                      <ChatLink href={row.chatHref} whatsappHref={row.whatsappHref} />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              {pages > 1 ? (
-                <div className="mt-3 flex items-center justify-between text-[12px]">
-                  <button type="button" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))} className="min-h-[36px] rounded-lg px-3 font-medium text-slate-600 disabled:opacity-40">
-                    Anterior
-                  </button>
-                  <span className="text-slate-400">
-                    Página {page + 1} de {pages}
-                  </span>
-                  <button type="button" disabled={page + 1 >= pages} onClick={() => setPage((p) => p + 1)} className="min-h-[36px] rounded-lg px-3 font-medium text-slate-600 disabled:opacity-40">
-                    Siguiente
-                  </button>
-                </div>
-              ) : null}
-            </>
-          )}
-          <SourceNote>ficha de cada cliente (pedidos y total gastado que Betsy lleva por cliente; puede no incluir pedidos sin cliente asignado)</SourceNote>
-        </>
+                  </div>
+                  <div className="shrink-0 pl-12 sm:pl-0">
+                    <ChatLink href={row.chatHref} whatsappHref={row.whatsappHref} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {pages > 1 ? (
+              <div className="mt-3 flex items-center justify-between text-[12px]">
+                <button
+                  type="button"
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  className="inline-flex min-h-[36px] items-center gap-1 rounded-lg px-3 font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden /> Anterior
+                </button>
+                <span className="tabular-nums text-slate-400">
+                  Página {page + 1} de {pages}
+                </span>
+                <button
+                  type="button"
+                  disabled={page + 1 >= pages}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="inline-flex min-h-[36px] items-center gap-1 rounded-lg px-3 font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  Siguiente <ChevronRight className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+            ) : null}
+          </>
+        )
       ) : null}
-    </StatsCard>
+    </InsightCard>
   )
 }
 
@@ -478,9 +565,9 @@ function View() {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="insights-customers">
       <InsightsHeader title="Clientes" subtitle="A quién escribirle hoy para que vuelva a comprar" />
-      <div className="mx-auto w-full max-w-[1200px] space-y-4 px-4 pb-6 pt-5 md:px-7">
+      <div className="mx-auto w-full max-w-[1200px] space-y-4 px-4 pb-8 pt-5 md:px-7">
         {session && !canSeeCustomers ? (
-          <AuroraEmptyState tone="neutral" icon="🔒" title="Sin acceso a clientes" description="Tu rol no puede ver datos de clientes." />
+          <AuroraEmptyState tone="neutral" icon={<Lock className="h-6 w-6" />} title="Sin acceso a clientes" description="Tu rol no puede ver datos de clientes." />
         ) : session ? (
           <>
             <ReorderSection canEditRules={canEditRules} />

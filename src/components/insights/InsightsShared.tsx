@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { CalendarRange, Database, HeartHandshake, LayoutGrid, Megaphone, Users } from 'lucide-react'
 import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import { PeriodPicker } from '@/components/aurora/estadisticas/StatsHeader'
 import type { CardLoad } from '@/components/aurora/estadisticas/StatsCard'
@@ -22,10 +23,10 @@ import {
 } from '@/lib/statistics-aurora'
 
 export const INSIGHT_TABS = [
-  { href: '/estadisticas', label: 'Resumen' },
-  { href: '/estadisticas/anuncios', label: 'Anuncios' },
-  { href: '/estadisticas/equipo', label: 'Equipo y chats' },
-  { href: '/estadisticas/clientes', label: 'Clientes' },
+  { href: '/estadisticas', label: 'Resumen', icon: LayoutGrid },
+  { href: '/estadisticas/anuncios', label: 'Anuncios', icon: Megaphone },
+  { href: '/estadisticas/equipo', label: 'Equipo y chats', icon: Users },
+  { href: '/estadisticas/clientes', label: 'Clientes', icon: HeartHandshake },
 ] as const
 
 export type Loaded<T> = { state: CardLoad; data: T | null; status: number | null }
@@ -115,15 +116,19 @@ export function InsightsTabs({ className = '' }: { className?: string }) {
     >
       {INSIGHT_TABS.map((tab) => {
         const active = pathname === tab.href
+        const Icon = tab.icon
         return (
           <Link
             key={tab.href}
             href={tabHref(tab.href, searchParams.toString())}
             aria-current={active ? 'page' : undefined}
-            className={`inline-flex min-h-[36px] shrink-0 snap-start items-center whitespace-nowrap rounded-lg px-3 text-[13px] font-medium transition-colors ${
-              active ? 'bg-au-tint-eef0ff text-au-ink-5b6cff' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+            className={`relative inline-flex min-h-[40px] shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[13px] font-medium transition-colors ${
+              active
+                ? 'text-au-ink-5b6cff after:absolute after:inset-x-2 after:-bottom-2 after:h-[2px] after:rounded-full after:bg-[#5B6CFF]'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
             }`}
           >
+            <Icon className="h-4 w-4" aria-hidden />
             {tab.label}
           </Link>
         )
@@ -169,10 +174,18 @@ export function InsightsHeader({
 /** "Fuente: … · 1–30 oct" — every number says where it comes from and for which period. */
 export function SourceNote({ children, range }: { children: ReactNode; range?: AuroraDateRange | null }) {
   return (
-    <p className="mt-3 text-[11px] leading-relaxed text-slate-400" data-testid="insights-source">
-      <span className="font-medium text-slate-500">Fuente:</span> {children}
-      {range ? <> · {formatRangeLabel(range.startDate, range.endDate)}</> : null}
-    </p>
+    <div className="flex flex-wrap items-start gap-x-3 gap-y-1 text-[11px] leading-relaxed text-slate-400" data-testid="insights-source">
+      {range ? (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
+          <CalendarRange className="h-3 w-3" aria-hidden />
+          {formatRangeLabel(range.startDate, range.endDate)}
+        </span>
+      ) : null}
+      <p className="min-w-0 flex-1">
+        <Database className="mr-1 inline h-3 w-3 -translate-y-px" aria-hidden />
+        <span className="font-medium text-slate-500">Fuente:</span> {children}
+      </p>
+    </div>
   )
 }
 

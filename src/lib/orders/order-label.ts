@@ -51,6 +51,8 @@ export function orderSecondaryId(order: OrderLabelInput | null | undefined): str
  */
 export function parseOrderNoQuery(term: string | null | undefined): number | null {
   const text = String(term ?? '').trim().toLowerCase();
+  // Valid inputs are short ("pedido # 9999999" = 16); never run the regex on long search strings (INFRA-26).
+  if (text.length > 24) return null;
   const match = text.match(/^(?:pedido\s*|orden\s*|n[°º.o]?\s*)?#?\s*(\d{1,7})$/);
   return match ? normalizeOrderNo(match[1]) : null;
 }

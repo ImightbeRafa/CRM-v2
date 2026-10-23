@@ -284,6 +284,8 @@ export async function POST(request: NextRequest) {
     // Separate known order fields from dynamic custom fields
     const knownKeys = new Set([
       'orderId','orderType','status','delivery','customerName','username','phone','email','business','product','quantity','size','color','packaging','customization','comments','total','iva','shippingCost','productCost','funnel','address','province','canton','district','courier','expectedDate','saleDate','agreedDate','pickupDate','seller','productDetails','timestamp','customFields','contraEntrega','cePaymentConfirmed',
+      // Assigned by the database (SQL 062); a client value is ignored, never stored as a custom field.
+      'orderNo',
       ...ORDER_COMMENT_FIELD_ALIASES
     ])
     const customFields: Record<string, any> = {}

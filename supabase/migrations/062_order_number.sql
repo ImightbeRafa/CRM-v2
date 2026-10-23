@@ -2,11 +2,15 @@
 -- and say on the phone. The long "Order"."orderId" ("ORDER-1792711884367") stays the internal/external id
 -- (URLs, guías, Correos, lm_orders.crm_order_id, exports, integrations, staff bot) and is not touched.
 -- Additive only. Gated: BETSY_V2_APPLY_FILES=062 — never DEFAULT_APPLY_FILES. DO NOT run prisma db push / migrate.
--- Apply in the daytime quiet window: the unique index build briefly blocks writes to "Order" (all values NULL, so
--- it is short; lock_timeout 3s aborts instead of queueing behind long transactions).
+-- Apply in a quiet window: ADD COLUMN takes an ACCESS EXCLUSIVE lock on "Order" (blocks reads AND writes) until
+-- COMMIT, which includes the unique index build (~4k rows on prod 2026-10-22: well under a second). lock_timeout 3s
+-- aborts instead of queueing behind long transactions. The CHECK is NOT VALID on purpose (every value is NULL; new
+-- rows are still checked), so there is no extra table scan.
 -- ORDER: code first or SQL first, either works. "orderNo" is deliberately NOT in schema.prisma: Prisma never
 -- names it, and the app reads it with raw SQL (src/lib/orders/order-number-server.ts; 42703 → long id).
--- After applying: run scripts/order-number-backfill.ts (dry-run first, then --apply with Rafael's GO).
+-- After applying: run scripts/order-number-backfill.ts (dry-run first, then --apply with Rafael's GO), then take a
+-- backup (the backfill does not bump updatedAt). After a restore from backup, re-apply this file (idempotent) if the
+-- trigger is missing; the self-healing counter catches up by itself.
 --
 --   "Order"."orderNo"            integer NULL; unique per tenant when set (partial unique index)
 --   "OrderNumberCounter"         one row per tenant: the last number handed out (RLS on, no policies; app role owns it)
@@ -38,7 +42,6 @@ BEGIN
       ADD CONSTRAINT "Order_orderNo_positive_check" CHECK ("orderNo" IS NULL OR "orderNo" > 0) NOT VALID;
   END IF;
 END $$;
-ALTER TABLE public."Order" VALIDATE CONSTRAINT "Order_orderNo_positive_check";
 
 CREATE UNIQUE INDEX IF NOT EXISTS "Order_tenantId_orderNo_key"
   ON public."Order"("tenantId", "orderNo")

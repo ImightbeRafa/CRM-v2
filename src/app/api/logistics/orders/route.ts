@@ -92,11 +92,13 @@ async function enrichArchivedOrders(orders: ArchivedLogisticsOrder[]) {
         })(),
     ]);
 
+    const orderNos = await loadOrderNosByTenant(orders);
     return orders.map((o) => {
         const guia = guiaByKey[`${o.tenantId}:${o.orderId}`];
         const ce = ceById[o.id];
         return {
             ...o,
+            orderNo: orderNos.get(o.id) ?? null,
             cePaymentMethod: ce?.method ?? null,
             ceConfirmedBy: ce?.confirmedBy ?? null,
             guiaId: guia?.guiaId ?? null,

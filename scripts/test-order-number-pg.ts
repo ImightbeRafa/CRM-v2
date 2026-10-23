@@ -202,6 +202,24 @@ async function main() {
     const maxNo = await sql<{ m: number }[]>`SELECT max("orderNo")::int AS m FROM "Order" WHERE "tenantId" = ${T1}`
     await check('counter equals the highest number after backfill', () => assert.equal(counter[0].lastNo, maxNo[0].m))
 
+    // 7b) Backfill WHILE new orders arrive (T3: its BASE orders were created before 062, none numbered yet).
+    const oldT3 = await sql<{ id: string }[]>`SELECT "id" FROM "Order" WHERE "tenantId" = ${T3} ORDER BY "timestamp", "id"`
+    const [t3Fill, t3New] = await Promise.all([
+      backfillTenantOrderNumbers(sql, T3, true),
+      Promise.all(Array.from({ length: 10 }, (_, i) =>
+        prisma.order.create({ data: { tenantId: T3, orderId: `ORDER-T3-LIVE-${i}`, orderType: 'EA', customerName: `Live ${i}` }, select: { id: true } }))),
+    ])
+    const t3All = await sql<{ id: string; orderNo: number | null }[]>`SELECT "id", "orderNo" FROM "Order" WHERE "tenantId" = ${T3}`
+    const byId = new Map(t3All.map((r) => [r.id, r.orderNo]))
+    await check(`backfill during live inserts: ${oldT3.length} old orders get 1..${oldT3.length} in creation order, 10 new ones above, all distinct`, () => {
+      assert.equal(t3Fill.missing, oldT3.length)
+      assert.deepEqual(oldT3.map((r) => byId.get(r.id)), oldT3.map((_, i) => i + 1))
+      const newNos = t3New.map((o) => byId.get(o.id) as number)
+      assert.ok(newNos.every((n) => n > oldT3.length), JSON.stringify(newNos))
+      assert.equal(new Set(t3All.map((r) => r.orderNo)).size, t3All.length)
+      assert.ok(t3All.every((r) => r.orderNo !== null))
+    })
+
     // 8) Self-heal: a counter that fell behind (restore, manual edit) never hands out a duplicate.
     await sql`UPDATE "OrderNumberCounter" SET "lastNo" = 0 WHERE "tenantId" = ${T1}`
     const healed = await prisma.order.create({ data: { tenantId: T1, orderId: 'ORDER-HEAL', orderType: 'EA', customerName: 'Heal' }, select: { id: true } })

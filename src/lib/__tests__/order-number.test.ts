@@ -216,3 +216,40 @@ describe('search wiring (tenant-scoped id lookups only)', () => {
     assert.match(drawer, /orderSecondaryId\(sale\)/, 'the long id stays visible in the detail for support');
   });
 });
+
+describe('review fixes (Verifier / SecureDog)', () => {
+  it('parseOrder keeps orderNo, so Pedidos / Producción / chat panel get "#1042" (was dropped)', async () => {
+    const { parseOrder } = await import('../../app/hooks/useSalesStream');
+    const sale = parseOrder({ id: 'o1', orderId: 'ORDER-1792711884367', orderNo: 1042, orderType: 'EA' });
+    assert.equal(sale?.orderNo, 1042);
+    assert.equal(orderLabel(sale), '#1042');
+    assert.equal(parseOrder({ id: 'o2', orderId: 'ORDER-2', orderType: 'EA' })?.orderNo, null);
+    assert.equal(parseOrder({ id: 'o3', orderId: 'ORDER-3', orderNo: 'x', orderType: 'EA' })?.orderNo, null);
+  });
+  it('INFRA-26: long search input never reaches the regex (no quadratic backtracking)', () => {
+    const evil = `n${' '.repeat(16_000)}a`;
+    const start = performance.now();
+    assert.equal(parseOrderNoQuery(evil), null);
+    assert.equal(parseOrderNoQuery(`#${' '.repeat(16_000)}1`), null);
+    assert.ok(performance.now() - start < 5, 'returns in < 5 ms');
+    assert.equal(parseOrderNoQuery('pedido # 9999999'), 9_999_999);
+  });
+  it('orderNo is never stored as a custom field on create or edit', () => {
+    assert.match(src('src/app/api/orders/update/route.ts'), /'itemLines',[\s\S]{0,160}'orderNo',/);
+    assert.match(src('src/app/api/orders/route.ts'), /'contraEntrega','cePaymentConfirmed',[\s\S]{0,140}'orderNo',/);
+  });
+  it('customer guía caption keeps the long id until the agent lookup understands #N (DATA-66)', () => {
+    assert.match(src('src/lib/shipping/send-guia-to-chat.ts'), /orderNumber: order\.orderId/);
+  });
+  it('backfill raises the counter in a short transaction, then numbers in batches with timeouts', () => {
+    const backfill = src('src/lib/orders/order-number-backfill.ts');
+    assert.match(backfill, /SET LOCAL lock_timeout = '3s'/);
+    assert.match(backfill, /SET LOCAL statement_timeout/);
+    assert.match(backfill, /if \(top > counterAfter\)/);
+    assert.match(backfill, /AND o\."orderNo" IS NULL/);
+  });
+  it('062 has no table-scanning VALIDATE (all NULL; NOT VALID still checks new rows)', () => {
+    const code = src('supabase/migrations/062_order_number.sql').replace(/--.*$/gm, '');
+    assert.doesNotMatch(code, /VALIDATE CONSTRAINT/);
+  });
+});

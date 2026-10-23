@@ -4,7 +4,9 @@
  * A productDetails item may carry `inventoryItemId` (staff bot, and Ventas / inbox prefill since lane J) while
  * its `type` holds a generic word ("Parche"). When the item has no saved `itemName`, the CURRENT inventory name
  * of that id (same business only) is added as `itemName`, so lists show "Parche Sleep · 30 u" instead of
- * "Parche". A saved `itemName` wins: renaming a product later does not rewrite old orders.
+ * "Parche". A saved `itemName` wins: renaming a product later does not rewrite orders that saved one (Ventas,
+ * inbox prefill, website sku, backfilled). Orders with only an id (e.g. older staff-bot orders until
+ * scripts/order-item-names-backfill.ts runs) show the item's CURRENT name.
  *
  * Never changes `type` / `sku` / `product`: those drive stock matching (order-lifecycle extractInventoryRequests,
  * the legacy deduction in /api/orders, retiro stock), which this file must not influence.

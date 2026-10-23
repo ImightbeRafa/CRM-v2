@@ -10,6 +10,8 @@
  * `inventoryItemId` (lookup). Never `sku` / `name`: the matcher reads those.
  */
 
+import { extractOrderLines } from '@/lib/retiro-stock-utils';
+
 export type PickedItem = { inventoryItemId: string; itemName: string; pickedType: string };
 
 const MAX_NAME = 120;
@@ -38,7 +40,13 @@ export function websiteProductDetails(
   if (!item || !name || name.includes(',') || !Number.isInteger(qty) || qty < 1) return null;
   const exact = exactItemDetail({ inventoryItemId: item.id, itemName: String(item.name ?? '').trim().slice(0, MAX_NAME) });
   if (!exact.inventoryItemId) return null;
-  return JSON.stringify([{ type: name, cantidad: qty, ...exact }]);
+  const details = JSON.stringify([{ type: name, cantidad: qty, ...exact }]);
+  // Retiro stock parses the product text ("Parche x2", "A + B") differently from details: write details only
+  // when retiro reads exactly the same lines either way.
+  const fromText = extractOrderLines({ product: product.name, quantity: qty });
+  const fromDetails = extractOrderLines({ product: product.name, quantity: qty, productDetails: details });
+  if (JSON.stringify(fromText) !== JSON.stringify(fromDetails)) return null;
+  return details;
 }
 
 /**

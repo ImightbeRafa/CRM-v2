@@ -29,7 +29,8 @@ type Guia = {
   createdAt: string
 }
 
-type ProductRow = { type?: string; cantidad?: number; color?: string; tamano?: string; productCost?: number }
+/** `itemName` = exact inventory item (lane J), shown instead of a generic `type` like "Parche". */
+type ProductRow = { type?: string; itemName?: string; cantidad?: number; color?: string; tamano?: string; productCost?: number }
 
 function fmtDateTime(value: string | undefined | null): string | null {
   if (!value) return null
@@ -305,7 +306,7 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
                 <li key={i} className="flex items-start justify-between gap-3 py-2 text-[13px]">
                   <span className="min-w-0">
                     <span className="block font-medium text-slate-900">
-                      {p.type || 'Producto'} <span className="text-slate-400">×{p.cantidad ?? 1}</span>
+                      {(typeof p.itemName === 'string' && p.itemName.trim()) || p.type || 'Producto'} <span className="text-slate-400">×{p.cantidad ?? 1}</span>
                     </span>
                     {[p.color, p.tamano].filter(Boolean).length > 0 ? (
                       <span className="block text-[12px] text-slate-500">{[p.color, p.tamano].filter(Boolean).join(' · ')}</span>

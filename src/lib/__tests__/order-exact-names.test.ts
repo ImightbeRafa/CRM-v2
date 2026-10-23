@@ -99,8 +99,8 @@ describe('Ventas form carries the exact item', () => {
     assert.match(src('src/app/ventas/components/EnhancedSmartSuggestions.tsx'), /type: item\.category,/, 'stock key unchanged');
   });
   it('website schema accepts an optional sku; the lookup is scoped to the business and active items', () => {
-    assert.match(src('src/lib/website-order-schema.ts'), /sku: z\.string\(\)\.trim\(\)\.min\(1\)\.max\(64\)\.optional\(\)/);
-    assert.match(src('src/lib/integration-orders.ts'), /where: \{ tenantId, isActive: true, sku: \{ equals: sku, mode: 'insensitive' \} \},[\s\S]{0,80}take: 2/);
+    assert.match(src('src/lib/website-order-schema.ts'), /sku: z\.preprocess\(/);
+    assert.match(src('src/lib/integration-orders.ts'), /where: \{ tenantId, isActive: true, sku: \{ equals: escaped, mode: 'insensitive' \} \},[\s\S]{0,80}take: 2/);
   });
 });
 
@@ -162,5 +162,41 @@ describe('generic-name report + safe backfill', () => {
     const numbers = src('scripts/order-number-backfill.ts');
     assert.match(numbers, /ORDER_NUMBER_BACKFILL_APPLY !== '1'/);
     assert.match(numbers, /confirmHost !== host/);
+  });
+});
+
+describe('review fixes (website intake)', () => {
+  it('a bad sku never rejects a website order (treated as "no sku", as before)', async () => {
+    const { externalOrderIntakeSchema } = await import('../website-order-schema');
+    const base = {
+      orderId: 'W-1', orderType: 'RA', customer: { name: 'Ana', phone: '88881111' }, total: '1000',
+      product: { name: 'Parche Sleep', quantity: 1, unitPrice: '1000' },
+    };
+    for (const sku of ['', '   ', null, 123, 'x'.repeat(65), { a: 1 }]) {
+      const parsed = externalOrderIntakeSchema.safeParse({ ...base, product: { ...base.product, sku } });
+      assert.equal(parsed.success, true, JSON.stringify(sku));
+      assert.equal(parsed.success && parsed.data.product.sku, undefined);
+    }
+    const ok = externalOrderIntakeSchema.safeParse({ ...base, product: { ...base.product, sku: ' SLP-30 ' } });
+    assert.equal(ok.success && ok.data.product.sku, 'SLP-30');
+  });
+  it('website details are skipped when retiro would read the order differently', () => {
+    for (const name of ['Parche Sleep x2', 'A + B', 'A y B', 'A; B']) {
+      assert.equal(websiteProductDetails({ name, quantity: 1 }, { id: 'i', name: 'X' }), null, name);
+    }
+    const details = websiteProductDetails({ name: 'Parche Sleep', quantity: 2 }, { id: 'i', name: 'Parche Sleep · 30 u' });
+    assert.ok(details);
+    assert.deepEqual(
+      extractOrderLines({ product: 'Parche Sleep', quantity: 2, productDetails: details }),
+      extractOrderLines({ product: 'Parche Sleep', quantity: 2 }),
+    );
+  });
+  it('sku lookup escapes ILIKE wildcards and re-checks the exact match', () => {
+    const code = src('src/lib/integration-orders.ts');
+    assert.ok(code.includes('sku.replace(/[\\\\%_]/g'), 'escapes % _ and backslash');
+    assert.match(code, /row\.sku\.toLowerCase\(\) === sku\.toLowerCase\(\)/);
+  });
+  it('Pedido drawer shows the exact item name', () => {
+    assert.match(src('src/components/aurora/pedidos/PedidoDetailDrawer.tsx'), /p\.itemName\.trim\(\)\) \|\| p\.type \|\| 'Producto'/);
   });
 });

@@ -13,8 +13,6 @@ import { logAuditEvent } from '@/lib/auditLogger'
 import { normalizeClientPhone } from '@/lib/order-lifecycle'
 import { sendWhatsAppMediaBytes } from '@/lib/chat-send-media-core'
 import { guiaCaption, guiaPdfFilename, maskPhone } from '@/lib/chat-order-flow'
-import { orderLabel } from '@/lib/orders/order-label'
-import { loadOrderNo } from '@/lib/orders/order-number-server'
 
 export type SendGuiaToChatInput = {
   tenantId: string
@@ -97,12 +95,9 @@ export async function sendGuiaToChat(input: SendGuiaToChatInput): Promise<SendGu
     recipient: conversation.peerId,
     bytes: new Uint8Array(guia.pdfData),
     filename: guiaPdfFilename(number, order.orderId),
-    // The customer reads (and quotes back) the short "#1042" when the order has one; else the long id as before.
-    caption: guiaCaption({
-      customerName: conversation.peerName || order.customerName,
-      orderNumber: orderLabel({ orderId: order.orderId, orderNo: await loadOrderNo(tenantId, order.id) }),
-      guiaNumber: number,
-    }),
+    // Customer-facing text keeps the long id for now: the inbox agent's order lookup (soft-ai order-ownership)
+    // only understands it, and showing customers the per-business sequence is Rafael's call (DATA-66).
+    caption: guiaCaption({ customerName: conversation.peerName || order.customerName, orderNumber: order.orderId, guiaNumber: number }),
     // Same guía to the same chat is deduplicated (double click); "Reenviar" is a new send.
     clientRequestId: input.resend === true ? `guia:${guia.id}:${conversation.id}:${Date.now()}` : `guia:${guia.id}:${conversation.id}`,
     metadata: { guiaId: guia.id, orderId: order.id },

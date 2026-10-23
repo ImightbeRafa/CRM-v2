@@ -2,6 +2,7 @@ import { useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useToast } from "@/app/hooks/use-toast"
 import { Sale } from '../produccion/types/sales'
+import { normalizeOrderNo } from '@/lib/orders/order-label'
 
 interface SalesStreamOptions {
   onData?: (data: Sale[]) => void;
@@ -24,6 +25,8 @@ export function parseOrder(data: any): Sale | null {
   const commonFields = {
     id: data.id || data.orderId,
     orderId: data.orderId || '',
+    // Short per-business number (#1042, SQL 062); null → screens show orderId.
+    orderNo: normalizeOrderNo(data.orderNo),
     status: data.status || 'Pendiente',
     delivery: data.delivery || '-',
     timestamp: data.timestamp || new Date().toISOString(),

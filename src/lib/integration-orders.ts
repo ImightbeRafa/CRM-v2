@@ -116,12 +116,16 @@ async function websiteExactDetails(tenantId: string, orderData: ExternalOrderDat
   const sku = orderData.product.sku?.trim();
   if (!sku) return null;
   try {
-    const matches = await getTenantPrisma(tenantId).inventoryItem.findMany({
-      where: { tenantId, isActive: true, sku: { equals: sku, mode: 'insensitive' } },
-      select: { id: true, name: true },
+    // Case-insensitive equals may become ILIKE: escape % _ \ so a sku is never a wildcard (INT-237), and
+    // re-check the exact match here.
+    const escaped = sku.replace(/[\\%_]/g, (c) => `\\${c}`);
+    const rows = await getTenantPrisma(tenantId).inventoryItem.findMany({
+      where: { tenantId, isActive: true, sku: { equals: escaped, mode: 'insensitive' } },
+      select: { id: true, name: true, sku: true },
       take: 2,
     });
-    return websiteProductDetails(orderData.product, matches.length === 1 ? matches[0] : null);
+    const matches = rows.filter((row) => row.sku.toLowerCase() === sku.toLowerCase());
+    return websiteProductDetails(orderData.product, matches.length === 1 && rows.length === 1 ? matches[0] : null);
   } catch (error) {
     console.warn('[createExternalOrder] sku lookup skipped', error instanceof Error ? error.message : error);
     return null;

@@ -2426,6 +2426,8 @@ export function SoftCopilotInboxV2() {
       Boolean(selectedConversation) &&
       selectedConversation!.platform === 'whatsapp' &&
       (!waWindowOpen || isWhatsAppWindowClosedError(sendError)),
+    igHumanAgentEnabled: selectedDto?.igHumanAgentEnabled === true,
+    lastInboundAt: selectedDto?.lastInboundAt ?? null,
     hasMoreMessages: Boolean(
       selectedConversationId && threadBeforeCursor[selectedConversationId],
     ),

@@ -3,6 +3,13 @@
 These answers match the privacy policy at https://www.betsycrm.com/privacy (version 2026-10-22). If the policy changes,
 change these answers too.
 
+## Where the data is (servers)
+
+- Database and chat files: **Supabase on AWS us-east-1 (United States)**.
+- App hosting: **Cloudflare** Workers + Containers (Cloudflare's global network); private backups on Cloudflare R2,
+  kept 14 days.
+- No servers of our own; no copies outside the providers below.
+
 ## Data processors / service providers
 
 **Do you have processors or service providers that will have access to the Platform Data you get from Meta?** Yes.
@@ -52,7 +59,13 @@ No.
   and AI records of the lines that person connected, and return a status page
   (https://www.betsycrm.com/data-deletion?code=…). Or by email to support@betsycrm.com. A whole account is erased by
   hand within 30 days.
-- **Retention.** Tokens are deleted at disconnect. History is kept for the business until a deletion request or an
-  account erase. AI outputs are kept 90 days, ad click ids 90 days, backups 14 days.
+- **Retention** (same as https://www.betsycrm.com/privacy §7):
+  - Access tokens: deleted at once when the business disconnects or removes Betsy in Facebook/Instagram.
+  - Conversations, messages and chat media: kept for the business while its account exists (also after a disconnect);
+    deleted by a deletion request (§8) or an account erase.
+  - AI agent outputs: 90 days. WhatsApp ad click id (ctwa_clid): 90 days. Staff assistant short-term memory: 7 days.
+  - Notifications: 90 days once read, 180 if unread. Workspace activity history: 395 days.
+  - Security logs (sign-ins, IP): while the account exists; deleted with an account erase.
+  - Backups: 14 days. Data held by OpenAI for the API: up to 30 days (abuse monitoring only).
 - **Security.** HTTPS everywhere, tokens encrypted at rest, each business's data isolated, private storage, access limited
   to what the service needs.

@@ -1,4 +1,5 @@
 import 'server-only'
+import { isDemoPeerId } from '@/lib/demo-chat'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
@@ -105,6 +106,11 @@ export async function sendWhatsAppMediaBytes(opts: {
   const { tenantId, userId, socialAccountId, recipient, bytes } = opts
   const caption = String(opts.caption || '').slice(0, 1024)
   const clientRequestId = opts.clientRequestId ?? null
+
+  // Demo chats (Meta review kit) have made-up customer ids: never send those to Meta.
+  if (isDemoPeerId(recipient)) {
+    return { ok: false, error: 'Este es un chat de demostración: no se envía a Instagram ni a WhatsApp.', status: 400 }
+  }
 
   const media = classifyOutboundMedia({ filename: opts.filename, bytes })
   if (!media.ok) return { ok: false, error: media.error, status: 400 }

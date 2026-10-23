@@ -37,6 +37,7 @@ function sampleDto(id: string, at: string): ChatConversationListItemDto {
     lastMessage: 'hola',
     lastMessageDirection: 'inbound',
     waWindowOpen: true,
+    igHumanAgentEnabled: false,
     aiMode: null,
     assignedUserId: null,
     assignedUser: null,

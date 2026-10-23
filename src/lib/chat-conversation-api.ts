@@ -1,5 +1,6 @@
 import { cleanProfileUsername, hasStoredPeerAvatar, peerAvatarRoute } from '@/lib/chat-peer-display'
 import { z } from 'zod'
+import { instagramHumanAgentEnabled } from '@/lib/instagram-human-agent'
 import { staffDisplayName } from '@/lib/display-name'
 import { projectRawMessageForClient } from '@/lib/chat-message-display'
 import type { Prisma } from '@prisma/client'
@@ -125,6 +126,8 @@ export type ChatConversationListItemDto = {
   lastMessage: string | null
   lastMessageDirection: string | null
   waWindowOpen: boolean
+  /** Instagram: a person may reply with the HUMAN_AGENT tag after 24 h (server flag; see instagram-human-agent). */
+  igHumanAgentEnabled: boolean
   aiMode: SoftAiAgentMode | null
   assignedUserId: string | null
   assignedUser: { id: string; name: string | null; image: string | null } | null
@@ -270,6 +273,7 @@ export function mapConversationToListDto(row: ConversationRow, stages: StageDef[
     lastInboundAt: row.lastInboundAt ? row.lastInboundAt.toISOString() : null,
     lastOutboundAt: row.lastOutboundAt ? row.lastOutboundAt.toISOString() : null,
     waWindowOpen: waWindowOpenFromInbound(platform, row.lastInboundAt),
+    igHumanAgentEnabled: platform === 'instagram' && instagramHumanAgentEnabled(),
     aiMode: normalizeAiMode(row.aiMode),
     assignedUserId: row.assignedUserId,
     assignedUser: row.assignedUser

@@ -242,6 +242,14 @@ export function buildSuggestedReply(
 
 const WA_WINDOW_MS = 24 * 60 * 60 * 1000
 
+/** Time (ms) of the customer's last message in the loaded thread, or null. */
+export function lastInboundTime(messages: ChatInboxMessage[]): number | null {
+  const lastInbound = [...messages].reverse().find((m) => m.direction === 'inbound')
+  if (!lastInbound) return null
+  const t = new Date(lastInbound.receivedAt || lastInbound.sentAt).getTime()
+  return Number.isNaN(t) ? null : t
+}
+
 /** True when WhatsApp free-form window is still open (last inbound < 24h). */
 export function isWhatsAppWindowOpen(
   messages: ChatInboxMessage[],

@@ -33,6 +33,15 @@ import {
   buildHumanSenderSnapshot,
   mergeHumanSenderMetadata,
 } from '@/lib/chat-human-attribution'
+import {
+  IG_WINDOW_CLOSED_MESSAGE,
+  type IgReplyWindowState,
+  igHumanSendFields,
+  igReplyWindow,
+  instagramHumanAgentEnabled,
+  mapInstagramSendError,
+} from '@/lib/instagram-human-agent'
+import { isDemoPeerId } from '@/lib/demo-chat'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -197,6 +206,11 @@ export async function POST(request: NextRequest) {
       return jsonError(`Falta el token de acceso de ${account.platform}. Reconecta la cuenta en Configuración Social.`, 400)
     }
 
+    // Demo chats (scripts/meta-review-demo-seed.ts) have made-up customer ids: never send those to Meta.
+    if (isDemoPeerId(recipient)) {
+      return jsonError('Este es un chat de demostración: no se envía a Instagram ni a WhatsApp.', 400, { reason: 'demo_chat' })
+    }
+
     // Same id already stored (Retry, double click, second tab): answer with that message, never send again.
     const already = await findOutboundByClientRequestId(db, {
       tenantId,
@@ -211,6 +225,23 @@ export async function POST(request: NextRequest) {
         conversationId: already.conversationId ?? null,
         clientRequestId,
       })
+    }
+
+    // Instagram, a person replying (this route is human-only): after 24 h and within 7 days Meta allows the
+    // HUMAN_AGENT tag once the permission is approved (META_IG_HUMAN_AGENT=1). Decided here, never by the client,
+    // and before the send claim so a refusal leaves nothing "in flight".
+    let igWindowState: IgReplyWindowState = 'unknown'
+    if (account.platform === 'instagram' && !isTemplate) {
+      const humanAgentOn = instagramHumanAgentEnabled()
+      const igChat = await db.chatConversation.findFirst({
+        where: { tenantId, socialAccountId: account.id, peerId: recipient },
+        select: { lastInboundAt: true },
+      })
+      igWindowState = igReplyWindow(igChat?.lastInboundAt ?? null, Date.now(), humanAgentOn).state
+      // Unknown last message (no chat row): today's behaviour, Meta decides.
+      if (humanAgentOn && igWindowState === 'closed') {
+        return jsonError(IG_WINDOW_CLOSED_MESSAGE, 409, { reason: 'window_closed' })
+      }
     }
     const claim = await claimChatSend(tenantId, clientRequestId)
     if (claim.kind === 'delivered') {
@@ -242,12 +273,16 @@ export async function POST(request: NextRequest) {
     let delivered = false
     // Timed out talking to Meta: it may or may not have gone out.
     let ambiguous = false
+    // Instagram reply sent with the HUMAN_AGENT tag (kept on the message metadata).
+    let usedHumanAgentTag = false
 
     try {
       if (account.platform === 'instagram') {
         if (isTemplate) {
           return jsonError('Las plantillas Meta solo están disponibles para WhatsApp', 400)
         }
+        const igSendFields = igHumanSendFields(igWindowState)
+        usedHumanAgentTag = igSendFields.messaging_type === 'MESSAGE_TAG'
         try {
           const pageId = parseSocialRefreshToken(account.refreshToken).pageId
           const sendPath = pageId ? `${encodeURIComponent(pageId)}/messages` : 'me/messages'
@@ -259,7 +294,7 @@ export async function POST(request: NextRequest) {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              messaging_type: 'RESPONSE',
+              ...igSendFields,
               recipient: { id: recipient },
               message: { text: content },
             }),
@@ -276,6 +311,8 @@ export async function POST(request: NextRequest) {
             if (isMetaInvalidTokenError(providerResponse)) {
               return jsonError(socialTokenSendBlockMessage({ ...account, tokenStatus: 'revoked' }), 400)
             }
+            const mapped = mapInstagramSendError(providerResponse, usedHumanAgentTag)
+            if (mapped) return jsonError(mapped.message, 409, { reason: mapped.reason })
             return jsonError(
               providerResponse?.error?.message || 'Falló el envío por Instagram',
               502,
@@ -468,6 +505,7 @@ export async function POST(request: NextRequest) {
           providerDispatch: dispatchResult,
           providerResponse,
           ...(clientRequestId ? { clientRequestId } : {}),
+          ...(usedHumanAgentTag ? { messagingTag: 'HUMAN_AGENT' } : {}),
           ...(isTemplate
             ? {
                 messageType: 'template',

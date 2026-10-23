@@ -24,10 +24,12 @@ import {
 } from 'lucide-react'
 import { useDashboardStats } from '@/app/hooks/useDashboardStats'
 import { SetupChecklist } from './SetupChecklist'
+import { orderLabel } from '@/lib/orders/order-label'
 
 type RecentOrder = {
   id: string
   orderId: string
+  orderNo?: number | null
   customerName: string
   product: string | null
   total: number
@@ -431,7 +433,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[13px] font-semibold text-slate-900">{o.customerName}</p>
                       <p className="line-clamp-2 break-words text-[12px] text-slate-500" title={o.product ? `${o.orderId} · ${o.product}` : o.orderId}>
-                        {o.orderId}
+                        {orderLabel(o)}
                         {o.product ? ` · ${o.product}` : ''}
                       </p>
                       {/* Status under the order on phones (the right-hand pill is sm+ only). */}

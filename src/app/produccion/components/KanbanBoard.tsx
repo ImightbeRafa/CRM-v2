@@ -1,5 +1,6 @@
 'use client';
 
+import { orderLabel } from '@/lib/orders/order-label';
 import React, { useMemo, useState } from 'react';
 import type { Sale } from '../types/sales';
 import { KanbanColumn } from './KanbanColumn';
@@ -73,7 +74,7 @@ function KanbanBoardComponent({ orders, statuses: provided = [], serverDriven = 
     setMovingOrderId(order.id);
     try {
       await moveStatus(order, status);
-      toast({ title: 'Estado actualizado', description: `${order.orderId} → ${status}` });
+      toast({ title: 'Estado actualizado', description: `${orderLabel(order)} → ${status}` });
     } catch (error) {
       const code = (error as Error & { code?: string }).code;
       toast({

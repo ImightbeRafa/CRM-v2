@@ -21,6 +21,8 @@ export type RetiroAllocationRow = {
 const DETAIL_SKIP_KEYS = new Set([
   'type', 'name', 'cantidad', 'quantity', 'productcost', 'productCost',
   'inventoryitemid', 'inventoryitemsku', 'requestedsku', 'id',
+  // lane J: exact picked item (display only), never an extra attribute of the line.
+  'itemname', 'pickedtype',
 ]);
 
 const GENERIC_PRODUCT_NAMES = new Set([

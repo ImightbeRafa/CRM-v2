@@ -1,3 +1,4 @@
+import { orderLabel } from '@/lib/orders/order-label';
 import {
   Dialog,
   DialogContent,
@@ -406,7 +407,7 @@ export function OrderDetails({
         <DialogHeader className="px-6 py-4 border-b border-border bg-card sticky top-0 z-10">
           <DialogTitle className="flex justify-between items-center">
             <div className="flex items-center space-x-3">
-              <span className="text-lg font-semibold text-foreground">Orden {displayOrder.orderId}</span>
+              <span className="text-lg font-semibold text-foreground" title={displayOrder.orderId}>Orden {orderLabel(displayOrder)}</span>
               <span className="px-2 py-1 text-xs font-medium rounded-full bg-muted text-muted-foreground">
                 {displayOrder.orderType === 'EA' ? 'Envío' : 'Retiro'}
               </span>

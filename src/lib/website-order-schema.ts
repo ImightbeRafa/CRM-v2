@@ -22,6 +22,8 @@ export const externalOrderIntakeSchema = z.object({
     name: z.string().min(1),
     quantity: z.number().positive(),
     unitPrice: z.string().min(1),
+    /** Optional (lane J): the store's SKU, so the order shows the exact inventory item. */
+    sku: z.string().trim().min(1).max(64).optional(),
   }),
   orderType: z.enum(['EA', 'RA']).optional(),
   pickupDate: z.string().optional(),

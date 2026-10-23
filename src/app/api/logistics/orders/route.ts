@@ -12,6 +12,8 @@ import {
 } from '@/lib/logistics-managed-tenants';
 import { fetchArchivedLogisticsOrders, type ArchivedLogisticsOrder } from '@/lib/logistics-archived-orders';
 import { orderItemLabels } from '@/lib/orders/order-items';
+import { loadOrderNosByTenant, orderIdsForSearchInTenants } from '@/lib/orders/order-number-server';
+import { withInventoryItemNamesByTenant } from '@/lib/orders/item-names-server';
 
 type GuiaInfo = {
     guiaId: string;
@@ -172,11 +174,14 @@ export async function GET(req: NextRequest) {
         if (status) where.status = status;
         if (courier) where.courier = courier;
         if (search) {
+            // "#1042" / "1042": that short number in each managed business (SQL 062; none before it).
+            const idsForNo = await orderIdsForSearchInTenants(tenantIds, search);
             where.OR = [
                 { customerName: { contains: search, mode: 'insensitive' } },
                 { orderId: { contains: search, mode: 'insensitive' } },
                 { phone: { contains: search } },
                 { address: { contains: search, mode: 'insensitive' } },
+                ...(idsForNo.length ? [{ id: { in: idsForNo } }] : []),
             ];
         }
 
@@ -382,8 +387,10 @@ export async function GET(req: NextRequest) {
             await Promise.all([loadCe(), loadGuias()]);
         }
 
-        const enriched = orders.map(({ productDetails, ...o }) => ({
+        const [orderNos, named] = await Promise.all([loadOrderNosByTenant(orders), withInventoryItemNamesByTenant(orders)]);
+        const enriched = named.map(({ productDetails, ...o }) => ({
             ...o,
+            orderNo: orderNos.get(o.id) ?? null,
             itemLines: orderItemLabels({ productDetails, product: o.product, quantity: o.quantity }) ?? null,
             lmCarrier: lmData[o.id]?.lmCarrier ?? null,
             isContraEntrega: (o as any).contraEntrega || lmData[o.id]?.isContraEntrega || false,

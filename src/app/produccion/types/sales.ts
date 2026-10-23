@@ -2,6 +2,8 @@
 export interface BaseOrder {
   id: string;
   orderId: string;
+  /** Short per-business number (#1042, SQL 062). Show it via orderLabel(); null/absent → orderId. */
+  orderNo?: number | null;
   status: string;
   delivery: string;
   timestamp: string;

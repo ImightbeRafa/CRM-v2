@@ -7,6 +7,7 @@ import { CrcMoneyError } from '@/lib/crc-money';
 import { createIdentifierRateLimit, getClientIP } from '@/lib/rate-limit';
 import { evaluateTenantAccess, markRestrictedBacklog, type TenantAccessEvaluation } from '@/lib/billing-access';
 import { externalOrderIntakeSchema } from '@/lib/website-order-schema';
+import { loadOrderNo } from '@/lib/orders/order-number-server';
 
 // Next.js route segment config
 export const maxDuration = 30; // Maximum execution time in seconds
@@ -150,6 +151,8 @@ export async function POST(req: NextRequest) {
       message: 'Order created successfully',
       crmOrderId: createdOrder.id,
       orderId: orderData.orderId,
+      // Short per-business number (#1042) the store can show its customer; null before SQL 062.
+      orderNo: await loadOrderNo(tenantId, createdOrder.id),
       processingTime
     });
 

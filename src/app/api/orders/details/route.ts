@@ -3,6 +3,8 @@ import { authenticateAPI } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { withTenantContext } from '@/lib/tenantContext';
 import { getToken } from 'next-auth/jwt';
+import { loadOrderNo } from '@/lib/orders/order-number-server';
+import { withInventoryItemNames } from '@/lib/orders/item-names-server';
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,9 +40,13 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Order not found' }, { status: 404 })
       }
       
+      const [orderNo, [named]] = await Promise.all([
+        loadOrderNo(tenantId, order.id),
+        withInventoryItemNames(tenantId, [order]),
+      ])
       return NextResponse.json({
         status: 'success',
-        data: order
+        data: { ...named, orderNo }
       })
     })
   } catch (error) {

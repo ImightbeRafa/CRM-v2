@@ -1,5 +1,6 @@
 'use client';
 
+import { orderLabelHash } from '@/lib/orders/order-label';
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Clock } from 'lucide-react';
@@ -58,7 +59,7 @@ export function MobileOrderCard({ order, formatCurrency, className = '' }: Mobil
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1">
-              <span className="font-semibold text-sm text-foreground">#{order.orderId}</span>
+              <span className="font-semibold text-sm text-foreground" title={order.orderId}>{orderLabelHash(order)}</span>
               {order.orderType && <ShippingMethodBadge order={order} size="xs" showCod={false} />}
             </div>
             <p className="text-sm text-foreground truncate">{order.customerName}</p>

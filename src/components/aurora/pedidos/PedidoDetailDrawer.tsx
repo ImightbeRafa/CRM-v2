@@ -16,6 +16,7 @@ import type { Sale } from '@/app/produccion/types/sales'
 import { isSinpeOrder, paymentChip, shipChip } from '@/lib/pedidos-aurora'
 import { isCancelledFulfillment } from '@/lib/order-payment-status'
 import { canalLabel, type OrderLine } from '@/lib/order-channel-line'
+import { orderLabel, orderLabelHash, orderSecondaryId } from '@/lib/orders/order-label'
 
 const CR_TZ = 'America/Costa_Rica'
 
@@ -153,7 +154,7 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'No se pudo confirmar el pago')
       }
-      toast({ variant: 'success' as any, title: 'Pago confirmado', description: `Pedido ${sale.orderId}` })
+      toast({ variant: 'success' as any, title: 'Pago confirmado', description: `Pedido ${orderLabel(sale)}` })
       onUpdated()
     } catch (error) {
       toast({ variant: 'destructive', title: 'No se pudo confirmar el pago', description: error instanceof Error ? error.message : undefined })
@@ -194,9 +195,9 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
     <AuroraDrawer
       open
       onOpenChange={(open) => !open && onClose()}
-      title={`#${sale.orderId}`}
-      ariaTitle={`Pedido ${sale.orderId}`}
-      subtitle={fmtDateTime(sale.timestamp) ?? undefined}
+      title={orderLabelHash(sale)}
+      ariaTitle={`Pedido ${orderLabel(sale)}`}
+      subtitle={[fmtDateTime(sale.timestamp), orderSecondaryId(sale)].filter(Boolean).join(' · ') || undefined}
       headerRight={
         <span className="hidden items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[12px] font-semibold text-slate-700 sm:inline-flex">
           <span className="h-1.5 w-1.5 rounded-full bg-[#7C5CFF]" aria-hidden />

@@ -59,6 +59,8 @@ export type RequiredLmTable = (typeof REQUIRED_LM_TABLES)[number];
  */
 export const HOT_PRISMA_TABLES = [
   'Order',
+  // SQL 062: per-tenant short order number counter; travels with Order (the trigger self-heals if it lags).
+  'OrderNumberCounter',
   'Client',
   'InventoryItem',
   'ShippingGuia',

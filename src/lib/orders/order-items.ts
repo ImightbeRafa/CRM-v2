@@ -78,16 +78,25 @@ function variantFor(item: Record<string, unknown>, name: string): string | null 
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
-function linesFromDetails(details: unknown): OrderItemLine[] {
+/** A detail line plus the name as stored in `type` (what `product` was built from). */
+type DetailLine = { line: OrderItemLine; stored: string };
+
+const MAX_ITEM_NAME_LEN = 120;
+
+function linesFromDetails(details: unknown): DetailLine[] {
   if (!Array.isArray(details)) return [];
-  const lines: OrderItemLine[] = [];
+  const lines: DetailLine[] = [];
   for (const raw of details) {
     if (!raw || typeof raw !== 'object') continue;
     const item = raw as Record<string, unknown>;
-    const name = String(item.type ?? item.name ?? item.product ?? '').trim();
+    const stored = String(item.type ?? item.name ?? item.product ?? '').trim();
+    // `itemName` = the exact inventory item picked (Ventas, inbox prefill) or resolved from its
+    // inventoryItemId; `type` may only hold a generic word like the category ("Parche").
+    const exact = typeof item.itemName === 'string' ? item.itemName.trim().slice(0, MAX_ITEM_NAME_LEN) : '';
+    const name = exact || stored;
     if (!name) continue;
     const qty = positiveInt(item.cantidad ?? item.quantity ?? item.qty) ?? 1;
-    lines.push(makeLine(name, qty, variantFor(item, name)));
+    lines.push({ line: makeLine(name, qty, variantFor(item, name)), stored: stored || name });
   }
   return lines;
 }
@@ -98,23 +107,28 @@ function linesFromDetails(details: unknown): OrderItemLine[] {
  * details only while they still match: every item name appears in the product
  * text and the item counts add up to the order quantity.
  */
-function detailsMatchOrder(lines: OrderItemLine[], order: OrderItemsInput): boolean {
+function productIsMadeOf(product: string, itemNames: string[]): boolean {
+  // Remove each item name (longest first); only separators and "xN" counts
+  // may be left, so a rename "Parche" → "Parche Focus" is caught.
+  let rest = product;
+  const names = itemNames.map(fold).sort((a, b) => b.length - a.length);
+  for (const name of names) {
+    const at = rest.indexOf(name);
+    if (at < 0) return false;
+    rest = `${rest.slice(0, at)} ${rest.slice(at + name.length)}`;
+  }
+  return rest.replace(/[x×]\s*\d+|\(\s*\d+\s*\)|[\s,;+&-]/g, '') === '';
+}
+
+function detailsMatchOrder(lines: DetailLine[], order: OrderItemsInput): boolean {
   const product = fold(String(order.product ?? ''));
-  if (product) {
-    // Remove each item name (longest first); only separators and "xN" counts
-    // may be left, so a rename "Parche" → "Parche Focus" is caught.
-    let rest = product;
-    const names = lines.map((line) => fold(line.name)).sort((a, b) => b.length - a.length);
-    for (const name of names) {
-      const at = rest.indexOf(name);
-      if (at < 0) return false;
-      rest = `${rest.slice(0, at)} ${rest.slice(at + name.length)}`;
-    }
-    if (rest.replace(/[x×]\s*\d+|\(\s*\d+\s*\)|[\s,;+&-]/g, '') !== '') return false;
+  // `product` is built from the stored names (`type`); accept the exact names too.
+  if (product && !productIsMadeOf(product, lines.map((l) => l.stored)) && !productIsMadeOf(product, lines.map((l) => l.line.name))) {
+    return false;
   }
   const total = positiveInt(order.quantity);
   if (total !== null) {
-    const sum = lines.reduce((acc, line) => acc + (line.qty ?? 0), 0);
+    const sum = lines.reduce((acc, l) => acc + (l.line.qty ?? 0), 0);
     if (sum !== total) return false;
   }
   return true;
@@ -122,7 +136,7 @@ function detailsMatchOrder(lines: OrderItemLine[], order: OrderItemsInput): bool
 
 function trustedDetailLines(order: OrderItemsInput): OrderItemLine[] {
   const lines = linesFromDetails(parseDetails(order.productDetails));
-  return lines.length > 0 && detailsMatchOrder(lines, order) ? lines : [];
+  return lines.length > 0 && detailsMatchOrder(lines, order) ? lines.map((l) => l.line) : [];
 }
 
 /** "Parche x2", "Parche ×2", "Parche (2)", "2 Parche" → name + explicit qty. */

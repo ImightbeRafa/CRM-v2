@@ -4,6 +4,7 @@ import { canalLabel, type OrderLine } from '@/lib/order-channel-line'
 import { CanalCell, PaymentPill, ShipPill } from './PedidoChips'
 import OrderItemsList from '@/components/orders/OrderItemsList'
 import ShippingMethodBadge from '@/components/orders/ShippingMethodBadge'
+import { orderLabel } from '@/lib/orders/order-label'
 
 const CR_TZ = 'America/Costa_Rica'
 const AVATAR_TONES = [
@@ -95,8 +96,9 @@ export function PedidosTable({
                       onOpen(o.orderId)
                     }}
                     className="font-semibold text-slate-900 hover:text-au-ink-5b6cff"
+                    title={o.orderId}
                   >
-                    {o.orderId}
+                    {orderLabel(o)}
                   </button>
                 </td>
                 <td className="px-3 py-3">
@@ -154,7 +156,7 @@ export function PedidosTable({
                       onOpen(o.orderId)
                     }}
                     className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                    aria-label={`Ver detalle de ${o.orderId}`}
+                    aria-label={`Ver detalle de ${orderLabel(o)}`}
                   >
                     <Eye className="h-4 w-4" />
                   </button>

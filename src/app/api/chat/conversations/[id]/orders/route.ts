@@ -8,6 +8,7 @@ import { isSameOriginJson } from '@/lib/same-origin'
 import { maskPhone } from '@/lib/chat-order-flow'
 import { parseOrderSearch, phoneTail, phoneTails, rankAttachCandidates, searchPhoneDigits } from '@/lib/chat-order-attach'
 import { orderIdsByPhoneDigits, orderIdsByPhoneTails } from '@/lib/chat-order-attach-server'
+import { loadOrderNos, orderIdForSearch } from '@/lib/orders/order-number-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -92,7 +93,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
   let recentIds: Set<string> | undefined
   if (search.kind === 'text') {
     const notExcluded = excluded.length ? { id: { notIn: excluded } } : {}
-    const digitIds = search.digits ? await orderIdsByPhoneDigits(tenantId, searchPhoneDigits(search.digits), 15) : []
+    const [digitIds, idForNo] = await Promise.all([
+      search.digits ? orderIdsByPhoneDigits(tenantId, searchPhoneDigits(search.digits), 15) : Promise.resolve([]),
+      orderIdForSearch(tenantId, search.text), // "#1042" / "1042" → that short number (SQL 062)
+    ])
     // Exact number in its own query, so newer partial matches never push it out of the list.
     const [exactRows, otherRows] = await Promise.all([
       prisma.order.findMany({
@@ -103,6 +107,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           OR: [
             { orderId: { equals: search.text, mode: 'insensitive' } },
             { orderId: { endsWith: `-${search.text}`, mode: 'insensitive' } },
+            ...(idForNo ? [{ id: idForNo }] : []),
           ],
         },
         select: candidateSelect,
@@ -175,6 +180,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       })
     : []
   const elsewhereSet = new Set(elsewhere.map((m) => m.orderId))
+  const orderNos = await loadOrderNos(tenantId, rows.map((o) => o.id))
 
   const ranked = rankAttachCandidates(rows, {
     tails,
@@ -188,6 +194,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       success: true,
       orders: ranked.map(({ phone, timestamp, ...o }) => ({
         ...o,
+        orderNo: orderNos.get(o.id) ?? null,
         timestamp: timestamp.toISOString(),
         phoneMasked: maskPhone(phone),
         phoneMatchesChat: Boolean(phoneTail(phone) && tails.includes(phoneTail(phone) as string)),

@@ -142,7 +142,7 @@ export type ChatConversationListItemDto = {
   /** Snoozed until (Phase 2b); set by the list/changes routes only while it is in effect. */
   snooze?: { until: string; at: string } | null
   /** Latest order linked from this chat (internal id + human number); set by the list/changes routes. */
-  linkedOrder?: { id: string; orderNumber: string } | null
+  linkedOrder?: { id: string; orderNumber: string; orderNo?: number | null } | null
   /** True when this chat has an order that is not delivered or cancelled. Set by list/changes. */
   hasOpenOrder?: boolean
   channel: {

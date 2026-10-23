@@ -173,7 +173,10 @@ describe('agents2-hours: after-hours texts', () => {
     // Lane C P8: the "en un momento" promise is dropped at night (it contradicted "mañana"); other owner words are kept.
     assert.equal(applyAfterHoursText(optOut, night, OPTS), 'A esta hora el equipo no está disponible; te escriben mañana a las 8:00 a. m. 😊')
     const optOutOwner = { text: 'Claro, con gusto. En un momento te escribe Ana.', handoff: { kind: 'handoff' as const, reason: 'human_request' } }
-    assert.equal(applyAfterHoursText(optOutOwner, night, OPTS), 'Claro, con gusto.\nEl equipo te escribe mañana a las 8:00 a. m.')
+    // Verifier #130 fail safe: a "right now" promise is replaced whole (never cut into pieces).
+    assert.equal(applyAfterHoursText(optOutOwner, night, OPTS), 'A esta hora el equipo no está disponible; te escriben mañana a las 8:00 a. m. 😊')
+    const optOutInfo = { text: 'Escribinos también a ventas@tienda.com.', handoff: { kind: 'handoff' as const, reason: 'human_request' } }
+    assert.equal(applyAfterHoursText(optOutInfo, night, OPTS), 'Escribinos también a ventas@tienda.com.\nEl equipo te escribe mañana a las 8:00 a. m.')
     const escalate = { text: 'Te paso con el equipo', handoff: { kind: 'handoff' as const, reason: 'escalate' } }
     assert.equal(applyAfterHoursText(escalate, night, OPTS), 'A esta hora el equipo no está disponible; te escriben mañana a las 8:00 a. m. 😊')
     // Order close: the checked reply (order details) stays, the line is added; the safe line is replaced.

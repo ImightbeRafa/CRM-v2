@@ -295,8 +295,10 @@ export function decideInbound(input: {
     // Lane C D3: a complaint / late order / refund gets the empathetic line, not "¡Gracias! … ya lo reviso".
     const moneyComplaint =
       safety.reason === 'payment_or_sinpe' &&
-      (paymentHandoffReason(input.inboundText) === 'complaint' || [input.inboundText, ...(input.earlierCustomerTexts || [])].some((t) => isComplaintText(t)))
-    const text = moneyComplaint ? SAFE_LINE.complaint : renderShortcutTemplate(shortcut.body, { facts: input.brandFacts })
+      (paymentHandoffReason(input.inboundText) === 'complaint' || isComplaintText([...(input.earlierCustomerTexts || []), input.inboundText].join('\n')))
+    // SecureDog #130 L2: only the seed text is swapped; an owner's own hand-off text (e.g. a fraud notice) is kept.
+    const ownText = shortcut.body.trim() !== reservedShortcutBody(safety.shortcutKey as 'sys_handoff_payment').trim()
+    const text = moneyComplaint && !ownText ? SAFE_LINE.complaint : renderShortcutTemplate(shortcut.body, { facts: input.brandFacts })
     return finish({
       text,
       intent: safety.reason === 'payment_or_sinpe' ? 'payment_proof' : safety.reason === 'opt_out' ? 'human_request' : 'other',

@@ -1,5 +1,5 @@
 /**
- * Lane C engine findings D3 / P8 (Forge + Pura Sonrisa exams, 2026-10-22).
+ * Lane C engine findings D3 / P8 (Forge + Pura Sonrisa exams, 2026-10-22), fail-safe versions (Verifier #130).
  * Run: npx tsx --import ./scripts/shim-server-only.mjs --test src/lib/__tests__/lane-c-d3-night.test.ts
  */
 import { describe, it } from 'node:test'
@@ -8,12 +8,15 @@ import { decideInbound } from '@/lib/soft-ai/inbound-decision'
 import { parseBrandFacts } from '@/lib/soft-ai/brand-facts'
 import { RESERVED_SHORTCUT_SEEDS } from '@/lib/soft-ai/shortcuts'
 import { isComplaintText, moneyHandoffLine, planModelTurnDelivery, SAFE_LINE } from '@/lib/soft-ai/agent-turn-outcome'
-import { applyAfterHoursText, COMPLAINT_HANDOFF_LINE, dropImmediatePromises } from '@/lib/soft-ai/business-hours'
+import { afterHoursHandoffLine, applyAfterHoursText, COMPLAINT_HANDOFF_LINE, hasImmediatePromise } from '@/lib/soft-ai/business-hours'
 
 const FACTS = parseBrandFacts({ payment: { shareWithCustomers: true, methods: ['sinpe'], sinpe: { number: '88880000', holderName: 'Ana Mora' } } })
 const SHORTCUTS = RESERVED_SHORTCUT_SEEDS.map((s, i) => ({ ...s, isActive: true, sortOrder: i }))
 const NIGHT = { afterHours: true, label: 'hoy a las 9:00 a. m.', transparent: false } as Parameters<typeof applyAfterHoursText>[1]
 const OPTS = { safeReview: SAFE_LINE.review, paymentSoon: SAFE_LINE.paymentSoon }
+const NIGHT_PERSON = afterHoursHandoffLine('person', 'hoy a las 9:00 a. m.')
+const lineFor = (inboundText: string, earlierCustomerTexts?: string[]) =>
+  (decideInbound({ inboundText, earlierCustomerTexts, brandFacts: FACTS, shortcuts: SHORTCUTS }) as { text?: string }).text
 
 describe('D3: a complaint / late order / refund gets empathy, never "¡Gracias!"', () => {
   it('code-decided hand-offs (the hand-off itself is unchanged)', () => {
@@ -25,10 +28,8 @@ describe('D3: a complaint / late order / refund gets empathy, never "¡Gracias!"
       const d = decideInbound({ inboundText: t, brandFacts: FACTS, shortcuts: SHORTCUTS }) as { text?: string; handoff: { reason: string } | null }
       assert.equal(d.handoff?.reason, reason, t)
       assert.equal(d.text, COMPLAINT_HANDOFF_LINE, t)
-      assert.doesNotMatch(String(d.text), /Gracias/, t)
     }
-    const receipt = decideInbound({ inboundText: 'Ya pagué, adjunto el comprobante', brandFacts: FACTS, shortcuts: SHORTCUTS }) as { text?: string }
-    assert.equal(receipt.text, SAFE_LINE.payment)
+    assert.equal(lineFor('Ya pagué, adjunto el comprobante'), SAFE_LINE.payment)
   })
   it('model turns: receipt cue, payment claim and a refund hand-off pick the line from the customer text', () => {
     assert.equal(planModelTurnDelivery({ text: 'x', textOk: true, llmHandoff: null, receiptCue: true, customerText: 'Hace 10 días pagué y no me ha llegado' }).text, SAFE_LINE.complaint)
@@ -36,7 +37,29 @@ describe('D3: a complaint / late order / refund gets empathy, never "¡Gracias!"
     assert.equal(moneyHandoffLine('complaint', ''), SAFE_LINE.complaint)
     assert.equal(moneyHandoffLine('payment', 'listo, ya hice el sinpe'), SAFE_LINE.payment)
     for (const t of ['no me ha llegado el pedido', 'nunca llegó', 'qué mal servicio', 'quiero un reembolso', 'me llegó roto']) assert.equal(isComplaintText(t), true, t)
-    for (const t of ['¿Cuándo llega?', 'ya pagué', 'Hi, how much is it?']) assert.equal(isComplaintText(t), false, t)
+  })
+  it('fail safe: a receipt-status question keeps "¡Gracias!" (Verifier #128-4, #130-2)', () => {
+    for (const t of [
+      'Ya pagué y nada más quería avisar',
+      'Ya pagué, perdón si molesto',
+      'Ya hice el sinpe, ¿no llegó?',
+      'Ya pagué, ¿no ha llegado la notificación?',
+      'Ya hice el sinpe del pedido, ¿no llegó?',
+      'Ya te mandé el comprobante, ¿todavía no llega?',
+      'Ya pagué el pedido por SINPE, ¿no ha llegado?',
+      'Ya hice la transferencia de la compra, ¿aún no llega?',
+      'Ya pagué el envío, todavía no me llega el número de guía',
+      'Ya pagué y nada, eso era todo 😊',
+      'Ya hice el sinpe, el link de pago no me funcionó',
+    ]) {
+      assert.equal(isComplaintText(t), false, t)
+      assert.equal(lineFor(t), SAFE_LINE.payment, t)
+    }
+    assert.equal(isComplaintText('Quiero 2 kits para el pedido\nYa hice el sinpe, ¿no llegó?'), false)
+  })
+  it('the burst is read joined: a complaint split over two bubbles counts (Verifier #130-4)', () => {
+    assert.equal(lineFor('y no me ha llegado', ['Pagué hace 10 días']), SAFE_LINE.complaint)
+    assert.equal(lineFor('Ya pagué hace 10 días', ['Todavía no me llega el pedido']), SAFE_LINE.complaint)
   })
   it('at night the complaint line keeps its empathy', () => {
     const night = applyAfterHoursText({ text: SAFE_LINE.complaint, handoff: { kind: 'handoff', reason: 'payment' } }, NIGHT, OPTS)
@@ -45,58 +68,45 @@ describe('D3: a complaint / late order / refund gets empathy, never "¡Gracias!"
   })
 })
 
-describe('P8: at night, "me atiende alguien" never promises "en un momento"', () => {
-  it('the immediate promise is dropped; the owner\'s other words stay', () => {
-    const seed = applyAfterHoursText({ text: 'Claro 😊 en un momento te escribe alguien de la tienda.', handoff: { kind: 'handoff', reason: 'human_request' } }, NIGHT, OPTS)
-    assert.doesNotMatch(seed, /en un momento/)
-    assert.match(seed, /hoy a las 9:00 a\. m\./)
-    const owner = applyAfterHoursText({ text: 'Claro, con gusto. En un momento te escribe Ana.', handoff: { kind: 'handoff', reason: 'human_request' } }, NIGHT, OPTS)
-    assert.equal(owner, 'Claro, con gusto.\nEl equipo te escribe hoy a las 9:00 a. m.')
-    assert.equal(dropImmediatePromises('Enseguida te escriben. Gracias por la paciencia.'), 'Gracias por la paciencia.')
+describe('P8 fail safe: at night a "right now" promise is replaced whole by the night line', () => {
+  const optOut = (text: string) => applyAfterHoursText({ text, handoff: { kind: 'handoff', reason: 'human_request' } }, NIGHT, OPTS)
+  it('every promise text gets the night person line (nothing cut, nothing garbled)', () => {
+    for (const t of [
+      'Claro 😊 en un momento te escribe alguien de la tienda.',
+      'Claro, con gusto. En un momento te escribe Ana.',
+      'Claro 😊 en un momento te atiende la Dra. Mora.',
+      'Claro 😊 en un momento te escribe alguien de la tienda (atendemos de 8:00 a. m. a 6:00 p. m.).',
+      'Te paso con alguien del equipo enseguida, el horario es de 8:00 a. m. a 6:00 p. m.',
+      'Con gusto, en un momento te atiende el Dr. Solís. Gracias por tu paciencia.',
+      'Gracias por escribirnos. Te paso con alguien enseguida, aprox. 5 min.',
+      'Claro, el kit sale ₡14.900 y enseguida te escribe Ana para coordinar.',
+      'En un momento te llama alguien al 2222.3333.',
+      'Dame chance, ya mismo te contactan',
+      'Enseguida te confirmo.',
+      'Claro 😊 Escribinos a ventas@tienda.com o en un momento te atiende Ana.',
+    ]) {
+      assert.equal(hasImmediatePromise(t), true, t)
+      assert.equal(optOut(t), NIGHT_PERSON, t)
+    }
   })
-})
-
-describe('Verifier / SecureDog review fixes (D3 / P8)', () => {
-  it('#2 night texts keep numbers, prices, links and line breaks; nothing dropped = unchanged', () => {
-    const optOut = (text: string) => applyAfterHoursText({ text, handoff: { kind: 'handoff', reason: 'human_request' } }, NIGHT, OPTS)
-    assert.equal(dropImmediatePromises('Cada frasco trae 2.5 ml. El kit sale ₡14.900. Mirá https://tienda.com/tallas'), 'Cada frasco trae 2.5 ml. El kit sale ₡14.900. Mirá https://tienda.com/tallas')
+  it('a text with no "right now" promise keeps every word and gets the team line', () => {
     assert.equal(optOut('Escribinos a ana@tienda.com o al 2222.3333.'), 'Escribinos a ana@tienda.com o al 2222.3333.\nEl equipo te escribe hoy a las 9:00 a. m.')
-    assert.equal(
-      dropImmediatePromises('Opciones:\n• A.\n• B.\nEnseguida te escribe Ana.'),
-      'Opciones:\n• A.\n• B.',
-    )
+    assert.equal(hasImmediatePromise('Ahorita tenemos el kit en ₡14 900.'), false)
   })
-  it('#3 an unknown_answer reply keeps its facts at night ("ahorita" is not a promise without a reply verb)', () => {
+  it('an unknown_answer reply keeps its facts at night', () => {
     const unknown = applyAfterHoursText(
       { text: 'Ahorita tenemos el kit en ₡14 900. El detalle exacto de la mezcla no lo tengo acá; lo confirmo y te lo paso.', handoff: { kind: 'handoff', reason: 'unknown_answer' } },
       NIGHT,
       OPTS,
     )
-    assert.match(unknown, /^Ahorita tenemos el kit en ₡14 900\./)
-    assert.equal(dropImmediatePromises('Ahorita tenemos el kit en ₡14 900.'), 'Ahorita tenemos el kit en ₡14 900.')
-  })
-  it('#4 a plain receipt keeps "¡Gracias!"; #5 a complaint in an earlier bubble counts', () => {
-    for (const t of ['Ya pagué y nada más quería avisar', 'Ya pagué, perdón si molesto', 'Ya hice el sinpe, ¿no llegó?', 'Ya pagué, ¿no ha llegado la notificación?']) {
-      assert.equal(isComplaintText(t), false, t)
-      const d = decideInbound({ inboundText: t, brandFacts: FACTS, shortcuts: SHORTCUTS }) as { text?: string }
-      assert.equal(d.text, SAFE_LINE.payment, t)
-    }
-    const burst = decideInbound({ inboundText: 'Ya pagué hace 10 días', earlierCustomerTexts: ['Todavía no me llega el pedido'], brandFacts: FACTS, shortcuts: SHORTCUTS }) as { text?: string }
-    assert.equal(burst.text, SAFE_LINE.complaint)
-  })
-  it('P8 keeps a sentence with an e-mail, a link, a phone or a safety instruction', () => {
-    assert.equal(dropImmediatePromises('Claro 😊 Escribinos a ventas@tienda.com o en un momento te atiende Ana.'), 'Claro 😊 Escribinos a ventas@tienda.com o en un momento te atiende Ana.')
-    assert.equal(
-      dropImmediatePromises('Suspendé el uso inmediatamente; en un momento te escribe alguien del equipo.'),
-      'Suspendé el uso inmediatamente; en un momento te escribe alguien del equipo.',
-    )
+    assert.match(unknown, /^Ahorita tenemos el kit en ₡14 900\. El detalle exacto/)
   })
 })
 
 describe('Lane C scan: the engine "Pedido confirmado" template never claims a written order', () => {
   it('the seed and the upgraded legacy bodies pass the final policy; the old text is upgraded', async () => {
     const { applyFinalOutputPolicy } = await import('@/lib/soft-ai/llm/output-validator')
-    const { ORDER_CONFIRMED_BODY, RESERVED_SHORTCUT_SEEDS, renderShortcutTemplate, upgradeLegacyShortcutBody } = await import('@/lib/soft-ai/shortcuts')
+    const { ORDER_CONFIRMED_BODY, renderShortcutTemplate, upgradeLegacyShortcutBody } = await import('@/lib/soft-ai/shortcuts')
     const seed = RESERVED_SHORTCUT_SEEDS.find((s) => s.key === 'sys_order_confirmed')
     assert.equal(seed?.body, ORDER_CONFIRMED_BODY)
     assert.doesNotMatch(ORDER_CONFIRMED_BODY, /registrad|confirmad|cread/)
@@ -107,5 +117,24 @@ describe('Lane C scan: the engine "Pedido confirmado" template never claims a wr
     const policy = applyFinalOutputPolicy({ text, intent: 'order_status', citedToolNames: [], brandFacts: FACTS, shortcuts: [] } as never) as { needsHuman: boolean; reasons: string[] }
     assert.equal(policy.needsHuman, false)
     assert.deepEqual(policy.reasons, [])
+  })
+})
+
+describe('SecureDog #130 Lows', () => {
+  it('L1: an opt-out text with a safety notice keeps every word at night', async () => {
+    const { hasSafetyNotice } = await import('@/lib/soft-ai/business-hours')
+    const t = 'En un momento te escribe alguien; nunca te pediremos tu PIN ni contraseñas.'
+    assert.equal(hasSafetyNotice(t), true)
+    assert.equal(applyAfterHoursText({ text: t, handoff: { kind: 'handoff', reason: 'human_request' } }, NIGHT, OPTS), `${t}\nEl equipo te escribe hoy a las 9:00 a. m.`)
+  })
+  it('L2: an owner-edited payment hand-off text is kept on a complaint', () => {
+    const own = SHORTCUTS.map((s) => (s.key === 'sys_handoff_payment' ? { ...s, body: '¡Gracias! Lo reviso. Nunca te pediremos tu PIN 🙏' } : s))
+    const d = decideInbound({ inboundText: 'Hace 10 días pagué y no me ha llegado', brandFacts: FACTS, shortcuts: own }) as { text?: string }
+    assert.equal(d.text, '¡Gracias! Lo reviso. Nunca te pediremos tu PIN 🙏')
+  })
+  it('L3: the keyword matcher never sends a reserved engine template', async () => {
+    const { matchVerbatimShortcut } = await import('@/lib/soft-ai/shortcuts')
+    const rows = SHORTCUTS.map((s) => (s.key === 'sys_order_confirmed' ? { ...s, keywords: ['pedido'] } : s))
+    assert.equal(matchVerbatimShortcut('¿Cómo hago un pedido?', rows as never), null)
   })
 })

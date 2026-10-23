@@ -287,22 +287,22 @@ export function afterHoursComplaintLine(label: string, transparent = false): str
 const IMMEDIATE_WORD_RE =
   /(?<![\p{L}])(?:en\s+un\s+(?:momento|momentito|ratito|toque)|enseguida|en\s+seguida|ahorita|ahora\s+mismo|en\s+breve|ya\s+mismo|de\s+inmediato|inmediatamente)(?![\p{L}])/iu
 const REPLY_VERB_RE =
-  /(?<![\p{L}])(?:te|le|les|lo|la)\s+(?:escrib\p{L}*|atiend\p{L}*|atender\p{L}*|contest\p{L}*|respond\p{L}*|ayud\p{L}*|llam\p{L}*|habl\p{L}*)|(?<![\p{L}])alguien(?![\p{L}])|(?<![\p{L}])(?:te|le)\s+paso\s+con/iu
-
-const KEEP_SENTENCE_RE =
-  /@|https?:\/\/|www\.|\d[\d\s-]{6,}\d|(?<![\p{L}])(?:suspend\p{L}*|dej[aá]\s+de\s+usar|m[eé]dico|emergencia|urgencias|911)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:te|le|les|lo|la)\s+(?:escrib\p{L}*|atiend\p{L}*|atender\p{L}*|contest\p{L}*|respond\p{L}*|ayud\p{L}*|llam\p{L}*|habl\p{L}*)|(?<![\p{L}])alguien(?![\p{L}])|(?<![\p{L}])(?:te|le)\s+paso\s+con|(?<![\p{L}])(?:te|le|les|lo|la)\s+(?:contact\p{L}*|confirm\p{L}*|avis\p{L}*)/iu
 
 /**
- * The text without its sentences that promise an immediate answer. Verifier #128-2: sentences end only at . ! ? followed
- * by a space or the end (never inside "2.5 ml", "₡14.900", a link or an e-mail) or at a line break; separators are kept;
- * a text with nothing to drop comes back exactly as it was.
+ * Lane C P8, fail safe (Verifier #130): a text that promises a person answers right now (an immediacy word AND a reply
+ * verb, anywhere in it) is never cut into pieces at night — it is replaced whole by the night person line. Cutting
+ * sentences broke "a. m.", "Dra.", prices and phones; a whole-text swap cannot garble anything.
  */
-export function dropImmediatePromises(text: string): string {
-  const parts = text.split(/(?<=[.!?](?=\s|$))|(?<=\n)/u)
-  // SecureDog #128 r1: a sentence with an e-mail, a link, a phone number or a safety instruction is always kept.
-  const kept = parts.filter((p) => KEEP_SENTENCE_RE.test(p) || !(IMMEDIATE_WORD_RE.test(p) && REPLY_VERB_RE.test(p)))
-  if (kept.length === parts.length) return text
-  return kept.join('').replace(/[ \t]+\n/g, '\n').trim()
+export function hasImmediatePromise(text: string): boolean {
+  return IMMEDIATE_WORD_RE.test(text) && REPLY_VERB_RE.test(text)
+}
+
+/** SecureDog #130 L1: an owner text with a safety / fraud notice is never replaced (the notice matters more). */
+const SAFETY_NOTICE_RE =
+  /(?<![\p{L}])(?:pin|contrase[nñ]a|clave|c[oó]digo|cvv|tarjeta|estafa\p{L}*|fraude|falso|falsa|nunca\s+te\s+(?:pedimos|pediremos|vamos\s+a\s+pedir)|suspend\p{L}*|m[eé]dico|emergencia|urgencias|911)(?![\p{L}])/iu
+export function hasSafetyNotice(text: string): boolean {
+  return SAFETY_NOTICE_RE.test(text)
 }
 
 export type AfterHoursTextOptions = {
@@ -340,13 +340,14 @@ export function applyAfterHoursText(
     const complaint = text === COMPLAINT_HANDOFF_LINE
     // Lane C P8: "en un momento te escribe alguien" + "El equipo te escribe mañana" contradicted each other: the
     // sentences that promise right now are dropped at night (the owner's other words are kept).
-    // Verifier #128-3: only the opt-out / "me atiende alguien" text; an unknown_answer reply keeps every fact.
-    const kept = complaint ? '' : plan.handoff.reason === 'human_request' ? dropImmediatePromises(text) : text
+    // Lane C P8 / Verifier #130: an opt-out text that promises an answer right now is replaced whole by the night line
+    // (an unknown_answer reply keeps every fact: it never promises a person right now).
+    const promise = plan.handoff.reason === 'human_request' && hasImmediatePromise(text) && !hasSafetyNotice(text)
     if (complaint) {
       body = afterHoursComplaintLine(state.label, state.transparent)
-    } else if (kind === 'person' && (plan.handoff.reason === 'human_request' || plan.handoff.reason === 'unknown_answer') && kept && text !== opts.safeReview.trim()) {
+    } else if (kind === 'person' && !promise && (plan.handoff.reason === 'human_request' || plan.handoff.reason === 'unknown_answer') && text && text !== opts.safeReview.trim()) {
       // luna-10: the model already said when the team writes ("…hoy a las 8:00 a. m.") → never a second line.
-      body = kept.includes(state.label.replace(/\.$/, '')) ? kept : `${kept}\n${afterHoursTeamLine(state.label)}`
+      body = text.includes(state.label.replace(/\.$/, '')) ? text : `${text}\n${afterHoursTeamLine(state.label)}`
     } else {
       const line = afterHoursHandoffLine(kind, state.label, state.transparent)
       const keep = kind === 'order' && text && text !== opts.safeReview.trim()

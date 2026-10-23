@@ -739,7 +739,9 @@ export function matchVerbatimShortcut(
   shortcuts: RuntimeShortcut[],
 ): RuntimeShortcut | null {
   const active = shortcuts
-    .filter((row) => row.isActive && row.deliveryMode === 'verbatim' && row.keywords.length > 0)
+    // SecureDog #130 L3: an engine template (sys_*) is sent only by the code path that owns it, never by keywords an
+    // API edit added (e.g. "Pedido confirmado" on "¿cómo hago un pedido?").
+    .filter((row) => row.isActive && row.deliveryMode === 'verbatim' && row.keywords.length > 0 && !isReservedShortcutKey(row.key))
     .sort((a, b) => a.sortOrder - b.sortOrder)
   for (const row of active) {
     if (row.keywords.some((keyword) => wholeWordHit(text, keyword))) return row

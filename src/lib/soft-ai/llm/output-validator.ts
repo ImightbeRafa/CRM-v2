@@ -330,10 +330,23 @@ const NEGATED_DEAL_BEFORE_RE =
   /(?:^|[^\p{L}])(?:no|ni|tampoco|sin|nunca)\s+(?:(?:manejamos|tenemos|hay|ofrecemos|damos|aplicamos|hacemos|incluimos|contamos\s+con|existen?|est[aá]n\s+disponibles)\s+)?(?:(?:ning[uú]n|ninguna|ningunos|ningunas|el|la|los|las|un|una|unos|unas|otros?|otras?)\s+)?$/iu
 const NEGATABLE_DEAL_RE = /^(?:descuentos?|rebaj\p{L}*|promoci[oó]n(?:es)?\s+especial|oferta\s+especial|precio\s+especial)$/iu
 
+/**
+ * Verifier #128-1: words that turn "no hay descuento…" back into an offer, anywhere in the sentence — an exception
+ * ("pero para vos sí", "normalmente no… pero", "por ser tu primera compra", "esta vez"), a comparison ("como el de hoy",
+ * "igual", "así", "mejor / mayor que esta") or a nudge ("aprovechá").
+ */
+const DEAL_NEGATION_BREAKER_RE =
+  /(?<![\p{L}])(?:s[ií]|vos|ti|usted|ustedes|primera|esta\s+vez|por\s+esta|excepci\p{L}*|especial(?:mente)?\s+para|solo\s+para|s[oó]lo\s+para|te\s+(?:lo|la|los|las|hago|dejo|rebajo|regalo)|como|igual|as[ií]|tal|mejor|mayor|menor|m[aá]s|sino|salvo|excepto|menos|aprovech\p{L}*|normalmente|generalmente|por\s+lo\s+general|usualmente|casi\s+nunca|nunca\s+antes)(?![\p{L}])/iu
+
 function negatedDeal(text: string, index: number, phrase: string): boolean {
   if (!NEGATABLE_DEAL_RE.test(phrase)) return false
-  const before = text.slice(Math.max(0, index - 60), index)
-  const clause = before.slice(Math.max(before.lastIndexOf('.'), before.lastIndexOf('!'), before.lastIndexOf('?'), before.lastIndexOf('\n'), before.lastIndexOf(';')) + 1)
+  // The whole sentence that holds the word (a question is never a refusal: "¿Por qué no aplicamos un descuento?").
+  const startCut = Math.max(text.lastIndexOf('.', index), text.lastIndexOf('!', index), text.lastIndexOf('?', index), text.lastIndexOf('\n', index), text.lastIndexOf(';', index))
+  const endHits = ['.', '!', '?', '\n', ';'].map((c) => text.indexOf(c, index + phrase.length)).filter((i) => i >= 0)
+  const sentenceEnd = endHits.length ? Math.min(...endHits) : text.length
+  const sentence = text.slice(startCut + 1, sentenceEnd + 1)
+  if (/[¿?]/u.test(sentence) || DEAL_NEGATION_BREAKER_RE.test(sentence)) return false
+  const clause = text.slice(Math.max(startCut + 1, index - 60), index)
   // "No tenemos promociones ni descuentos": the earlier listed deal sits between the verb and "ni".
   return NEGATED_DEAL_BEFORE_RE.test(clause) || /(?:^|[^\p{L}])(?:no|sin|tampoco)\s+(?:\p{L}+\s+){1,4}ni\s+$/iu.test(clause)
 }

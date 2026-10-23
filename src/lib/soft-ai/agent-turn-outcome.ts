@@ -186,10 +186,20 @@ export const SAFE_LINE = {
  * experience. Only chooses the hand-off LINE (empathy instead of "¡Gracias!"); it never decides whether a hand-off happens.
  */
 const COMPLAINT_TEXT_RE =
-  /(?<![\p{L}])(?:no\s+(?:me\s+)?(?:ha|han|haya|hayan)\s+(?:llegado|enviado|mandado|entregado)|no\s+(?:me\s+)?(?:lleg[oó]|llega|llegan|llegaron)|nunca\s+(?:me\s+)?lleg\p{L}*|todav[ií]a\s+no\s+(?:me\s+)?lleg\p{L}*|a[uú]n\s+no\s+(?:me\s+)?lleg\p{L}*|y\s+nada|mal\s+servicio|p[eé]simo|p[eé]sima|qu[eé]\s+mal|estafa\p{L}*|me\s+(?:robaron|estafaron)|no\s+(?:me\s+)?(?:funcion\p{L}*|sirvi[oó]|sirvieron|sirve)|devuelv\p{L}*|devoluci[oó]n|reembols\p{L}*|reclamo|queja|molest[oa]s?|decepcion\p{L}*|enojad[oa]|vino\s+(?:mal|roto|da[nñ]ado|equivocado)|lleg[oó]\s+(?:mal|roto|da[nñ]ado|equivocado|incompleto))(?![\p{L}])/iu
+  /(?<![\p{L}])(?:nunca\s+(?:me\s+)?lleg\p{L}*|y\s+nada(?!\s+m[aá]s)|mal\s+servicio|p[eé]simo|p[eé]sima|qu[eé]\s+mal\s+(?:servicio|atenci[oó]n|todo)|estafa\p{L}*|me\s+(?:robaron|estafaron)|no\s+(?:me\s+)?(?:funcion\p{L}*|sirvi[oó]|sirvieron)|devuelv\p{L}*|devoluci[oó]n|reembols\p{L}*|reclamo|queja|(?:estoy|me\s+tiene|me\s+tienen)\s+(?:muy\s+)?molest[oa]s?|decepcion\p{L}*|enojad[oa]|vino\s+(?:mal|roto|rota|da[nñ]ad[oa]|equivocad[oa])|lleg[oó]\s+(?:mal|roto|rota|da[nñ]ad[oa]|equivocad[oa]|incomplet[oa]))(?![\p{L}])/iu
+/**
+ * A late order: "no (me) ha llegado / no llegó / todavía no llega" next to an order word or a time phrase — never the
+ * store's own receipt ("Ya hice el sinpe, ¿no llegó?", "¿no ha llegado la notificación?", Verifier #128-4).
+ */
+const NOT_ARRIVED_RE =
+  /(?<![\p{L}])(?:no\s+(?:me\s+)?(?:ha|han|haya|hayan)\s+(?:llegado|enviado|mandado|entregado)|no\s+(?:me\s+)?(?:lleg[oó]|llega|llegan|llegaron)|todav[ií]a\s+no\s+(?:me\s+)?lleg\p{L}*|a[uú]n\s+no\s+(?:me\s+)?lleg\p{L}*)(?![\p{L}])/iu
+const ORDER_OR_TIME_RE =
+  /(?<![\p{L}])(?:pedido|paquete|producto|productos|env[ií]o|orden|compra|encomienda|caja|hace\s+(?:\d+|un|una|dos|tres|cuatro|cinco|varios|varias)\s+(?:d[ií]as?|semanas?|mes(?:es)?)|semanas?|todav[ií]a|a[uú]n|nunca)(?![\p{L}])/iu
 
 export function isComplaintText(text: string | null | undefined): boolean {
-  return COMPLAINT_TEXT_RE.test(String(text || '').normalize('NFKC'))
+  const v = String(text || '').normalize('NFKC')
+  if (COMPLAINT_TEXT_RE.test(v)) return true
+  return NOT_ARRIVED_RE.test(v) && ORDER_OR_TIME_RE.test(v) && !/(?<![\p{L}])(?:notificaci[oó]n|comprobante|sinpe|transferencia|dep[oó]sito|plata|pago)(?![\p{L}])/iu.test(v.slice(v.search(NOT_ARRIVED_RE)))
 }
 
 /** The customer line of a money hand-off: empathy for a complaint / refund, else the payment line. */

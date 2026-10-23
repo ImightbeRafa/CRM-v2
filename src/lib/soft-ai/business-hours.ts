@@ -280,17 +280,25 @@ export function afterHoursComplaintLine(label: string, transparent = false): str
   return `Lamento mucho lo que pasó 🙏 ${afterHoursHandoffLine('person', label, transparent)}`
 }
 
-/** Lane C P8: a sentence that promises an answer right now ("en un momento te escribe alguien") — false after hours. */
-const IMMEDIATE_PROMISE_RE =
+/**
+ * Lane C P8: a sentence that promises a person answers right now ("en un momento te escribe alguien") — false after
+ * hours. Both an immediacy word and a reply verb (Verifier #128-3: "Ahorita tenemos el kit en ₡14 900" is a fact).
+ */
+const IMMEDIATE_WORD_RE =
   /(?<![\p{L}])(?:en\s+un\s+(?:momento|momentito|ratito|toque)|enseguida|en\s+seguida|ahorita|ahora\s+mismo|en\s+breve|ya\s+mismo|de\s+inmediato|inmediatamente)(?![\p{L}])/iu
+const REPLY_VERB_RE =
+  /(?<![\p{L}])(?:te|le|les|lo|la)\s+(?:escrib\p{L}*|atiend\p{L}*|atender\p{L}*|contest\p{L}*|respond\p{L}*|ayud\p{L}*|llam\p{L}*|habl\p{L}*)|(?<![\p{L}])alguien(?![\p{L}])|(?<![\p{L}])(?:te|le)\s+paso\s+con/iu
 
-/** The text without its sentences that promise an immediate answer. */
+/**
+ * The text without its sentences that promise an immediate answer. Verifier #128-2: sentences end only at . ! ? followed
+ * by a space or the end (never inside "2.5 ml", "₡14.900", a link or an e-mail) or at a line break; separators are kept;
+ * a text with nothing to drop comes back exactly as it was.
+ */
 export function dropImmediatePromises(text: string): string {
-  return text
-    .split(/(?<=[.!?\n])\s*/u)
-    .filter((sentence) => !IMMEDIATE_PROMISE_RE.test(sentence))
-    .join(' ')
-    .trim()
+  const parts = text.split(/(?<=[.!?](?=\s|$))|(?<=\n)/u)
+  const kept = parts.filter((p) => !(IMMEDIATE_WORD_RE.test(p) && REPLY_VERB_RE.test(p)))
+  if (kept.length === parts.length) return text
+  return kept.join('').replace(/[ \t]+\n/g, '\n').trim()
 }
 
 export type AfterHoursTextOptions = {
@@ -328,7 +336,8 @@ export function applyAfterHoursText(
     const complaint = text === COMPLAINT_HANDOFF_LINE
     // Lane C P8: "en un momento te escribe alguien" + "El equipo te escribe mañana" contradicted each other: the
     // sentences that promise right now are dropped at night (the owner's other words are kept).
-    const kept = complaint ? '' : dropImmediatePromises(text)
+    // Verifier #128-3: only the opt-out / "me atiende alguien" text; an unknown_answer reply keeps every fact.
+    const kept = complaint ? '' : plan.handoff.reason === 'human_request' ? dropImmediatePromises(text) : text
     if (complaint) {
       body = afterHoursComplaintLine(state.label, state.transparent)
     } else if (kind === 'person' && (plan.handoff.reason === 'human_request' || plan.handoff.reason === 'unknown_answer') && kept && text !== opts.safeReview.trim()) {

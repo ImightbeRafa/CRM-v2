@@ -294,7 +294,8 @@ export function decideInbound(input: {
     const shortcut = seedShortcut(safety.shortcutKey, input.shortcuts)
     // Lane C D3: a complaint / late order / refund gets the empathetic line, not "¡Gracias! … ya lo reviso".
     const moneyComplaint =
-      safety.reason === 'payment_or_sinpe' && (paymentHandoffReason(input.inboundText) === 'complaint' || isComplaintText(input.inboundText))
+      safety.reason === 'payment_or_sinpe' &&
+      (paymentHandoffReason(input.inboundText) === 'complaint' || [input.inboundText, ...(input.earlierCustomerTexts || [])].some((t) => isComplaintText(t)))
     const text = moneyComplaint ? SAFE_LINE.complaint : renderShortcutTemplate(shortcut.body, { facts: input.brandFacts })
     return finish({
       text,

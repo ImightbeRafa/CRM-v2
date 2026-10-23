@@ -63,3 +63,49 @@ describe('D6: "No manejamos descuentos" is not an offer', () => {
     for (const t of ['Te hago un descuento', 'No olvides que hay descuento', 'No te preocupes, hay descuento hoy', '¿Querés un descuento?']) assert.equal(dealProblem(t, []), true, t)
   })
 })
+
+describe('Verifier #128 fixes', () => {
+  it('#1 an exception, comparison, nudge or question keeps a negated discount an offer', () => {
+    for (const t of [
+      'Normalmente no damos descuentos, pero por ser tu primera compra sí. ¿Lo pedimos?',
+      'No hay descuento para todos, pero para vos sí 😊 ¿Te lo aparto?',
+      'No damos descuentos normalmente, pero a vos te lo hago',
+      'No hay descuento como el de hoy 🔥',
+      'No existe descuento igual en todo el país',
+      'No hay rebaja mayor que esta',
+      'Tampoco hay un precio especial mejor que este',
+      '¿Por qué no aplicamos un descuento a tu pedido?',
+      'Nunca hay un descuento así, ¡aprovechá!',
+    ]) assert.equal(dealProblem(t, []), true, t)
+    for (const t of ['No manejamos descuentos.', 'No manejamos descuentos, pero el combo sale ₡32 800', 'No tenemos promociones ni descuentos 😊', 'Sin descuento, el precio es ₡14 900']) {
+      assert.equal(dealProblem(t, []), false, t)
+    }
+  })
+  it('#2 night texts keep numbers, prices, links and line breaks; nothing dropped = unchanged', () => {
+    const optOut = (text: string) => applyAfterHoursText({ text, handoff: { kind: 'handoff', reason: 'human_request' } }, NIGHT, OPTS)
+    assert.equal(dropImmediatePromises('Cada frasco trae 2.5 ml. El kit sale ₡14.900. Mirá https://tienda.com/tallas'), 'Cada frasco trae 2.5 ml. El kit sale ₡14.900. Mirá https://tienda.com/tallas')
+    assert.equal(optOut('Escribinos a ana@tienda.com o al 2222.3333.'), 'Escribinos a ana@tienda.com o al 2222.3333.\nEl equipo te escribe hoy a las 9:00 a. m.')
+    assert.equal(
+      dropImmediatePromises('Opciones:\n• A.\n• B.\nEnseguida te escribe Ana.'),
+      'Opciones:\n• A.\n• B.',
+    )
+  })
+  it('#3 an unknown_answer reply keeps its facts at night ("ahorita" is not a promise without a reply verb)', () => {
+    const unknown = applyAfterHoursText(
+      { text: 'Ahorita tenemos el kit en ₡14 900. El detalle exacto de la mezcla no lo tengo acá; lo confirmo y te lo paso.', handoff: { kind: 'handoff', reason: 'unknown_answer' } },
+      NIGHT,
+      OPTS,
+    )
+    assert.match(unknown, /^Ahorita tenemos el kit en ₡14 900\./)
+    assert.equal(dropImmediatePromises('Ahorita tenemos el kit en ₡14 900.'), 'Ahorita tenemos el kit en ₡14 900.')
+  })
+  it('#4 a plain receipt keeps "¡Gracias!"; #5 a complaint in an earlier bubble counts', () => {
+    for (const t of ['Ya pagué y nada más quería avisar', 'Ya pagué, perdón si molesto', 'Ya hice el sinpe, ¿no llegó?', 'Ya pagué, ¿no ha llegado la notificación?']) {
+      assert.equal(isComplaintText(t), false, t)
+      const d = decideInbound({ inboundText: t, brandFacts: FACTS, shortcuts: SHORTCUTS }) as { text?: string }
+      assert.equal(d.text, SAFE_LINE.payment, t)
+    }
+    const burst = decideInbound({ inboundText: 'Ya pagué hace 10 días', earlierCustomerTexts: ['Todavía no me llega el pedido'], brandFacts: FACTS, shortcuts: SHORTCUTS }) as { text?: string }
+    assert.equal(burst.text, SAFE_LINE.complaint)
+  })
+})

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Package, TrendingUp, Truck, Mail, FileDown, CheckCircle, Calendar, DollarSign, PlusCircle, Trash2, AlertCircle, Wallet, Save, RefreshCw } from 'lucide-react';
+import { Package, TrendingUp, Truck, Mail, FileDown, CheckCircle, Calendar, DollarSign, PlusCircle, Trash2, AlertCircle, Wallet, Save, RefreshCw, X, AlertTriangle, Check } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import PaymentMethodWizard, { type PaymentConfirmPayload } from '@/app/logistics/components/PaymentMethodWizard';
 import { csvCell } from '@/lib/csv-safe';
@@ -118,7 +118,7 @@ function ResumenTab({ rates }: { rates: Rates }) {
                 <button onClick={load} style={{ padding: '7px 16px', ...glass, color: '#8b87ff', cursor: 'pointer', fontSize: 13, borderColor: 'rgba(139,135,255,0.2)' }}>
                     Aplicar
                 </button>
-                {(dateFrom || dateTo) && <button onClick={() => { setDateFrom(''); setDateTo(''); }} style={{ padding: '7px 12px', background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 12 }}>✕ Limpiar</button>}
+                {(dateFrom || dateTo) && <button onClick={() => { setDateFrom(''); setDateTo(''); }} style={{ padding: '7px 12px', background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}><X size={12} aria-hidden style={{ flexShrink: 0 }} /> Limpiar</button>}
                 <button onClick={exportCSV} style={{ marginLeft: 'auto', ...glass, display: 'flex', alignItems: 'center', gap: 7, padding: '7px 16px', color: '#8b87ff', cursor: 'pointer', fontSize: 13 }}>
                     <FileDown size={13} /> Exportar CSV
                 </button>
@@ -184,7 +184,7 @@ function ResumenTab({ rates }: { rates: Rates }) {
                                 {totals.correos > 0 && `Correos ${100 - pct}%`}
                             </div>
                         </div>
-                        {totals.unassigned > 0 && <p style={{ color: '#fbbf24', fontSize: 12, margin: 0 }}>⚠ {totals.unassigned} sin carrier</p>}
+                        {totals.unassigned > 0 && <p style={{ color: '#fbbf24', fontSize: 12, margin: 0, display: 'inline-flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} aria-hidden style={{ flexShrink: 0 }} /> {totals.unassigned} sin carrier</p>}
                     </div>
 
                     {/* Per-tenant table */}
@@ -347,7 +347,7 @@ function CorreosCRTab() {
                 <button onClick={load} style={{ padding: '7px 16px', ...glass, color: '#60a5fa', cursor: 'pointer', fontSize: 13, borderColor: 'rgba(96,165,250,0.2)' }}>
                     Aplicar
                 </button>
-                {(filterTenant || dateFrom || dateTo) && <button onClick={() => { setFilterTenant(''); setDateFrom(''); setDateTo(''); }} style={{ padding: '7px 12px', background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 12 }}>✕ Limpiar</button>}
+                {(filterTenant || dateFrom || dateTo) && <button onClick={() => { setFilterTenant(''); setDateFrom(''); setDateTo(''); }} style={{ padding: '7px 12px', background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}><X size={12} aria-hidden style={{ flexShrink: 0 }} /> Limpiar</button>}
             </div>
 
             {summary.pendingCostCount > 0 && (
@@ -498,7 +498,7 @@ function ContraEntregasTab() {
             <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
                 {(['all', 'pending', 'collected'] as const).map(f => (
                     <button key={f} onClick={() => setFilter(f)} style={{ padding: '6px 16px', borderRadius: 20, border: `1px solid ${filter === f ? 'rgba(251,191,36,0.5)' : 'rgba(255,255,255,0.1)'}`, background: filter === f ? 'rgba(251,191,36,0.1)' : 'transparent', color: filter === f ? '#fbbf24' : 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
-                        {f === 'all' ? 'Todos' : f === 'pending' ? '○ Pendientes' : '✓ Cobrados'}
+                        {f === 'all' ? 'Todos' : f === 'pending' ? 'Pendientes' : 'Cobrados'}
                     </button>
                 ))}
             </div>
@@ -537,7 +537,7 @@ function ContraEntregasTab() {
                                             {!o.collected && (
                                                 <button onClick={() => setCeWizardOrder(o)} disabled={confirming === o.orderId}
                                                     style={{ padding: '5px 13px', borderRadius: 7, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.08)', color: '#34d399', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                                    {confirming === o.orderId ? '...' : '✓ Confirmar Pago'}
+                                                    {confirming === o.orderId ? '...' : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Check size={12} aria-hidden style={{ flexShrink: 0 }} /> Confirmar Pago</span>}
                                                 </button>
                                             )}
                                         </td>
@@ -1439,8 +1439,8 @@ function GdBalanceTab() {
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                     <select value={entryType} onChange={e => setEntryType(e.target.value as any)}
                         style={{ padding: '8px 14px', ...glass, color: entryType === 'payment' ? '#34d399' : '#f87171', fontSize: 13, outline: 'none', cursor: 'pointer', fontWeight: 700 }}>
-                        <option value="payment">💳 Pago Recibido</option>
-                        <option value="charge">📦 Cargo</option>
+                        <option value="payment">Pago recibido</option>
+                        <option value="charge">Cargo</option>
                     </select>
                     <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Monto ₡"
                         style={{ width: 140, padding: '8px 14px', ...glass, color: '#F2F2F2', fontSize: 13, outline: 'none', borderRadius: 8 }} />

@@ -593,7 +593,7 @@ export default function PrivateDeliveryPage() {
                                                                         <span style={{ color: 'rgba(255,255,255,0.22)', fontSize: 11 }}>—</span>
                                                                     ) : order.contraEntregaCollected ? (
                                                                         <span title={order.ceConfirmedBy || undefined} style={{ color: '#34d399', fontSize: 11, fontWeight: 800 }}>
-                                                                            ✓ {ceMethod || 'Cobrado'}
+                                                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Check size={11} aria-hidden style={{ flexShrink: 0 }} /> {ceMethod || 'Cobrado'}</span>
                                                                         </span>
                                                                     ) : tab === 'pending' ? (
                                                                         <button onClick={() => setCeWizardOrder(order)} disabled={!!busy}

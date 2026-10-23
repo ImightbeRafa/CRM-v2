@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Package, PackageCheck, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X, Archive, ArchiveRestore, Copy, CheckCircle2, FileText, Download } from 'lucide-react';
+import { Package, PackageCheck, Search, Truck, Mail, ArrowRight, RefreshCcw, ChevronDown, ChevronUp, Filter, CheckSquare, Square, Layers, Clock, PlusCircle, X, Archive, ArchiveRestore, Copy, CheckCircle2, FileText, Download, Banknote, Check, MapPin, Phone, Printer, StickyNote, Zap, ArrowRightLeft, Circle, type LucideIcon } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import PaymentMethodWizard, { type PaymentConfirmPayload } from '@/app/logistics/components/PaymentMethodWizard';
 import ShippingMethodBadge from '@/components/orders/ShippingMethodBadge';
@@ -199,7 +199,7 @@ function HistorialPanel({ orderId }: { orderId: string }) {
         setSaving(false);
     }
 
-    const eventIcon: Record<string, string> = { carrier_assigned: '🚚', status_change: '🔄', ce_confirmed: '💵', guia_generated: '🖨', note: '📝', bulk_update: '⚡' };
+    const eventIcon: Record<string, LucideIcon> = { carrier_assigned: Truck, status_change: ArrowRightLeft, ce_confirmed: Banknote, guia_generated: Printer, note: StickyNote, bulk_update: Zap };
     const timeAgo = (ts: string) => { const s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000); if (s < 60) return 'hace un momento'; if (s < 3600) return `hace ${Math.floor(s / 60)}m`; if (s < 86400) return `hace ${Math.floor(s / 3600)}h`; return new Date(ts).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' }); };
 
     return (
@@ -211,7 +211,7 @@ function HistorialPanel({ orderId }: { orderId: string }) {
                     <div style={{ maxHeight: 160, overflowY: 'auto', marginBottom: 8 }}>
                         {events.map((e) => (
                             <div key={e.id} style={{ display: 'flex', gap: 7, marginBottom: 6, alignItems: 'flex-start' }}>
-                                <span style={{ fontSize: 12, flexShrink: 0 }}>{eventIcon[e.event_type] || '•'}</span>
+                                {(() => { const EventIcon = eventIcon[e.event_type] || Circle; return <EventIcon size={12} aria-hidden style={{ flexShrink: 0, marginTop: 1, color: 'rgba(255,255,255,0.45)' }} />; })()}
                                 <div style={{ flex: 1 }}>
                                     <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10.5 }}>
                                         {e.event_type === 'note' ? e.payload?.text
@@ -390,13 +390,13 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onConfirmC
             }} className="lm-order-card">
             {order.isContraEntrega && (
                 <div style={{ background: 'rgba(251,191,36,0.1)', padding: '4px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(251,191,36,0.15)' }}>
-                    <span style={{ color: '#fbbf24', fontSize: 10, fontWeight: 700 }}>💵 CONTRA ENTREGA</span>
+                    <span style={{ color: '#fbbf24', fontSize: 10, fontWeight: 700, letterSpacing: 0.3, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Banknote size={12} aria-hidden style={{ flexShrink: 0 }} /> CONTRA ENTREGA</span>
                     {order.contraEntregaCollected ? (
                         <span
                             title={order.ceConfirmedBy ? `Confirmado por ${order.ceConfirmedBy}` : undefined}
                             style={{ padding: '2px 9px', borderRadius: 20, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.12)', color: '#34d399', fontSize: 10, fontWeight: 700 }}
                         >
-                            ✓ Cobrado{methodLabel ? ` · ${methodLabel}` : ''}
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Check size={11} aria-hidden style={{ flexShrink: 0 }} /> Cobrado{methodLabel ? ` · ${methodLabel}` : ''}</span>
                         </span>
                     ) : (
                         <button type="button" onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onConfirmCobro(order); }}
@@ -436,7 +436,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onConfirmC
                 {/* Row 2: Phone (always visible) + copy */}
                 {order.phone && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
-                        <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11 }}>📞 {order.phone}</span>
+                        <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Phone size={11} aria-hidden style={{ flexShrink: 0 }} /> {order.phone}</span>
                         <button type="button" onPointerDown={e => e.stopPropagation()} onClick={handleCopyPhone} style={{ background: 'none', border: 'none', color: copied ? '#34d399' : 'rgba(255,255,255,0.25)', cursor: 'pointer', padding: 1, display: 'flex', alignItems: 'center' }} title="Copiar teléfono">
                             {copied ? <CheckCircle2 size={10} /> : <Copy size={10} />}
                         </button>
@@ -447,7 +447,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onConfirmC
                 <OrderItemsList order={order} style={itemsListStyle} moreColor="#a5a2ff" />
                 {/* Row 4: Location, guía, total */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                    {location && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>📍 {location}</span>}
+                    {location && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}><MapPin size={11} aria-hidden style={{ flexShrink: 0 }} /> {location}</span>}
                     {carrier === 'correos' && trackingCode && order.guiaStatus !== 'failed' && (
                         <span style={{ color: '#60a5fa', background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.25)', borderRadius: 6, padding: '1px 6px', fontSize: 10.5, fontWeight: 700 }}>Guia {trackingCode}</span>
                     )}
@@ -468,7 +468,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onConfirmC
                         </div>}
                         {carrier === 'mensajeria' && (
                             <button onClick={e => { e.stopPropagation(); onToggleCOD(order.id, !order.isContraEntrega); }} style={{ marginTop: 8, padding: '4px 10px', borderRadius: 6, border: `1px solid ${order.isContraEntrega ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.12)'}`, background: order.isContraEntrega ? 'rgba(251,191,36,0.08)' : 'transparent', color: order.isContraEntrega ? '#fbbf24' : 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>
-                                {order.isContraEntrega ? '💵 Quitar Contra Entrega' : '+ Marcar Contra Entrega'}
+                                {order.isContraEntrega ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Banknote size={12} aria-hidden style={{ flexShrink: 0 }} /> Quitar Contra Entrega</span> : '+ Marcar Contra Entrega'}
                             </button>
                         )}
                     </div>
@@ -481,7 +481,7 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onConfirmC
                         <ArrowRight size={9} /> {otherLabel}
                     </button>
                     <button onClick={e => { e.stopPropagation(); handleSync(); }} disabled={syncing} style={{ padding: '3px 7px', borderRadius: 5, border: `1px solid ${synced ? 'rgba(52,211,153,0.4)' : 'rgba(52,211,153,0.18)'}`, background: synced ? 'rgba(52,211,153,0.1)' : 'transparent', color: synced ? '#34d399' : 'rgba(255,255,255,0.35)', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }} title={`→ Betsy: ${LM_TO_CRM[order.lmStatus || 'Pendiente']}`}>
-                        <RefreshCcw size={9} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} /> {synced ? '✓ Betsy' : '→ Betsy'}
+                        <RefreshCcw size={9} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} /> {synced ? <><Check size={9} aria-hidden style={{ flexShrink: 0 }} /> Betsy</> : '→ Betsy'}
                     </button>
                     {canArchive && (
                         <button onClick={e => { e.stopPropagation(); onArchive(order.id); }} style={{ padding: '3px 7px', borderRadius: 5, border: '1px solid rgba(52,211,153,0.35)', background: 'rgba(52,211,153,0.08)', color: '#34d399', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -520,12 +520,12 @@ function ArchivedOrderRow({ order, onRestore, getTenantName, getTenantColor }: {
                     <span style={{ padding: '1px 7px', borderRadius: 20, background: `${tenantColor}22`, color: tenantColor, fontSize: 9.5, fontWeight: 700, flexShrink: 0 }}>{getTenantName(order.tenantId)}</span>
                 </div>
                 {order.phone && (
-                    <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, marginBottom: 4 }}>📞 {order.phone}</div>
+                    <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Phone size={11} aria-hidden style={{ flexShrink: 0 }} /> {order.phone}</div>
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11 }}>
                     <ShippingMethodBadge order={order} theme="dark" size="xs" />
                     {order.lmStatus && <span style={{ color: statusColor, fontWeight: 700 }}>{order.lmStatus}</span>}
-                    {location && <span style={{ color: 'rgba(255,255,255,0.35)' }}>📍 {location}</span>}
+                    {location && <span style={{ color: 'rgba(255,255,255,0.35)', display: 'inline-flex', alignItems: 'center', gap: 5 }}><MapPin size={11} aria-hidden style={{ flexShrink: 0 }} /> {location}</span>}
                     {order.lmCarrier === 'correos' && trackingCode && (
                         <span style={{ padding: '1px 6px', borderRadius: 20, background: 'rgba(96,165,250,0.12)', color: '#60a5fa', fontSize: 9, fontWeight: 800 }}>Guia {trackingCode}</span>
                     )}
@@ -637,7 +637,7 @@ function Board({ title, icon, carrier, orders, onMove, onMoveCarrier, onToggleCO
                 <div style={{ color: accentColor, filter: `drop-shadow(0 0 6px ${accentColor})` }}>{icon}</div>
                 <div style={{ flex: 1 }}>
                     <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 14, margin: 0 }}>{title}</p>
-                    <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, margin: 0 }}>{orders.length} órdenes{cod > 0 ? ` · 💵 ${cobrado}/${cod} cobrado` : ''}</p>
+                    <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, margin: 0 }}>{orders.length} órdenes{cod > 0 ? ` · contra entrega ${cobrado}/${cod} cobrado` : ''}</p>
                 </div>
             </div>
             {/* Columns — horizontally scrollable, vertically capped */}
@@ -1250,7 +1250,7 @@ export default function CarriersPage() {
                         </select>
                         <button onClick={applyBulk} disabled={applying || (!bulkStatus && !bulkCarrier)}
                             style={{ padding: '5px 16px', borderRadius: 7, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.1)', color: '#34d399', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
-                            {applying ? 'Aplicando...' : '✓ Aplicar'}
+                            {applying ? 'Aplicando...' : 'Aplicar'}
                         </button>
                         <button onClick={bulkArchive} disabled={applying}
                             style={{ padding: '5px 16px', borderRadius: 7, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.08)', color: '#34d399', cursor: 'pointer', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1437,7 +1437,7 @@ export default function CarriersPage() {
                         {byDate.length === 0 ? (
                             <div style={{ textAlign: 'center', padding: '40px 16px', color: 'rgba(255,255,255,0.2)' }}>
                                 <Package size={24} style={{ display: 'block', margin: '0 auto 8px', opacity: 0.3 }} />
-                                <p style={{ margin: 0, fontSize: 12 }}>Todo asignado ✓</p>
+                                <p style={{ margin: 0, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}><CheckCircle2 size={13} aria-hidden style={{ flexShrink: 0 }} /> Todo asignado</p>
                             </div>
                         ) : byDate.map(g => (
                             <div key={g.dateKey} style={{ marginBottom: 14 }}>
@@ -1465,11 +1465,11 @@ export default function CarriersPage() {
                                                     <span style={{ padding: '1px 7px', borderRadius: 20, background: `${tc}20`, color: tc, fontSize: 9.5, fontWeight: 700 }}>{getTenantName(o.tenantId)}</span>
                                                 </div>
                                             </div>
-                                            {o.phone && <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: '0 0 2px' }}>📞 {o.phone}</p>}
+                                            {o.phone && <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: '0 0 2px', display: 'inline-flex', alignItems: 'center', gap: 5 }}><Phone size={11} aria-hidden style={{ flexShrink: 0 }} /> {o.phone}</p>}
                                             <ShippingMethodBadge order={o} theme="dark" size="xs" style={{ margin: '2px 0 4px' }} />
                                             <OrderItemsList order={o} style={{ ...itemsListStyle, marginBottom: 4 }} moreColor="#93c5fd" />
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: o.comments ? 4 : 8 }}>
-                                                <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>📍 {o.canton || o.province || '—'}</span>
+                                                <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}><MapPin size={11} aria-hidden style={{ flexShrink: 0 }} /> {o.canton || o.province || '—'}</span>
                                                 <span style={{ color: '#34d399', fontWeight: 700, fontSize: 11 }}>₡{o.total.toLocaleString('es-CR')}</span>
                                             </div>
                                             {o.comments && <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, margin: '0 0 8px', fontStyle: 'italic' }}>&quot;{o.comments.slice(0, 55)}{o.comments.length > 55 ? '…' : ''}&quot;</p>}

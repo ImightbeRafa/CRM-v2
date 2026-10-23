@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Truck, Mail, Printer, CheckSquare, Square, Search, RefreshCw, Package, Zap, CheckCircle, AlertTriangle, X, Download, Clock, FileText } from 'lucide-react';
+import { Truck, Mail, Printer, CheckSquare, Square, Search, RefreshCw, Package, Zap, CheckCircle, AlertTriangle, X, Download, Clock, FileText, Banknote, Phone, MapPin, Mailbox } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import OrderItemsList from '@/components/orders/OrderItemsList';
 import {
@@ -433,7 +433,7 @@ export default function GuiasPage() {
                         ))}
                         <button onClick={() => setCeFilter(f => !f)}
                             style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${ceFilter ? 'rgba(251,191,36,0.6)' : 'rgba(255,255,255,0.08)'}`, background: ceFilter ? 'rgba(251,191,36,0.14)' : 'transparent', color: ceFilter ? '#fbbf24' : 'rgba(255,255,255,0.35)', fontSize: 12.5, fontWeight: ceFilter ? 700 : 400, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s', whiteSpace: 'nowrap' }}>
-                            💵 Contra Entrega
+                            <Banknote size={13} aria-hidden /> Contra Entrega
                             <span style={{ padding: '1px 6px', borderRadius: 20, background: ceFilter ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.06)', fontSize: 10.5 }}>{ceCount}</span>
                         </button>
                     </div>
@@ -780,7 +780,7 @@ export default function GuiasPage() {
                             <div key={o.id} className="guia-ticket">
                                 <div style={{ background: isMens ? '#3730a3' : '#1e40af', color: '#fff', padding: '5px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <span style={{ fontWeight: 900, fontSize: 10, letterSpacing: 0.3 }}>
-                                        {isMens ? '🚚 MENSAJERÍA' : '📮 CORREOS CR'}
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{isMens ? <Truck size={11} aria-hidden style={{ flexShrink: 0 }} /> : <Mailbox size={11} aria-hidden style={{ flexShrink: 0 }} />}{isMens ? 'MENSAJERÍA' : 'CORREOS CR'}</span>
                                     </span>
                                     <span style={{ fontSize: 9, opacity: 0.85 }}>{getTenantName(o.tenantId)}</span>
                                 </div>
@@ -798,8 +798,8 @@ export default function GuiasPage() {
                                     <div style={{ background: '#f5f5f5', padding: '6px 8px', borderRadius: 4, marginBottom: 6 }}>
                                         <div style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', color: '#666', marginBottom: 2 }}>Destinatario</div>
                                         <div style={{ fontWeight: 900, fontSize: 12 }}>{o.customerName}</div>
-                                        {o.phone && <div style={{ fontSize: 9, marginTop: 1 }}>📞 {o.phone}</div>}
-                                        {addr && <div style={{ fontSize: 9, marginTop: 1, color: '#444' }}>📍 {addr}</div>}
+                                        {o.phone && <div style={{ fontSize: 9, marginTop: 1, display: 'flex', alignItems: 'center', gap: 3 }}><Phone size={9} aria-hidden style={{ flexShrink: 0 }} /> {o.phone}</div>}
+                                        {addr && <div style={{ fontSize: 9, marginTop: 1, color: '#444', display: 'flex', alignItems: 'flex-start', gap: 3 }}><MapPin size={9} aria-hidden style={{ flexShrink: 0, marginTop: 1 }} /> {addr}</div>}
                                     </div>
                                     <div style={{ marginBottom: 6 }}>
                                         <div style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', color: '#666' }}>Contenido</div>

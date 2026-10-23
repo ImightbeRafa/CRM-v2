@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   PackageCheck, Search, RefreshCw, Phone, Calendar, Clock, User, Copy, Check,
-  DollarSign, AlertTriangle, CalendarClock, MapPin, FileDown,
+  DollarSign, AlertTriangle, CalendarClock, MapPin, FileDown, Mail, MessageSquare,
 } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import PaymentMethodWizard, { type PaymentConfirmPayload } from '@/app/logistics/components/PaymentMethodWizard';
@@ -805,7 +805,7 @@ export default function RetirosPage() {
                       )}
 
                       {o.email && (
-                        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>✉ {o.email}</div>
+                        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Mail size={12} aria-hidden style={{ flexShrink: 0 }} /> {o.email}</div>
                       )}
 
                       {o.seller && (
@@ -879,7 +879,7 @@ export default function RetirosPage() {
 
                     {o.comments && (
                       <div style={{ marginTop: 10, padding: '8px 10px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, color: 'rgba(255,255,255,0.4)', fontSize: 11, fontStyle: 'italic' }}>
-                        💬 {o.comments}
+                        <MessageSquare size={11} aria-hidden style={{ flexShrink: 0, marginRight: 5, verticalAlign: -1 }} />{o.comments}
                       </div>
                     )}
 

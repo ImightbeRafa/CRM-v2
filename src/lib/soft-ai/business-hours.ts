@@ -300,9 +300,11 @@ export function hasImmediatePromise(text: string): boolean {
 
 /** SecureDog #130 L1: an owner text with a safety / fraud notice is never replaced (the notice matters more). */
 const SAFETY_NOTICE_RE =
-  /(?<![\p{L}])(?:pin|contrase[nñ]a|clave|c[oó]digo|cvv|tarjeta|estafa\p{L}*|fraude|falso|falsa|nunca\s+te\s+(?:pedimos|pediremos|vamos\s+a\s+pedir)|suspend\p{L}*|m[eé]dico|emergencia|urgencias|911)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:pin|contrase[nñ]a|clave|c[oó]digo|cvv|tarjeta|estafa\p{L}*|fraude|falso|falsa|nunca\s+te\s+(?:pedimos|pediremos|vamos\s+a\s+pedir)|suspend\p{L}*|m[eé]dico|emergenci\p{L}*|urgen\p{L}*|911)(?![\p{L}])/iu
+/** Verifier #130 r2: contact info or a price (a phone, an e-mail, a link, ₡ / $) — never lost by the night swap. */
+const CONTACT_OR_PRICE_RE = /@|https?:\/\/|www\.|\d[\d\s.-]{6,}\d|[₡¢$]\s?\d/u
 export function hasSafetyNotice(text: string): boolean {
-  return SAFETY_NOTICE_RE.test(text)
+  return SAFETY_NOTICE_RE.test(text) || CONTACT_OR_PRICE_RE.test(text)
 }
 
 export type AfterHoursTextOptions = {

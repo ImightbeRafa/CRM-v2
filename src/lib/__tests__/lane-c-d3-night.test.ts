@@ -79,11 +79,8 @@ describe('P8 fail safe: at night a "right now" promise is replaced whole by the 
       'Te paso con alguien del equipo enseguida, el horario es de 8:00 a. m. a 6:00 p. m.',
       'Con gusto, en un momento te atiende el Dr. Solís. Gracias por tu paciencia.',
       'Gracias por escribirnos. Te paso con alguien enseguida, aprox. 5 min.',
-      'Claro, el kit sale ₡14.900 y enseguida te escribe Ana para coordinar.',
-      'En un momento te llama alguien al 2222.3333.',
       'Dame chance, ya mismo te contactan',
       'Enseguida te confirmo.',
-      'Claro 😊 Escribinos a ventas@tienda.com o en un momento te atiende Ana.',
     ]) {
       assert.equal(hasImmediatePromise(t), true, t)
       assert.equal(optOut(t), NIGHT_PERSON, t)
@@ -136,5 +133,24 @@ describe('SecureDog #130 Lows', () => {
     const { matchVerbatimShortcut } = await import('@/lib/soft-ai/shortcuts')
     const rows = SHORTCUTS.map((s) => (s.key === 'sys_order_confirmed' ? { ...s, keywords: ['pedido'] } : s))
     assert.equal(matchVerbatimShortcut('¿Cómo hago un pedido?', rows as never), null)
+  })
+})
+
+describe('Verifier #130 r2', () => {
+  const optOut = (text: string) => applyAfterHoursText({ text, handoff: { kind: 'handoff', reason: 'human_request' } }, NIGHT, OPTS)
+  it('#1 urgency / contact / price text is never swapped away at night', () => {
+    for (const t of [
+      'Claro 😊 en un momento te escribe alguien. Si es una urgencia, llamá al 8888-8888.',
+      'En un momento te escribe alguien. Para emergencias llamá al 2222 3333.',
+      'Enseguida te escribe alguien; si es urgente escribí a ventas@tienda.com',
+      'Claro, el kit sale ₡14.900 y enseguida te escribe Ana para coordinar.',
+    ]) assert.equal(optOut(t), `${t}\nEl equipo te escribe hoy a las 9:00 a. m.`, t)
+  })
+  it('#2 a payment verb is a receipt question unless days went by; #4 "no estoy molesta" is calm', () => {
+    for (const t of ['Ya pagué el pedido, ¿no ha llegado?', 'Ya pagué la compra, ¿todavía no llega?', 'Ya transferí lo del pedido, ¿no ha llegado?', 'Ya deposité lo de la orden, ¿aún no llega?', 'Ya mandé el dinero del pedido, ¿no ha llegado?', 'No estoy molesta, ya hice el sinpe 😊', 'Ya pagué, no estoy enojada solo pregunto']) {
+      assert.equal(isComplaintText(t), false, t)
+    }
+    assert.equal(isComplaintText('Hace 10 días pagué y no me ha llegado'), true)
+    assert.equal(isComplaintText('Hace una semana pagué el pedido y no ha llegado'), true)
   })
 })

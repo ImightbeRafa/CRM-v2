@@ -186,7 +186,7 @@ export const SAFE_LINE = {
  * experience. Only chooses the hand-off LINE (empathy instead of "¡Gracias!"); it never decides whether a hand-off happens.
  */
 const COMPLAINT_TEXT_RE =
-  /(?<![\p{L}])(?:nunca\s+(?:me\s+)?lleg\p{L}*|mal\s+servicio|p[eé]simo|p[eé]sima|qu[eé]\s+mal\s+(?:servicio|atenci[oó]n|todo)|estafa\p{L}*|me\s+(?:robaron|estafaron)|no\s+(?:me\s+)?(?:sirvi[oó]|sirvieron)|devuelv\p{L}*|devoluci[oó]n|reembols\p{L}*|reclamo|queja|(?:estoy|me\s+tiene|me\s+tienen)\s+(?:muy\s+)?molest[oa]s?|decepcion\p{L}*|enojad[oa]|vino\s+(?:mal|roto|rota|da[nñ]ad[oa]|equivocad[oa])|lleg[oó]\s+(?:mal|roto|rota|da[nñ]ad[oa]|equivocad[oa]|incomplet[oa]))(?![\p{L}])/iu
+  /(?<![\p{L}])(?:nunca\s+(?:me\s+)?lleg\p{L}*|mal\s+servicio|p[eé]simo|p[eé]sima|qu[eé]\s+mal\s+(?:servicio|atenci[oó]n|todo)|estafa\p{L}*|me\s+(?:robaron|estafaron)|no\s+(?:me\s+)?(?:sirvi[oó]|sirvieron)|devuelv\p{L}*|devoluci[oó]n|reembols\p{L}*|reclamo|queja|(?<!no\s)(?:estoy|me\s+tiene|me\s+tienen)\s+(?:muy\s+)?molest[oa]s?|decepcion\p{L}*|(?<!no\s+estoy\s+)enojad[oa]|vino\s+(?:mal|roto|rota|da[nñ]ad[oa]|equivocad[oa])|lleg[oó]\s+(?:mal|roto|rota|da[nñ]ad[oa]|equivocad[oa]|incomplet[oa]))(?![\p{L}])/iu
 /**
  * A late order: "no (me) ha llegado / no llegó / todavía no llega" next to an order word or a time phrase — never the
  * store's own receipt ("Ya hice el sinpe, ¿no llegó?", "¿no ha llegado la notificación?", Verifier #128-4).
@@ -195,6 +195,8 @@ const NOT_ARRIVED_RE =
   /(?<![\p{L}])(?:no\s+(?:me\s+)?(?:ha|han|haya|hayan)\s+(?:llegado|enviado|mandado|entregado)|no\s+(?:me\s+)?(?:lleg[oó]|llega|llegan|llegaron)|todav[ií]a\s+no\s+(?:me\s+)?lleg\p{L}*|a[uú]n\s+no\s+(?:me\s+)?lleg\p{L}*)(?![\p{L}])/iu
 const ORDER_OR_TIME_RE =
   /(?<![\p{L}])(?:pedido|paquete|producto|productos|orden|compra|encomienda|caja|hace\s+(?:\d+|un|una|dos|tres|cuatro|cinco|varios|varias)\s+(?:d[ií]as?|semanas?|mes(?:es)?))(?![\p{L}])/iu
+const PAYMENT_VERB_RE = /(?<![\p{L}])(?:pagu[eé]|pagado|pagamos|transfer\p{L}*|deposit\p{L}*|dinero|monto)(?![\p{L}])/iu
+const DAYS_AGO_RE = /(?<![\p{L}])hace\s+(?:\d+|un|una|dos|tres|cuatro|cinco|varios|varias)\s+(?:d[ií]as?|semanas?|mes(?:es)?)(?![\p{L}])/iu
 /** A receipt / payment word anywhere: the customer asks whether the STORE got the payment — the payment line. */
 const RECEIPT_WORD_RE = /(?<![\p{L}])(?:notificaci[oó]n|comprobante|sinpe|transferencia|dep[oó]sito|plata|pago|link|guía|gu[ií]a)(?![\p{L}])/iu
 
@@ -205,7 +207,9 @@ const RECEIPT_WORD_RE = /(?<![\p{L}])(?:notificaci[oó]n|comprobante|sinpe|trans
 export function isComplaintText(text: string | null | undefined): boolean {
   const v = String(text || '').normalize('NFKC')
   if (COMPLAINT_TEXT_RE.test(v)) return true
-  return NOT_ARRIVED_RE.test(v) && ORDER_OR_TIME_RE.test(v) && !RECEIPT_WORD_RE.test(v)
+  if (!NOT_ARRIVED_RE.test(v) || !ORDER_OR_TIME_RE.test(v) || RECEIPT_WORD_RE.test(v)) return false
+  // Verifier #130 r2: a payment verb ("ya pagué el pedido, ¿no ha llegado?") is a receipt question — unless days went by.
+  return !PAYMENT_VERB_RE.test(v) || DAYS_AGO_RE.test(v)
 }
 
 /** The customer line of a money hand-off: empathy for a complaint / refund, else the payment line. */

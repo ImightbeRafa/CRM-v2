@@ -1462,7 +1462,7 @@ export default function CarriersPage() {
                                                     </button>
                                                     <div style={{ minWidth: 0, flex: 1 }}>
                                                         <p title={o.customerName} style={{ ...compactOrderNameStyle, fontSize: 12 }}>{o.customerName}</p>
-                                                        <p style={{ color: 'rgba(255,255,255,0.3)', margin: '1px 0 0', fontSize: 9.5 }}>#{o.orderId}</p>
+                                                        <p style={{ color: 'rgba(255,255,255,0.3)', margin: '1px 0 0', fontSize: 9.5 }} title={o.orderId}>{orderLabelHash(o)}</p>
                                                     </div>
                                                 </div>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end' }}>
@@ -1589,7 +1589,7 @@ export default function CarriersPage() {
             <PaymentMethodWizard
                 open={!!ceWizardOrder}
                 title="Confirmar cobro contra entrega"
-                subtitle={ceWizardOrder ? `#${ceWizardOrder.orderId} · ${ceWizardOrder.customerName}` : undefined}
+                subtitle={ceWizardOrder ? `${orderLabelHash(ceWizardOrder)} · ${ceWizardOrder.customerName}` : undefined}
                 amountLabel="Monto del pedido"
                 amount={ceWizardOrder?.total || 0}
                 employeeLabel="Quién confirma el cobro"

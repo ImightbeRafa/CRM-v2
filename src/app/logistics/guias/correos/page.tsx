@@ -1,5 +1,6 @@
 'use client';
 
+import { orderLabelHash } from '@/lib/orders/order-label';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Mail, Printer, CheckSquare, Square, Search, RefreshCw, Package, Zap, CheckCircle, AlertTriangle, X, Download, Clock, FileText } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
@@ -407,7 +408,7 @@ export default function GuiaCorreosPage() {
                                                     <td style={{ padding: '9px 12px', width: 32 }}>
                                                         {selected.has(o.id) ? <CheckSquare size={14} style={{ color: '#60a5fa' }} /> : <Square size={14} style={{ color: 'rgba(255,255,255,0.2)' }} />}
                                                     </td>
-                                                    <td style={{ padding: '9px 12px', color: '#F2F2F2', fontWeight: 600 }}>{o.customerName}<div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>#{o.orderId}</div></td>
+                                                    <td style={{ padding: '9px 12px', color: '#F2F2F2', fontWeight: 600 }}>{o.customerName}<div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }} title={o.orderId}>{orderLabelHash(o)}</div></td>
                                                     <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.45)', fontSize: 11 }}>{getTenantName(o.tenantId)}</td>
                                                     <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.4)', fontSize: 11, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[o.address, o.district, o.canton].filter(Boolean).join(', ') || '—'}</td>
                                                     <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.4)' }}>{o.province || '—'}</td>

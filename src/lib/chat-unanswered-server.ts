@@ -18,7 +18,7 @@ const WAITING_ACK_LIKE = `${WAITING_ACK_KEY_PREFIX.replace(/[\\%_]/g, (ch) => `\
 
 /** The chat's latest real agent turn (delivered, not Probar, not the "ya le avisé" ack) as alias `lt`. */
 const LATEST_REAL_TURN_SQL = Prisma.sql`(
-  SELECT COALESCE(tm."sentAt", t."createdAt") AS since, t."decisionTrace" -> 'outcomeMarkers' AS om
+  SELECT COALESCE(tm."sentAt", t."createdAt") AS since, t."decisionTrace" -> 'outcomeMarkers' AS om, t.intent AS intent
   FROM "ChatAgentTurn" t
   LEFT JOIN "ChatMessage" tm ON tm.id = t."triggerMessageId" AND tm."tenantId" = t."tenantId"
   WHERE t."conversationId" = c.id
@@ -31,7 +31,9 @@ const LATEST_REAL_TURN_SQL = Prisma.sql`(
 ) lt`
 
 const HANDOFF_MARKERS_SQL = Prisma.sql`(
-  lt.om ->> 'needsHuman' = 'true'
+  -- #121 outage line ("Dame un momento" while the AI provider is down) is a hand-off in waiting, not an answer.
+  lt.intent = 'outage_ack'
+  OR lt.om ->> 'needsHuman' = 'true'
   OR lt.om ->> 'fallbackUsed' = 'true'
   OR lt.om ->> 'escalate' = 'true'
   OR lt.om ->> 'handoffKind' IN ('handoff', 'review')

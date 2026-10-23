@@ -64,6 +64,7 @@ export interface SoftConversation extends ChatConversation {
   /** Linked order status / total for the readable order chip (server's latest linked order). */
   orderStatus?: string | null
   orderTotal?: number | null
+  orderItems?: string | null
   /** Sin responder server truth (incl. "Respondido"). */
   waiting?: boolean
 }

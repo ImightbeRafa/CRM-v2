@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { agentModeLabel, type SoftAiAgentMode, type SoftAiToolLogEntry } from '@/lib/soft-ai'
 import type { ConversationStatus, SoftConversation, SoftTag } from '@/lib/chat-soft-copilot'
 import { stageChipClass, useCrmCatalog } from '@/components/chats/useCrmCatalog'
+import { ChatIdentityCard, LinkedOrderCard } from '@/components/chats/ChatDetailCards'
 
 /**
  * Chats side panel (Phase 2a): two tabs instead of three.
@@ -86,6 +87,11 @@ export function ChatContextRail({
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         {tab === 'cliente' ? (
           <div className="space-y-4">
+            {/* Who, on which line / channel, and the linked order (short number, status, total, items). */}
+            <div className="space-y-2">
+              <ChatIdentityCard conversation={conversation} />
+              <LinkedOrderCard conversation={conversation} />
+            </div>
             <div>
               <p className="mb-1.5 text-[11px] font-medium text-slate-400">Etapa del chat</p>
               <div className="flex flex-wrap gap-1.5" role="listbox" aria-label="Etapa del chat">

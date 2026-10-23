@@ -224,8 +224,8 @@ describe('chat-inbox helpers', () => {
 
   it('outboundDeliveryLabel covers pending/sent/failed/delivered/read', () => {
     assert.equal(outboundDeliveryLabel('pending'), 'Enviando…')
-    assert.equal(outboundDeliveryLabel('sent'), 'Enviado ✓')
-    assert.equal(outboundDeliveryLabel('failed'), 'Falló ✕')
+    assert.equal(outboundDeliveryLabel('sent'), 'Enviado')
+    assert.equal(outboundDeliveryLabel('failed'), 'No enviado')
     assert.equal(outboundDeliveryLabel('delivered'), 'Entregado')
     assert.equal(outboundDeliveryLabel('read'), 'Leído')
   })

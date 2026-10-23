@@ -148,6 +148,7 @@ export function listDtoToSoftConversation(
     lastIsFollowUp: dto.lastIsFollowUp === true,
     orderStatus: orderId && dto.linkedOrder?.id === orderId ? dto.linkedOrder.status ?? null : null,
     orderTotal: orderId && dto.linkedOrder?.id === orderId ? dto.linkedOrder.total ?? null : null,
+    orderItems: orderId && dto.linkedOrder?.id === orderId ? dto.linkedOrder.items ?? null : null,
     ...(typeof dto.waiting === 'boolean' ? { waiting: dto.waiting } : {}),
   }
 }

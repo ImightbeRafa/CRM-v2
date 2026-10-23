@@ -1,6 +1,18 @@
 'use client'
 
+import type { LucideIcon } from 'lucide-react'
+import { CreditCard, Hourglass, Inbox, Package, RefreshCw, Sparkles, UserRound } from 'lucide-react'
 import { INBOX_VIEW_DEFS, type InboxView, type InboxViewCounts } from '@/lib/chat-inbox-views'
+
+const ICON: Record<InboxView, LucideIcon> = {
+  todos: Inbox,
+  sin_responder: Hourglass,
+  persona: UserRound,
+  pago: CreditCard,
+  pedido: Package,
+  ia: Sparkles,
+  seguimientos: RefreshCw,
+}
 
 const TONE: Record<InboxView, { on: string; off: string }> = {
   todos: { on: 'bg-slate-900 text-white ring-slate-900', off: 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50' },
@@ -54,7 +66,10 @@ export function InboxViewTabs({
             }`}
             data-testid={`chat-view-${def.id}`}
           >
-            {def.emoji ? <span aria-hidden>{def.emoji}</span> : null}
+            {(() => {
+              const Icon = ICON[def.id]
+              return <Icon className="h-3 w-3 shrink-0" strokeWidth={2.25} aria-hidden />
+            })()}
             {def.short}
             {count != null ? (
               <span

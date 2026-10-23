@@ -2027,7 +2027,7 @@ export function SoftCopilotInboxV2() {
       const row = prev.get(job.conversationId)
       if (!row) return prev
       const next = new Map(prev)
-      next.set(job.conversationId, projectOptimisticListPreview(row, job.caption || `📎 ${preview.filename}`, optimistic.sentAt))
+      next.set(job.conversationId, projectOptimisticListPreview(row, job.caption || `Archivo · ${preview.filename}`, optimistic.sentAt))
       return next
     })
     nearBottomRef.current = true

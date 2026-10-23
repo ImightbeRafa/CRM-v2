@@ -52,6 +52,15 @@ export function orderTotalLabel(total: number | null | undefined): string | null
   return typeof total === 'number' && Number.isFinite(total) && total > 0 ? formatColones(total) : null
 }
 
+/** The customer's own handle for the header: "@usuario" (Instagram) or "+506 8888 8888" (WhatsApp). */
+export function customerHandle(conv: { platform: string; recipientId: string; recipientUsername?: string | null }): string | null {
+  if (conv.platform === 'instagram') return conv.recipientUsername ? `@${conv.recipientUsername.replace(/^@/, '')}` : null
+  const digits = conv.recipientId.replace(/\D/g, '')
+  if (!digits) return null
+  if (digits.length === 11 && digits.startsWith('506')) return `+506 ${digits.slice(3, 7)} ${digits.slice(7)}`
+  return `+${digits}`
+}
+
 /** Pictographs / dingbats out of chrome text (agent labels, line names); words and accents stay. */
 export function withoutEmoji(text: string): string {
   return text

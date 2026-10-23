@@ -257,13 +257,13 @@ export function chatSendErrorNeedsReconnect(raw: string | undefined | null): boo
  */
 export function outboundDeliveryLabel(
   status: string | null | undefined,
-): 'Enviando…' | 'Enviado ✓' | 'Falló ✕' | 'Entregado' | 'Leído' {
+): 'Enviando…' | 'Enviado' | 'No enviado' | 'Entregado' | 'Leído' {
   const s = (status || '').toLowerCase()
-  if (s === 'failed' || s === 'error') return 'Falló ✕'
+  if (s === 'failed' || s === 'error') return 'No enviado'
   if (s === 'pending' || s === 'sending' || s === 'queued') return 'Enviando…'
   if (s === 'delivered') return 'Entregado'
   if (s === 'read') return 'Leído'
-  return 'Enviado ✓'
+  return 'Enviado'
 }
 
 const DELIVERY_RANK: Record<string, number> = {

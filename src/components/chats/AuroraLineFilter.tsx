@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, CircleDashed, Info } from 'lucide-react'
 import { accountChannelAddress, accountDisplayLabel, type SoftSocialAccount } from '@/lib/chat-soft-copilot'
 import {
   filterLineAccounts,
@@ -101,7 +101,7 @@ export function AuroraLineFilter({
             <ChannelLogo platform={selected.platform} size={22} className="shrink-0" />
           ) : (
             <span aria-hidden className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-slate-400">
-              ◌
+              <CircleDashed className="h-3.5 w-3.5" />
             </span>
           )}
           <span className="min-w-0 flex-1">
@@ -135,7 +135,7 @@ export function AuroraLineFilter({
             <ChannelLogo platform={selected.platform} size={14} className="shrink-0" />
           ) : (
             <span aria-hidden className="text-slate-400">
-              ◌
+              <CircleDashed className="h-3.5 w-3.5" />
             </span>
           )}
           <span className="min-w-0 flex-1 truncate">
@@ -144,9 +144,7 @@ export function AuroraLineFilter({
           {selectedDown ? (
             <span aria-label="Línea caída" className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
           ) : null}
-          <span aria-hidden className="text-[10px] text-slate-400">
-            ▾
-          </span>
+          <ChevronDown aria-hidden className="h-3.5 w-3.5 text-slate-400" />
         </button>
       )}
 
@@ -178,7 +176,7 @@ export function AuroraLineFilter({
               }`}
             >
               <span aria-hidden className="text-slate-400">
-                ◌
+                <CircleDashed className="h-3.5 w-3.5" />
               </span>
               Todas las líneas
               <CountPill value={totalOpen} active={selectedAccountId === 'all'} />
@@ -224,8 +222,8 @@ export function AuroraLineFilter({
                         </span>
                       </span>
                       {down ? (
-                        <span aria-label={health.label} className="text-[13px] text-red-500">
-                          ⓘ
+                        <span aria-label={health.label} title={health.label} className="text-red-500">
+                          <Info className="h-3.5 w-3.5" aria-hidden />
                         </span>
                       ) : null}
                       <CountPill value={count} active={active} />

@@ -11,14 +11,15 @@ export type InboxCountedView = Exclude<InboxView, 'todos'>
 
 export const INBOX_COUNTED_VIEWS: InboxCountedView[] = ['sin_responder', 'persona', 'pago', 'pedido', 'ia', 'seguimientos']
 
-export const INBOX_VIEW_DEFS: Array<{ id: InboxView; label: string; short: string; emoji: string }> = [
-  { id: 'todos', label: 'Bandeja', short: 'Bandeja', emoji: '' },
-  { id: 'sin_responder', label: 'Sin responder (el cliente espera)', short: 'Sin responder', emoji: '⏳' },
-  { id: 'persona', label: 'Persona (chats con alguien del equipo)', short: 'Persona', emoji: '👤' },
-  { id: 'pago', label: 'Revisar pago', short: 'Revisar pago', emoji: '💳' },
-  { id: 'pedido', label: 'Pedidos abiertos (no entregados ni cancelados)', short: 'Pedido', emoji: '📦' },
-  { id: 'ia', label: 'IA atendiendo', short: 'IA', emoji: '✦' },
-  { id: 'seguimientos', label: 'Seguimientos sin respuesta', short: 'Seguimientos', emoji: '↻' },
+/** Labels only: the tab icons are lucide components (InboxViewTabs), never emojis in chrome. */
+export const INBOX_VIEW_DEFS: Array<{ id: InboxView; label: string; short: string }> = [
+  { id: 'todos', label: 'Bandeja', short: 'Bandeja' },
+  { id: 'sin_responder', label: 'Sin responder (el cliente espera)', short: 'Sin responder' },
+  { id: 'persona', label: 'Persona (chats con alguien del equipo)', short: 'Persona' },
+  { id: 'pago', label: 'Revisar pago', short: 'Revisar pago' },
+  { id: 'pedido', label: 'Pedidos abiertos (no entregados ni cancelados)', short: 'Pedido' },
+  { id: 'ia', label: 'IA atendiendo', short: 'IA' },
+  { id: 'seguimientos', label: 'Seguimientos sin respuesta', short: 'Seguimientos' },
 ]
 
 /** aiMode values that mean a person has the chat (agent hand-off sets 'human'; legacy 'human_takeover'). */

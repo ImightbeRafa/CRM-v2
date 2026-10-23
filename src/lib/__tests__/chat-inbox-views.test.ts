@@ -72,10 +72,17 @@ describe('chat views · rules', () => {
       { id: 'old', lastMessageAt: '2026-10-18T08:00:00Z', lastOutboundAt: null },
       { id: 'answeredNew', lastMessageAt: '2026-10-17T09:00:00Z', lastOutboundAt: '2026-10-17T09:00:00Z' },
     ]
-    for (const view of ['persona', 'pago', 'pedido', 'ia', 'sin_responder', 'todos'] as const) {
+    for (const view of ['persona', 'pago', 'pedido', 'ia', 'todos'] as const) {
       assert.deepEqual(sortForInboxView(rows, view).map((r) => r.id), ['new', 'old', 'answeredNew', 'answeredOld'], view)
     }
     assert.deepEqual(sortForInboxView(rows, 'seguimientos').map((r) => r.id), ['answeredOld', 'new', 'old', 'answeredNew'])
+    // Sin responder is a queue: OLDEST wait on top (since the customer's last message).
+    const waiting = [
+      { id: 'w2h', lastMessageAt: '2026-10-22T12:00:00Z', lastInboundAt: '2026-10-22T10:00:00Z' },
+      { id: 'w5h', lastMessageAt: '2026-10-22T07:05:00Z', lastInboundAt: '2026-10-22T07:00:00Z' },
+      { id: 'w10m', lastMessageAt: '2026-10-22T11:50:00Z', lastInboundAt: '2026-10-22T11:50:00Z' },
+    ]
+    assert.deepEqual(sortForInboxView(waiting, 'sin_responder').map((r) => r.id), ['w5h', 'w2h', 'w10m'])
   })
 
   it('Sin responder: the customer wrote last, or the agent left it to a person; never in IA', () => {
@@ -188,12 +195,16 @@ describe('Sin responder · server wiring (Lane A 2026-10-22)', () => {
     // F2: the line filter is applied inside the page query.
     has(rule, 'AND c."socialAccountId" = ANY(${accountIds}::text[])')
     const views = read('src/lib/chat-inbox-views-server.ts')
-    has(views, 'COUNT(*) FILTER (WHERE ${UNANSWERED_SQL}) AS sin_responder')
-    assert.match(views, /AND NOT \$\{NEEDS_PERSON_SQL\}\r?\n\s*\) AS ia/)
+    has(views, 'COUNT(*) FILTER (WHERE ${unansweredSql(answered)}) AS sin_responder')
+    assert.match(views, /AND NOT \$\{needsPersonSql\(answered\)\}\r?\n\s*\) AS ia/)
     const route = read('src/app/api/chat/conversations/route.ts')
     assert.match(route, /listUnansweredIds\(\s*auth\.tenantId,\s*viewClosedKeys,\s*limit,\s*input\.socialAccountId \? \[input\.socialAccountId\] : platformAccountIds,/)
-    has(route, 'attachNeedsPersonFlag(auth.tenantId, base)')
-    assert.ok(!route.includes("lastInboundAt: { sort: 'asc'"))
-    has(read('src/app/api/chat/conversations/changes/route.ts'), 'attachNeedsPersonFlag(auth.tenantId')
+    has(route, 'attachWaitingFlags(auth.tenantId, base)')
+    has(read('src/app/api/chat/conversations/changes/route.ts'), 'attachWaitingFlags(auth.tenantId')
+    // Respondido (SQL 062): the marker only counts once the columns exist; the queue is oldest first.
+    has(rule, 'AND (c."answeredAt" IS NULL OR c."answeredAt" < lt.since)')
+    has(rule, 'c."answeredAt" < COALESCE(c."lastInboundAt", c."lastMessageAt")')
+    has(rule, 'ORDER BY COALESCE(c."lastInboundAt", c."lastMessageAt") ASC, c.id ASC')
+    has(rule, "AND column_name IN ('answeredAt', 'answeredByUserId')")
   })
 })

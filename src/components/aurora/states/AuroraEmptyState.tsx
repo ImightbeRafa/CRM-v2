@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { CheckCircle2 } from 'lucide-react'
 
 type Tone = 'brand' | 'neutral' | 'danger'
 
@@ -36,7 +37,7 @@ export function AuroraEmptyState({
         className={`mb-4 flex h-14 w-14 items-center justify-center rounded-full text-xl ring-8 ${TONE_CLASS[tone]}`}
         aria-hidden
       >
-        {icon ?? '✓'}
+        {icon ?? <CheckCircle2 className="h-6 w-6" />}
       </div>
       <p className="text-[15px] font-semibold text-slate-900">{title}</p>
       {description ? (

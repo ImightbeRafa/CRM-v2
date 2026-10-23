@@ -154,14 +154,14 @@ function OrderChip({ conv, small = false }: { conv: SoftConversation; small?: bo
   const status = conv.orderStatus ? withoutEmoji(conv.orderStatus) : null
   return (
     <span
-      className={`${CHIP_BASE} ${small ? CHIP_SM : CHIP_MD} max-w-full ${ORDER_TONE_CLASS[tone]}`}
+      className={`${CHIP_BASE} ${small ? CHIP_SM : CHIP_MD} max-w-full whitespace-nowrap ${ORDER_TONE_CLASS[tone]}`}
       title={`Pedido ${conv.orderNumber}${status ? ` · ${status}` : ''}${total ? ` · ${total}` : ''}`}
       data-testid="conv-order-chip"
     >
       <Package className={small ? 'h-2.5 w-2.5' : 'h-3 w-3'} aria-hidden />
-      <span className="tabular-nums">{shortOrderNumber(conv.orderNumber)}</span>
-      {status ? <span className="truncate font-medium">· {status}</span> : null}
-      {total ? <span className="tabular-nums font-medium">· {total}</span> : null}
+      <span className="shrink-0 tabular-nums">{shortOrderNumber(conv.orderNumber)}</span>
+      {status ? <span className="min-w-0 truncate font-medium">· {status}</span> : null}
+      {total ? <span className="shrink-0 tabular-nums font-medium">· {total}</span> : null}
     </span>
   )
 }
@@ -557,7 +557,7 @@ export function SoftConversationList({
                   className={
                     compact
                       ? 'absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[12px] font-semibold text-white shadow-sm active:bg-emerald-700'
-                      : 'absolute right-3 top-2.5 inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-sm transition-opacity hover:bg-emerald-700 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 group-hover:opacity-100'
+                      : 'absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-sm transition-opacity hover:bg-emerald-700 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 group-hover:opacity-100'
                   }
                   data-testid="conv-mark-answered"
                 >
@@ -590,7 +590,7 @@ export function SoftConversationList({
                       data-soft-conv-key={key}
                       aria-current={selected ? 'true' : undefined}
                       onClick={() => onSelect(conv)}
-                      className={`flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition-colors ${
+                      className={`flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition-colors ${showAnswer ? 'pb-14' : ''} ${
                         selected ? 'bg-white shadow-[0_1px_4px_rgba(15,23,42,0.08)]' : 'active:bg-white/70'
                       }`}
                     >
@@ -617,9 +617,9 @@ export function SoftConversationList({
                         <LineLabel conv={conv} className="mt-0.5 text-[12px]" />
                         <p className="mt-1 flex min-w-0 items-center gap-1 text-[14px] text-slate-600" title={conv.lastIsFollowUp ? FOLLOW_UP_TITLE : undefined}>
                           {conv.lastIsFollowUp ? <RefreshCw className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-label="Seguimiento" /> : null}
-                          <span className="truncate">{chatPreviewText(conv.lastMessage) || '—'}</span>
+                          <span className="truncate" data-testid="conv-preview">{chatPreviewText(conv.lastMessage) || '—'}</span>
                         </p>
-                        <div className={`mt-1.5 flex flex-wrap items-center gap-1.5 ${showAnswer ? 'pr-28' : ''}`}>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                           <OrderChip conv={conv} />
                           {isDemo ? <span className={`${CHIP_BASE} ${CHIP_MD} bg-amber-50 text-amber-900 ring-amber-200`}>Demo</span> : null}
                           {inboxView === 'sin_responder' ? <WaitBadge since={conv.waitingSince} /> : null}
@@ -665,13 +665,13 @@ export function SoftConversationList({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <p className="truncate text-[13px] font-semibold text-slate-900">{conversationDisplayName(conv)}</p>
-                        <span className={`shrink-0 text-[11px] text-slate-500 ${showAnswer ? 'group-hover:invisible' : ''}`}>
+                        <span className="shrink-0 text-[11px] text-slate-500">
                           {formatRelativeEs(conv.lastMessageAt)}
                         </span>
                       </div>
                       <p className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-slate-600" title={conv.lastIsFollowUp ? FOLLOW_UP_TITLE : undefined}>
                         {conv.lastIsFollowUp ? <RefreshCw className="h-3 w-3 shrink-0 text-slate-400" aria-label="Seguimiento" /> : null}
-                        <span className="truncate">{chatPreviewText(conv.lastMessage) || '—'}</span>
+                        <span className="truncate" data-testid="conv-preview">{chatPreviewText(conv.lastMessage) || '—'}</span>
                       </p>
                       <div className="mt-1 flex min-w-0 items-center gap-1.5">
                         <LineLabel conv={conv} className="min-w-0 flex-1 text-[11px]" />
@@ -687,7 +687,11 @@ export function SoftConversationList({
                         {agentChip}
                         {inboxView === 'sin_responder' ? <WaitBadge since={conv.waitingSince} small /> : null}
                         {unread > 0 ? (
-                          <span className="ml-auto flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#5B6CFF] px-1 text-[10px] font-bold text-white">
+                          <span
+                            className={`ml-auto flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#5B6CFF] px-1 text-[10px] font-bold text-white ${
+                              showAnswer ? 'group-focus-within:invisible group-hover:invisible' : ''
+                            }`}
+                          >
                             {unread > 9 ? '9+' : unread}
                           </span>
                         ) : null}

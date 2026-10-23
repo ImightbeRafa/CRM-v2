@@ -12,6 +12,9 @@ import { createIdentifierRateLimit } from '@/lib/rate-limit'
 import { AGENT_PLATES, parseAgentAppearance } from '@/lib/agent-appearance'
 import { readAgentAppearances, writeAgentAppearance } from '@/lib/agent-appearance-store'
 
+/** The body is three small fields; anything bigger is refused before parsing (SecureDog Low-1). */
+const MAX_BODY_BYTES = 2_048
+
 const appearanceRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 20, identifier: 'chat-agent-appearance' })
 
 export const runtime = 'nodejs'
@@ -40,7 +43,21 @@ export async function PUT(request: NextRequest) {
     if (!rate.allowed) {
       return NextResponse.json({ success: false, error: 'Demasiados cambios. Esperá un momento.' }, { status: 429, headers: rate.headers })
     }
-    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
+    const declared = Number(request.headers.get('content-length') || 0)
+    if (declared > MAX_BODY_BYTES) {
+      return NextResponse.json({ success: false, error: 'Datos demasiado grandes.' }, { status: 413 })
+    }
+    const raw = await request.text().catch(() => '')
+    if (raw.length > MAX_BODY_BYTES) {
+      return NextResponse.json({ success: false, error: 'Datos demasiado grandes.' }, { status: 413 })
+    }
+    let body: Record<string, unknown> | null = null
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      body = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
+    } catch {
+      body = null
+    }
     const agentId = typeof body?.agentId === 'string' ? body.agentId : ''
     if (!body || !agentId) return NextResponse.json({ success: false, error: 'Datos inválidos' }, { status: 400 })
     // Only palette ids, never raw colors.

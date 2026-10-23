@@ -45,9 +45,15 @@ describe('agent appearance', () => {
     assert.equal(parseAgentAppearance(null), null)
     assert.equal(parseAgentAppearance({ plate: '#ff0000', ring: 'yes' }), null)
     assert.deepEqual(parseAgentAppearance({ plate: 'sky', extra: 1 }), { plate: 'sky' })
-    assert.deepEqual(parseAgentAppearance({ displayName: '  ‮Sofi\u0007 ' }), { displayName: 'Sofi' })
+    assert.deepEqual(parseAgentAppearance({ displayName: '  \u202eSofi\u0007 ' }), { displayName: 'Sofi' })
     assert.deepEqual(parseAgentAppearance({ displayName: '   ' }), { displayName: null })
     assert.equal(parseAgentAppearance({ displayName: 'x'.repeat(80) })?.displayName?.length, 40)
+    // SecureDog Info-1: BiDi marks / C1 / line separators out; never half an emoji at the cut.
+    assert.deepEqual(parseAgentAppearance({ displayName: '\u200fSo\u0085fi\u2028' }), { displayName: 'Sofi' })
+    const cut = parseAgentAppearance({ displayName: 'a'.repeat(39) + '😀😀' })?.displayName ?? ''
+    assert.equal(Array.from(cut).length, 40)
+    assert.ok(cut.endsWith('😀'))
+    assert.equal(parseAgentAppearance({ displayName: 'Ana 👩‍💻' })?.displayName, 'Ana 👩‍💻')
   })
   test('the agent runtime never reads appearance (owner UI only)', () => {
     for (const f of files('src/lib/soft-ai', /\.ts$/)) assert.doesNotMatch(read(f), /agent[_-]appearance/, f)
@@ -63,7 +69,10 @@ describe('agent appearance', () => {
     assert.match(route, /AGENT_PLATES as readonly unknown\[\]\)\.includes\(body\.plate\)/)
     assert.match(route, /logAuditEvent\(/)
     const store = read('src/lib/agent-appearance-store.ts')
-    assert.match(store, /where: \{ tenantId, scope: tenantId, key: \{ startsWith: AGENT_APPEARANCE_KEY_PREFIX \} \}/)
+    // Exact keys of the business's own agents (SecureDog Info-2) and a body cap before parsing (Low-1).
+    assert.match(store, /where: \{ tenantId, scope: tenantId, key: \{ in: agents\.map\(\(a\) => appearanceKey\(a\.id\)\) \} \}/)
+    assert.match(route, /if \(declared > MAX_BODY_BYTES\)/)
+    assert.match(route, /if \(raw\.length > MAX_BODY_BYTES\)/)
     assert.match(store, /enabled: false, config/)
     assert.match(store, /own\.has\(agentId\)/)
   })

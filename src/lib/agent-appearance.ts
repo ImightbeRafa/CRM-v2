@@ -37,8 +37,10 @@ export function parseAgentAppearance(raw: unknown): Partial<AgentAppearance> | n
   if (typeof r.plate === 'string' && (AGENT_PLATES as readonly string[]).includes(r.plate)) out.plate = r.plate as AgentPlate
   if (typeof r.ring === 'boolean') out.ring = r.ring
   if (typeof r.displayName === 'string') {
-    // Control and BiDi override characters out (it is rendered as text next to the internal name).
-    const name = r.displayName.replace(/[\u0000-\u001f\u007f‪-‮⁦-⁩]/g, '').trim().slice(0, DISPLAY_NAME_MAX)
+    // Control (C0/C1), BiDi marks/overrides/isolates and line separators out; it is rendered as text next to the
+    // internal name. Not all of \p{Cf}: U+200D joins emoji. Truncate by code point so an emoji is never cut in half.
+    const clean = r.displayName.replace(/[\p{Cc}\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069\u2028\u2029]/gu, '').trim()
+    const name = Array.from(clean).slice(0, DISPLAY_NAME_MAX).join('').trim()
     out.displayName = name || null
   } else if (r.displayName === null) out.displayName = null
   return Object.keys(out).length ? out : null

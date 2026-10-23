@@ -14,14 +14,13 @@ export const appearanceKey = (agentId: string) => `${AGENT_APPEARANCE_KEY_PREFIX
 /** Saved appearances of this business's agents (agent ids that no longer exist are dropped). */
 export async function readAgentAppearances(tenantId: string): Promise<Record<string, Partial<AgentAppearance>>> {
   if (!tenantId) return {}
-  const [rows, agents] = await Promise.all([
-    prisma.tenantFeatureFlag.findMany({
-      where: { tenantId, scope: tenantId, key: { startsWith: AGENT_APPEARANCE_KEY_PREFIX } },
-      select: { key: true, config: true },
-      take: 500,
-    }),
-    prisma.chatAgent.findMany({ where: { tenantId }, select: { id: true }, take: 500 }),
-  ])
+  // Exact keys of this business's own agents (no LIKE prefix scan, no arbitrary cut-off).
+  const agents = await prisma.chatAgent.findMany({ where: { tenantId }, select: { id: true }, take: 500 })
+  if (agents.length === 0) return {}
+  const rows = await prisma.tenantFeatureFlag.findMany({
+    where: { tenantId, scope: tenantId, key: { in: agents.map((a) => appearanceKey(a.id)) } },
+    select: { key: true, config: true },
+  })
   const own = new Set(agents.map((a) => a.id))
   const out: Record<string, Partial<AgentAppearance>> = {}
   for (const row of rows) {

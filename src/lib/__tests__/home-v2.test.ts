@@ -81,9 +81,9 @@ test('copy is honest: coming-soon is labeled, no dates, store badges, logos, par
   assert.match(read(`${DIR}/sections/Story.tsx`), /<span className=\{s\.soonBadge\}>Próximamente<\/span>/)
   const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
   assert.doesNotMatch(code, /App Store|Google Play|Disponible en|2026|2027|testimon|clientes felices|\+\d+ negocios|cientos de negocios/i)
-  // Rafael 2026-10-22: Claude, ChatGPT and Grok yes; Dots / Muse only once he confirms they are MCP clients.
-  assert.doesNotMatch(source, /\bDots\b|\bMuse\b/, 'unconfirmed MCP clients are not named')
-  assert.match(content, /compatibles con MCP, como Claude, ChatGPT o Grok/)
+  // Rafael 2026-10-23: Claude, ChatGPT and Grok now; Dots and Muse only as "más adelante".
+  assert.match(content, /compatibles con MCP, como Claude, ChatGPT o Grok\. Más adelante, también Dots y Muse\./)
+  assert.equal((content.match(/\bDots\b/g) ?? []).length, 1)
   assert.doesNotMatch(content, /integrad[oa] con (Claude|ChatGPT|Grok)|alianza|partner/i)
   // Example data in UI mocks is labeled.
   assert.match(read(`${DIR}/sections/Ops.tsx`), /Datos de ejemplo/)
@@ -110,8 +110,23 @@ test('one spacing system and brand slots for Lane I (logo + avatar)', () => {
   assert.match(css, /\.section \{\n  padding: var\(--section-y\) 0;/)
   const brand = read(`${DIR}/brand.tsx`)
   assert.match(brand, /export function Logo/)
-  assert.match(brand, /export function AvatarSlot/)
-  for (const f of ['sections/Hero.tsx', 'sections/Agent.tsx', 'sections/Closing.tsx']) {
-    assert.match(read(`${DIR}/${f}`), /<AvatarSlot place=/, f)
+  assert.match(brand, /export function Mark/)
+  // Handoff: never the hero over product UI — the hero has no mark; the demo's status bar has exactly one.
+  assert.doesNotMatch(read(`${DIR}/sections/Hero.tsx`), /<Mark\b/)
+  assert.equal((read(`${DIR}/demos/StoryStage.tsx`).match(/<Mark\b/g) ?? []).length, 1)
+  assert.match(read(`${DIR}/demos/StoryStage.tsx`), /if \(step === 3\) return 'yes'/)
+  // Logo / mark only come from brand.tsx (the swap point for Lane I's BetsyMark / BetsyLogo).
+  for (const f of files.filter((x) => x.endsWith('.tsx') && !x.endsWith('brand.tsx'))) {
+    assert.doesNotMatch(read(f), /className=\{s\.logo\}>\s*Betsy/, f)
   }
+})
+
+test('agent costumes: mark on a colored plate + name; the mark itself is never recolored; one mark in the view', () => {
+  const c = read(`${DIR}/islands/AgentCostumes.tsx`)
+  assert.match(c, /className=\{s\.costumePlate\} style=\{\{ background: plate \}\}/)
+  assert.equal((c.match(/<Mark\b/g) ?? []).length, 1)
+  assert.match(c, /role="radiogroup"/)
+  assert.match(c, /maxLength=\{16\}/)
+  assert.match(read(`${DIR}/sections/Agent.tsx`), /<AgentCostumes \/>/)
+  assert.doesNotMatch(read(`${DIR}/sections/Agent.tsx`), /→/)
 })

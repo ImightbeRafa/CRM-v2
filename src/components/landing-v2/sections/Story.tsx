@@ -60,19 +60,21 @@ function SoonVisual({ k }: { k: string }) {
     return (
       <div className={s.phone}>
         <span className={s.appTop}>Betsy</span>
-        {[
-          ['DR', 'ia', 'IA'],
-          ['CM', 'pago', 'Pago'],
-          ['AV', 'persona', 'Persona'],
-          ['JS', 'pedido', 'Pedido'],
-        ].map(([ini, chip, label]) => (
+        {(
+          [
+            ['DR', 'ia', 'IA'],
+            ['CM', 'pago', 'Pago'],
+            ['AV', 'persona', 'Persona'],
+            ['JS', 'pedido', 'Pedido'],
+          ] as const satisfies ReadonlyArray<readonly [string, ChipKind, string]>
+        ).map(([ini, chip, label]) => (
           <span key={ini} className={s.appRow}>
             <span className={s.appAv}>{ini}</span>
             <span className={s.appLines}>
               <i />
               <i />
             </span>
-            <Chip kind={chip as ChipKind} small>
+            <Chip kind={chip} small>
               {label}
             </Chip>
           </span>

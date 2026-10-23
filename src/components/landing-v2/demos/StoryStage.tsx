@@ -1,6 +1,7 @@
 import { Check, CreditCard, Sparkles, Truck } from 'lucide-react'
 import s from '../landing.module.css'
 import { Chip as StatusChip } from '../ui/Chip'
+import { Mark, type MarkState } from '../brand'
 import { STORY } from '../content'
 
 /**
@@ -17,6 +18,15 @@ function Chip({ step }: { step: number }) {
   if (step >= 4) return <StatusChip kind="pedido">Pedido</StatusChip>
   if (step >= 2) return <StatusChip kind="pago">Revisar pago</StatusChip>
   return <StatusChip kind="ia">IA</StatusChip>
+}
+
+/** The demo's one Betsy mark reacts to the story: thinking while the reply forms, listening when the receipt lands,
+ * the "yes" hop at Pago verificado (handoff), idle otherwise. */
+function markState(step: number): MarkState {
+  if (step === 0) return 'think'
+  if (step === 2) return 'listen'
+  if (step === 3) return 'yes'
+  return 'idle'
 }
 
 export function StoryStage({ step }: { step: number }) {
@@ -80,6 +90,7 @@ export function StoryStage({ step }: { step: number }) {
           )}
         </div>
         <div className={s.statusBar}>
+          <Mark size={18} state={markState(step)} />
           {step >= 2 && step < 4 ? (
             <span>
               <b className={s.inlineIcon}>
@@ -89,7 +100,6 @@ export function StoryStage({ step }: { step: number }) {
             </span>
           ) : (
             <span>
-              <span className={s.liveDot} style={{ display: 'inline-block', marginRight: 6 }} />
               <b>IA activa</b> · Pausar
             </span>
           )}

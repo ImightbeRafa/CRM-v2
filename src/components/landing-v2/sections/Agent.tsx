@@ -1,10 +1,11 @@
+import { ArrowRight } from 'lucide-react'
 import s from '../landing.module.css'
 import { AGENT, LINKS } from '../content'
 import { AgentStage, AgentSteps } from '../demos/AgentStage'
 import { DemoFrame } from '../demos/DemoFrame'
 import { LazyDemo } from '../demos/LazyDemo'
 import { NicheTabs } from '../islands/NicheTabs'
-import { AvatarSlot } from '../brand'
+import { AgentCostumes } from '../islands/AgentCostumes'
 
 /** Light section: what the agent does (interactive explainer) + examples per type of business. */
 export function Agent() {
@@ -12,7 +13,6 @@ export function Agent() {
     <section id="agente" className={`${s.section} ${s.light}`} aria-labelledby="lv2-agent-title">
       <div className={s.wrap}>
         <div className={s.sectionHead}>
-          <AvatarSlot place="agent" mood="talking" />
           <p className={s.eyebrow}>{AGENT.label}</p>
           <h2 id="lv2-agent-title" className={`landing-h2 ${s.display}`}>
             {AGENT.title}
@@ -34,7 +34,16 @@ export function Agent() {
           </div>
         </LazyDemo>
 
-        <div style={{ marginTop: 96 }}>
+        <div style={{ marginTop: 'var(--section-y)' }}>
+          <p className={s.eyebrow}>Tu agente</p>
+          <h3 className={`${s.cardTitle} ${s.h3Big}`}>Con tu nombre y tus colores.</h3>
+          <p className={s.small} style={{ maxWidth: 560 }}>
+            Cada negocio tiene su propio agente, con el nombre y el color que elijás. Probá cambiarlos.
+          </p>
+          <AgentCostumes />
+        </div>
+
+        <div style={{ marginTop: 'var(--section-y)' }}>
           <p className={s.eyebrow}>Para tu tipo de negocio</p>
           <h3 className={`${s.cardTitle} ${s.h3Big}`}>
             Así suena en negocios como el tuyo.
@@ -45,8 +54,8 @@ export function Agent() {
           <NicheTabs />
           <p className={s.small} style={{ marginTop: 20 }}>
             ¿Tu negocio no está en la lista?{' '}
-            <a href={LINKS.agent} style={{ color: 'var(--indigo-ink)', fontWeight: 650 }}>
-              Contanos qué vendés →
+            <a href={LINKS.agent} className={s.inlineIcon} style={{ color: 'var(--indigo-ink)', fontWeight: 650 }}>
+              Contanos qué vendés <ArrowRight size={14} aria-hidden />
             </a>
           </p>
         </div>

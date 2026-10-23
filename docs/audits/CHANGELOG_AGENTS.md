@@ -6,7 +6,11 @@
 - Próximamente: "compatibles con MCP, como Claude, ChatGPT o Grok" (Dots / Muse still out until Rafael confirms).
 - Brand slots for Lane I (`landing-v2/brand.tsx`): `Logo` (nav, footer; current wordmark until the shared `<BetsyLogo />` with the original blue→violet gradient lands) and `AvatarSlot` (hero beside the demo, agent section header, contact card; renders nothing until `<BetsyAvatar />` lands). Each becomes one import.
 - Lighthouse mobile (local `next start`): perf 58–74 → 71–79, LCP 6.0–6.5 → 3.9–5.7 s, CLS 0, a11y 100.
-- Tests: `home-v2.test.ts` (+2: no emoji chrome / no grid; spacing system + brand slots); MCP names updated.
+- Mascot handoff rules (docs/design/betsy-mascot-handoff): no mark in the hero (never over product UI); the demo's status bar has the one mark, whose state follows the story (think → listen → "yes" at Pago verificado); one mark in the contact card. `brand.tsx` (`Logo`, `Mark`) is the single swap point for Lane I's `BetsyLogo` / `BetsyMark` (placeholder mark until their branch merges; same box, no layout shift).
+- Agent "costumes" (Rafael): `islands/AgentCostumes.tsx` — one live preview (mark on a colored plate + name + greeting) and 4 example agents (Sofi, Vale, Luna, Max) as chips; type a name, pick a plate color. The mark is never recolored.
+- Próximamente: Claude, ChatGPT o Grok; "Más adelante, también Dots y Muse".
+- Verifier fixes: hero columns 0.92/1.08 at 1080–1279 (CTAs fit on a 1112 px iPad), CTAs wrap/nowrap; text arrow → icon; chip data typed `as const satisfies` (a typo can't 500 the page).
+- Tests: `home-v2.test.ts` (+3: no emoji chrome / no grid; spacing system + brand slots); MCP names updated.
 ## 2026-10-22 — Home v2 at /home-preview: live demos, agent explainer, ops showcase, "Próximamente" (Lane H; preview only, /home unchanged)
 
 - `/home-preview` (noindex, public, no nav link) now renders `src/components/landing-v2/**` instead of the #123 page the wave moved there (0ee42805). `/home` (Release 1 page) is untouched; the swap is one commit when Rafael approves.

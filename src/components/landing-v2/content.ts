@@ -195,7 +195,7 @@ export const COMING_SOON = {
     {
       key: 'mcp',
       title: 'Tu negocio desde tu asistente de IA',
-      text: 'Configurá y consultá Betsy desde asistentes compatibles con MCP, como Claude, ChatGPT o Grok.',
+      text: 'Configurá y consultá Betsy desde asistentes compatibles con MCP, como Claude, ChatGPT o Grok. Más adelante, también Dots y Muse.',
     },
     { key: 'tools', title: 'Más tipos de negocio', text: 'Herramientas para negocios que no solo venden productos: servicios, reservas y más.' },
     { key: 'presets', title: 'Agentes listos para activar', text: 'Agentes de base que vos mismo configurás y encendés, sin esperar a que te armemos uno.' },

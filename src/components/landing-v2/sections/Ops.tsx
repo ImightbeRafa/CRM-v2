@@ -36,12 +36,14 @@ export function Ops() {
             </div>
             <Reveal className={s.tileVisual}>
               <div className={s.inboxMini} aria-hidden>
-                {[
-                  ['DR', 'Daniela R.', '¿Tienen los parches para dormir?', 'ig', 'ia', 'IA'],
-                  ['CM', 'Carlos M.', 'Ya hice el SINPE', 'wa', 'pago', 'Revisar pago'],
-                  ['AV', 'Andrea V.', 'Quiero hablar con alguien', 'wa', 'persona', 'Persona'],
-                  ['JS', 'José S.', 'Gracias, me llegó perfecto', 'ig', 'pedido', 'Pedido'],
-                ].map(([ini, name, text, ch, chip, label], n) => (
+                {(
+                  [
+                    ['DR', 'Daniela R.', '¿Tienen los parches para dormir?', 'ig', 'ia', 'IA'],
+                    ['CM', 'Carlos M.', 'Ya hice el SINPE', 'wa', 'pago', 'Revisar pago'],
+                    ['AV', 'Andrea V.', 'Quiero hablar con alguien', 'wa', 'persona', 'Persona'],
+                    ['JS', 'José S.', 'Gracias, me llegó perfecto', 'ig', 'pedido', 'Pedido'],
+                  ] as const satisfies ReadonlyArray<readonly [string, string, string, 'wa' | 'ig', ChipKind, string]>
+                ).map(([ini, name, text, ch, chip, label], n) => (
                   <div key={name} className={`${s.inboxRow} ${s.anim}`} style={i(n)}>
                     <span className={s.avatar}>
                       {ini}
@@ -51,7 +53,7 @@ export function Ops() {
                       <b>{name}</b>
                       <small>{text}</small>
                     </span>
-                    <Chip kind={chip as ChipKind}>{label}</Chip>
+                    <Chip kind={chip}>{label}</Chip>
                   </div>
                 ))}
               </div>
@@ -109,18 +111,20 @@ export function Ops() {
             </div>
             <Reveal className={s.tileVisual}>
               <div aria-hidden>
-                {[
-                  ['#2036 · María F.', '₡18.500', 'live', 'Cobrado · SINPE'],
-                  ['#2039 · Luis P.', '₡9.900', 'wait', 'Pendiente'],
-                  ['#2040 · Ana J.', '₡24.000', 'live', 'Cobrado · Efectivo'],
-                ].map(([who, amt, chip, label], n) => (
+                {(
+                  [
+                    ['#2036 · María F.', '₡18.500', 'live', 'Cobrado · SINPE'],
+                    ['#2039 · Luis P.', '₡9.900', 'wait', 'Pendiente'],
+                    ['#2040 · Ana J.', '₡24.000', 'live', 'Cobrado · Efectivo'],
+                  ] as const satisfies ReadonlyArray<readonly [string, string, ChipKind, string]>
+                ).map(([who, amt, chip, label], n) => (
                   <div key={who} className={`${s.codRow} ${s.anim}`} style={i(n)}>
                     <span>
                       <b>{who}</b>
                       <br />
                       <span style={{ color: 'var(--muted)' }}>{amt} · contra entrega</span>
                     </span>
-                    <Chip kind={chip as ChipKind}>{label}</Chip>
+                    <Chip kind={chip}>{label}</Chip>
                   </div>
                 ))}
               </div>

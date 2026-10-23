@@ -4,7 +4,6 @@ import { HERO, LINKS, STORY } from '../content'
 import { DemoFrame } from '../demos/DemoFrame'
 import { LazyDemo } from '../demos/LazyDemo'
 import { StorySteps, StoryStage } from '../demos/StoryStage'
-import { AvatarSlot } from '../brand'
 
 /** Dark hero: static headline (the LCP element never animates in) + the story demo poster, swapped for the player. */
 export function Hero({ priceShort, trialDays }: { priceShort: string; trialDays: number }) {
@@ -32,7 +31,6 @@ export function Hero({ priceShort, trialDays }: { priceShort: string; trialDays:
           <p className={s.fine}>{priceShort} · sin tarjeta para la prueba</p>
         </div>
         <div id="como-funciona" className={s.heroDemo}>
-          <AvatarSlot place="hero" mood="idle" />
           <h2 className={s.srOnly}>Cómo funciona: un chat de principio a fin</h2>
           <StorySteps className={s.srOnly} />
           <LazyDemo which="story">

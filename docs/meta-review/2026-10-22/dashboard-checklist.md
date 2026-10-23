@@ -95,7 +95,7 @@ chats (reviewer-instructions §1.6).
   nightly backfill for older lines).
   For WhatsApp, Embedded Signup's token may belong to a system user rather than the person, so a deletion request might
   not find a WhatsApp line. Test once with a test WhatsApp signup (remove the app in Facebook settings, then check
-  /data-deletion?code=…). If it says "Sin datos", WhatsApp deletion stays manual through support@betsycrm.com, which the
+  /data-deletion?code=…). If it says "Sin datos", WhatsApp deletion stays manual through hola@betsycrm.com, which the
   policy already offers.
 - **AI terms text** (`src/lib/soft-ai/ai-terms.ts`, Lane D) says the agent sends message text, name, context and order
   status to OpenAI. That is still true (it sends no images or audio), so it was **not** changed and no re-acceptance is
@@ -106,7 +106,7 @@ chats (reviewer-instructions §1.6).
 
 ## D. Support runbook: manual deletion requests
 
-The status page tells people with "no automatic match" or "manual review" to email support@betsycrm.com with their
+The status page tells people with "no automatic match" or "manual review" to email hola@betsycrm.com with their
 code. **The code proves nothing about who owns an account.** Before erasing anything by hand:
 
 1. Confirm that the person controls the Instagram or WhatsApp account. For example, ask them to send a message from it to

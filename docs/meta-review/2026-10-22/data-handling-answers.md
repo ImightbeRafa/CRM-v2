@@ -29,7 +29,7 @@ business's own staff assistant can look up orders that started in a chat.
 ## Responsible entity
 
 **Who is responsible for the Platform Data?** Rafael Garcia Montoya (Betsy CRM), Costa Rica. Contact:
-support@betsycrm.com. Each business that connects its account controls its own customers' data; Betsy processes it on the
+hola@betsycrm.com. Each business that connects its account controls its own customers' data; Betsy processes it on the
 business's behalf.
 
 **Country:** Costa Rica.
@@ -57,7 +57,7 @@ No.
 - **How do users delete their data?** In Facebook/Instagram settings → remove Betsy → ask for deletion. Meta calls
   https://www.betsycrm.com/api/auth/instagram/data-deletion; we disconnect that person's lines at once, tell the business owner, and 3 days later delete the conversations, messages, media, ad referrals
   and AI records of the lines that person connected, and return a status page
-  (https://www.betsycrm.com/data-deletion?code=…). Or by email to support@betsycrm.com. A whole account is erased by
+  (https://www.betsycrm.com/data-deletion?code=…). Or by email to hola@betsycrm.com. A whole account is erased by
   hand within 30 days.
 - **Retention** (same as https://www.betsycrm.com/privacy §7):
   - Access tokens: deleted at once when the business disconnects or removes Betsy in Facebook/Instagram.

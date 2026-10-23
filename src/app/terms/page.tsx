@@ -254,8 +254,8 @@ export default function TermsPage() {
               For questions about these Terms, please contact us:
             </p>
             <ul className="list-none space-y-2">
-              <li><strong>Email:</strong> <a href="mailto:legal@betsycrm.com" className="text-blue-600 hover:underline">legal@betsycrm.com</a></li>
-              <li><strong>Support:</strong> <a href="mailto:support@betsycrm.com" className="text-blue-600 hover:underline">support@betsycrm.com</a></li>
+              <li><strong>Email:</strong> <a href="mailto:hola@betsycrm.com" className="text-blue-600 hover:underline">hola@betsycrm.com</a></li>
+              <li><strong>Support:</strong> <a href="mailto:hola@betsycrm.com" className="text-blue-600 hover:underline">hola@betsycrm.com</a></li>
               <li><strong>Website:</strong> <a href="https://www.betsycrm.com" className="text-blue-600 hover:underline">www.betsycrm.com</a></li>
             </ul>
           </section>

@@ -84,8 +84,8 @@ export default async function DataDeletionPage({
             <h3 className="text-lg font-semibold mb-2">Opción 2: por correo</h3>
             <p>
               Escribí a{' '}
-              <a href="mailto:support@betsycrm.com" className="text-blue-600 hover:underline">
-                support@betsycrm.com
+              <a href="mailto:hola@betsycrm.com" className="text-blue-600 hover:underline">
+                hola@betsycrm.com
               </a>{' '}
               con tu usuario o correo de Betsy, la cuenta de Instagram o WhatsApp conectada y la solicitud de eliminación.
               Respondemos en 10 días hábiles.
@@ -95,7 +95,7 @@ export default async function DataDeletionPage({
           <section>
             <h3 className="text-lg font-semibold mb-2">Borrar toda una cuenta de Betsy</h3>
             <p>
-              La persona dueña de la cuenta puede pedirlo a support@betsycrm.com desde el correo de la cuenta. Lo hacemos a
+              La persona dueña de la cuenta puede pedirlo a hola@betsycrm.com desde el correo de la cuenta. Lo hacemos a
               mano dentro de 30 días (usuarios, clientes, pedidos, conversaciones, archivos y registros) y lo confirmamos por
               correo; las copias de seguridad se renuevan en 14 días más.
             </p>
@@ -104,7 +104,7 @@ export default async function DataDeletionPage({
           <section>
             <h3 className="text-lg font-semibold mb-2">Si sos cliente de un negocio que usa Betsy</h3>
             <p>
-              Escribile primero al negocio, que es responsable de tus datos. También podés escribirnos a support@betsycrm.com
+              Escribile primero al negocio, que es responsable de tus datos. También podés escribirnos a hola@betsycrm.com
               y le ayudamos a atender tu solicitud.
             </p>
           </section>
@@ -126,7 +126,7 @@ export default async function DataDeletionPage({
                 confirmation code linking to this page. Backups roll over within 14 days.
               </li>
               <li>
-                <strong>By email</strong>: write to support@betsycrm.com. We answer within 10 business days. A whole Betsy
+                <strong>By email</strong>: write to hola@betsycrm.com. We answer within 10 business days. A whole Betsy
                 account is erased by hand within 30 days on the owner&apos;s request.
               </li>
             </ul>

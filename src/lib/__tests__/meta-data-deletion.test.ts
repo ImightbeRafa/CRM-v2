@@ -206,7 +206,7 @@ test('deletion with no matching line answers no_data, and the page offers the ma
   const out = await processMetaDataRequest({ metaUserId: '222', kind: 'deletion' }, store, opts)
   assert.equal(out.status, 'no_data')
   assert.equal([...store.rows.values()][0]!.status, 'no_data')
-  assert.match(describeDeletionStatus('no_data').body, /support@betsycrm\.com.*30 días/)
+  assert.match(describeDeletionStatus('no_data').body, /hola@betsycrm.com.*30 días/)
 })
 
 test('a storage failure is not swallowed: pending_storage with the remaining paths, then the cron finishes it', async () => {
@@ -286,7 +286,7 @@ test('after MAX attempts the request is marked failed and reported (status page 
   assert.equal(res.failed, 1)
   assert.equal(store.rows.get(row.id)!.status, 'failed')
   assert.ok(failures.includes('gave_up'))
-  assert.match(describeDeletionStatus('failed').body, /support@betsycrm\.com/)
+  assert.match(describeDeletionStatus('failed').body, /hola@betsycrm.com/)
 })
 
 test('Meta resending (or a replay) within 24 h gets the same code: no second request', async () => {

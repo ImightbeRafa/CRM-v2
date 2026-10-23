@@ -249,7 +249,7 @@ export async function sendMetaDataDeletionNoticeEmail(input: {
             cuentas. Tus pedidos, clientes y agentes no se borran.
           </p>
           <p style="color:#4b5563;font-size:14px;">
-            Si no lo esperabas, escribí antes de esa fecha a support@betsycrm.com con el código <strong>${code}</strong>.
+            Si no lo esperabas, escribí antes de esa fecha a hola@betsycrm.com con el código <strong>${code}</strong>.
             Para seguir usando esas cuentas, volvé a conectarlas en Configuración › Cuentas conectadas.
           </p>
         </div>

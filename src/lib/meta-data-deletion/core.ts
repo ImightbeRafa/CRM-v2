@@ -418,19 +418,19 @@ export function describeDeletionStatus(
       return {
         tone: 'ok',
         title: 'Sin coincidencia automática · No automatic match',
-        body: 'No encontramos automáticamente ninguna cuenta de Instagram o WhatsApp conectada a Betsy por ese usuario de Facebook. Si conectaste una cuenta, escribí a support@betsycrm.com con este código y la borramos a mano dentro de 30 días. / We could not automatically match an Instagram or WhatsApp account connected to Betsy by that Facebook user. If you connected one, email support@betsycrm.com with this code and we delete it by hand within 30 days.',
+        body: 'No encontramos automáticamente ninguna cuenta de Instagram o WhatsApp conectada a Betsy por ese usuario de Facebook. Si conectaste una cuenta, escribí a hola@betsycrm.com con este código y la borramos a mano dentro de 30 días. / We could not automatically match an Instagram or WhatsApp account connected to Betsy by that Facebook user. If you connected one, email hola@betsycrm.com with this code and we delete it by hand within 30 days.',
       }
     case 'failed':
       return {
         tone: 'warn',
         title: 'Necesita revisión manual · Needs manual review',
-        body: 'No pudimos terminar la eliminación automáticamente (por ejemplo, el negocio volvió a conectar la cuenta). Nuestro equipo ya fue avisado y la completa a mano dentro de 30 días; podés escribir a support@betsycrm.com con este código. / We could not finish automatically (for example, the business connected the account again). Our team has been alerted and completes it by hand within 30 days; you can email support@betsycrm.com with this code.',
+        body: 'No pudimos terminar la eliminación automáticamente (por ejemplo, el negocio volvió a conectar la cuenta). Nuestro equipo ya fue avisado y la completa a mano dentro de 30 días; podés escribir a hola@betsycrm.com con este código. / We could not finish automatically (for example, the business connected the account again). Our team has been alerted and completes it by hand within 30 days; you can email hola@betsycrm.com with this code.',
       }
     default:
       return {
         tone: 'wait',
         title: 'Solicitud recibida · Request received',
-        body: 'Recibimos tu solicitud y desconectamos las cuentas. Para confirmar el estado o terminarla, escribí a support@betsycrm.com con este código; la completamos dentro de 30 días. / We received your request and disconnected the accounts. To confirm its status or finish it, email support@betsycrm.com with this code; we complete it within 30 days.',
+        body: 'Recibimos tu solicitud y desconectamos las cuentas. Para confirmar el estado o terminarla, escribí a hola@betsycrm.com con este código; la completamos dentro de 30 días. / We received your request and disconnected the accounts. To confirm its status or finish it, email hola@betsycrm.com with this code; we complete it within 30 days.',
       }
   }
 }

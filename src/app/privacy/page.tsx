@@ -335,12 +335,12 @@ export default function PrivacyPage() {
                 </Link>
                 . If we cannot match the request to an account automatically, the status page says so and we complete it by
                 hand within 30 days when you email us. Backups roll over within 14 days. You can also ask by email at{' '}
-                {mail('support@betsycrm.com')}.
+                {mail('hola@betsycrm.com')}.
               </p>
             </Sub>
             <Sub title="8.3 Erasing a whole Betsy account">
               <p>
-                The account owner can ask {mail('support@betsycrm.com')} from the account&apos;s email address to erase the
+                The account owner can ask {mail('hola@betsycrm.com')} from the account&apos;s email address to erase the
                 whole workspace (users, customers, orders, conversations, media and logs). We do it by hand within 30 days and
                 confirm by email; backups roll over within 14 more days.
               </p>
@@ -348,7 +348,7 @@ export default function PrivacyPage() {
             <Sub title="8.4 If you are a customer of a business that uses Betsy">
               <p>
                 Contact the business first, since it is responsible for your data. You can also write to{' '}
-                {mail('support@betsycrm.com')}; we will help the business answer or act on your request.
+                {mail('hola@betsycrm.com')}; we will help the business answer or act on your request.
               </p>
             </Sub>
           </Section>
@@ -356,7 +356,7 @@ export default function PrivacyPage() {
           <Section title="9. Your rights">
             <p className="mb-2">
               You can ask to access, correct, export or delete your personal data, or object to its use, by writing to{' '}
-              {mail('support@betsycrm.com')}. We answer within 10 business days. In Costa Rica you can also contact PRODHAB,
+              {mail('hola@betsycrm.com')}. We answer within 10 business days. In Costa Rica you can also contact PRODHAB,
               and in the European Economic Area your local data protection authority.
             </p>
             <p>
@@ -407,10 +407,10 @@ export default function PrivacyPage() {
           <Section title="14. Contact">
             <ul className="list-none space-y-2">
               <li>
-                <strong>Privacy and deletion:</strong> {mail('support@betsycrm.com')}
+                <strong>Privacy and deletion:</strong> {mail('hola@betsycrm.com')}
               </li>
               <li>
-                <strong>Other privacy questions:</strong> {mail('privacy@betsycrm.com')}
+                <strong>Other privacy questions:</strong> {mail('hola@betsycrm.com')}
               </li>
               <li>
                 <strong>Website:</strong>{' '}

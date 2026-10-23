@@ -31,7 +31,8 @@ export const HERO = {
 /** One chat, start to finish. Each step is one frame of the hero demo; `caption` is also the accessible step list. */
 export const STORY = {
   customer: { name: 'Daniela R.', initials: 'DR', channel: 'ig' as const, line: 'Instagram · @tu_tienda' },
-  agentName: 'Sofi',
+  // Generic example name: never a live client persona (handoff: Betsy never speaks for a client store).
+  agentName: 'Luna',
   steps: [
     { caption: 'Una clienta escribe por Instagram a las 10:42 p. m.' },
     { caption: 'El agente contesta con tu precio y tus envíos, en mensajes cortos.' },
@@ -51,7 +52,7 @@ export const STORY = {
     a4: '¡Pago recibido, gracias! Ya preparamos tu pedido 🙌',
     a4By: 'Carlos (equipo)',
   },
-  order: { id: '#2041', item: '1× Parches para dormir ×30', total: '₡12.900', pay: 'SINPE ✓', ship: 'Correos' },
+  order: { id: '#2041', item: '1× Parches para dormir ×30', total: '₡12.900', pay: 'Pagado por SINPE', ship: 'Correos' },
   guia: { number: 'CR 4021 7735 06', to: 'Daniela R. · Heredia 40101', weight: '0,3 kg' },
   columns: ['Pendiente', 'En Proceso', 'Enviado'],
 }
@@ -195,7 +196,7 @@ export const COMING_SOON = {
     {
       key: 'mcp',
       title: 'Tu negocio desde tu asistente de IA',
-      text: 'Configurá y consultá Betsy desde asistentes compatibles con MCP, como Claude o ChatGPT.',
+      text: 'Configurá y consultá Betsy desde asistentes compatibles con MCP, como Claude, ChatGPT o Grok. Más adelante, también Dots y Muse.',
     },
     { key: 'tools', title: 'Más tipos de negocio', text: 'Herramientas para negocios que no solo venden productos: servicios, reservas y más.' },
     { key: 'presets', title: 'Agentes listos para activar', text: 'Agentes de base que vos mismo configurás y encendés, sin esperar a que te armemos uno.' },

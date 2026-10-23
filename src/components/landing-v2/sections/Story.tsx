@@ -1,6 +1,8 @@
 import s from '../landing.module.css'
 import { BUILD, COMING_SOON, TRUST } from '../content'
+import { Package } from 'lucide-react'
 import { Reveal } from '../islands/Reveal'
+import { Chip, type ChipKind } from '../ui/Chip'
 
 /** "Cómo creamos tu agente" (dark), "Lo que hay detrás" (light) and "Próximamente" (dark). */
 
@@ -58,24 +60,28 @@ function SoonVisual({ k }: { k: string }) {
     return (
       <div className={s.phone}>
         <span className={s.appTop}>Betsy</span>
-        {[
-          ['DR', s.chipIa, 'IA'],
-          ['CM', s.chipPago, 'Pago'],
-          ['AV', s.chipPersona, 'Persona'],
-          ['JS', s.chipPedido, 'Pedido'],
-        ].map(([ini, chip, label]) => (
+        {(
+          [
+            ['DR', 'ia', 'IA'],
+            ['CM', 'pago', 'Pago'],
+            ['AV', 'persona', 'Persona'],
+            ['JS', 'pedido', 'Pedido'],
+          ] as const satisfies ReadonlyArray<readonly [string, ChipKind, string]>
+        ).map(([ini, chip, label]) => (
           <span key={ini} className={s.appRow}>
             <span className={s.appAv}>{ini}</span>
             <span className={s.appLines}>
               <i />
               <i />
             </span>
-            <span className={`${s.chip} ${chip}`} style={{ fontSize: 8, padding: '2px 5px' }}>
+            <Chip kind={chip} small>
               {label}
-            </span>
+            </Chip>
           </span>
         ))}
-        <span className={s.toast}>📦 Nuevo pedido #2042</span>
+        <span className={`${s.toast} ${s.inlineIcon}`}>
+          <Package size={11} aria-hidden /> Nuevo pedido #2042
+        </span>
       </div>
     )
   if (k === 'mcp')

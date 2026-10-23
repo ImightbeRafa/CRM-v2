@@ -10,9 +10,8 @@ export function Hero({ priceShort, trialDays }: { priceShort: string; trialDays:
   return (
     <section id="inicio" className={s.hero} aria-labelledby="lv2-hero-title">
       <div className={s.lightField} aria-hidden />
-      <div className={s.grid} aria-hidden />
       <div className={`${s.wrap} ${s.heroGrid}`}>
-        <div>
+        <div className={s.heroCopy}>
           <p className={s.heroPill}>
             <span className={s.liveDot} aria-hidden />
             {HERO.pill}
@@ -31,7 +30,7 @@ export function Hero({ priceShort, trialDays }: { priceShort: string; trialDays:
           </div>
           <p className={s.fine}>{priceShort} · sin tarjeta para la prueba</p>
         </div>
-        <div id="como-funciona">
+        <div id="como-funciona" className={s.heroDemo}>
           <h2 className={s.srOnly}>Cómo funciona: un chat de principio a fin</h2>
           <StorySteps className={s.srOnly} />
           <LazyDemo which="story">

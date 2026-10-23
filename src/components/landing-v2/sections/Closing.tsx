@@ -2,6 +2,7 @@ import { Check, Instagram, LifeBuoy, Mail, MessageCircle } from 'lucide-react'
 import s from '../landing.module.css'
 import { FAQ, LINKS, PRICING } from '../content'
 import type { SupportContactConfig } from '@/lib/support/contact-config'
+import { Logo, Mark } from '../brand'
 
 /** Pricing (from the single price source), FAQ, contact (from the support contact config) and footer. */
 
@@ -112,6 +113,8 @@ export function Contact({ contact }: { contact: SupportContactConfig }) {
       <div className={s.wrap}>
         <div className={s.contactBox}>
           <div className={s.lightField} style={{ top: -700, opacity: 0.7 }} aria-hidden />
+          {/* One mark in this view, gazing at the contact links below. */}
+          <Mark size={44} state="idle" />
           <h2 id="lv2-contact-title" className={`landing-h2 ${s.display}`} style={{ color: '#fff', marginTop: 0 }}>
             Hablemos de tu negocio.
           </h2>
@@ -149,9 +152,7 @@ export function Footer() {
     <footer className={s.footer}>
       <div className={`${s.wrap} ${s.footerInner}`}>
         <p style={{ margin: 0 }}>
-          <span className={s.logo} style={{ color: 'var(--ink)', fontSize: 18 }}>
-            Betsy
-          </span>
+          <Logo tone="light" />
           <span style={{ marginLeft: 12 }}>Hecho en Costa Rica · © {new Date().getFullYear()}</span>
         </p>
         <nav aria-label="Legal y ayuda" className={s.footerLinks}>

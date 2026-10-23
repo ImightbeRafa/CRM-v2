@@ -1,5 +1,6 @@
 'use client'
 
+import { ThumbsUp, ThumbsDown } from 'lucide-react'
 import { MobileCardTable } from '@/components/ui/MobileCardTable'
 import { useEffect, useState } from 'react'
 
@@ -65,7 +66,7 @@ export default function ScorecardPanel({ days }: { days: number }) {
                 <th className="px-2 py-2 text-right">Sugerencias usadas</th>
                 <th className="px-2 py-2 text-right">Tomadas por persona</th>
                 <th className="px-2 py-2 text-right">Con pedido ≤7d</th>
-                <th className="px-4 py-2 text-right">👍 / 👎</th>
+                <th className="px-4 py-2 text-right"><span className="inline-flex items-center gap-1"><ThumbsUp className="h-3.5 w-3.5" aria-label="Útil" /> / <ThumbsDown className="h-3.5 w-3.5" aria-label="No útil" /></span></th>
               </tr>
             </thead>
             <tbody>

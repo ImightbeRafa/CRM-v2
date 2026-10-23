@@ -567,12 +567,12 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         printWindow.close();
-        alert(`❌ ${payload.error || 'No se pudieron guardar las guías manuales'}`);
+        alert(`${payload.error || 'No se pudieron guardar las guías manuales'}`);
         return;
       }
     } catch {
       printWindow.close();
-      alert('❌ No se pudieron guardar las guías manuales');
+      alert('No se pudieron guardar las guías manuales');
       return;
     }
 

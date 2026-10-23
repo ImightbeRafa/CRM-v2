@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, RefreshCw, Eye, EyeOff, MessageSquare, Megaphone } from 'lucide-react';
+import { Save, RefreshCw, Eye, EyeOff, MessageSquare, Megaphone, Check, Link2, Package, Building2, User, CalendarDays } from 'lucide-react';
 import { useTenantConfig, type TenantConfig } from '@/hooks/useTenantConfig';
 
 interface FeedbackTicket {
@@ -40,7 +40,7 @@ function RateCard({ label, desc, rateKey, value, onSave, color }: {
                     <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 15, margin: 0 }}>{label}</p>
                     <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: '3px 0 0' }}>{desc}</p>
                 </div>
-                {saved && <span style={{ color: '#34d399', fontSize: 12, fontWeight: 600 }}>✓ Guardado</span>}
+                {saved && <span style={{ color: '#34d399', fontSize: 12, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Check size={12} aria-hidden style={{ flexShrink: 0 }} /> Guardado</span>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 18 }}>₡</span>
@@ -76,7 +76,7 @@ function TenantRow({ tenant, onSave }: { tenant: TenantConfig; onSave: (id: stri
             </div>
             <input type="color" value={color} onChange={e => setColor(e.target.value)} style={{ width: 30, height: 30, borderRadius: 6, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} />
             <button onClick={save} disabled={saving} style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${color}40`, background: `${color}12`, color, fontWeight: 600, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', transition: 'all 0.2s' }} className="lm-save-btn">
-                {saving ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : saved ? '✓' : <Save size={12} />}
+                {saving ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : saved ? <Check size={12} /> : <Save size={12} />}
                 {saved ? 'Guardado' : 'Guardar'}
             </button>
         </div>
@@ -223,7 +223,7 @@ export default function ConfigPage() {
 
             {/* Tabs */}
             <div className="lm-tab-row" style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-                {[{ id: 'rates' as const, label: 'Tarifas de Envío' }, { id: 'tenants' as const, label: 'Cuentas y Colores' }, { id: 'correos' as const, label: '📮 Correos CR' }, { id: 'feedback' as const, label: '💬 Feedback' }, { id: 'changelog' as const, label: '📋 Changelog' }].map(t => (
+                {[{ id: 'rates' as const, label: 'Tarifas de Envío' }, { id: 'tenants' as const, label: 'Cuentas y Colores' }, { id: 'correos' as const, label: 'Correos CR' }, { id: 'feedback' as const, label: 'Feedback' }, { id: 'changelog' as const, label: 'Changelog' }].map(t => (
                     <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: '9px 20px', borderRadius: '8px 8px 0 0', border: 'none', borderBottom: tab === t.id ? '2px solid #8b87ff' : '2px solid transparent', background: tab === t.id ? 'rgba(139,135,255,0.08)' : 'transparent', color: tab === t.id ? '#F2F2F2' : 'rgba(255,255,255,0.35)', fontWeight: tab === t.id ? 700 : 400, fontSize: 13, cursor: 'pointer', marginBottom: -1, transition: 'all 0.15s' }}>
                         {t.label}
                     </button>
@@ -255,12 +255,12 @@ export default function ConfigPage() {
                     {/* ── Web Service Credentials ── */}
                     <div style={{ ...glass, padding: '22px 26px', borderColor: 'rgba(52,211,153,0.3)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-                            <span style={{ fontSize: 18 }}>🔗</span>
+                            <Link2 size={18} aria-hidden style={{ color: '#8b87ff' }} />
                             <div>
                                 <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 15, margin: 0 }}>Web Service (SOAP API)</p>
                                 <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: '2px 0 0' }}>Credenciales del Web Service proporcionadas por Correos CR</p>
                             </div>
-                            {hasWsCredentials && <span style={{ marginLeft: 'auto', color: '#34d399', fontSize: 12, fontWeight: 600 }}>✓ Configurado</span>}
+                            {hasWsCredentials && <span style={{ marginLeft: 'auto', color: '#34d399', fontSize: 12, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Check size={12} aria-hidden style={{ flexShrink: 0 }} /> Configurado</span>}
                         </div>
                         {!correosLoaded ? <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14 }}>Cargando...</p> : (
                             <div style={{ display: 'grid', gap: 12 }}>
@@ -310,7 +310,7 @@ export default function ConfigPage() {
                     {/* ── Sender (Remitente) Info ── */}
                     <div style={{ ...glass, padding: '22px 26px', borderColor: 'rgba(251,191,36,0.25)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-                            <span style={{ fontSize: 18 }}>📦</span>
+                            <Package size={18} aria-hidden style={{ color: '#60a5fa' }} />
                             <div>
                                 <p style={{ color: '#F2F2F2', fontWeight: 700, fontSize: 15, margin: 0 }}>Datos del Remitente</p>
                                 <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, margin: '2px 0 0' }}>Información que aparece como remitente en cada guía generada</p>
@@ -347,7 +347,7 @@ export default function ConfigPage() {
                     {/* ── Save Button ── */}
                     <button onClick={saveWsConfig} disabled={wsSaving || !wsUsername.trim()}
                         style={{ padding: '12px 20px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.12)', color: '#34d399', fontWeight: 700, fontSize: 13, cursor: wsUsername.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, transition: 'all 0.2s', opacity: wsUsername.trim() ? 1 : 0.4 }} className="lm-save-btn">
-                        {wsSaving ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> : wsSaved ? '✓ Guardado' : <><Save size={13} /> Guardar Configuración Correos CR</>}
+                        {wsSaving ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> : wsSaved ? <><Check size={13} /> Guardado</> : <><Save size={13} /> Guardar Configuración Correos CR</>}
                     </button>
 
                     <div style={{ ...glass, padding: '14px 18px' }}>
@@ -407,9 +407,9 @@ export default function ConfigPage() {
                                                 </div>
                                                 <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, margin: '0 0 6px', lineHeight: 1.5 }}>{t.description}</p>
                                                 <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>
-                                                    <span>🏢 {t.tenant?.businessName || t.tenant?.name || t.tenantId.slice(0, 8)}</span>
-                                                    <span>👤 {t.user?.name || t.user?.email || 'N/A'}</span>
-                                                    <span>📅 {new Date(t.createdAt).toLocaleDateString('es-CR')}</span>
+                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Building2 size={11} aria-hidden style={{ flexShrink: 0 }} /> {t.tenant?.businessName || t.tenant?.name || t.tenantId.slice(0, 8)}</span>
+                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><User size={11} aria-hidden style={{ flexShrink: 0 }} /> {t.user?.name || t.user?.email || 'N/A'}</span>
+                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><CalendarDays size={11} aria-hidden style={{ flexShrink: 0 }} /> {new Date(t.createdAt).toLocaleDateString('es-CR')}</span>
                                                 </div>
                                             </div>
                                             <button onClick={() => { if (isEditing) { setEditingTicket(null); } else { setEditingTicket(t.id); setEditStatus(t.status); setEditPriority(t.priority); setEditNotes(t.adminNotes || ''); } }}
@@ -455,7 +455,7 @@ export default function ConfigPage() {
                                                 </div>
                                                 <button onClick={() => updateTicket(t.id)} disabled={ticketSaving}
                                                     style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid rgba(52,211,153,0.4)', background: 'rgba(52,211,153,0.12)', color: '#34d399', fontWeight: 600, fontSize: 12, cursor: 'pointer' }} className="lm-save-btn">
-                                                    {ticketSaving ? 'Guardando...' : '✓ Guardar Cambios'}
+                                                    {ticketSaving ? 'Guardando...' : 'Guardar cambios'}
                                                 </button>
                                             </div>
                                         )}

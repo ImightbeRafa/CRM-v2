@@ -75,7 +75,7 @@ export function MobileOrderCard({ order, formatCurrency, className = '' }: Mobil
 
           <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
             <StatusBadge status={order.status} />
-            <PaymentStatusBadge order={order} className="text-[10px]" />
+            <PaymentStatusBadge order={order} />
             {order.total != null && (
               <span className="text-sm font-bold text-foreground">{displayCurrency(order.total)}</span>
             )}

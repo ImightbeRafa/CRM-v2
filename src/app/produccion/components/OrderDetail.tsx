@@ -490,7 +490,7 @@ export function OrderDetails({
                         ? 'bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400'
                         : 'bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400'
                     }`}>
-                      {displayOrder.cePaymentConfirmed ? '✓ Pago Confirmado' : '○ Pendiente de Cobro'}
+                      {displayOrder.cePaymentConfirmed ? 'Pago confirmado' : 'Pendiente de cobro'}
                     </div>
                   </div>
                 </div>

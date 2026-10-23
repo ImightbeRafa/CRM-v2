@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Truck, Printer, CheckSquare, Square, Search, RefreshCw, Package } from 'lucide-react';
+import { Truck, Printer, CheckSquare, Square, Search, RefreshCw, Package, Banknote, Phone, MapPin } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
 import OrderItemsList from '@/components/orders/OrderItemsList';
+import { StatusBadge } from '@/app/components/ui/StatusBadge';
 
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12 } as const;
 
@@ -78,7 +79,7 @@ export default function GuiaMensajeriaPage() {
                     </div>
                     <button onClick={() => setCeFilter(f => !f)}
                         style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${ceFilter ? 'rgba(251,191,36,0.6)' : 'rgba(255,255,255,0.08)'}`, background: ceFilter ? 'rgba(251,191,36,0.14)' : 'transparent', color: ceFilter ? '#fbbf24' : 'rgba(255,255,255,0.35)', fontSize: 12.5, fontWeight: ceFilter ? 700 : 400, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s', whiteSpace: 'nowrap' }}>
-                        💵 Contra Entrega
+                        <Banknote size={13} aria-hidden /> Contra Entrega
                         <span style={{ padding: '1px 6px', borderRadius: 20, background: ceFilter ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.06)', fontSize: 10.5 }}>{ceCount}</span>
                     </button>
                     <select value={tenantFilter} onChange={e => setTenantFilter(e.target.value)}
@@ -126,7 +127,7 @@ export default function GuiaMensajeriaPage() {
                                             <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.4)' }}>{o.province || '—'}</td>
                                             <td style={{ padding: '9px 12px', color: 'rgba(255,255,255,0.4)' }}>{o.phone || '—'}</td>
                                             <td style={{ padding: '9px 12px', color: '#34d399', fontWeight: 700 }}>{fmt(o.total)}</td>
-                                            <td style={{ padding: '9px 12px' }}><span style={{ padding: '2px 8px', borderRadius: 20, background: 'rgba(139,135,255,0.12)', color: '#8b87ff', fontSize: 10.5, fontWeight: 600 }}>{o.lmStatus || 'Pendiente'}</span></td>
+                                            <td style={{ padding: '9px 12px' }}><StatusBadge status={o.lmStatus || 'Pendiente'} surface="dark" /></td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -144,7 +145,7 @@ export default function GuiaMensajeriaPage() {
                         return (
                             <div key={o.id} className="guia-ticket">
                                 <div style={{ background: '#3730a3', color: '#fff', padding: '5px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <span style={{ fontWeight: 900, fontSize: 10, letterSpacing: 0.3 }}>🚚 MENSAJERÍA PRIVADA</span>
+                                    <span style={{ fontWeight: 900, fontSize: 10, letterSpacing: 0.3, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Truck size={11} aria-hidden style={{ flexShrink: 0 }} /> MENSAJERÍA PRIVADA</span>
                                     <span style={{ fontSize: 9, opacity: 0.85 }}>{getTenantName(o.tenantId)}</span>
                                 </div>
                                 <div style={{ padding: '8px 10px' }}>
@@ -161,8 +162,8 @@ export default function GuiaMensajeriaPage() {
                                     <div style={{ background: '#f5f5f5', padding: '6px 8px', borderRadius: 4, marginBottom: 6 }}>
                                         <div style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', color: '#666', marginBottom: 2 }}>Destinatario</div>
                                         <div style={{ fontWeight: 900, fontSize: 12 }}>{o.customerName}</div>
-                                        {o.phone && <div style={{ fontSize: 9, marginTop: 1 }}>📞 {o.phone}</div>}
-                                        {addr && <div style={{ fontSize: 9, marginTop: 1, color: '#444' }}>📍 {addr}</div>}
+                                        {o.phone && <div style={{ fontSize: 9, marginTop: 1, display: 'flex', alignItems: 'center', gap: 3 }}><Phone size={9} aria-hidden style={{ flexShrink: 0 }} /> {o.phone}</div>}
+                                        {addr && <div style={{ fontSize: 9, marginTop: 1, color: '#444', display: 'flex', alignItems: 'flex-start', gap: 3 }}><MapPin size={9} aria-hidden style={{ flexShrink: 0, marginTop: 1 }} /> {addr}</div>}
                                     </div>
                                     <div style={{ marginBottom: 6 }}>
                                         <div style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', color: '#666' }}>Contenido</div>

@@ -6,6 +6,7 @@ import { useTenantConfig } from '@/hooks/useTenantConfig';
 import { MANAGED_TENANT_IDS } from '@/lib/logistics-managed-tenants';
 import OrderItemsList from '@/components/orders/OrderItemsList';
 import ShippingMethodBadge from '@/components/orders/ShippingMethodBadge';
+import { StatusBadge } from '@/app/components/ui/StatusBadge';
 
 interface Order {
     id: string; orderId: string; tenantId: string; status: string;
@@ -14,12 +15,6 @@ interface Order {
     total: number; lmCarrier: string | null; lmStatus: string | null;
     tenant?: { name: string; slug: string; businessName: string | null };
 }
-
-const STATUS_COLORS: Record<string, string> = {
-    'Pendiente': '#94a3b8', 'En Proceso': '#8b87ff', 'Urgente': '#f87171',
-    'Completado': '#34d399', 'Enviado': '#c084fc', 'Entregado': '#10b981', 'Devuelto': '#fbbf24',
-    'En Tránsito': '#c084fc', 'Guía Creada': '#60a5fa', 'Impreso': '#22d3ee',
-};
 
 const glass = { background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14 } as const;
 const glassHi = { background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 14 } as const;
@@ -157,8 +152,6 @@ export default function LogisticsDashboardPage() {
                                 <Package size={28} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.3 }} />No hay órdenes
                             </td></tr>
                         ) : orders.map((o, idx) => {
-                            const sc = STATUS_COLORS[o.status] || '#94a3b8';
-                            const lmSc = STATUS_COLORS[o.lmStatus || ''] || null;
                             const tc = getTenantColor(o.tenantId);
                             return (
                                 <tr key={o.id} style={{ borderBottom: idx < orders.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', transition: 'background 0.1s' }} className="lm-table-row">
@@ -172,13 +165,13 @@ export default function LogisticsDashboardPage() {
                                     <td style={{ padding: '9px 14px', color: 'rgba(255,255,255,0.4)', minWidth: 140, maxWidth: 240 }}><OrderItemsList order={o} maxItems={2} emptyLabel="—" /></td>
                                     <td style={{ padding: '9px 14px', color: 'rgba(255,255,255,0.4)' }}>{o.province || '—'}</td>
                                     <td style={{ padding: '9px 14px' }}>
-                                        <span style={{ padding: '2px 8px', borderRadius: 20, background: `${sc}18`, color: sc, fontSize: 11, fontWeight: 600 }}>{o.status}</span>
+                                        <StatusBadge status={o.status} surface="dark" />
                                     </td>
                                     <td style={{ padding: '9px 14px' }}>
                                         <ShippingMethodBadge order={o} theme="dark" size="xs" />
                                     </td>
                                     <td style={{ padding: '9px 14px' }}>
-                                        {lmSc ? <span style={{ padding: '2px 8px', borderRadius: 20, background: `${lmSc}18`, color: lmSc, fontSize: 11, fontWeight: 600 }}>{o.lmStatus}</span>
+                                        {o.lmStatus ? <StatusBadge status={o.lmStatus} surface="dark" />
                                             : <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11 }}>—</span>}
                                     </td>
                                     <td style={{ padding: '9px 14px', color: '#34d399', fontWeight: 700 }}>₡{o.total.toLocaleString('es-CR')}</td>

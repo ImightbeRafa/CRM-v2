@@ -105,7 +105,7 @@ export function TenantSettingsPanel() {
       
       if (json.status === 'success') {
         toast({
-          title: "✅ Configuración guardada",
+          title: "Configuración guardada",
           description: "Los cambios se aplicarán en toda la aplicación"
         });
         setIsOpen(false);

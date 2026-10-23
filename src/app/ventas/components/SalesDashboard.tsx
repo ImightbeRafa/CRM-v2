@@ -29,13 +29,14 @@ import { useSalesStream } from '@/app/hooks/useSalesStream';
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Loader2, TrendingUp, Package, DollarSign, Clock, CheckCircle, Edit3 } from 'lucide-react';
+import { Loader2, TrendingUp, Package, DollarSign, Clock, CheckCircle, Edit3, Phone, Eye } from 'lucide-react';
 import { MobileOrderCard } from '@/app/components/ui/MobileOrderCard';
 import { SwipeableRow } from '@/app/components/ui/SwipeableRow';
 import { useUpdateOrderStatus } from '@/app/hooks/useOrderMutations';
 import { OrderDetails } from '@/app/produccion/components/OrderDetail';
 import type { Sale } from '@/app/produccion/types/sales';
 import { PaymentStatusBadge } from '@/app/components/orders/PaymentStatusBadge';
+import { StatusBadge } from '@/app/components/ui/StatusBadge';
 import { useToast } from '@/app/hooks/use-toast';
 import OrderItemsList from '@/components/orders/OrderItemsList';
 
@@ -236,13 +237,13 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                 <SelectValue placeholder="Tipo" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">📦 Todas</SelectItem>
-                <SelectItem value="EA">🚚 Envíos</SelectItem>
-                <SelectItem value="RA">🏪 Retiros</SelectItem>
+                <SelectItem value="ALL">Todas</SelectItem>
+                <SelectItem value="EA">Envíos</SelectItem>
+                <SelectItem value="RA">Retiros</SelectItem>
               </SelectContent>
             </Select>
             <Input
-              placeholder="🔍 Buscar por nombre, orden o teléfono..."
+              placeholder="Buscar por nombre, orden o teléfono..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="flex-1"
@@ -342,7 +343,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                       <TableCell>
                         <div>
                           <div className="font-medium text-foreground">{sale.customerName}</div>
-                          <div className="text-xs text-muted-foreground">📞 {sale.phone}</div>
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground"><Phone className="h-3 w-3 shrink-0" aria-hidden /> {sale.phone}</div>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -360,16 +361,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
-                          <Badge
-                            variant={
-                              sale.status === 'Pendiente' ? 'warning' :
-                              sale.status === 'Completado' ? 'success' : 'default'
-                            }
-                            className="font-medium"
-                          >
-                            {sale.status === 'Pendiente' ? '⏳' :
-                             sale.status === 'Completado' ? '✅' : '📋'} {sale.status}
-                          </Badge>
+                          <StatusBadge status={sale.status} />
                           <PaymentStatusBadge order={sale} className="w-fit" />
                         </div>
                       </TableCell>
@@ -391,7 +383,7 @@ export const SalesDashboard = React.memo(function SalesDashboard() {
                           onClick={() => setSelectedSale(sale)}
                           className="hover:bg-accent hover:text-accent-foreground transition-colors"
                         >
-                          👁️ Ver
+                          <Eye className="h-4 w-4 shrink-0" aria-hidden /> Ver
                         </Button>
                       </TableCell>
                     </TableRow>

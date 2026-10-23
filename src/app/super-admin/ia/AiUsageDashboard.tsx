@@ -259,7 +259,7 @@ function VisionCheck() {
         <ul className="mt-2 space-y-1 text-[12.5px]">
           {results.map((r) => (
             <li key={r.model} className={r.pass ? 'text-emerald-800' : 'text-red-800'}>
-              {r.model}: {r.pass ? 'lee imágenes ✓' : `no pasó${r.errorCode ? ` (${r.errorCode})` : ''}`} · {(r.latencyMs / 1000).toFixed(1)} s
+              {r.model}: {r.pass ? 'lee imágenes' : `no pasó${r.errorCode ? ` (${r.errorCode})` : ''}`} · {(r.latencyMs / 1000).toFixed(1)} s
             </li>
           ))}
         </ul>

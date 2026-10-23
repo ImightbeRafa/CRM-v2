@@ -1129,7 +1129,7 @@ export default function SocialConfigPage() {
         <MetaSalesAttributionCard />
 
         <p className="text-[12px] text-au-ink-5b6cff">
-          ✦ Inbox de clientes en{' '}
+          Inbox de clientes en{' '}
           <a className="underline" href="/chats">
             Chats
           </a>

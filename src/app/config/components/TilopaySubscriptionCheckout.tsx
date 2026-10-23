@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Button } from '@/app/components/ui/button';
 import { Card } from '@/app/components/ui/card';
-import { Loader2, CreditCard, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Loader2, CreditCard, CheckCircle, XCircle, AlertCircle, X, Lock, RefreshCw } from 'lucide-react';
 import { trackMetaEvent } from '@/app/components/MetaPixel';
 
 /**
@@ -105,8 +105,9 @@ export default function TilopaySubscriptionCheckout({
                 onClick={onClose}
                 className="text-muted-foreground hover:text-muted-foreground"
                 disabled={loading}
+                aria-label="Cerrar"
               >
-                ✕
+                <X className="h-5 w-5" aria-hidden />
               </button>
             )}
           </div>
@@ -162,9 +163,9 @@ export default function TilopaySubscriptionCheckout({
           </Button>
 
           <div className="text-xs text-muted-foreground space-y-1 text-center">
-            <p>🔒 Pago seguro procesado por Tilopay</p>
-            <p>💳 Monto: ₡{amountCRC.toLocaleString()} / mes</p>
-            <p>🔄 Cancele en cualquier momento desde su panel</p>
+            <p className="flex items-center justify-center gap-1.5"><Lock className="h-3.5 w-3.5" aria-hidden /> Pago seguro procesado por Tilopay</p>
+            <p className="flex items-center justify-center gap-1.5"><CreditCard className="h-3.5 w-3.5" aria-hidden /> Monto: ₡{amountCRC.toLocaleString()} / mes</p>
+            <p className="flex items-center justify-center gap-1.5"><RefreshCw className="h-3.5 w-3.5" aria-hidden /> Cancele en cualquier momento desde su panel</p>
           </div>
         </div>
       </Card>

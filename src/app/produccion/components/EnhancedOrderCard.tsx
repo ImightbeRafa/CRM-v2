@@ -458,7 +458,7 @@ function EnhancedOrderCardComponent({
                 <span className={`text-xs font-semibold ${
                   order.cePaymentConfirmed ? 'text-emerald-600' : 'text-amber-600'
                 }`}>
-                  {order.cePaymentConfirmed ? '✓ Pago Confirmado' : 'Pendiente de Cobro'}
+                  {order.cePaymentConfirmed ? 'Pago confirmado' : 'Pendiente de cobro'}
                 </span>
               </div>
               {!order.cePaymentConfirmed && onConfirmPayment && (

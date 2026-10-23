@@ -98,7 +98,7 @@ export function AiUsagePanel() {
   async function saveLimit(clear = false) {
     const value = clear ? null : Number(limitInput.replace(',', '.'))
     if (!clear && !(Number.isFinite(value) && (value as number) >= 1)) {
-      notify('⚠️ Escribí un monto de al menos $1.')
+      notify('Escribí un monto de al menos $1.', 'error')
       return
     }
     setSaving(true)
@@ -113,7 +113,7 @@ export function AiUsagePanel() {
       notify(json.clamped ? `Límite guardado en el máximo permitido (${money(json.ceilingMicros)}).` : clear ? 'Límite quitado.' : 'Límite guardado.')
       await load(period)
     } catch (e) {
-      notify(`⚠️ ${e instanceof Error ? e.message : 'No se pudo guardar el límite.'}`)
+      notify(`${e instanceof Error ? e.message : 'No se pudo guardar el límite.'}`, 'error')
     } finally {
       setSaving(false)
     }
@@ -131,7 +131,7 @@ export function AiUsagePanel() {
       if (!res.ok || !json.checkoutUrl) throw new Error(json?.error || 'No se pudo abrir el pago.')
       window.location.href = json.checkoutUrl
     } catch (e) {
-      notify(`⚠️ ${e instanceof Error ? e.message : 'No se pudo abrir el pago.'}`)
+      notify(`${e instanceof Error ? e.message : 'No se pudo abrir el pago.'}`, 'error')
       setBuying(null)
     }
   }

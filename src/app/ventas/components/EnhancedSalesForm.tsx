@@ -650,7 +650,7 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
 
       setSubmitStatus({
         type: 'success',
-        message: `✅ Pedido guardado exitosamente con ${orderInfo.products.length} producto(s) - ID: ${result.data.orderId}`
+        message: `Pedido guardado exitosamente con ${orderInfo.products.length} producto(s) - ID: ${result.data.orderId}`
       });
 
       // Clear auto-save data after successful submission
@@ -682,8 +682,8 @@ const EnhancedSalesForm: React.FC<EnhancedSalesFormProps> = ({ showOrderForm, on
       setSubmitStatus({
         type: 'error',
         message: error instanceof Error
-          ? `❌ Error: ${error.message}`
-          : '❌ Error al guardar el pedido. Por favor intente de nuevo.'
+          ? `Error: ${error.message}`
+          : 'Error al guardar el pedido. Por favor intente de nuevo.'
       });
     } finally {
       submittingRef.current = false;

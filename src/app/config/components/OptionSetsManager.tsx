@@ -96,7 +96,7 @@ export function OptionSetsManager() {
       
       if (json.status === 'success') {
         toast({
-          title: "✅ Opción agregada",
+          title: "Opción agregada",
           description: "La opción se agregó correctamente"
         });
         setNewOption(null);
@@ -133,7 +133,7 @@ export function OptionSetsManager() {
       
       if (json.status === 'success') {
         toast({
-          title: "✅ Opción actualizada",
+          title: "Opción actualizada",
           description: "Los cambios se guardaron correctamente"
         });
         setEditingOption(null);
@@ -159,7 +159,7 @@ export function OptionSetsManager() {
       
       if (json.status === 'success') {
         toast({
-          title: "✅ Opción eliminada",
+          title: "Opción eliminada",
           description: "La opción se eliminó correctamente"
         });
         await loadData();

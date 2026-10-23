@@ -12,6 +12,7 @@ import {
   CheckCircle,
   Loader2,
   AlertCircle,
+  Package,
 } from 'lucide-react';
 
 interface ShippingConfig {
@@ -169,7 +170,7 @@ export function ShippingConfigManagement() {
         <CardContent className="p-5 space-y-4">
           <div>
             <div className="flex items-center gap-2 mb-0.5">
-              <span className="text-base">📦</span>
+              <Package className="h-4 w-4 shrink-0 text-amber-700" aria-hidden />
               <h3 className="font-semibold text-sm text-amber-800">Datos del Remitente</h3>
             </div>
             <p className="text-xs text-muted-foreground ml-7">

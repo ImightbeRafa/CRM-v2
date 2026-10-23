@@ -104,7 +104,7 @@ export function MyTasksClient() {
           </div>
         ) : tasks.length === 0 ? (
           <div className="rounded-xl bg-white px-4 py-10 text-center ring-1 ring-slate-200" data-testid="my-tasks-empty">
-            <p className="text-[14px] font-semibold text-slate-900">Nada pendiente 🎉</p>
+            <p className="text-[14px] font-semibold text-slate-900">Nada pendiente</p>
             <p className="mt-1 text-[12.5px] text-slate-500">Creá seguimientos desde un chat, en la pestaña Cliente.</p>
           </div>
         ) : (

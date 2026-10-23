@@ -17,7 +17,8 @@ import {
   Home,
   Settings,
   Users,
-  Download
+  Download,
+  Search, Tag, Eye, Zap, ListChecks, Lightbulb, BarChart3, ClipboardList, Gauge, Smartphone, Bell, ShieldCheck,
 } from 'lucide-react';
 
 interface ProductionWorkflowGuideProps {
@@ -107,7 +108,7 @@ export function ProductionWorkflowGuide({ onClose }: ProductionWorkflowGuideProp
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-4 bg-muted border border-border rounded-lg">
-              <h4 className="font-semibold mb-2">🔍 Buscar Órdenes</h4>
+              <h4 className="font-semibold mb-2 flex items-center gap-2"><Search className="h-4 w-4 shrink-0" aria-hidden />Buscar órdenes</h4>
               <p className="text-sm text-muted-foreground mb-2">Usa la barra de búsqueda para encontrar órdenes por:</p>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>• Nombre del cliente</li>
@@ -117,7 +118,7 @@ export function ProductionWorkflowGuide({ onClose }: ProductionWorkflowGuideProp
               </ul>
             </div>
             <div className="p-4 bg-muted border border-border rounded-lg">
-              <h4 className="font-semibold mb-2">🏷️ Filtrar por Estado</h4>
+              <h4 className="font-semibold mb-2 flex items-center gap-2"><Tag className="h-4 w-4 shrink-0" aria-hidden />Filtrar por estado</h4>
               <p className="text-sm text-muted-foreground mb-2">Selecciona un estado para ver solo esas órdenes:</p>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>• Pendiente</li>
@@ -127,7 +128,7 @@ export function ProductionWorkflowGuide({ onClose }: ProductionWorkflowGuideProp
               </ul>
             </div>
             <div className="p-4 bg-muted border border-border rounded-lg">
-              <h4 className="font-semibold mb-2">👁️ Ver Detalles</h4>
+              <h4 className="font-semibold mb-2 flex items-center gap-2"><Eye className="h-4 w-4 shrink-0" aria-hidden />Ver detalles</h4>
               <p className="text-sm text-muted-foreground">Haz clic en &quot;Ver Detalles&quot; para:</p>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>• Ver toda la información</li>
@@ -137,7 +138,7 @@ export function ProductionWorkflowGuide({ onClose }: ProductionWorkflowGuideProp
               </ul>
             </div>
             <div className="p-4 bg-muted border border-border rounded-lg">
-              <h4 className="font-semibold mb-2">⚡ Acciones Rápidas</h4>
+              <h4 className="font-semibold mb-2 flex items-center gap-2"><Zap className="h-4 w-4 shrink-0" aria-hidden />Acciones rápidas</h4>
               <p className="text-sm text-muted-foreground">Cambia el estado directamente desde la tarjeta:</p>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>• Selecciona nuevo estado</li>
@@ -158,7 +159,7 @@ export function ProductionWorkflowGuide({ onClose }: ProductionWorkflowGuideProp
       content: (
         <div className="space-y-4">
           <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">📋 Seleccionar Múltiples Órdenes</h4>
+            <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-2"><ListChecks className="h-4 w-4 shrink-0" aria-hidden />Seleccionar varias órdenes</h4>
             <ol className="text-sm text-blue-700 dark:text-blue-400 space-y-1">
               <li>1. Marca las casillas de las órdenes que quieres actualizar</li>
               <li>2. Haz clic en &quot;Operaciones Masivas&quot;</li>
@@ -167,7 +168,7 @@ export function ProductionWorkflowGuide({ onClose }: ProductionWorkflowGuideProp
             </ol>
           </div>
           <div className="p-4 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg">
-            <h4 className="font-semibold text-green-800 dark:text-green-300 mb-2">💡 Casos de Uso Comunes</h4>
+            <h4 className="font-semibold text-green-800 dark:text-green-300 mb-2 flex items-center gap-2"><Lightbulb className="h-4 w-4 shrink-0" aria-hidden />Casos de uso comunes</h4>
             <ul className="text-sm text-green-700 dark:text-green-400 space-y-1">
               <li>• Marcar todas las órdenes del día como &quot;En Proceso&quot;</li>
               <li>• Cambiar múltiples órdenes a &quot;Completado&quot;</li>
@@ -187,7 +188,7 @@ export function ProductionWorkflowGuide({ onClose }: ProductionWorkflowGuideProp
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-4 bg-muted border border-border rounded-lg">
-              <h4 className="font-semibold mb-2">📊 Generar Reportes</h4>
+              <h4 className="font-semibold mb-2 flex items-center gap-2"><BarChart3 className="h-4 w-4 shrink-0" aria-hidden />Generar reportes</h4>
               <p className="text-sm text-muted-foreground mb-2">Haz clic en &quot;Exportar&quot; para:</p>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>• Crear archivos Excel/CSV</li>
@@ -197,7 +198,7 @@ export function ProductionWorkflowGuide({ onClose }: ProductionWorkflowGuideProp
               </ul>
             </div>
             <div className="p-4 bg-muted border border-border rounded-lg">
-              <h4 className="font-semibold mb-2">📋 Generar Guías</h4>
+              <h4 className="font-semibold mb-2 flex items-center gap-2"><ClipboardList className="h-4 w-4 shrink-0" aria-hidden />Generar guías</h4>
               <p className="text-sm text-muted-foreground mb-2">Para órdenes de envío:</p>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>• Selecciona órdenes EA</li>
@@ -220,7 +221,7 @@ export function ProductionWorkflowGuide({ onClose }: ProductionWorkflowGuideProp
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-4 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-              <h4 className="font-semibold text-yellow-800 dark:text-yellow-300 mb-2">⚡ Eficiencia</h4>
+              <h4 className="font-semibold text-yellow-800 dark:text-yellow-300 mb-2 flex items-center gap-2"><Gauge className="h-4 w-4 shrink-0" aria-hidden />Eficiencia</h4>
               <ul className="text-sm text-yellow-700 dark:text-yellow-400 space-y-1">
                 <li>• Usa filtros para enfocarte</li>
                 <li>• Actualiza estados en lote</li>
@@ -229,7 +230,7 @@ export function ProductionWorkflowGuide({ onClose }: ProductionWorkflowGuideProp
               </ul>
             </div>
             <div className="p-4 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg">
-              <h4 className="font-semibold text-green-800 dark:text-green-300 mb-2">📱 Móvil</h4>
+              <h4 className="font-semibold text-green-800 dark:text-green-300 mb-2 flex items-center gap-2"><Smartphone className="h-4 w-4 shrink-0" aria-hidden />Móvil</h4>
               <ul className="text-sm text-green-700 dark:text-green-400 space-y-1">
                 <li>• Funciona en tablets y móviles</li>
                 <li>• Navegación táctil optimizada</li>
@@ -238,7 +239,7 @@ export function ProductionWorkflowGuide({ onClose }: ProductionWorkflowGuideProp
               </ul>
             </div>
             <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
-              <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">🔔 Notificaciones</h4>
+              <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-2"><Bell className="h-4 w-4 shrink-0" aria-hidden />Notificaciones</h4>
               <ul className="text-sm text-blue-700 dark:text-blue-400 space-y-1">
                 <li>• Órdenes urgentes destacadas</li>
                 <li>• Actualizaciones en tiempo real</li>
@@ -247,7 +248,7 @@ export function ProductionWorkflowGuide({ onClose }: ProductionWorkflowGuideProp
               </ul>
             </div>
             <div className="p-4 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-lg">
-              <h4 className="font-semibold text-purple-800 dark:text-purple-300 mb-2">🛡️ Seguridad</h4>
+              <h4 className="font-semibold text-purple-800 dark:text-purple-300 mb-2 flex items-center gap-2"><ShieldCheck className="h-4 w-4 shrink-0" aria-hidden />Seguridad</h4>
               <ul className="text-sm text-purple-700 dark:text-purple-400 space-y-1">
                 <li>• Todos los cambios se registran</li>
                 <li>• Historial de modificaciones</li>

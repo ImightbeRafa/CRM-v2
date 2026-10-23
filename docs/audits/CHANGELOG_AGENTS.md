@@ -1,3 +1,10 @@
+## 2026-10-22 — Premium chips and lucide icons instead of emoji (Lane B, claude/wave-icons-chips, PR #133)
+
+- One shared `Chip` (`src/components/ui/Chip.tsx`): tone (neutral/brand/violet/info/success/warning/danger), size sm/md, `surface` aurora (palette classes, follows dark mode) or dark (Logística), optional lucide `icon` or status `dot`. Keep this API stable; other lanes reuse it.
+- Shipping method (Correos / Mensajería privada / Retiro + Contra entrega), payment chips, `PaymentStatusBadge`, `StatusBadge` and the Pedidos chips all use it; one status tone map (`lib/orders/status-tone.ts`) for CRM and logistics statuses.
+- No emoji as UI chrome in Pedidos, Logística (incl. printed guía tickets), Producción, Ventas, Config (not Agentes) and super-admin; 74 toast/notice prefixes removed. Left on purpose: country flags in the country picker, console logs, /chats, Agentes, /home.
+- Suggested next slice (not built): a per-tenant short order number (#1042) in a separate column filled by a counter row inside the create transaction; keep `orderId` (see PR #133).
+
 ## 2026-10-22 — Home v2 at /home-preview: live demos, agent explainer, ops showcase, "Próximamente" (Lane H; preview only, /home unchanged)
 
 - `/home-preview` (noindex, public, no nav link) now renders `src/components/landing-v2/**` instead of the #123 page the wave moved there (0ee42805). `/home` (Release 1 page) is untouched; the swap is one commit when Rafael approves.

@@ -48,7 +48,7 @@ export function StatusManager({ statuses, loading = false, onRefresh }: StatusMa
       
       if (json.status === 'success') {
         toast({
-          title: "✅ Estado guardado",
+          title: "Estado guardado",
           description: editingStatus ? "Estado actualizado correctamente" : "Estado creado correctamente"
         });
         await onRefresh?.();
@@ -74,7 +74,7 @@ export function StatusManager({ statuses, loading = false, onRefresh }: StatusMa
       
       if (json.status === 'success') {
         toast({
-          title: "✅ Estado eliminado",
+          title: "Estado eliminado",
           description: "El estado ha sido desactivado"
         });
         await onRefresh?.();

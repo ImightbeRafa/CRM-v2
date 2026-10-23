@@ -1,16 +1,18 @@
 'use client';
 
-import { Badge } from '@/app/components/ui/badge';
+import { Banknote, CheckCircle2, CircleDashed, Clock, type LucideIcon } from 'lucide-react';
+import { Chip, type ChipTone } from '@/components/ui/Chip';
 import {
   derivePaymentState,
+  type PaymentStateKey,
   type PaymentStatusSource,
 } from '@/lib/order-payment-status';
 
-const BADGE_CLASS: Record<string, string> = {
-  pagado: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
-  contra_entrega: 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/20',
-  pendiente_pago: 'bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/20',
-  sin_registrar: 'bg-muted text-muted-foreground',
+const PAYMENT: Record<PaymentStateKey, { tone: ChipTone; icon: LucideIcon }> = {
+  pagado: { tone: 'success', icon: CheckCircle2 },
+  contra_entrega: { tone: 'warning', icon: Banknote },
+  pendiente_pago: { tone: 'warning', icon: Clock },
+  sin_registrar: { tone: 'neutral', icon: CircleDashed },
 };
 
 export function PaymentStatusBadge({
@@ -21,9 +23,10 @@ export function PaymentStatusBadge({
   className?: string;
 }) {
   const state = derivePaymentState(order);
+  const look = PAYMENT[state.key];
   return (
-    <Badge variant="outline" className={`${BADGE_CLASS[state.key]} ${className}`.trim()}>
+    <Chip tone={look.tone} icon={look.icon} className={className}>
       {state.label}
-    </Badge>
+    </Chip>
   );
 }

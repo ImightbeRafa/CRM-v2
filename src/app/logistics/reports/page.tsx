@@ -873,7 +873,7 @@ export default function ReportsPage() {
                                                                                 <td style={{ padding: '6px 8px', color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>{o.province ?? '—'}</td>
                                                                                 <td style={{ padding: '6px 8px', color: '#F2F2F2', fontWeight: 600 }}>{fmt(o.total)}</td>
                                                                                 <td style={{ padding: '6px 8px', color: o.carrier === 'mensajeria' || o.correosShippingCost != null ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)' }}>
-                                                                                    {o.carrier === 'correos' ? (o.correosShippingCost != null ? fmt(o.correosShippingCost) : '⚠ sin costo') : fmt(o.mensajeriaShippingCost ?? r.mensajeria.shippingRate ?? 2500)}
+                                                                                    {o.carrier === 'correos' ? (o.correosShippingCost != null ? fmt(o.correosShippingCost) : 'Sin costo') : fmt(o.mensajeriaShippingCost ?? r.mensajeria.shippingRate ?? 2500)}
                                                                                 </td>
                                                                                 <td style={{ padding: '6px 8px', color: o.carrier === 'correos' ? '#fb7185' : 'rgba(255,255,255,0.2)' }}>
                                                                                     {o.carrier === 'correos' && o.correosShippingCost != null ? fmt(o.correosTax ?? getCorreosTax(o.correosShippingCost)) : '—'}

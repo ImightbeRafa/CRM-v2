@@ -1,5 +1,6 @@
 'use client'
 
+import { Lock } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useSession } from 'next-auth/react'
 import type { Permission } from '@/lib/rbac'
@@ -27,7 +28,7 @@ export function PanelGate({
     return (
       <AuroraEmptyState
         tone="neutral"
-        icon="🔒"
+        icon={<Lock className="h-6 w-6" aria-hidden />}
         title="Sin permiso"
         description={`Pedile a un administrador acceso a ${label}.`}
       />

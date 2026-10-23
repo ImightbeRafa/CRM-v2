@@ -2257,31 +2257,9 @@
   }
 }
 
-/* ── Betsy mark slot (placeholder until Lane I's BetsyMark; same box, so the swap never shifts layout) ── */
-.markSlot {
-  flex: none;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 34% 34% 34% 12%;
-  background: linear-gradient(90deg, #2f6bff, #5644e4 55%, #7a3ff0);
-  color: #f4f6ff;
-}
-.markSlot[data-state='yes'] {
-  animation: markYes 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) 1;
-}
-@keyframes markYes {
-  0%,
-  100% {
-    transform: none;
-  }
-  40% {
-    transform: translateY(-22%) scaleY(1.06);
-  }
-  70% {
-    transform: translateY(0) scaleY(0.94);
-  }
-}
-.contactBox .markSlot {
+/* ── Betsy mark in the contact card ── */
+.contactMark {
+  display: block;
   margin-bottom: 18px;
 }
 
@@ -2418,16 +2396,14 @@
 .costumeSwatch {
   width: 44px;
   height: 44px;
+  display: grid;
+  place-items: center;
   border-radius: 14px;
-  border: 2px solid transparent;
+  border: 1px solid var(--line);
+  background: var(--paper);
   cursor: pointer;
 }
 .costumeSwatch[aria-checked='true'] {
-  border-color: var(--paper);
-  box-shadow: 0 0 0 2px var(--ink);
-}
-@media (prefers-reduced-motion: reduce) {
-  .markSlot[data-state='yes'] {
-    animation: none;
-  }
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
 }

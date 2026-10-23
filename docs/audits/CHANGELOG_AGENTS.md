@@ -42,6 +42,19 @@
 - AI: default rate markup ×1.5 and free monthly credit $0 (`DEFAULT_RATE`; owner card defaults 1.5 / 0). The usage page and the landing only mention a free credit when the owner sets one; landing says "IA por uso, con créditos prepagados".
 - Verifier fixes: a $0 cap only shows the 100 % alarm when the AI can actually pause or something was spent (no red banner for every account without prepaid credit); the owner card warns that enabling the pause with free credit $0 pauses agent businesses without balance immediately (top them up or exempt them first); live /home free card says "Gratis" and "Hasta 25 usuarios" (also BillingDashboard); docs use the sentence form "(₡10.000 al mes, IVA incluido)".
 - Tests: home-pricing (colones, IVA flag states, /home has no hand-typed price, no "usuarios ilimitados" on /home or billing), ai-billing (+1 defaults incl. enforce on/off at a $0 cap).
+## 2026-10-22 — Home v3 (/home-preview): Rafael's feedback — spacing, no grid texture, icons not emoji, Grok, brand slots (Lane H)
+
+- One spacing system on the page: `--gutter` (20/32/48 px), `--section-y` (96/128/152 px) and `--head-gap` (48/64/72 px) at 640/900/1280 px; content widens to 1280 px; hero copy column 560 px max with a wider demo (story stage 520 px tall at ≥1280) and more top/bottom air; display headings 62 px at ≥1280.
+- Background grid texture removed (Rafael didn't like it); the indigo light field stays.
+- No emoji as UI chrome: status chips are a shared `ui/Chip` with lucide icons (Sparkles, CreditCard, Package, User, RotateCw, Check, Clock); status bar, guía (Truck), paid mark, niche ticks and the phone toast use icons too. Emojis remain only inside example chat messages (what customers type).
+- Próximamente: "compatibles con MCP, como Claude, ChatGPT o Grok" (Dots / Muse still out until Rafael confirms).
+- Brand slots for Lane I (`landing-v2/brand.tsx`): `Logo` (nav, footer; current wordmark until the shared `<BetsyLogo />` with the original blue→violet gradient lands) and `AvatarSlot` (hero beside the demo, agent section header, contact card; renders nothing until `<BetsyAvatar />` lands). Each becomes one import.
+- Lighthouse mobile (local `next start`): perf 58–74 → 71–79, LCP 6.0–6.5 → 3.9–5.7 s, CLS 0, a11y 100.
+- Mascot handoff rules (docs/design/betsy-mascot-handoff): no mark in the hero (never over product UI); the demo's status bar has the one mark, whose state follows the story (think → listen → "yes" at Pago verificado); one mark in the contact card. `brand.tsx` (`Logo`, `Mark`) is the single swap point for Lane I's `BetsyLogo` / `BetsyMark` (placeholder mark until their branch merges; same box, no layout shift).
+- Agent "costumes" (Rafael): `islands/AgentCostumes.tsx` — one live preview (mark on a colored plate + name + greeting) and 4 example agents (Luna, Nico, Ana, Max — generic names, never live client personas; the hero demo agent is "Luna" too) as chips; type a name, pick a plate color. The mark is never recolored.
+- Próximamente: Claude, ChatGPT o Grok; "Más adelante, también Dots y Muse".
+- Verifier fixes: hero columns 0.92/1.08 at 1080–1279 (CTAs fit on a 1112 px iPad), CTAs wrap/nowrap; text arrow → icon; chip data typed `as const satisfies` (a typo can't 500 the page).
+- Tests: `home-v2.test.ts` (+3: no emoji chrome / no grid; spacing system + brand slots); MCP names updated.
 ## 2026-10-22 — Betsy identity: official BetsyMark, agent plates, one logo, premium sidebar (Lane I, claude/wave-betsy-avatar-5df13b)
 
 - Official mark (Rafael's designer, `docs/design/betsy-mascot-handoff/`) replaces the first orb exploration:

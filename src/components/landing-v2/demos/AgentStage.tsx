@@ -85,7 +85,7 @@ export function AgentStage({ step }: { step: number }) {
           <div className={s.thread}>
             <p className={`${s.bubble} ${s.bubbleIn}`}>Dejame pensarlo y te aviso</p>
             <span className={s.bubbleMeta} style={{ alignSelf: 'center' }}>
-              Al día siguiente
+              Más tarde
             </span>
             <p className={`${s.bubble} ${s.bubbleOut}`} style={d(1)}>
               ¡Hola! ¿Te quedó alguna duda? Si querés te ayudamos a terminar tu pedido 😊

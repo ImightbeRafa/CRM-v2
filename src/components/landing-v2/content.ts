@@ -44,15 +44,15 @@ export const STORY = {
     { caption: 'En tránsito: el pedido va en camino y todo quedó ligado al chat.' },
   ],
   messages: {
-    ask: 'Hola! ¿Tienen los parches para dormir? ¿Cuánto cuestan?',
+    ask: 'Hola! ¿Tienen el sérum de vitamina C? ¿Cuánto cuesta?',
     a1: '¡Hola Daniela! Sí, hay 😊',
-    a2: 'Caja de 30 parches: ₡12.900',
+    a2: 'Sérum de vitamina C, 30 ml: ₡12.900',
     a3: '¿Te lo enviamos por Correos o preferís mensajería?',
     pick: 'Por Correos. Ya te hice el SINPE',
     a4: '¡Pago recibido, gracias! Ya preparamos tu pedido 🙌',
     a4By: 'Carlos (equipo)',
   },
-  order: { id: '#2041', item: '1× Parches para dormir ×30', total: '₡12.900', pay: 'Pagado por SINPE', ship: 'Correos' },
+  order: { id: '#2041', item: '1× Sérum vitamina C 30 ml', total: '₡12.900', pay: 'Pagado por SINPE', ship: 'Correos' },
   guia: { number: 'CR 4021 7735 06', to: 'Daniela R. · Heredia 40101', weight: '0,3 kg' },
   columns: ['Pendiente', 'En Proceso', 'Enviado'],
 }
@@ -87,30 +87,18 @@ export const AGENT = {
   ],
 }
 
+/**
+ * Examples for Costa Rican small businesses in general (Rafael 2026-10-23: nothing from his own stores, no real
+ * store names). Conversations are illustrative.
+ */
 export const NICHES = [
-  {
-    key: 'suplementos',
-    label: 'Parches y suplementos',
-    chat: [
-      { from: 'in', text: '¿Los parches de colágeno sirven si tengo piel sensible?' },
-      { from: 'out', text: 'Te paso lo que dice la marca sobre piel sensible 👇' },
-      { from: 'out', text: 'Si tenés una condición de la piel, mejor consultalo con tu médico.' },
-      { from: 'in', text: 'Ok, quiero 2 cajas' },
-      { from: 'out', text: '¡Perfecto! ¿Cómo preferís pagar? SINPE Móvil, transferencia o contra entrega (solo GAM)' },
-    ],
-    notes: [
-      ['Respuestas con cuidado', 'contesta con la información de la marca y no promete resultados de salud.'],
-      ['Combos y promos', 'la promo del mes y los combos salen de tu catálogo, no de la memoria del agente.'],
-      ['Pago por SINPE', 'el comprobante cae en “Revisar pago” para que alguien de tu equipo lo confirme.'],
-    ],
-  },
   {
     key: 'ropa',
     label: 'Ropa',
     chat: [
-      { from: 'in', text: '¿La camisa negra la tienen en M?' },
-      { from: 'out', text: 'Sí, la M en negro está disponible 😊' },
-      { from: 'out', text: 'Mide 52 cm de pecho y 72 cm de largo' },
+      { from: 'in', text: '¿La blusa de lino la tienen en M?' },
+      { from: 'out', text: 'Sí, la M en blanco está disponible 😊' },
+      { from: 'out', text: 'Mide 52 cm de pecho y 64 cm de largo' },
       { from: 'in', text: 'La quiero, ¿hacen envíos a Liberia?' },
       { from: 'out', text: 'Sí, por Correos llega en 2 a 3 días hábiles' },
     ],
@@ -121,23 +109,39 @@ export const NICHES = [
     ],
   },
   {
-    key: 'dental',
-    label: 'Dental y belleza',
+    key: 'cosmeticos',
+    label: 'Cosméticos',
     chat: [
-      { from: 'in', text: '¿El kit de blanqueamiento trae todo?' },
-      { from: 'out', text: 'Sí: gel, protector y guía de uso 🦷' },
-      { from: 'in', text: 'Me da sensibilidad, ¿lo puedo usar?' },
-      { from: 'out', text: 'Para eso te paso con alguien del equipo, un momento 🙏' },
+      { from: 'in', text: '¿El protector solar sirve para piel grasa?' },
+      { from: 'out', text: 'Según la marca, es de textura ligera y sin aceite' },
+      { from: 'out', text: 'Si tenés una condición de la piel, mejor consultalo con tu dermatólogo.' },
+      { from: 'in', text: 'Ok, quiero 2' },
+      { from: 'out', text: '¡Listo! ¿Cómo preferís pagar? SINPE Móvil, transferencia o contra entrega (solo GAM)' },
     ],
     notes: [
-      ['Sabe cuándo parar', 'una duda de salud pasa a una persona con el motivo marcado.'],
-      ['Instrucciones claras', 'la guía de uso y los cuidados salen tal cual de tu información.'],
-      ['Contra entrega', 'confirma los datos y deja el pedido listo para que tu equipo lo revise.'],
+      ['Respuestas con cuidado', 'contesta con la información de la marca y no promete resultados.'],
+      ['Combos y promos', 'la promo del mes sale de tu catálogo, no de la memoria del agente.'],
+      ['Pago por SINPE', 'el comprobante cae en “Revisar pago” para que alguien de tu equipo lo confirme.'],
     ],
   },
   {
-    key: 'gadgets',
-    label: 'Gadgets',
+    key: 'reposteria',
+    label: 'Repostería',
+    chat: [
+      { from: 'in', text: '¿Hacen queques para el sábado?' },
+      { from: 'out', text: 'Sí, con 2 días de anticipación 🎂' },
+      { from: 'in', text: '¿Cuánto el de chocolate para 20 personas?' },
+      { from: 'out', text: '₡18.000. ¿Lo recogés o te lo enviamos por mensajería?' },
+    ],
+    notes: [
+      ['Precios y anticipación', 'salen de tu información, igual para todos los clientes.'],
+      ['Mensajería propia', 'el pedido queda con la dirección para tu mensajero, y el cobro registrado.'],
+      ['Sabe cuándo parar', 'un pedido especial o una alergia pasa a una persona con el motivo marcado.'],
+    ],
+  },
+  {
+    key: 'tecnologia',
+    label: 'Tecnología',
     chat: [
       { from: 'in', text: '¿El cargador sirve para iPhone 15?' },
       { from: 'out', text: 'Sí, es USB-C de 20 W y sirve para el iPhone 15 ⚡' },
@@ -148,6 +152,36 @@ export const NICHES = [
       ['Ficha técnica', 'compatibilidad, potencia y garantía salen de tu catálogo.'],
       ['Comparaciones', 'explica la diferencia entre modelos con tus datos, no con datos de internet.'],
       ['Pedidos con guía', 'del chat a la guía de Correos en el mismo flujo.'],
+    ],
+  },
+  {
+    key: 'mascotas',
+    label: 'Mascotas',
+    chat: [
+      { from: 'in', text: '¿Tienen arena para gato de 10 kg?' },
+      { from: 'out', text: 'Sí, la de 10 kg está en ₡8.500 🐾' },
+      { from: 'in', text: '¿Envían a Cartago?' },
+      { from: 'out', text: 'Sí, por Correos llega en 2 a 3 días hábiles. ¿Te la apunto?' },
+    ],
+    notes: [
+      ['Precios al día', 'el agente usa los precios de tu catálogo, no los que vio la semana pasada.'],
+      ['Da seguimiento', 'si lo activás y el cliente se queda a medias, le vuelve a escribir una vez.'],
+      ['Contra entrega', 'confirma los datos y deja el pedido listo para que tu equipo lo revise.'],
+    ],
+  },
+  {
+    key: 'servicios',
+    label: 'Servicios',
+    chat: [
+      { from: 'in', text: '¿Cuánto cuesta una sesión de fotos de producto?' },
+      { from: 'out', text: 'El paquete básico de 10 fotos es ₡45.000' },
+      { from: 'in', text: '¿Tienen espacio el viernes?' },
+      { from: 'out', text: 'Te paso con alguien del equipo para coordinar la fecha 🙏' },
+    ],
+    notes: [
+      ['Paquetes y precios', 'salen de tu información; el agente no inventa descuentos.'],
+      ['Sabe cuándo parar', 'la agenda la confirma una persona: el chat pasa a “Necesita persona”.'],
+      ['Adelanto por SINPE', 'el comprobante cae en “Revisar pago” para que lo confirmen.'],
     ],
   },
 ] as const

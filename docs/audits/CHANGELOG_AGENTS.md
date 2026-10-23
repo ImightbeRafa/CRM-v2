@@ -19,6 +19,14 @@
 
 - Resumen, Anuncios, Equipo y chats and Clientes: the 1200 px centered column is gone. One shared container (`STATS_CONTAINER` in src/components/insights/InsightsShared.tsx) uses the full content width with the headers' side padding, capped at 1760 px only on very wide screens.
 - Grids: 4 KPI cards across from 1024 px; main chart + side card (`STATS_SPLIT`) with a fixed 340 px side card on laptops and 2:1 on ≥1536 px; Equipo puts "Por canal" next to "Por persona" and Clientes puts "Por recomprar" next to "Clientes que repiten" on ≥1536 px; tables full width. Phones unchanged (one column). Layout only, no data changes. Verifier fixes: the body stays left-aligned with the header when capped (no drift on very wide screens), and /estadisticas loading uses a matching full-width "stats" skeleton (shared "page" skeleton unchanged for Home).
+## 2026-10-23 — Home v4: soft section blends, agent in action, generic examples, animated mark (Lane H, claude/wave-home-v4-4ad5c6)
+
+- Dark sections (hero bottom, Build, Próximamente) fade into the light neighbour inside their own padding with an eased gradient (.fadeTop / .fadeBottom, paper or canvas): no hard dark/light edge in either direction. Static, nothing animates.
+- "Tu agente" is now "Así trabaja, con tus colores": the name input is gone; a looping mini-chat in the order the product really works (answers with the store info, the customer goes quiet, one follow-up "más tarde" (soft-ai/follow-up.ts skips chats with an order, a payment or a hand-off), receipt, Pago verificado por tu equipo, Necesita persona) with Pausar/Repetir (WCAG 2.2.2) next to the AgentMark on its colored plate, whose state follows each beat (listen/typing/speak/yes/paused). Color swatches and 4 example agents kept; fixed-height thread (no CLS), stops off-screen, reduced motion = the whole conversation, no mask. Fades use plain rgba (old Safari safe). Verifier: PASS WITH NOTES, F1–F5 fixed.
+- Examples across the home are generic CR small businesses (ropa, cosméticos, repostería, tecnología, mascotas, servicios); story is a sérum de vitamina C. Nothing from Rafael's stores; a test blocks those words.
+- The demo's Betsy mark follows finer beats while the story plays (listen as the message lands, typing, speak, idle; yes at Pago verificado). Contact mark keeps its idle breath/blink.
+- Tests: home-v2 (new assertions for fades, mark beats, no name input, generic examples).
+
 ## 2026-10-22 — Premium chips and lucide icons instead of emoji (Lane B, claude/wave-icons-chips, PR #133)
 
 - One shared `Chip` (`src/components/ui/Chip.tsx`): tone (neutral/brand/violet/info/success/warning/danger), size sm/md, `surface` aurora (palette classes, follows dark mode) or dark (Logística), optional lucide `icon` or status `dot`. Keep this API stable; other lanes reuse it.

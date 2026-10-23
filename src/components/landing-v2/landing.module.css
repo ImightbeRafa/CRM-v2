@@ -334,6 +334,49 @@
 .paper {
   background: var(--paper);
 }
+/* Soft blends between dark and light sections (Rafael 2026-10-23: no hard edges). A dark section fades into the
+   light neighbour's color inside its own padding, at the top (.fadeTop) and/or bottom (.fadeBottom); the neighbour
+   is named by .fromPaper / .toPaper (default: canvas). Static gradients, nothing animates. */
+.fadeTop,
+.fadeBottom {
+  --fade-h: calc(var(--section-y) * 1.3);
+}
+/* A long, gentle blend needs room: the faded edge gets extra padding so text never sits on the gradient. */
+.section.fadeTop {
+  padding-top: calc(var(--section-y) * 1.65);
+}
+.section.fadeBottom,
+.hero.fadeBottom {
+  padding-bottom: calc(var(--section-y) * 1.65);
+}
+.fadeTop::before,
+.fadeBottom::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--fade-h);
+  pointer-events: none;
+  z-index: 0;
+  --fade-rgb: 246, 245, 242; /* --canvas */
+}
+.fadeTop::before {
+  top: 0;
+  background: linear-gradient(to top, rgba(var(--fade-rgb), 0) 0%, rgba(var(--fade-rgb), 0.03) 10%, rgba(var(--fade-rgb), 0.09) 20%, rgba(var(--fade-rgb), 0.19) 30%, rgba(var(--fade-rgb), 0.32) 40%, rgba(var(--fade-rgb), 0.5) 50%, rgba(var(--fade-rgb), 0.68) 60%, rgba(var(--fade-rgb), 0.81) 70%, rgba(var(--fade-rgb), 0.91) 80%, rgba(var(--fade-rgb), 0.97) 90%, rgba(var(--fade-rgb), 1) 100%);
+}
+.fadeBottom::after {
+  bottom: 0;
+  background: linear-gradient(to bottom, rgba(var(--fade-rgb), 0) 0%, rgba(var(--fade-rgb), 0.03) 10%, rgba(var(--fade-rgb), 0.09) 20%, rgba(var(--fade-rgb), 0.19) 30%, rgba(var(--fade-rgb), 0.32) 40%, rgba(var(--fade-rgb), 0.5) 50%, rgba(var(--fade-rgb), 0.68) 60%, rgba(var(--fade-rgb), 0.81) 70%, rgba(var(--fade-rgb), 0.91) 80%, rgba(var(--fade-rgb), 0.97) 90%, rgba(var(--fade-rgb), 1) 100%);
+}
+.fromPaper::before,
+.toPaper::after {
+  --fade-rgb: 255, 255, 255; /* --paper */
+}
+.fadeTop > .wrap,
+.fadeBottom > .wrap {
+  position: relative;
+  z-index: 1;
+}
 .sectionHead {
   max-width: 720px;
 }
@@ -2281,20 +2324,81 @@
   border-radius: var(--radius);
   background: var(--paper);
   border: 1px solid var(--line);
-  padding: 24px;
+  padding: 20px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 14px 16px;
-  align-items: center;
+  gap: 14px;
+  min-width: 0;
 }
-.costumePlate {
-  width: 88px;
-  height: 88px;
-  border-radius: 26px;
+.costumeHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+/* Fixed height: messages arrive at the bottom and older ones fade under the head (no layout shift). */
+.costumeChat {
+  flex: none;
+  height: 318px;
+  padding: 12px 4px 4px;
+  border-radius: 14px;
+  background: var(--canvas);
+}
+.costumePlay {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.costumePlay .iconBtn {
+  min-height: 40px;
+  border-color: var(--line);
+  background: var(--canvas);
+  color: var(--ink-2);
+}
+.costumePlay .iconBtn:focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 2px;
+}
+@media (max-width: 640px) {
+  .costumeChat {
+    height: 380px;
+  }
+}
+/* No animation to protect: show the whole conversation. */
+@media (prefers-reduced-motion: reduce) {
+  .costumeChat {
+    height: auto;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+}
+.costumeEvent {
+  align-self: center;
+  animation: pop 0.38s var(--ease) both;
+}
+.costumeFacts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: grid;
-  place-items: center;
-  transition: background-color 0.35s var(--ease);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 16px 32px -18px rgba(11, 11, 18, 0.6);
+  gap: 8px;
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+.costumeFacts li {
+  position: relative;
+  padding-left: 18px;
+}
+.costumeFacts li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.6em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--indigo);
 }
 .costumeId {
   display: grid;
@@ -2311,13 +2415,8 @@
   font-size: 13.5px;
   color: var(--muted);
 }
-.costumeBubble {
-  grid-column: 1 / -1;
-  max-width: 100%;
-  justify-self: start;
-}
 .costumeHint {
-  grid-column: 1 / -1;
+  margin: 0;
   font-size: 12px;
   color: var(--muted);
 }
@@ -2366,23 +2465,6 @@
   font-size: 12px;
   color: var(--muted);
 }
-.costumeDot {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 8px;
-}
-.costumeInput {
-  min-height: 44px;
-  padding: 0 14px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--paper);
-  font: inherit;
-  font-size: 16px;
-  color: var(--ink);
-}
-.costumeInput:focus-visible,
 .costumeChip:focus-visible,
 .costumeSwatch:focus-visible {
   outline: 2px solid var(--indigo);

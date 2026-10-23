@@ -29,7 +29,16 @@ function markState(step: number): MarkState {
   return 'idle'
 }
 
-export function StoryStage({ step }: { step: number }) {
+/** Finer beats for the playing story (ms into the step → state): listen as the customer's message lands, typing
+ * while the reply forms, speak while it arrives, idle once it's done. The poster and reduced motion use markState. */
+export const STORY_MARK_BEATS: Partial<Record<number, ReadonlyArray<readonly [number, MarkState]>>> = {
+  0: [[0, 'listen'], [900, 'typing']],
+  1: [[0, 'speak'], [2600, 'idle']],
+  2: [[0, 'listen'], [1400, 'idle']],
+  3: [[0, 'yes']],
+}
+
+export function StoryStage({ step, mark }: { step: number; mark?: MarkState }) {
   const m = STORY.messages
   const c = STORY.customer
   const o = STORY.order
@@ -90,7 +99,7 @@ export function StoryStage({ step }: { step: number }) {
           )}
         </div>
         <div className={s.statusBar}>
-          <Mark size={18} state={markState(step)} />
+          <Mark size={18} state={mark ?? markState(step)} />
           {step >= 2 && step < 4 ? (
             <span>
               <b className={s.inlineIcon}>

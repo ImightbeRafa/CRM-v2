@@ -1,3 +1,17 @@
+## 2026-10-23 — Trial / software questions are not payment claims; the declared support line is not a payment number (Lane D, claude/lane-d-trial-support, PR #145)
+
+- `payment-classifier.ts`: closed shapes for "¿puedo probarlo / usarlo antes de pagar?", "¿hay prueba gratis / demo?" and
+  "(uso Betsy pero) no sé cuáles pedidos ya confirmé" — answered, no payment hand-off. Bare "prueba" stays a possible proof.
+  Real claims next to them still hand off.
+- `payment-guard.ts` `paymentNumberProblems`: the owner's declared contact number (fact labelled Contacto / Soporte /
+  WhatsApp / Teléfono, label and value money-free) passes only for agents with no SINPE / transfer, when neither the reply
+  nor the customer turn has a payment / money stem (accents folded, invisible characters removed, spelled-out letters
+  joined, mixed-digit or other-script words refused), the conversation is not about paying (`paymentContext`), and the
+  number sits in a help clause. Everything else is held as before.
+- Verifier 4 rounds + SecureDog: every bypass (60+ phrasings) is a held test. Replays: 7 days 0 classification / 0 number
+  changes on live lines; 30 days held turns 0 live releases. Register: INT-248, INT-250 fixed; INT-249 (pre-existing
+  PAY_WORDS_RE gap), INT-253 (pack note: separate "WhatsApp" fact), INT-257 ([[CONTACTO]] token) open.
+- Proof: tsc + eslint clean, test:soft-ai 1549/1549, test:soft-ai-agent 350/350.
 ## 2026-10-23 — Animated Betsy mark: live sidebar mark, agent plates react (Lane I, claude/wave-betsy-motion)
 
 - `emitBetsySignal(type)` (`src/components/brand/betsy-signals.ts`): a window event any screen can fire, with types read, replied, think, typing, done, listen and yes. It only animates the owner UI and is never sent to customers. Lane A wires the inbox calls in PR #142, stacked on this branch: read, Respondido, Pago verificado, and listen/think/done from the `/changes` merge.

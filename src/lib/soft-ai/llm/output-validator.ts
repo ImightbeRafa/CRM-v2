@@ -1545,7 +1545,7 @@ export function applyFinalOutputPolicy(input: {
     styleText = styleText.replace(new RegExp(LEFTOVER_TOKEN_STRIP_RE.source, 'gu'), '')
     reasons.push('unknown_token')
   }
-  reasons.push(...paymentNumberProblems({ text, facts, customerText: input.customerText }))
+  reasons.push(...paymentNumberProblems({ text, facts, customerText: input.customerText, paymentContext: input.paymentContext }))
 
   const hasMoney = extractMoneyAmounts(text).some((amount) => Math.round(amount) >= 100)
   const purchaseIntent = PURCHASE_INTENTS.has(intent)

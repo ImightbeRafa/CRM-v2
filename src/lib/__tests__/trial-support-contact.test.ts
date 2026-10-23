@@ -143,8 +143,40 @@ describe('Verifier / SecureDog #145 round 3: closed shape — payment stems anyw
       assert.deepEqual(paymentNumberProblems({ text: 'Escribinos a nuestro número de WhatsApp 8701-2233', facts }), [])
     }
   })
-  it('the number must sit in a contact frame', () => {
+  it('the number must sit in a help clause', () => {
     assert.ok(paymentNumberProblems({ text: `Nuestro número es ${N}`, facts: FACTS }).includes('payment_number_unsourced'))
+  })
+})
+
+describe('Verifier #145 round 4: the customer turn counts, joined letters never hide a stem, more money words', () => {
+  const N = '+506 6247-0831'
+  const held = (text: string, extra: { customerText?: string; paymentContext?: boolean } = {}) =>
+    paymentNumberProblems({ text, facts: FACTS, ...extra }).includes('payment_number_unsourced')
+  it('a payment question from the customer (or a payment conversation) keeps the contact number held', () => {
+    for (const t of [`¡Sí! Al número de WhatsApp ${N} 😊`, `¡Claro! Al mismo número de WhatsApp: ${N}`, `Sí, al número de WhatsApp ${N} y nos compartís la captura`]) {
+      assert.ok(held(t, { customerText: '¿Les puedo hacer un SINPE?' }), JSON.stringify(t))
+      assert.ok(held(t), JSON.stringify(t) + ' (no help clause)')
+    }
+    assert.ok(held(`Para soporte escribí a nuestro número de WhatsApp: ${N}`, { paymentContext: true }))
+    assert.ok(held(`Para soporte escribí a nuestro número de WhatsApp: ${N}`, { customerText: '¿Les deposito?' }))
+    assert.deepEqual(paymentNumberProblems({ text: `Para soporte escribí a nuestro número de WhatsApp: ${N} 😊`, facts: FACTS, customerText: 'No sé cuáles pedidos ya confirmé' }), [])
+  })
+  it('a one-letter word before spelled-out letters, other separators, digits or other scripts never hide the stem', () => {
+    for (const t of [
+      `Tarjeta o S I N P E al número de WhatsApp ${N}`,
+      `Aceptamos tarjeta o S.I.N.P.E al número de WhatsApp ${N}`,
+      `Con tarjeta y S-I-N-P-E: WhatsApp ${N} (número)`,
+      `Tarjeta o P A G O al número de WhatsApp ${N}`,
+      `Hacé el S/I/N/P/E al número de WhatsApp ${N}`,
+      `Hacé el S~I~N~P~E al número de WhatsApp ${N}`,
+      `Hacé el s1npe al número de WhatsApp ${N}`,
+      `Hacé el \u0405INPE al número de WhatsApp ${N}`,
+    ]) assert.ok(held(t), JSON.stringify(t))
+  })
+  it('more money words are stems', () => {
+    for (const w of ['el adelanto', 'el anticipo', 'el prepago', 'el traspaso', 'la transacción', 'el giro', 'desde la app de tu banco', 'por BN Móvil', 'la seña', 'la consignación', 'saldá la factura', 'liquidá la factura', 'son 15.000', 'reservá con el 50%', 'el payment', 'por Zelle', 'los tucanes']) {
+      assert.ok(held(`Hacé ${w} al número de WhatsApp ${N}`), w)
+    }
   })
   it("SecureDog L2: a contact fact whose value names money (e.g. 'cuenta') never exempts — use a WhatsApp-only fact", () => {
     const betsyLike = parseBrandFacts({ payment: CARD, extraFacts: [{ label: 'Contacto', value: `Clientes con cuenta: soporte en la app. WhatsApp ${N}` }] })

@@ -301,13 +301,20 @@ function configuredNumbers(facts: BrandFacts): string[] {
  */
 const CONTACT_FACT_LABEL_RE = /contact|soporte|support|whats\s*app|tel[eé]fono|celular/iu
 
-/** Accent-free, lowercase, invisible format characters removed, spaced-out letters joined ("S I N P E" → "sinpe"). */
+/**
+ * Accent-free, lowercase, invisible format characters removed, spaced-out letters joined ("S I N P E", "S/I/N/P/E" →
+ * "sinpe"). The joined run is emitted with and without its first letter, so a one-letter word before it ("o S I N P E")
+ * never hides the stem (Verifier #145 round 4).
+ */
 function foldPayText(text: string): string {
   return (text || '')
     .normalize('NFKD')
     .replace(/[\p{M}\p{Cf}]/gu, '')
     .toLowerCase()
-    .replace(/(?<![\p{L}])\p{L}(?:[\s.\-_*·]+\p{L}(?![\p{L}])){2,}/gu, (m) => m.replace(/[^\p{L}]/gu, ''))
+    .replace(/(?<![\p{L}\p{N}])\p{L}(?:[^\p{L}\p{N}]{1,3}\p{L}(?![\p{L}\p{N}])){2,}/gu, (m) => {
+      const j = m.replace(/[^\p{L}]/gu, '')
+      return ` ${j} ${j.slice(1)} `
+    })
 }
 /**
  * Verifier #145 round 3 (closed shape, fail closed): ANY payment or money stem in the reply — after folding accents and
@@ -316,13 +323,22 @@ function foldPayText(text: string): string {
  * a nuestro número de WhatsApp: …" has none of them. Also used on the contact fact's own label and value.
  */
 const PAY_STEM_RE =
-  /(?<![\p{L}])(?:pag|sinp|simp|cinp|synp|sipe|cuent|iban|transf|trasf|tranf|deposit|plat|diner|monto|total|cancel|abon|cobr|mand|envi|pase|pasa|pasam|rojo|colon|dolar|metodo|precio|cost|nombre|comprob|cuot)\p{L}*|[$₡¢]|(?<![\p{L}])(?:mil|plan)(?![\p{L}])/u
+  /pag|pay|(?<![\p{L}])(?:sinp|simp|cinp|synp|sipe|cuent|iban|transf|trasf|tranf|transac|deposit|consign|plat|diner|monto|total|cancel|abon|cobr|mand|envi|pase|pasa|pasam|rojo|colon|dolar|metodo|precio|cost|nombre|comprob|cuot|adelant|anticip|traspas|giro|banc|movil|tarjet|sena|factur|reserv|sald|liquid|zelle|tucan|son)\p{L}*|[$₡¢%]|(?<![\p{L}])(?:mil|plan)(?![\p{L}])/u
+/**
+ * A word that mixes letters and digits ("s1npe") or a letter from another script (Cyrillic "Ѕ") can hide a stem: no
+ * exemption for that reply.
+ */
+const DISGUISED_WORD_RE = /\p{L}\d|\d\p{L}|[^\P{L}\p{Script=Latin}]/u
 function hasPayStem(text: string): boolean {
-  return PAY_STEM_RE.test(foldPayText(text).replace(LONG_NUMBER_RE, ' ').replace(/(?<![\p{L}])numeros?(?![\p{L}])/gu, ' '))
+  const folded = foldPayText(text).replace(LONG_NUMBER_RE, ' ').replace(/(?<![\p{L}])numeros?(?![\p{L}])/gu, ' ')
+  return PAY_STEM_RE.test(folded) || DISGUISED_WORD_RE.test(folded)
 }
-/** The number itself must sit in a contact frame ("WhatsApp", "soporte", "escribinos", "llamanos") in its own clause. */
+/**
+ * The number itself must sit in a HELP clause ("soporte", "dudas", "escribinos", "contactanos", "llamanos") — a bare
+ * "al número de WhatsApp …" answering "¿les hago un SINPE?" is not one (Verifier #145 round 4).
+ */
 const CONTACT_CUE_BEFORE_RE =
-  /(?<![\p{L}])(?:whats\s*app|wsp|soporte|support|contacto|contact\p{L}*|escrib\p{L}*|llam\p{L}*|telefono|celular)(?![\p{L}])[^.!?\n]{0,40}$/u
+  /(?<![\p{L}])(?:soporte|support|ayud\p{L}*|duda\p{L}*|consult\p{L}*|problema\p{L}*|configur\p{L}*|contact\p{L}*|escrib\p{L}*|llam\p{L}*|atencion)(?![\p{L}])[^.!?\n]{0,50}$/u
 function contactNumbers(facts: BrandFacts): string[] {
   // SecureDog #145 (safe minimum): only an agent that takes no number-based payment (no SINPE, no transfer) — in Costa
   // Rica a phone number can BE a SINPE account, so a SINPE / transfer store never gets the exemption.
@@ -351,7 +367,7 @@ function sameNumber(a: string, b: string): boolean {
  * (re-check 2026-10-09: "sí, el depósito es al 8888-8888" is the fraud). If the reply mentions payment anywhere,
  * EVERY 8+ digit run in it is checked (no sentence splitting). Also flags a configured number when sharing is off.
  */
-export function paymentNumberProblems(input: { text: string; facts: BrandFacts; customerText?: string }): string[] {
+export function paymentNumberProblems(input: { text: string; facts: BrandFacts; customerText?: string; paymentContext?: boolean }): string[] {
   const reasons = new Set<string>()
   const raw = (input.text || '').normalize('NFKC')
   const configured = configuredNumbers(input.facts)
@@ -370,8 +386,11 @@ export function paymentNumberProblems(input: { text: string; facts: BrandFacts; 
     if (!okNumber(digitsOf(m))) reasons.add('payment_number_unsourced')
   }
   if (PAY_WORDS_RE.test(text)) {
-    // The declared contact line is fine only in a reply with no payment / money stem at all, and only in a contact frame.
-    const contacts = hasPayStem(text) ? [] : contactNumbers(input.facts)
+    // The declared contact line is fine only when neither the reply nor the customer's turn has a payment / money stem,
+    // the conversation is not about paying, and the number sits in a help clause (Verifier #145 round 4: "¿Les hago un
+    // SINPE?" → "¡Sí! Al número de WhatsApp …" is a payment answer).
+    const contacts =
+      input.paymentContext || hasPayStem(text) || hasPayStem(input.customerText || '') ? [] : contactNumbers(input.facts)
     for (const m of text.matchAll(LONG_NUMBER_RE)) {
       const d = digitsOf(m[0])
       if (okNumber(d)) continue

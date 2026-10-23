@@ -17,22 +17,20 @@ import {
 // Run from the repo root (npm scripts do).
 const read = (rel: string) => fs.readFileSync(rel, 'utf8').replace(/\r\n/g, '\n')
 
-test('plan price: ₡10.000/mes, what Tilopay charges (Rafael 2026-10-23); IVA wording waits for his answer', () => {
+test('plan price: ₡10.000/mes with IVA included, what Tilopay charges (Rafael 2026-10-23)', () => {
   assert.equal(BETSY_PLAN.currency, 'CRC')
   assert.equal(BETSY_PLAN.amountColones, 10_000)
   assert.equal(IVA_BPS, 1300)
-  // Not confirmed yet: the copy says nothing about IVA either way.
-  assert.equal(BETSY_PLAN.ivaIncluded, null)
+  assert.equal(BETSY_PLAN.ivaIncluded, true)
   const l = planPriceLabels()
   assert.equal(l.base, '₡10.000')
-  assert.equal(l.short, '₡10.000/mes')
-  assert.equal(l.math, '₡10.000 al mes')
-  assert.equal(l.ivaNote, '')
+  assert.equal(l.short, '₡10.000/mes (IVA incluido)')
+  assert.equal(l.math, '₡10.000 al mes, IVA incluido')
+  assert.equal(l.ivaNote, 'IVA incluido')
   assert.equal(l.iva, null)
-  // Once Rafael answers, one flag changes every surface:
-  const inc = planPriceLabels({ amountColones: 10_000, ivaIncluded: true })
-  assert.equal(inc.short, '₡10.000/mes (IVA incluido)')
-  assert.equal(inc.math, '₡10.000 al mes, IVA incluido')
+  // The flag still supports the other states:
+  const unknown = planPriceLabels({ amountColones: 10_000, ivaIncluded: null })
+  assert.equal(unknown.short, '₡10.000/mes')
   const plus = planPriceLabels({ amountColones: 10_000, ivaIncluded: false })
   assert.equal(plus.short, '₡10.000/mes + IVA')
   assert.equal(plus.iva, '₡1.300')
@@ -75,17 +73,17 @@ test('landing, docs and BillingDashboard read the price from the one source', ()
 
 test('docs expand <PlanPrice/> to text on load (rendered page and support-agent search see the real price)', async () => {
   const { expandDocPlaceholders, getDocBySlug } = await import('../docs')
-  assert.equal(expandDocPlaceholders('Pro (<PlanPrice />)'), 'Pro (₡10.000/mes)')
-  assert.equal(expandDocPlaceholders('**<PlanPrice show="math" />**'), '**₡10.000 al mes**')
+  assert.equal(expandDocPlaceholders('Pro (<PlanPrice />)'), 'Pro (₡10.000/mes (IVA incluido))')
+  assert.equal(expandDocPlaceholders('**<PlanPrice show="math" />**'), '**₡10.000 al mes, IVA incluido**')
   assert.equal(expandDocPlaceholders('<PlanPrice show="total"/>'), '₡10.000')
   assert.equal(expandDocPlaceholders('<PlanPrice show="iva"/>'), '')
   const billing = getDocBySlug('billing')
-  assert.ok(billing && !billing.content.includes('<PlanPrice') && billing.content.includes('₡10.000 al mes'))
+  assert.ok(billing && !billing.content.includes('<PlanPrice') && billing.content.includes('₡10.000 al mes, IVA incluido'))
 })
 
 test('plan copy never promises unlimited users (PRO is capped at 25 in plan-enforcement)', () => {
   assert.match(read('src/lib/plan-enforcement.ts'), /PRO: 25/)
-  const copy = read('src/components/landing-v2/content.ts') + read('src/content/docs/billing.mdx') + read('src/content/docs/managing-team.mdx') + read('src/content/docs/faq.mdx')
+  const copy = read('src/app/home/components/SimplePricingSection.tsx') + read('src/app/config/components/BillingDashboard.tsx') + read('src/components/landing-v2/content.ts') + read('src/content/docs/billing.mdx') + read('src/content/docs/managing-team.mdx') + read('src/content/docs/faq.mdx')
   assert.doesNotMatch(copy, /usuarios ilimitados|Usuarios y pedidos ilimitados|\| Ilimitados \|\n?.*Usuarios|costos por usuario/i)
 })
 

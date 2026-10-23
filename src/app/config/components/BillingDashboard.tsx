@@ -122,7 +122,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       price: BETSY_PLAN.amountColones,
       interval: 'month',
       features: [
-        'Usuarios ilimitados',
+        'Hasta 25 usuarios',
         'Pedidos ilimitados',
         'Integración API',
         'Correos de Costa Rica',

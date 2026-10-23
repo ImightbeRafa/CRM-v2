@@ -26,7 +26,7 @@ interface PricingPlan {
 const pricingPlans: PricingPlan[] = [
   {
     name: "Prueba Gratis",
-    price: "$0",
+    price: "Gratis",
     period: "",
     description: "7 días gratis con acceso completo",
     features: [
@@ -45,10 +45,10 @@ const pricingPlans: PricingPlan[] = [
   {
     name: "Pro",
     price: PRICE.base,
-    period: PRICE.ivaNote ? `/mes ${PRICE.ivaNote}` : "/mes",
+    period: PRICE.ivaNote ? `/mes (${PRICE.ivaNote})` : "/mes",
     description: "Todo incluido para tu negocio",
     features: [
-      "Usuarios ilimitados",
+      "Hasta 25 usuarios",
       "Pedidos ilimitados",
       "Integración API",
       "Correos de Costa Rica",

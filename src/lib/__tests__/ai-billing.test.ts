@@ -299,9 +299,16 @@ test('defaults (Rafael 2026-10-23): markup ×1.5 and no free monthly credit — 
   assert.equal(DEFAULT_RATE.markupBps, 15_000)
   assert.equal(DEFAULT_RATE.freeMonthlyMicros, 0)
   assert.match(read('src/app/super-admin/ia/AiBillingSettingsCard.tsx'), /markup: '1\.5', free: '0'/)
-  // A regular account with no balance and no free credit shows 100 % (paused only if enforcement is on).
-  const d = decideCredits({ billedMicros: 0, freeMicros: DEFAULT_RATE.freeMonthlyMicros, balanceMicros: 0, limitMicros: null, ceilingMicros: null, enforce: false, exempt: false })
-  assert.equal(d.exhausted, false)
+  // No balance + no free credit at $0 usage: no alarm while nothing can pause…
+  const base = { billedMicros: 0, freeMicros: DEFAULT_RATE.freeMonthlyMicros, balanceMicros: 0, limitMicros: null, ceilingMicros: null, exempt: false }
+  const off = decideCredits({ ...base, enforce: false })
+  assert.equal(off.exhausted, false)
+  assert.equal(off.alert, 0)
+  // …but with enforcement on it pauses and says so (the owner card warns before turning it on).
+  const on = decideCredits({ ...base, enforce: true })
+  assert.equal(on.exhausted, true)
+  assert.equal(on.alert, 100)
+  assert.match(read('src/app/super-admin/ia/AiBillingSettingsCard.tsx'), /Con crédito gratis en \$0, al activar la pausa/)
   // The usage page only mentions a free credit when the owner sets one.
   assert.match(read('src/app/config/components/AiUsagePanel.tsx'), /const hasFree = data\.rate\.freeMonthlyMicros > 0/)
 })

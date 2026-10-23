@@ -160,7 +160,9 @@ export function decideCredits(input: {
   const usedPct = capMicros > 0 ? Math.round((billed / capMicros) * 1000) / 10 : billed > 0 ? 100 : 0
   const enforced = input.enforce && !input.exempt
   // A cap of $0 (no free credit, no balance) is "100 % used": the banner must explain any pause.
-  const alert: 0 | 80 | 100 = usedPct >= 100 || remaining <= 0 ? 100 : usedPct >= 80 ? 80 : 0
+  // A $0 cap (no free credit, no balance) is "100 %" only when it can pause the AI or something was spent; otherwise
+  // every business without prepaid credit would see a red alarm at $0 usage.
+  const alert: 0 | 80 | 100 = (usedPct >= 100 && billed > 0) || (remaining <= 0 && enforced) ? 100 : usedPct >= 80 ? 80 : 0
   return {
     creditMicros: credit,
     limitMicros: limit,

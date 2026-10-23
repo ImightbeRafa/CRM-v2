@@ -6,9 +6,8 @@
  *
  * Display only. The charge itself is created in src/app/api/tilopay/create-plan-repeat/route.ts (CRC 10000);
  * keep the two equal (home-pricing.test.ts checks it).
- * IVA: Rafael still has to confirm whether ₡10.000 includes IVA. While `ivaIncluded` is null the copy says nothing
- * about IVA either way; set it to true ("IVA incluido") or false ("+ IVA", with the 13% math) and every surface
- * follows.
+ * IVA: Rafael confirmed (2026-10-23) that ₡10.000 already includes IVA, so every surface says "IVA incluido".
+ * The flag also supports false ("+ IVA" with the 13% math) and null (say nothing) if that ever changes.
  */
 
 /** Costa Rica IVA on digital services: 13%, in basis points (also used for AI credit packs). */
@@ -21,7 +20,7 @@ export const BETSY_PLAN: {
   amountColones: number
   interval: 'month'
   trialDays: number
-  /** Does `amountColones` include IVA? null = not confirmed yet (decision for Rafael). */
+  /** Does `amountColones` include IVA? (Rafael 2026-10-23: yes.) */
   ivaIncluded: boolean | null
 } = {
   name: 'Betsy',
@@ -29,7 +28,7 @@ export const BETSY_PLAN: {
   amountColones: 10_000,
   interval: 'month',
   trialDays: 7,
-  ivaIncluded: null,
+  ivaIncluded: true,
 }
 
 /** What the Tilopay Repeat subscription charges (CRC). Same as the plan price. */

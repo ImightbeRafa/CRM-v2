@@ -27,7 +27,7 @@ export function Pricing({
             <h3 className={s.cardTitle}>Betsy</h3>
             <p className={s.amount}>
               <strong>{price.base}</strong>
-              <span>/mes{price.ivaNote ? ` ${price.ivaNote}` : ''}</span>
+              <span>/mes{price.ivaNote ? ` (${price.ivaNote})` : ''}</span>
             </p>
             {price.iva && (
               <p className={s.small}>

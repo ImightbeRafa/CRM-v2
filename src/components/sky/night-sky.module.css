@@ -1,0 +1,198 @@
+/*
+ * Night sky (NightSky.tsx). Layers, back to front: nebula, stars, constellation, then the cloud banks at the
+ * dark→light edges. Only transform and opacity animate; everything is paused until SkyWatch sets data-run (on
+ * screen + visible tab) and is still under prefers-reduced-motion. `.sky` creates no stacking context on purpose:
+ * the clouds (z 1) sit over the band's own edge gradient (z 0) and under the content (z ≥ 1, later in the DOM).
+ */
+.sky {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Stars thin out toward light edges instead of sitting on the clouds. */
+  --edge-top: 0px;
+  --edge-bottom: 0px;
+}
+.sky[data-top='canvas'],
+.sky[data-top='paper'] {
+  --edge-top: var(--cloud-h, 140px);
+}
+.sky[data-bottom='canvas'],
+.sky[data-bottom='paper'] {
+  --edge-bottom: var(--cloud-h, 140px);
+}
+
+/* ── Nebula: two faint glows in the Betsy gradient (#2F6BFF → #5644E4 → #7A3FF0) ── */
+.nebula {
+  position: absolute;
+  inset: 0 -10%;
+  background:
+    linear-gradient(to bottom, rgba(14, 18, 52, 0) 0%, rgba(20, 24, 70, 0.42) 50%, rgba(14, 18, 52, 0) 100%),
+    radial-gradient(38% 30% at 22% 38%, rgba(47, 107, 255, 0.24), transparent 70%),
+    radial-gradient(34% 34% at 74% 62%, rgba(122, 63, 240, 0.22), transparent 72%),
+    radial-gradient(26% 22% at 52% 46%, rgba(86, 68, 228, 0.14), transparent 70%);
+  animation: sky-nebula 46s ease-in-out infinite alternate;
+}
+@keyframes sky-nebula {
+  from {
+    transform: translate3d(-2%, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(2%, -1.5%, 0) scale(1.06);
+  }
+}
+
+/* ── Stars ── */
+.stars {
+  position: absolute;
+  inset: 0;
+}
+/* Nebula and stars thin out toward the light edges (the clouds own those). */
+.nebula,
+.stars {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 calc(var(--edge-top) * 0.9),
+    #000 calc(100% - var(--edge-bottom) * 1.1),
+    transparent calc(100% - var(--edge-bottom) * 0.5)
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 calc(var(--edge-top) * 0.9),
+    #000 calc(100% - var(--edge-bottom) * 1.1),
+    transparent calc(100% - var(--edge-bottom) * 0.5)
+  );
+}
+.stars i {
+  position: absolute;
+  border-radius: 50%;
+  background: #f4f6ff;
+  opacity: var(--a, 0.6);
+  box-shadow: 0 0 4px rgba(190, 200, 255, 0.55);
+}
+.twA {
+  animation: sky-twinkle 4.6s ease-in-out infinite;
+}
+.twB {
+  animation: sky-twinkle 7.2s ease-in-out infinite;
+}
+/* Fixed values (no var()): keyframes with custom properties can't run on the compositor. */
+.twA,
+.twB {
+  opacity: 0.85;
+}
+@keyframes sky-twinkle {
+  0%,
+  100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  45% {
+    opacity: 0.12;
+    transform: scale(0.7);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.35);
+  }
+}
+
+/* ── Constellation: segments appear one after another, hold, then fade together ── */
+.constellation {
+  position: absolute;
+  max-width: 30vw;
+  height: auto;
+  overflow: visible;
+  opacity: 0.85;
+}
+.segment {
+  stroke: rgba(196, 204, 255, 0.5);
+  stroke-width: 0.45;
+  stroke-linecap: round;
+  opacity: 0;
+  animation: sky-draw 16s ease-in-out infinite;
+}
+.cStar {
+  fill: #f4f6ff;
+  opacity: 0.85;
+}
+@keyframes sky-draw {
+  0% {
+    opacity: 0;
+  }
+  5%,
+  62% {
+    opacity: 1;
+  }
+  74%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ── Clouds: two banks of soft puffs in the light neighbour's color, drifting at different speeds ── */
+.clouds {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--cloud-h, 140px);
+  overflow: hidden;
+  z-index: 1;
+}
+.cloudsBottom {
+  bottom: 0;
+}
+.cloudsTop {
+  top: 0;
+  transform: scaleY(-1);
+}
+.band {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(100% + 760px);
+  background-repeat: repeat-x;
+  background-size: 760px 100%;
+}
+.bandBack {
+  opacity: 0.55;
+  background-position: 240px 0;
+  background-image:
+    radial-gradient(34% 62% at 18% 100%, rgba(var(--cloud-rgb), 0.95), rgba(var(--cloud-rgb), 0) 72%),
+    radial-gradient(30% 78% at 52% 100%, rgba(var(--cloud-rgb), 0.9), rgba(var(--cloud-rgb), 0) 70%),
+    radial-gradient(28% 56% at 84% 100%, rgba(var(--cloud-rgb), 0.95), rgba(var(--cloud-rgb), 0) 72%);
+  animation: sky-drift 150s linear infinite;
+}
+.bandFront {
+  background-image:
+    radial-gradient(26% 46% at 8% 100%, rgba(var(--cloud-rgb), 1), rgba(var(--cloud-rgb), 0) 74%),
+    radial-gradient(32% 58% at 38% 100%, rgba(var(--cloud-rgb), 1), rgba(var(--cloud-rgb), 0) 72%),
+    radial-gradient(24% 40% at 66% 100%, rgba(var(--cloud-rgb), 1), rgba(var(--cloud-rgb), 0) 74%),
+    radial-gradient(30% 52% at 92% 100%, rgba(var(--cloud-rgb), 1), rgba(var(--cloud-rgb), 0) 72%),
+    linear-gradient(to top, rgba(var(--cloud-rgb), 1) 0, rgba(var(--cloud-rgb), 0) 34%);
+  animation: sky-drift 96s linear infinite reverse;
+}
+@keyframes sky-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-760px, 0, 0);
+  }
+}
+
+/* Off screen, hidden tab, or before hydration: hold still. */
+.sky:not([data-run]) *,
+.sky:not([data-run]) {
+  animation-play-state: paused !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sky *,
+  .sky {
+    animation: none !important;
+  }
+  .segment {
+    opacity: 1;
+  }
+}

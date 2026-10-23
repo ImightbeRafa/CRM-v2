@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, ChevronLeft, Loader2, Send } from 'lucide-react';
 import { TurnstileWidget } from '@/components/aurora/auth/TurnstileWidget';
+import { BetsyMark } from '@/components/brand/BetsyMark';
 import {
   auroraBtnPrimary,
   auroraBtnSecondary,
@@ -82,8 +83,11 @@ function ContactForm({ topic }: { topic: 'agent' | null }) {
 
   if (done) {
     return (
-      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-emerald-900">
-        <CheckCircle2 className="mb-2 h-6 w-6" aria-hidden />
+      <div className="rounded-[22px] border border-emerald-200 bg-emerald-50 p-6 text-emerald-900">
+        <span className="mb-3 flex items-center gap-2">
+          <BetsyMark size={40} state="yes" decorative />
+          <CheckCircle2 className="h-6 w-6" aria-hidden />
+        </span>
         <p className="text-[15px] font-semibold">¡Listo! Recibimos tu mensaje.</p>
         <p className="text-[13px]">
           {done.ref ? <>Tu número de caso es <strong>{done.ref}</strong>. </> : null}
@@ -94,8 +98,15 @@ function ContactForm({ topic }: { topic: 'agent' | null }) {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4 rounded-2xl border border-slate-200/70 bg-white p-5 shadow-sm" noValidate>
-      <h2 className="text-[16px] font-semibold">Escribinos</h2>
+    <form onSubmit={submit} className="space-y-4 rounded-[22px] border border-slate-200/70 bg-white p-5 shadow-[0_24px_60px_-36px_rgba(11,11,18,0.35)] sm:p-7" noValidate>
+      {/* Betsy listens while you write and thinks while it sends (the page's one mark). */}
+      <div className="flex items-center gap-3">
+        <BetsyMark size={44} state={sending ? 'think' : 'listen'} decorative />
+        <div>
+          <h2 className="landing-h2 !text-[18px] !font-semibold !leading-tight !tracking-normal">Escribinos</h2>
+          <p className="text-[13px] text-slate-500">Contanos con detalle y te respondemos por correo.</p>
+        </div>
+      </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="block">
           <span className={auroraLabelClass}>Nombre</span>
@@ -248,7 +259,7 @@ function MyTickets() {
 
 export function SoporteClient({ ticketsEnabled, topic = null }: { ticketsEnabled: boolean; topic?: 'agent' | null }) {
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-6">
       <ContactForm topic={topic} />
       {ticketsEnabled && <MyTickets />}
     </div>

@@ -1,0 +1,295 @@
+/* /soporte (Rafael 2026-10-23): the home's night-sky band, then a light page (fixed look in any app theme). */
+.page {
+  --ink: #0b0b12;
+  --muted: #55556a;
+  --canvas: #f6f5f2;
+  --paper: #ffffff;
+  --line: rgba(11, 11, 18, 0.09);
+  --indigo: #5b6cff;
+  --indigo-ink: #4048d4;
+  --cloud-h: 120px;
+  min-height: 100vh;
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+/* ── Night-sky band ── */
+.band {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: #0d0d14;
+  color: #ececf1;
+  padding: 0 20px 168px;
+}
+/* Same eased blend as the home: dark melts into the cream page under the clouds. */
+.band::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 190px;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(246, 245, 242, 0) 0%, rgba(246, 245, 242, 0.03) 10%, rgba(246, 245, 242, 0.09) 20%, rgba(246, 245, 242, 0.19) 30%, rgba(246, 245, 242, 0.32) 40%, rgba(246, 245, 242, 0.5) 50%, rgba(246, 245, 242, 0.68) 60%, rgba(246, 245, 242, 0.81) 70%, rgba(246, 245, 242, 0.91) 80%, rgba(246, 245, 242, 0.97) 90%, rgba(246, 245, 242, 1) 100%);
+}
+.band > :not(:first-child) {
+  position: relative;
+  z-index: 2;
+}
+.bar,
+.intro {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 68px;
+}
+.barLinks {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.barLinks a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: rgba(236, 236, 241, 0.75);
+  font-size: 14px;
+  font-weight: 550;
+  text-decoration: none;
+  transition: color 0.2s, background-color 0.2s;
+}
+.barLinks a:hover {
+  color: #ececf1;
+  background: rgba(255, 255, 255, 0.07);
+}
+.barLinks .barSignin {
+  color: #ececf1;
+  border: 1px solid rgba(236, 236, 241, 0.2);
+}
+.intro {
+  padding-top: 40px;
+}
+.eyebrow {
+  margin: 0 0 10px;
+  color: #aab4ff;
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.band .title {
+  margin: 0;
+  font-size: clamp(32px, 6vw, 52px);
+  line-height: 1.05;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+.lead {
+  margin: 14px 0 0;
+  max-width: 560px;
+  color: rgba(236, 236, 241, 0.7);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+/* ── Content: pulled up into the clouds ── */
+.main {
+  position: relative;
+  z-index: 3;
+  max-width: 1120px;
+  margin: -96px auto 0;
+  padding: 0 20px 72px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+@media (min-width: 1024px) {
+  .grid {
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 28px;
+  }
+}
+.formCol {
+  min-width: 0;
+}
+.side {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.card {
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  padding: 20px;
+  box-shadow: 0 24px 60px -40px rgba(11, 11, 18, 0.35);
+}
+/* The h1/h2 carry landing-hero / landing-h2 so globals-mobile.css leaves them alone; the band/card prefix outranks
+   those global classes' own sizes. */
+.card .cardTitle {
+  margin: 0 0 12px;
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 650;
+}
+.channels {
+  display: grid;
+  gap: 8px;
+}
+.channel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  color: var(--ink);
+  text-decoration: none;
+  transition: border-color 0.2s, transform 0.2s;
+}
+.channel:hover {
+  border-color: rgba(91, 108, 255, 0.45);
+  transform: translateY(-1px);
+}
+.channel:focus-visible,
+.agentCta:focus-visible,
+.barLinks a:focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 2px;
+}
+.channelIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--paper);
+}
+.channelIcon svg {
+  width: 19px;
+  height: 19px;
+}
+.channel[data-kind='wa'] .channelIcon {
+  color: #128c4a;
+}
+.channel[data-kind='ig'] .channelIcon {
+  color: #c2185b;
+}
+.channel[data-kind='mail'] .channelIcon {
+  color: var(--indigo-ink);
+}
+.channelText {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.channelText span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.channelText b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.channelGo {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+.hours {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 2px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.hours svg {
+  width: 15px;
+  height: 15px;
+}
+.steps {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.steps li {
+  display: flex;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #2a2a36;
+}
+.steps svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  color: var(--indigo-ink);
+}
+.steps a {
+  color: var(--indigo-ink);
+  font-weight: 600;
+}
+.agentCta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  color: #fff;
+  text-decoration: none;
+  background: linear-gradient(120deg, #2f6bff, #5644e4 55%, #7a3ff0);
+  box-shadow: 0 24px 48px -28px rgba(86, 68, 228, 0.9);
+  transition: transform 0.2s;
+}
+.agentCta:hover {
+  transform: translateY(-1px);
+}
+.agentCta > svg:first-child {
+  flex: none;
+  width: 22px;
+  height: 22px;
+}
+.agentCta > span {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+}
+.agentCta b {
+  font-size: 15.5px;
+}
+.agentCta span span {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.82);
+}
+.agentCta .channelGo {
+  color: #fff;
+}
+@media (prefers-reduced-motion: reduce) {
+  .channel,
+  .agentCta {
+    transition: none;
+  }
+}

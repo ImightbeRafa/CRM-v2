@@ -1,3 +1,12 @@
+## 2026-10-23 — Home v5: night sky, new nav, agent plate fix, /soporte redesign (Lane H, claude/wave-home-v5-4ad5c6)
+
+- New `src/components/sky/NightSky.tsx` (server-rendered, seeded, no canvas): twinkling stars, one constellation that draws itself, a nebula in the Betsy gradient, and two cloud banks drifting at the dark→light edges. Only transform/opacity animate; `SkyWatch` runs it only on screen with the tab visible; still under reduced motion. Used on the hero, Build, Próximamente and the /soporte band.
+- Nav: official lockup with the animated mark, pill links with the section on screen marked (aria-current), quiet "Iniciar sesión" + primary "Probar gratis", glass blur once scrolled, a full mobile sheet (Escape, scroll lock, focus) rendered outside the blurred header (backdrop-filter traps fixed children).
+- Agent plate bug: the "typing" dots sat beside the mark and pushed it off the plate; AgentMark now shows the think light instead (same rule as BetsyLogo). The plate stayed dark under the app's dark theme; the block is `theme-light`. The mini-chat opens with a greeting and reads top-down until it fills.
+- /soporte: night-sky band, Betsy listening next to the form (think while sending, yes on success), side panel (channels from config, what happens after you write, Centro de ayuda, Quiero mi agente). Form, honeypot, Turnstile and API unchanged.
+- Verifier: PASS WITH NOTES, all 9 fixed: theme-light only on the plate / around .page (it redefines --muted); nav links 0.78 on 0.8 glass (AA); the lockup mark breathes only at the top (still once scrolled: one live mark per view); sheet is a modal (inert page, Escape returns focus); aria-current from scroll position; phone headings opt out of globals-mobile; case number only promised with the ticket pipeline on; SkyWatch keeps the right timer id and the newest observer entry; no blur on the opaque sheet.
+- Tests: home-v2 (+4: sky, nav, plate, soporte).
+
 ## 2026-10-23 — Animated Betsy mark: live sidebar mark, agent plates react (Lane I, claude/wave-betsy-motion)
 
 - `emitBetsySignal(type)` (`src/components/brand/betsy-signals.ts`): a window event any screen can fire, with types read, replied, think, typing, done, listen and yes. It only animates the owner UI and is never sent to customers. Lane A wires the inbox calls in PR #142, stacked on this branch: read, Respondido, Pago verificado, and listen/think/done from the `/changes` merge.

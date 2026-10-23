@@ -4,12 +4,14 @@ import { HERO, LINKS, STORY } from '../content'
 import { DemoFrame } from '../demos/DemoFrame'
 import { LazyDemo } from '../demos/LazyDemo'
 import { StorySteps, StoryStage } from '../demos/StoryStage'
+import { NightSky } from '@/components/sky/NightSky'
 
 /** Dark hero: static headline (the LCP element never animates in) + the story demo poster, swapped for the player. */
 export function Hero({ priceShort, trialDays }: { priceShort: string; trialDays: number }) {
   return (
     <section id="inicio" className={`${s.hero} ${s.fadeBottom}`} aria-labelledby="lv2-hero-title">
       <div className={s.lightField} aria-hidden />
+      <NightSky seed={7} bottom="canvas" stars={64} constellation={{ x: 43, y: 9, w: 112 }} />
       <div className={`${s.wrap} ${s.heroGrid}`}>
         <div className={s.heroCopy}>
           <p className={s.heroPill}>

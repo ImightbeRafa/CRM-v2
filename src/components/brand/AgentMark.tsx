@@ -29,7 +29,15 @@ export function AgentMark({
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
-      <BetsyMark size={Math.round(size * 0.78)} state={state} animated={animated} decorative gaze="center" />
+      {/* On a plate the typing dots would sit beside the mark and push it off center: show the think light instead
+          (same rule as BetsyLogo). */}
+      <BetsyMark
+        size={Math.round(size * 0.78)}
+        state={state === 'typing' ? 'think' : state}
+        animated={animated}
+        decorative
+        gaze="center"
+      />
     </span>
   )
 }

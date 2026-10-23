@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Clock, Instagram, LifeBuoy, Mail, MessageCircle } from 'lucide-react';
+import { ArrowRight, BookOpen, Clock, Instagram, Mail, MessageCircle, Sparkles, Ticket } from 'lucide-react';
 import { getSupportContactConfig } from '@/lib/support/contact-config';
 import { supportPipelineEnabled } from '@/lib/support/config';
 import { SoporteClient } from './SoporteClient';
 import { BetsyLogo } from '@/components/brand/BetsyLogo';
+import { NightSky } from '@/components/sky/NightSky';
+import s from './soporte.module.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +16,11 @@ export const metadata: Metadata = {
   openGraph: { images: [{ url: '/brand/betsy/og-cream-1200x630.png', width: 1200, height: 630, alt: 'Betsy' }] },
 };
 
-/** Public support / contact page (SPEC §7.1). Contact info from env; empty values are hidden. */
+/**
+ * Public support / contact page (SPEC §7.1). Contact info from env; empty values are hidden.
+ * Look (Rafael 2026-10-23): the home's night-sky band on top, the form with Betsy listening next to it, and a side
+ * panel with the other channels, what happens after you write, and the agent CTA. Light in any app theme.
+ */
 export default async function SoportePage({ searchParams }: { searchParams: Promise<{ tema?: string | string[] }> }) {
   const { tema } = await searchParams;
   const topic = tema === 'agente' ? 'agent' : null;
@@ -22,84 +28,137 @@ export default async function SoportePage({ searchParams }: { searchParams: Prom
   const ticketsEnabled = supportPipelineEnabled();
 
   return (
-    <div className="aurora-light min-h-screen bg-[var(--aurora-canvas,#f7f7fb)] text-slate-900">
-      <header className="border-b border-slate-200/70 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 sm:px-6">
-          <BetsyLogo tone="light" size={20} href="/home" ariaLabel="Betsy, inicio" />
-          <Link href="/help" className="text-[13px] font-medium text-slate-500 hover:text-slate-800">
-            Centro de ayuda
-          </Link>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-        <div className="mb-8 flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#5B6CFF] to-[#7C5CFF] text-white">
-            <LifeBuoy className="h-5 w-5" aria-hidden />
-          </span>
-          <div>
-            <h1 className="text-[20px] font-semibold">Soporte y contacto</h1>
-            <p className="max-w-xl text-[14px] text-slate-500">
-              Escribinos por donde te quede más cómodo. Si abrís un caso, te damos un número para darle seguimiento.
+    // theme-light outside .page: it redefines --muted, so the page's own tokens must win (nested inside it).
+    <div className="theme-light">
+      <div className={s.page}>
+        <header className={s.band}>
+          <NightSky seed={11} bottom="canvas" stars={40} constellation={{ x: 76, y: 22, w: 120 }} />
+          <div className={s.bar}>
+            <BetsyLogo size={21} href="/home" ariaLabel="Betsy, inicio" />
+            <nav aria-label="Soporte" className={s.barLinks}>
+              <Link href="/docs">Centro de ayuda</Link>
+              <Link href="/auth/signin" className={s.barSignin}>
+                Iniciar sesión
+              </Link>
+            </nav>
+          </div>
+          <div className={s.intro}>
+            <p className={s.eyebrow}>Soporte y contacto</p>
+            <h1 className={`landing-hero ${s.title}`}>¿En qué te ayudamos?</h1>
+            <p className={s.lead}>
+              Escribinos por donde te quede más cómodo.
+              {ticketsEnabled ? ' Si abrís un caso, te damos un número para darle seguimiento.' : ''}
             </p>
           </div>
-        </div>
+        </header>
 
-        <section aria-label="Canales de contacto" className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {contact.whatsapp && (
-            <a
-              href={contact.whatsapp.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-3 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm transition hover:border-emerald-300 hover:shadow-md"
-            >
-              <MessageCircle className="h-5 w-5 shrink-0 text-emerald-600" aria-hidden />
-              <span className="min-w-0">
-                <span className="block text-[12px] text-slate-500">WhatsApp</span>
-                <span className="block truncate text-[14px] font-medium">{contact.whatsapp.display}</span>
-              </span>
-            </a>
-          )}
-          {contact.instagram && (
-            <a
-              href={contact.instagram.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-3 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm transition hover:border-pink-300 hover:shadow-md"
-            >
-              <Instagram className="h-5 w-5 shrink-0 text-pink-600" aria-hidden />
-              <span className="min-w-0">
-                <span className="block text-[12px] text-slate-500">Instagram</span>
-                <span className="block truncate text-[14px] font-medium">{contact.instagram.display}</span>
-              </span>
-            </a>
-          )}
-          {contact.emails.map((email) => (
-            <a
-              key={email}
-              href={`mailto:${email}`}
-              className="flex items-center gap-3 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm transition hover:border-indigo-300 hover:shadow-md"
-            >
-              <Mail className="h-5 w-5 shrink-0 text-indigo-600" aria-hidden />
-              <span className="min-w-0">
-                <span className="block text-[12px] text-slate-500">Correo</span>
-                <span className="block truncate text-[14px] font-medium">{email}</span>
-              </span>
-            </a>
-          ))}
-          {contact.hours && (
-            <div className="flex items-center gap-3 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-              <Clock className="h-5 w-5 shrink-0 text-slate-500" aria-hidden />
-              <span className="min-w-0">
-                <span className="block text-[12px] text-slate-500">Horario</span>
-                <span className="block text-[14px] font-medium">{contact.hours}</span>
-              </span>
+        <main className={s.main}>
+          <div className={s.grid}>
+            <div className={s.formCol}>
+              <SoporteClient ticketsEnabled={ticketsEnabled} topic={topic} />
             </div>
-          )}
-        </section>
 
-        <SoporteClient ticketsEnabled={ticketsEnabled} topic={topic} />
-      </main>
+            <aside className={s.side} aria-label="Más formas de contacto">
+              {(contact.whatsapp || contact.instagram || contact.emails.length > 0 || contact.hours) && (
+                <section className={s.card}>
+                  <h2 className={`landing-h2 ${s.cardTitle}`}>Otras formas de escribirnos</h2>
+                  <div className={s.channels}>
+                    {contact.whatsapp && (
+                      <a
+                        href={contact.whatsapp.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={s.channel}
+                        data-kind="wa"
+                      >
+                        <span className={s.channelIcon}>
+                          <MessageCircle aria-hidden />
+                        </span>
+                        <span className={s.channelText}>
+                          <span>WhatsApp</span>
+                          <b>{contact.whatsapp.display}</b>
+                        </span>
+                        <ArrowRight className={s.channelGo} aria-hidden />
+                      </a>
+                    )}
+                    {contact.instagram && (
+                      <a
+                        href={contact.instagram.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={s.channel}
+                        data-kind="ig"
+                      >
+                        <span className={s.channelIcon}>
+                          <Instagram aria-hidden />
+                        </span>
+                        <span className={s.channelText}>
+                          <span>Instagram</span>
+                          <b>{contact.instagram.display}</b>
+                        </span>
+                        <ArrowRight className={s.channelGo} aria-hidden />
+                      </a>
+                    )}
+                    {contact.emails.map((email) => (
+                      <a key={email} href={`mailto:${email}`} className={s.channel} data-kind="mail">
+                        <span className={s.channelIcon}>
+                          <Mail aria-hidden />
+                        </span>
+                        <span className={s.channelText}>
+                          <span>Correo</span>
+                          <b>{email}</b>
+                        </span>
+                        <ArrowRight className={s.channelGo} aria-hidden />
+                      </a>
+                    ))}
+                  </div>
+                  {contact.hours && (
+                    <p className={s.hours}>
+                      <Clock aria-hidden /> Horario: {contact.hours}
+                    </p>
+                  )}
+                </section>
+              )}
+
+              <section className={s.card}>
+                <h2 className={`landing-h2 ${s.cardTitle}`}>Qué pasa cuando nos escribís</h2>
+                <ol className={s.steps}>
+                  {ticketsEnabled && (
+                    <li>
+                      <Ticket aria-hidden />
+                      <span>Si abrís un caso, te damos un número para darle seguimiento.</span>
+                    </li>
+                  )}
+                  <li>
+                    <Mail aria-hidden />
+                    <span>
+                      Te respondemos por correo lo antes posible{contact.hours ? ', en nuestro horario' : ''}.
+                    </span>
+                  </li>
+                  <li>
+                    <BookOpen aria-hidden />
+                    <span>
+                      ¿Ya usás Betsy? En el <Link href="/help">Centro de ayuda</Link> hay guías paso a paso (con tu
+                      cuenta).
+                    </span>
+                  </li>
+                </ol>
+              </section>
+
+              {topic !== 'agent' && (
+                <a href="/soporte?tema=agente" className={s.agentCta}>
+                  <Sparkles aria-hidden />
+                  <span>
+                    <b>Quiero mi agente de IA</b>
+                    <span>Contanos qué vendés y te armamos un agente con tu información.</span>
+                  </span>
+                  <ArrowRight className={s.channelGo} aria-hidden />
+                </a>
+              )}
+            </aside>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

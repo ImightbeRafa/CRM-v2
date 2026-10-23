@@ -1,12 +1,29 @@
-## 2026-10-22 — Betsy visual identity: avatar, agent faces, one wordmark, help button (Lane I, claude/wave-betsy-avatar-5df13b)
+## 2026-10-22 — Betsy identity: official BetsyMark, agent plates, one logo, premium sidebar (Lane I, claude/wave-betsy-avatar-5df13b)
 
-- `src/components/brand/betsy-avatar/**`: `<BetsyAvatar />`, Betsy's character. A glossy night-indigo drop with a blue→violet rim light (the original logo gradient), white eyes and a small smile. It is pure SVG + one CSS module: no runtime, no assets, server- and client-safe. Moods: idle (float, breathing glow, blink), listening (leans in, pulse ring), thinking (orbiting light ribbon), talking, happy, paused (dim, eyes closed). Props: size (detail levels below 28 and 24 px), mood, variant / agent, still, motion (`hover` for lists), label (`''` = decorative). Motion is transform/opacity only. It stops under `prefers-reduced-motion` and `still`. Fixed box, no layout shift.
-- Variants (`variants.ts`): curated looks for the live personas by customer-facing first name (Betsy, Sofi, Vale, Laura, Andrés, Dani, Caro). Every other agent gets a generated accent and shape from a stable hash of its presentation name (then internal name, then id), so the draft preview and the saved agent match. No brand words in the data.
-- Config › Agentes: emoji chrome is gone. Cards, detail header and the new-agent form show the agent's face plus "Sofi · PatchHouse ventas" (from `introductionNames[0]`). Status pills have lucide icons (En vivo / Borrador / Archivado). Configurar / Probar are pill buttons. The human-only agent (`operationMode = human_only`) is listed last, muted, with a person icon and "Responde tu equipo, sin IA". It is still shown to everyone (it can hold lines). The emoji inputs were removed; the `emoji` column stays (dead data, no migration). Remaining emoji glyphs in the agents UI (sources list, provenance chip, Probar thumbs-up, test marks, empty state) are lucide icons now.
-- `<BetsyLogo />` (`src/components/brand/BetsyLogo.tsx`): one wordmark in the landing's Space Grotesk 700 shape with the original gradient (#1E5BF6 → #3A3FF3 → #682BF8 → #9425F9, lifted on dark). Used in the sidebar (expanded + collapsed "B"), auth (`BetsyWordmark` wraps it), old `/home` nav + footer, landing-v2 nav + footer (Lane H files, small edit), `/soporte` header and the dashboard sign-in fallback (which imported a `@/BetsyLogo.png` missing from the repo: that was the one baseline tsc error). Emails stay plain text.
-- `<BetsyHelpButton />` in `ClientProviders`: a floating "Ayuda" pill with the avatar, a plain link to `/soporte` (no session fetch). Allowlist only (`help-routes.ts`): public pages on every size, and `/dashboard`, `/tareas`, `/help`, `/config` on desktop only. Never on the inbox, agents, orders, stats, logistics, soporte, auth, work-clock or super-admin pages.
-- `/super-admin/avatar`: showcase of every mood, variant and size plus the logo, on dark and light (server `isSuperAdmin` gate).
-- Tests: new `betsy-brand.test.ts` in `test:agentes-ui`. `agents2-tuning.test.ts` asserts the lucide thumbs-up instead of the emoji.
+- Official mark (Rafael's designer, `docs/design/betsy-mascot-handoff/`) replaces the first orb exploration:
+  - `src/components/brand/BetsyMark.tsx` plus `useBetsyState.ts`. It is the designer's component; its per-instance `<style>` became `betsy-mark.module.css`.
+  - It is server-safe and only animates transform/opacity. Reduced motion gives a still pose.
+  - The designer's test runs as `src/lib/__tests__/betsy-mark.test.tsx`.
+- `<BetsyLogo />` renders the lockup's outlined wordmark (`betsy-wordmark.ts`, no font needed). Options: `lockup` (mark + word in the official proportions) and `mark`. It replaced the four different wordmarks: sidebar, auth, old `/home`, landing-v2 nav and footer, `/soporte`, and the dashboard fallback (which imported a `@/BetsyLogo.png` missing from the repo).
+- Agents: the same official mark on a per-agent plate (the "costume"; the mark is never recolored).
+  - Choices: 8 palette ids, an optional ring (off by default), and a UI-only display label.
+  - Defaults are curated for the live personas by first name. Others get a stable pick from their name.
+  - Config › Agentes › Personalidad › "Apariencia" edits it.
+  - The list keeps marks still; only the detail header animates (`think` while publishing).
+  - Storage: `GET/PUT /api/chat/agents/appearance`, one `TenantFeatureFlag` row per agent (scope = tenant, key `agent_appearance:<id>`, `enabled=false`), the same convention as `meta-attribution/settings.ts`. It uses the custom_agents gate, update_config, same-origin, a rate limit and an audit entry. It accepts palette ids only and the business's own agents only. No schema change, no soft-ai edit, never read by the agent runtime (test-enforced).
+- Agents UI: no emoji chrome. Status pills have lucide icons, the buttons are pills, and the human-only agent goes last and muted. The emoji inputs were removed; the column stays.
+- Sidebar:
+  - The mark on the collapsed rail, the lockup when expanded.
+  - The business block is a quiet initials plate with an active dot.
+  - Nav pills, CSS tooltips on the rail (hover + keyboard focus).
+  - The collapse button moved to `shell/SidebarToggle.tsx`.
+  - `aurora-shell-polish.test.ts` updated to the new truth and added to `test:site-ui`; it was stale and in no suite.
+- Floating "Ayuda" pill (mark, `listen` on hover, links to `/soporte`): public pages only. Inside the app the sidebar already shows the mark (one per view), and Ayuda is in the nav.
+- Agents empty state uses the 64 px mark (`AuroraEmptyState betsy`).
+- Favicons from the pack: `favicon.ico` rebuilt from the 16/32/48 PNGs, plus an SVG and the apple-touch icon. OG images: dark by default, cream on `/soporte`. Files live in `public/brand/betsy/`; ads, motion and social stay in docs.
+- `/super-admin/avatar`: showcase of every state, size, plate color and the lockup, on dark and cream.
+- Tests: `scripts/shim-css-modules.mjs` lets node tests import CSS modules (used by `test:agentes-ui` and `test:chat-feedback`). `betsy-brand.test.ts` covers appearance parsing and defaults, route guards, no soft-ai reference, no emoji and the help routes.
+- Hand-off for Lanes A/H: `side-session-notes/.../laneI-notes.md`. Lane I does not edit `src/components/chats/**`.
 ## 2026-10-22 — Home v2 at /home-preview: live demos, agent explainer, ops showcase, "Próximamente" (Lane H; preview only, /home unchanged)
 
 - `/home-preview` (noindex, public, no nav link) now renders `src/components/landing-v2/**` instead of the #123 page the wave moved there (0ee42805). `/home` (Release 1 page) is untouched; the swap is one commit when Rafael approves.

@@ -165,6 +165,7 @@ interface Env {
   META_IG_HUMAN_AGENT?: string;
   // Support pipeline (off unless SUPPORT_PIPELINE_ENABLED=true).
   SUPPORT_PIPELINE_ENABLED?: string;
+  SUPPORT_AI_CHAT_TENANTS?: string;
   SUPPORT_PUBLIC_BASE_URL?: string;
   SUPPORT_AGENT_EMAIL?: string;
   SUPPORT_ESCALATION_EMAIL?: string;
@@ -275,6 +276,7 @@ const CONTAINER_ENV_KEYS = [
   "META_IG_HUMAN_AGENT",
   // Support pipeline (docs/runbooks/support-pipeline.md): off unless SUPPORT_PIPELINE_ENABLED=true.
   "SUPPORT_PIPELINE_ENABLED",
+  "SUPPORT_AI_CHAT_TENANTS",
   "SUPPORT_PUBLIC_BASE_URL",
   "SUPPORT_AGENT_EMAIL",
   "SUPPORT_ESCALATION_EMAIL",

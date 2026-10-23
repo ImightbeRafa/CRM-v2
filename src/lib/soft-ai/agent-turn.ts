@@ -152,6 +152,7 @@ import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 import { readSoftTenantAiConfig } from '@/lib/feature-flags'
 import { turnWasCodeDecided } from '@/lib/soft-ai/turn-origin'
 import { withAiUsageContext } from '@/lib/ai-usage/context'
+import { escalateHandoffFromJob } from '@/lib/soft-ai/support-escalation'
 import { classifyPaymentText } from '@/lib/soft-ai/payment-classifier'
 import { effectiveTestCap } from '@/lib/soft-ai/provider-outage'
 
@@ -1805,6 +1806,8 @@ async function settleHandoff(row: ClaimedChatAutomationJob, handoff: TurnHandoff
       // agents2-hours: created now (the queue is ready in the morning) but quiet until the team is back.
       quietUntil: afterHours.afterHours ? afterHours.opensAt : null,
     })
+    // Betsy's own agent (opt-in, allowlisted businesses only): the hand-off also opens a support ticket.
+    if (handoff.kind === 'handoff') void escalateHandoffFromJob(row, handoff.reason)
   } catch (error) {
     console.error('[soft-ai handoff]', { code: error instanceof Error ? error.name : 'error' })
   }

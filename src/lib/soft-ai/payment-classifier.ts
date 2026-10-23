@@ -791,7 +791,8 @@ const CLOSED_PAY_INFO_SEG_RE = new RegExp(
     String.raw`|(?:puedo|se\s+puede)\s+pagar\s+contra\s*entrega` +
     // Betsy exam 2026-10-23: a trial before paying ("¿Puedo probarlo antes de pagar?", "¿hay prueba gratis?").
     String.raw`|(?:puedo|se\s+puede|podr[ií]a|hay\s+forma\s+de)\s+(?:probar(?:lo|la|los|las)?|usar(?:lo|la)?|ver(?:lo|la)?|conocer(?:lo|la)?)(?:\s+(?:gratis|primero|un\s+tiempo|unos\s+d[ií]as))?\s+antes\s+de\s+(?:pagar|comprar|suscribir(?:me)?)` +
-    String.raw`|(?:tienen|hay)\s+(?:una\s+|alguna\s+)?(?:prueba|demo)(?:\s+gratis|\s+gratuita)?(?:\s+antes\s+de\s+pagar)?` +
+    // Verifier #145: "prueba" alone can mean proof of payment — only a free trial counts ("demo" stays bare).
+    String.raw`|(?:tienen|hay)\s+(?:una\s+|alguna\s+)?(?:prueba(?:\s+gratis|\s+gratuita|\s+antes\s+de\s+pagar|\s+gratis\s+antes\s+de\s+pagar)|demo(?:\s+gratis|\s+gratuita)?(?:\s+antes\s+de\s+pagar)?)` +
     // Betsy exam 2026-10-23: how the software shows the user's OWN orders ("no sé cuáles pedidos ya confirmé") — the
     // done word is about orders in the app, never a payment.
     String.raw`|(?:(?:uso|tengo|manejo|ya\s+uso)\s+(?:betsy|la\s+app|el\s+sistema|el\s+crm)\s*,?\s*(?:pero|y)\s+)?(?:no\s+s[eé]|c[oó]mo\s+(?:veo|s[eé]|reviso)|d[oó]nde\s+veo)\s+(?:cu[aá]les|qu[eé]|cu[aá]ntos)\s+pedidos\s+ya\s+(?:confirm[eé]|marqu[eé]|envi[eé]|despach[eé]|entregu[eé])` +

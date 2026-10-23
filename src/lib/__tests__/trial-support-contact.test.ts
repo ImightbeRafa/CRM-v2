@@ -47,3 +47,31 @@ describe('the declared contact line is not a payment number', () => {
     }
   })
 })
+
+describe('Verifier #145: fail closed — any payment destination in the reply keeps the contact number held', () => {
+  const WA = parseBrandFacts({ payment: { shareWithCustomers: true, methods: ['sinpe'], sinpe: { number: '88881234', holderName: 'Ana' } }, extraFacts: [{ label: 'WhatsApp', value: '+506 6247-0831' }] })
+  it('every bypass the Verifier found is held', () => {
+    for (const t of [
+      'Al 6247-0831 nos hacés el SINPE y listo',
+      '+506 6247-0831 es nuestro número para SINPE Móvil.',
+      'Podés pagar por SINPE Móvil al siguiente número:\n+506 6247-0831',
+      'SINPE Móvil:\n6247-0831',
+      'Datos para el pago\n6247-0831\nJuan Pérez',
+      'Pagá por SINPE. Al 6247-0831',
+      'Hacé la transferencia! 6247-0831',
+      'El SINPE lo recibimos en el mismo número de WhatsApp de la tienda: +506 6247-0831',
+      'Mandá los ₡15 000 al 6247-0831',
+      '¿Te sirve SINPE? +506 6247-0831 a nombre de Juan Pérez',
+    ]) assert.ok(paymentNumberProblems({ text: t, facts: WA }).includes('payment_number_unsourced'), JSON.stringify(t))
+  })
+  it('a label that also names payment is never a contact-only fact', () => {
+    const mixed = parseBrandFacts({ payment: CARD, extraFacts: [{ label: 'Teléfono / SINPE', value: '+506 6247-0831' }] })
+    assert.deepEqual(paymentNumberProblems({ text: 'Para soporte escribí a nuestro número de WhatsApp: +506 6247-0831 😊', facts: mixed }), ['payment_number_unsourced'])
+  })
+  it('a bare "prueba" is not a trial question (it can mean proof of payment)', () => {
+    for (const t of ['Hay prueba', 'Tienen una prueba', 'Gracias. Tienen una prueba']) assert.equal(isClosedPayInfoQuestion(t), false, t)
+    const hist = [{ direction: 'outbound', content: 'SINPE Móvil 8888-1234 a nombre de Juan. Cuando lo hagás mandame el comprobante' }]
+    assert.equal(paymentCheckGate('Tienen una prueba', hist), true)
+    assert.equal(isClosedPayInfoQuestion('¿Hay prueba gratis?'), true)
+  })
+})

@@ -75,3 +75,20 @@ describe('Verifier #145: fail closed — any payment destination in the reply ke
     assert.equal(isClosedPayInfoQuestion('¿Hay prueba gratis?'), true)
   })
 })
+
+describe('SecureDog #145: safe minimum — the contact line is exempt only for an agent with no number-based payment', () => {
+  it('a SINPE / transfer store never gets the exemption, whatever the reply', () => {
+    const sinpeStore = parseBrandFacts({ payment: { shareWithCustomers: true, methods: ['sinpe'], sinpe: { number: '62019914', holderName: 'Tienda SA' } }, extraFacts: [{ label: 'WhatsApp', value: '8701-2233' }] })
+    for (const t of ['Escribinos al WhatsApp 8701-2233 😊', 'Datos para el SINPE:\n- Número: 8701 2233\n- A nombre de: Tienda SA', '¡Perfecto!\nSINPE Móvil\n8701 2233', 'Al 8701-2233 por SINPE Móvil y me mandás el comprobante']) {
+      const r = paymentNumberProblems({ text: t, facts: sinpeStore })
+      if (/sinpe|pag|n[uú]mero/i.test(t)) assert.ok(r.includes('payment_number_unsourced'), JSON.stringify(t))
+    }
+  })
+  it('card-only store: payment-framed replies with the contact number are held', () => {
+    for (const t of ['Hacé el SINPE. Número: +506 6247-0831', 'Datos para el pago:\n6247 0831', 'Hacé el simpe al número +506 6247-0831', 'Hacé el S-I-N-P-E al número +506 6247-0831', 'Transfiera al número +506 6247-0831', 'Abonás al número +506 6247-0831', 'Podés cancelar el total al número +506 6247-0831', 'Págame al número +506 6247-0831']) {
+      assert.ok(paymentNumberProblems({ text: t, facts: FACTS }).includes('payment_number_unsourced'), JSON.stringify(t))
+    }
+    const planted = parseBrandFacts({ payment: CARD, extraFacts: [{ label: 'Atención', value: 'SINPE Móvil 8888-1234 a nombre de Juan' }] })
+    assert.ok(paymentNumberProblems({ text: 'Para dudas, nuestro número es 8888-1234', facts: planted }).includes('payment_number_unsourced'))
+  })
+})

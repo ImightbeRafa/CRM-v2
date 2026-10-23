@@ -303,9 +303,13 @@ const CONTACT_FACT_LABEL_RE = /contact|soporte|support|whats\s*app|tel[eé]fono|
 /** A label that also names payment ("Teléfono / SINPE", "Contacto y pagos") is never a contact-only fact. */
 const PAYMENT_LABEL_RE = /pag|sinpe|simpe|cuenta|iban|transfer|dep[oó]sit|cobr/iu
 function contactNumbers(facts: BrandFacts): string[] {
+  // SecureDog #145 (safe minimum): only an agent that takes no number-based payment (no SINPE, no transfer) — in Costa
+  // Rica a phone number can BE a SINPE account, so a SINPE / transfer store never gets the exemption.
+  const methods = facts.payment?.methods ?? []
+  if (methods.some((m) => m === 'sinpe' || m === 'transferencia') || facts.payment?.sinpe?.number || facts.payment?.transfer?.iban) return []
   const out: string[] = []
   for (const f of facts.extraFacts ?? []) {
-    if (!CONTACT_FACT_LABEL_RE.test(f.label || '') || PAYMENT_LABEL_RE.test(f.label || '')) continue
+    if (!CONTACT_FACT_LABEL_RE.test(f.label || '') || PAYMENT_LABEL_RE.test(f.label || '') || PAYMENT_LABEL_RE.test(f.value || '')) continue
     for (const m of (f.value || '').match(LONG_NUMBER_RE) ?? []) {
       const d = digitsOf(m)
       if (d.length >= 8) out.push(d)
@@ -319,7 +323,7 @@ function contactNumbers(facts: BrandFacts): string[] {
  * numbers, so "el SINPE es el WhatsApp" must stay held whatever the order, line or sentence.
  */
 const PAY_DESTINATION_ANYWHERE_RE =
-  /(?<![\p{L}])(?:sinpe|simpe|iban|cuenta|cuentas|transfer\p{L}*|trasfer\p{L}*|dep[oó]sit\p{L}*|plata|dinero|monto|cobr\p{L}*|abon\p{L}*|mand[aá]\p{L}*|a\s+nombre\s+de|datos\s+(?:de|para|del)\s+(?:el\s+)?pago)(?![\p{L}])|[₡¢]|colones|(?<![\p{L}])pag\p{L}*[^.!?\n]{0,30}(?<![\p{L}])(?:al|a\s+(?:este|ese|nuestro|mi|tu))(?![\p{L}])/iu
+  /(?<![\p{L}])(?:sinpe|simpe|s-i-n-p-e|iban|cuenta|cuentas|transfer\p{L}*|trasfer\p{L}*|transfi\p{L}*|dep[oó]sit\p{L}*|plata|dinero|monto|total|cancel\p{L}*|p[aá]game|p[aá]gale|p[aá]guen|cobr\p{L}*|abon\p{L}*|mand[aá]\p{L}*|a\s+nombre\s+de|datos\s+(?:de|para|del)\s+(?:el\s+)?pago)(?![\p{L}])|[₡¢]|colones|(?<![\p{L}])pag\p{L}*[^.!?\n]{0,30}(?<![\p{L}])(?:al|a\s+(?:este|ese|nuestro|mi|tu))(?![\p{L}])/iu
 
 /** Same number, allowing a +506 prefix on either side. */
 function sameNumber(a: string, b: string): boolean {

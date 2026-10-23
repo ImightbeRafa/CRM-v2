@@ -303,17 +303,18 @@ const CONTACT_FACT_LABEL_RE = /contact|soporte|support|whats\s*app|tel[eé]fono|
 
 /**
  * Accent-free, lowercase, invisible format characters removed, spaced-out letters joined ("S I N P E", "S/I/N/P/E" →
- * "sinpe"). The joined run is emitted with and without its first letter, so a one-letter word before it ("o S I N P E")
- * never hides the stem (Verifier #145 round 4).
+ * "sinpe", any separator length). The joined run is emitted from each of its first letters, so one-letter words before
+ * it ("y/o S I N P E", "o a S I N P E") never hide the stem (Verifier #145 rounds 4–5).
  */
 function foldPayText(text: string): string {
   return (text || '')
     .normalize('NFKD')
     .replace(/[\p{M}\p{Cf}]/gu, '')
     .toLowerCase()
-    .replace(/(?<![\p{L}\p{N}])\p{L}(?:[^\p{L}\p{N}]{1,3}\p{L}(?![\p{L}\p{N}])){2,}/gu, (m) => {
+    .replace(/(?<![\p{L}\p{N}])\p{L}(?:[^\p{L}\p{N}]+\p{L}(?![\p{L}\p{N}])){2,}/gu, (m) => {
       const j = m.replace(/[^\p{L}]/gu, '')
-      return ` ${j} ${j.slice(1)} `
+      const starts = Array.from({ length: Math.min(j.length, 6) }, (_, i) => j.slice(i))
+      return ` ${starts.join(' ')} `
     })
 }
 /**
@@ -323,7 +324,7 @@ function foldPayText(text: string): string {
  * a nuestro número de WhatsApp: …" has none of them. Also used on the contact fact's own label and value.
  */
 const PAY_STEM_RE =
-  /pag|pay|(?<![\p{L}])(?:sinp|simp|cinp|synp|sipe|cuent|iban|transf|trasf|tranf|transac|deposit|consign|plat|diner|monto|total|cancel|abon|cobr|mand|envi|pase|pasa|pasam|rojo|colon|dolar|metodo|precio|cost|nombre|comprob|cuot|adelant|anticip|traspas|giro|banc|movil|tarjet|sena|factur|reserv|sald|liquid|zelle|tucan|son)\p{L}*|[$₡¢%]|(?<![\p{L}])(?:mil|plan)(?![\p{L}])/u
+  /pag|pay|(?<![\p{L}])(?:[sczx][iy][nm]p|sipe|cuent|iban|transf|trasf|tranf|transac|deposit|consign|plat|diner|monto|total|cancel|abon|cobr|mand|envi|pase|pasa|pasam|rojo|colon|dolar|metodo|precio|cost|nombre|comprob|cuot|adelant|anticip|traspas|giro|banc|movil|tarjet|sena|factur|reserv|sald|liquid|zelle|tucan|son)\p{L}*|[$₡¢%]|(?<![\p{L}])(?:mil|plan)(?![\p{L}])/u
 /**
  * A word that mixes letters and digits ("s1npe") or a letter from another script (Cyrillic "Ѕ") can hide a stem: no
  * exemption for that reply.

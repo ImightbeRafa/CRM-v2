@@ -5,6 +5,7 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { classifyPaymentText, isClosedPayInfoQuestion } from '@/lib/soft-ai/payment-classifier'
 import { paymentCheckGate } from '@/lib/soft-ai/payment-claim-check-core'
 import { paymentNumberProblems } from '@/lib/soft-ai/payment-guard'
@@ -172,6 +173,18 @@ describe('Verifier #145 round 4: the customer turn counts, joined letters never 
       `Hacé el s1npe al número de WhatsApp ${N}`,
       `Hacé el \u0405INPE al número de WhatsApp ${N}`,
     ]) assert.ok(held(t), JSON.stringify(t))
+  })
+  it('Verifier #145 round 5: several one-letter words, long separators, misspelled SINPE in the customer turn', () => {
+    for (const t of [
+      `¡Claro! Con gusto y/o S I N P E: escribinos al número de WhatsApp ${N} 😊 ¿Algo más?`,
+      `Con gusto o a S I N P E: escribinos al número de WhatsApp ${N}`,
+      `Con gusto **S** **I** **N** **P** **E**: escribinos al número de WhatsApp ${N}`,
+    ]) assert.ok(held(t), JSON.stringify(t))
+    for (const c of ['¿les hago un cimpe?', '¿un zinpe?', '¿por sympe?']) assert.ok(held(`¡Sí! Escribinos al número de WhatsApp ${N}`, { customerText: c }), c)
+  })
+  it('the validator hands the payment context to the number check', () => {
+    const v = readFileSync('src/lib/soft-ai/llm/output-validator.ts', 'utf8')
+    assert.ok(v.includes('paymentNumberProblems({ text, facts, customerText: input.customerText, paymentContext: input.paymentContext })'))
   })
   it('more money words are stems', () => {
     for (const w of ['el adelanto', 'el anticipo', 'el prepago', 'el traspaso', 'la transacción', 'el giro', 'desde la app de tu banco', 'por BN Móvil', 'la seña', 'la consignación', 'saldá la factura', 'liquidá la factura', 'son 15.000', 'reservá con el 50%', 'el payment', 'por Zelle', 'los tucanes']) {

@@ -46,6 +46,7 @@ export const FILES = {
   '059': '059_support_pipeline.sql',
   '060': '060_ai_credits.sql',
   '061': '061_ai_provider_status.sql',
+  '063': '063_chat_answered_marker.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -124,6 +125,7 @@ export const EXPECTED_COLUMNS = {
   '057': [['ChatSendClaim', 'clientRequestId'], ['ChatSendClaim', 'providerMessageId']],
   '058': [['SocialAccount', 'metaUserId'], ['MetaDataDeletionRequest', 'pendingPaths']],
   '059': [['SupportTicket', 'number'], ['SupportTicket', 'contactEmail'], ['SupportTicketMessage', 'isDraft'], ['SupportTicketEvent', 'nextAttemptAt'], ['SupportMcpAudit', 'tool']],
+  '063': [['ChatConversation', 'answeredAt'], ['ChatConversation', 'answeredByUserId'], ['ChatConversation', 'answeredThroughAt']],
   '060': [['AiBillingRate', 'markupBps'], ['AiCreditLedger', 'sourceKey'], ['AiCreditPurchase', 'ref'], ['AiCreditPurchase', 'lastEvent'], ['AiTenantSpendLimit', 'monthlyLimitMicros']],
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],

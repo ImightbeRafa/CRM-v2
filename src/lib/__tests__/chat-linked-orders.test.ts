@@ -7,12 +7,13 @@ import type { ChatConversationListItemDto } from '@/lib/chat-conversation-api'
 
 test('newest linked message per conversation wins; rows without an order are ignored', () => {
   const map = pickLatestLinkedOrders([
-    { conversationId: 'c1', orderId: 'o2', order: { orderId: 'PH-1042' } },
+    { conversationId: 'c1', orderId: 'o2', order: { orderId: 'PH-1042', status: 'Pendiente', total: 12500, product: '2x Parche' } },
     { conversationId: 'c1', orderId: 'o1', order: { orderId: 'PH-1001' } },
     { conversationId: 'c2', orderId: null, order: null },
     { conversationId: null, orderId: 'o9', order: { orderId: 'X' } },
   ])
-  assert.deepEqual(map.get('c1'), { id: 'o2', orderNumber: 'PH-1042' })
+  // Status, total and the items line feed the readable order chip / card (Lane A 2026-10-22).
+  assert.deepEqual(map.get('c1'), { id: 'o2', orderNumber: 'PH-1042', status: 'Pendiente', total: 12500, items: '2x Parche' })
   assert.equal(map.has('c2'), false)
   assert.equal(map.size, 1)
 })

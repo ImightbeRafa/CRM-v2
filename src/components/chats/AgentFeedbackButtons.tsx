@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { ThumbsDown, ThumbsUp } from 'lucide-react'
 
 const REASONS = [
   { code: 'wrong_fact', label: 'Dato incorrecto' },
@@ -43,18 +44,18 @@ export function AgentFeedbackButtons({ turnId }: { turnId: string }) {
         disabled={busy}
         aria-label="Buena respuesta"
         onClick={() => void send(1)}
-        className="rounded px-1 text-[11px] text-slate-500 hover:bg-slate-100 disabled:opacity-40"
+        className="inline-flex items-center rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40"
       >
-        👍
+        <ThumbsUp className="h-3 w-3" aria-hidden />
       </button>
       <button
         type="button"
         disabled={busy}
         aria-label="Mala respuesta"
         onClick={() => setState(state === 'down' ? 'idle' : 'down')}
-        className="rounded px-1 text-[11px] text-slate-500 hover:bg-slate-100 disabled:opacity-40"
+        className="inline-flex items-center rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40"
       >
-        👎
+        <ThumbsDown className="h-3 w-3" aria-hidden />
       </button>
       {state === 'down'
         ? REASONS.map((r) => (

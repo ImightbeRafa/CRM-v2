@@ -419,7 +419,7 @@ export function QuickRepliesManager({
                   value={editing.text}
                   onChange={(e) => setEditing({ ...editing, text: e.target.value.slice(0, QUICK_REPLY_MAX_TEXT) })}
                   rows={5}
-                  placeholder={'Hola {nombre} 👋 el precio es ₡…'}
+                  placeholder={'Hola {nombre}, el precio es ₡…'}
                   className="mt-1 w-full resize-y rounded-xl bg-white px-3 py-2 text-[13px] leading-relaxed text-slate-900 outline-none placeholder:text-slate-400 ring-1 ring-slate-200 focus:ring-2 focus:ring-[#5B6CFF]/40"
                 />
                 <span className="mt-1 flex justify-between text-[11px] text-slate-400">

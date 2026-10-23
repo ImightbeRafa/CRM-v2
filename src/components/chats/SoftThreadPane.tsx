@@ -12,7 +12,7 @@ import {
   type Ref,
 } from 'react'
 import Link from 'next/link'
-import { Check, CheckCheck, ChevronLeft, Hand, Info, PanelRight, Paperclip, Pause, Play, Send, ShoppingBag, Smile, Sparkles, User, X, Zap } from 'lucide-react'
+import { Check, CheckCheck, ChevronLeft, CreditCard, Hand, Info, MessageCircle, Package, PanelRight, Paperclip, Pause, Play, Send, ShoppingBag, Smile, Sparkles, User, UserRound, X, Zap, type LucideIcon } from 'lucide-react'
 import { AgentFeedbackButtons } from '@/components/chats/AgentFeedbackButtons'
 import { CorrectionPanel } from '@/components/aurora/agentes/CorrectionPanel'
 import { TUNE_CODE_REPLY_NOTE, tuneTargetFromMetadata } from '@/lib/soft-ai/agent-tuning-core'
@@ -80,6 +80,8 @@ import { ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
 import { ChatSnoozeButton } from '@/components/chats/ChatSnoozeButton'
 import { PeerAvatar } from '@/components/chats/PeerAvatar'
 import { conversationDisplayName } from '@/lib/chat-peer-display'
+import { agentDisplayName, customerHandle, lineChannelLabel } from '@/lib/chat-row-display'
+import { LinkedOrderCard } from '@/components/chats/ChatDetailCards'
 
 export type SoftWaTemplateOption = {
   name: string
@@ -93,6 +95,8 @@ interface SoftThreadPaneProps {
   presence?: string
   /** "Corregir" on AI messages (update_config). Undefined = shown; the API's 403 explains. */
   canTuneAgent?: boolean
+  /** "Respondido": the chat leaves Sin responder (and goes back to the agent after a hand-off). Hidden when absent. */
+  onMarkAnswered?: () => void
   /** "Posponer" (Phase 2b). Hidden when absent (e.g. before migration 036). */
   snooze?: {
     until: string | null
@@ -207,6 +211,7 @@ function DeliveryTicks({ status }: { status?: string | null }) {
 const REVIEW_BANNERS: Array<{
   tag: SoftTag
   title: string
+  icon: LucideIcon
   detail: string
   resolveLabel: string
   /** False alarm: clears the alert without marking it paid / confirmed (audited as dismissed). */
@@ -217,7 +222,8 @@ const REVIEW_BANNERS: Array<{
 }> = [
   {
     tag: PAYMENT_REVIEW_TAG,
-    title: '💳 Pago por verificar',
+    title: 'Pago por verificar',
+    icon: CreditCard,
     detail: 'el cliente mandó el comprobante',
     resolveLabel: 'Pago verificado',
     dismissLabel: 'No es pago',
@@ -227,7 +233,8 @@ const REVIEW_BANNERS: Array<{
   },
   {
     tag: ORDER_REVIEW_TAG,
-    title: '📦 Pedido por confirmar',
+    title: 'Pedido por confirmar',
+    icon: Package,
     detail: 'pidió contra entrega, confirmá los datos',
     resolveLabel: 'Confirmado',
     dismissLabel: 'Descartar',
@@ -335,6 +342,7 @@ export function SoftThreadPane({
   quickReplies,
   presence,
   snooze,
+  onMarkAnswered,
   canTuneAgent = true,
   reviewTags,
 }: SoftThreadPaneProps) {
@@ -507,7 +515,7 @@ export function SoftThreadPane({
     return (
       <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-au-tint-fafbfc px-6 text-center">
         <AuroraEmptyState
-          icon="💬"
+          icon={<MessageCircle className="h-6 w-6" aria-hidden />}
           title="Seleccioná un chat"
           description="Elegí una conversación para leer el hilo, responder o tomar el control del agente."
         />
@@ -650,8 +658,8 @@ export function SoftThreadPane({
             >
               <ChannelLogo platform={conversation.platform} size={12} className="shrink-0" />
               <span className="truncate">
-                {conversation.accountLabel}
-                {closedWindow ? ' · ventana 24h cerrada' : ''}
+                {lineChannelLabel(conversation.accountLabel, conversation.platform)}
+                {closedWindow ? ' · ventana 24 h cerrada' : ''}
               </span>
             </p>
           </div>
@@ -666,6 +674,18 @@ export function SoftThreadPane({
               {orderDraftPending ? (
                 <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-white" aria-hidden />
               ) : null}
+            </button>
+          ) : null}
+          {onMarkAnswered && !conversation.isDemo ? (
+            <button
+              type="button"
+              onClick={onMarkAnswered}
+              aria-label="Marcar como respondido"
+              title="Respondido"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white active:bg-emerald-700"
+              data-testid="soft-thread-mark-answered-compact"
+            >
+              <CheckCheck className="h-5 w-5" aria-hidden />
             </button>
           ) : null}
           {onOpenDetails ? (
@@ -704,27 +724,47 @@ export function SoftThreadPane({
                 <button
                   type="button"
                   onClick={onBack}
-                  className="mb-1 text-xs font-medium text-au-ink-5b6cff"
+                  className="mb-1 inline-flex items-center gap-0.5 text-xs font-medium text-au-ink-5b6cff"
                 >
-                  ← Chats
+                  <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
+                  Chats
                 </button>
               ) : null}
-              <h2 className="truncate text-base font-semibold text-slate-900">
-                {conversationDisplayName(conversation)}
-              </h2>
-              <p
-                className={`mt-0.5 flex items-center gap-1.5 truncate text-[11px] ${
-                  closedWindow ? 'font-medium text-red-600' : 'text-slate-500'
-                }`}
-              >
-                <ChannelLogo platform={conversation.platform} size={16} className="shrink-0" />
-                <span className="truncate">
-                  {compact && closedWindow
-                    ? `${platformFullName(conversation.platform)} · ${conversation.accountLabel} · ventana 24h CERRADA`
-                    : metaLine}
-                </span>
-              </p>
-              <p className="mt-1 truncate text-[11px] text-slate-500" data-testid="soft-agent-label">
+              <div className="flex min-w-0 items-center gap-3">
+                <PeerAvatar
+                  src={conversation.isDemo ? null : conversation.recipientAvatarUrl}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-au-tint-eef0ff text-[13px] font-bold text-au-ink-4a46e5"
+                >
+                  {initialsFromName(conversation.recipientName)}
+                </PeerAvatar>
+                <div className="min-w-0">
+                  <h2 className="flex min-w-0 items-baseline gap-2 text-base font-semibold text-slate-900">
+                    <span className="truncate">{conversationDisplayName(conversation)}</span>
+                    {customerHandle(conversation) ? (
+                      <span className="shrink-0 text-[12px] font-normal tabular-nums text-slate-500" data-testid="soft-thread-customer-handle">
+                        {customerHandle(conversation)}
+                      </span>
+                    ) : null}
+                  </h2>
+                  {/* Which business line + channel this chat is on, and the WhatsApp 24 h window. */}
+                  <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-slate-600" data-testid="soft-thread-line">
+                    <ChannelLogo platform={conversation.platform} size={14} className="shrink-0" />
+                    <span className="truncate font-medium" title={metaLine}>
+                      {lineChannelLabel(conversation.accountLabel, conversation.platform)}
+                    </span>
+                    {windowLabel ? (
+                      <span
+                        className={`shrink-0 rounded-md px-1.5 py-px text-[10.5px] font-semibold ring-1 ${
+                          closedWindow ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                        }`}
+                      >
+                        {closedWindow ? 'Ventana 24 h cerrada' : 'Ventana 24 h abierta'}
+                      </span>
+                    ) : null}
+                  </p>
+                </div>
+              </div>
+              <p className="sr-only" data-testid="soft-agent-label">
                 {conversation.agentLabel || 'Sin agente'}
               </p>
               {presence ? (
@@ -741,13 +781,25 @@ export function SoftThreadPane({
                   {chatStageLabel(conversation.status)}
                 </span>
                 <span
-                  className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${
-                    needsPerson ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300' : 'bg-au-tint-eef0ff text-au-ink-4a46e5'
+                  className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10.5px] font-semibold ring-1 ${
+                    needsPerson
+                      ? 'bg-amber-100 text-amber-900 ring-amber-300'
+                      : agentMode === 'ai_active'
+                        ? 'bg-au-tint-eef0ff text-au-ink-4a46e5 ring-[#5B6CFF]/20'
+                        : 'bg-slate-50 text-slate-600 ring-slate-200'
                   }`}
                   title={needsPerson ? NEEDS_PERSON_REASON : aiTruth?.reason}
                   data-testid="soft-ai-truth-chip"
                 >
+                  {needsPerson ? (
+                    <UserRound className="h-3 w-3" aria-hidden />
+                  ) : agentMode === 'ai_active' ? (
+                    <Sparkles className="h-3 w-3" aria-hidden />
+                  ) : null}
                   {needsPerson ? 'Necesita persona' : aiTruth && aiTruth.state !== 'ia' ? aiTruth.label : agentModeLabel(agentMode)}
+                  {!needsPerson && conversation.agentLabel && conversation.agentLabel !== 'Sin agente' ? (
+                    <span className="font-medium opacity-80">· {agentDisplayName(conversation.agentLabel)}</span>
+                  ) : null}
                 </span>
                 {conversation.tags.map((t) => {
                   const def = tagDefs.find((d) => d.key === t)
@@ -767,17 +819,7 @@ export function SoftThreadPane({
                   />
                 ) : null}
                 {conversation.orderId ? (
-                  <Link
-                    href={`/ventas?pedido=${encodeURIComponent(conversation.orderId)}`}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200 hover:bg-emerald-100"
-                    data-testid="soft-thread-order-link"
-                  >
-                    <Check className="h-3.5 w-3.5" aria-hidden />
-                    Pedido vinculado
-                    {conversation.orderNumber ? (
-                      <span className="font-semibold">#{conversation.orderNumber}</span>
-                    ) : null}
-                  </Link>
+                  <LinkedOrderCard conversation={conversation} variant="inline" />
                 ) : canCreateOrder ? (
                   <button
                     type="button"
@@ -790,6 +832,18 @@ export function SoftThreadPane({
                     {orderDraftPending ? (
                       <span className="rounded bg-static-white/25 px-1.5 py-px text-[10px] font-semibold">Borrador</span>
                     ) : null}
+                  </button>
+                ) : null}
+                {onMarkAnswered && !conversation.isDemo ? (
+                  <button
+                    type="button"
+                    onClick={onMarkAnswered}
+                    title={needsPerson ? 'Respondido: sale de Sin responder y vuelve al agente' : 'Respondido: sale de Sin responder'}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                    data-testid="soft-thread-mark-answered"
+                  >
+                    <CheckCheck className="h-3.5 w-3.5" aria-hidden />
+                    Respondido
                   </button>
                 ) : null}
                 {snooze && !conversation.isDemo ? (
@@ -833,7 +887,8 @@ export function SoftThreadPane({
               data-testid={b.testId}
               className={`flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2.5 sm:px-5 ${b.className}`}
             >
-              <p className="min-w-0 flex-1 text-[13px] font-semibold">
+              <p className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] font-semibold">
+                <b.icon className="h-4 w-4 shrink-0" aria-hidden />
                 {b.title}
                 <span className="font-normal opacity-80"> — {b.detail}</span>
               </p>
@@ -892,7 +947,7 @@ export function SoftThreadPane({
                     : needsPerson
                     ? 'Necesita persona'
                     : agentMode === 'ai_active'
-                    ? `${conversation.agentLabel || 'Agente'} está atendiendo`
+                    ? `${agentDisplayName(conversation.agentLabel)} está atendiendo`
                     : agentMode === 'paused'
                       ? 'Agente en pausa'
                       : aiTruth
@@ -1091,7 +1146,7 @@ export function SoftThreadPane({
                         {outbound && softAi ? (
                           <>
                             <Sparkles className="h-3 w-3" aria-hidden />
-                            <span className="font-medium">{conversation.agentLabel || 'Agente'}</span>
+                            <span className="font-medium">{agentDisplayName(conversation.agentLabel)}</span>
                             {typeof feedbackTurnId === 'string' && feedbackTurnId ? (
                               <AgentFeedbackButtons turnId={feedbackTurnId} />
                             ) : null}
@@ -1128,7 +1183,10 @@ export function SoftThreadPane({
                         </>
                       ) : failed || msg.deliveryStatus === 'failed' ? (
                         <>
-                          No enviado ⓘ{' '}
+                          <span className="inline-flex items-center gap-0.5">
+                            No enviado
+                            <Info className="h-3 w-3" aria-hidden />
+                          </span>{' '}
                           <button
                             type="button"
                             onClick={() => {

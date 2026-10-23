@@ -303,6 +303,7 @@ export const apiPermissions: Record<string, Permission> = {
   'GET /api/workspace/notifications': 'update_sales',
   'POST /api/workspace/notifications': 'update_sales',
   'POST /api/chat/conversations/*/snooze': 'update_sales',
+  'POST /api/chat/conversations/*/answered': 'update_sales',
   'DELETE /api/chat/conversations/*/snooze': 'update_sales',
   'GET /api/crm/tasks': 'update_sales',
   'POST /api/crm/tasks': 'update_sales',

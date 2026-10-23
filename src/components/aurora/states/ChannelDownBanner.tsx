@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Info } from 'lucide-react'
 
 type ChannelDownBannerProps = {
   message: string
@@ -22,9 +23,7 @@ export function ChannelDownBanner({
       className={`flex items-center justify-between gap-3 border-b border-red-100 bg-red-50 px-4 py-2 text-[12px] text-red-700 ${className}`}
     >
       <span className="flex min-w-0 items-center gap-2">
-        <span aria-hidden className="text-[13px]">
-          ⓘ
-        </span>
+        <Info aria-hidden className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">{message}</span>
       </span>
       <Link href={href} className="shrink-0 font-semibold text-red-700 underline-offset-2 hover:underline">

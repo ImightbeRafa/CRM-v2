@@ -24,7 +24,7 @@ import { loadStages } from '@/lib/crm-stages-server'
 import { attachFollowUpFlag, attachOpenOrderFlag, closedStageKeys, listFollowUpOnlyIds, listOpenOrderConversationIds, viewWhere } from '@/lib/chat-inbox-views-server'
 import { searchConversationIds } from '@/lib/chat-search-server'
 import { aiOnLineIds } from '@/lib/soft-ai/agent-inbox-enrich'
-import { attachNeedsPersonFlag, listUnansweredIds } from '@/lib/chat-unanswered-server'
+import { answeredMarkerReady, attachWaitingFlags, listUnansweredIds } from '@/lib/chat-unanswered-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -143,7 +143,7 @@ export async function GET(request: NextRequest) {
       attachSnoozeState(auth.tenantId, base),
       attachFollowUpFlag(auth.tenantId, base),
       attachOpenOrderFlag(auth.tenantId, base),
-      attachNeedsPersonFlag(auth.tenantId, base),
+      attachWaitingFlags(auth.tenantId, base),
     ])
     const conversations = base.map((_, i) => ({
       ...withAgents[i],
@@ -152,6 +152,7 @@ export async function GET(request: NextRequest) {
       ...(withFollowUp[i].lastIsFollowUp ? { lastIsFollowUp: true } : {}),
       hasOpenOrder: withOpen[i].hasOpenOrder === true,
       ...(withNeedsPerson[i].needsPerson ? { needsPerson: true } : {}),
+      ...(typeof withNeedsPerson[i].waiting === 'boolean' ? { waiting: withNeedsPerson[i].waiting } : {}),
     }))
 
     const last = page[page.length - 1]
@@ -170,6 +171,8 @@ export async function GET(request: NextRequest) {
       maxRevision: (maxRevisionAgg._max.revision ?? BigInt(0)).toString(),
       // Phase 2b: false until migration 036 is applied (the inbox hides "Posponer").
       snoozeAvailable: conversations.length ? !workStateKnownMissing() : await probeWorkState(auth.tenantId),
+      // SQL 063: "Respondido" shows only once the marker columns exist.
+      answeredAvailable: await answeredMarkerReady(),
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invalid request'

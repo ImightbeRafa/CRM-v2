@@ -39,7 +39,10 @@ describe('F37-02 soft-ai server-truth agent mode', () => {
   })
 
   it('control route dual-writes aiMode on ChatConversation', () => {
-    const src = readFileSync(resolve('src/app/api/chat/soft-ai/control/route.ts'), 'utf8')
+    // The mode write lives in the shared helper (also used by "Respondido"); the route must call it.
+    const route = readFileSync(resolve('src/app/api/chat/soft-ai/control/route.ts'), 'utf8')
+    assert.ok(route.includes('setConversationAgentMode({ tenantId, conversationKey, action })'))
+    const src = route + readFileSync(resolve('src/lib/chat-agent-control.ts'), 'utf8')
     assert.match(src, /chatConversation\.updateMany/)
     assert.match(src, /aiMode: mode/)
   })
@@ -175,7 +178,10 @@ describe('F37-02 soft-ai server-truth agent mode', () => {
   })
 
   it('control route persists staffControlled agentState server-side', () => {
-    const src = readFileSync(resolve('src/app/api/chat/soft-ai/control/route.ts'), 'utf8')
+    // The mode write lives in the shared helper (also used by "Respondido"); the route must call it.
+    const route = readFileSync(resolve('src/app/api/chat/soft-ai/control/route.ts'), 'utf8')
+    assert.ok(route.includes('setConversationAgentMode({ tenantId, conversationKey, action })'))
+    const src = route + readFileSync(resolve('src/lib/chat-agent-control.ts'), 'utf8')
     assert.match(src, /staffControlled/)
     assert.match(src, /agentState\[conversationKey\]/)
   })

@@ -1,9 +1,9 @@
 'use client'
 
-import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { auroraConfirm } from '@/components/aurora/ui/AuroraConfirmHost'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Plus, Sparkles } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useSession } from 'next-auth/react'
 import { hasSessionPermission } from '@/lib/session-permissions'
 import {
@@ -39,7 +39,8 @@ import {
 } from '@/components/aurora/states'
 import { AuroraToggle } from '@/components/aurora/agentes/AuroraToggle'
 import { AgentListPanel } from '@/components/aurora/agentes/AgentListPanel'
-import { AgentFace } from '@/components/aurora/agentes/AgentFace'
+import { AgentAppearanceCard } from '@/components/aurora/agentes/AgentAppearanceCard'
+import type { AgentAppearance } from '@/lib/agent-appearance'
 import { AgentDetailHeader } from '@/components/aurora/agentes/AgentDetailHeader'
 import { AgentKnowledgeTab } from '@/components/aurora/agentes/AgentKnowledgeTab'
 import {
@@ -197,6 +198,24 @@ export default function AgentesConfigPage() {
   const [studioApplied, setStudioApplied] = useState(0)
   const [history, setHistory] = useState<unknown[]>([])
   const [introDraft, setIntroDraft] = useState('')
+  // Owner-UI look of each agent (plate / ring / label), one read for the whole list; missing = defaults.
+  const [appearances, setAppearances] = useState<Record<string, Partial<AgentAppearance>>>({})
+  useEffect(() => {
+    let alive = true
+    fetch('/api/chat/agents/appearance', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (alive && json?.appearances && typeof json.appearances === 'object') setAppearances(json.appearances)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+  const agentsWithLook = useMemo(() => agents.map((a) => ({ ...a, appearance: appearances[a.id] ?? null })), [agents, appearances])
+  const onAppearanceSaved = useCallback((agentId: string, look: Partial<AgentAppearance>) => {
+    setAppearances((prev) => ({ ...prev, [agentId]: look }))
+  }, [])
   const [checklist, setChecklist] = useState<KnowledgeCard[]>([])
   const [knowledgeSchemaReady, setKnowledgeSchemaReady] = useState(true)
   const savingRef = useRef(false)
@@ -615,7 +634,7 @@ export default function AgentesConfigPage() {
       ) : inDetail && selected ? (
         <div className="border-b border-slate-200/70 bg-white px-4 pt-5 md:px-6">
           <AgentDetailHeader
-            agent={selected}
+            agent={{ ...selected, appearance: appearances[selected.id] ?? null }}
             status={selected.status}
             mode={selected.operationMode}
             subtitle={detailLinesSubtitle}
@@ -700,7 +719,7 @@ export default function AgentesConfigPage() {
         ) : isEmpty && !draftMode ? (
           <div className="rounded-2xl bg-white ring-1 ring-slate-200/70">
             <AuroraEmptyState
-              icon={<Sparkles className="h-5 w-5" aria-hidden />}
+              betsy
               title="Todavía no hay agentes"
               description={
                 !canEdit
@@ -737,7 +756,7 @@ export default function AgentesConfigPage() {
           <>
             {view === 'list' && !draftMode ? (
               <AgentListPanel
-                agents={agents}
+                agents={agentsWithLook}
                 selectedId={null}
                 onConfigure={(id) => openAgent(id)}
                 onProbar={(id) => probar(id)}
@@ -1004,6 +1023,12 @@ export default function AgentesConfigPage() {
                     onApplied={() => setSetupRefresh((value) => value + 1)}
                   />
 
+                  <AgentAppearanceCard
+                    agent={{ ...selected, appearance: appearances[selected.id] ?? null }}
+                    canEdit={canEdit}
+                    onSaved={onAppearanceSaved}
+                  />
+
                   {/* Identidad */}
                   <div className={CARD}>
                     <div className="mb-3 flex items-baseline justify-between gap-2">
@@ -1020,10 +1045,6 @@ export default function AgentesConfigPage() {
                           disabled={!canEdit || saving}
                           onBlur={(e) => void patch({ name: e.target.value })}
                         />
-                      </div>
-                      <div className="flex flex-col items-center gap-1" title="La cara sale del nombre de presentación">
-                        <span className="text-xs font-medium text-slate-700">Cara</span>
-                        <AgentFace agent={selected} size={40} motion="always" />
                       </div>
                     </div>
 

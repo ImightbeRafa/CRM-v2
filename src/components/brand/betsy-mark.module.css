@@ -1,0 +1,217 @@
+/* Official BetsyMark motion (HANDOFF.md tokens). Only transform and opacity animate. */
+
+.bm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28em;
+  line-height: 0;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.bm svg {
+  display: block;
+  overflow: visible;
+}
+
+.lean,
+.gaze {
+  transition: transform 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.breath,
+.hop {
+  transform-box: view-box;
+  transform-origin: 60px 112px;
+}
+.eyes {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+.orbit {
+  transform-box: view-box;
+  transform-origin: 62px 58px;
+}
+
+.bm[data-on] .breath {
+  animation: bm-breath 4400ms ease-in-out infinite alternate;
+}
+.bm[data-on][data-state='speak'] .breath {
+  animation: bm-speak 340ms ease-in-out infinite alternate;
+}
+.bm[data-on] .blink {
+  animation: bm-blink 4400ms linear infinite;
+}
+.bm[data-on] .dbl {
+  animation: bm-dbl 640ms linear 1 both;
+}
+.bm[data-on][data-state='yes'] .hop {
+  animation: bm-hop 900ms cubic-bezier(0.22, 1, 0.36, 1) 1 both;
+}
+.arcs {
+  opacity: 1;
+}
+.bm[data-state='yes'] .open {
+  opacity: 0;
+}
+.bm[data-on][data-state='yes'] .arcs {
+  animation: bm-out 1.4s linear 1 both;
+}
+.bm[data-on][data-state='yes'] .open {
+  animation: bm-in 1.4s linear 1 both;
+}
+.bm[data-on][data-state='yes'] .open .eyes {
+  animation: bm-dbl 640ms linear 1.25s 1 both;
+}
+.bm[data-on] .orbit {
+  animation: bm-spin 1800ms linear infinite;
+}
+
+.dots {
+  display: inline-flex;
+  gap: 0.06em;
+}
+.dot {
+  width: 0.09em;
+  height: 0.09em;
+  border-radius: 50%;
+  background: #5644e4;
+  opacity: 0.35;
+}
+.bm[data-on] .dot {
+  animation: bm-dot 1s ease-in-out infinite;
+}
+.dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.bm[data-state='paused'] svg {
+  filter: saturate(0.25);
+  opacity: 0.8;
+}
+
+@keyframes bm-breath {
+  from {
+    transform: scale(1.008, 0.984);
+  }
+  to {
+    transform: scale(0.992, 1.016);
+  }
+}
+@keyframes bm-speak {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(calc(1 + var(--bm-lvl, 0.6) * 0.035));
+  }
+}
+@keyframes bm-blink {
+  0%,
+  58% {
+    transform: scaleY(1);
+  }
+  59.25% {
+    transform: scaleY(0.14);
+  }
+  61% {
+    transform: scaleY(1.05);
+  }
+  62.5%,
+  100% {
+    transform: scaleY(1);
+  }
+}
+@keyframes bm-dbl {
+  0% {
+    transform: scaleY(1);
+  }
+  8.6% {
+    transform: scaleY(0.14);
+  }
+  22% {
+    transform: scaleY(1.04);
+  }
+  34.4% {
+    transform: scaleY(1);
+  }
+  43% {
+    transform: scaleY(0.14);
+  }
+  56% {
+    transform: scaleY(1.04);
+  }
+  68%,
+  100% {
+    transform: scaleY(1);
+  }
+}
+@keyframes bm-hop {
+  0% {
+    transform: scale(1.04, 0.94);
+  }
+  8% {
+    transform: translateY(0) scale(1);
+  }
+  30% {
+    transform: translateY(-9px);
+  }
+  53% {
+    transform: translateY(0) scale(1.045, 0.94);
+  }
+  62%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes bm-out {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  85%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes bm-in {
+  0%,
+  70% {
+    opacity: 0;
+  }
+  85%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes bm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes bm-dot {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-0.08em);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bm,
+  .bm * {
+    animation: none !important;
+    transition: none !important;
+  }
+  .bm[data-state='yes'] .arcs {
+    opacity: 1 !important;
+  }
+  .bm[data-state='yes'] .open {
+    opacity: 0 !important;
+  }
+}

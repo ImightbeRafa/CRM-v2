@@ -1,47 +1,32 @@
-/* Betsy wordmark: Space Grotesk 700 (root layout `--font-logo`) with the ORIGINAL logo gradient,
-   sampled from the first wordmark (#1E5BF6 → #3A3FF3 → #682BF8 → #9425F9). The dark tone lifts
-   the same hues so the blue end keeps contrast on near-black surfaces. */
+/* Official Betsy wordmark (outlined paths) and lockup. Colors live in the SVG (#2F6BFF → #5644E4 → #7A3FF0). */
 
 .logo {
-  display: inline-block;
-  /* Never stretch (flex/grid parents): the gradient must span the word, not the container. */
+  display: inline-flex;
+  align-items: center;
+  /* Never stretch inside flex/grid parents. */
   width: max-content;
   max-width: 100%;
-  font-family: var(--font-logo), 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
-  font-weight: 700;
-  line-height: 1.05;
-  letter-spacing: -0.035em;
-  white-space: nowrap;
-  /* Room for the descender of the "y" so background-clip does not cut it. */
-  padding-bottom: 0.06em;
-  color: transparent;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  line-height: 0;
+  flex-shrink: 0;
+  vertical-align: middle;
 }
 
-.light {
-  background-image: linear-gradient(100deg, #1e5bf6 0%, #3a3ff3 38%, #682bf8 66%, #9425f9 100%);
+.word {
+  display: block;
+  overflow: visible;
 }
 
-.dark {
-  background-image: linear-gradient(100deg, #4f80ff 0%, #6f63ff 38%, #9a5cff 66%, #bd6bff 100%);
-}
-
-/* auto: light gradient, dark gradient under the app's `.dark` theme, except inside forced-light
-   islands (same rule as Tailwind's dark variant in tailwind.config). */
-.auto {
-  background-image: linear-gradient(100deg, #1e5bf6 0%, #3a3ff3 38%, #682bf8 66%, #9425f9 100%);
-}
-:global(.dark) .auto:not(:is(:global(.theme-light), :global(.theme-light) *)) {
-  background-image: linear-gradient(100deg, #4f80ff 0%, #6f63ff 38%, #9a5cff 66%, #bd6bff 100%);
+/* In the lockup the wordmark sits slightly below the mark's center (the tail hangs low). */
+.lockWord {
+  display: inline-flex;
+  transform: translateY(6%);
 }
 
 .link {
   text-decoration: none;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 .link:focus-visible {
-  outline: 2px solid #6f63ff;
+  outline: 2px solid #5644e4;
   outline-offset: 3px;
 }

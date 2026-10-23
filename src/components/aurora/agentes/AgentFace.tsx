@@ -1,11 +1,19 @@
-import { BetsyAvatar, personaName, type AvatarMood } from '@/components/brand/betsy-avatar'
+import { AgentMark } from '@/components/brand/AgentMark'
+import type { BetsyState } from '@/components/brand/BetsyMark'
+import { resolveAgentAppearance, type AgentAppearance } from '@/lib/agent-appearance'
 
-type FaceSource = { id?: string | null; name: string; introductionNames?: ReadonlyArray<string> | null }
+export type FaceSource = {
+  id?: string | null
+  name: string
+  introductionNames?: ReadonlyArray<string> | null
+  /** Saved appearance (plate, ring, display name); missing = deterministic default. */
+  appearance?: Partial<AgentAppearance> | null
+}
 
-/** "Sofi · Ventas tienda": persona name from `introductionNames[0]` (data, never literals) + internal name. */
+/** "Sofi · Ventas tienda": display name (saved, else `introductionNames[0]`, never literals) + internal name. */
 export function agentTitleParts(a: FaceSource): { persona: string | null; internal: string } {
   const internal = a.name.trim() || 'Agente'
-  const persona = personaName(a)
+  const persona = resolveAgentAppearance(a, a.appearance).displayName
   // Avoid "Ventas · Ventas" when both are the same word.
   if (persona && persona.toLowerCase() === internal.toLowerCase()) return { persona: null, internal }
   return { persona, internal }
@@ -16,18 +24,20 @@ export function agentTitle(a: FaceSource): string {
   return persona ? `${persona} · ${internal}` : internal
 }
 
-/** The agent's Betsy-family face: deterministic from its id + customer-facing name. Decorative next to its name. */
+/**
+ * The agent's face: the official Betsy mark on its own colored plate ("costume").
+ * Lists pass `animated={false}` so only one mark moves per view (the detail header).
+ */
 export function AgentFace({
   agent,
   size = 48,
-  mood = 'idle',
-  motion = 'hover',
+  state = 'idle',
+  animated = true,
 }: {
   agent: FaceSource
   size?: number
-  mood?: AvatarMood
-  /** Lists animate only on hover / for the selected card; headers animate always. */
-  motion?: 'always' | 'hover'
+  state?: BetsyState
+  animated?: boolean
 }) {
-  return <BetsyAvatar agent={agent} size={size} mood={mood} motion={motion} label="" />
+  return <AgentMark appearance={resolveAgentAppearance(agent, agent.appearance)} size={size} state={state} animated={animated} />
 }

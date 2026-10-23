@@ -69,8 +69,7 @@ export function NewAgentForm({
             <span className="text-xs font-medium text-slate-700">Cara</span>
             <AgentFace
               agent={{ name: draft.name || 'Nuevo agente', introductionNames: parseIntroductionNames(draft.introductionNames) }}
-              size={40}
-              motion="always"
+              size={44}
             />
           </div>
         </div>

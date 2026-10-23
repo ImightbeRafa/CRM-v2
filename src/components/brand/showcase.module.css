@@ -7,12 +7,12 @@
   padding: 28px 24px 32px;
 }
 .dark {
-  background: #0d0d14;
+  background: #07070c;
   color: #ececf1;
 }
-.light {
-  background: #f6f5f1;
-  color: #1b1b26;
+.cream {
+  background: #f6f5f2;
+  color: #0b0b12;
   border: 1px solid rgba(15, 15, 30, 0.06);
 }
 .h {
@@ -32,7 +32,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 22px;
+  gap: 24px;
 }
 .grid {
   display: grid;
@@ -52,4 +52,5 @@
   font-size: 12.5px;
   font-weight: 500;
   opacity: 0.75;
+  text-align: center;
 }

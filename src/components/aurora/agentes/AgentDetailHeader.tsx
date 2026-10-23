@@ -3,12 +3,12 @@
 import { ArrowLeft, Check, FlaskConical, UserRound } from 'lucide-react'
 import { AgentModeChip, AgentStatusPill } from './AgentChips'
 import { AgentTabBar } from './AgentTabBar'
-import { AgentFace, agentTitleParts } from './AgentFace'
+import { AgentFace, agentTitleParts, type FaceSource } from './AgentFace'
 import type { AgentTab } from './agent-url'
 
 type Props = {
   /** Agent identity for its face + title (`introductionNames[0]` is the customer-facing name). */
-  agent: { id?: string | null; name: string; introductionNames?: ReadonlyArray<string> | null }
+  agent: FaceSource
   status: string
   /** Operation mode chip (saved agents only). */
   mode?: string
@@ -59,13 +59,13 @@ export function AgentDetailHeader({
         <div className="flex min-w-0 items-center gap-3.5">
           {mode === 'human_only' ? (
             <span
-              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"
+              className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[30%] bg-slate-100 text-slate-500"
               aria-hidden
             >
               <UserRound className="h-6 w-6" />
             </span>
           ) : (
-            <AgentFace agent={agent} size={56} mood={publishing ? 'thinking' : 'idle'} motion="always" />
+            <AgentFace agent={agent} size={52} state={publishing ? 'think' : 'idle'} />
           )}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">

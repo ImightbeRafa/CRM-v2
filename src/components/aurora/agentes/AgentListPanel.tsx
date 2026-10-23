@@ -3,6 +3,7 @@
 import { FlaskConical, MessagesSquare, Plus, Settings2, UserRound } from 'lucide-react'
 import { AgentModeChip, AgentStatusPill } from './AgentChips'
 import { AgentFace, agentTitleParts } from './AgentFace'
+import type { AgentAppearance } from '@/lib/agent-appearance'
 
 export type AgentListItem = {
   id: string
@@ -11,6 +12,8 @@ export type AgentListItem = {
   status: string
   /** Customer-facing names; the first one is the agent's face name (e.g. "Sofi"). */
   introductionNames?: string[]
+  /** Saved plate / ring / display name (Config › Agentes › Personalidad); missing = default. */
+  appearance?: Partial<AgentAppearance> | null
   /** `human_only` = the team answers, no AI (shown last and muted). */
   operationMode?: string
   /** Active line bindings from the list API, when present. */
@@ -76,13 +79,13 @@ export function AgentListPanel({
               <div className="flex items-start gap-3.5">
                 {human ? (
                   <span
-                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[30%] bg-slate-100 text-slate-500"
                     aria-hidden
                   >
                     <UserRound className="h-5 w-5" />
                   </span>
                 ) : (
-                  <AgentFace agent={a} size={48} motion={selected ? 'always' : 'hover'} />
+                  <AgentFace agent={a} size={48} animated={false} />
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">

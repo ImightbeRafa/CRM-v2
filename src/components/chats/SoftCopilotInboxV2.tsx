@@ -72,6 +72,9 @@ import {
   sortedConversationDtos,
   threadTailCursor,
 } from '@/lib/chat-inbox-v2-client'
+import { aiStatusFromDto } from '@/lib/chat-inbox-v2-client'
+import { emitBetsySignal } from '@/components/brand/betsy-signals'
+import { betsySignalsForChange } from '@/lib/chat-betsy-signals'
 import {
   applyAgentControl,
   getConversationAgentState,
@@ -456,6 +459,13 @@ export function SoftCopilotInboxV2() {
           )
           if (fresh) playNotificationChime()
         }
+        // Betsy mark for the OPEN chat: customer wrote (listen / think when the agent answers), agent done.
+        const openId = selectedConversationIdRef.current
+        const openRow = openId ? parsed.data.conversations.find((c) => c.id === openId) : undefined
+        if (openRow) {
+          const aiHandles = aiStatusFromDto(openRow)?.state === 'ia' && !openRow.needsPerson
+          for (const signal of betsySignalsForChange(dtoMapRef.current.get(openRow.id), openRow, aiHandles)) emitBetsySignal(signal)
+        }
         setDtoMap((prev) => mergeListDtoIntoMap(prev, parsed.data.conversations!))
       }
 
@@ -508,10 +518,13 @@ export function SoftCopilotInboxV2() {
         [conversationId]: parsed.data.nextBefore ?? null,
       }))
     }
+    // Betsy mark: a double blink only when this open actually read something new (not on every open).
+    const hadUnread = (dtoMapRef.current.get(conversationId)?.unreadCount ?? 0) > 0
     void fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}/read`, {
       method: 'POST',
       credentials: 'same-origin',
-    }).then(() => {
+    }).then((res) => {
+      if (res.ok && hadUnread) emitBetsySignal('read')
       setDtoMap((prev) => {
         const row = prev.get(conversationId)
         if (!row) return prev
@@ -1470,7 +1483,12 @@ export function SoftCopilotInboxV2() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ seenThrough: before.lastMessageAt }),
       })
-      const json = (await res.json().catch(() => null)) as { success?: boolean; returnedToAi?: boolean; error?: string } | null
+      const json = (await res.json().catch(() => null)) as {
+        success?: boolean
+        returnedToAi?: boolean
+        alreadyAnswered?: boolean
+        error?: string
+      } | null
       if (!res.ok || !json?.success) {
         if (res.status === 409) setAnsweredAvailable(false)
         setDtoMap((prev) => {
@@ -1490,6 +1508,7 @@ export function SoftCopilotInboxV2() {
           return next
         })
       }
+      if (!json.alreadyAnswered) emitBetsySignal('replied')
       toast({ title: json.returnedToAi ? 'Respondido · el agente vuelve a atender este chat' : 'Marcado como respondido' })
       scheduleRefreshAfterSend()
     } catch {
@@ -1588,6 +1607,7 @@ export function SoftCopilotInboxV2() {
         ...(paidStage && selectedConversation.status !== paidStage.key ? { status: paidStage.key } : {}),
       }).catch(() => false)
       if (ok) {
+        if (tag === PAYMENT_REVIEW_TAG) emitBetsySignal('yes')
         toast({ variant: 'success', title: tag === PAYMENT_REVIEW_TAG ? 'Pago verificado' : 'Pedido confirmado' })
       } else {
         toast({ variant: 'destructive', title: 'No se pudo guardar', description: 'Probá de nuevo o recargá la página.' })

@@ -130,3 +130,7 @@ test('agent costumes: mark on a colored plate + name; the mark itself is never r
   assert.match(read(`${DIR}/sections/Agent.tsx`), /<AgentCostumes \/>/)
   assert.doesNotMatch(read(`${DIR}/sections/Agent.tsx`), /→/)
 })
+
+test('examples never use live client agent personas (Sofi, Vale, Laura, Andrés, Dani, Caro)', () => {
+  assert.doesNotMatch(source, /\b(Sofi|Vale|Laura|Andrés|Dani|Caro)\b/)
+})

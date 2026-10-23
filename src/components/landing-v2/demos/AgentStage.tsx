@@ -56,7 +56,7 @@ export function AgentStage({ step }: { step: number }) {
               ¿Querés que te lo aparte?
             </p>
             <span className={s.bubbleMeta} style={d(2.2)}>
-              <Sparkles size={11} aria-hidden /> Sofi · 3:15 p. m.
+              <Sparkles size={11} aria-hidden /> Luna · 3:15 p. m.
             </span>
           </div>
           <Bar left={live} right="Tomar control" />

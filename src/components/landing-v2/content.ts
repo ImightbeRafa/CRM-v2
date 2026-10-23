@@ -31,7 +31,8 @@ export const HERO = {
 /** One chat, start to finish. Each step is one frame of the hero demo; `caption` is also the accessible step list. */
 export const STORY = {
   customer: { name: 'Daniela R.', initials: 'DR', channel: 'ig' as const, line: 'Instagram · @tu_tienda' },
-  agentName: 'Sofi',
+  // Generic example name: never a live client persona (handoff: Betsy never speaks for a client store).
+  agentName: 'Luna',
   steps: [
     { caption: 'Una clienta escribe por Instagram a las 10:42 p. m.' },
     { caption: 'El agente contesta con tu precio y tus envíos, en mensajes cortos.' },

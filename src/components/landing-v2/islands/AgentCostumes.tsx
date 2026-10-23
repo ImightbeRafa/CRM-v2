@@ -8,12 +8,12 @@ import { Mark } from '../brand'
  * "Tu agente, con tu nombre y tus colores": the same costume idea as the Agents tab — Betsy's official mark on a
  * colored plate plus the agent's name. The mark is never recolored (handoff rule); only the plate is.
  * One mark in this view: the example agents are color chips, only the preview shows the mark.
- * Example names and businesses are made up.
+ * Example names and businesses are made up — never live client personas (Lane I / handoff).
  */
 const PRESETS = [
-  { name: 'Sofi', business: 'Suplementos', plate: '#5B6CFF', greeting: '¡Hola! Soy Sofi 😊 ¿Te ayudo con los parches?' },
-  { name: 'Vale', business: 'Ropa', plate: '#D6457B', greeting: '¡Hola! Soy Vale. ¿Qué talla buscás?' },
-  { name: 'Luna', business: 'Dental y belleza', plate: '#12938A', greeting: 'Hola, soy Luna. ¿Te cuento cómo funciona el kit?' },
+  { name: 'Luna', business: 'Suplementos', plate: '#12938A', greeting: '¡Hola! Soy Luna 😊 ¿Te ayudo con los parches?' },
+  { name: 'Nico', business: 'Ropa', plate: '#5B3FE0', greeting: '¡Hola! Soy Nico. ¿Qué talla buscás?' },
+  { name: 'Ana', business: 'Dental y belleza', plate: '#D6457B', greeting: 'Hola, soy Ana. ¿Te cuento cómo funciona el kit?' },
   { name: 'Max', business: 'Gadgets', plate: '#E07A1F', greeting: '¡Buenas! Soy Max. ¿Para qué celular lo necesitás?' },
 ] as const
 

@@ -1,46 +1,51 @@
 /**
- * Betsy plan price: the one source of truth for what Betsy costs (Rafael, 2026-10-22: $20/month + IVA).
- * Used by the landing (/home), the billing docs (<PlanPrice/> in DocRenderer) and BillingDashboard.
+ * Betsy plan price: the one source of truth for what Betsy costs.
+ * Rafael 2026-10-23: the price is what Tilopay actually charges, ₡10.000/mes (no Tilopay change for now).
+ * Used by /home, /home-preview, the billing docs (<PlanPrice/> expanded in src/lib/docs.ts) and BillingDashboard.
  * Pure (no server-only): safe in client and server components.
  *
- * Display only. What Tilopay actually charges is set where the charge is created:
- *  - Monthly subscription (Tilopay Repeat plan): CRC 10,000 in src/app/api/tilopay/create-plan-repeat/route.ts.
- *    That is about $20 BEFORE IVA, so today's charge does not include the 13% IVA. Existing subscribers keep
- *    that charge; changing it is Rafael's call (see LEGACY_SUBSCRIPTION_CRC).
- * All money is integer cents so the IVA math never drifts.
+ * Display only. The charge itself is created in src/app/api/tilopay/create-plan-repeat/route.ts (CRC 10000);
+ * keep the two equal (home-pricing.test.ts checks it).
+ * IVA: Rafael confirmed (2026-10-23) that ₡10.000 already includes IVA, so every surface says "IVA incluido".
+ * The flag also supports false ("+ IVA" with the 13% math) and null (say nothing) if that ever changes.
  */
 
-/** Costa Rica IVA on digital services: 13%, in basis points. */
+/** Costa Rica IVA on digital services: 13%, in basis points (also used for AI credit packs). */
 export const IVA_BPS = 1300
 
-export const BETSY_PLAN = {
+export const BETSY_PLAN: {
+  name: string
+  currency: 'CRC'
+  /** Monthly price in colones (whole colones). */
+  amountColones: number
+  interval: 'month'
+  trialDays: number
+  /** Does `amountColones` include IVA? (Rafael 2026-10-23: yes.) */
+  ivaIncluded: boolean | null
+} = {
   name: 'Betsy',
-  /** Price before IVA, in US cents. */
-  baseUsdCents: 2000,
+  currency: 'CRC',
+  amountColones: 10_000,
   interval: 'month',
   trialDays: 7,
-} as const
+  ivaIncluded: true,
+}
 
-/**
- * What the Tilopay Repeat subscription charges today (CRC, no IVA). Kept as-is for existing subscribers.
- * Decision for Rafael: $20 + IVA = $22.60 ≈ CRC 11,300 at ~500 CRC/USD; the plan still charges CRC 10,000.
- */
-export const LEGACY_SUBSCRIPTION_CRC = 10_000
+/** What the Tilopay Repeat subscription charges (CRC). Same as the plan price. */
+export const LEGACY_SUBSCRIPTION_CRC = BETSY_PLAN.amountColones
 
-/** IVA on an amount in cents, rounded half-up to the cent. */
+/** IVA on an amount in cents (or whole colones), rounded half-up. */
 export function ivaCents(baseCents: number, ivaBps: number = IVA_BPS): number {
   return Math.round((Math.max(0, Math.round(baseCents)) * ivaBps) / 10_000)
 }
 
-export type PlanPriceBreakdown = { baseCents: number; ivaCents: number; totalCents: number; ivaPercent: number }
-
-export function planPriceBreakdown(baseCents: number = BETSY_PLAN.baseUsdCents, ivaBps: number = IVA_BPS): PlanPriceBreakdown {
-  const base = Math.max(0, Math.round(baseCents))
-  const iva = ivaCents(base, ivaBps)
-  return { baseCents: base, ivaCents: iva, totalCents: base + iva, ivaPercent: ivaBps / 100 }
+/** `10000` → `₡10.000` (Costa Rica style: dot thousands, no decimals). */
+export function formatColones(amount: number): string {
+  const n = Math.max(0, Math.round(amount))
+  return `₡${String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`
 }
 
-/** `2000` → `$20`, `2260` → `$22.60` (whole dollars drop the cents). */
+/** `2000` → `$20`, `2260` → `$22.60` (USD cents; AI credit packs are priced in dollars). */
 export function formatUsdCents(cents: number): string {
   const n = Math.round(cents)
   const whole = n % 100 === 0
@@ -48,15 +53,28 @@ export function formatUsdCents(cents: number): string {
 }
 
 /** Ready-made strings for the landing, docs and billing screens. */
-export function planPriceLabels(breakdown: PlanPriceBreakdown = planPriceBreakdown()) {
+export function planPriceLabels(plan: Pick<typeof BETSY_PLAN, 'amountColones' | 'ivaIncluded'> = BETSY_PLAN, ivaBps: number = IVA_BPS) {
+  const base = formatColones(plan.amountColones)
+  const iva = ivaCents(plan.amountColones, ivaBps)
+  const ivaPercent = `${ivaBps / 100}%`
+  const ivaNote = plan.ivaIncluded === true ? 'IVA incluido' : plan.ivaIncluded === false ? '+ IVA' : ''
   return {
-    base: formatUsdCents(breakdown.baseCents),
-    iva: formatUsdCents(breakdown.ivaCents),
-    total: formatUsdCents(breakdown.totalCents),
-    ivaPercent: `${breakdown.ivaPercent}%`,
-    /** "$20/mes + IVA" */
-    short: `${formatUsdCents(breakdown.baseCents)}/mes + IVA`,
-    /** "$20 + IVA (13%) = $22.60 al mes" */
-    math: `${formatUsdCents(breakdown.baseCents)} + IVA (${breakdown.ivaPercent}%) = ${formatUsdCents(breakdown.totalCents)} al mes`,
+    /** "₡10.000" */
+    base,
+    ivaPercent,
+    /** "IVA incluido" | "+ IVA" | "" (not confirmed) */
+    ivaNote,
+    /** IVA amount and total, only meaningful when IVA is charged on top. */
+    iva: plan.ivaIncluded === false ? formatColones(iva) : null,
+    total: plan.ivaIncluded === false ? formatColones(plan.amountColones + iva) : base,
+    /** "₡10.000/mes" (+ " + IVA" / " (IVA incluido)") */
+    short: `${base}/mes${plan.ivaIncluded === true ? ' (IVA incluido)' : plan.ivaIncluded === false ? ' + IVA' : ''}`,
+    /** One sentence for docs: "₡10.000 al mes" / "₡10.000 al mes, IVA incluido" / "₡10.000 + IVA (13%) = ₡11.300 al mes" */
+    math:
+      plan.ivaIncluded === false
+        ? `${base} + IVA (${ivaPercent}) = ${formatColones(plan.amountColones + iva)} al mes`
+        : plan.ivaIncluded === true
+          ? `${base} al mes, IVA incluido`
+          : `${base} al mes`,
   }
 }

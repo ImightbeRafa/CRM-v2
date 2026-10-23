@@ -166,6 +166,7 @@ export function AiUsagePanel() {
   // Only the inbox agent is paused by the allowance (Lane D); helpers for accounts without an agent are not.
   const agentPauses = data.enforce && data.agentEnabled && !data.exempt
   const creditLeft = Math.max(0, d.creditMicros - d.billedMicros)
+  const hasFree = data.rate.freeMonthlyMicros > 0
 
   return (
     <div className="space-y-5">
@@ -237,8 +238,10 @@ export function AiUsagePanel() {
           <p className="text-[12px] font-medium text-slate-500">Crédito que te queda</p>
           <p className="mt-1 text-[26px] font-semibold tracking-tight text-slate-900">{money(creditLeft)}</p>
           <p className="text-[12px] text-slate-500">
-            de {money(d.creditMicros)}: {money(data.rate.freeMonthlyMicros)} gratis este mes
-            {data.balanceMicros > 0 ? ` + ${money(data.balanceMicros)} prepago` : ''}
+            {/* No free credit by default (Rafael 2026-10-23): only mention it when the owner sets one. */}
+            {hasFree
+              ? `de ${money(d.creditMicros)}: ${money(data.rate.freeMonthlyMicros)} gratis este mes${data.balanceMicros > 0 ? ` + ${money(data.balanceMicros)} prepago` : ''}`
+              : 'Saldo prepago para la IA'}
           </p>
         </div>
         <div className={card}>
@@ -291,14 +294,18 @@ export function AiUsagePanel() {
           <dd className="text-right font-medium tabular-nums text-slate-900">{formatMarkup(data.rate.markupBps)}</dd>
           <dt className="border-t border-slate-100 pt-2 text-slate-900">Uso del mes (antes de IVA)</dt>
           <dd className="border-t border-slate-100 pt-2 text-right font-semibold tabular-nums text-slate-900">{money(d.billedMicros)}</dd>
-          <dt className="text-slate-600">Crédito gratis del mes</dt>
-          <dd className="text-right tabular-nums text-slate-900">− {money(Math.min(d.billedMicros, data.rate.freeMonthlyMicros))}</dd>
+          {hasFree && (
+            <>
+              <dt className="text-slate-600">Crédito gratis del mes</dt>
+              <dd className="text-right tabular-nums text-slate-900">− {money(Math.min(d.billedMicros, data.rate.freeMonthlyMicros))}</dd>
+            </>
+          )}
         </dl>
         <p className="mt-3 text-[12px] leading-relaxed text-slate-500">
           El IVA ({ivaPct} %) se cobra una sola vez, al comprar créditos. El asistente del equipo, las pruebas del agente y las
           plantillas de WhatsApp están incluidos y no gastan crédito.
           {data.nextRate &&
-            ` Desde ${monthLabel(data.nextRate.periodKey)}: margen ${formatMarkup(data.nextRate.markupBps)} y ${money(data.nextRate.freeMonthlyMicros)} gratis por mes.`}
+            ` Desde ${monthLabel(data.nextRate.periodKey)}: margen ${formatMarkup(data.nextRate.markupBps)}${data.nextRate.freeMonthlyMicros > 0 ? ` y ${money(data.nextRate.freeMonthlyMicros)} gratis por mes` : ''}.`}
         </p>
       </section>
 
@@ -339,8 +346,8 @@ export function AiUsagePanel() {
               <Sparkles className="h-4 w-4 text-indigo-500" aria-hidden /> ¿Querés un agente de ventas?
             </h2>
             <p className="mt-1 text-[13px] text-slate-500">
-              Tu plan incluye {money(data.rate.freeMonthlyMicros)} de IA al mes para las funciones de ayuda. Para un agente que atienda tus
-              chats, lo construimos con vos y pagás solo lo que usa.
+              {hasFree ? `Tu plan incluye ${money(data.rate.freeMonthlyMicros)} de IA al mes para las funciones de ayuda. ` : ''}Para un
+              agente que atienda tus chats, lo construimos con vos y pagás solo la IA que usa, con créditos prepagados.
             </p>
             <Link href="/config?tab=agentes" className={`${auroraBtnSecondary} mt-3`}>
               Quiero mi agente

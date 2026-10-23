@@ -5,6 +5,10 @@ import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { CheckCircle, Loader2 } from 'lucide-react';
+import { planPriceLabels } from '@/lib/pricing/plan';
+
+// The plan price comes from the single price source (src/lib/pricing/plan.ts).
+const PRICE = planPriceLabels();
 
 interface PricingPlan {
   name: string;
@@ -22,7 +26,7 @@ interface PricingPlan {
 const pricingPlans: PricingPlan[] = [
   {
     name: "Prueba Gratis",
-    price: "$0",
+    price: "Gratis",
     period: "",
     description: "7 días gratis con acceso completo",
     features: [
@@ -40,11 +44,11 @@ const pricingPlans: PricingPlan[] = [
   },
   {
     name: "Pro",
-    price: "$20",
-    period: "/mes",
+    price: PRICE.base,
+    period: PRICE.ivaNote ? `/mes (${PRICE.ivaNote})` : "/mes",
     description: "Todo incluido para tu negocio",
     features: [
-      "Usuarios ilimitados",
+      "Hasta 25 usuarios",
       "Pedidos ilimitados",
       "Integración API",
       "Correos de Costa Rica",

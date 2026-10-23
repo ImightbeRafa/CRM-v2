@@ -14,8 +14,11 @@ import { IVA_BPS, ivaCents } from '@/lib/pricing/plan'
 export const MICROS_PER_USD = 1_000_000
 export const MICROS_PER_CENT = 10_000
 
-/** Defaults until the owner saves a rate (Rafael 2026-10-22: markup still open → ×2; "a few" free credits → $1). */
-export const DEFAULT_RATE: AiBillingRate = { periodKey: '2026-01', markupBps: 20_000, freeMonthlyMicros: 1 * MICROS_PER_USD }
+/**
+ * Defaults until the owner saves a rate. Rafael 2026-10-23: markup ×1.5 (live: an agent reply costs ≈ US$0.00077 of
+ * OpenAI) and NO free monthly credit (prepaid top-ups only).
+ */
+export const DEFAULT_RATE: AiBillingRate = { periodKey: '2026-01', markupBps: 15_000, freeMonthlyMicros: 0 }
 export const MIN_MARKUP_BPS = 10_000
 export const MAX_MARKUP_BPS = 100_000
 export const MAX_FREE_MICROS = 1_000 * MICROS_PER_USD
@@ -157,7 +160,9 @@ export function decideCredits(input: {
   const usedPct = capMicros > 0 ? Math.round((billed / capMicros) * 1000) / 10 : billed > 0 ? 100 : 0
   const enforced = input.enforce && !input.exempt
   // A cap of $0 (no free credit, no balance) is "100 % used": the banner must explain any pause.
-  const alert: 0 | 80 | 100 = usedPct >= 100 || remaining <= 0 ? 100 : usedPct >= 80 ? 80 : 0
+  // A $0 cap (no free credit, no balance) is "100 %" only when it can pause the AI or something was spent; otherwise
+  // every business without prepaid credit would see a red alarm at $0 usage.
+  const alert: 0 | 80 | 100 = (usedPct >= 100 && billed > 0) || (remaining <= 0 && enforced) ? 100 : usedPct >= 80 ? 80 : 0
   return {
     creditMicros: credit,
     limitMicros: limit,

@@ -35,6 +35,13 @@
 - scripts/meta-review-demo-seed.ts: fills a test business Rafael created (dry run by default; --apply/--cleanup need META_DEMO_CONFIRM_TENANT; refuses >20 real orders). Demo chats hang on the real test line with demo- customers that the send routes refuse; demo referrals carry no click id, so they are never reported to Meta.
 - Review docs: Human Agent permission text + Video 5, event log step, v4 dashboard steps, servers / retention answers.
 
+## 2026-10-23 — Pricing: ₡10.000/mes everywhere, no free AI credit, markup ×1.5 (Lane H; no Tilopay change, no SQL)
+
+- Rafael 2026-10-23: the price is what Tilopay charges, ₡10.000/mes. `src/lib/pricing/plan.ts` now holds `amountColones: 10_000` (CRC) and `ivaIncluded: true` (Rafael 2026-10-23: IVA is included) → "₡10.000/mes (IVA incluido)" everywhere; the $20 + IVA / $22.60 wording is gone. The flag also supports `false` ("+ IVA" with the 13 % math) and `null` (say nothing). `LEGACY_SUBSCRIPTION_CRC` = the plan amount; the Tilopay route is unchanged (test checks both are 10000).
+- Surfaces: /home-preview pricing card + hero, the live /home pricing (`SimplePricingSection` no longer hard-codes "$20"), BillingDashboard (price label, no separate "cobro en Tilopay" line), docs via `<PlanPrice/>`.
+- AI: default rate markup ×1.5 and free monthly credit $0 (`DEFAULT_RATE`; owner card defaults 1.5 / 0). The usage page and the landing only mention a free credit when the owner sets one; landing says "IA por uso, con créditos prepagados".
+- Verifier fixes: a $0 cap only shows the 100 % alarm when the AI can actually pause or something was spent (no red banner for every account without prepaid credit); the owner card warns that enabling the pause with free credit $0 pauses agent businesses without balance immediately (top them up or exempt them first); live /home free card says "Gratis" and "Hasta 25 usuarios" (also BillingDashboard); docs use the sentence form "(₡10.000 al mes, IVA incluido)".
+- Tests: home-pricing (colones, IVA flag states, /home has no hand-typed price, no "usuarios ilimitados" on /home or billing), ai-billing (+1 defaults incl. enforce on/off at a $0 cap).
 ## 2026-10-22 — Home v2 at /home-preview: live demos, agent explainer, ops showcase, "Próximamente" (Lane H; preview only, /home unchanged)
 
 - `/home-preview` (noindex, public, no nav link) now renders `src/components/landing-v2/**` instead of the #123 page the wave moved there (0ee42805). `/home` (Release 1 page) is untouched; the swap is one commit when Rafael approves.

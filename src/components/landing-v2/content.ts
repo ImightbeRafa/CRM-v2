@@ -212,7 +212,7 @@ export const PRICING = {
     'Correos de Costa Rica, mensajería y contra entrega',
     'Pedidos ilimitados y hasta 25 usuarios',
     'Reportes, inventario y clientes',
-    'Créditos de IA incluidos cada mes',
+    'IA por uso, con créditos prepagados',
   ],
   agentTitle: 'Agente de IA',
   agentPrice: 'Hecho para vos',
@@ -228,7 +228,7 @@ export const PRICING = {
 export const FAQ = [
   {
     q: '¿Qué incluye el plan?',
-    a: 'Todo Betsy: bandeja de WhatsApp e Instagram, pedidos, producción, envíos, reportes, hasta 25 usuarios y créditos de IA cada mes para las funciones de ayuda. Los agentes de ventas se construyen aparte.',
+    a: 'Todo Betsy: bandeja de WhatsApp e Instagram, pedidos, producción, envíos, reportes, hasta 25 usuarios. La IA se paga por uso con créditos prepagados, y los agentes de ventas se construyen aparte.',
   },
   {
     q: '¿Cómo se cobra la IA?',

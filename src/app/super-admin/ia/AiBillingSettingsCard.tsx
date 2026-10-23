@@ -22,7 +22,7 @@ export function AiBillingSettingsCard({ tenants }: { tenants: Array<{ id: string
   const [p, setP] = useState<Payload | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [form, setForm] = useState({ markup: '2', free: '1', packs: '10, 25, 50', ceiling: '', enforce: false, effectiveNow: false })
+  const [form, setForm] = useState({ markup: '1.5', free: '0', packs: '10, 25, 50', ceiling: '', enforce: false, effectiveNow: false })
   const [adj, setAdj] = useState({ tenantId: '', amount: '', note: '' })
 
   const load = useCallback(async () => {
@@ -131,6 +131,12 @@ export function AiBillingSettingsCard({ tenants }: { tenants: Array<{ id: string
             <input type="checkbox" checked={form.enforce} onChange={(e) => setForm({ ...form, enforce: e.target.checked })} />
             Pausar los agentes al llegar al tope o sin saldo
           </label>
+          {Number(form.free) === 0 && (
+            <p className="w-full text-[12px] text-amber-800">
+              Con crédito gratis en $0, al activar la pausa los negocios con agente que no tengan saldo se pausan de inmediato.
+              Antes, cargales crédito (ajuste manual) o agregalos a AI_ALLOWANCE_EXEMPT_TENANTS.
+            </p>
+          )}
           <label className="flex items-center gap-2 text-amber-800">
             <input type="checkbox" checked={form.effectiveNow} onChange={(e) => setForm({ ...form, effectiveNow: e.target.checked })} />
             Aplicar la tarifa a ESTE mes (solo emergencias)

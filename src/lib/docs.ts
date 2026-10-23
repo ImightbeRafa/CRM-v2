@@ -99,7 +99,7 @@ export function getAllDocs(filter?: 'public' | 'private'): DocMeta[] {
  */
 export function expandDocPlaceholders(content: string): string {
   const labels = planPriceLabels();
-  return content.replace(/<PlanPrice(?:\s+show="(base|iva|total|short|math)")?\s*\/>/g, (_m, show?: keyof typeof labels) => labels[show ?? 'short']);
+  return content.replace(/<PlanPrice(?:\s+show="(base|iva|total|short|math)")?\s*\/>/g, (_m, show?: 'base' | 'iva' | 'total' | 'short' | 'math') => labels[show ?? 'short'] ?? '');
 }
 
 export function getDocBySlug(slug: string): DocPage | null {

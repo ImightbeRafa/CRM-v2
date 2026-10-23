@@ -447,13 +447,13 @@ function ConfigPageInner() {
       if (result.status === 'success') {
         await loadData(); // Reload data
         setSelectedFields([]);
-        notify(`✅ Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
+        notify(`Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
       } else {
-        notify(`❌ Error: ${result.error || result.message}`);
+        notify(`Error: ${result.error || result.message}`);
       }
     } catch (error) {
       console.error('Bulk delete fields error:', error);
-      notify('❌ Error al eliminar campos. Por favor intente de nuevo.');
+      notify('Error al eliminar campos. Por favor intente de nuevo.');
     }
   }
 
@@ -479,13 +479,13 @@ function ConfigPageInner() {
       if (result.status === 'success') {
         await loadData(); // Reload data
         setSelectedOptionSets([]);
-        notify(`✅ Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
+        notify(`Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
       } else {
-        notify(`❌ Error: ${result.error || result.message}`);
+        notify(`Error: ${result.error || result.message}`);
       }
     } catch (error) {
       console.error('Bulk delete option sets error:', error);
-      notify('❌ Error al eliminar conjuntos de opciones. Por favor intente de nuevo.');
+      notify('Error al eliminar conjuntos de opciones. Por favor intente de nuevo.');
     }
   }
 
@@ -511,13 +511,13 @@ function ConfigPageInner() {
       if (result.status === 'success') {
         await loadData(); // Reload data
         setSelectedShipping([]);
-        notify(`✅ Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
+        notify(`Eliminación completada: ${result.data.success} exitosos, ${result.data.failed} fallidos`);
       } else {
-        notify(`❌ Error: ${result.error || result.message}`);
+        notify(`Error: ${result.error || result.message}`);
       }
     } catch (error) {
       console.error('Bulk delete shipping error:', error);
-      notify('❌ Error al eliminar métodos de envío. Por favor intente de nuevo.');
+      notify('Error al eliminar métodos de envío. Por favor intente de nuevo.');
     }
   }
 
@@ -1026,13 +1026,13 @@ function ConfigPageInner() {
                   await loadData()
                   setShowFieldForm(false)
                   setEditingField(null)
-                  notify(editingField ? '✅ Campo actualizado' : '✅ Campo creado')
+                  notify(editingField ? 'Campo actualizado' : 'Campo creado')
                 } else {
-                  notify(`❌ Error: ${json.error || 'No se pudo guardar el campo'}`)
+                  notify(`Error: ${json.error || 'No se pudo guardar el campo'}`)
                 }
               } catch (err) {
                 console.error('Field save error:', err)
-                notify('❌ Error al guardar campo')
+                notify('Error al guardar campo')
               }
             }}>
               <div className="space-y-4">
@@ -1176,7 +1176,7 @@ function ConfigPageInner() {
                 })
                 const json = await res.json()
                 if (!(res.ok && json.status === 'success')) {
-                  notify(`❌ Error: ${json.error || 'No se pudo guardar el conjunto'}`)
+                  notify(`Error: ${json.error || 'No se pudo guardar el conjunto'}`)
                   return
                 }
 
@@ -1203,10 +1203,10 @@ function ConfigPageInner() {
                 setShowOptionSetForm(false)
                 setEditingOptionSet(null)
                 setOptionSetOptions([])
-                notify(editingOptionSet ? '✅ Conjunto actualizado' : '✅ Conjunto creado')
+                notify(editingOptionSet ? 'Conjunto actualizado' : 'Conjunto creado')
               } catch (err) {
                 console.error('Option set save error:', err)
-                notify('❌ Error al guardar conjunto de opciones')
+                notify('Error al guardar conjunto de opciones')
               }
             }}>
               <div className="space-y-4">
@@ -1353,13 +1353,13 @@ function ConfigPageInner() {
                   await loadData()
                   setShowShippingForm(false)
                   setEditingShipping(null)
-                  notify(editingShipping ? '✅ Método actualizado' : '✅ Método creado')
+                  notify(editingShipping ? 'Método actualizado' : 'Método creado')
                 } else {
-                  notify(`❌ Error: ${json.error || 'No se pudo guardar el método de envío'}`)
+                  notify(`Error: ${json.error || 'No se pudo guardar el método de envío'}`)
                 }
               } catch (err) {
                 console.error('Shipping save error:', err)
-                notify('❌ Error al guardar método de envío')
+                notify('Error al guardar método de envío')
               }
             }}>
               <div className="space-y-4">

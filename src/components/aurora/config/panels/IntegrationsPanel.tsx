@@ -18,6 +18,7 @@ import {
   AlertCircle,
   CheckCircle,
   Globe,
+  Check, Minus, CheckCircle2, XCircle, KeyRound, AlertTriangle, ServerCrash,
 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/app/components/ui/alert';
 import { AuroraErrorState } from '../../states/AuroraErrorState';
@@ -154,12 +155,12 @@ export function IntegrationsPanel() {
       const data = await response.json();
 
       if (response.ok) {
-        setTestResult(`✅ Conexión exitosa! El endpoint está funcionando correctamente.\n\nRespuesta: ${JSON.stringify(data, null, 2)}`);
+        setTestResult(`Conexión exitosa! El endpoint está funcionando correctamente.\n\nRespuesta: ${JSON.stringify(data, null, 2)}`);
       } else {
-        setTestResult(`❌ Error: ${data.error || 'Unknown error'}\n\nDetalles: ${JSON.stringify(data, null, 2)}`);
+        setTestResult(`Error: ${data.error || 'Unknown error'}\n\nDetalles: ${JSON.stringify(data, null, 2)}`);
       }
     } catch (error) {
-      setTestResult(`❌ Error de conexión: ${error instanceof Error ? error.message : 'Unknown error'}\n\nNo se pudo conectar al endpoint. Verifica que el servidor esté funcionando.`);
+      setTestResult(`Error de conexión: ${error instanceof Error ? error.message : 'Unknown error'}\n\nNo se pudo conectar al endpoint. Verifica que el servidor esté funcionando.`);
     } finally {
       setTesting(false);
     }
@@ -483,12 +484,12 @@ export function IntegrationsPanel() {
                 <tbody>
                   <tr className="border-b border-border">
                     <td className="py-1 pr-4 font-mono">Content-Type</td>
-                    <td className="py-1 pr-4">✅ Sí</td>
+                    <td className="py-1 pr-4"><span className="inline-flex items-center gap-1 text-emerald-700"><Check className="h-3.5 w-3.5" aria-hidden /> Sí</span></td>
                     <td className="py-1">application/json</td>
                   </tr>
                   <tr>
                     <td className="py-1 pr-4 font-mono">x-api-key</td>
-                    <td className="py-1 pr-4">✅ Sí</td>
+                    <td className="py-1 pr-4"><span className="inline-flex items-center gap-1 text-emerald-700"><Check className="h-3.5 w-3.5" aria-hidden /> Sí</span></td>
                     <td className="py-1">Tu API key de Betsy (empieza con bts_)</td>
                   </tr>
                 </tbody>
@@ -553,25 +554,25 @@ export function IntegrationsPanel() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  <tr><td className="py-1 pr-4 font-mono">orderId</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">ID único de tu sistema</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">customer.name</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Nombre del cliente</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">customer.phone</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Teléfono del cliente</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">customer.email</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Email válido del cliente</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">product.name</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Nombre del producto</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">product.quantity</td><td className="py-1 pr-4">number</td><td className="py-1 pr-4">✅</td><td className="py-1">Debe ser positivo</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">product.unitPrice</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Acepta &quot;₡9.900&quot; o &quot;GRATIS&quot;</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">shipping.cost</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Acepta &quot;GRATIS&quot; para envío gratis</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">shipping.courier</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">❌</td><td className="py-1">Nombre del courier</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">shipping.address.*</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">province, canton, district, fullAddress</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">total</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Total del pedido (ej: &quot;₡9.900&quot;)</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">payment.method</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Método de pago</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">payment.transactionId</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">ID de transacción</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">payment.status</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Estado del pago</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">payment.date</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">✅</td><td className="py-1">Fecha del pago</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">source</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">❌</td><td className="py-1">Nombre/URL de tu sitio</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">salesChannel</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">❌</td><td className="py-1">Canal de venta</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">seller</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4">❌</td><td className="py-1">Vendedor asignado</td></tr>
-                  <tr><td className="py-1 pr-4 font-mono">metadata</td><td className="py-1 pr-4">object</td><td className="py-1 pr-4">❌</td><td className="py-1">metadata.comments se guarda como comentario</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">orderId</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Requerido" /></td><td className="py-1">ID único de tu sistema</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">customer.name</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Requerido" /></td><td className="py-1">Nombre del cliente</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">customer.phone</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Requerido" /></td><td className="py-1">Teléfono del cliente</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">customer.email</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Requerido" /></td><td className="py-1">Email válido del cliente</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">product.name</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Requerido" /></td><td className="py-1">Nombre del producto</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">product.quantity</td><td className="py-1 pr-4">number</td><td className="py-1 pr-4"><Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Requerido" /></td><td className="py-1">Debe ser positivo</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">product.unitPrice</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Requerido" /></td><td className="py-1">Acepta &quot;₡9.900&quot; o &quot;GRATIS&quot;</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">shipping.cost</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Requerido" /></td><td className="py-1">Acepta &quot;GRATIS&quot; para envío gratis</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">shipping.courier</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Minus className="h-3.5 w-3.5 text-slate-400" aria-label="Opcional" /></td><td className="py-1">Nombre del courier</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">shipping.address.*</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Requerido" /></td><td className="py-1">province, canton, district, fullAddress</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">total</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Requerido" /></td><td className="py-1">Total del pedido (ej: &quot;₡9.900&quot;)</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">payment.method</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Requerido" /></td><td className="py-1">Método de pago</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">payment.transactionId</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Requerido" /></td><td className="py-1">ID de transacción</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">payment.status</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Requerido" /></td><td className="py-1">Estado del pago</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">payment.date</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Requerido" /></td><td className="py-1">Fecha del pago</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">source</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Minus className="h-3.5 w-3.5 text-slate-400" aria-label="Opcional" /></td><td className="py-1">Nombre/URL de tu sitio</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">salesChannel</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Minus className="h-3.5 w-3.5 text-slate-400" aria-label="Opcional" /></td><td className="py-1">Canal de venta</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">seller</td><td className="py-1 pr-4">string</td><td className="py-1 pr-4"><Minus className="h-3.5 w-3.5 text-slate-400" aria-label="Opcional" /></td><td className="py-1">Vendedor asignado</td></tr>
+                  <tr><td className="py-1 pr-4 font-mono">metadata</td><td className="py-1 pr-4">object</td><td className="py-1 pr-4"><Minus className="h-3.5 w-3.5 text-slate-400" aria-label="Opcional" /></td><td className="py-1">metadata.comments se guarda como comentario</td></tr>
                 </tbody>
               </table>
             </div>
@@ -579,7 +580,7 @@ export function IntegrationsPanel() {
             {/* Response Formats */}
             <h4 className="text-lg font-semibold mt-6">Respuestas del API:</h4>
 
-            <p className="text-sm font-medium text-green-700 mt-3 mb-1">✅ Éxito (200)</p>
+            <p className="text-sm font-medium text-green-700 mt-3 mb-1 flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />Éxito (200)</p>
             <pre className="bg-green-50 border border-green-200 p-3 rounded text-xs overflow-x-auto">
               {`{
   "success": true,
@@ -590,7 +591,7 @@ export function IntegrationsPanel() {
 }`}
             </pre>
 
-            <p className="text-sm font-medium text-red-700 mt-3 mb-1">❌ Error de validación (400)</p>
+            <p className="text-sm font-medium text-red-700 mt-3 mb-1 flex items-center gap-1.5"><XCircle className="h-4 w-4 shrink-0" aria-hidden />Error de validación (400)</p>
             <pre className="bg-red-50 border border-red-200 p-3 rounded text-xs overflow-x-auto">
               {`{
   "error": "Invalid order data",
@@ -600,19 +601,19 @@ export function IntegrationsPanel() {
 }`}
             </pre>
 
-            <p className="text-sm font-medium text-red-700 mt-3 mb-1">🔑 Error de autenticación (401)</p>
+            <p className="text-sm font-medium text-red-700 mt-3 mb-1 flex items-center gap-1.5"><KeyRound className="h-4 w-4 shrink-0" aria-hidden />Error de autenticación (401)</p>
             <pre className="bg-red-50 border border-red-200 p-3 rounded text-xs overflow-x-auto">
               {`{ "error": "Missing API key. Include x-api-key header." }
 // o
 { "error": "Invalid API key" }`}
             </pre>
 
-            <p className="text-sm font-medium text-yellow-700 mt-3 mb-1">⚠️ Pedido duplicado (409)</p>
+            <p className="text-sm font-medium text-yellow-700 mt-3 mb-1 flex items-center gap-1.5"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />Pedido duplicado (409)</p>
             <pre className="bg-yellow-50 border border-yellow-200 p-3 rounded text-xs overflow-x-auto">
               {`{ "error": "Order already exists", "orderId": "799360" }`}
             </pre>
 
-            <p className="text-sm font-medium text-red-700 mt-3 mb-1">💥 Error del servidor (500)</p>
+            <p className="text-sm font-medium text-red-700 mt-3 mb-1 flex items-center gap-1.5"><ServerCrash className="h-4 w-4 shrink-0" aria-hidden />Error del servidor (500)</p>
             <pre className="bg-red-50 border border-red-200 p-3 rounded text-xs overflow-x-auto">
               {`{ "error": "Internal server error", "message": "...", "processingTime": 150 }`}
             </pre>

@@ -7,7 +7,7 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
-import { Check, Copy, MessageCircle, Plus, RefreshCw, Repeat, Trash2 } from 'lucide-react'
+import { Check, Copy, MessageCircle, Plus, RefreshCw, Repeat, Trash2, Lock } from 'lucide-react'
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext'
 import { StatsCard } from '@/components/aurora/estadisticas/StatsCard'
 import { AuroraEmptyState } from '@/components/aurora/states'
@@ -480,7 +480,7 @@ function View() {
       <InsightsHeader title="Clientes" subtitle="A quién escribirle hoy para que vuelva a comprar" />
       <div className="mx-auto w-full max-w-[1200px] space-y-4 px-4 pb-6 pt-5 md:px-7">
         {session && !canSeeCustomers ? (
-          <AuroraEmptyState tone="neutral" icon="🔒" title="Sin acceso a clientes" description="Tu rol no puede ver datos de clientes." />
+          <AuroraEmptyState tone="neutral" icon={<Lock className="h-6 w-6" aria-hidden />} title="Sin acceso a clientes" description="Tu rol no puede ver datos de clientes." />
         ) : session ? (
           <>
             <ReorderSection canEditRules={canEditRules} />

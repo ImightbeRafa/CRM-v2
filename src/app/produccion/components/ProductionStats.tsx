@@ -15,7 +15,8 @@ import {
   DollarSign,
   Users,
   Calendar,
-  BarChart3
+  BarChart3,
+  MousePointerClick,
 } from 'lucide-react';
 
 interface ProductionStatsProps {
@@ -237,7 +238,7 @@ export const ProductionStats = React.memo(function ProductionStats({ orders, onC
                   {Math.abs(trend.value)}%
                 </div>
               )}
-              {clickable && <p className="text-xs text-blue-500 dark:text-blue-400 mt-1">👆 Click para filtrar</p>}
+              {clickable && <p className="mt-1 flex items-center gap-1 text-xs text-blue-500 dark:text-blue-400"><MousePointerClick className="h-3.5 w-3.5" aria-hidden /> Click para filtrar</p>}
             </div>
             <div
               className={`p-2 rounded-full ${

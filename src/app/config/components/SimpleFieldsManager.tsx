@@ -22,7 +22,8 @@ import {
   Truck,
   Settings,
   Loader2,
-  DollarSign
+  DollarSign,
+  ClipboardList, AlertTriangle, CheckCircle2, X, Save, Check,
 } from 'lucide-react';
 
 interface Option {
@@ -221,7 +222,7 @@ export function SimpleFieldsManager() {
       console.log('📥 Field creation response:', fieldJson);
       if (fieldJson.status === 'success') {
         toast({
-          title: "✅ Campo agregado",
+          title: "Campo agregado",
           description: `${presetField.label} se agregó correctamente`
         });
         await loadData();
@@ -248,7 +249,7 @@ export function SimpleFieldsManager() {
       
       if (json.status === 'success') {
         toast({
-          title: "✅ Campo eliminado",
+          title: "Campo eliminado",
           description: "El campo se eliminó correctamente"
         });
         await loadData();
@@ -350,7 +351,7 @@ export function SimpleFieldsManager() {
       console.log('📥 Response JSON:', json);
       
       if (json.status === 'success') {
-        toast({ title: "✅ Opción agregada" });
+        toast({ title: "Opción agregada" });
         setNewOptionLabel('');
         setNewOptionPrice(0);
         await loadFieldOptions(editingField.optionSetId);
@@ -378,7 +379,7 @@ export function SimpleFieldsManager() {
       
       const json = await res.json();
       if (json.status === 'success') {
-        toast({ title: "✅ Opción actualizada" });
+        toast({ title: "Opción actualizada" });
         setEditingOptionId(null);
         if (editingField?.optionSetId) {
           await loadFieldOptions(editingField.optionSetId);
@@ -399,7 +400,7 @@ export function SimpleFieldsManager() {
       const json = await res.json();
       
       if (json.status === 'success') {
-        toast({ title: "✅ Opción eliminada" });
+        toast({ title: "Opción eliminada" });
         if (editingField?.optionSetId) {
           await loadFieldOptions(editingField.optionSetId);
         }
@@ -629,7 +630,7 @@ export function SimpleFieldsManager() {
                   
                   if (json.status === 'success') {
                     toast({
-                      title: "✅ Campo creado",
+                      title: "Campo creado",
                       description: "El campo personalizado se creó correctamente"
                     });
                     setShowCustomFieldForm(false);
@@ -752,14 +753,14 @@ export function SimpleFieldsManager() {
                             }}
                             className="flex-1 border-2 border-indigo-400 text-indigo-700 hover:bg-indigo-100"
                           >
-                            📋 Ver todos los conjuntos
+                            <ClipboardList className="h-4 w-4 shrink-0" aria-hidden /> Ver todos los conjuntos
                           </Button>
                         </div>
 
                         {!newFieldOptionSetId && (
                           <div className="bg-amber-50 border-l-4 border-amber-400 p-3 rounded">
                             <p className="text-xs text-amber-800 font-medium flex items-center gap-2">
-                              <span className="text-lg">⚠️</span>
+                              <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
                               Debes seleccionar o crear un conjunto de opciones antes de guardar
                             </p>
                           </div>
@@ -767,7 +768,7 @@ export function SimpleFieldsManager() {
                         {newFieldOptionSetId && (
                           <div className="bg-green-50 border-l-4 border-green-400 p-3 rounded">
                             <p className="text-xs text-green-800 font-medium flex items-center gap-2">
-                              <span className="text-lg">✓</span>
+                              <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
                               Conjunto &quot;{optionSets.find(s => s.id === newFieldOptionSetId)?.name}&quot; seleccionado
                             </p>
                           </div>
@@ -789,7 +790,7 @@ export function SimpleFieldsManager() {
                             }}
                             className="text-muted-foreground"
                           >
-                            ✕ Cancelar
+                            <X className="h-4 w-4 shrink-0" aria-hidden /> Cancelar
                           </Button>
                         </div>
 
@@ -853,7 +854,7 @@ export function SimpleFieldsManager() {
                                 onClick={() => setQuickOptions(quickOptions.filter((_, i) => i !== idx))}
                                 disabled={quickOptions.length === 1}
                               >
-                                🗑️
+                                <Trash2 className="h-4 w-4" aria-label="Eliminar opción" />
                               </Button>
                             </div>
                           ))}
@@ -916,7 +917,7 @@ export function SimpleFieldsManager() {
                               setQuickOptions([{label: '', value: ''}]);
                               
                               toast({
-                                title: "✅ Conjunto creado",
+                                title: "Conjunto creado",
                                 description: `"${quickOptionSetName}" con ${quickOptions.length} opciones`
                               });
                             } catch (error) {
@@ -929,7 +930,7 @@ export function SimpleFieldsManager() {
                           }}
                           className="w-full bg-purple-600 hover:bg-purple-700"
                         >
-                          💾 Guardar conjunto y usar
+                          <Save className="h-4 w-4 shrink-0" aria-hidden /> Guardar conjunto y usar
                         </Button>
                       </div>
                     )}
@@ -995,7 +996,7 @@ export function SimpleFieldsManager() {
                   
                   if (json.status === 'success') {
                     toast({
-                      title: "✅ Campo actualizado",
+                      title: "Campo actualizado",
                       description: "Los cambios se guardaron correctamente"
                     });
                     setEditingField(null);
@@ -1123,7 +1124,7 @@ export function SimpleFieldsManager() {
                                 }}
                                 className="h-8 px-2 bg-green-600 hover:bg-green-700"
                               >
-                                ✓
+                                <Check className="h-4 w-4" aria-label="Guardar" />
                               </Button>
                               <Button
                                 type="button"
@@ -1132,7 +1133,7 @@ export function SimpleFieldsManager() {
                                 onClick={() => setEditingOptionId(null)}
                                 className="h-8 px-2"
                               >
-                                ✕
+                                <X className="h-4 w-4" aria-label="Cancelar" />
                               </Button>
                             </>
                           ) : (

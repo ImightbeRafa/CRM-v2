@@ -18,7 +18,7 @@ import { useTenantSettings } from '@/app/contexts/TenantSettingsContext';
 import { useConfig } from '@/app/contexts/ConfigContext';
 import { OrderStatus } from '@/app/config/components/StatusManager';
 import { Sale } from '../types/sales';
-import { Loader2, Search, Filter, Download, Printer, Eye, Edit, CheckCircle, Clock, AlertCircle, Truck, Package, Users, TrendingUp, LayoutGrid, List, Kanban, FileText, RefreshCw, Banknote } from 'lucide-react';
+import { Loader2, Search, Filter, Download, Printer, Eye, Edit, CheckCircle, Clock, AlertCircle, Truck, Package, Users, TrendingUp, LayoutGrid, List, Kanban, FileText, RefreshCw, Banknote, Factory } from 'lucide-react';
 import { ProductionOrderWindow } from './ProductionOrderWindow';
 import { useToast } from "@/app/hooks/use-toast";
 import { EnhancedOrderCard } from './EnhancedOrderCard';
@@ -231,7 +231,8 @@ const EnhancedHeader = React.memo(({
     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
       <div className="flex items-center gap-3">
         <CardTitle className="flex items-center gap-2 text-lg">
-          🏭 Producción
+          <Factory className="h-5 w-5 text-slate-500" aria-hidden />
+          Producción
           {loading && <Loader2 className="h-4 w-4 animate-spin" />}
         </CardTitle>
         <Badge variant="outline" className="text-xs">
@@ -667,13 +668,13 @@ export function EnhancedProductionDashboard({
       // Show final result
       if (failCount === 0) {
         toast({
-          title: "✅ Completado",
+          title: "Completado",
           description: `${successCount} órdenes actualizadas exitosamente.`,
         });
       } else {
         toast({
           variant: "destructive",
-          title: "⚠️ Completado con errores",
+          title: "Completado con errores",
           description: `${successCount} exitosos, ${failCount} fallidos.`,
         });
       }

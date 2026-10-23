@@ -3,7 +3,7 @@
 import { MobileCardTable } from '@/components/ui/MobileCardTable';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { RefreshCw, TrendingUp, Users, Building2, ShoppingCart, DollarSign } from 'lucide-react';
+import { RefreshCw, TrendingUp, Users, Building2, ShoppingCart, DollarSign, ShieldCheck } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 
 interface SuperAdminStats {
@@ -110,7 +110,7 @@ export default function SuperAdminDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">🔐 Super Admin Dashboard</h1>
+          <h1 className="flex items-center gap-2 text-3xl font-bold text-foreground"><ShieldCheck className="h-7 w-7 text-slate-500" aria-hidden /> Super Admin Dashboard</h1>
           <p className="text-muted-foreground mt-1">Cross-tenant monitoring and analytics</p>
         </div>
         <div className="flex items-center gap-2">

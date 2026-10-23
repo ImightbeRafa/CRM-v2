@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProductInfo } from './types';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Package } from 'lucide-react';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 
 interface ProductFormProps {
@@ -158,7 +158,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
       <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg">
         <div className="flex justify-between items-start">
           <div>
-            <h3 className="text-lg font-semibold text-blue-800 dark:text-blue-300 mb-2">📦 Información del Producto</h3>
+            <h3 className="text-lg font-semibold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-2"><Package className="h-5 w-5 shrink-0" aria-hidden /> Información del producto</h3>
             <p className="text-sm text-blue-600 dark:text-blue-400">Configure los detalles del producto que está vendiendo</p>
           </div>
           <button

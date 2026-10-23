@@ -2,7 +2,7 @@
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { Button } from './ui/button';
-import { AlertTriangle, RefreshCw, Bug } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Bug, Lightbulb } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
@@ -164,7 +164,7 @@ export class DOMErrorBoundary extends Component<Props, State> {
 
             {isDOMError && (
               <div className="mt-4 text-xs text-gray-500">
-                <p>💡 <strong>Consejo:</strong> Si este error persiste, intenta:</p>
+                <p className="flex items-center gap-1.5"><Lightbulb className="h-4 w-4 shrink-0" aria-hidden /> <strong>Consejo:</strong> Si este error persiste, intenta:</p>
                 <ul className="mt-1 text-left">
                   <li>• Limpiar la caché del navegador</li>
                   <li>• Deshabilitar extensiones temporalmente</li>

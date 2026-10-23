@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  Bot, Copy, Check, RefreshCw, Shield, Users, Sparkles, ArrowLeft, Key, MessageCircle, Send
+  Bot, Copy, Check, RefreshCw, Shield, Users, Sparkles, ArrowLeft, Key, MessageCircle, Send,
+  Lock,
 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -339,7 +340,7 @@ export default function AIAssistantPage() {
         {/* Info Cards */}
         <div className="grid md:grid-cols-2 gap-6 mt-6">
           <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/30 dark:to-blue-950/50 rounded-xl p-6 border border-blue-200/50 dark:border-blue-900">
-            <h3 className="font-bold text-blue-900 dark:text-blue-300 mb-2">✨ Qué puede hacer el bot</h3>
+            <h3 className="font-bold text-blue-900 dark:text-blue-300 mb-2 flex items-center gap-2"><Sparkles className="h-4 w-4 shrink-0" aria-hidden /> Qué puede hacer el bot</h3>
             <ul className="text-blue-800 dark:text-blue-400 text-sm space-y-1">
               <li>• Crear y gestionar órdenes</li>
               <li>• Consultar inventario</li>
@@ -350,7 +351,7 @@ export default function AIAssistantPage() {
           </div>
 
           <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950/30 dark:to-purple-950/50 rounded-xl p-6 border border-purple-200/50 dark:border-purple-900">
-            <h3 className="font-bold text-purple-900 dark:text-purple-300 mb-2">🔒 Seguridad</h3>
+            <h3 className="font-bold text-purple-900 dark:text-purple-300 mb-2 flex items-center gap-2"><Lock className="h-4 w-4 shrink-0" aria-hidden /> Seguridad</h3>
             <ul className="text-purple-800 dark:text-purple-400 text-sm space-y-1">
               <li>• Código único por empresa</li>
               <li>• Registro de todas las acciones</li>

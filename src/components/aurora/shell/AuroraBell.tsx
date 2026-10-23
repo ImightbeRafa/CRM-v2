@@ -52,7 +52,7 @@ export function AuroraBell() {
     if (!night.length) return
     playNotificationChime()
     toast({
-      title: `🌙 ${morningSummaryText(night.length)}`,
+      title: `${morningSummaryText(night.length)}`,
       description: 'Revisalos en el inbox',
       duration: 20_000,
       action: (

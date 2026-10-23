@@ -22,7 +22,8 @@ import {
   Users,
   Package,
   BarChart3,
-  Clock
+  Clock,
+  RefreshCw, Sparkles,
 } from 'lucide-react';
 
 const PRICE = planPriceLabels();
@@ -262,14 +263,14 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
         const result = await response.json();
         
         if (result.status === 'success') {
-          notify('✅ Plan cambiado a FREE exitosamente');
+          notify('Plan cambiado a FREE exitosamente');
           await loadBillingData();
         } else {
-          notify(`❌ Error: ${result.error}`);
+          notify(`Error: ${result.error}`);
         }
       } catch (error) {
         console.error('Error changing plan:', error);
-        notify('❌ Error al cambiar el plan');
+        notify('Error al cambiar el plan');
       } finally {
         setLoading(false);
       }
@@ -309,7 +310,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
 
     // Show important warning about email before redirecting
     const emailWarning = await auroraConfirm(
-      '⚠️ IMPORTANTE: Email para Pago\n\n' +
+      'IMPORTANTE: Email para Pago\n\n' +
       'Cuando hagas el pago en TiloPay, DEBES usar el mismo email con el que inicias sesión en BetsyCRM.\n\n' +
       '¿Continuar al pago?'
     );
@@ -348,19 +349,19 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
       const result = await response.json();
       
       if (result.status === 'success') {
-        let message = '✅ Suscripción cancelada. Mantendrás acceso hasta el fin del período actual.';
+        let message = 'Suscripción cancelada. Mantendrás acceso hasta el fin del período actual.';
         if (result.data?.note) {
-          message += '\n\n⚠️ ' + result.data.note;
+          message += '\n\n' + result.data.note;
         }
         notify(message);
         await loadBillingData();
         setShowCancelDialog(false);
       } else {
-        notify(`❌ Error: ${result.error}`);
+        notify(`Error: ${result.error}`);
       }
     } catch (error) {
       console.error('Error canceling subscription:', error);
-      notify('❌ Error al cancelar la suscripción');
+      notify('Error al cancelar la suscripción');
     } finally {
       setLoading(false);
     }
@@ -460,7 +461,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                   paymentMessage.type === 'error' ? 'text-red-900' :
                   'text-yellow-900'
                 }`}>
-                  {paymentMessage.type === 'success' ? '✅ ' : paymentMessage.type === 'error' ? '❌ ' : 'ℹ️ '}
+                  {paymentMessage.type === 'success' ? '' : paymentMessage.type === 'error' ? '' : ''}
                   {paymentMessage.message}
                 </p>
               </div>
@@ -493,7 +494,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
                 size="sm"
                 className="bg-card hover:bg-muted text-muted-foreground border-border"
               >
-                🔄 Actualizar
+                <RefreshCw className="h-4 w-4 shrink-0" aria-hidden /> Actualizar
               </Button>
               <div className="p-3 bg-blue-50 rounded-lg">
                 <CreditCard className="w-8 h-8 text-blue-600" />
@@ -686,15 +687,15 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
             <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
             <div>
               <h3 className="font-semibold text-yellow-900 mb-2">
-                ⚠️ Importante: Email para Pagos de TiloPay
+                Importante: email para pagos de Tilopay
               </h3>
               <p className="text-sm text-yellow-800 mb-2">
                 Cuando hagas el pago en TiloPay, <strong>debes usar el mismo email de tu cuenta de BetsyCRM</strong>.
               </p>
               
               <p className="text-xs text-yellow-700 font-medium mt-3">
-                ✓ Usa el email con el que inicias sesión en BetsyCRM<br/>
-                ✗ No uses un email diferente al hacer el pago
+                <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 shrink-0" aria-hidden /> Usa el email con el que inicias sesión en BetsyCRM</span>
+                <span className="flex items-center gap-1.5"><X className="h-3.5 w-3.5 shrink-0" aria-hidden /> No uses un email diferente al hacer el pago</span>
               </p>
             </div>
           </div>
@@ -724,7 +725,7 @@ export function BillingDashboard({ tenantId }: BillingDashboardProps) {
               ) : plan.popular ? (
                 <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
                   <Badge className="bg-[#5B3FE0] text-white shadow-sm">
-                    ✨ Todo lo que Necesitas
+                    <Sparkles className="mr-1 h-3.5 w-3.5" aria-hidden /> Todo lo que necesitas
                   </Badge>
                 </div>
               ) : null}

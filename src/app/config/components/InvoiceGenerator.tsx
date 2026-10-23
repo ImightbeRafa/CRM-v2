@@ -17,7 +17,8 @@ import {
   DollarSign,
   User,
   Package,
-  Printer
+  Printer,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface Order {
@@ -236,16 +237,16 @@ export function InvoiceGenerator({
       
       if (result.status === 'success') {
         setGeneratedInvoices([result.data]);
-        notify('✅ Factura generada exitosamente!');
+        notify('Factura generada exitosamente!');
         if (onInvoiceGenerated) {
           onInvoiceGenerated([result.data.id]);
         }
       } else {
-        notify(`❌ Error: ${result.error}`);
+        notify(`Error: ${result.error}`);
       }
     } catch (error) {
       console.error('Error generating invoice:', error);
-      notify('❌ Error al generar factura');
+      notify('Error al generar factura');
     } finally {
       setIsGenerating(false);
     }
@@ -253,7 +254,7 @@ export function InvoiceGenerator({
 
   const handleGenerateBulk = async () => {
     if (selectedOrders.length === 0) {
-      notify('⚠️ Selecciona al menos una orden');
+      notify('Selecciona al menos una orden');
       return;
     }
 
@@ -297,16 +298,16 @@ export function InvoiceGenerator({
       
       if (result.status === 'success') {
         setGeneratedInvoices(result.data);
-        notify(`✅ ${result.data.length} facturas generadas exitosamente!`);
+        notify(`${result.data.length} facturas generadas exitosamente!`);
         if (onInvoiceGenerated) {
           onInvoiceGenerated(result.data.map((inv: any) => inv.id));
         }
       } else {
-        notify(`❌ Error: ${result.error}`);
+        notify(`Error: ${result.error}`);
       }
     } catch (error) {
       console.error('Error generating invoices:', error);
-      notify('❌ Error al generar facturas');
+      notify('Error al generar facturas');
     } finally {
       setIsGenerating(false);
     }
@@ -314,17 +315,17 @@ export function InvoiceGenerator({
 
   const validateInvoice = (): boolean => {
     if (!currentInvoice.customerName.trim()) {
-      notify('⚠️ El nombre del cliente es requerido');
+      notify('El nombre del cliente es requerido');
       return false;
     }
     
     if (currentInvoice.items.length === 0) {
-      notify('⚠️ Agrega al menos un artículo');
+      notify('Agrega al menos un artículo');
       return false;
     }
     
     if (currentInvoice.items.some(item => !item.description.trim() || item.quantity <= 0 || item.unitPrice < 0)) {
-      notify('⚠️ Todos los artículos deben tener descripción, cantidad y precio válidos');
+      notify('Todos los artículos deben tener descripción, cantidad y precio válidos');
       return false;
     }
     
@@ -343,7 +344,7 @@ export function InvoiceGenerator({
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error downloading PDF:', error);
-      notify('❌ Error al descargar PDF');
+      notify('Error al descargar PDF');
     }
   };
 
@@ -361,13 +362,13 @@ export function InvoiceGenerator({
       const result = await response.json();
       
       if (result.status === 'success') {
-        notify('✅ Factura enviada por email!');
+        notify('Factura enviada por email!');
       } else {
-        notify(`❌ Error: ${result.error}`);
+        notify(`Error: ${result.error}`);
       }
     } catch (error) {
       console.error('Error emailing invoice:', error);
-      notify('❌ Error al enviar email');
+      notify('Error al enviar email');
     }
   };
 
@@ -806,8 +807,8 @@ export function InvoiceGenerator({
           {generatedInvoices.length > 0 && (
             <Card className="mt-6 bg-green-50 border-green-200">
               <CardHeader>
-                <CardTitle className="text-green-900">
-                  ✅ Facturas Generadas Exitosamente
+                <CardTitle className="flex items-center gap-2 text-green-900">
+                  <CheckCircle2 className="h-5 w-5 shrink-0" aria-hidden /> Facturas generadas
                 </CardTitle>
                 <CardDescription>
                   {generatedInvoices.length} factura(s) creadas

@@ -271,7 +271,7 @@ const MONEY_RE = /[₡¢$]\s?\d|\d[\d.,]*\s*(colones|crc|usd)/i
 /** Deals the agent may never invent (fixed rule 12, INT-72): discounts, promos, free shipping, gifts, "te lo dejo en". */
 const DEAL_RE =
   // No bare "gratis" / "%" (free pickup, "100% algodón" are fine); deal phrasing only.
-  /(?<![\p{L}])(descuentos?|promoci[oó]n(es)?\s+especial|oferta\s+especial|precio\s+especial|rebaj\p{L}*|env[ií]os?\s+(gratis|gratuitos?|sin\s+costo|de\s+regalo|por\s+la\s+casa)|(sale|va|queda)\s+gratis\s+el\s+env[ií]o|dos\s+por\s+uno|tres\s+por\s+dos|mitad\s+de\s+precio|medio\s+precio|te (lo|la|los|las) (dejo|rebajo|regalo)|te regalo|de regalo|por la casa|sin cobrarte|te hago (un )?precio|2x1|3x2|\d{1,2}\s?%\s*(de\s+)?(descuento|off|menos))(?![\p{L}])/iu
+  /(?<![\p{L}])(descuentos?|promoci[oó]n(es)?\s+especial|oferta\s+especial|precio\s+especial|rebaj\p{L}*|env[ií]os?\s+(gratis|gratuitos?|sin\s+costo|de\s+regalo|por\s+la\s+casa)|(sale|va|queda)\s+gratis\s+el\s+env[ií]o|dos\s+por\s+uno|tres\s+por\s+dos|mitad\s+de\s+precio|medio\s+precio|te (lo|la|los|las) (dejo|rebajo|regalo)|te regalo|de regalo|por la casa|sin cobrarte|te hago (un )?precio|te\s+(?:hago|dejo|doy)\s+(?:un\s+)?\d{1,2}\s?%|2x1|3x2|\d{1,2}\s?%\s*(de\s+)?(descuento|off|menos))(?![\p{L}])/iu
 const DEAL_ALL_RE = new RegExp(DEAL_RE.source, 'giu')
 const FREE_SHIPPING_DEAL_RE = /^(env[ií]os?\s+(gratis|gratuitos?|sin\s+costo)|(sale|va|queda)\s+gratis\s+el\s+env[ií]o)$/iu
 const SPECIAL_PRICE_DEAL_RE = /^(precio\s+especial|promoci[oó]n(es)?\s+especial|oferta\s+especial)$/iu
@@ -318,43 +318,59 @@ export function freeShippingWording(text: string): Array<{ index: number; end: n
 }
 
 /**
+ * Lane C D6, closed allowlist (Verifier #128-1, SecureDog #128 r1): the store saying it has NO discount is not an offer
+ * — but only a sentence that is a closed refusal from start to end ("No manejamos descuentos", "Por ahora no tenemos
+ * promociones ni descuentos 😊", "No hay descuento, pero el combo sale ₡32 800"), and only when nothing anywhere else
+ * in the reply turns it back into an offer ("… Pero para vos sí", a %, "te lo dejo", "cortesía"). Anything else is
+ * judged as a deal (a false hit only triggers the normal repair).
+ */
+const DEAL_NOUN = String.raw`(?:descuentos?|rebajas?|promoci[oó]n(?:es)?(?:\s+especial(?:es)?)?|ofertas?(?:\s+especial(?:es)?)?|precios?\s+especial(?:es)?)`
+const DEAL_TIME_TAIL = String.raw`(?:por\s+ahora|de\s+momento|por\s+el\s+momento|en\s+este\s+momento|actualmente|ahorita)`
+const REFUSAL_SENTENCE_RE = new RegExp(
+  String.raw`^(?:(?:lo\s+siento|lamentablemente|disculp[aá]|perd[oó]n|${DEAL_TIME_TAIL})\s*,?\s*)?` +
+    String.raw`(?:no|tampoco)\s+(?:manejamos|tenemos|hay|ofrecemos|damos|aplicamos|hacemos)\s+(?:(?:ning[uú]n|ninguna|ningunos|ningunas)\s+)?${DEAL_NOUN}` +
+    String.raw`(?:\s*(?:,|y|ni)\s+(?:(?:ning[uú]n|ninguna)\s+)?${DEAL_NOUN})*` +
+    String.raw`(?:\s*,?\s*${DEAL_TIME_TAIL})?` +
+    String.raw`(?:\s*,\s*pero\s+(?:el|la|los|las)\s+[\p{L} ]{1,40}?\s+(?:sale|salen|cuesta|cuestan|queda|quedan)\s+(?:en\s+|a\s+)?[₡¢]\s?\d[\d .,]*)?` +
+    String.raw`\s*[.!]*\s*(?:\p{Extended_Pictographic}\s*)*$`,
+  'iu',
+)
+/** Anything elsewhere in the reply that turns the refusal back into an offer. */
+const DEAL_REVERSAL_RE =
+  /(?<![\p{L}])(?:s[ií]|vos|ti|usted|ustedes|primera|esta\s+vez|salvo|excepto|sino|menos|mentira|broma|bueno|pero|aunque|te\s+(?:lo|la|los|las|hago|dejo|doy|rebaj\p{L}*|regal\p{L}*)|regal\p{L}*|cortes[ií]a|gratis|aprovech\p{L}*|llev\p{L}*\s+\d+|pag\p{L}*\s+\d+|no\s+te\s+cuesta|como|igual|as[ií]|parecid\p{L}*|compar\p{L}*|super\p{L}*|gan\p{L}*|mejor|mayor|tan)(?![\p{L}])|\d{1,3}\s?%|\d\s?x\s?\d/iu
+
+/** P8's sentence rule: a sentence ends at . ! ? before a space / the end, at a line break or at ';'. */
+function sentenceSpan(text: string, index: number): { start: number; end: number } {
+  let start = 0
+  for (let i = index - 1; i >= 0; i--) {
+    const c = text[i]
+    if (c === '\n' || c === ';' || ((c === '.' || c === '!' || c === '?') && /\s/u.test(text[i + 1] || ''))) {
+      start = i + 1
+      break
+    }
+  }
+  const e = text.slice(index).search(/[.!?](?=\s|$)|\n|;/u)
+  return { start, end: e < 0 ? text.length : index + e + 1 }
+}
+
+function negatedDeal(text: string, index: number): boolean {
+  const { start, end } = sentenceSpan(text, index)
+  const sentence = text.slice(start, end).trim()
+  // A refusal is short: a long "sentence" is never exempt (and the shape is never run on a long input).
+  if (sentence.length > 200 || !REFUSAL_SENTENCE_RE.test(sentence)) return false
+  return !DEAL_REVERSAL_RE.test(`${text.slice(0, start)} ${text.slice(end)}`)
+}
+
+/**
  * Deal wording is blocked unless the owner's active promo enables that exact kind (B1): free shipping and a special
  * price can be enabled; discounts, %, 2x1, "te lo dejo en", gifts are always blocked.
  */
-/**
- * Lane C D6: the store saying it has NO discount ("No manejamos descuentos", "no tenemos promociones ni descuentos",
- * "sin descuento") is not an offer. Closed shape: a negation, an optional "we have / there is" verb and an article right
- * before the word, in the same clause — "no olvidés que hay descuento" is still an offer.
- */
-const NEGATED_DEAL_BEFORE_RE =
-  /(?:^|[^\p{L}])(?:no|ni|tampoco|sin|nunca)\s+(?:(?:manejamos|tenemos|hay|ofrecemos|damos|aplicamos|hacemos|incluimos|contamos\s+con|existen?|est[aá]n\s+disponibles)\s+)?(?:(?:ning[uú]n|ninguna|ningunos|ningunas|el|la|los|las|un|una|unos|unas|otros?|otras?)\s+)?$/iu
-const NEGATABLE_DEAL_RE = /^(?:descuentos?|rebaj\p{L}*|promoci[oó]n(?:es)?\s+especial|oferta\s+especial|precio\s+especial)$/iu
-
-/**
- * Verifier #128-1: words that turn "no hay descuento…" back into an offer, anywhere in the sentence — an exception
- * ("pero para vos sí", "normalmente no… pero", "por ser tu primera compra", "esta vez"), a comparison ("como el de hoy",
- * "igual", "así", "mejor / mayor que esta") or a nudge ("aprovechá").
- */
-const DEAL_NEGATION_BREAKER_RE =
-  /(?<![\p{L}])(?:s[ií]|vos|ti|usted|ustedes|primera|esta\s+vez|por\s+esta|excepci\p{L}*|especial(?:mente)?\s+para|solo\s+para|s[oó]lo\s+para|te\s+(?:lo|la|los|las|hago|dejo|rebajo|regalo)|como|igual|as[ií]|tal|mejor|mayor|menor|m[aá]s|sino|salvo|excepto|menos|aprovech\p{L}*|normalmente|generalmente|por\s+lo\s+general|usualmente|casi\s+nunca|nunca\s+antes)(?![\p{L}])/iu
-
-function negatedDeal(text: string, index: number, phrase: string): boolean {
-  if (!NEGATABLE_DEAL_RE.test(phrase)) return false
-  // The whole sentence that holds the word (a question is never a refusal: "¿Por qué no aplicamos un descuento?").
-  const startCut = Math.max(text.lastIndexOf('.', index), text.lastIndexOf('!', index), text.lastIndexOf('?', index), text.lastIndexOf('\n', index), text.lastIndexOf(';', index))
-  const endHits = ['.', '!', '?', '\n', ';'].map((c) => text.indexOf(c, index + phrase.length)).filter((i) => i >= 0)
-  const sentenceEnd = endHits.length ? Math.min(...endHits) : text.length
-  const sentence = text.slice(startCut + 1, sentenceEnd + 1)
-  if (/[¿?]/u.test(sentence) || DEAL_NEGATION_BREAKER_RE.test(sentence)) return false
-  const clause = text.slice(Math.max(startCut + 1, index - 60), index)
-  // "No tenemos promociones ni descuentos": the earlier listed deal sits between the verb and "ni".
-  return NEGATED_DEAL_BEFORE_RE.test(clause) || /(?:^|[^\p{L}])(?:no|sin|tampoco)\s+(?:\p{L}+\s+){1,4}ni\s+$/iu.test(clause)
-}
-
-export function dealProblem(text: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
+export function dealProblem(rawText: string, allowed: ReadonlyArray<'free_shipping' | 'special_price'>): boolean {
+  // SecureDog #128 r1: judged as the customer reads it (soft hyphens / zero-width removed; NFKC turns NBSP into a space).
+  const text = stripFormatChars((rawText || '').normalize('NFKC'))
   for (const m of text.matchAll(DEAL_ALL_RE)) {
     const phrase = m[1].trim()
-    if (negatedDeal(text, m.index ?? 0, phrase)) continue
+    if (negatedDeal(text, m.index ?? 0)) continue
     // Free-shipping phrasing is judged below with the wider wording list.
     if (FREE_SHIPPING_DEAL_RE.test(phrase)) continue
     if (allowed.includes('special_price') && SPECIAL_PRICE_DEAL_RE.test(phrase)) continue

@@ -289,6 +289,9 @@ const IMMEDIATE_WORD_RE =
 const REPLY_VERB_RE =
   /(?<![\p{L}])(?:te|le|les|lo|la)\s+(?:escrib\p{L}*|atiend\p{L}*|atender\p{L}*|contest\p{L}*|respond\p{L}*|ayud\p{L}*|llam\p{L}*|habl\p{L}*)|(?<![\p{L}])alguien(?![\p{L}])|(?<![\p{L}])(?:te|le)\s+paso\s+con/iu
 
+const KEEP_SENTENCE_RE =
+  /@|https?:\/\/|www\.|\d[\d\s-]{6,}\d|(?<![\p{L}])(?:suspend\p{L}*|dej[aá]\s+de\s+usar|m[eé]dico|emergencia|urgencias|911)(?![\p{L}])/iu
+
 /**
  * The text without its sentences that promise an immediate answer. Verifier #128-2: sentences end only at . ! ? followed
  * by a space or the end (never inside "2.5 ml", "₡14.900", a link or an e-mail) or at a line break; separators are kept;
@@ -296,7 +299,8 @@ const REPLY_VERB_RE =
  */
 export function dropImmediatePromises(text: string): string {
   const parts = text.split(/(?<=[.!?](?=\s|$))|(?<=\n)/u)
-  const kept = parts.filter((p) => !(IMMEDIATE_WORD_RE.test(p) && REPLY_VERB_RE.test(p)))
+  // SecureDog #128 r1: a sentence with an e-mail, a link, a phone number or a safety instruction is always kept.
+  const kept = parts.filter((p) => KEEP_SENTENCE_RE.test(p) || !(IMMEDIATE_WORD_RE.test(p) && REPLY_VERB_RE.test(p)))
   if (kept.length === parts.length) return text
   return kept.join('').replace(/[ \t]+\n/g, '\n').trim()
 }

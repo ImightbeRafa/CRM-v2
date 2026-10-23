@@ -59,7 +59,7 @@ describe('P8: at night, "me atiende alguien" never promises "en un momento"', ()
 
 describe('D6: "No manejamos descuentos" is not an offer', () => {
   it('a closed negation before the word passes; a real offer is still held', () => {
-    for (const t of ['No manejamos descuentos, pero el combo sale ₡32 800', 'No tenemos promociones ni descuentos 😊', 'Sin descuento, el precio es ₡14 900', 'No hay ningún descuento ahorita']) assert.equal(dealProblem(t, []), false, t)
+    for (const t of ['No manejamos descuentos, pero el combo sale ₡32 800', 'No tenemos promociones ni descuentos 😊', 'No hay ningún descuento ahorita']) assert.equal(dealProblem(t, []), false, t)
     for (const t of ['Te hago un descuento', 'No olvides que hay descuento', 'No te preocupes, hay descuento hoy', '¿Querés un descuento?']) assert.equal(dealProblem(t, []), true, t)
   })
 })
@@ -77,7 +77,7 @@ describe('Verifier #128 fixes', () => {
       '¿Por qué no aplicamos un descuento a tu pedido?',
       'Nunca hay un descuento así, ¡aprovechá!',
     ]) assert.equal(dealProblem(t, []), true, t)
-    for (const t of ['No manejamos descuentos.', 'No manejamos descuentos, pero el combo sale ₡32 800', 'No tenemos promociones ni descuentos 😊', 'Sin descuento, el precio es ₡14 900']) {
+    for (const t of ['No manejamos descuentos.', 'No manejamos descuentos, pero el combo sale ₡32 800', 'No tenemos promociones ni descuentos 😊']) {
       assert.equal(dealProblem(t, []), false, t)
     }
   })
@@ -107,5 +107,51 @@ describe('Verifier #128 fixes', () => {
     }
     const burst = decideInbound({ inboundText: 'Ya pagué hace 10 días', earlierCustomerTexts: ['Todavía no me llega el pedido'], brandFacts: FACTS, shortcuts: SHORTCUTS }) as { text?: string }
     assert.equal(burst.text, SAFE_LINE.complaint)
+  })
+})
+
+describe('SecureDog #128 r1: the negated discount is a closed refusal, and nothing else in the reply reverses it', () => {
+  const ch = (...codes: number[]) => String.fromCharCode(...codes)
+  it('every reversal SecureDog found is held', () => {
+    for (const t of [
+      'No hay descuento para todos. Pero para vos sí 😊 ¿Te lo aparto?',
+      'No damos descuentos. Pero a vos te lo hago',
+      'No damos descuentos. Pero por ser tu primera compra, sí. ¿Lo pedimos?',
+      'Nunca hay un descuento. ¡Aprovechá, hoy sí hay!',
+      'No manejamos descuentos; para vos sí 😉',
+      'No hay descuento... ¡para vos sí! 😉',
+      'No damos descuentos.\nA vos sí 🤫',
+      'No rebajamos. Para vos sí 😉',
+      'No tenemos promociones ni descuentos. Pero para vos sí 😉',
+      'Para vos sí hay. No hay descuento para el resto 😉',
+      '• No hay descuento\n• Para vos: 20% 😉',
+      'No existe descuento parecido a este 🔥',
+      'No hay descuento que se le compare',
+      'No hay descuento que no te demos 😉',
+      'No hay descuento que supere este',
+      'No hay precio especial que le gane a este',
+      'Nunca hay rebajas de este tamaño',
+      'Ni el descuento de Black Friday se compara con esta oferta',
+      'Sin duda, no hay descuento tan bueno en todo el país',
+      `No hay descuento para v${ch(0xad)}os s${ch(0xad)}í 😉`,
+      'Por qué no aplicamos el descuento de una vez 😉',
+      'Y por qué no un descuento 😉',
+      'No manejamos descuentos. Pero te hago un 10% 😉',
+      'Para vos hoy 12.5% y no hay descuento extra',
+      `Te hago un des${ch(0xad)}cuento del 20% 😉`,
+      'Te hago un 10% 😉',
+    ]) assert.equal(dealProblem(t, []), true, JSON.stringify(t))
+  })
+  it('the plain refusals Lane C needs still pass', () => {
+    for (const t of ['No manejamos descuentos.', 'No manejamos descuentos, pero el combo sale ₡32 800', 'No tenemos promociones ni descuentos 😊', 'No hay ningún descuento ahorita', 'Por ahora no tenemos descuentos 🙏', 'Lo siento, no manejamos promociones ni rebajas.']) {
+      assert.equal(dealProblem(t, []), false, t)
+    }
+  })
+  it('P8 keeps a sentence with an e-mail, a link, a phone or a safety instruction', () => {
+    assert.equal(dropImmediatePromises('Claro 😊 Escribinos a ventas@tienda.com o en un momento te atiende Ana.'), 'Claro 😊 Escribinos a ventas@tienda.com o en un momento te atiende Ana.')
+    assert.equal(
+      dropImmediatePromises('Suspendé el uso inmediatamente; en un momento te escribe alguien del equipo.'),
+      'Suspendé el uso inmediatamente; en un momento te escribe alguien del equipo.',
+    )
   })
 })

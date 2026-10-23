@@ -294,7 +294,7 @@ describe('notify · inbox chips and thread banner', () => {
     assert.match(read('src/components/chats/InboxViewTabs.tsx'), /data-testid="chat-view-tabs"/)
     const pane = read('src/components/chats/SoftThreadPane.tsx')
     // No emoji in chrome (Lane A 2026-10-22): the banner title is text + a lucide icon.
-    assert.match(pane, /title: 'Pago por verificar',\n\s*icon: CreditCard,/)
+    assert.match(pane, /title: 'Pago por verificar',\r?\n\s*icon: CreditCard,/)
     assert.match(pane, /'el cliente mandó el comprobante'/)
     assert.match(pane, /resolveLabel: 'Pago verificado'/)
     assert.match(pane, /resolveLabel: 'Confirmado'/)

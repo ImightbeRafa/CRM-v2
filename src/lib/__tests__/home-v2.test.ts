@@ -123,8 +123,10 @@ test('one spacing system and brand slots for Lane I (logo + avatar)', () => {
 
 test('agent costumes: mark on a colored plate + name; the mark itself is never recolored; one mark in the view', () => {
   const c = read(`${DIR}/islands/AgentCostumes.tsx`)
-  assert.match(c, /className=\{s\.costumePlate\} style=\{\{ background: plate \}\}/)
-  assert.equal((c.match(/<Mark\b/g) ?? []).length, 1)
+  // Lane I's official costume: AgentMark with a named plate; swatches never render a mark.
+  assert.match(c, /<AgentMark appearance=\{\{ plate, ring: false \}\}/)
+  assert.equal((c.match(/<AgentMark\b|<Mark\b|<BetsyMark\b/g) ?? []).length, 1)
+  assert.match(c, /AGENT_PLATES\.map/)
   assert.match(c, /role="radiogroup"/)
   assert.match(c, /maxLength=\{16\}/)
   assert.match(read(`${DIR}/sections/Agent.tsx`), /<AgentCostumes \/>/)
@@ -133,4 +135,11 @@ test('agent costumes: mark on a colored plate + name; the mark itself is never r
 
 test('examples never use live client agent personas (Sofi, Vale, Laura, Andrés, Dani, Caro)', () => {
   assert.doesNotMatch(source, /\b(Sofi|Vale|Laura|Andrés|Dani|Caro)\b/)
+})
+
+test("brand slots render Lane I's official BetsyLogo / BetsyMark", () => {
+  const b = read(`${DIR}/brand.tsx`)
+  assert.match(b, /from '@\/components\/brand\/BetsyLogo'/)
+  assert.match(b, /from '@\/components\/brand\/BetsyMark'/)
+  assert.doesNotMatch(b, /Sparkles|placeholder/i)
 })

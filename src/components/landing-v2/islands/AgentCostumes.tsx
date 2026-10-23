@@ -1,28 +1,27 @@
 'use client'
 
 import { useId, useState } from 'react'
+import { AgentMark, PlateSwatch } from '@/components/brand/AgentMark'
+import { AGENT_PLATES, AGENT_PLATE_LABELS, type AgentPlate } from '@/lib/agent-appearance'
 import s from '../landing.module.css'
-import { Mark } from '../brand'
 
 /**
- * "Tu agente, con tu nombre y tus colores": the same costume idea as the Agents tab — Betsy's official mark on a
- * colored plate plus the agent's name. The mark is never recolored (handoff rule); only the plate is.
- * One mark in this view: the example agents are color chips, only the preview shows the mark.
+ * "Tu agente, con tu nombre y tus colores": the same costume as the Agents tab (Lane I's AgentMark) — Betsy's
+ * official mark on a colored plate plus the agent's name. The mark is never recolored (handoff rule); only the plate.
+ * One mark in this view: the example agents and colors are swatches, only the preview shows the mark.
  * Example names and businesses are made up — never live client personas (Lane I / handoff).
  */
-const PRESETS = [
-  { name: 'Luna', business: 'Suplementos', plate: '#12938A', greeting: '¡Hola! Soy Luna 😊 ¿Te ayudo con los parches?' },
-  { name: 'Nico', business: 'Ropa', plate: '#5B3FE0', greeting: '¡Hola! Soy Nico. ¿Qué talla buscás?' },
-  { name: 'Ana', business: 'Dental y belleza', plate: '#D6457B', greeting: 'Hola, soy Ana. ¿Te cuento cómo funciona el kit?' },
-  { name: 'Max', business: 'Gadgets', plate: '#E07A1F', greeting: '¡Buenas! Soy Max. ¿Para qué celular lo necesitás?' },
-] as const
-
-const PLATES = ['#5B6CFF', '#5B3FE0', '#D6457B', '#12938A', '#E07A1F', '#0B0B12'] as const
+const PRESETS: ReadonlyArray<{ name: string; business: string; plate: AgentPlate; greeting: string }> = [
+  { name: 'Luna', business: 'Suplementos', plate: 'teal', greeting: '¡Hola! Soy Luna 😊 ¿Te ayudo con los parches?' },
+  { name: 'Nico', business: 'Ropa', plate: 'violet', greeting: '¡Hola! Soy Nico. ¿Qué talla buscás?' },
+  { name: 'Ana', business: 'Dental y belleza', plate: 'rose', greeting: 'Hola, soy Ana. ¿Te cuento cómo funciona el kit?' },
+  { name: 'Max', business: 'Gadgets', plate: 'amber', greeting: '¡Buenas! Soy Max. ¿Para qué celular lo necesitás?' },
+]
 
 export function AgentCostumes() {
   const [preset, setPreset] = useState(0)
   const [name, setName] = useState<string>(PRESETS[0].name)
-  const [plate, setPlate] = useState<string>(PRESETS[0].plate)
+  const [plate, setPlate] = useState<AgentPlate>(PRESETS[0].plate)
   const inputId = useId()
   const p = PRESETS[preset]
   const shownName = name.trim() || 'Tu agente'
@@ -36,9 +35,7 @@ export function AgentCostumes() {
   return (
     <div className={s.costumes}>
       <div className={s.costumePreview} aria-live="polite">
-        <div className={s.costumePlate} style={{ background: plate }}>
-          <Mark size={56} state="idle" decorative={false} />
-        </div>
+        <AgentMark appearance={{ plate, ring: false }} size={88} />
         <div className={s.costumeId}>
           <b>{shownName}</b>
           <span>Agente de ventas · {p.business}</span>
@@ -59,7 +56,7 @@ export function AgentCostumes() {
               className={s.costumeChip}
               onClick={() => pick(i)}
             >
-              <span className={s.costumeDot} style={{ background: x.plate }} aria-hidden />
+              <PlateSwatch plate={x.plate} />
               <span>
                 <b>{x.name}</b>
                 <small>{x.business}</small>
@@ -81,17 +78,18 @@ export function AgentCostumes() {
         />
         <p className={s.costumeLabel}>Color</p>
         <div className={s.costumeSwatches} role="radiogroup" aria-label="Color del agente">
-          {PLATES.map((c) => (
+          {AGENT_PLATES.map((c) => (
             <button
               key={c}
               type="button"
               role="radio"
               aria-checked={plate === c}
-              aria-label={`Color ${c}`}
+              aria-label={`Color ${AGENT_PLATE_LABELS[c]}`}
               className={s.costumeSwatch}
-              style={{ background: c }}
               onClick={() => setPlate(c)}
-            />
+            >
+              <PlateSwatch plate={c} />
+            </button>
           ))}
         </div>
       </div>

@@ -112,7 +112,9 @@ export function Contact({ contact }: { contact: SupportContactConfig }) {
         <div className={s.contactBox}>
           <div className={s.lightField} style={{ top: -700, opacity: 0.7 }} aria-hidden />
           {/* One mark in this view, gazing at the contact links below. */}
-          <Mark size={44} state="idle" />
+          <span className={s.contactMark}>
+            <Mark size={44} state="idle" gaze="read" />
+          </span>
           <h2 id="lv2-contact-title" className={`landing-h2 ${s.display}`} style={{ color: '#fff', marginTop: 0 }}>
             Hablemos de tu negocio.
           </h2>

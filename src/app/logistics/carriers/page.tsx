@@ -400,8 +400,8 @@ function OrderCard({ order, onMoveStatus, onMoveCarrier, onToggleCOD, onConfirmC
                         </span>
                     ) : (
                         <button type="button" onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onConfirmCobro(order); }}
-                            style={{ padding: '2px 9px', borderRadius: 20, border: '1px solid rgba(251,191,36,0.35)', background: 'transparent', color: '#fbbf24', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>
-                            ○ Pendiente cobro
+                            style={{ padding: '2px 9px', borderRadius: 20, border: '1px solid rgba(251,191,36,0.35)', background: 'transparent', color: '#fbbf24', fontSize: 10, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <Clock size={10} aria-hidden style={{ flexShrink: 0 }} /> Pendiente cobro
                         </button>
                     )}
                 </div>
@@ -520,7 +520,7 @@ function ArchivedOrderRow({ order, onRestore, getTenantName, getTenantColor }: {
                     <span style={{ padding: '1px 7px', borderRadius: 20, background: `${tenantColor}22`, color: tenantColor, fontSize: 9.5, fontWeight: 700, flexShrink: 0 }}>{getTenantName(order.tenantId)}</span>
                 </div>
                 {order.phone && (
-                    <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Phone size={11} aria-hidden style={{ flexShrink: 0 }} /> {order.phone}</div>
+                    <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5 }}><Phone size={11} aria-hidden style={{ flexShrink: 0 }} /> {order.phone}</div>
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11 }}>
                     <ShippingMethodBadge order={order} theme="dark" size="xs" />
@@ -1437,7 +1437,7 @@ export default function CarriersPage() {
                         {byDate.length === 0 ? (
                             <div style={{ textAlign: 'center', padding: '40px 16px', color: 'rgba(255,255,255,0.2)' }}>
                                 <Package size={24} style={{ display: 'block', margin: '0 auto 8px', opacity: 0.3 }} />
-                                <p style={{ margin: 0, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}><CheckCircle2 size={13} aria-hidden style={{ flexShrink: 0 }} /> Todo asignado</p>
+                                <p style={{ margin: 0, fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}><CheckCircle2 size={13} aria-hidden style={{ flexShrink: 0 }} /> Todo asignado</p>
                             </div>
                         ) : byDate.map(g => (
                             <div key={g.dateKey} style={{ marginBottom: 14 }}>
@@ -1465,7 +1465,7 @@ export default function CarriersPage() {
                                                     <span style={{ padding: '1px 7px', borderRadius: 20, background: `${tc}20`, color: tc, fontSize: 9.5, fontWeight: 700 }}>{getTenantName(o.tenantId)}</span>
                                                 </div>
                                             </div>
-                                            {o.phone && <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: '0 0 2px', display: 'inline-flex', alignItems: 'center', gap: 5 }}><Phone size={11} aria-hidden style={{ flexShrink: 0 }} /> {o.phone}</p>}
+                                            {o.phone && <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: '0 0 2px', display: 'flex', alignItems: 'center', gap: 5 }}><Phone size={11} aria-hidden style={{ flexShrink: 0 }} /> {o.phone}</p>}
                                             <ShippingMethodBadge order={o} theme="dark" size="xs" style={{ margin: '2px 0 4px' }} />
                                             <OrderItemsList order={o} style={{ ...itemsListStyle, marginBottom: 4 }} moreColor="#93c5fd" />
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: o.comments ? 4 : 8 }}>

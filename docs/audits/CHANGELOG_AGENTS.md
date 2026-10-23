@@ -1,3 +1,25 @@
+## 2026-10-23 — Betsy's own agent hand-offs open a support ticket (Lane D, claude/lane-d-emma-support, PR #146)
+
+- `src/lib/soft-ai/support-escalation.ts`: on a TRUE hand-off (`settleHandoff`, after the normal inbox hand-off), an agent with
+  `salesRules.escalateToSupport: true` in a business listed in `SUPPORT_AI_CHAT_TENANTS` opens a ticket through the existing
+  `createSupportTicket()` (source `ai_chat`, contact = Betsy's own support inbox so the customer is never e-mailed, no tenant
+  / user). Kill switch `SUPPORT_PIPELINE_ENABLED`. Support lib contract unchanged (only `createSupportTicket` / `addStaffMessage`).
+- Only person-needed reasons (escalate, unknown_answer, complaint, owner_reply, human_request) and never an opt-out (any
+  bubble of the last burst, or the turn's burst trace); payment / order / system hand-offs stay inbox-only.
+- One ticket per chat for 72 h (later hand-offs = internal note); 20 tickets a day per business (beyond = inbox only);
+  spam-shaped text stored as spam; a chat a person marked spam opens nothing for 30 days.
+- Body: channel, reason, `/chats` link, "respondé en el chat", then the display name and last 6 messages inside an
+  unverified-customer-text fence the customer cannot draw. Masked: secrets, cards, codes, passwords, e-mails, IBANs and
+  phone / SINPE numbers in any separator form; prices stay.
+- `packEscalationFlag`: a pack rebuild keeps the live flag unless the pack names it (true or false). Stored only when on.
+- Verifier + SecureDog, two rounds each: no Critical/High in the code; OK to set the env once Rafael confirms F1(a)/(b) in
+  `docs/runbooks/support-pipeline.md` (the support automation has no repo secrets / shell / git push / network beyond
+  `/api/mcp`; one ticket per run with its own reply_token; autosend off). Register: INFRA-28 (blocks until confirmed),
+  INT-251, DATA-69, DATA-70 fixed; INT-252, DATA-71 open (Low / Info). Lane G follow-ups: one ticket's text can drive
+  writes on another if the bot reads hola@ as a digest (INT-254); `support_escalate` has no per-ticket limit (INT-255);
+  the super-admin reply on an `ai_chat` ticket e-mails Betsy's own inbox (INT-256).
+- Deploy (Rafael): `SUPPORT_AI_CHAT_TENANTS=cmhsibjue0004js04gie724nx` and Emma's `escalateToSupport: true` (pack or
+  build-agent). No SQL. Proof: tsc + eslint clean, test:soft-ai 1550/1550, test:soft-ai-agent 350/350, test:support 59/59.
 ## 2026-10-23 — Animated Betsy mark: live sidebar mark, agent plates react (Lane I, claude/wave-betsy-motion)
 
 - `emitBetsySignal(type)` (`src/components/brand/betsy-signals.ts`): a window event any screen can fire, with types read, replied, think, typing, done, listen and yes. It only animates the owner UI and is never sent to customers. Lane A wires the inbox calls in PR #142, stacked on this branch: read, Respondido, Pago verificado, and listen/think/done from the `/changes` merge.

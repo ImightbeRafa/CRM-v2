@@ -40,6 +40,7 @@ import {
 import { ChannelsAlertBanner } from './components/ChannelsAlertBanner'
 import { ChannelsTable } from './components/ChannelsTable'
 import { MetaSalesAttributionCard } from './components/MetaSalesAttributionCard'
+import { MetaAdAccountCard } from './components/MetaAdAccountCard'
 import { ChannelSummaryCards } from './components/ChannelSummaryCards'
 
 interface MetaEnvFlag {
@@ -1128,6 +1129,8 @@ export default function SocialConfigPage() {
         </section>
 
         <MetaSalesAttributionCard />
+
+        <MetaAdAccountCard />
 
         <p className="text-[12px] text-au-ink-5b6cff">
           Inbox de clientes en{' '}

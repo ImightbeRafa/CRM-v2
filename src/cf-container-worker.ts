@@ -164,6 +164,8 @@ interface Env {
   OPS_ALERT_EMAIL?: string;
   // Meta sales attribution: sending stays off unless this is exactly "1" (never on Railway preview).
   META_SALES_CAPI_SENDER?: string;
+  /** Facebook Login for Business configuration with only ads_read (ad spend / ROAS, Config › Cuentas sociales). */
+  META_ADS_LOGIN_CONFIG_ID?: string;
   // Instagram HUMAN_AGENT tag for human replies 24 h–7 d ("1" only after Meta approved Human Agent).
   META_IG_HUMAN_AGENT?: string;
   // Support pipeline (off unless SUPPORT_PIPELINE_ENABLED=true).
@@ -275,6 +277,7 @@ const CONTAINER_ENV_KEYS = [
   "R2_SECRET_ACCESS_KEY",
   "OPS_ALERT_EMAIL",
   "META_SALES_CAPI_SENDER",
+  "META_ADS_LOGIN_CONFIG_ID",
   "META_IG_HUMAN_AGENT",
   // Support pipeline (docs/runbooks/support-pipeline.md): off unless SUPPORT_PIPELINE_ENABLED=true.
   "SUPPORT_PIPELINE_ENABLED",

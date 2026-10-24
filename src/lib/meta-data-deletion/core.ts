@@ -63,6 +63,11 @@ export interface DeletionStore {
   insertRequest(row: DeletionRequestRow & { metaUserKey: string }): Promise<boolean>
   updateRequest(id: string, patch: DeletionRequestPatch): Promise<void>
   listOpenRequests(olderThan: Date, limit: number): Promise<DeletionRequestRow[]>
+  /**
+   * Ad account connections (ads_read, SQL 064) made by this person: deleted at once, no grace period (they hold
+   * only a token and the ad account's name). Returns how many were deleted. Optional: stores without it skip it.
+   */
+  deleteAdConnections?(metaUserId: string): Promise<number>
 }
 
 export type RemovePaths = (paths: string[]) => Promise<void>
@@ -199,6 +204,17 @@ export async function processMetaDataRequest(
   const now = options.now ?? (() => new Date())
   const key = metaUserKey(input.metaUserId, options.secret)
 
+  // Ad account connections go right away, for both kinds and also on Meta's resend (idempotent: the raw Meta id is
+  // only in hand now, the request row keeps a hash). A token and an account name, nothing else.
+  let adConnections = 0
+  let adDeleteFailed = false
+  try {
+    adConnections = store.deleteAdConnections ? await store.deleteAdConnections(input.metaUserId) : 0
+  } catch (error) {
+    adDeleteFailed = true
+    options.onFailure?.('ad_connection', errorCode(error))
+  }
+
   const recent = await store.findRecentRequest(key, input.kind, new Date(now().getTime() - RESEND_WINDOW_MS))
   if (recent) {
     return { confirmationCode: recent.confirmationCode, status: recent.status, matchedAccounts: recent.matchedAccounts, recorded: true, reused: true }
@@ -207,23 +223,27 @@ export async function processMetaDataRequest(
   const lines = await store.findLines(input.metaUserId)
   const code = newConfirmationCode()
   const at = now()
+  // No Instagram / WhatsApp line: done now when an ad connection was deleted (never "no data"); when its delete
+  // failed, "failed" (finished by hand, like an erase out of retries: only an HMAC of the Meta id is kept, so the
+  // nightly job cannot retry it). With lines, the line flow below decides the status.
+  const noLineStatus: DeletionStatus = adDeleteFailed ? 'failed' : adConnections > 0 ? 'completed' : 'no_data'
   const row: DeletionRequestRow & { metaUserKey: string } = {
     id: crypto.randomUUID(),
     confirmationCode: code,
     kind: input.kind,
     metaUserKey: key,
-    status: lines.length ? 'received' : 'no_data',
+    status: lines.length ? 'received' : noLineStatus,
     matchedAccounts: lines.length,
     accountIds: lines.map((l) => l.id),
     pendingPaths: [],
     attempts: 0,
-    lastErrorCode: null,
+    lastErrorCode: !lines.length && adDeleteFailed ? 'ad_connection' : null,
     createdAt: at,
     updatedAt: at,
-    completedAt: lines.length ? null : at,
+    completedAt: lines.length || adDeleteFailed ? null : at,
   }
   const recorded = await store.insertRequest(row)
-  if (!lines.length) return { confirmationCode: code, status: 'no_data', matchedAccounts: 0, recorded, reused: false }
+  if (!lines.length) return { confirmationCode: code, status: noLineStatus, matchedAccounts: 0, recorded, reused: false }
 
   const update = async (patch: DeletionRequestPatch) => {
     if (recorded) await store.updateRequest(row.id, patch)

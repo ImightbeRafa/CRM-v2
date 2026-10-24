@@ -3738,3 +3738,36 @@ Plan: `docs/plans/betsy-agent-studio-sales-flow-2026-10-08.md` (v4). Off `claudi
   business team + owner bell (`ai_budget`), markers reset when a budget changes, explicit DELETE, read fresh;
   dashboard opens audited (throttled), budget audit rows in the affected business; platform-wide labels on the
   headline; calls/cost toggle; cached tokens; chats and cost per chat by business/agent; Agent Ops links here.
+
+# 2026-10-24 — Full codebase review + careful cleanup (branch `claudio/full-review-2026-10-24`, from `claudio/wave-2026-10-22`)
+
+- Findings ledger: `docs/audits/FULL_REVIEW_2026-10-24.md`.
+  - No Critical findings.
+  - High: DATA-01 (PII files in git), INT-01, AUTH-01 and DATA-02.
+- Fixed on this branch (small and local):
+  - INT-01: `api/social/link` is WhatsApp-only; the Instagram branch stored ids with no ownership proof.
+  - AUTH-01: API keys need `update_config`.
+  - AUTH-03: carrier config GET masks secrets.
+  - DATA-05: PII PDFs are sent with no-store.
+  - INFRA-05: removed the unused image host.
+  - PERF-03 (partial): the manual guía check no longer loads PDF bytes.
+  - `email.ts` uses `crypto.randomUUID` (no unlisted `uuid` import).
+- Removed:
+  - `orders.xlsx` and `prisma/dev.db`: real customer PII, tracked despite `.gitignore`. They are still in git history; the purge is for Rafael.
+  - `src/lib/sentry-scrub.ts` and `src/app/components/LogoutButton.tsx`: zero references.
+- Left for Rafael:
+  - DATA-02: logistics managed-tenant allowlist.
+  - AUTH-02, 04, 05, 07: the role matrix.
+  - AUTH-06: verify-email takeover persistence.
+  - INFRA-01: unsigned webhooks outside prod.
+  - INFRA-02: dependency upgrades.
+  - INFRA-03: CSP nonce.
+  - DB-01: tenant extension gaps.
+  - PERF-01, 02, 04, 05: polling, payloads, Chromium cap, stats index.
+  - Staff-bot items are report-only (INT-05, INFRA-01 bot parts).
+- Proof:
+  - tsc and lint clean.
+  - `npm run build` passes with `NODE_ENV=production`.
+  - All test suites match the baseline.
+  - Pre-existing failures: chat-harden 1 (chat-inbox-live teardown), site-ui 1 (agentes dialogs), meta-attribution 1 (cron list regex).
+  - No DB touched; no `db push` / migrate.

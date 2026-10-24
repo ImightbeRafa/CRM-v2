@@ -84,6 +84,7 @@ const RETENTION: RetentionRow[] = [
   { item: 'Conversations, messages and chat media (photos, voice notes, videos, documents)', period: 'Kept for the business while its Betsy account exists, including after a channel is disconnected, so it does not lose its history. Deleted by a deletion request (section 8) or an account erase.' },
   { item: 'AI agent outputs (drafted replies, suggestions, decision records)', period: '90 days, then deleted automatically.' },
   { item: 'Ad click identifier (WhatsApp “ctwa_clid”)', period: '90 days, then deleted automatically.' },
+  { item: 'Ad account connection (Meta Ads access token, used only to read ad data)', period: 'Deleted immediately when the business disconnects the ad account in Betsy, when Meta reports the access no longer works or the ads permission was removed, or when the person removes Betsy in their Facebook settings. Ad spend figures are not stored: they are read from Meta when the report is opened and kept in memory for up to 15 minutes (ad and campaign names up to 1 hour).' },
   { item: 'Staff assistant short-term memory', period: 'Up to 7 days, then deleted automatically.' },
   { item: 'In-app notifications', period: '90 days once read, 180 days if unread.' },
   { item: 'Activity history inside the workspace', period: '395 days.' },
@@ -260,6 +261,15 @@ export default function PrivacyPage() {
               responsible for informing its customers; Betsy acts on its behalf. Ad click identifiers are deleted from Betsy
               after 90 days. The business can turn the feature off at any time, and reports stop at once.
             </p>
+            <p className="mt-2">
+              <strong>Ad spend (optional, read-only).</strong> If the business owner connects its own Meta ad account in
+              Configuración › Cuentas sociales (Facebook Login, permission &quot;ads_read&quot; only), Betsy reads, for
+              the dates the business looks at: campaign, ad set and ad names, and each ad&apos;s spend, impressions and clicks.
+              Betsy uses them only to show that business its spend, sales and return on ad spend (ROAS) per ad in Estadísticas.
+              Betsy never creates, edits, pauses or pays for ads, and never shares these figures with anyone else. The access
+              token (used only for these reads) is stored encrypted and deleted when the business disconnects the ad account or Meta reports the access no longer works; spend figures are not
+              stored. Encrypted database backups may keep the token for up to 14 days after that, then they are overwritten.
+            </p>
           </Section>
 
           <Section id="sub-processors" title="6. Who processes data for us (sub-processors)">
@@ -325,7 +335,7 @@ export default function PrivacyPage() {
                 When you remove Betsy in your Facebook or Instagram settings and ask for your data to be deleted, Meta sends us
                 the request. Every Instagram or WhatsApp account you connected with that Facebook user is disconnected at
                 once, and the business owner is told by email. 3 days later (at the first nightly run after that) we delete
-                all conversations, messages, media files, ad referrals and AI records received through those accounts. The
+                all conversations, messages, media files, ad referrals and AI records received through those accounts. An ad account connection made by that Facebook user is deleted at once (no wait). The
                 wait lets the business react if, for example, you were one of several admins; if the business connects the
                 account again in that time, our team reviews the request by hand and completes it within 30 days. The
                 business keeps its own setup and the orders and customer records its team created. If a file cannot be

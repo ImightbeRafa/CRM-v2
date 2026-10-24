@@ -13,6 +13,7 @@ import { formatPercent, rate } from '@/lib/insights/stats-math'
 import { safeAdLink, type AdSalesReport, type AdSalesRow } from '@/lib/insights/ad-sales'
 import { InsightsHeader, SourceNote, STATS_CONTAINER, STATS_SPLIT, nf, useInsightsJson, useUrlPeriod } from './InsightsShared'
 import { AreaChart, InsightCard, NEUTRAL_SERIES, SERIES, Segmented, SplitBar, StatTile, StatusChip } from './charts'
+import { AdRoasCard } from './AdRoasCard'
 
 type Payload = {
   range: { startDate: string; endDate: string }
@@ -317,7 +318,7 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
             ningún anuncio; aparecen aparte para que el total cuadre con el Resumen.
           </li>
           <li>Solo cuentan los chats que llegaron de un anuncio pagado; un post orgánico o un enlace de la biografía cuentan como “Sin anuncio”.</li>
-          <li>El nombre de la campaña aparecerá cuando Meta nos dé permiso de leer tus anuncios; por ahora mostramos el título y el ID.</li>
+          <li>El nombre de la campaña aparece cuando conectás tu cuenta publicitaria (Configuración › Cuentas sociales); si no, mostramos el título y el ID.</li>
         </ul>
       </details>
     </div>
@@ -335,6 +336,8 @@ function View() {
     <div className="flex min-h-0 flex-1 flex-col" data-testid="insights-ads">
       <InsightsHeader title="Ventas por anuncio" subtitle="Qué anuncio de Meta trae chats, pedidos y plata" spec={spec} range={range} onPeriod={setSpec} />
       <div className={STATS_CONTAINER}>
+        {/* Spend + ROAS needs the ad account (ads_read); all channels, same period. */}
+        <AdRoasCard query={range ? query : null} />
         <InsightCard
           icon={Megaphone}
           title="Anuncio → chat → venta"

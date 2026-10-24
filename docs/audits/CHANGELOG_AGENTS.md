@@ -1,3 +1,13 @@
+## 2026-10-24 — Meta ads_read: connect ad account + ad spend & ROAS (claude/meta-ads-read)
+
+- For Meta App Review of `ads_read` (Betsy CRM Inbox app). Config › Cuentas sociales › **Cuenta publicitaria (Meta Ads)**: "Connect ad account" via Facebook Login for Business asking only `ads_read` (config id from runtime env `META_ADS_LOGIN_CONFIG_ID`, forwarded by the Worker; fallback `scope=ads_read`), pick the ad account (only accounts Meta listed; list cleared after the pick), optional owner exchange rate for ROAS when the ad account bills in another currency, Disconnect (row + token deleted; ads_read revoked at Meta only when no other business uses the same Facebook person; never the whole app). ES/EN toggle.
+- Estadísticas › Anuncios › **Gasto en anuncios y ROAS / Ad spend & ROAS**: Ads Insights per ad (campaign / ad set / ad names, spend, impressions, clicks) joined by ad id with the orders Betsy already credits (ad-sales.ts) → spend, orders, revenue, ROAS; total ROAS only over ads with spend in the connected account (other ads' sales shown apart). Campaign names now fill the existing table too (`ad-campaign-adapter.ts`).
+- Security: OAuth state bound to business + person (HMAC cookie), token encrypted (enc:) and never in responses / URLs / logs, POST for secrets, cursor paging (never `paging.next`), ad-account ids validated, 10 s timeout, no redirects, appsecret_proof. Token wiped when Meta reports token_invalid / missing_permission. Name lookups never change the connection state. Meta data-deletion / deauthorize deletes the ad connection at once (also on a resend; failure → "failed", never "no data").
+- SQL 064 `MetaAdConnection` (raw SQL, RLS on, not in schema.prisma, gated `BETSY_V2_APPLY_FILES=064`, not applied). Code works before it (card / ROAS hidden).
+- Privacy page: ad spend section, retention row, deletion note.
+- Advisor GO with changes; Verifier FAIL → all fixed (0.0.0.0 redirect, Worker env, ignored migration, fx cache, names flipping state, total ROAS, deletion failure, card); SecureDog FIX BEFORE PROD (0 Critical/High) → fixed except the decision on a dedicated ads app (Medium, register).
+- Tests: meta-ads (12) + deletion (ad connection) in test:meta-attribution / test:security.
+
 ## 2026-10-23 — Reliability after the 9:21–9:41 database blip: no lost messages, accurate alerts (claude/reliability-2026-10-23)
 
 - Incident: Postgres was slow to accept connections for ~20 min after a heavy checkpoint (134× "SSL EOF" in Supabase's logs); chat messages stopped 15:25–15:40 UTC. Not a deploy. The two "volvió a responder (~1 h / ~50 min)" emails were false: two Cloudflare data centers each kept their own outage note.

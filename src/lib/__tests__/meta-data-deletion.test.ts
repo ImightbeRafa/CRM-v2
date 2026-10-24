@@ -414,3 +414,37 @@ test('callback body reader stops at the cap even without Content-Length (chunked
   const small = new Request('https://x.test/', { method: 'POST', body: 'signed_request=a.b' })
   assert.equal(await readCapped(small, 16_384), 'signed_request=a.b')
 })
+
+test('ads_read: an ad account connection made by that person is deleted at once (both kinds); alone it reads "completed", never "no data"', async () => {
+  const opts = { secret: SECRET, now: () => new Date('2026-10-23T12:00:00Z') }
+  const deleted: string[] = []
+  // Only an ad connection matched (no Instagram / WhatsApp line).
+  const onlyAds = fakeStore({})
+  onlyAds.deleteAdConnections = async (id) => {
+    deleted.push(id)
+    return id === '901' ? 1 : 0
+  }
+  const out = await processMetaDataRequest({ metaUserId: '901', kind: 'deletion' }, onlyAds, opts)
+  assert.equal(out.status, 'completed')
+  assert.deepEqual(deleted, ['901'])
+  const none = await processMetaDataRequest({ metaUserId: '902', kind: 'deauthorize' }, onlyAds, opts)
+  assert.equal(none.status, 'no_data')
+  assert.deepEqual(deleted, ['901', '902'], 'deauthorize deletes it too')
+  // A failing ad delete never blocks the line flow.
+  const lineStore = fakeStore({ '903': [{ id: 'sa_x', tenantId: 't1', platform: 'instagram' } as MetaLineRef] })
+  lineStore.deleteAdConnections = async () => {
+    throw Object.assign(new Error('db down'), { code: 'P1001' })
+  }
+  const failures: string[] = []
+  const withLine = await processMetaDataRequest({ metaUserId: '903', kind: 'deletion' }, lineStore, { ...opts, onFailure: (stage) => failures.push(stage) })
+  assert.equal(withLine.status, 'received')
+  assert.deepEqual(failures, ['ad_connection'])
+  // No line and the ad delete failed: 'failed' (finished by hand), never 'no_data'.
+  const brokenAds = fakeStore({})
+  brokenAds.deleteAdConnections = async () => {
+    throw Object.assign(new Error('db down'), { code: 'P1001' })
+  }
+  const failedOut = await processMetaDataRequest({ metaUserId: '904', kind: 'deletion' }, brokenAds, opts)
+  assert.equal(failedOut.status, 'failed')
+  assert.match(read('src/lib/meta-data-deletion/store.ts'), /deleteAdConnections: deleteAdConnectionsByMetaUser,/)
+})

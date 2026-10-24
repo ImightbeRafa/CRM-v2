@@ -43,6 +43,8 @@
  * (BETSY_V2_APPLY_FILES=056; two nullable columns, apply BEFORE the code that reads them).
  * 062 short order numbers: Order.orderNo + OrderNumberCounter + BEFORE INSERT trigger (BETSY_V2_APPLY_FILES=062;
  * code works before it). Then run scripts/order-number-backfill.ts (dry-run first).
+ * 064 Meta ad account connection (ads_read): MetaAdConnection (BETSY_V2_APPLY_FILES=064; new table only, safe any time;
+ * code works before it).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

@@ -10,6 +10,7 @@ import { isMissingRelation } from '@/lib/db-missing-relation'
 import { chatStorageRemove } from '@/lib/chat-storage'
 import { purgeChatOnlyWorkspaceData } from '@/lib/workspace-purge'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
+import { deleteAdConnectionsByMetaUser } from '@/lib/meta-ads/store'
 import { softUnlinkUpdateData } from '@/lib/social-account-token-health'
 import { reportError } from '@/lib/observability/report-error'
 import { addAppSecretProofToUrl, buildMetaGraphUrl, getMetaWhatsAppAppId, getMetaWhatsAppAppSecret } from '@/lib/meta-api'
@@ -256,6 +257,7 @@ export const prismaDeletionStore: DeletionStore = {
   insertRequest,
   updateRequest,
   listOpenRequests,
+  deleteAdConnections: deleteAdConnectionsByMetaUser,
 }
 
 export const removeChatPaths: RemovePaths = (paths) => chatStorageRemove(paths)

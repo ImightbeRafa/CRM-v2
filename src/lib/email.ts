@@ -1,6 +1,6 @@
 import { Resend } from 'resend';
 import { prisma } from './db';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { escapeHtml } from './validation';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -58,7 +58,7 @@ export async function sendVerificationEmail({ email, name }: SendVerificationEma
     console.log(`📧 Preparing to send verification email to: ${email}`);
     
     // Generate verification token (valid for 24 hours)
-    const token = uuidv4();
+    const token = randomUUID();
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 24);
 

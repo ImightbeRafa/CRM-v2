@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PII_NO_STORE_HEADERS } from '@/lib/security';
 import { authenticateAPI } from '@/lib/auth-helpers';
 import { hasPermission } from '@/lib/rbac';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
@@ -63,6 +64,7 @@ export async function GET(
         headers: {
           'Content-Type': 'application/pdf',
           'Content-Disposition': `attachment; filename="${fileName}"`,
+        ...PII_NO_STORE_HEADERS,
           'Content-Length': pdfData.length.toString()
         }
       });

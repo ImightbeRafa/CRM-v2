@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { sqlCostaRicaHalfOpenRange } from '@/lib/costa-rica-clock-range';
 import { prisma } from '@/lib/db';
+import { ensureRlsEnabled } from '@/lib/lm-runtime-rls';
 import { authOptions } from '@/lib/auth-options';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { getLogisticsRates } from '@/lib/logistics-rates';
@@ -14,7 +15,20 @@ const CR_TZ = 'America/Costa_Rica';
 const MAX_BATCH = 200;
 const SETTLEMENT_METHODS = new Set(['sinpe', 'efectivo']);
 
-async function ensurePrivateDeliveryTable() {
+let ensurePromise: Promise<void> | null = null;
+
+/** Once per process: the ALTER TABLEs below take an exclusive table lock, and they ran on every request. */
+function ensurePrivateDeliveryTable(): Promise<void> {
+    if (!ensurePromise) {
+        ensurePromise = createPrivateDeliveryTable().catch((err) => {
+            ensurePromise = null;
+            throw err;
+        });
+    }
+    return ensurePromise;
+}
+
+async function createPrivateDeliveryTable() {
     await prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS lm_private_delivery_confirmations (
             id BIGSERIAL PRIMARY KEY,
@@ -47,6 +61,8 @@ async function ensurePrivateDeliveryTable() {
         CREATE INDEX IF NOT EXISTS lm_private_delivery_confirmations_archived_idx
         ON lm_private_delivery_confirmations (archived_at)
     `);
+    // Created here, so it never had row-level security (Supabase advisor 2026-10-23): on only when off.
+    await ensureRlsEnabled(['lm_private_delivery_confirmations']);
     // Migrate stale default rate 2800 → 2500 once (does not override other custom values)
     try {
         await prisma.$executeRawUnsafe(`

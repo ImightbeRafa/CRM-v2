@@ -16,22 +16,66 @@ export type HealthCheck = {
   ms: number;
   /** Database answer time reported by /api/health (only when the app answered with it). */
   dbMs?: number;
+  /** Database connection errors the app saw in its last 5 min (watchdog's authenticated check only). */
+  connErrors?: number;
   cause?: HealthCause;
   /** Short raw detail (status + first bytes of the body, or the error name). */
   detail: string;
 };
 
-/** What the edge-cache marker holds while the site is down. */
+/** An outage being tracked (failed rounds in a row). */
 export type HealthOutage = {
   /** First failed check of this outage (ISO). */
   since: string;
+  /** Last failed round (ISO): the outage ended between this and the first OK round. */
+  lastFailedAt: string;
   cause: HealthCause;
   detail: string;
-  /** Last "down" email (ISO): repeats at most every hour. */
+  /** Last "down" email (ISO): repeats at most every hour. UNSENT_EMAIL_AT until one went out. */
   lastEmailAt: string;
   /** Rounds (one every 5 min) where both checks failed. */
   failedRounds: number;
+  /** A "down" email went out (so recovery gets an email too). A one-round blip never emails. */
+  emailed: boolean;
 };
+
+/** Site up but the database slow / connections failing (warning before a full outage). */
+export type HealthDegraded = {
+  since: string;
+  /** Slow rounds in a row; email after DEGRADED_ROUNDS. */
+  slowRounds: number;
+  /** Normal rounds in a row since the last slow one; clears after DEGRADED_CLEAR_ROUNDS. */
+  okRounds: number;
+  emailed: boolean;
+  /** Worst database time / connection-error count seen. */
+  worstDbMs: number;
+  worstConnErrors: number;
+};
+
+/**
+ * Watchdog state, shared by every Cloudflare data center (Durable Object storage). It was an edge-cache
+ * entry per data center: on 2026-10-23 two data centers each saw one failed check and each later sent
+ * "volvió a responder (caído ~1 h)" for a ~15 min blip.
+ */
+export type WatchState = {
+  outage: HealthOutage | null;
+  degraded: HealthDegraded | null;
+  /** Last round that wrote the state (ISO): older than WATCH_STATE_STALE_MS = crons paused, discarded. */
+  updatedAt: string;
+};
+
+export type WatchEmail = "down" | "remind" | "up" | "degraded" | "degraded_clear";
+
+/** Failed rounds in a row before the first "down" email (~5 min; each round already retries after 20 s). */
+export const DOWN_ROUNDS = 2;
+/** Database slower than this on the health check counts as a slow round. */
+export const DEGRADED_DB_MS = 2_000;
+/** Connection errors in the app's last 5 min that count as a slow round. */
+export const DEGRADED_CONN_ERRORS = 5;
+export const DEGRADED_ROUNDS = 2;
+export const DEGRADED_CLEAR_ROUNDS = 2;
+/** State not updated for this long (crons paused / DISABLE_CRONS): dropped without any email. */
+export const WATCH_STATE_STALE_MS = 2 * 60 * 60_000;
 
 /** How long the watchdog waits for /api/health before calling it "no answer". */
 export const HEALTH_CHECK_TIMEOUT_MS = 15_000;
@@ -53,6 +97,12 @@ export function classifyHealth(status: number, body: string, thrown?: string): H
 
 export function parseDbMs(body: string): number | undefined {
   const m = /"dbMs"\s*:\s*(\d{1,6})/.exec(body);
+  return m ? Number(m[1]) : undefined;
+}
+
+/** Connection errors the app saw in its last 5 min (only in the watchdog's own authenticated check). */
+export function parseConnErrors(body: string): number | undefined {
+  const m = /"connErrors5m"\s*:\s*(\d{1,6})/.exec(body);
   return m ? Number(m[1]) : undefined;
 }
 
@@ -136,10 +186,9 @@ function checkLine(c: HealthCheck, n: number): string {
   return `  ${n}) ${crTime(c.at)} — ${c.detail} (tardó ${(c.ms / 1000).toFixed(1)} s${db})`;
 }
 
-/** First "down" email of an outage, or the hourly reminder when `outage.failedRounds > 1`. */
-export function buildDownEmail(outage: HealthOutage, checks: HealthCheck[], now: string): { subject: string; text: string } {
+/** First "down" email of an outage (after DOWN_ROUNDS failed rounds), or the hourly reminder. */
+export function buildDownEmail(outage: HealthOutage, checks: HealthCheck[], now: string, reminder = false): { subject: string; text: string } {
   const info = CAUSE[outage.cause];
-  const reminder = outage.failedRounds > 1;
   const elapsed = humanDuration(Date.parse(now) - Date.parse(outage.since));
   const subject = reminder
     ? `www.betsycrm.com SIGUE sin responder (${elapsed}) — ${SHORT[outage.cause]}`
@@ -176,16 +225,21 @@ export function buildUpEmail(outage: HealthOutage | null, check: HealthCheck, no
       text: [nowLine, `Hora: ${crTime(now, true)} hora CR (${utcTime(now)} UTC)`].join("\n"),
     };
   }
-  const duration = humanDuration(Date.parse(now) - Date.parse(outage.since));
+  // It ended somewhere between the last failed round and this first OK round (checks every 5 min).
+  const lastFailedAt = outage.lastFailedAt || outage.since;
+  const atLeast = humanDuration(Date.parse(lastFailedAt) - Date.parse(outage.since));
+  const atMost = humanDuration(Date.parse(now) - Date.parse(outage.since));
+  const range = atLeast === atMost ? `unos ${atMost}` : `entre ${atLeast} y ${atMost}`;
   return {
-    subject: `www.betsycrm.com volvió a responder (caído ~${duration})`,
+    subject: `www.betsycrm.com volvió a responder (caído ~${atMost})`,
     text: [
       nowLine,
       "",
-      `Estuvo caído: de ${crTime(outage.since, true)} a ${crTime(now)} hora CR (${utcTime(outage.since)}–${utcTime(now)} UTC), unos ${duration}.`,
+      `Estuvo caído desde ${crTime(outage.since, true)} hora CR (${utcTime(outage.since)} UTC). Último fallo visto: ${crTime(lastFailedAt)}; ya contesta a las ${crTime(now)}. Duración: ${range}.`,
       `Causa: ${CAUSE[outage.cause].what}`,
       `Primer error visto: ${outage.detail}`,
-      `Revisiones fallidas: ${outage.failedRounds} (se revisa cada 5 min: los horarios son aproximados, ±5 min).`,
+      `Revisiones fallidas seguidas: ${outage.failedRounds} (se revisa cada 5 min).`,
+      "Los mensajes de WhatsApp/Instagram de ese rato: Meta los vuelve a mandar cuando Betsy no los pudo guardar.",
       "",
       outage.cause === "db_timeout" || outage.cause === "db_error"
         ? "No hace falta hacer nada si no se repite. Si pasa seguido, conviene revisar el plan / uso de Supabase."
@@ -194,50 +248,143 @@ export function buildUpEmail(outage: HealthOutage | null, check: HealthCheck, no
   };
 }
 
-/**
- * One failed round (both checks down) → the outage to store and whether to email now.
- * `hadMarker` without `previous` = marker from the previous watchdog version ("1"): it already
- * emailed within the hour, so start tracking without a second email.
- */
-export function planDownRound(
-  hadMarker: boolean,
-  previous: HealthOutage | null,
-  checks: HealthCheck[],
-  now: string,
-): { outage: HealthOutage; email: boolean } {
-  const last = checks[checks.length - 1];
-  if (previous) {
-    const email = Date.parse(now) - Date.parse(previous.lastEmailAt) >= HEALTH_REMIND_EVERY_MS;
+/** Site answers but the database is slow / connections fail (one email per episode, and one when it clears). */
+export function buildDegradedEmail(d: HealthDegraded, check: HealthCheck, now: string, cleared: boolean): { subject: string; text: string } {
+  if (cleared) {
     return {
-      outage: {
-        ...previous,
-        // The cause can change mid-outage (Supabase slow → container down): reminders use the latest.
-        cause: last.cause ?? previous.cause,
-        failedRounds: previous.failedRounds + 1,
-        lastEmailAt: email ? now : previous.lastEmailAt,
-      },
-      email,
+      subject: "www.betsycrm.com: la base de datos volvió a la normalidad",
+      text: [
+        `Desde ${crTime(d.since, true)} hasta ${crTime(now)} hora CR la base de datos estuvo lenta o con conexiones fallidas (${humanDuration(Date.parse(now) - Date.parse(d.since))}).`,
+        `Peor momento: base de datos ${d.worstDbMs} ms, ${d.worstConnErrors} conexiones fallidas en 5 min.`,
+        `Ahora: base de datos ${check.dbMs ?? "?"} ms. No hace falta hacer nada si no se repite.`,
+      ].join("\n"),
     };
   }
   return {
-    // `detail` from the same check as `cause`, so both describe one failure.
-    outage: { since: checks[0].at, cause: last.cause ?? "app_error", detail: last.detail, lastEmailAt: now, failedRounds: 1 },
-    email: !hadMarker,
+    subject: "www.betsycrm.com sigue arriba, pero la base de datos está lenta",
+    text: [
+      "QUÉ PASA: el sitio responde, pero la base de datos (Supabase) está lenta o rechaza conexiones. Puede ser el aviso antes de un corte.",
+      `Desde: ${crTime(d.since, true)} hora CR (${utcTime(d.since)} UTC).`,
+      `Ahora: base de datos ${check.dbMs ?? "?"} ms, ${check.connErrors ?? 0} conexiones fallidas en los últimos 5 min (normal: menos de 300 ms y 0).`,
+      "",
+      "QUÉ HACER:",
+      "  • Nada todavía si dura pocos minutos. Si llega el correo de \"NO responde\", ahí sí es un corte.",
+      "  • Si se repite seguido: en el panel de Supabase mirá CPU, conexiones y \"checkpoints\".",
+      "",
+      "Te llega otro correo cuando vuelva a la normalidad.",
+    ].join("\n"),
   };
 }
 
-/** Marker body → outage, or null when it is the old "1" marker / unreadable. */
-export function parseOutage(raw: string): HealthOutage | null {
+function isSlow(check: HealthCheck): boolean {
+  return (check.dbMs ?? 0) > DEGRADED_DB_MS || (check.connErrors ?? 0) >= DEGRADED_CONN_ERRORS;
+}
+
+/**
+ * One watchdog round → the state to store and the emails to send. Pure.
+ * - Down: email only after DOWN_ROUNDS failed rounds in a row (a single failed round is a blip: no email);
+ *   then a reminder every hour; "up" on the first OK round, only when "down" went out.
+ * - Degraded (site up, database slow): email after DEGRADED_ROUNDS slow rounds, "cleared" after
+ *   DEGRADED_CLEAR_ROUNDS normal rounds. Never during an outage.
+ * - State older than WATCH_STATE_STALE_MS is dropped (crons were paused): no "recovered after 3 days".
+ * - `downRounds: 1` when the shared state could not be read (per-data-center fallback): rounds move between
+ *   data centers, so waiting for 2 in the same one could delay the email for a long time.
+ */
+export function planWatchRound(
+  previous: WatchState | null,
+  checks: HealthCheck[],
+  now: string,
+  opts: { downRounds?: number } = {},
+): { state: WatchState | null; emails: WatchEmail[] } {
+  const downRounds = opts.downRounds ?? DOWN_ROUNDS;
+  const fresh = previous && Date.parse(now) - Date.parse(previous.updatedAt) <= WATCH_STATE_STALE_MS ? previous : null;
+  let outage = fresh?.outage ?? null;
+  let degraded = fresh?.degraded ?? null;
+  const emails: WatchEmail[] = [];
+  const last = checks[checks.length - 1];
+
+  if (!last.ok) {
+    if (!outage) {
+      // `detail` from the same check as `cause`, so both describe one failure.
+      outage = { since: checks[0].at, lastFailedAt: now, cause: last.cause ?? "app_error", detail: last.detail, lastEmailAt: UNSENT_EMAIL_AT, failedRounds: 1, emailed: false };
+    } else {
+      // The cause can change mid-outage (Supabase slow → container down): emails use the latest.
+      outage = { ...outage, lastFailedAt: now, cause: last.cause ?? outage.cause, failedRounds: outage.failedRounds + 1 };
+    }
+    if (!outage.emailed && outage.failedRounds >= downRounds) {
+      outage = { ...outage, emailed: true, lastEmailAt: now };
+      emails.push("down");
+    } else if (outage.emailed && Date.parse(now) - Date.parse(outage.lastEmailAt) >= HEALTH_REMIND_EVERY_MS) {
+      outage = { ...outage, lastEmailAt: now };
+      emails.push("remind");
+    }
+    // A real outage (emailed) replaces the "slow" episode; a one-round blip keeps it, so its promised
+    // "back to normal" email still comes.
+    if (outage.emailed) degraded = null;
+  } else {
+    if (outage?.emailed) emails.push("up");
+    outage = null;
+    if (isSlow(last)) {
+      const base: HealthDegraded = degraded ?? { since: checks[0].at, slowRounds: 0, okRounds: 0, emailed: false, worstDbMs: 0, worstConnErrors: 0 };
+      degraded = {
+        ...base,
+        slowRounds: base.slowRounds + 1,
+        okRounds: 0,
+        worstDbMs: Math.max(base.worstDbMs, last.dbMs ?? 0),
+        worstConnErrors: Math.max(base.worstConnErrors, last.connErrors ?? 0),
+      };
+      if (!degraded.emailed && degraded.slowRounds >= DEGRADED_ROUNDS) {
+        degraded = { ...degraded, emailed: true };
+        emails.push("degraded");
+      }
+    } else if (degraded) {
+      degraded = { ...degraded, okRounds: degraded.okRounds + 1 };
+      if (degraded.okRounds >= DEGRADED_CLEAR_ROUNDS) {
+        if (degraded.emailed) emails.push("degraded_clear");
+        degraded = null;
+      }
+    }
+  }
+  if (!outage && !degraded) return { state: null, emails };
+  return { state: { outage, degraded, updatedAt: now }, emails };
+}
+
+function causeOk(v: unknown): v is HealthCause {
+  return typeof v === "string" && v in CAUSE;
+}
+
+/** Stored JSON → state, or null when missing / unreadable (never throws). */
+export function parseWatchState(raw: string | null | undefined): WatchState | null {
+  if (!raw) return null;
   try {
-    const v = JSON.parse(raw) as Partial<HealthOutage>;
-    if (typeof v?.since !== "string" || typeof v.cause !== "string" || !(v.cause in CAUSE)) return null;
-    return {
-      since: v.since,
-      cause: v.cause,
-      detail: typeof v.detail === "string" ? v.detail : "",
-      lastEmailAt: typeof v.lastEmailAt === "string" ? v.lastEmailAt : v.since,
-      failedRounds: typeof v.failedRounds === "number" ? v.failedRounds : 1,
-    };
+    const v = JSON.parse(raw) as Partial<WatchState>;
+    if (typeof v?.updatedAt !== "string") return null;
+    const o = v.outage as Partial<HealthOutage> | null | undefined;
+    const outage: HealthOutage | null =
+      o && typeof o.since === "string" && causeOk(o.cause)
+        ? {
+            since: o.since,
+            lastFailedAt: typeof o.lastFailedAt === "string" ? o.lastFailedAt : o.since,
+            cause: o.cause,
+            detail: typeof o.detail === "string" ? o.detail : "",
+            lastEmailAt: typeof o.lastEmailAt === "string" ? o.lastEmailAt : UNSENT_EMAIL_AT,
+            failedRounds: typeof o.failedRounds === "number" ? o.failedRounds : 1,
+            emailed: o.emailed === true,
+          }
+        : null;
+    const d = v.degraded as Partial<HealthDegraded> | null | undefined;
+    const degraded: HealthDegraded | null =
+      d && typeof d.since === "string"
+        ? {
+            since: d.since,
+            slowRounds: typeof d.slowRounds === "number" ? d.slowRounds : 1,
+            okRounds: typeof d.okRounds === "number" ? d.okRounds : 0,
+            emailed: d.emailed === true,
+            worstDbMs: typeof d.worstDbMs === "number" ? d.worstDbMs : 0,
+            worstConnErrors: typeof d.worstConnErrors === "number" ? d.worstConnErrors : 0,
+          }
+        : null;
+    return { outage, degraded, updatedAt: v.updatedAt };
   } catch {
     return null;
   }

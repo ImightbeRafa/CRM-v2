@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { ensureRlsEnabled } from '@/lib/lm-runtime-rls';
 import {
   buildMappingSlots,
   linesNeedIndependentSlots,
@@ -154,6 +155,14 @@ export async function ensureRetiroStockTables() {
           PRIMARY KEY (crm_order_id, slot_key)
         )
       `);
+      // Tables created here never had row-level security (Supabase advisor 2026-10-23): on only when off.
+      await ensureRlsEnabled([
+        'lm_retiro_stock',
+        'lm_retiro_stock_movements',
+        'lm_retiro_product_aliases',
+        'lm_retiro_handoffs',
+        'lm_retiro_order_allocations',
+      ]);
       await seedLauraStockIfNeeded(DEFAULT_RETIRO_AGENT);
     })().catch((err) => {
       ensurePromise = null;

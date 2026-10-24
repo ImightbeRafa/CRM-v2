@@ -60,15 +60,18 @@ async function fetchWithFailover(env: Env, request: Request): Promise<Response> 
 }
 import { env } from "cloudflare:workers";
 import {
+  buildDegradedEmail,
   buildDownEmail,
   buildUpEmail,
   classifyHealth,
   HEALTH_CHECK_TIMEOUT_MS,
+  parseConnErrors,
   parseDbMs,
-  parseOutage,
-  planDownRound,
+  parseWatchState,
+  planWatchRound,
   UNSENT_EMAIL_AT,
   type HealthCheck,
+  type WatchState,
 } from "./lib/ops/health-watch-text";
 import { cronSlotMinute, cronSlotStorageKey, shouldRunCronSlot } from "./lib/ops/cron-slot";
 
@@ -378,6 +381,16 @@ export class BetsyCrmContainer extends Container {
     this.ctx.storage.kv.put(key, minute);
     return true;
   }
+
+  /** Uptime watchdog state, one copy for every data center (see healthWatch). Plain RPC, no container wake. */
+  async getWatchState(): Promise<string | null> {
+    return this.ctx.storage.kv.get<string>(WATCH_STATE_KEY) ?? null;
+  }
+
+  async putWatchState(raw: string | null): Promise<void> {
+    if (raw === null) this.ctx.storage.kv.delete(WATCH_STATE_KEY);
+    else this.ctx.storage.kv.put(WATCH_STATE_KEY, raw);
+  }
 }
 
 /** Fail-open: if the claim cannot be checked (stuck object, 5 s), run anyway — a duplicate beats a missed backup. */
@@ -441,12 +454,57 @@ async function runCronPaths(
 
 /**
  * Uptime watchdog (every 5 min, runs in the Worker, so it still works when the container or the
- * database is down): asks the container for /api/health; if two checks 20 s apart both fail,
- * emails OPS_ALERT_EMAIL through Resend's API directly. The edge-cache marker keeps the outage
- * (start, cause, failed rounds): first email at once, a reminder at most every hour, and one
- * "back up" email saying how long it lasted. Texts: src/lib/ops/health-watch-text.ts.
+ * database is down): asks the container for /api/health (a round fails when two checks 20 s apart both
+ * fail) and emails OPS_ALERT_EMAIL through Resend's API directly. Decisions: planWatchRound in
+ * src/lib/ops/health-watch-text.ts ("down" after 2 failed rounds in a row, hourly reminder, one "back up"
+ * with the real duration range, a "database slow" warning). State lives in the primary Durable Object, so
+ * every data center sees the same outage (2026-10-23: per-data-center cache markers sent two "~1 h" emails
+ * for a ~15 min blip); the edge cache is only the fallback when the object cannot be reached.
  */
-const HEALTH_ALERT_KEY = "https://betsy-internal.invalid/health-alert";
+const HEALTH_ALERT_KEY = "https://betsy-internal.invalid/health-alert-v2";
+const WATCH_STATE_KEY = "betsy-health-watch";
+const WATCH_STATE_RPC_MS = 5_000;
+
+async function withRpcTimeout<T>(work: Promise<T>): Promise<T | "timeout"> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), WATCH_STATE_RPC_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** `shared: false` = the Durable Object could not be read; the edge copy (this data center only) is used. */
+async function loadWatchState(env: Env): Promise<{ state: WatchState | null; shared: boolean }> {
+  try {
+    const raw = await withRpcTimeout(containerStub(env, CONTAINER_INSTANCE_NAME).getWatchState());
+    if (raw !== "timeout") return { state: parseWatchState(raw), shared: true };
+    console.error("[cf-health] state read timed out, using edge cache");
+  } catch (error) {
+    console.error(`[cf-health] state read failed, using edge cache ${error instanceof Error ? error.name : "error"}`);
+  }
+  const stored = await caches.default.match(new Request(HEALTH_ALERT_KEY)).catch(() => undefined);
+  return { state: stored ? parseWatchState(await stored.text().catch(() => "")) : null, shared: false };
+}
+
+async function saveWatchState(env: Env, state: WatchState | null): Promise<void> {
+  const raw = state ? JSON.stringify(state) : null;
+  const marker = new Request(HEALTH_ALERT_KEY);
+  // Edge copy first (fallback only, 2 h like the staleness rule), then the shared copy.
+  if (raw) await caches.default.put(marker, new Response(raw, { headers: { "Cache-Control": "max-age=7200" } })).catch(() => undefined);
+  else await caches.default.delete(marker).catch(() => undefined);
+  try {
+    const done = await withRpcTimeout(containerStub(env, CONTAINER_INSTANCE_NAME).putWatchState(raw));
+    if (done === "timeout") console.error("[cf-health] state write timed out");
+  } catch (error) {
+    console.error(`[cf-health] state write failed ${error instanceof Error ? error.name : "error"}`);
+  }
+}
 
 async function checkHealthOnce(env: Env): Promise<HealthCheck> {
   const at = new Date().toISOString();
@@ -458,7 +516,12 @@ async function checkHealthOnce(env: Env): Promise<HealthCheck> {
     });
     // Body read inside the race too: headers then a stalled body still counts as "no answer".
     const answer = await Promise.race([
-      fetchWithFailover(env, new Request("http://container/api/health", { method: "GET" })).then(async (r) => ({
+      // The watch header (CRON_SECRET) adds the app's connection-error count to the answer; the public answer
+      // stays { ok, dbMs }.
+      fetchWithFailover(
+        env,
+        new Request("http://container/api/health", { method: "GET", headers: { "x-betsy-watch": (env.CRON_SECRET || "").trim() } }),
+      ).then(async (r) => ({
         status: r.status,
         ok: r.ok,
         text: await r.text().catch(() => ""),
@@ -482,6 +545,7 @@ async function checkHealthOnce(env: Env): Promise<HealthCheck> {
       status,
       ms: Date.now() - started,
       dbMs: parseDbMs(text),
+      connErrors: parseConnErrors(text),
       cause: classifyHealth(status, text),
       detail: `HTTP ${status} ${text.slice(0, 120)}`,
     };
@@ -514,8 +578,6 @@ async function sendWorkerAlert(env: Env, subject: string, text: string): Promise
 }
 
 async function healthWatch(env: Env): Promise<void> {
-  const cache = caches.default;
-  const marker = new Request(HEALTH_ALERT_KEY);
   const checks = [await checkHealthOnce(env)];
   if (!checks[0].ok) {
     await new Promise((r) => setTimeout(r, 20_000));
@@ -523,26 +585,34 @@ async function healthWatch(env: Env): Promise<void> {
   }
   const last = checks[checks.length - 1];
   const now = new Date().toISOString();
-  const stored = await cache.match(marker);
-  const previous = stored ? parseOutage(await stored.text().catch(() => "")) : null;
-  if (!last.ok) {
-    console.error(`[cf-health] DOWN ${last.cause} ${last.detail}`);
-    const { outage, email } = planDownRound(Boolean(stored), previous, checks, now);
-    if (email) {
-      const down = buildDownEmail(outage, checks, now);
+  // Database time on every round, for the logs (a number only).
+  if (last.ok) console.log(`[cf-health] ok dbMs=${last.dbMs ?? "?"} connErrors5m=${last.connErrors ?? "?"} totalMs=${last.ms}`);
+  else console.error(`[cf-health] DOWN ${last.cause} ${last.detail}`);
+
+  const { state: previous, shared } = await loadWatchState(env);
+  // Without the shared state, rounds land in different data centers: email on the first failed round
+  // (the edge copy still dedupes within this data center), as before 2026-10-23.
+  const { state, emails } = planWatchRound(previous, checks, now, shared ? {} : { downRounds: 1 });
+  for (const kind of emails) {
+    if ((kind === "down" || kind === "remind") && state?.outage) {
+      const down = buildDownEmail(state.outage, checks, now, kind === "remind");
       // Not accepted by Resend: retry on the next round instead of an hour later.
-      if (!(await sendWorkerAlert(env, down.subject, down.text))) outage.lastEmailAt = UNSENT_EMAIL_AT;
+      if (!(await sendWorkerAlert(env, down.subject, down.text))) {
+        state.outage.lastEmailAt = UNSENT_EMAIL_AT;
+        if (kind === "down") state.outage.emailed = false;
+      }
+    } else if (kind === "up") {
+      const up = buildUpEmail(previous?.outage ?? null, last, now);
+      await sendWorkerAlert(env, up.subject, up.text);
+    } else if (kind === "degraded" && state?.degraded) {
+      const slow = buildDegradedEmail(state.degraded, last, now, false);
+      if (!(await sendWorkerAlert(env, slow.subject, slow.text))) state.degraded.emailed = false;
+    } else if (kind === "degraded_clear" && previous?.degraded) {
+      const clear = buildDegradedEmail(previous.degraded, last, now, true);
+      await sendWorkerAlert(env, clear.subject, clear.text);
     }
-    // Rewritten every failed round, so 2 h keeps the outage start; a marker left behind (recovery
-    // seen in another data center, crons paused) expires soon instead of faking a long outage.
-    await cache.put(marker, new Response(JSON.stringify(outage), { headers: { "Cache-Control": "max-age=7200" } }));
-    return;
   }
-  if (stored) {
-    await cache.delete(marker);
-    const up = buildUpEmail(previous, last, now);
-    await sendWorkerAlert(env, up.subject, up.text);
-  }
+  if (state || previous) await saveWatchState(env, state);
 }
 
 /**

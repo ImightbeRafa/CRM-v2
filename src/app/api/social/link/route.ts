@@ -29,7 +29,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing platform or accountId' }, { status: 400 })
     }
 
-    if (!['instagram', 'whatsapp'].includes(platform)) {
+    // Manual link is WhatsApp-only (Graph-verified below). Instagram connects through OAuth
+    // (/api/auth/instagram/*), which proves ownership; an unverified Instagram row created here
+    // could claim another business's Page / IG id and receive its DMs.
+    if (platform !== 'whatsapp') {
       return NextResponse.json({ error: 'Unsupported social platform' }, { status: 400 })
     }
 
@@ -170,44 +173,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, subscribed: true, account: result })
     }
 
-    const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : null
-
-    const existing = await db.socialAccount.findFirst({
-      where: { tenantId, platform, accountId },
-    })
-
-    const encryptedToken = encryptSocialAccessToken(accessToken) ?? undefined
-
-    let result
-    if (existing) {
-      result = await db.socialAccount.update({
-        where: { id: existing.id },
-        data: {
-          userId,
-          isActive: true,
-          accessToken: encryptedToken,
-          refreshToken: refreshToken ?? undefined,
-          expiresAt: expiresAt ?? undefined,
-        },
-        select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true },
-      })
-    } else {
-      result = await db.socialAccount.create({
-        data: {
-          tenantId,
-          userId,
-          platform,
-          accountId,
-          isActive: true,
-          accessToken: encryptedToken,
-          refreshToken: refreshToken ?? undefined,
-          expiresAt: expiresAt ?? undefined,
-        },
-        select: { id: true, platform: true, accountId: true, isActive: true, linkedAt: true },
-      })
-    }
-
-    return NextResponse.json({ success: true, account: result })
+    return NextResponse.json({ error: 'Unsupported social platform' }, { status: 400 })
   } catch (error) {
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }

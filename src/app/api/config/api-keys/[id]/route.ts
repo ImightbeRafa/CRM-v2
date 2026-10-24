@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateAPI } from '@/lib/auth-helpers';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { revokeApiKey } from '@/lib/integration-auth';
 
 export async function DELETE(
@@ -8,7 +8,7 @@ export async function DELETE(
 ) {
   try {
     const { id: keyId } = await params;
-    const auth = await authenticateAPI(req);
+    const auth = await authenticateAPIWithPermission(req, 'update_config');
     if (!auth.ok) {
       return auth.response;
     }

@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   const saved = [];
   const lifecycleV2 = await shouldUseOrderLifecycleV2(tenantId, 'tenant-guia');
   for (const entry of clean) {
-    const existing = await tenantPrisma.shippingGuia.findFirst({ where: { orderId: entry.orderId, carrier: 'manual' } });
+    const existing = await tenantPrisma.shippingGuia.findFirst({ where: { orderId: entry.orderId, carrier: 'manual' }, select: { id: true } });
     const guia = existing
       ? await tenantPrisma.shippingGuia.update({
           where: { id: existing.id },

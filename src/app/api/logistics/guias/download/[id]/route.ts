@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PII_NO_STORE_HEADERS } from '@/lib/security';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { getCorreosAutomatedShippingCost } from '@/lib/correos-gam-pricing';
@@ -53,6 +54,7 @@ export async function GET(
             headers: {
                 'Content-Type': 'application/pdf',
                 'Content-Disposition': `attachment; filename="${fileName}"`,
+                ...PII_NO_STORE_HEADERS,
                 'Content-Length': pdfData.length.toString(),
             },
         });

@@ -24,6 +24,7 @@ import { softAiCanalContextLine } from '@/lib/soft-ai/channel-context'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 import { BURST_SETTLE_MS, persistJob } from '@/lib/soft-ai/automation-queue'
+import { isTransientDbError } from '@/lib/db-retry'
 
 type InboundHookArgs = {
   tenantId: string
@@ -391,7 +392,9 @@ export function isReactionMessage(messageType: string | null | undefined): boole
 
 /**
  * Persist a Soft AI automation job after inbound dual-write succeeds.
- * Returns null when flag is off or ids are missing. Never throws to webhook.
+ * Never throws to webhook. Returns null ONLY when the database could not be reached (the webhook then
+ * answers 503 so Meta re-delivers, 2026-10-23); any other failure is `{ skippedReason: 'enqueue_failed' }`
+ * (a repeating bug must not make every webhook fail).
  */
 export async function enqueueSoftAiAfterInbound(
   args: InboundHookArgs,
@@ -427,7 +430,7 @@ export async function enqueueSoftAiAfterInbound(
     return { jobId: row.id, duplicate: row.duplicate, settleMs }
   } catch (error) {
     console.error('[soft-ai/inbound-hook] enqueue failed', error)
-    return null
+    return isTransientDbError(error) ? null : { skippedReason: 'enqueue_failed' }
   }
 }
 

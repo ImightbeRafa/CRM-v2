@@ -5,6 +5,7 @@
 
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { isTransientDbError, withDbRetry } from '@/lib/db-retry'
 import {
   compareMessageOrder,
   deriveConversationPeer,
@@ -96,7 +97,8 @@ export type DualWriteResult =
     }
   | {
       ok: false
-      reason: 'missing_peer' | 'literal_unknown' | 'error'
+      /** 'transient': the database could not be reached in time (2026-10-23): the caller should make the sender retry. */
+      reason: 'missing_peer' | 'literal_unknown' | 'error' | 'transient'
       error?: string
     }
 
@@ -135,6 +137,43 @@ function isP2002(error: unknown): boolean {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
   )
+}
+
+/** P2002 on ChatConversation (tenantId, socialAccountId, peerId): two first messages of a new chat at once. */
+export function isConversationRace(error: unknown): boolean {
+  if (!isP2002(error)) return false
+  const target = (error as Prisma.PrismaClientKnownRequestError).meta?.target
+  const text = Array.isArray(target) ? target.join(',') : String(target ?? '')
+  return /peerId|ChatConversation/i.test(text) && !/providerMessageId/i.test(text)
+}
+
+/**
+ * Explicit transaction budget (Prisma defaults: 2 s to start, 5 s to finish). A busy pool may wait up to
+ * 5 s for a connection instead of failing the webhook after 2 s (2026-10-23 incident).
+ */
+const DUAL_WRITE_TX_OPTIONS = { maxWait: 5_000, timeout: 10_000 } as const
+
+const ACTIVITY_TOUCH_MS = 60_000
+
+/**
+ * "Last webhook / last send" stamp on the line, after the message committed. It was written inside every
+ * message transaction: one hot row per line that serialized concurrent webhooks (ShareLock waits during
+ * Meta's retry burst). Now best effort, at most once a minute, and always while the line carries an error
+ * marker so the quiet-line check clears a recovered line on its next run. Never blocks or fails the write.
+ */
+function touchSocialAccountActivity(socialAccountId: string, direction: DualWriteDirection): void {
+  const now = new Date()
+  const cutoff = new Date(now.getTime() - ACTIVITY_TOUCH_MS)
+  const where: Prisma.SocialAccountWhereInput =
+    direction === 'inbound'
+      ? { id: socialAccountId, OR: [{ lastWebhookAt: null }, { lastWebhookAt: { lt: cutoff } }, { lastErrorCode: { not: null } }] }
+      : { id: socialAccountId, OR: [{ lastSendAt: null }, { lastSendAt: { lt: cutoff } }] }
+  void prisma.socialAccount
+    .updateMany({ where, data: direction === 'inbound' ? { lastWebhookAt: now } : { lastSendAt: now } })
+    .catch((error: unknown) => {
+      const e = error as { code?: unknown } | null
+      console.warn('[chat-conversation-write] activity touch failed', { code: typeof e?.code === 'string' ? e.code : undefined })
+    })
 }
 
 export function isDeliveryStatusMonotonicUpgrade(
@@ -204,65 +243,52 @@ async function ensureConversation(
     args.platform,
   )
 
+  // New conversations auto-activate only when the layer flag is on,
+  // autoActivateNewConversations is true, and the account is allowlisted.
+  // An empty allowlist activates nobody. Existing rows stay untouched.
+  let aiMode: string | undefined
   try {
-    // New conversations auto-activate only when the layer flag is on,
-    // autoActivateNewConversations is true, and the account is allowlisted.
-    // An empty allowlist activates nobody. Existing rows stay untouched.
-    let aiMode: string | undefined
-    try {
-      const flag = await tx.tenantFeatureFlag.findFirst({
-        where: {
-          tenantId: args.tenantId,
-          scope: args.tenantId,
-          key: CHAT_AGENT_LAYER_V1_FLAG,
-        },
-        select: { enabled: true, config: true },
-      })
-      if (flag?.enabled) {
-        const cfg = parseChatAgentLayerConfig(flag.config)
-        if (
-          cfg.autoActivateNewConversations &&
-          cfg.accountAllowlist.includes(args.socialAccountId)
-        ) {
-          aiMode = 'ai_active'
-        }
-      }
-    } catch {
-      // Flag/table unavailable — leave aiMode unset (fail closed).
-    }
-
-    const created = await tx.chatConversation.create({
-      data: {
-        tenantId: args.tenantId,
-        socialAccountId: args.socialAccountId,
-        peerId: args.peerId,
-        peerName: args.peerName,
-        clientId: clientId ?? undefined,
-        status: 'nuevo',
-        tags: [],
-        lastMessageAt: args.sentAt,
-        inboundCount: 0,
-        messageCount: 0,
-        ...(aiMode ? { aiMode } : {}),
-      },
-      select: { id: true, clientId: true, peerName: true },
-    })
-    return created
-  } catch (error) {
-    if (!isP2002(error)) throw error
-    const raced = await tx.chatConversation.findUnique({
+    const flag = await tx.tenantFeatureFlag.findFirst({
       where: {
-        tenantId_socialAccountId_peerId: {
-          tenantId: args.tenantId,
-          socialAccountId: args.socialAccountId,
-          peerId: args.peerId,
-        },
+        tenantId: args.tenantId,
+        scope: args.tenantId,
+        key: CHAT_AGENT_LAYER_V1_FLAG,
       },
-      select: { id: true, clientId: true, peerName: true },
+      select: { enabled: true, config: true },
     })
-    if (!raced) throw error
-    return raced
+    if (flag?.enabled) {
+      const cfg = parseChatAgentLayerConfig(flag.config)
+      if (
+        cfg.autoActivateNewConversations &&
+        cfg.accountAllowlist.includes(args.socialAccountId)
+      ) {
+        aiMode = 'ai_active'
+      }
+    }
+  } catch {
+    // Flag/table unavailable — leave aiMode unset (fail closed).
   }
+
+  // A concurrent first message can create this chat between the lookup and this INSERT: the P2002 then
+  // aborts the transaction (no query can run on tx any more, 25P02), so it propagates as is and
+  // dualWriteChatMessage reruns the whole write once (the chat exists by then).
+  const created = await tx.chatConversation.create({
+    data: {
+      tenantId: args.tenantId,
+      socialAccountId: args.socialAccountId,
+      peerId: args.peerId,
+      peerName: args.peerName,
+      clientId: clientId ?? undefined,
+      status: 'nuevo',
+      tags: [],
+      lastMessageAt: args.sentAt,
+      inboundCount: 0,
+      messageCount: 0,
+      ...(aiMode ? { aiMode } : {}),
+    },
+    select: { id: true, clientId: true, peerName: true },
+  })
+  return created
 }
 
 /** Customer messages (non-duplicate) sent at or before `upTo`, capped by the inbound counter. */
@@ -444,8 +470,8 @@ export async function dualWriteChatMessage(
     mediaFilename: input.mediaFilename || undefined,
   }
 
-  try {
-    return await prisma.$transaction(async (tx) => {
+  const writeOnce = () =>
+    prisma.$transaction(async (tx) => {
       if (providerMessageId) {
         const existing = await findExistingByProviderId(
           tx,
@@ -502,20 +528,8 @@ export async function dualWriteChatMessage(
           select: { id: true },
         })
       } catch (error) {
-        if (isP2002(error) && providerMessageId) {
-          const dup = await findExistingByProviderId(
-            tx,
-            input.socialAccountId,
-            providerMessageId,
-          )
-          return {
-            ok: true as const,
-            duplicate: true as const,
-            messageId: dup?.id ?? null,
-            conversationId: dup?.conversationId ?? conversation.id,
-            reason: 'duplicate' as const,
-          }
-        }
+        // Same message stored by a concurrent delivery (Meta retry): the failed INSERT aborted the
+        // transaction, so the duplicate lookup happens outside it (catch below).
         throw error
       }
 
@@ -536,14 +550,6 @@ export async function dualWriteChatMessage(
         keepListPosition: input.keepListPosition === true,
       })
 
-      await tx.socialAccount.update({
-        where: { id: input.socialAccountId },
-        data:
-          input.direction === 'inbound'
-            ? { lastWebhookAt: new Date() }
-            : { lastSendAt: new Date() },
-      })
-
       return {
         ok: true as const,
         duplicate: false as const,
@@ -558,26 +564,46 @@ export async function dualWriteChatMessage(
         suppressSoftAi:
           Boolean(input.suppressSoftAi) || input.direction !== 'inbound',
       }
-    })
+    }, DUAL_WRITE_TX_OPTIONS)
+
+  try {
+    let result: DualWriteResult
+    try {
+      // Retries only when the transaction never started (connect / pool / start timeout).
+      result = await withDbRetry(writeOnce)
+    } catch (error) {
+      if (!isConversationRace(error)) throw error
+      // The chat was created by a concurrent first message: it exists now, one rerun picks it up.
+      result = await withDbRetry(writeOnce)
+    }
+    if (result.ok && !result.duplicate) {
+      touchSocialAccountActivity(input.socialAccountId, input.direction)
+    }
+    return result
   } catch (error) {
     if (isP2002(error)) {
+      const dup = providerMessageId
+        ? await findExistingByProviderId(prisma as unknown as Prisma.TransactionClient, input.socialAccountId, providerMessageId).catch(() => null)
+        : null
       return {
         ok: true,
         duplicate: true,
-        messageId: null,
-        conversationId: null,
+        messageId: dup?.id ?? null,
+        conversationId: dup?.conversationId ?? null,
         reason: 'duplicate',
       }
     }
+    const transient = isTransientDbError(error)
     // Name / code only: a Prisma validation error prints the whole row (phone, text, raw message).
-    const e = error as { name?: unknown; code?: unknown } | null
+    const e = error as { name?: unknown; code?: unknown; errorCode?: unknown } | null
     console.error('[chat-conversation-write] dualWrite failed', {
       name: typeof e?.name === 'string' ? e.name : undefined,
-      code: typeof e?.code === 'string' ? e.code : undefined,
+      code: typeof e?.code === 'string' ? e.code : typeof e?.errorCode === 'string' ? e.errorCode : undefined,
+      transient,
     })
     return {
       ok: false,
-      reason: 'error',
+      reason: transient ? 'transient' : 'error',
       error: error instanceof Error ? error.message : 'unknown',
     }
   }

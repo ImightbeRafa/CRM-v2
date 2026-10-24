@@ -24,6 +24,10 @@ export const getDatabaseUrl = () => {
   if (!baseUrl.includes('pgbouncer') && baseUrl.includes(':6543')) {
     params.push('pgbouncer=true');
   }
+  // connect_timeout stays at Prisma's default (5 s) on purpose (2026-10-23 incident): a longer one only
+  // makes a request wait longer while Postgres cannot accept connections; the callers that matter
+  // (chat webhook / write) retry connect failures with backoff (src/lib/db-retry.ts) and the webhook
+  // answers 503 so Meta re-delivers. One long-lived container: the pool (PRISMA_CONNECTION_LIMIT) is shared.
 
   if (params.length === 0) return baseUrl;
   const separator = hasParams ? '&' : '?';

@@ -180,10 +180,20 @@ test('uptime: public /api/health pings the DB with a 3 s limit; the Worker check
   const worker = read('src/cf-container-worker.ts')
   assert.match(worker, /if \(controller\.cron === "\*\/5 \* \* \* \*"\) \{\n\s+await healthWatch\(env\)/)
   assert.match(worker, /await new Promise\(\(r\) => setTimeout\(r, 20_000\)\);/, 'second check before alerting')
-  assert.match(worker, /planDownRound\(Boolean\(stored\), previous, checks, now\)/, 'hourly reminder decided by the tested helper')
-  assert.match(worker, /buildUpEmail\(previous, last, now\)/)
+  assert.match(worker, /planWatchRound\(previous, checks, now, shared \? \{\} : \{ downRounds: 1 \}\)/, 'every email decided by the tested planner; first-failure email without the shared state')
+  assert.match(worker, /buildUpEmail\(previous\?\.outage \?\? null, last, now\)/)
   assert.match(worker, /HEALTH_CHECK_TIMEOUT_MS/, 'a hung container counts as down')
   assert.match(health, /dbMs: Date\.now\(\) - started/)
+  // 2026-10-23: state shared by every data center (Durable Object), edge cache only as fallback.
+  assert.match(worker, /async getWatchState\(\): Promise<string \| null> \{\n\s+return this\.ctx\.storage\.kv\.get<string>\(WATCH_STATE_KEY\)/)
+  assert.match(worker, /const \{ state: previous, shared \} = await loadWatchState\(env\);/)
+  assert.match(worker, /if \(state \|\| previous\) await saveWatchState\(env, state\);/)
+  assert.match(worker, /using edge cache/)
+  // The connection-error count only for the watchdog's own check (header = CRON_SECRET, constant-time).
+  assert.match(worker, /"x-betsy-watch": \(env\.CRON_SECRET \|\| ""\)\.trim\(\)/)
+  assert.match(health, /request\.headers\.get\('x-betsy-watch'\)/)
+  assert.match(health, /timingSafeEqual\(a, b\)/)
+  assert.match(health, /: \{ ok: true, dbMs: Date\.now\(\) - started \}/, 'public answer unchanged')
 })
 
 test('uptime emails: cause in plain words, CR time, attempts, duration on recovery, hourly reminder', async () => {
@@ -206,10 +216,22 @@ test('uptime emails: cause in plain words, CR time, attempts, duration on recove
     { ...fail, at: '2026-10-13T03:25:51.000Z' },
     { ...fail, at: '2026-10-13T03:26:11.500Z' },
   ]
-  const first = h.planDownRound(false, null, checks, '2026-10-13T03:26:12.068Z')
-  assert.equal(first.email, true)
-  assert.equal(first.outage.since, '2026-10-13T03:25:51.000Z')
-  const down = h.buildDownEmail(first.outage, checks, '2026-10-13T03:26:12.068Z')
+  // Round 1 fails: tracked, NO email (a single failed round is a blip — 2026-10-23 sent "down" for those).
+  const r1 = h.planWatchRound(null, checks, '2026-10-13T03:26:12.068Z')
+  assert.deepEqual(r1.emails, [])
+  assert.equal(r1.state?.outage?.since, '2026-10-13T03:25:51.000Z')
+  assert.equal(r1.state?.outage?.emailed, false)
+  // A one-round blip that recovers: no email at all, state cleared.
+  const ok = { at: '2026-10-13T03:30:49.000Z', ok: true, status: 200, ms: 180, dbMs: 9, detail: 'HTTP 200' }
+  const blip = h.planWatchRound(r1.state, [ok], '2026-10-13T03:31:00.000Z')
+  assert.deepEqual(blip.emails, [])
+  assert.equal(blip.state, null)
+
+  // Round 2 still failing: ONE "down" email.
+  const r2 = h.planWatchRound(r1.state, checks, '2026-10-13T03:31:12.000Z')
+  assert.deepEqual(r2.emails, ['down'])
+  assert.equal(r2.state?.outage?.failedRounds, 2)
+  const down = h.buildDownEmail(r2.state!.outage!, checks, '2026-10-13T03:31:12.000Z')
   assert.match(down.subject, /NO responde — base de datos lenta/)
   assert.match(down.text, /Supabase\) tardó más de 3 segundos/)
   assert.match(down.text, /12\/10 21:25 hora CR \(03:25 UTC\)/)
@@ -217,36 +239,69 @@ test('uptime emails: cause in plain words, CR time, attempts, duration on recove
   assert.match(down.text, /status\.supabase\.com/)
 
   // Later rounds inside the hour: no email; after an hour: one reminder.
-  const r2 = h.planDownRound(true, first.outage, checks, '2026-10-13T03:31:12.000Z')
-  assert.equal(r2.email, false)
-  assert.equal(r2.outage.failedRounds, 2)
-  const r3 = h.planDownRound(true, { ...r2.outage, failedRounds: 12 }, checks, '2026-10-13T04:26:30.000Z')
-  assert.equal(r3.email, true)
-  assert.equal(r3.outage.lastEmailAt, '2026-10-13T04:26:30.000Z')
-  assert.match(h.buildDownEmail(r3.outage, checks, '2026-10-13T04:26:30.000Z').subject, /SIGUE sin responder \(1 h 1 min\) — base de datos lenta/)
+  const r3 = h.planWatchRound(r2.state, checks, '2026-10-13T03:36:12.000Z')
+  assert.deepEqual(r3.emails, [])
+  const r4 = h.planWatchRound({ ...r3.state!, updatedAt: '2026-10-13T04:26:00.000Z' }, checks, '2026-10-13T04:31:30.000Z')
+  assert.deepEqual(r4.emails, ['remind'])
+  assert.equal(r4.state?.outage?.lastEmailAt, '2026-10-13T04:31:30.000Z')
+  assert.match(h.buildDownEmail(r4.state!.outage!, checks, '2026-10-13T04:31:30.000Z', true).subject, /SIGUE sin responder \(1 h 6 min\) — base de datos lenta/)
   // Cause follows the latest failure (Supabase slow → container down).
-  const gone = [{ ...fail, at: '2026-10-13T04:26:10.000Z', status: 0, cause: 'app_unreachable' as const, detail: 'Error' }]
-  const r4 = h.planDownRound(true, r3.outage, gone, '2026-10-13T04:31:00.000Z')
-  assert.equal(r4.outage.cause, 'app_unreachable')
-  assert.equal(r4.outage.since, '2026-10-13T03:25:51.000Z')
-  // Resend did not accept the first email: the next round sends again (not an hour later).
-  const retry = h.planDownRound(true, { ...first.outage, lastEmailAt: h.UNSENT_EMAIL_AT }, checks, '2026-10-13T03:31:12.000Z')
-  assert.equal(retry.email, true)
+  const gone = [{ ...fail, at: '2026-10-13T04:36:10.000Z', status: 0, cause: 'app_unreachable' as const, detail: 'Error' }]
+  const r5 = h.planWatchRound(r4.state, gone, '2026-10-13T04:36:30.000Z')
+  assert.equal(r5.state?.outage?.cause, 'app_unreachable')
+  assert.equal(r5.state?.outage?.since, '2026-10-13T03:25:51.000Z')
+  // Resend did not accept the first email: the worker marks it unsent and the next round sends again.
+  const unsent = { ...r2.state!, outage: { ...r2.state!.outage!, emailed: false, lastEmailAt: h.UNSENT_EMAIL_AT } }
+  assert.deepEqual(h.planWatchRound(unsent, checks, '2026-10-13T03:36:12.000Z').emails, ['down'])
+  assert.match(worker(), /if \(kind === "down"\) state\.outage\.emailed = false;/)
   assert.match(worker(), /max-age=7200/)
-  assert.match(worker(), /if \(!\(await sendWorkerAlert\(env, down\.subject, down\.text\)\)\) outage\.lastEmailAt = UNSENT_EMAIL_AT/)
-  // Marker from the previous version ("1"): tracked, no duplicate email.
-  assert.equal(h.parseOutage('1'), null)
-  assert.equal(h.planDownRound(true, null, checks, '2026-10-13T03:26:12.068Z').email, false)
 
-  const stored = h.parseOutage(JSON.stringify(r2.outage))
-  const ok = { at: '2026-10-13T03:30:49.000Z', ok: true, status: 200, ms: 180, dbMs: 9, detail: 'HTTP 200' }
-  const up = h.buildUpEmail(stored, ok, '2026-10-13T03:30:49.693Z')
-  assert.match(up.subject, /volvió a responder \(caído ~5 min\)/)
-  assert.match(up.text, /de 12\/10 21:25 a 21:30 hora CR/)
+  // Recovery: one "up" email with the real range (last failure → first OK), not "since the first failure".
+  const r6 = h.planWatchRound(r2.state, [ok], '2026-10-13T03:36:00.000Z')
+  assert.deepEqual(r6.emails, ['up'])
+  assert.equal(r6.state, null)
+  const stored = h.parseWatchState(JSON.stringify(r2.state))
+  const up = h.buildUpEmail(stored!.outage, ok, '2026-10-13T03:36:00.000Z')
+  assert.match(up.subject, /volvió a responder \(caído ~10 min\)/)
+  assert.match(up.text, /Duración: entre 5 min y 10 min/)
+  assert.match(up.text, /Último fallo visto: 21:31/)
   assert.match(up.text, /base de datos 9 ms/)
-  assert.match(up.text, /Revisiones fallidas: 2/)
+  assert.match(up.text, /Revisiones fallidas seguidas: 2/)
   assert.match(h.buildUpEmail(null, ok, '2026-10-13T03:30:49.693Z').subject, /^www\.betsycrm\.com volvió a responder$/)
   assert.doesNotMatch(down.text + up.text, /@/, 'no addresses or customer data in the texts')
+
+  // State left behind while crons were paused (> 2 h): dropped, no "recovered after 3 days" email.
+  const old = { ...r2.state!, updatedAt: '2026-10-10T03:31:12.000Z' }
+  const late = h.planWatchRound(old, [ok], '2026-10-13T03:36:00.000Z')
+  assert.deepEqual(late.emails, [])
+  assert.equal(late.state, null)
+  assert.equal(h.parseWatchState('1'), null)
+  assert.equal(h.parseWatchState(null), null)
+
+  // Database slow while the site answers: one warning after 2 slow rounds, one "back to normal" after 2 normal rounds.
+  const slow = { ...ok, dbMs: 2500, connErrors: 0 }
+  const s1 = h.planWatchRound(null, [slow], '2026-10-13T05:00:00.000Z')
+  assert.deepEqual(s1.emails, [])
+  const s2 = h.planWatchRound(s1.state, [{ ...ok, dbMs: 40, connErrors: 9 }], '2026-10-13T05:05:00.000Z')
+  assert.deepEqual(s2.emails, ['degraded'])
+  assert.equal(s2.state?.degraded?.worstDbMs, 2500)
+  assert.equal(s2.state?.degraded?.worstConnErrors, 9)
+  const s3 = h.planWatchRound(s2.state, [ok], '2026-10-13T05:10:00.000Z')
+  assert.deepEqual(s3.emails, [])
+  const s4 = h.planWatchRound(s3.state, [ok], '2026-10-13T05:15:00.000Z')
+  assert.deepEqual(s4.emails, ['degraded_clear'])
+  assert.equal(s4.state, null)
+  assert.match(h.buildDegradedEmail(s2.state!.degraded!, slow, '2026-10-13T05:05:00.000Z', false).subject, /sigue arriba, pero la base de datos está lenta/)
+  // A one-round blip during a "slow" episode keeps it: its promised "back to normal" email still comes.
+  const b1 = h.planWatchRound(s2.state, checks, '2026-10-13T05:10:00.000Z')
+  assert.deepEqual(b1.emails, [])
+  assert.equal(b1.state?.degraded?.emailed, true)
+  const b2 = h.planWatchRound(b1.state, [ok], '2026-10-13T05:15:00.000Z')
+  const b3 = h.planWatchRound(b2.state, [ok], '2026-10-13T05:20:00.000Z')
+  assert.deepEqual([...b2.emails, ...b3.emails], ['degraded_clear'])
+  // Shared state unreadable (per-data-center fallback): email on the first failed round.
+  assert.deepEqual(h.planWatchRound(null, checks, '2026-10-13T06:00:00.000Z', { downRounds: 1 }).emails, ['down'])
+  assert.equal(h.parseConnErrors('{"ok":true,"dbMs":5,"connErrors5m":7}'), 7)
 })
 
 test('crons: one run per cron per minute (2026-10-13 Cloudflare fired every slot twice, ~:04 and ~:43)', async () => {

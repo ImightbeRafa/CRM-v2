@@ -28,6 +28,7 @@ import {
   logChatWebhookEvent,
 } from '@/lib/chat-webhook-observability'
 import { recordAdReferral } from '@/lib/meta-attribution/referral-store'
+import { withDbRetry } from '@/lib/db-retry'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -122,8 +123,16 @@ async function recordAdReferralForRetry(
   }
 }
 
+/**
+ * A Meta retry of a message we stored but whose Soft AI job was never queued (DB trouble after the write).
+ * Only recent messages: an old retry must not start a reply to a question from hours ago.
+ */
+const RETRY_ENQUEUE_MAX_AGE_MS = 30 * 60_000
+
 async function storeMessage(event: ParsedMetaChatMessage) {
-  const resolved = await resolveWebhookSocialAccount(prisma as any, event)
+  // The webhook answers 503 when the database cannot be reached (below): resolving the line retries
+  // only connect / pool-start failures, within a short deadline (Meta waits for our answer).
+  const resolved = await withDbRetry(() => resolveWebhookSocialAccount(prisma as any, event))
 
   if (!resolved.ok) {
     console.warn('[chat/webhook][POST] No resolvable SocialAccount for Meta event', {
@@ -173,7 +182,9 @@ async function storeMessage(event: ParsedMetaChatMessage) {
       reason: result.reason,
       error: 'error' in result ? result.error : undefined,
     })
-    return { stored: false as const, reason: result.reason }
+    // 'transient' = the database was unreachable: the POST answers 503 so Meta delivers it again
+    // (a 200 here lost the message for good — incident 2026-10-23).
+    return { stored: false as const, reason: result.reason, transient: result.reason === 'transient' }
   }
 
   if (result.duplicate) {
@@ -186,9 +197,28 @@ async function storeMessage(event: ParsedMetaChatMessage) {
       providerMessageId: event.providerMessageId,
       messageId: result.messageId,
     })
-    return { stored: false as const, reason: 'duplicate' as const }
+    // Meta retries after our 503: the message may be stored while its Soft AI job is not. Queue it now
+    // (the queue is unique per message, so a job that already exists is left alone and not dispatched).
+    const recent = Date.now() - event.sentAt.getTime() <= RETRY_ENQUEUE_MAX_AGE_MS
+    const retryEnqueue =
+      direction === 'inbound' && !event.suppressSoftAi && recent && result.messageId && result.conversationId
+        ? {
+            tenantId: account.tenantId,
+            socialAccountId: account.id,
+            senderId: event.senderId,
+            senderName: event.senderName || null,
+            platform: event.platform as string,
+            content: event.content,
+            messageType: event.messageType || null,
+            conversationId: result.conversationId,
+            messageId: result.messageId,
+          }
+        : null
+    return { stored: false as const, reason: 'duplicate' as const, retryEnqueue }
   }
 
+  // Audit row only: a failure here must not turn a stored message into a 500 (Meta's retry would then be
+  // a duplicate whose reply was never queued).
   await (prisma as any).webhookLog.create({
     data: {
       tenantId: account.tenantId,
@@ -208,6 +238,8 @@ async function storeMessage(event: ParsedMetaChatMessage) {
         messageId: result.messageId,
       }),
     },
+  }).catch(() => {
+    console.warn('[chat/webhook][POST] webhookLog write failed (message already stored)')
   })
 
   // Ad click that opened this chat (click-to-WhatsApp / IG ad). Best effort; never blocks the 200.
@@ -374,25 +406,43 @@ export async function POST(request: NextRequest) {
 
     const stored = results.filter((result) => result.stored).length
 
+    // Database unreachable for at least one message: Meta must deliver the payload again (503 below).
+    let transientFailure = results.some((result) => 'transient' in result && result.transient)
+
     const softAiJobIds: string[] = []
     const softAiSettleMs = new Map<string, number>()
     for (const result of results) {
-      if (!result.stored || !('tenantId' in result) || !result.tenantId) continue
-      if ('suppressSoftAi' in result && result.suppressSoftAi) continue
-      if (!result.conversationId || !result.messageId) continue
+      let args: Parameters<typeof enqueueSoftAiAfterInbound>[0] | null = null
+      let isRetry = false
+      if (result.stored && 'tenantId' in result && result.tenantId) {
+        if ('suppressSoftAi' in result && result.suppressSoftAi) continue
+        if (!result.conversationId || !result.messageId) continue
+        args = {
+          tenantId: result.tenantId,
+          socialAccountId: result.socialAccountId,
+          senderId: result.senderId,
+          senderName: result.senderName,
+          platform: result.platform,
+          content: result.content,
+          messageType: result.messageType,
+          conversationId: result.conversationId,
+          messageId: result.messageId,
+        }
+      } else if ('retryEnqueue' in result && result.retryEnqueue) {
+        args = result.retryEnqueue
+        isRetry = true
+      }
+      if (!args) continue
       // Persist Soft AI job BEFORE 200 so cron can recover if this instance dies.
-      const enqueued = await enqueueSoftAiAfterInbound({
-        tenantId: result.tenantId,
-        socialAccountId: result.socialAccountId,
-        senderId: result.senderId,
-        senderName: result.senderName,
-        platform: result.platform,
-        content: result.content,
-        messageType: result.messageType,
-        conversationId: result.conversationId,
-        messageId: result.messageId,
-      })
-      if (enqueued && 'jobId' in enqueued) {
+      const enqueued = await enqueueSoftAiAfterInbound(args)
+      // null = the database was unreachable for the queue write: the reply would never come. 503 → Meta retries →
+      // the duplicate path above queues it (recent messages only).
+      if (enqueued === null) {
+        transientFailure = true
+        continue
+      }
+      // A retry whose job already existed is not dispatched again.
+      if ('jobId' in enqueued && !(isRetry && enqueued.duplicate)) {
         softAiJobIds.push(enqueued.jobId)
         softAiSettleMs.set(enqueued.jobId, enqueued.settleMs)
       }
@@ -432,6 +482,12 @@ export async function POST(request: NextRequest) {
     // Best-effort dispatch after persist, once the burst settle time is over; cron is the safety net.
     for (const jobId of softAiJobIds) {
       processJobAfterSettle(jobId, softAiSettleMs.get(jobId) ?? 0)
+    }
+
+    if (transientFailure) {
+      // Messages already stored in this payload come back as duplicates on the retry (safe).
+      console.warn('[chat/webhook][POST] database unreachable: 503 so Meta retries', { stored, parsedMessages: parsed.messages.length })
+      return NextResponse.json({ ok: false, retry: true }, { status: 503, headers: { 'Retry-After': '30' } })
     }
 
     return NextResponse.json({

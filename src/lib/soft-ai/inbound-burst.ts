@@ -25,7 +25,7 @@ const MEDIA_TYPES = new Set(['image', 'document', 'audio', 'video', 'voice', 'st
  * text. Lowercase and listed on purpose: "[STOP]" or "[urgente]" typed by a customer stays text (SecureDog MEDIA).
  */
 const PLACEHOLDER_RE =
-  /^\s*\[(image|imagen|video|audio|voice|document|archivo|file|attachment|sticker|location|contact|contacts|share|story_mention|ig_reel|reel|ig_post|ig_story|reaction|unsupported|button|interactive|order|system|template|fallback|request_welcome|unknown)\]\s*$/
+  /^\s*\[(image|imagen|video|audio|voice|document|archivo|file|attachment|sticker|location|contact|contacts|share|story_mention|ig_reel|reel|ig_post|ig_story|reaction|unsupported|unsupported_type|ephemeral|edit|revoke|button|interactive|order|system|template|fallback|request_welcome|unknown)\]\s*$/
 /** A WhatsApp document's caption falls back to its file name ("IMG-2026.pdf"): that is not something the customer said. */
 const FILE_NAME_RE = /^[\p{L}\d _.()-]{1,120}\.(pdf|jpe?g|png|gif|webp|heic|docx?|xlsx?|pptx?|txt|csv|mp4|mov|mp3|ogg|opus|m4a|zip)$/iu
 

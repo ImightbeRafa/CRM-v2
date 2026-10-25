@@ -1,3 +1,14 @@
+## 2026-10-25 — Inbox: every message type shown clearly, no more "tipo no soportado" (claude/inbox-unsupported-msgs)
+
+- Read-only inventory of stored `[type]` placeholders (120 days) found types the inbox showed as "Mensaje de un tipo no soportado · Tipo: X" or as an empty "Compartió un enlace": IG `ig_post` (719), `ig_story` (83), `template` with an empty card (38), `ephemeral` (6), `unsupported_type` (1); WA `edit` (29), `revoke` (14), `unsupported` 131060 (11), `system` number change (3).
+- `src/lib/chat-message-display.ts`: shared post → "Compartió una publicación" + caption (280 chars) + Ver publicación; shared story → "Compartió una historia" + Ver historia; ephemeral → "Foto o video temporal" (ver una vez, Instagram does not share it); empty link card says Instagram sent no preview, a filled card shows its title/subtitle; IG unsupported_type with a URL offers Abrir; WA edit → "Editó un mensaje" + the new text; revoke → "Eliminó un mensaje"; 131060 → "Mensaje no disponible"; number change → "El cliente cambió de número" + new number. The last-resort fallback never shows Meta's type name. List previews cover every token. Client projection still drops every URL.
+- `src/lib/chat-media.ts`: `/api/chat/media/[id]` also serves a shared story (`story_media_url`, same host allowlist).
+- `SoftThreadPane`: a shared post / story whose media got cached keeps its label and caption under the media.
+- `inbound-burst.ts`: `[ephemeral]`, `[edit]`, `[revoke]`, `[unsupported_type]` are non-text for the agent, like the other tokens.
+- Not changed: the webhook still stores `[edit]` (the agent / order prefill do not read the edited text yet) — follow-up.
+- Verifier FAIL → fixed: an IG PDF/file (`[file]`) would have shown the fallback notice under the document (`file` added to media types); revoke wording made neutral (echoes can be the store's own); behavior tests added. Follow-up (not here): an inbound `[edit]`/`[revoke]` still starts an agent turn, and the agent never sees an edit's new text.
+- Tests: 11 new in chat-message-display.test.ts (shapes from real rows). test:chat-harden 798/799 (the 1 failure, instagram-media "a lone confirmada", fails at base too).
+
 ## 2026-10-24 — Meta ads_read: connect ad account + ad spend & ROAS (claude/meta-ads-read)
 
 - For Meta App Review of `ads_read` (Betsy CRM Inbox app). Config › Cuentas sociales › **Cuenta publicitaria (Meta Ads)**: "Connect ad account" via Facebook Login for Business asking only `ads_read` (config id from runtime env `META_ADS_LOGIN_CONFIG_ID`, forwarded by the Worker; fallback `scope=ads_read`), pick the ad account (only accounts Meta listed; list cleared after the pick), optional owner exchange rate for ROAS when the ad account bills in another currency, Disconnect (row + token deleted; ads_read revoked at Meta only when no other business uses the same Facebook person; never the whole app). ES/EN toggle.

@@ -230,6 +230,29 @@ test('an unknown future token never shows the internal Meta type name', () => {
   assert.match(notice!.detail ?? '', /Instagram/)
 })
 
+test('verifier F1: media tokens never get a notice (an IG PDF "[file]" stays a plain document bubble)', () => {
+  for (const t of ['image', 'audio', 'voice', 'document', 'video', 'sticker', 'file']) {
+    assert.equal(describeChatMessage({ id: 'm', content: `[${t}]`, messageType: t, metadata: IG }), null, t)
+  }
+  const raw = { attachments: [{ type: 'file', payload: { url: 'https://lookaside.fbsbx.com/x' } }] }
+  for (const rawMessage of [raw, thru(raw)]) {
+    assert.equal(describeChatMessage({ id: 'p', content: '[file]', messageType: 'document', metadata: { ...IG, rawMessage } }), null)
+  }
+})
+
+test('verifier F2: an earlier [edit]/[revoke] bubble is not customer text in a burst', async () => {
+  const { planBurstInbound } = await import('@/lib/soft-ai/inbound-burst')
+  const t0 = new Date('2026-10-25T15:00:00Z').getTime()
+  for (const token of ['[edit]', '[revoke]']) {
+    const plan = planBurstInbound({
+      earlier: [{ direction: 'inbound', content: token, messageType: token.slice(1, -1), sentAt: new Date(t0) }],
+      trigger: { content: '[image]', messageType: 'image', sentAt: new Date(t0 + 5_000) },
+      awaitingReceipt: () => false,
+    })
+    assert.equal(plan.reason, 'single', token)
+  }
+})
+
 test('agent burst treats the new tokens as non-text; cached shared posts keep their label', () => {
   const src = readFileSync('src/lib/soft-ai/inbound-burst.ts', 'utf8')
   for (const t of ['ephemeral', 'edit', 'revoke', 'unsupported_type', 'ig_post', 'ig_story']) assert.match(src, new RegExp(`\\|${t}\\|`), t)

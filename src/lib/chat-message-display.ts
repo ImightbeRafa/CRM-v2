@@ -31,7 +31,7 @@ type DisplayInput = {
 const PLACEHOLDER = /^\[([a-z_]+)\]$/
 
 /** Media placeholders are rendered by the media component, not here. */
-const MEDIA_TYPES = new Set(['image', 'audio', 'voice', 'document', 'video', 'sticker'])
+const MEDIA_TYPES = new Set(['image', 'audio', 'voice', 'document', 'video', 'sticker', 'file'])
 
 /** Known values Meta may put in `unsupported.type` (newer Graph versions). */
 const UNSUPPORTED_KIND_LABEL: Record<string, string> = {
@@ -192,7 +192,7 @@ function whatsappNotice(type: string, raw: Record<string, any> | null): ChatMess
       }
     }
     case 'revoke':
-      return { title: 'Eliminó un mensaje', detail: 'El cliente borró un mensaje para todos.', tone: 'muted' }
+      return { title: 'Eliminó un mensaje', detail: 'Se borró un mensaje para todos.', tone: 'muted' }
     case 'request_welcome':
       return { title: 'El cliente abrió el chat', tone: 'muted' }
     case 'ephemeral':

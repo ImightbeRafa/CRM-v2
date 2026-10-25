@@ -108,7 +108,7 @@ import { notifyHandoff } from '@/lib/soft-ai/handoff-notify'
 import { decideWaitingAck, isOptOutText, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS, WAITING_ALERT_THROTTLE_MS } from '@/lib/soft-ai/waiting-ack'
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { dropRepeatedParts, REPEAT_WINDOW_MS } from '@/lib/soft-ai/repeat-guard'
-import { ORDER_BLOCK_RE, awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet, orderDataChoice, paymentDetailsIn, salesAllowedAmounts } from '@/lib/soft-ai/sales-state'
+import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet, orderDataChoice, paymentDetailsIn, salesAllowedAmounts } from '@/lib/soft-ai/sales-state'
 import { duplicateReceiptReply, isPaymentHandoff } from '@/lib/soft-ai/repeat-order'
 import { loadSettledSale } from '@/lib/soft-ai/settled-sale'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
@@ -1623,9 +1623,7 @@ export async function executeAgentLayerTurn(
       llmEscalateReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
-      // Rafael 2026-10-25: the model sometimes writes the contra entrega block itself instead of the token — the order
-      // still goes to a person ("Pedido por confirmar").
-      codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo') || ORDER_BLOCK_RE.test(policy.text),
+      codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
       customerText: customerTextSinceLastAnswer(history, burst.inboundText),
     }),
@@ -2754,9 +2752,7 @@ async function runAgentTestTurnInner(input: {
       llmEscalateReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
-      // Rafael 2026-10-25: the model sometimes writes the contra entrega block itself instead of the token — the order
-      // still goes to a person ("Pedido por confirmar").
-      codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo') || ORDER_BLOCK_RE.test(policy.text),
+      codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
       customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText),
     })

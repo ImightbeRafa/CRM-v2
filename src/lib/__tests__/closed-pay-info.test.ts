@@ -601,3 +601,12 @@ describe('payment choice wordings (Rafael 2026-10-25, Dani Probar "seria sinpe")
     }
   })
 })
+
+describe('payment choice wordings · SecureDog 2026-10-25', () => {
+  it('"Lo pagó / pagò / pagô …" is never a choice (any accent outside á é í ó ú ü ñ, or a combining mark)', () => {
+    for (const t of ['Lo pagó por SINPE', 'Lo pagò por SINPE', 'Lo pagô por sinpe', 'Lo pagö por sinpe', 'Lo pagõ por sinpe', 'Lo pago\u0300 por sinpe', 'Lo pagò con tarjeta', 'Lo pagò por sinpe y retiro en tienda', 'Lo pagò por SINPE, ¿me pasás el número?']) {
+      assert.equal(classifyPaymentText(t, { awaitingPaymentMethod: true }), 'payment_proof_or_risk', t)
+    }
+    for (const t of ['Sería SINPE', 'Prefiero transferencia', 'Por tarjeta, porfa']) assert.notEqual(classifyPaymentText(t, { awaitingPaymentMethod: true }), 'payment_proof_or_risk', t)
+  })
+})

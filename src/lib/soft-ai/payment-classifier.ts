@@ -1322,9 +1322,23 @@ function methodOf(word: string): PaymentChoiceMethod {
  * with one strict detail ask ("¿me pasás el número?"). `ask` = it carried that detail ask. Any digit, "#", "ref", ₡,
  * ✅ ✔ ☑ 👍 💸, a completion word or anything else → null (the classifier path: a person). Pure.
  */
+/** An accent outside á é í ó ú ü ñ or a combining mark (foldChoice would hide it from the claim checks). */
+function hasOddAccent(raw: string): boolean {
+  const v = raw.normalize('NFC')
+  return /[̀-ͯ]/u.test(v) || /[À-ɏ]/u.test(v.replace(/[áéíóúüñÁÉÍÓÚÜÑ]/gu, ''))
+}
+/** Order data keeps names like François / Zoë: only a payment word with an odd accent ("pagò", "cancelò") rejects it. */
+function hasOddAccentPayWord(raw: string): boolean {
+  return (raw.normalize('NFC').match(/\p{L}[\p{L}\p{M}]*/gu) ?? []).some(
+    (w) => hasOddAccent(w) && /^(?:pag|cancel|abon|deposit|transf|sinp)/u.test(foldChoice(w).toLowerCase()),
+  )
+}
 export function paymentChoiceGrammar(text: string): { method: PaymentChoiceMethod; ask: boolean } | null {
   const raw = (text || '').normalize('NFKC').replace(FORMAT_CHARS_RE, '')
   if (!raw.trim() || raw.length > 160 || CHOICE_REJECT_RE.test(raw) || PAYMENT_COMPLETION_RE.test(raw)) return null
+  // SecureDog 2026-10-25: foldChoice strips every accent, the claim checks only know á é í ó ú ü ñ — "Lo pagò por SINPE"
+  // (any other accent or a combining mark) is never a clean choice.
+  if (hasOddAccent(raw)) return null
   const t = foldChoice(raw)
   if (CHOICE_REJECT_RE.test(t) || PAYMENT_COMPLETION_RE.test(t)) return null
   let m = CHOICE_RE.exec(t)
@@ -1361,7 +1375,7 @@ export function hasChoiceClaimOrStatusWord(text: string): boolean {
 
 export function pendingMethodMention(text: string): PaymentChoiceMethod | null {
   const raw = (text || '').normalize('NFKC').replace(FORMAT_CHARS_RE, '')
-  if (!raw.trim() || raw.length > 120 || /[?¿]/.test(raw) || CHOICE_REJECT_RE.test(raw)) return null
+  if (!raw.trim() || raw.length > 120 || /[?¿]/.test(raw) || CHOICE_REJECT_RE.test(raw) || hasOddAccent(raw)) return null
   if (!isCueFreePaymentChoiceText(raw) || isPaymentCompletionClaim(raw) || PAYMENT_COMPLETION_RE.test(raw)) return null
   if (hasPaymentStatusClaim(raw) || NEGATION_RE.test(raw)) return null
   const t = foldChoice(raw)
@@ -1551,7 +1565,7 @@ export function hasHardPaymentClaimLabelMasked(text: string): boolean {
 
 export function embeddedPaymentChoice(text: string): PaymentChoiceMethod | null {
   // SecureDog r2 INT-D / r3 INT-G: invisible characters and odd breaks are rejected, never stripped (they glue words).
-  if (DATA_ODD_BREAK_RE.test((text || '').normalize('NFKC'))) return null
+  if (DATA_ODD_BREAK_RE.test((text || '').normalize('NFKC')) || hasOddAccentPayWord(text || '')) return null
   const value = stripFormatChars((text || '').normalize('NFKC')).replace(/\p{Default_Ignorable_Code_Point}/gu, '')
   if (!value.trim() || value.length > DATA_CHOICE_MAX_CHARS) return null
   // Any question, any non-Latin letter (Cyrillic "Уа") or Latin look-alike (small caps "ʟɪsᴛᴏ"), any symbol / emoji

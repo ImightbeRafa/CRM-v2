@@ -574,6 +574,11 @@ describe('pre-purchase payment questions · Verifier r4 (2026-10-24)', () => {
       const d = decideInbound({ inboundText: latest, earlierCustomerTexts: ['¿Pago envío?'], unansweredCustomerTexts: parts.after.filter((x) => x !== 'Sí'), raceCustomerTexts: parts.race, brandFacts: FACTS, shortcuts: SHORTCUTS })
       assert.notEqual(d.paymentClass, 'payment_proof_or_risk', latest)
     }
+    // Verifier r6: money said in the 10-minute window (answered or not) keeps a rescued question with a person.
+    for (const earlier of ['₡15 000', 'La mitad', 'Ya les hice el sinpe']) {
+      const d3 = decideInbound({ inboundText: '¿Pago envío?', earlierCustomerTexts: [earlier], unansweredCustomerTexts: [], raceCustomerTexts: [], brandFacts: FACTS, shortcuts: SHORTCUTS })
+      assert.equal(d3.paymentClass, 'payment_proof_or_risk', earlier)
+    }
     // A race bubble with money still counts as a neighbour of a NEW rescued question.
     const d2 = decideInbound({ inboundText: '¿Cuánto pago en total?', earlierCustomerTexts: ['₡15 000'], unansweredCustomerTexts: [], raceCustomerTexts: ['₡15 000'], brandFacts: FACTS, shortcuts: SHORTCUTS })
     assert.equal(d2.paymentClass, 'payment_proof_or_risk')

@@ -982,6 +982,15 @@ const CLEAN_ORDER_RE =
   /^(?:(?:hol+a+|buenas|buenos\s+d[ií]as)[\s,!.]+)?(?:quiero|queremos|me\s+interesan?|me\s+gustar[ií]a|ocupo|necesito|busco|ando\s+buscando|llevo|me\s+llevo)(?:\s+[\p{L}\d]+){0,8}[\s!.]*$/iu
 const ORDER_LINE_FORBIDDEN_RE =
   /(?<![\p{L}])(?:plat\p{L}*|diner\p{L}*|devol\p{L}*|devuelv\p{L}*|reembols\p{L}*|cobr\p{L}*|mil|miles|rojos?|tejas?|lucas?|colon\p{L}*|verifi\p{L}*|revis\p{L}*|factur\p{L}*|gu[ií]a|(?:mi|el|otro|ese|del)\s+pedido|pedido\s+(?:anterior|pasado)|esperando|reclam\p{L}*|queja|(?:\d+|un[oa]?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+(?:d[ií]as?|semanas?|horas?|meses|mes|a[nñ]os?))(?![\p{L}])/iu
+/**
+ * Verifier r6 (2026-10-24): a recent bubble (10-minute window, answered or not) that still says money happened — a hard
+ * claim, a part payment / debt or a colón amount — keeps a rescued "¿pago envío?" with a person.
+ */
+export function hasRecentMoneyState(text: string): boolean {
+  const t = stripFormatChars((text || '').normalize('NFKC'))
+  // A price asked back ("₡17 900?") is not money said.
+  return hasHardPaymentClaim(t) || PARTIAL_STATE_RE.test(t) || DEBT_RE.test(t) || (/[₡¢]\s?\d/u.test(t) && !/[?¿]/u.test(t))
+}
 export function isCleanPayShipNeighbour(text: string): boolean {
   const t = stripFormatChars((text || '').normalize('NFKC')).trim()
   if (!t) return true

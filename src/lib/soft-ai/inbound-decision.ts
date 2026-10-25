@@ -18,6 +18,7 @@ import {
   hasHardPaymentClaim,
   hasHardPaymentClaimLabelMasked,
   hasPaymentStatusHint,
+  hasRecentMoneyState,
   isCleanPayShipNeighbour,
   isBareOrderConfirmAsk,
   isRescuedPayShipQuestion,
@@ -228,7 +229,10 @@ export function decideInbound(input: {
   const rescued = (input.unansweredCustomerTexts ? burst : [input.inboundText || '']).some((t) => isRescuedPayShipQuestion(t || ''))
   const neighbours = [...(input.raceCustomerTexts ?? []), ...burst]
   const payShipAfterTrace =
-    isText && rescued && neighbours.some((t) => !isRescuedPayShipQuestion(t || '') && !isCleanPayShipNeighbour(t || ''))
+    isText &&
+    rescued &&
+    (neighbours.some((t) => !isRescuedPayShipQuestion(t || '') && !isCleanPayShipNeighbour(t || '')) ||
+      (input.earlierCustomerTexts || []).some((t) => hasRecentMoneyState(t || '')))
   const burstClaim = doneAfterDetails || payShipAfterTrace || (input.earlierCustomerTexts || []).some(
     (t) => hasHardPaymentClaim(t, { noPaymentYet }) && !(embeddedPaymentChoice(t) && !hasHardPaymentClaimLabelMasked(t)),
   )

@@ -1,3 +1,15 @@
+## 2026-10-24 — Pre-purchase payment questions answered by the agent, all agents (claude/pay-questions-answer)
+
+- Rafael 2026-10-24: only a real payment goes to a person (receipt, "ya pagué", status, complaint, part payment); questions about paying BEFORE buying get the total / methods and the order data. The agent still never confirms a payment.
+- Before: "¿Pago envío?", "Si llevo 3, ¿pago envío?", "¿Cuánto pago de envío?", "¿El envío lo pago yo?", "¿Cuánto pago en total?" fell to the bare "pago" catch-all → "Dame un momento, ya lo reviso" + payment hand-off (every live agent).
+- `payment-classifier.ts` `isClosedPayInfoQuestion`: new anchored whole-sentence shapes (pago/pagar shapes only in a sentence written as a question; "cuánto … de envío / en total", "quién paga el envío", "envío a <Lugar>" with capitalised place words only). A 1–2 digit quantity only in a "(si) llevo / compro / pido N" clause. Per sentence: hard-claim, free-pay-act, part-payment and debt checks; a yes/ok stripped in front keeps the person path (strict form: for every shape). The place slot and yes-led sentences never skip the "¿ya pagó?" check.
+- `inbound-decision.ts`: the new shapes go to a person when an earlier unanswered bubble carries money (amount, "mil", payment word, part payment, status hint, ✅/👍). An order quantity ("Quiero 3 kits") is fine.
+- `output-validator.ts`: implicit "your payment arrived" replies held ("lo que ya pagaste", "quedás al día", "la otra mitad", "pedido apartado").
+- `config.ts` (legacy worker): the price / shipping shapes count as payment-sensitive only with a payment word.
+- "¿ya pagó?" model prompt: these questions listed as claim=false; cache key payment-check-v3.
+- Reviews: Advisor plan; Verifier r1 PASS WITH NOTES (2 Medium + 4 Low, all fixed); SecureDog r1 FIX BEFORE PROD (no Critical/High; 2 Medium + 4 Low, all fixed) → r2 on the full range.
+- Tests: closed-pay-info +6 groups (26 total). tsc baseline (5 TS2321/TS2349 in insights/customers-server.ts, same on 89adc2ee), lint 0, soft-ai 1542/1542, soft-ai-agent 350/350, security 372/372, chat-harden 789/790 (instagram-media CRLF source-regex test, baseline).
+
 ## 2026-10-24 — Meta ads_read: connect ad account + ad spend & ROAS (claude/meta-ads-read)
 
 - For Meta App Review of `ads_read` (Betsy CRM Inbox app). Config › Cuentas sociales › **Cuenta publicitaria (Meta Ads)**: "Connect ad account" via Facebook Login for Business asking only `ads_read` (config id from runtime env `META_ADS_LOGIN_CONFIG_ID`, forwarded by the Worker; fallback `scope=ads_read`), pick the ad account (only accounts Meta listed; list cleared after the pick), optional owner exchange rate for ROAS when the ad account bills in another currency, Disconnect (row + token deleted; ads_read revoked at Meta only when no other business uses the same Facebook person; never the whole app). ES/EN toggle.

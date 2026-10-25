@@ -980,6 +980,8 @@ const CLEAN_GREETING_RE =
   /^[\s¡!¿.,]*(?:(?:hol+a+|holi|buenas(?:\s+(?:tardes|noches))?|buenos\s+d[ií]as|buen\s+d[ií]a|upe|disculpe?|una\s+consulta|consulta)[\s!.,]*)+$/iu
 const CLEAN_ORDER_RE =
   /^(?:(?:hol+a+|buenas|buenos\s+d[ií]as)[\s,!.]+)?(?:quiero|queremos|me\s+interesan?|me\s+gustar[ií]a|ocupo|necesito|busco|ando\s+buscando|llevo|me\s+llevo)(?:\s+[\p{L}\d]+){0,8}[\s!.]*$/iu
+const ORDER_LINE_FORBIDDEN_RE =
+  /(?<![\p{L}])(?:plat\p{L}*|diner\p{L}*|devol\p{L}*|devuelv\p{L}*|reembols\p{L}*|cobr\p{L}*|mil|miles|rojos?|tejas?|lucas?|colon\p{L}*|verifi\p{L}*|revis\p{L}*|factur\p{L}*|gu[ií]a|(?:mi|el|otro|ese|del)\s+pedido|pedido\s+(?:anterior|pasado)|esperando|reclam\p{L}*|queja|(?:\d+|un[oa]?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+(?:d[ií]as?|semanas?|horas?|meses|mes|a[nñ]os?))(?![\p{L}])/iu
 export function isCleanPayShipNeighbour(text: string): boolean {
   const t = stripFormatChars((text || '').normalize('NFKC')).trim()
   if (!t) return true
@@ -988,6 +990,8 @@ export function isCleanPayShipNeighbour(text: string): boolean {
   // A bare quantity answering "¿Cuántos querés?" ("2", "3 kits").
   if (new RegExp(String.raw`^${QTY}[\s!.]*$`, 'iu').test(t)) return true
   if (!CLEAN_ORDER_RE.test(t)) return false
+  // Verifier r4 #2: no money, refund or after-purchase words in an "order line", and "llevo 3 días" is not a quantity.
+  if (ORDER_LINE_FORBIDDEN_RE.test(t)) return false
   if (/\d/.test(t.replace(QTY_IF_MASK_RE, ' '))) return false
   return !YES_PREFIX_RE.test(t) && !hasPaymentWord(t) && !hasHardPaymentClaim(t) && !PARTIAL_STATE_RE.test(t) && !DEBT_RE.test(t) && !hasPastOrDoneWord(t, false)
 }

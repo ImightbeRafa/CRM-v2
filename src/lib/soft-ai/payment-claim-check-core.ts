@@ -48,6 +48,32 @@ export function unansweredCustomerTexts(history: PaymentCheckHistory, now = Date
   return { burst: [...early, ...burst], storeIndex: i }
 }
 
+/**
+ * Verifier r4 (2026-10-24): the customer bubbles the store has NOT answered — after its last message, plus bubbles sent at
+ * most `raceMs` before it (typed while it was being written). Unlike unansweredCustomerTexts, a question the store already
+ * answered minutes ago is not in it (the rescued "¿pago envío?" allow-list must not sweep the next reply back in).
+ */
+export function customerTextsSinceStore(history: PaymentCheckHistory, raceMs = 60_000): string[] {
+  const after: string[] = []
+  let i = history.length - 1
+  for (; i >= 0; i--) {
+    if (history[i].direction === 'outbound') break
+    if (history[i].content) after.unshift(String(history[i].content))
+  }
+  if (i < 0) return after
+  const storeAt = history[i].sentAt ? new Date(history[i].sentAt as string | Date).getTime() : NaN
+  const race: string[] = []
+  if (Number.isFinite(storeAt)) {
+    for (let j = 0; j < i; j++) {
+      const m = history[j]
+      if (m.direction !== 'inbound' || !m.content || !m.sentAt) continue
+      const at = new Date(m.sentAt).getTime()
+      if (Number.isFinite(at) && storeAt - at >= 0 && storeAt - at <= raceMs) race.push(String(m.content))
+    }
+  }
+  return [...race, ...after]
+}
+
 /** SecureDog wave D r4 (M1): English / PT / FR money and state words open the check too (one small check per false hit). */
 const FOREIGN_MONEY_WORDS_RE =
   /(?<![\p{L}])(?:sent|done|paid|pay\p{L}*|transfer\p{L}*|money|cash|deposit\p{L}*|receipt|refund\p{L}*|charged?|wired|pix|dinheiro|pagamento|paguei|depositei|transferi|enviei|mandei|foi|virement|argent|paiement|envoy[eé]|r[eé]gl[eé]|re[cç]u|arrived|through|received|confirm\p{L}*)(?![\p{L}])/iu

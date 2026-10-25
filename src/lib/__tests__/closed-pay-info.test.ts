@@ -548,3 +548,26 @@ describe('pre-purchase payment questions · Verifier r3 allow-list (2026-10-24)'
     assert.ok(!v('Si ya pagaste, mandame el comprobante por aquí').includes('payment_status_claim'))
   })
 })
+
+describe('pre-purchase payment questions · Verifier r4 (2026-10-24)', () => {
+  const route = (unanswered: string[], latest: string) =>
+    decideInbound({ inboundText: latest, earlierCustomerTexts: unanswered, unansweredCustomerTexts: unanswered, brandFacts: FACTS, shortcuts: SHORTCUTS }).paymentClass
+  it('#1: only bubbles after the store\'s last message (plus a 60 s race) are "unanswered"', async () => {
+    const { customerTextsSinceStore } = await import('@/lib/soft-ai/payment-claim-check-core')
+    const t0 = Date.parse('2026-10-24T20:00:00Z')
+    const at = (s: number) => new Date(t0 + s * 1000).toISOString()
+    const history = [
+      { direction: 'inbound', content: '¿Pago envío?', sentAt: at(0) },
+      { direction: 'inbound', content: 'Escrito mientras respondían', sentAt: at(170) },
+      { direction: 'outbound', content: 'Con 2 kits va incluido: ₡29 800. ¿Te lo aparto?', sentAt: at(200) },
+      { direction: 'inbound', content: 'Sí', sentAt: at(230) },
+    ]
+    assert.deepEqual(customerTextsSinceStore(history), ['Escrito mientras respondían', 'Sí'])
+  })
+  it('#2: money, refund and after-purchase lines are not a plain order line', () => {
+    for (const u of ['Quiero mi plata de vuelta', 'Necesito mi dinero', 'Me interesa el kit de quince mil', 'Quiero el de veinte rojos', 'Llevo 3 días esperando el pedido', 'Llevo 2 semanas esperando', 'Busco mi pedido', 'Necesito la factura', 'Busco el número de guía', 'Quiero que verifiquen', 'Ocupo que me ayuden con mi pedido', 'Quiero el otro pedido igual que el anterior']) {
+      assert.equal(route([u], '¿Pago envío?'), 'payment_proof_or_risk', u)
+    }
+    for (const u of ['Quiero 3 kits', 'Me interesa el avión', 'Quiero hacer un pedido']) assert.notEqual(route([u], '¿Pago envío?'), 'payment_proof_or_risk', u)
+  })
+})

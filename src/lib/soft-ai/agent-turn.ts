@@ -115,7 +115,7 @@ import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
 import { decideInbound, decisionOrderDataChoice, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import { paymentCheckGate, paymentCheckMode, runPaymentClaimCheck } from '@/lib/soft-ai/llm/payment-claim-check'
-import { unansweredCustomerTexts, unansweredPaymentState } from '@/lib/soft-ai/payment-claim-check-core'
+import { customerTextsSinceStore, unansweredPaymentState } from '@/lib/soft-ai/payment-claim-check-core'
 import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
 import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
@@ -1350,7 +1350,7 @@ export async function executeAgentLayerTurn(
   const decisionBase = {
     brandFacts: resolved.agent.brandFacts,
     // Verifier r3 (2026-10-24): the bubbles not answered yet (the rescued "¿pago envío?" allow-list).
-    unansweredCustomerTexts: [...unansweredCustomerTexts(history).burst, ...burstEarlier.map((m) => m.content || '')],
+    unansweredCustomerTexts: [...customerTextsSinceStore(history), ...burstEarlier.map((m) => m.content || '')],
     replyStyle: resolved.agent.replyStyle,
     shortcuts,
     // A keyword reply WITH images whose image can't go out now ("Te paso la guía 👇" with nothing) → model answers.
@@ -2602,7 +2602,7 @@ async function runAgentTestTurnInner(input: {
   const probarDecisionBase = {
     brandFacts: runtimeAgent.brandFacts,
     // Verifier r3 (2026-10-24): same as live — the bubbles not answered yet.
-    unansweredCustomerTexts: [...unansweredCustomerTexts(history).burst, ...probarBurstEarlier.map((m) => m.content || '')],
+    unansweredCustomerTexts: [...customerTextsSinceStore(history), ...probarBurstEarlier.map((m) => m.content || '')],
     replyStyle: runtimeAgent.replyStyle,
     shortcuts,
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !probarImageReplyIds.has(id))),

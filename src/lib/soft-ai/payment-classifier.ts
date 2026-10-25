@@ -1293,7 +1293,8 @@ function foldChoice(text: string): string {
 }
 
 const METHOD = String.raw`(sinpe(?: movil)?|transferencia(?: bancaria)?|tarjeta(?: de (?:credito|debito))?|contra ?entrega|al recibir(?:lo|la)?|efectivo)`
-const LEAD = String.raw`(?:(?:prefiero pagar|prefiero|mejor|quiero pagar|voy a pagar|quisiera pagar|(?:te|le|les) pago|pago)\s+)?(?:(?:por|con|en)\s+)?(?:el\s+|la\s+)?`
+// Rafael 2026-10-25 (Dani Probar): "seria sinpe" — "sería / va a ser / lo pago por / elijo / escojo" + the method only.
+const LEAD = String.raw`(?:(?:prefiero pagar|prefiero|mejor|quiero pagar|voy a pagar|quisiera pagar|(?:te|le|les) pago|pago|seria|va a ser|lo pago|lo voy a pagar|elijo|escojo)\s+)?(?:(?:por|con|en)\s+)?(?:el\s+|la\s+)?`
 const TAIL = String.raw`(?:\s*,?\s*(?:porfa|por favor|gracias|pls|esta bien|mejor|entonces|por la web|por la pagina|en la web|en la pagina)){0,3}[\s.!🙏😊🙌]*`
 // Pura Sonrisa P4: the imperative ask too ("Por SINPE, pasame el número", "mandame los datos").
 const ASK_HEAD = String.raw`¿?\s*(?:me\s+(?:pasas|pasa|das|da)|pasame|mandame|dame|regalame|enviame|cual\s+es|a\s+que)\s+(?:el\s+|los\s+|la\s+)?(?:numero|cuenta|link|datos)`

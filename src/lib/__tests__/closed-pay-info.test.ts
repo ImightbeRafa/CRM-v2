@@ -590,3 +590,14 @@ describe('pre-purchase payment questions · Verifier r4 (2026-10-24)', () => {
     for (const u of ['Quiero 3 kits', 'Me interesa el avión', 'Quiero hacer un pedido']) assert.notEqual(route([u], '¿Pago envío?'), 'payment_proof_or_risk', u)
   })
 })
+
+describe('payment choice wordings (Rafael 2026-10-25, Dani Probar "seria sinpe")', () => {
+  it('"sería / va a ser / lo pago por / elijo" + the method is a choice; anything more keeps the person path', () => {
+    for (const t of ['seria sinpe', 'Sería SINPE', 'Seria por sinpe', 'va a ser por sinpe', 'lo pago por sinpe', 'elijo sinpe', 'seria contra entrega', 'sería tarjeta']) {
+      assert.notEqual(classifyPaymentText(t, { awaitingPaymentMethod: true }), 'payment_proof_or_risk', t)
+    }
+    for (const t of ['seria sinpe ya lo hice', 'ya lo pago por sinpe', 'seria sinpe ✅', 'lo pago por sinpe, ya te mandé', 'sería sinpe de 17900', 'ya seria sinpe']) {
+      assert.equal(classifyPaymentText(t, { awaitingPaymentMethod: true }), 'payment_proof_or_risk', t)
+    }
+  })
+})

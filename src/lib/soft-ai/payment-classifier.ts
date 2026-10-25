@@ -793,6 +793,40 @@ const CLOSED_PAY_INFO_SEG_RE = new RegExp(
   'iu',
 )
 /**
+ * Rafael 2026-10-24 (all agents): a question about paying BEFORE buying is answered by the agent (the total with
+ * shipping, the methods, then the order data) — only a real payment goes to a person. "¿Pago envío?", "Si llevo 3,
+ * ¿pago envío?", "¿Cuánto pago de envío?", "¿El envío lo pago yo?", "¿Cuánto sería en total?". Whole-sentence shapes
+ * like the ones above; a quantity (1–2 digits or a number word) is allowed only right after "si llevo / compro".
+ */
+const QTY = String.raw`(?:\d{1,2}(?![.,]?\d)|un[oa]?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)(?:\s+(?:kits?|parches?|cajas?|unidades|paquetes?|combos?|bolsas?|tiras?|arn[eé]s(?:es)?))?`
+const QTY_IF = String.raw`(?:y\s+)?(?:si\s+)?(?:llevo|compro|pido|encargo|me\s+llevo|ocupo|quiero)\s+${QTY}`
+/** The quantity clause, masked before the whole-message digit ban (an amount like "20.000" or "3000" never matches). */
+const QTY_IF_MASK_RE = new RegExp(String.raw`(?<![\p{L}\d])${QTY_IF}(?![\p{L}\d])`, 'giu')
+const QTY_IF_SEG_RE = new RegExp(String.raw`^${QTY_IF}$`, 'iu')
+const PAY_SHIP = String.raw`(?:el\s+)?env[ií]o`
+/** "pago / pagar" as a verb: only in a sentence the customer wrote as a question (¿ or ?). */
+const PAY_SHIP_ASK_SEG_RE = new RegExp(
+  String.raw`^(?:${QTY_IF}\s*,?\s*)?(?:` +
+    String.raw`(?:tengo\s+que\s+|hay\s+que\s+|debo\s+)?pag(?:o|ar)\s+${PAY_SHIP}(?:\s+(?:aparte|tambi[eé]n|yo))?` +
+    String.raw`|${PAY_SHIP}\s+(?:lo\s+)?pago\s+(?:yo|aparte)` +
+    String.raw`|${PAY_SHIP}\s+se\s+paga\s+aparte` +
+    String.raw`)$`,
+  'iu',
+)
+/** "¿Cuánto sería en total?" / "¿Quién paga el envío?": price questions, with or without a question mark. */
+const PAY_TOTAL_ASK_SEG_RE = new RegExp(
+  String.raw`^(?:${QTY_IF}\s*,?\s*)?(?:` +
+    String.raw`qui[eé]n\s+paga\s+${PAY_SHIP}` +
+    String.raw`|cu[aá]nto\s+(?:pago|ser[ií]a|es|sale|cobran|queda)\s+(?:de|del|por\s+el|el|en)\s+(?:env[ií]o|total)(?:\s+con\s+(?:el\s+)?env[ií]o)?` +
+    String.raw`|cu[aá]nto\s+(?:pago|ser[ií]a|es|sale|queda)\s+(?:todo\s+)?(?:en\s+)?total(?:\s+con\s+(?:el\s+)?env[ií]o)?` +
+    String.raw`)$`,
+  'iu',
+)
+function isPayShipAsk(seg: string, question: boolean): boolean {
+  const ok = PAY_TOTAL_ASK_SEG_RE.test(seg) || (question && PAY_SHIP_ASK_SEG_RE.test(seg))
+  return ok && !hasHardPaymentClaim(seg) && !hasFreePayAct(seg) && !PARTIAL_STATE_RE.test(seg) && !DEBT_RE.test(seg)
+}
+/**
  * Lane C D2: a context sentence around a closed question ("Lo quiero talla XL", "Vivo en Heredia centro") — never with
  * a done / past word (checked by the caller), never a digit (checked for the whole message).
  */
@@ -843,17 +877,23 @@ export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean }
   // exemption ("Vivo en Heredia ya<U+2028>pague", Cyrillic "уа раgue", "paiement envoyé"): the normal rules decide.
   if (raw.length > 400) return false
   const v = clean(normalizePaySpelling(stripFormatChars(raw.normalize('NFKC'))))
-  if (!v.trim() || v.length > 200 || /\d/.test(v)) return false
+  if (!v.trim() || v.length > 200 || /\d/.test(v.replace(QTY_IF_MASK_RE, ' '))) return false
   if (invisibleAsGap(raw) !== null || hasMixedScriptWord(raw) || hasForeignPaymentState(raw)) return false
-  const segs = v
-    .replace(/¿/gu, '\u0001¿')
-    .split(/[.!?\n\u0001]+/u)
-    .map((x) => x.replace(/^[\s¿¡,]+/u, '').replace(/[\s,]+$/u, '').replace(LEADING_GREETING_RE, '').trim())
+  // Rafael 2026-10-24: each sentence remembers whether it was written as a question ("¿…" or "…?").
+  const questionSegs = new Set<string>()
+  const segs = [...v.replace(/¿/gu, '\u0001¿').matchAll(/([^.!?\n\u0001]+)([.!?\n\u0001]*)/gu)]
+    .map((m) => {
+      const t = m[1].replace(/^[\s¿¡,]+/u, '').replace(/[\s,]+$/u, '').replace(LEADING_GREETING_RE, '').trim()
+      if (t && (m[1].includes('¿') || m[2].includes('?'))) questionSegs.add(t)
+      return t
+    })
     .filter(Boolean)
   // Lane C D2: a context sentence ("Lo quiero talla XL", "Vivo en Heredia centro") may sit next to the ask, never a done word.
   const isContext = (t: string) => {
     const s = t.replace(/\s+/gu, ' ')
     if (hasHardPaymentClaim(s) || hasPastOrDoneWord(t, false)) return false
+    // Rafael 2026-10-24: "Si llevo 3" next to "¿pago envío?" (the quantity clause only, nothing else).
+    if (QTY_IF_SEG_RE.test(s)) return true
     if (opts.strict) return CLOSED_PAY_STRICT_CONTEXT_SEG_RE.test(s)
     if (CLOSED_PAY_CHOICE_SEG_RE.test(s)) return true
     const bare = s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
@@ -863,7 +903,13 @@ export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean }
     return !place || place[1].split(' ').every((w) => PLACE_WORD_RE.test(w) && !PLACE_FILLER_RE.test(w))
   }
   const asks = segs.filter((t) => !CLOSED_PAY_INFO_COURTESY_RE.test(t) && !isContext(t))
-  return asks.length > 0 && asks.every((t) => CLOSED_PAY_INFO_SEG_RE.test(t.replace(/\s+/gu, ' ')))
+  return (
+    asks.length > 0 &&
+    asks.every((t) => {
+      const one = t.replace(/\s+/gu, ' ')
+      return CLOSED_PAY_INFO_SEG_RE.test(one) || isPayShipAsk(one, questionSegs.has(t))
+    })
+  )
 }
 /** An offer to send the card number by chat (one of the closed shapes above). */
 const CARD_BY_CHAT_RE =

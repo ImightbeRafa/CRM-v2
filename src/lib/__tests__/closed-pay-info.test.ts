@@ -262,3 +262,80 @@ describe('SecureDog r3 Lows', () => {
     assert.equal(unansweredPaymentState('¿Lo tienen en negro?', [{ direction: 'outbound', content: '¿Cómo preferís pagar?' }]).inPlay, false)
   })
 })
+
+/**
+ * Rafael 2026-10-24 (all agents): a question about paying BEFORE buying ("¿pago envío?", "si llevo 3, ¿pago envío?",
+ * "¿cuánto pago de envío?") is answered by the agent with the total / the methods. Only a real payment goes to a person,
+ * and the agent never says a payment is confirmed.
+ */
+const PAY_SHIP_ASKS = [
+  '¿Pago envío?',
+  'Si llevo 3, ¿pago envío?',
+  'si llevo 2 pago envio?',
+  'Llevo 2, ¿pago envío?',
+  'Y si llevo 2 pago el envío?',
+  'Y si compro 3 kits, ¿pago envío?',
+  '¿Cuánto pago de envío?',
+  '¿Cuánto pago en total?',
+  'cuanto seria en total con envio',
+  'Si pido 3 kits cuánto sería en total con envío',
+  '¿El envío lo pago yo?',
+  '¿El envío lo pago aparte?',
+  '¿quién paga el envío?',
+  'Hola, ¿pago envío?',
+]
+const PAY_SHIP_PERSON = [
+  'Ya pagué, ¿cuánto pago de envío?',
+  '¿Pago envío? Le hice el sinpe',
+  'Si llevo 3 ya pagué, ¿pago envío?',
+  'llevo 3 ya pague, ¿pago envío?',
+  'Si llevo 3 le hice el sinpe, ¿pago envío?',
+  'quiero 2, ya les pague el envio?',
+  '¿Les llegó? ¿Cuánto pago de envío?',
+  'Pago el envío ✅',
+  '¿Pago envío? ✅',
+  '¿Pago envío? ya te lo mande',
+  'El envío lo pago mi esposo?',
+  'El envío lo pago Juan?',
+  'Mi esposo pago el envío',
+  '¿Pago la mitad del envío?',
+  '¿Cuánto pago del resto?',
+  '¿Cuánto me falta por pagar?',
+  'Si llevo 20.000, ¿pago envío?',
+  'Si llevo 3000 ¿pago envío?',
+  'Pago envío',
+  'pago el envio',
+  '¿Pago la mitad hoy si mi cuñado cancelo la otra?',
+  '¿Pago env\u200Bío? ya pague',
+  '¿Раgo envío? ya pague',
+]
+
+describe('pre-purchase payment questions (Rafael 2026-10-24)', () => {
+  it('are answered by the agent, also in the strict form (no "¿ya pagó?" model check)', () => {
+    for (const t of PAY_SHIP_ASKS) {
+      assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
+      assert.equal(isClosedPayInfoQuestion(t), true, t)
+      const d = decideInbound({ inboundText: t, brandFacts: FACTS, shortcuts: SHORTCUTS })
+      assert.notEqual(d.paymentClass, 'payment_proof_or_risk', t)
+      assert.equal(d.handoff, null, t)
+    }
+    // A leading "si" reads as a yes in the strict form (SecureDog r3): the "¿ya pagó?" check still looks at those.
+    for (const t of PAY_SHIP_ASKS.filter((x) => !/^(hola|s[ií])\b/i.test(x))) assert.equal(isClosedPayInfoQuestion(t, { strict: true }), true, t)
+  })
+
+  it('a claim, a third payer, a part payment, an amount or a statement keeps the person path', () => {
+    for (const t of PAY_SHIP_PERSON) assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+  })
+
+  it('the reply still never confirms a payment on these turns', () => {
+    for (const t of ['¿Pago envío?', 'Si llevo 3, ¿pago envío?']) {
+      for (const reply of ['¡Pago confirmado! El envío es ₡3 000', 'Recibimos tu pago 🙌']) {
+        const r = validateAgentOutput({ text: reply, customerText: t, paymentContext: true } as Parameters<typeof validateAgentOutput>[0])
+        assert.equal(r.ok, false, reply)
+        assert.ok(r.reasons.some((x) => x === 'payment_status_claim' || x === 'confirmation_wording'), JSON.stringify(r))
+      }
+      const fine = validateAgentOutput({ text: 'Depende de cuántos kits llevés 😊 ¿Cuántos querés?', customerText: t, paymentContext: true } as Parameters<typeof validateAgentOutput>[0])
+      assert.equal(fine.ok, true, JSON.stringify(fine))
+    }
+  })
+})

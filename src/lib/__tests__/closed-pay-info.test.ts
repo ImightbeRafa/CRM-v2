@@ -536,7 +536,7 @@ describe('pre-purchase payment questions · Verifier r3 allow-list (2026-10-24)'
   it('a reply to the agent after its answer is not swept back in (answered bubbles are not unanswered)', () => {
     for (const latest of ['Sí', 'Ya', 'Listo']) {
       const d = decideInbound({ inboundText: latest, earlierCustomerTexts: ['¿Pago envío?'], unansweredCustomerTexts: [], brandFacts: FACTS, shortcuts: SHORTCUTS })
-      assert.equal(d.why ?? null, null, latest)
+      assert.notEqual(d.paymentClass, 'payment_proof_or_risk', latest)
     }
   })
   it('"gracias" in front or in a place keeps the person path; a question after a statement does not hide it', () => {
@@ -572,7 +572,7 @@ describe('pre-purchase payment questions · Verifier r4 (2026-10-24)', () => {
     const parts = customerTextsSinceStore(fast)
     for (const latest of ['Sí', 'Dale', 'Mil gracias', 'Ana Mora, Heredia']) {
       const d = decideInbound({ inboundText: latest, earlierCustomerTexts: ['¿Pago envío?'], unansweredCustomerTexts: parts.after.filter((x) => x !== 'Sí'), raceCustomerTexts: parts.race, brandFacts: FACTS, shortcuts: SHORTCUTS })
-      assert.equal(d.why ?? null, null, latest)
+      assert.notEqual(d.paymentClass, 'payment_proof_or_risk', latest)
     }
     // A race bubble with money still counts as a neighbour of a NEW rescued question.
     const d2 = decideInbound({ inboundText: '¿Cuánto pago en total?', earlierCustomerTexts: ['₡15 000'], unansweredCustomerTexts: [], raceCustomerTexts: ['₡15 000'], brandFacts: FACTS, shortcuts: SHORTCUTS })

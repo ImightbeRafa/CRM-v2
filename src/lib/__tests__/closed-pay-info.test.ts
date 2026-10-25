@@ -562,7 +562,21 @@ describe('pre-purchase payment questions · Verifier r4 (2026-10-24)', () => {
       { direction: 'outbound', content: 'Con 2 kits va incluido: ₡29 800. ¿Te lo aparto?', sentAt: at(200) },
       { direction: 'inbound', content: 'Sí', sentAt: at(230) },
     ]
-    assert.deepEqual(customerTextsSinceStore(history), ['Escrito mientras respondían', 'Sí'])
+    assert.deepEqual(customerTextsSinceStore(history), { after: ['Sí'], race: ['Escrito mientras respondían'] })
+    // Verifier r5: the agent answers within seconds — the answered question sits in the race list, never as "rescued".
+    const fast = [
+      { direction: 'inbound', content: '¿Pago envío?', sentAt: at(0) },
+      { direction: 'outbound', content: 'Con 2 kits va incluido: ₡29 800. ¿Te lo aparto?', sentAt: at(5) },
+      { direction: 'inbound', content: 'Sí', sentAt: at(30) },
+    ]
+    const parts = customerTextsSinceStore(fast)
+    for (const latest of ['Sí', 'Dale', 'Mil gracias', 'Ana Mora, Heredia']) {
+      const d = decideInbound({ inboundText: latest, earlierCustomerTexts: ['¿Pago envío?'], unansweredCustomerTexts: parts.after.filter((x) => x !== 'Sí'), raceCustomerTexts: parts.race, brandFacts: FACTS, shortcuts: SHORTCUTS })
+      assert.equal(d.why ?? null, null, latest)
+    }
+    // A race bubble with money still counts as a neighbour of a NEW rescued question.
+    const d2 = decideInbound({ inboundText: '¿Cuánto pago en total?', earlierCustomerTexts: ['₡15 000'], unansweredCustomerTexts: [], raceCustomerTexts: ['₡15 000'], brandFacts: FACTS, shortcuts: SHORTCUTS })
+    assert.equal(d2.paymentClass, 'payment_proof_or_risk')
   })
   it('#2: money, refund and after-purchase lines are not a plain order line', () => {
     for (const u of ['Quiero mi plata de vuelta', 'Necesito mi dinero', 'Me interesa el kit de quince mil', 'Quiero el de veinte rojos', 'Llevo 3 días esperando el pedido', 'Llevo 2 semanas esperando', 'Busco mi pedido', 'Necesito la factura', 'Busco el número de guía', 'Quiero que verifiquen', 'Ocupo que me ayuden con mi pedido', 'Quiero el otro pedido igual que el anterior']) {

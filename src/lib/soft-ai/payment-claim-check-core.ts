@@ -53,14 +53,15 @@ export function unansweredCustomerTexts(history: PaymentCheckHistory, now = Date
  * most `raceMs` before it (typed while it was being written). Unlike unansweredCustomerTexts, a question the store already
  * answered minutes ago is not in it (the rescued "¿pago envío?" allow-list must not sweep the next reply back in).
  */
-export function customerTextsSinceStore(history: PaymentCheckHistory, raceMs = 60_000): string[] {
+/** Verifier r5: the two parts kept apart — `after` the store's last message, and the `race` bubbles just before it. */
+export function customerTextsSinceStore(history: PaymentCheckHistory, raceMs = 60_000): { after: string[]; race: string[] } {
   const after: string[] = []
   let i = history.length - 1
   for (; i >= 0; i--) {
     if (history[i].direction === 'outbound') break
     if (history[i].content) after.unshift(String(history[i].content))
   }
-  if (i < 0) return after
+  if (i < 0) return { after, race: [] }
   const storeAt = history[i].sentAt ? new Date(history[i].sentAt as string | Date).getTime() : NaN
   const race: string[] = []
   if (Number.isFinite(storeAt)) {
@@ -71,7 +72,7 @@ export function customerTextsSinceStore(history: PaymentCheckHistory, raceMs = 6
       if (Number.isFinite(at) && storeAt - at >= 0 && storeAt - at <= raceMs) race.push(String(m.content))
     }
   }
-  return [...race, ...after]
+  return { after, race }
 }
 
 /** SecureDog wave D r4 (M1): English / PT / FR money and state words open the check too (one small check per false hit). */

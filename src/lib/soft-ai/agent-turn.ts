@@ -1350,7 +1350,8 @@ export async function executeAgentLayerTurn(
   const decisionBase = {
     brandFacts: resolved.agent.brandFacts,
     // Verifier r3 (2026-10-24): the bubbles not answered yet (the rescued "¿pago envío?" allow-list).
-    unansweredCustomerTexts: [...customerTextsSinceStore(history), ...burstEarlier.map((m) => m.content || '')],
+    unansweredCustomerTexts: [...customerTextsSinceStore(history).after, ...burstEarlier.map((m) => m.content || '')],
+    raceCustomerTexts: customerTextsSinceStore(history).race,
     replyStyle: resolved.agent.replyStyle,
     shortcuts,
     // A keyword reply WITH images whose image can't go out now ("Te paso la guía 👇" with nothing) → model answers.
@@ -2602,7 +2603,8 @@ async function runAgentTestTurnInner(input: {
   const probarDecisionBase = {
     brandFacts: runtimeAgent.brandFacts,
     // Verifier r3 (2026-10-24): same as live — the bubbles not answered yet.
-    unansweredCustomerTexts: [...customerTextsSinceStore(history), ...probarBurstEarlier.map((m) => m.content || '')],
+    unansweredCustomerTexts: [...customerTextsSinceStore(history).after, ...probarBurstEarlier.map((m) => m.content || '')],
+    raceCustomerTexts: customerTextsSinceStore(history).race,
     replyStyle: runtimeAgent.replyStyle,
     shortcuts,
     skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !probarImageReplyIds.has(id))),

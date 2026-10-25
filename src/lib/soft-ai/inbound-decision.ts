@@ -168,6 +168,11 @@ export function decideInbound(input: {
    */
   unansweredCustomerTexts?: string[]
   /**
+   * Verifier r5: bubbles sent just before the store's last message (typed while it was written). They count as neighbours
+   * of a rescued question, never as the rescued question itself (the store may have answered it).
+   */
+  raceCustomerTexts?: string[]
+  /**
    * luna-10 D2: the "¿ya pagó?" model check said claim (or failed) in enforce mode — the message is treated exactly like
    * a regex payment claim (same hand-off, same notification). Can only force toward a person.
    */
@@ -220,9 +225,10 @@ export function decideInbound(input: {
   // before or after it. Plain price questions ("¿Cuánto sale el envío?") never enter here: nothing live answers changes.
   const unanswered = input.unansweredCustomerTexts ?? input.earlierCustomerTexts ?? []
   const burst = [...unanswered, input.inboundText || '']
-  const rescuedAt = (input.unansweredCustomerTexts ? burst : [input.inboundText || '']).map((t) => isRescuedPayShipQuestion(t || ''))
+  const rescued = (input.unansweredCustomerTexts ? burst : [input.inboundText || '']).some((t) => isRescuedPayShipQuestion(t || ''))
+  const neighbours = [...(input.raceCustomerTexts ?? []), ...burst]
   const payShipAfterTrace =
-    isText && rescuedAt.some(Boolean) && burst.some((t) => !isRescuedPayShipQuestion(t || '') && !isCleanPayShipNeighbour(t || ''))
+    isText && rescued && neighbours.some((t) => !isRescuedPayShipQuestion(t || '') && !isCleanPayShipNeighbour(t || ''))
   const burstClaim = doneAfterDetails || payShipAfterTrace || (input.earlierCustomerTexts || []).some(
     (t) => hasHardPaymentClaim(t, { noPaymentYet }) && !(embeddedPaymentChoice(t) && !hasHardPaymentClaimLabelMasked(t)),
   )

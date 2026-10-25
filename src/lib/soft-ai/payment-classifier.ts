@@ -804,27 +804,48 @@ const QTY_IF = String.raw`(?:y\s+)?(?:si\s+)?(?:llevo|compro|pido|encargo|me\s+l
 const QTY_IF_MASK_RE = new RegExp(String.raw`(?<![\p{L}\d])${QTY_IF}(?![\p{L}\d])`, 'giu')
 const QTY_IF_SEG_RE = new RegExp(String.raw`^${QTY_IF}$`, 'iu')
 const PAY_SHIP = String.raw`(?:el\s+)?env[ií]o`
+/** The quantity may also close the question ("¿Pago envío si llevo 3?"). */
+const QTY_AFTER = String.raw`(?:\s*,?\s*${QTY_IF})?`
 /** "pago / pagar" as a verb: only in a sentence the customer wrote as a question (¿ or ?). */
 const PAY_SHIP_ASK_SEG_RE = new RegExp(
-  String.raw`^(?:${QTY_IF}\s*,?\s*)?(?:` +
-    String.raw`(?:tengo\s+que\s+|hay\s+que\s+|debo\s+)?pag(?:o|ar)\s+${PAY_SHIP}(?:\s+(?:aparte|tambi[eé]n|yo))?` +
+  String.raw`^(?:${QTY_IF}\s*,?\s*)?(?:y\s+)?(?:` +
+    String.raw`(?:tengo\s+que\s+|hay\s+que\s+)?pag(?:o|ar)\s+${PAY_SHIP}(?:\s+(?:aparte|tambi[eé]n|yo))?` +
     String.raw`|${PAY_SHIP}\s+(?:lo\s+)?pago\s+(?:yo|aparte)` +
     String.raw`|${PAY_SHIP}\s+se\s+paga\s+aparte` +
-    String.raw`)$`,
+    String.raw`)${QTY_AFTER}$`,
   'iu',
 )
-/** "¿Cuánto sería en total?" / "¿Quién paga el envío?": price questions, with or without a question mark. */
+/**
+ * "¿Cuánto sería en total?" / "¿Quién paga el envío?": price questions, with or without a question mark. Verifier r1 #2:
+ * never "queda" / "del total" (how much is LEFT = a part payment, a person).
+ */
 const PAY_TOTAL_ASK_SEG_RE = new RegExp(
-  String.raw`^(?:${QTY_IF}\s*,?\s*)?(?:` +
+  String.raw`^(?:${QTY_IF}\s*,?\s*)?(?:y\s+)?(?:` +
     String.raw`qui[eé]n\s+paga\s+${PAY_SHIP}` +
-    String.raw`|cu[aá]nto\s+(?:pago|ser[ií]a|es|sale|cobran|queda)\s+(?:de|del|por\s+el|el|en)\s+(?:env[ií]o|total)(?:\s+con\s+(?:el\s+)?env[ií]o)?` +
-    String.raw`|cu[aá]nto\s+(?:pago|ser[ií]a|es|sale|queda)\s+(?:todo\s+)?(?:en\s+)?total(?:\s+con\s+(?:el\s+)?env[ií]o)?` +
-    String.raw`)$`,
+    String.raw`|cu[aá]nto\s+(?:pago|pagar[ií]a|ser[ií]a|es|sale|cobran)\s+(?:de|del|por\s+el|el|en|con)\s+env[ií]o(?:\s+(?:a|para)\s+(?<place>\p{L}+(?:\s+\p{L}+){0,3}))?` +
+    String.raw`|cu[aá]nto\s+(?:pago|pagar[ií]a|ser[ií]a|es|sale)\s+(?:todo\s+)?(?:en\s+|el\s+)?total(?:\s+con\s+(?:el\s+)?env[ií]o)?` +
+    String.raw`)${QTY_AFTER}$`,
   'iu',
 )
+/** "¿Cuánto pago de envío a Heredia?": the words after "a / para" are a place — no payment / done stem, no filler. */
+function payTotalAsk(seg: string): boolean {
+  const m = PAY_TOTAL_ASK_SEG_RE.exec(seg)
+  if (!m) return false
+  const place = m.groups?.place
+  if (!place) return true
+  const bare = place.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+  return !CONTEXT_FORBIDDEN_RE.test(bare) && place.split(/\s+/u).every((w) => !PLACE_FILLER_RE.test(w))
+}
+/** Verifier r1 #1: a yes / ok in front ("Sí, cuánto pago de envío?") can answer the store's "¿Pudiste pagar?". */
+const YES_PREFIX_RE = /(?<![\p{L}])(?:s[ií]|ok|okay|okey|perfecto|dale|claro|bueno|va|genial|excelente|s[uú]per|listo|lista|hecho)(?![\p{L}])/iu
+/** The sentence opens with the quantity verb ("llevo 2 …"), so a stripped "si " right before it was the if. */
+const QTY_SI_RE = /^(?:llevo|compro|pido|encargo|me\s+llevo|ocupo|quiero)\s/iu
+const QTY_SI_PREFIX_RE = /(?<![\p{L}])s[ií]\s+$/iu
 function isPayShipAsk(seg: string, question: boolean): boolean {
-  const ok = PAY_TOTAL_ASK_SEG_RE.test(seg) || (question && PAY_SHIP_ASK_SEG_RE.test(seg))
-  return ok && !hasHardPaymentClaim(seg) && !hasFreePayAct(seg) && !PARTIAL_STATE_RE.test(seg) && !DEBT_RE.test(seg)
+  // Verifier r1 #3: "envio" here is always the noun (the shape is anchored), never "envió" (sent).
+  const s = seg.replace(/(?<![\p{L}])envio(?![\p{L}])/giu, 'envío')
+  const ok = payTotalAsk(s) || (question && PAY_SHIP_ASK_SEG_RE.test(s))
+  return ok && !hasHardPaymentClaim(s) && !hasFreePayAct(s) && !PARTIAL_STATE_RE.test(s) && !DEBT_RE.test(s)
 }
 /**
  * Lane C D2: a context sentence around a closed question ("Lo quiero talla XL", "Vivo en Heredia centro") — never with
@@ -868,7 +889,7 @@ export function normalizePaySpelling(v: string): string {
     .replace(/(?<![\p{L}])(?:s[iy]mpe|sinpi|simpi|cinpe)(?![\p{L}])/giu, 'sinpe')
     .replace(/(?<![\p{L}])(hacer|mandar|enviar|pasar|depositar|transferir)\s+(te|le|les)(?![\p{L}])/giu, '$1$2')
 }
-export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean } = {}): boolean {
+export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean; payShip?: boolean } = {}): boolean {
   // SecureDog r3: an emoji's own variation selector / joiner ("❤️", "👨‍👩") is not an invisible gap; after a letter it is.
   if ((text || '').length > 400) return false
   const raw = (text || '').replace(EMOJI_JOINER_RE, '$1')
@@ -879,15 +900,18 @@ export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean }
   const v = clean(normalizePaySpelling(stripFormatChars(raw.normalize('NFKC'))))
   if (!v.trim() || v.length > 200 || /\d/.test(v.replace(QTY_IF_MASK_RE, ' '))) return false
   if (invisibleAsGap(raw) !== null || hasMixedScriptWord(raw) || hasForeignPaymentState(raw)) return false
-  // Rafael 2026-10-24: each sentence remembers whether it was written as a question ("¿…" or "…?").
-  const questionSegs = new Set<string>()
-  const segs = [...v.replace(/¿/gu, '\u0001¿').matchAll(/([^.!?\n\u0001]+)([.!?\n\u0001]*)/gu)]
+  // Rafael 2026-10-24: each sentence remembers whether it was written as a question ("¿…" or "…?") and whether a yes /
+  // ok was stripped in front of it (Verifier r1 #1, #5: kept per sentence, not per text).
+  const parts = [...v.replace(/¿/gu, '\u0001¿').matchAll(/([^.!?\n\u0001]+)([.!?\n\u0001]*)/gu)]
     .map((m) => {
-      const t = m[1].replace(/^[\s¿¡,]+/u, '').replace(/[\s,]+$/u, '').replace(LEADING_GREETING_RE, '').trim()
-      if (t && (m[1].includes('¿') || m[2].includes('?'))) questionSegs.add(t)
-      return t
+      const lead = m[1].replace(/^[\s¿¡,]+/u, '').replace(/[\s,]+$/u, '')
+      const t = lead.replace(LEADING_GREETING_RE, '').trim()
+      // "si llevo 2 …": that "si" is the if of the quantity clause, not a yes (only when written without a comma).
+      const stripped = lead.slice(0, lead.length - t.length)
+      const prefix = QTY_SI_RE.test(t) ? stripped.replace(QTY_SI_PREFIX_RE, '') : stripped
+      return { t, q: m[1].includes('¿') || m[2].includes('?'), yes: YES_PREFIX_RE.test(prefix) }
     })
-    .filter(Boolean)
+    .filter((p) => p.t)
   // Lane C D2: a context sentence ("Lo quiero talla XL", "Vivo en Heredia centro") may sit next to the ask, never a done word.
   const isContext = (t: string) => {
     const s = t.replace(/\s+/gu, ' ')
@@ -902,12 +926,12 @@ export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean }
     // SecureDog r3: "VIVO EN HEREDIA JUAN LO MANDO" — pronouns / fillers are never part of a place, in any case.
     return !place || place[1].split(' ').every((w) => PLACE_WORD_RE.test(w) && !PLACE_FILLER_RE.test(w))
   }
-  const asks = segs.filter((t) => !CLOSED_PAY_INFO_COURTESY_RE.test(t) && !isContext(t))
+  const asks = parts.filter((p) => !CLOSED_PAY_INFO_COURTESY_RE.test(p.t) && !isContext(p.t))
   return (
     asks.length > 0 &&
-    asks.every((t) => {
-      const one = t.replace(/\s+/gu, ' ')
-      return CLOSED_PAY_INFO_SEG_RE.test(one) || isPayShipAsk(one, questionSegs.has(t))
+    asks.every((p) => {
+      const one = p.t.replace(/\s+/gu, ' ')
+      return CLOSED_PAY_INFO_SEG_RE.test(one) || (opts.payShip !== false && !p.yes && isPayShipAsk(one, p.q))
     })
   )
 }

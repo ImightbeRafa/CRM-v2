@@ -283,6 +283,14 @@ const PAY_SHIP_ASKS = [
   '¿El envío lo pago aparte?',
   '¿quién paga el envío?',
   'Hola, ¿pago envío?',
+  // Verifier r1 #3
+  '¿el envio lo pago yo?',
+  'el envio lo pago aparte?',
+  '¿Pago envío si llevo 3?',
+  '¿Cuánto pago de envío a Heredia?',
+  '¿Cuánto pago con envío?',
+  '¿Y el envío lo pago yo?',
+  '¿Cuánto pagaría de envío?',
 ]
 const PAY_SHIP_PERSON = [
   'Ya pagué, ¿cuánto pago de envío?',
@@ -308,6 +316,20 @@ const PAY_SHIP_PERSON = [
   '¿Pago la mitad hoy si mi cuñado cancelo la otra?',
   '¿Pago env\u200Bío? ya pague',
   '¿Раgo envío? ya pague',
+  // Verifier r1 #1: a yes / ok in front can answer the store's "¿Pudiste hacer el SINPE?"
+  'Sí, cuánto pago de envío?',
+  'Si, pago envio?',
+  'Claro, cuánto pago en total?',
+  'Sí, el envío lo pago aparte?',
+  'si, cuanto pago en total',
+  'Sí cuanto pago de envio',
+  'Listo, ¿cuánto pago de envío?',
+  // Verifier r1 #2: how much is LEFT is a part payment
+  '¿Cuánto pago del total?',
+  // Verifier r1 #5 / places
+  'Pago el envio. Pago el envio?',
+  '¿Cuánto pago de envío a mi esposo ya le pague?',
+  '¿Cuánto pago de envío a la cuenta que les transferí?',
 ]
 
 describe('pre-purchase payment questions (Rafael 2026-10-24)', () => {
@@ -325,6 +347,16 @@ describe('pre-purchase payment questions (Rafael 2026-10-24)', () => {
 
   it('a claim, a third payer, a part payment, an amount or a statement keeps the person path', () => {
     for (const t of PAY_SHIP_PERSON) assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    // No payment word (same as before 2026-10-24), but never the closed shape: the "¿ya pagó?" check still reads them.
+    for (const t of ['¿Cuánto queda del total?', '¿Cuánto queda en total?']) {
+      assert.equal(isClosedPayInfoQuestion(t), false, t)
+      assert.equal(isClosedPayInfoQuestion(t, { strict: true }), false, t)
+    }
+  })
+
+  it('the legacy worker keeps plain price questions non-sensitive (Verifier r1 #4)', () => {
+    for (const t of ['¿Cuánto sale el envío?', '¿Cuánto es el total?', '¿Quién paga el envío?', 'Cuánto sería en total con envío']) assert.equal(isPaymentSensitiveText(t), false, t)
+    for (const t of ['¿Pago envío?', 'Que le pongo de detalle']) assert.equal(isPaymentSensitiveText(t), true, t)
   })
 
   it('the reply still never confirms a payment on these turns', () => {

@@ -11,7 +11,7 @@ import {
   type SoftAiToolName,
 } from '@/lib/soft-ai/types'
 
-import { classifyPaymentText, isClosedPayInfoQuestion } from '@/lib/soft-ai/payment-classifier'
+import { classifyPaymentText, hasPaymentWord, isClosedPayInfoQuestion } from '@/lib/soft-ai/payment-classifier'
 
 export { DEFAULT_SOFT_AI_CONFIG }
 export const SOFT_TENANT_AI_V1_FLAG = 'soft_tenant_ai_v1'
@@ -19,7 +19,10 @@ export const SOFT_TENANT_AI_V1_FLAG = 'soft_tenant_ai_v1'
 /** Legacy worker gate: any payment class other than non_payment stays sensitive. */
 export function isPaymentSensitiveText(text: string): boolean {
   // Verifier r2 #4: a closed before-paying question the agent layer answers stays sensitive here (legacy heuristic replies).
-  return classifyPaymentText(text || '') !== 'non_payment' || isClosedPayInfoQuestion(text || '')
+  // Verifier r1 #4 (2026-10-24): the price / shipping shapes count only with a payment word ("¿cuánto sale el envío?" is a
+  // plain price question here, as before).
+  const t = text || ''
+  return classifyPaymentText(t) !== 'non_payment' || isClosedPayInfoQuestion(t, { payShip: false }) || (hasPaymentWord(t) && isClosedPayInfoQuestion(t))
 }
 
 export function parseSoftAiConfig(raw: unknown): SoftAiConfig {

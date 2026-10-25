@@ -829,7 +829,7 @@ const PAY_TOTAL_ASK_SEG_RE = new RegExp(
 )
 /** SecureDog r1 (2026-10-24): words that never belong to a place name ("a Heredia Recibido", "a Heredia Puse Plata"). */
 const PLACE_PAY_RE =
-  /(?<![a-z])(?:recib[a-z]*|plata|dinero|puse|pus[a-z]*|di|dimos|dio|envi[a-z]*|mand[a-z]*|complet[a-z]*|confirm[a-z]*|hecho|ok|sinpe|comprobante|monto|cuenta|mitad|resto|saldo|adelanto)(?![a-z])/
+  /(?<![a-z])(?:recib[a-z]*|plata|dinero|puse|pus[a-z]*|di|dimos|dio|envi[a-z]*|mand[a-z]*|complet[a-z]*|confirm[a-z]*|hecho|ok|sinpe|comprobante|monto|cuenta|mitad|resto|saldo|adelanto|lleg[a-z]*|cay[a-z]*|entr[a-z]*|realiz[a-z]*|efectu[a-z]*|acredit[a-z]*|aprob[a-z]*)(?![a-z])/
 /**
  * "¿Cuánto pago de envío a Heredia?": the words after "a / para" are a place — each a capitalised name or a place
  * word (like "vivo en …"), no payment / done stem, no filler. SecureDog r1: never in the strict form (the "¿ya pagó?"
@@ -846,10 +846,10 @@ function payTotalAsk(seg: string, strict: boolean): boolean {
   return place.split(/\s+/u).every((w) => PLACE_WORD_RE.test(w) && !PLACE_FILLER_RE.test(w))
 }
 /** Verifier r1 #1: a yes / ok in front ("Sí, cuánto pago de envío?") can answer the store's "¿Pudiste pagar?". */
-const YES_PREFIX_RE = /(?<![\p{L}])(?:s[ií]|ok|okay|okey|perfecto|dale|claro|bueno|va|genial|excelente|s[uú]per|listo|lista|hecho)(?![\p{L}])/iu
+const YES_PREFIX_RE = /(?<![\p{L}])(?:s[ií]|ok|okay|okey|oki|perfecto|dale|claro|bueno|va|genial|excelente|s[uú]per|listo|lista|hecho|pura\s+vida|de\s+una)(?![\p{L}])/iu
 /** The sentence opens with the quantity verb ("llevo 2 …"), so a stripped "si " right before it was the if. */
 const QTY_SI_RE = /^(?:llevo|compro|pido|encargo|me\s+llevo|ocupo|quiero)\s/iu
-const QTY_SI_PREFIX_RE = /(?<![\p{L}])s[ií]\s+$/iu
+const QTY_SI_PREFIX_RE = /(?<![\p{L}])si\s+$/iu
 function isPayShipAsk(seg: string, question: boolean, strict = false): boolean {
   // Verifier r1 #3: "envio" here is always the noun (the shape is anchored), never "envió" (sent).
   const s = seg.replace(/(?<![\p{L}])envio(?![\p{L}])/giu, 'envío')
@@ -888,7 +888,7 @@ const CLOSED_PAY_CHOICE_SEG_RE =
  * payment / done stem, whatever the accents or capitals ("Vivo en Heredia Pagué", "cancele", "abone").
  */
 const CONTEXT_FORBIDDEN_RE =
-  /(?<![a-z])(?:y|e|pero|que|porque|ya|pag[a-z]*|cancel[a-z]*|abon[a-z]*|deposit[a-z]*|transf[a-z]*|trasf[a-z]*|sinp[a-z]*|simp[a-z]*|cinp[a-z]*|hic[a-z]*|hiz[a-z]*|hech[a-z]*|list[oa]s?|mande|envie|pase|tire|gire|meti|deje|cubri|liquid[a-z]*|sald[a-z]*|comprob[a-z]*|plata|dinero|puse|di|dimos|recib[a-z]*|envi[a-z]*|mand[a-z]*|complet[a-z]*)(?![a-z])/
+  /(?<![a-z])(?:y|e|pero|que|porque|ya|pag[a-z]*|cancel[a-z]*|abon[a-z]*|deposit[a-z]*|transf[a-z]*|trasf[a-z]*|sinp[a-z]*|simp[a-z]*|cinp[a-z]*|hic[a-z]*|hiz[a-z]*|hech[a-z]*|list[oa]s?|mande|envie|pase|tire|gire|meti|deje|cubri|liquid[a-z]*|sald[a-z]*|comprob[a-z]*)(?![a-z])/
 /**
  * Lane C D2 round 3: everyday spellings of SINPE ("simpe", "sinpi") and a split clitic ("hacer te un simpe") read as the
  * clean form. Used for the closed shape and as an extra hand-off reading — never to clear a message the raw text flags.
@@ -918,9 +918,13 @@ export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean; 
       // "si llevo 2 …": that "si" is the if of the quantity clause, not a yes (only when written without a comma).
       const stripped = lead.slice(0, lead.length - t.length)
       const prefix = QTY_SI_RE.test(t) ? stripped.replace(QTY_SI_PREFIX_RE, '') : stripped
-      return { t, q: m[1].includes('¿') || m[2].includes('?'), yes: YES_PREFIX_RE.test(prefix) }
+      // A sentence made only of greetings / yes words ("Hola, ok", "Genial") is a yes when one of them is.
+      const onlyGreetings = !`${t} `.replace(LEADING_GREETING_RE, '').trim()
+      return { t, q: m[1].includes('¿') || m[2].includes('?'), yes: YES_PREFIX_RE.test(prefix) || (onlyGreetings && YES_PREFIX_RE.test(lead)) }
     })
-    .filter((p) => p.t)
+  // SecureDog r2 R1: a yes / ok anywhere in the message, also as its own sentence ("Hola, ok. ¿Pago envío?", "Genial. …").
+  const anyYes = parts.some((p) => p.yes)
+  parts.splice(0, parts.length, ...parts.filter((p) => p.t))
   // Lane C D2: a context sentence ("Lo quiero talla XL", "Vivo en Heredia centro") may sit next to the ask, never a done word.
   const isContext = (t: string) => {
     const s = t.replace(/\s+/gu, ' ')
@@ -932,18 +936,20 @@ export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean; 
     const bare = s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
     if (!CLOSED_PAY_CONTEXT_SEG_RE.test(s) || CONTEXT_FORBIDDEN_RE.test(bare)) return false
     const place = /^vivo\s+en\s+(.+)$/iu.exec(s)
+    // SecureDog r1 L4 / r2 F3: money / done words never in the place ("Vivo en Heredia Puse Plata").
+    if (place && PLACE_PAY_RE.test(bare)) return false
     // SecureDog r3: "VIVO EN HEREDIA JUAN LO MANDO" — pronouns / fillers are never part of a place, in any case.
     return !place || place[1].split(' ').every((w) => PLACE_WORD_RE.test(w) && !PLACE_FILLER_RE.test(w))
   }
   // SecureDog r1 M2 (2026-10-24): in the strict form a yes / ok stripped in front of ANY sentence ("Gracias ¿sí, a nombre
   // de quién sale?") keeps the "¿ya pagó?" check — it can answer the store's "¿Pudiste hacer el SINPE?".
-  if (opts.strict && parts.some((p) => p.yes)) return false
+  if (opts.strict && anyYes) return false
   const asks = parts.filter((p) => !CLOSED_PAY_INFO_COURTESY_RE.test(p.t) && !isContext(p.t))
   return (
     asks.length > 0 &&
     asks.every((p) => {
       const one = p.t.replace(/\s+/gu, ' ')
-      return CLOSED_PAY_INFO_SEG_RE.test(one) || (opts.payShip !== false && !p.yes && isPayShipAsk(one, p.q, opts.strict === true))
+      return CLOSED_PAY_INFO_SEG_RE.test(one) || (opts.payShip !== false && !anyYes && isPayShipAsk(one, p.q, opts.strict === true))
     })
   )
 }
@@ -952,21 +958,22 @@ export function isPayShipOnlyQuestion(text: string): boolean {
   return isClosedPayInfoQuestion(text) && !isClosedPayInfoQuestion(text, { payShip: false })
 }
 /**
- * SecureDog r1 L1: an earlier unanswered bubble with an amount, a payment word, a part payment / debt, a status hint or a
- * done emoji ("La mitad" + "¿Cuánto pago de envío?", "₡15 000" + "¿Pago envío?") — the price question then goes to a person.
+ * SecureDog r1 L1 / r2 F1: a bubble with MONEY in it — an amount (₡, "mil", "15k", thousands, a 4–6 digit run that is not
+ * a phone), a part payment / debt, a done emoji, a hard claim or a payment message ("La mitad", "₡15 000", "Les debo el
+ * resto", "✅"). A quantity ("2", "Quiero 3 kits"), a size, a phone number or a plain question is not money.
  */
+const PHONE_RE = /(?<!\d)\d{4}[\s-]?\d{4}(?!\d)|(?<!\d)\+?506[\s-]?\d{4}[\s-]?\d{4}(?!\d)/gu
+const AMOUNT_RE =
+  /[₡¢$]|(?<![\p{L}])(?:mil|colones)(?![\p{L}])|\d\s*(?:k|rojos?|tejas?|lucas?)(?![\p{L}])|\d{1,3}(?:[.,\s ]\d{3})+(?!\d)|(?<![\d.,])\d{4,6}(?![\d.,])/iu
 export function hasPaymentTrace(text: string): boolean {
   const t = stripFormatChars((text || '').normalize('NFKC'))
   return (
-    // "Quiero 3 kits" + "¿pago envío?" is a normal order burst: only the quantity clause may carry a digit.
-    /\d/.test(t.replace(QTY_IF_MASK_RE, ' ')) ||
-    /(?<![\p{L}])mil(?![\p{L}])/iu.test(t) ||
-    /[✅✔☑👍👌💸💰💵🧾]/u.test(t) ||
-    hasPaymentWord(t) ||
+    AMOUNT_RE.test(t.replace(PHONE_RE, ' ')) ||
+    /[✅✔☑💸💰💵🧾]/u.test(t) ||
     PARTIAL_STATE_RE.test(t) ||
     DEBT_RE.test(t) ||
-    hasPaymentStatusHint(t) ||
-    hasHardPaymentClaim(t)
+    hasHardPaymentClaim(t) ||
+    classifyPaymentText(t) === 'payment_proof_or_risk'
   )
 }
 /** An offer to send the card number by chat (one of the closed shapes above). */

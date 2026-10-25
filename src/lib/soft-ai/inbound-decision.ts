@@ -19,6 +19,7 @@ import {
   hasHardPaymentClaimLabelMasked,
   hasPaymentStatusHint,
   hasPaymentTrace,
+  hasPaymentWord,
   isBareOrderConfirmAsk,
   isPayShipOnlyQuestion,
   isCourtesyText,
@@ -210,9 +211,12 @@ export function decideInbound(input: {
     input.paymentDetailsSent === true &&
     isText &&
     [input.inboundText, ...(input.earlierCustomerTexts || [])].some((t) => isShortDoneBubble(t || ''))
-  // SecureDog r1 L1 (2026-10-24): "¿pago envío?" is answered only when nothing unanswered before it carries money words.
-  const payShipAfterTrace =
-    isText && isPayShipOnlyQuestion(input.inboundText || '') && (input.earlierCustomerTexts || []).some((t) => hasPaymentTrace(t || ''))
+  // SecureDog r1 L1 / r2 F1+R2 (2026-10-24): "¿pago envío?" (a payment word, closed only by the new shapes) is answered
+  // only when no other recent bubble carries money — before it ("La mitad" + "¿Pago envío?") or after it ("¿Pago
+  // envío?" + "₡15 000"). A plain price question ("¿Cuánto sale el envío?") keeps the live path.
+  const burst = [...(input.earlierCustomerTexts || []), input.inboundText || '']
+  const payShipAt = burst.findIndex((t) => hasPaymentWord(t || '') && isPayShipOnlyQuestion(t || ''))
+  const payShipAfterTrace = isText && payShipAt >= 0 && burst.some((t, i) => i !== payShipAt && hasPaymentTrace(t || ''))
   const burstClaim = doneAfterDetails || payShipAfterTrace || (input.earlierCustomerTexts || []).some(
     (t) => hasHardPaymentClaim(t, { noPaymentYet }) && !(embeddedPaymentChoice(t) && !hasHardPaymentClaimLabelMasked(t)),
   )

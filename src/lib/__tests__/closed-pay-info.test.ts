@@ -392,7 +392,7 @@ describe('pre-purchase payment questions · SecureDog r1 (2026-10-24)', () => {
   })
 
   it('a money trace in an earlier unanswered bubble sends the price question to a person; an order burst does not', () => {
-    for (const earlier of [['La mitad'], ['₡15 000'], ['15 mil'], ['✅'], ['👍'], ['Ya les hice el sinpe'], ['Les debo el resto']]) {
+    for (const earlier of [['La mitad'], ['₡15 000'], ['15 mil'], ['✅'], ['Ya les hice el sinpe'], ['Les debo el resto'], ['15000'], ['15 rojos']]) {
       const d = decideInbound({ inboundText: '¿Pago envío?', earlierCustomerTexts: earlier, brandFacts: FACTS, shortcuts: SHORTCUTS })
       assert.equal(d.paymentClass, 'payment_proof_or_risk', earlier[0])
     }
@@ -406,10 +406,65 @@ describe('pre-purchase payment questions · SecureDog r1 (2026-10-24)', () => {
     for (const t of ['Vivo en Heredia Puse Plata. ¿Cómo pago?', 'Vivo en Heredia Recibieron. ¿Pago envío?', 'Vivo en Cartago Mande. ¿Cómo pago?']) assert.equal(isClosedPayInfoQuestion(t), false, t)
   })
 
-  it('implicit "your payment arrived" replies are held (L2)', () => {
-    for (const reply of ['Con lo que ya pagaste, solo te queda el envío', '¡Gracias! Con eso quedás al día, solo falta el envío', 'Entonces te queda la otra mitad más el envío', 'Ya con la mitad apartamos tu pedido', 'Listo, tu pedido queda apartado. Solo falta el envío']) {
+  it('implicit "your payment arrived" statements are held (L2, narrowed in r2 F2)', () => {
+    for (const reply of ['Con lo que ya pagaste, solo te queda el envío', 'Lo que ya nos transferiste cubre el kit']) {
       const r = validateAgentOutput({ text: reply, customerText: '¿Pago envío?', paymentContext: true, modelText: true } as unknown as Parameters<typeof validateAgentOutput>[0])
       assert.ok(r.reasons.includes('payment_status_claim'), `${reply} → ${JSON.stringify(r.reasons)}`)
     }
+  })
+})
+
+describe('pre-purchase payment questions · SecureDog r2 (2026-10-24)', () => {
+  const route = (earlier: string[], latest: string) =>
+    decideInbound({ inboundText: latest, earlierCustomerTexts: earlier, brandFacts: FACTS, shortcuts: SHORTCUTS }).paymentClass
+
+  it('F1: an ordinary order chat keeps the live path on a plain price question', () => {
+    const chats: Array<[string[], string]> = [
+      [['2'], '¿Cuánto sale el envío?'],
+      [['Mi número es 8888-8888'], '¿Cuánto sale el envío?'],
+      [['Talla 38'], '¿Cuánto sale el envío?'],
+      [['¿Ya tienen el kit rojo?'], '¿Cuánto sale el envío?'],
+      [['Me gusta 👍'], '¿Cuánto sale el envío?'],
+      [['El combo de 3'], '¿Quién paga el envío?'],
+      [['Ya vi los precios'], 'Cuánto sería en total con envío'],
+      [['2'], '¿Pago envío?'],
+      [['Mi número es 8888-8888'], '¿Pago envío?'],
+      [['Hola', 'Quiero 3 kits'], '¿Pago envío?'],
+    ]
+    for (const [earlier, latest] of chats) assert.notEqual(route(earlier, latest), 'payment_proof_or_risk', `${earlier.join(' | ')} → ${latest}`)
+  })
+
+  it('R2: money after the question also sends it to a person', () => {
+    const chats: Array<[string[], string]> = [
+      [['¿Pago envío?'], '₡15 000'],
+      [['¿Cuánto pago de envío?'], 'La mitad'],
+      [['¿Pago envío?'], '15 mil'],
+      [['¿Pago envío?'], '✅'],
+      [['¿Pago envío?'], 'Les debo el resto'],
+    ]
+    for (const [earlier, latest] of chats) assert.equal(route(earlier, latest), 'payment_proof_or_risk', `${earlier.join(' | ')} → ${latest}`)
+  })
+
+  it('R1: a yes / ok as its own sentence keeps the person path (and the strict "¿ya pagó?" check)', () => {
+    for (const t of ['Hola, ok. ¿Pago envío?', 'Hola, perfecto. ¿Pago envío?', 'Genial. ¿Pago envío?', 'Excelente, ¿cuánto pago en total?', 'Hola, dale, ¿el envío lo pago aparte?', 'Pura vida. ¿Pago envío?', 'Ok, ¿cuánto pago de envío?', 'Hola sí llevo 2, pago envío?']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+      assert.equal(isClosedPayInfoQuestion(t, { strict: true }), false, t)
+    }
+    assert.equal(isClosedPayInfoQuestion('Hola, ok. ¿A nombre de quién sale?', { strict: true }), false)
+  })
+
+  it('R3 / F3: status verbs never in a place; "plata" as a colour is fine', () => {
+    for (const t of ['¿Cuánto pago de envío a San José Centro Llegó?', '¿Cuánto pago de envío a Heredia Juan Realizó?']) assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    assert.notEqual(classifyPaymentText('Lo quiero color plata. ¿Cómo pago?'), 'payment_proof_or_risk')
+    assert.equal(isClosedPayInfoQuestion('Vivo en Heredia Puse Plata. ¿Cómo pago?'), false)
+  })
+
+  it('F2: deposit policy, questions and conditionals are ordinary replies; an unconditional past payment is held', () => {
+    const v = (text: string) =>
+      validateAgentOutput({ text, customerText: '¿Cuánto pago en total?', paymentContext: true, modelText: true } as unknown as Parameters<typeof validateAgentOutput>[0]).reasons
+    for (const r of ['Para apartarlo pagás la mitad y la otra mitad al recibir', 'Con el adelanto te lo reservamos por 3 días', 'Si ya pagaste, mandame el comprobante por aquí', '¿Ya pagaste o querés que te pase los datos?', 'Tu pedido queda apartado cuando recibamos el comprobante']) {
+      assert.ok(!v(r).includes('payment_status_claim'), `${r} → ${JSON.stringify(v(r))}`)
+    }
+    for (const r of ['Con lo que ya pagaste, solo te queda el envío', 'Ya nos depositaste, gracias']) assert.ok(v(r).includes('payment_status_claim'), r)
   })
 })

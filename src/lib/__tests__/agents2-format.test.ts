@@ -571,8 +571,7 @@ describe('3b. contra entrega → order_ready hand-off', () => {
   })
   it('both turn paths wire it (settleHandoff runs after the send through finishDeliveryOrSuggest)', () => {
     const turn = read('src/lib/soft-ai/agent-turn.ts')
-    // Rafael 2026-10-25: a written "Pago contra entrega:" block (no token) also counts.
-    assert.equal((turn.match(/codOrderReady: policy\.paymentMethods\.some\(\(m\) => m === 'contra_entrega' \|\| m === 'efectivo'\) \|\| ORDER_BLOCK_RE\.test\(policy\.text\),/g) || []).length, 2)
+    assert.equal((turn.match(/codOrderReady: policy\.paymentMethods\.some\(\(m\) => m === 'contra_entrega' \|\| m === 'efectivo'\),/g) || []).length, 2)
     assert.match(turn, /if \(input\.handoff\) await settleHandoff\(input\.row, input\.handoff, input\.afterHours\)/)
   })
 })

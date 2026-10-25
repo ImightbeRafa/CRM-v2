@@ -76,7 +76,7 @@ const MORE_DONE_REPLY_RE =
  * recibir") are ordinary replies.
  */
 const IMPLICIT_PAID_REPLY_RE =
-  /(?<![\p{L}])(?:lo\s+que\s+ya\s+(?:me\s+|nos\s+|les\s+)?(?:pagaste|mandaste|abonaste|depositaste|transferiste|adelantaste)|ya\s+(?:me|nos|les)\s+(?:pagaste|depositaste|transferiste|abonaste)|con\s+lo\s+que\s+(?:ya\s+)?(?:pagaste|abonaste|adelantaste))(?![\p{L}])/iu
+  /(?<![\p{L}])(?:lo\s+que\s+ya\s+(?:me\s+|nos\s+|les\s+)?(?:pagaste|abonaste|depositaste|transferiste|adelantaste)|ya\s+(?:me|nos|les)\s+(?:pagaste|depositaste|transferiste|abonaste)|con\s+lo\s+que\s+(?:ya\s+)?(?:pagaste|abonaste|adelantaste))(?![\p{L}])/iu
 const IMPLICIT_PAID_SKIP_RE = /[?¿]|(?<![\p{L}])(?:si|cuando|una\s+vez|apenas|en\s+cuanto|cuando)(?![\p{L}])/iu
 function hasImplicitPaidStatement(forms: string[]): boolean {
   return forms.some((f) => f.split(/(?<=[.!?\n])/u).some((seg) => IMPLICIT_PAID_REPLY_RE.test(seg) && !IMPLICIT_PAID_SKIP_RE.test(seg)))

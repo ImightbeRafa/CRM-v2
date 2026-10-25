@@ -829,7 +829,7 @@ const PAY_TOTAL_ASK_SEG_RE = new RegExp(
 )
 /** SecureDog r1 (2026-10-24): words that never belong to a place name ("a Heredia Recibido", "a Heredia Puse Plata"). */
 const PLACE_PAY_RE =
-  /(?<![a-z])(?:recib[a-z]*|plata|dinero|puse|pus[a-z]*|di|dimos|dio|envi[a-z]*|mand[a-z]*|complet[a-z]*|confirm[a-z]*|hecho|ok|sinpe|comprobante|monto|cuenta|mitad|resto|saldo|adelanto|lleg[a-z]*|cay[a-z]*|entr[a-z]*|realiz[a-z]*|efectu[a-z]*|acredit[a-z]*|aprob[a-z]*)(?![a-z])/
+  /(?<![a-z])(?:recib[a-z]*|plata|dinero|puse|pus[a-z]*|di|dimos|dio|envi[a-z]*|mand[a-z]*|complet[a-z]*|confirm[a-z]*|hecho|ok|sinpe|comprobante|monto|cuenta|mitad|resto|saldo|adelanto|lleg[a-z]*|cay[a-z]*|entr[a-z]*|realiz[a-z]*|efectu[a-z]*|acredit[a-z]*|aprob[a-z]*|qued[a-z]*)(?![a-z])/
 /**
  * "¿Cuánto pago de envío a Heredia?": the words after "a / para" are a place — each a capitalised name or a place
  * word (like "vivo en …"), no payment / done stem, no filler. SecureDog r1: never in the strict form (the "¿ya pagó?"
@@ -898,7 +898,11 @@ export function normalizePaySpelling(v: string): string {
     .replace(/(?<![\p{L}])(?:s[iy]mpe|sinpi|simpi|cinpe)(?![\p{L}])/giu, 'sinpe')
     .replace(/(?<![\p{L}])(hacer|mandar|enviar|pasar|depositar|transferir)\s+(te|le|les)(?![\p{L}])/giu, '$1$2')
 }
-export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean; payShip?: boolean } = {}): boolean {
+/**
+ * opts.payShip=false: only the shapes before 2026-10-24. opts.yesBlocksAll (the "¿ya pagó?" gate only): a yes / ok anywhere
+ * refuses every shape; the receipt cue keeps the old strict meaning (Verifier r2 #2).
+ */
+export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean; payShip?: boolean; yesBlocksAll?: boolean } = {}): boolean {
   // SecureDog r3: an emoji's own variation selector / joiner ("❤️", "👨‍👩") is not an invisible gap; after a letter it is.
   if ((text || '').length > 400) return false
   const raw = (text || '').replace(EMOJI_JOINER_RE, '$1')
@@ -943,13 +947,15 @@ export function isClosedPayInfoQuestion(text: string, opts: { strict?: boolean; 
   }
   // SecureDog r1 M2 (2026-10-24): in the strict form a yes / ok stripped in front of ANY sentence ("Gracias ¿sí, a nombre
   // de quién sale?") keeps the "¿ya pagó?" check — it can answer the store's "¿Pudiste hacer el SINPE?".
-  if (opts.strict && anyYes) return false
+  if (opts.strict && opts.yesBlocksAll && anyYes) return false
+  // Verifier r2 #6: a quantity clause only ever rides with the new price / shipping shapes, never an older shape.
+  const hasQty = v.replace(QTY_IF_MASK_RE, '') !== v
   const asks = parts.filter((p) => !CLOSED_PAY_INFO_COURTESY_RE.test(p.t) && !isContext(p.t))
   return (
     asks.length > 0 &&
     asks.every((p) => {
       const one = p.t.replace(/\s+/gu, ' ')
-      return CLOSED_PAY_INFO_SEG_RE.test(one) || (opts.payShip !== false && !anyYes && isPayShipAsk(one, p.q, opts.strict === true))
+      return (CLOSED_PAY_INFO_SEG_RE.test(one) && !hasQty) || (opts.payShip !== false && !anyYes && isPayShipAsk(one, p.q, opts.strict === true))
     })
   )
 }
@@ -958,17 +964,28 @@ export function isPayShipOnlyQuestion(text: string): boolean {
   return isClosedPayInfoQuestion(text) && !isClosedPayInfoQuestion(text, { payShip: false })
 }
 /**
- * SecureDog r1 L1 / r2 F1: a bubble with MONEY in it — an amount (₡, "mil", "15k", thousands, a 4–6 digit run that is not
- * a phone), a part payment / debt, a done emoji, a hard claim or a payment message ("La mitad", "₡15 000", "Les debo el
- * resto", "✅"). A quantity ("2", "Quiero 3 kits"), a size, a phone number or a plain question is not money.
+ * Verifier r2 #1: a message that the rules alone hand off (live 89adc2ee: a person) and only the new shapes answer
+ * ("¿Pago envío?"). The burst money check and the legacy worker apply to these only, so nothing live answers changes.
  */
-const PHONE_RE = /(?<!\d)\d{4}[\s-]?\d{4}(?!\d)|(?<!\d)\+?506[\s-]?\d{4}[\s-]?\d{4}(?!\d)/gu
+export function isRescuedPayShipQuestion(text: string): boolean {
+  return isPayShipOnlyQuestion(text) && classifyPaymentTextRules(text) === 'payment_proof_or_risk'
+}
+/**
+ * SecureDog r1 L1 / r2 F1, Verifier r2 #1/#4/#5: a bubble with MONEY in it, next to a rescued "¿pago envío?" — an amount
+ * stated (₡ / $ sign, "15 mil", "15k", "15 lucas", "15.000"), a part payment / debt, a done emoji, a bare yes / done
+ * bubble ("Sí", "Listo", "Ya quedó", "Ahí va"), a hard claim or a payment message. A price asked back ("₡17 900?"), a
+ * quantity, a size, a phone, a postal code, an e-mail or "Mil gracias" is not money.
+ */
+const PHONE_RE = /(?<!\d)\d{4}[\s-]?\d{2,4}[\s-]?\d{0,4}(?!\d)|(?<!\d)\+?506[\s-]?\d{4}[\s-]?\d{4}(?!\d)/gu
 const AMOUNT_RE =
-  /[₡¢$]|(?<![\p{L}])(?:mil|colones)(?![\p{L}])|\d\s*(?:k|rojos?|tejas?|lucas?)(?![\p{L}])|\d{1,3}(?:[.,\s ]\d{3})+(?!\d)|(?<![\d.,])\d{4,6}(?![\d.,])/iu
+  /[₡¢$]\s?\d|\d\s*(?:mil|k|lucas?|tejas?|colones)(?![\p{L}])|(?<![\p{L}\d@#.,-])\d{1,3}(?:[.,\s ]\d{3})+(?![\d\p{L}@])/iu
+const YES_DONE_BUBBLE_RE = /^[\s¡!.]*(?:s[ií]|listo|lista|hecho|ya|ya\s+qued[oó]|ah[ií]\s+va|ya\s+est[aá]|de\s+una)[\s!.]*$/iu
 export function hasPaymentTrace(text: string): boolean {
   const t = stripFormatChars((text || '').normalize('NFKC'))
   return (
-    AMOUNT_RE.test(t.replace(PHONE_RE, ' ')) ||
+    (!/[?¿]/.test(t) && AMOUNT_RE.test(t.replace(PHONE_RE, ' '))) ||
+    YES_DONE_BUBBLE_RE.test(t) ||
+    isShortDoneBubble(t) ||
     /[✅✔☑💸💰💵🧾]/u.test(t) ||
     PARTIAL_STATE_RE.test(t) ||
     DEBT_RE.test(t) ||

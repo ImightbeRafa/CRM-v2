@@ -19,9 +19,8 @@ import {
   hasHardPaymentClaimLabelMasked,
   hasPaymentStatusHint,
   hasPaymentTrace,
-  hasPaymentWord,
   isBareOrderConfirmAsk,
-  isPayShipOnlyQuestion,
+  isRescuedPayShipQuestion,
   isCourtesyText,
   isCueFreePaymentChoiceText,
   isPlainPaymentLinkQuestion,
@@ -215,7 +214,8 @@ export function decideInbound(input: {
   // only when no other recent bubble carries money — before it ("La mitad" + "¿Pago envío?") or after it ("¿Pago
   // envío?" + "₡15 000"). A plain price question ("¿Cuánto sale el envío?") keeps the live path.
   const burst = [...(input.earlierCustomerTexts || []), input.inboundText || '']
-  const payShipAt = burst.findIndex((t) => hasPaymentWord(t || '') && isPayShipOnlyQuestion(t || ''))
+  // Verifier r2 #1: only a question the new shapes rescued (live hands it off), so nothing live answers changes.
+  const payShipAt = burst.findIndex((t) => isRescuedPayShipQuestion(t || ''))
   const payShipAfterTrace = isText && payShipAt >= 0 && burst.some((t, i) => i !== payShipAt && hasPaymentTrace(t || ''))
   const burstClaim = doneAfterDetails || payShipAfterTrace || (input.earlierCustomerTexts || []).some(
     (t) => hasHardPaymentClaim(t, { noPaymentYet }) && !(embeddedPaymentChoice(t) && !hasHardPaymentClaimLabelMasked(t)),

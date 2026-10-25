@@ -59,7 +59,7 @@ export function paymentCheckGate(inboundText: string, history: PaymentCheckHisto
   // Lane C store exam 2026-10-22: when everything unanswered is a closed before-paying question ("¿Qué le pongo de
   // detalle?", "¿se puede pagar cuando ya está acá?"), there is no claim to look for (no digit, anchored shapes).
   // SecureDog r2 F1: strict — only questions, courtesy and a fixed "Lo quiero (talla M)"; never a free context sentence.
-  if (unanswered.every((t) => !t.trim() || isClosedPayInfoQuestion(t, { strict: true }))) return false
+  if (unanswered.every((t) => !t.trim() || isClosedPayInfoQuestion(t, { strict: true, yesBlocksAll: true }))) return false
   // SecureDog round 6: the whole unanswered burst, not only the newest message.
   for (const t of unanswered) if (MONEY_WORDS_RE.test(t) || FOREIGN_MONEY_WORDS_RE.test(t) || hasPaymentWord(t)) return true
   const recentInbound = history.filter((m) => m.direction === 'inbound').slice(-3).map((m) => m.content || '')

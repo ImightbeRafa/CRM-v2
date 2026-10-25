@@ -18,7 +18,9 @@ import {
   hasHardPaymentClaim,
   hasHardPaymentClaimLabelMasked,
   hasPaymentStatusHint,
+  hasPaymentTrace,
   isBareOrderConfirmAsk,
+  isPayShipOnlyQuestion,
   isCourtesyText,
   isCueFreePaymentChoiceText,
   isPlainPaymentLinkQuestion,
@@ -208,7 +210,10 @@ export function decideInbound(input: {
     input.paymentDetailsSent === true &&
     isText &&
     [input.inboundText, ...(input.earlierCustomerTexts || [])].some((t) => isShortDoneBubble(t || ''))
-  const burstClaim = doneAfterDetails || (input.earlierCustomerTexts || []).some(
+  // SecureDog r1 L1 (2026-10-24): "¿pago envío?" is answered only when nothing unanswered before it carries money words.
+  const payShipAfterTrace =
+    isText && isPayShipOnlyQuestion(input.inboundText || '') && (input.earlierCustomerTexts || []).some((t) => hasPaymentTrace(t || ''))
+  const burstClaim = doneAfterDetails || payShipAfterTrace || (input.earlierCustomerTexts || []).some(
     (t) => hasHardPaymentClaim(t, { noPaymentYet }) && !(embeddedPaymentChoice(t) && !hasHardPaymentClaimLabelMasked(t)),
   )
   const forced = input.forcePaymentRisk === true

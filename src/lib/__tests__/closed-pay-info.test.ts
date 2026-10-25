@@ -341,8 +341,9 @@ describe('pre-purchase payment questions (Rafael 2026-10-24)', () => {
       assert.notEqual(d.paymentClass, 'payment_proof_or_risk', t)
       assert.equal(d.handoff, null, t)
     }
-    // A leading "si" reads as a yes in the strict form (SecureDog r3): the "¿ya pagó?" check still looks at those.
-    for (const t of PAY_SHIP_ASKS.filter((x) => !/^(hola|s[ií])\b/i.test(x))) assert.equal(isClosedPayInfoQuestion(t, { strict: true }), true, t)
+    // A leading "si" reads as a yes in the strict form (SecureDog r3), and a free place is never strict (SecureDog r1
+    // 2026-10-24): the "¿ya pagó?" check still looks at those.
+    for (const t of PAY_SHIP_ASKS.filter((x) => !/^(hola|s[ií])\b/i.test(x) && !/env[ií]o a /i.test(x))) assert.equal(isClosedPayInfoQuestion(t, { strict: true }), true, t)
   })
 
   it('a claim, a third payer, a part payment, an amount or a statement keeps the person path', () => {
@@ -368,6 +369,47 @@ describe('pre-purchase payment questions (Rafael 2026-10-24)', () => {
       }
       const fine = validateAgentOutput({ text: 'Depende de cuántos kits llevés 😊 ¿Cuántos querés?', customerText: t, paymentContext: true } as Parameters<typeof validateAgentOutput>[0])
       assert.equal(fine.ok, true, JSON.stringify(fine))
+    }
+  })
+})
+
+describe('pre-purchase payment questions · SecureDog r1 (2026-10-24)', () => {
+  it('a free place after "envío a" is a capitalised place with no money / done word, and never skips the "¿ya pagó?" check', () => {
+    assert.equal(isClosedPayInfoQuestion('¿Cuánto pago de envío a Heredia?'), true)
+    assert.equal(isClosedPayInfoQuestion('¿Cuánto pago de envío a San José?'), true)
+    for (const t of ['¿Cuánto pago de envío a Heredia?', '¿Cuánto pago de envío a San José?']) assert.equal(isClosedPayInfoQuestion(t, { strict: true }), false, t)
+    for (const t of ['¿Cuánto pago de envío a Heredia Recibido?', '¿Cuánto pago de envío a Heredia Puse Plata?', '¿Cuánto pago de envío a Heredia Mandé?', '¿Cuánto pago de envío a Heredia Sinpe?']) {
+      assert.equal(isClosedPayInfoQuestion(t), false, t)
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+
+  it('in the strict form a yes / ok in front of any sentence keeps the "¿ya pagó?" check (old shapes too)', () => {
+    for (const t of ['Hola sí, el envío lo pago aparte?', 'Hola, sí, pago envío?', 'Upe dale, pago envío?', 'Hola ¿sí, el envío lo pago aparte?', 'Buenas ¿claro, cuánto pago en total?', 'Hola ¿ok, el envío lo pago yo?', 'Gracias ¿sí, a nombre de quién sale?']) {
+      assert.equal(isClosedPayInfoQuestion(t, { strict: true }), false, t)
+    }
+    for (const t of ['Hola sí, el envío lo pago aparte?', 'Hola, sí, pago envío?', 'Upe dale, pago envío?', 'Hola ¿ok, el envío lo pago yo?']) assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+  })
+
+  it('a money trace in an earlier unanswered bubble sends the price question to a person; an order burst does not', () => {
+    for (const earlier of [['La mitad'], ['₡15 000'], ['15 mil'], ['✅'], ['👍'], ['Ya les hice el sinpe'], ['Les debo el resto']]) {
+      const d = decideInbound({ inboundText: '¿Pago envío?', earlierCustomerTexts: earlier, brandFacts: FACTS, shortcuts: SHORTCUTS })
+      assert.equal(d.paymentClass, 'payment_proof_or_risk', earlier[0])
+    }
+    for (const earlier of [['Hola'], ['Quiero 3 kits'], ['Buenas tardes', 'Me interesa el avión']]) {
+      const d = decideInbound({ inboundText: '¿Pago envío?', earlierCustomerTexts: earlier, brandFacts: FACTS, shortcuts: SHORTCUTS })
+      assert.notEqual(d.paymentClass, 'payment_proof_or_risk', earlier.join(' | '))
+    }
+  })
+
+  it('a "Vivo en …" context never carries money / done words', () => {
+    for (const t of ['Vivo en Heredia Puse Plata. ¿Cómo pago?', 'Vivo en Heredia Recibieron. ¿Pago envío?', 'Vivo en Cartago Mande. ¿Cómo pago?']) assert.equal(isClosedPayInfoQuestion(t), false, t)
+  })
+
+  it('implicit "your payment arrived" replies are held (L2)', () => {
+    for (const reply of ['Con lo que ya pagaste, solo te queda el envío', '¡Gracias! Con eso quedás al día, solo falta el envío', 'Entonces te queda la otra mitad más el envío', 'Ya con la mitad apartamos tu pedido', 'Listo, tu pedido queda apartado. Solo falta el envío']) {
+      const r = validateAgentOutput({ text: reply, customerText: '¿Pago envío?', paymentContext: true, modelText: true } as unknown as Parameters<typeof validateAgentOutput>[0])
+      assert.ok(r.reasons.includes('payment_status_claim'), `${reply} → ${JSON.stringify(r.reasons)}`)
     }
   })
 })

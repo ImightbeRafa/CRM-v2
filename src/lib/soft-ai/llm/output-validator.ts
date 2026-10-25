@@ -69,6 +69,12 @@ const ALWAYS_PAYMENT_STATUS_REPLY_RE =
  */
 const MORE_DONE_REPLY_RE =
   /(?<![\p{L}])(?:payment\s+(?:has\s+been\s+|was\s+|is\s+)?(?:received|confirmed|approved|processed|completed|verified)|(?:we|i)\s+(?:have\s+|'ve\s+)?(?:got|received|confirmed|verified)\s+(?:your|the)\s+(?:payment|transfer|deposit|money)|(?:your\s+)?order\s+(?:has\s+)?(?:shipped|been\s+(?:sent|shipped|dispatched)|is\s+on\s+(?:its|the)\s+way)|(?:pagamento|paiement)\s+(?:recebido|confirmado|aprovado|re[cç]u|confirm[eé])|gracias\s+por\s+(?:tu\s+|su\s+|el\s+|la\s+)?(?:pago|pagar|sinpe|transferencia|dep[oó]sito)|(?:el\s+equipo\s+|ya\s+)(?:confirm[oó]|verific[oó]|aprob[oó]|valid[oó])\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|(?:ya\s+)?(?:confirmaron|verificaron|aprobaron|validaron|acreditaron)\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)|(?:el\s+equipo\s+)?ya\s+(?:lo|la)\s+(?:confirm[oó]|confirmaron|verific[oó]|verificaron|aprob[oó]|aprobaron|valid[oó]|validaron|acredit[oó]|acreditaron)|(?:lo|la)\s+(?:confirm[oó]|verific[oó]|aprob[oó]|valid[oó])\s+el\s+equipo|(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia|comprobante)\s+(?:ya\s+)?(?:se\s+(?:confirm[oó]|verific[oó]|aprob[oó]|valid[oó]|acredit[oó])|(?:lo|la)\s+(?:confirm[oó]|verific[oó]|aprob[oó]|valid[oó]))|se\s+(?:confirm[oó]|verific[oó]|aprob[oó]|valid[oó]|acredit[oó])\s+(?:tu|su|el)\s+(?:pago|sinpe|dep[oó]sito|transferencia)|confirmo\s+que\s+(?:ya\s+)?(?:pagaste|pag[oó]|hiciste\s+el\s+(?:pago|sinpe))|ya\s+tenemos\s+(?:tu|la|su)\s+plata|(?:tu\s+|su\s+|el\s+)?pedido\s*:?\s+(?:ya\s+)?(?:fue\s+)?(?:enviado|despachado)(?=\s*(?:[.!,]|\p{Extended_Pictographic}|$)))(?![\p{L}])/iu
+/**
+ * SecureDog r1 L2 (2026-10-24): an IMPLICIT "your payment arrived" — a balance or a reservation built on money the
+ * store has not verified ("Con lo que ya pagaste, solo te queda el envío", "quedás al día", "la otra mitad").
+ */
+const IMPLICIT_PAID_REPLY_RE =
+  /(?<![\p{L}])(?:ya\s+(?:me\s+|nos\s+|les\s+)?(?:pagaste|pag[oó]|depositaste|transferiste|abonaste|mandaste\s+(?:el|la)\s+(?:pago|sinpe|plata|transferencia))|lo\s+que\s+(?:ya\s+)?(?:pagaste|mandaste|abonaste|depositaste|transferiste|adelantaste)|qued[aá]s\s+al\s+d[ií]a|est[aá]s\s+al\s+d[ií]a|la\s+otra\s+mitad|(?:con|por)\s+(?:la\s+mitad|el\s+adelanto|el\s+abono)\s+(?:\p{L}+\s+){0,3}(?:apart|reserv|separ)\p{L}*|(?:tu|el|su)\s+pedido\s+(?:ya\s+)?(?:queda|qued[oó]|est[aá])\s+(?:apartado|reservado|separado))(?![\p{L}])/iu
 
 /**
  * SecureDog wave D r2 (INT-208): "pagado" / "pago completado · procesado · exitoso" as a statement, per sentence, with
@@ -1166,7 +1172,7 @@ export function validateAgentOutput(input: {
   // The wave-D list reads model text only (an owner's saved line may say "¡Gracias por la transferencia!").
   if (
     anyForm(ALWAYS_PAYMENT_STATUS_REPLY_RE, claimForms) ||
-    (input.modelText && (anyForm(MORE_DONE_REPLY_RE, modelForms) || hasPaidStatement(modelForms)))
+    (input.modelText && (anyForm(MORE_DONE_REPLY_RE, modelForms) || anyForm(IMPLICIT_PAID_REPLY_RE, modelForms) || hasPaidStatement(modelForms)))
   ) {
     reasons.push('payment_status_claim')
   } else if (

@@ -25,6 +25,7 @@ import { ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
 import { runPreModelGates } from '@/lib/soft-ai/agent-claim-gates'
 import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
 import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
+import { customerTextOf } from '@/lib/soft-ai/inbound-text'
 
 export const FOLLOW_UP_FLAG = 'agent_follow_up_v1'
 /** Meta's window is 24 h after the customer's last message; keep a margin. */
@@ -137,13 +138,14 @@ export async function followUpSkipReason(
     where: { tenantId, conversationId: conv.id },
     orderBy: { sentAt: 'desc' },
     take: 30,
-    select: { direction: true, content: true, metadata: true },
+    select: { direction: true, content: true, metadata: true, messageType: true },
   })
   const lastOut = recent.find((m) => m.direction === 'outbound')
   if (!lastOut || (lastOut.metadata as { softAi?: unknown } | null)?.softAi !== true) return 'last_reply_by_person'
-  if (recent.some((m) => m.direction === 'inbound' && isOptOutText(m.content))) return 'opted_out'
+  // 2026-10-25: a "no me escriban" typed into a WhatsApp edit counts too (inbound-text.ts).
+  if (recent.some((m) => m.direction === 'inbound' && isOptOutText(customerTextOf(m)))) return 'opted_out'
   const lastIn = recent.find((m) => m.direction === 'inbound')
-  if (lastIn && DECLINE_RE.test(lastIn.content || '')) return 'declined'
+  if (lastIn && DECLINE_RE.test(customerTextOf(lastIn))) return 'declined'
   if (recent.some((m) => m.direction === 'outbound' && (m.metadata as { followUp?: unknown } | null)?.followUp)) return 'already_followed_up'
   return null
 }

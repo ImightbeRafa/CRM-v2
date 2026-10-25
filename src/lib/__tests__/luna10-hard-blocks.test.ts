@@ -279,7 +279,7 @@ describe('verifier + SecureDog round 2 (luna-10)', () => {
     for (const t of ['STOP', 'no me escriban más', 'NO MÁS MENSAJES', 'ya no me manden nada', 'quiero darme de baja', 'no me contacten más', 'No quiero un asistente virtual', 'No quiero que me atienda una inteligencia artificial', 'No me escriban']) assert.ok(isOptOutText(t), t)
     for (const t of ['Me podría atender un asesor', 'quiero hablar con una persona', 'no quiero el combo', 'no me llegó el pedido']) assert.equal(isOptOutText(t), false, t)
     // Burst = one reply (2026-10-17): the same two checks, plus the burst marker and every message since the hand-off.
-    assert.match(fs.readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8'), /optOut:\s+isOptOutText\(handoffTrigger\?\.content\) \|\|\s+isOptOutText\(input\.payload\.content\)/)
+    assert.match(fs.readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8'), /optOut:\s+isOptOutText\(handoffTrigger \? customerTextOf\(handoffTrigger\) : null\) \|\|\s+isOptOutText\(input\.payload\.content\)/)
   })
   it('#5: a new place / product the customer asked about is a new answer; the same answer twice is still dropped', () => {
     assert.equal(isNearRepeat('El envío a Limón cuesta ₡2.500 y llega en 2 días hábiles', ['El envío a San José cuesta ₡2.500 y llega en 2 días hábiles'], 'y a limón?'), false)

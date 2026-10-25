@@ -35,6 +35,7 @@ import {
 } from '@/lib/soft-ai/automation-queue'
 import { sweepShouldAnswer } from '@/lib/soft-ai/resume-reply'
 import { resolveAiAllowance } from '@/lib/soft-ai/ai-allowance'
+import { customerMessageTypeOf, customerTextOf, isEditMessage, isRevokeMessage } from '@/lib/soft-ai/inbound-text'
 
 const DAY_MS = 24 * 60 * 60_000
 /** Most chats answered by one "line turned on" call (Rafael: newest first, cap 50). */
@@ -269,14 +270,16 @@ async function prepareConversation(
     recentRows.find((r) => {
       const meta = r.metadata as { waitingAck?: unknown; outageAck?: unknown } | null
       // Lane D: the outage line ("Dame un momento" while OpenAI was down) is not an answer either.
-      return meta?.waitingAck !== true && meta?.outageAck !== true && r.messageType !== 'reaction'
+      // 2026-10-25: a deleted message, or an edit with no new text, gets no turn from the webhook either (inbound-text.ts).
+      const saysNothing = r.direction === 'inbound' && (isRevokeMessage(r.messageType) || isEditMessage(r.messageType)) && !customerTextOf(r)
+      return meta?.waitingAck !== true && meta?.outageAck !== true && r.messageType !== 'reaction' && !saysNothing
     }) ?? null
   const latest = latestRow
     ? {
         id: latestRow.id,
         direction: latestRow.direction,
         sentAt: latestRow.sentAt,
-        content: latestRow.content,
+        content: latestRow.direction === 'inbound' ? customerTextOf(latestRow) : latestRow.content,
         historical: isHistorical(latestRow.metadata),
         duplicate: Boolean(latestRow.duplicateOfMessageId),
       }
@@ -323,7 +326,7 @@ async function prepareConversation(
   )
   if (decision.action === 'skip' || !latest) return { decision }
   if (decision.action === 'enqueue' || decision.action === 'rearm') {
-    const gate = sweepShouldAnswer({ content: latest.content, messageType: latestRow?.messageType ?? null })
+    const gate = sweepShouldAnswer({ content: latest.content, messageType: customerMessageTypeOf(latestRow?.messageType) })
     if (!gate.answer) return { decision: { action: 'skip', reason: gate.reason } }
   }
 

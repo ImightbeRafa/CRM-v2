@@ -237,9 +237,9 @@ describe('burst = one reply · hand-offs and questions in any bubble', () => {
     assert.equal(optOut, true)
     assert.equal(burstOptOutIn(decision.decisionTrace), true)
     const turn = read('src/lib/soft-ai/agent-turn.ts')
-    assert.match(turn, /isOptOutText\(input\.payload\.content\) \|\|\s+burstOptOutIn\(lastTurn\.decisionTrace\) \|\|\s+inboundSince\.some\(\(m\) => isOptOutText\(m\.content\)\),/)
+    assert.match(turn, /isOptOutText\(input\.payload\.content\) \|\|\s+burstOptOutIn\(lastTurn\.decisionTrace\) \|\|\s+inboundSince\.some\(\(m\) => isOptOutText\(customerTextOf\(m\)\)\),/)
     // SecureDog R3: every customer message since the hand-off is read (the STOP bubble's job may have been superseded).
-    assert.match(turn, /direction: 'inbound', sentAt: \{ gt: since \} \},\s+select: \{ content: true \},\s+take: 50,/)
+    assert.match(turn, /direction: 'inbound', sentAt: \{ gt: since \} \},\s+select: \{ content: true, messageType: true, metadata: true \},\s+take: 50,/)
     // SecureDog R1: only a message sent no earlier than this trigger can take the burst.
     assert.match(read('src/lib/soft-ai/automation-queue.ts'), /\.\.\.\(triggerSentAt \? \{ message: \{ sentAt: \{ gte: triggerSentAt \} \} \} : \{\}\)/)
     assert.match(turn, /newerPending: await newerBurstJobPending\(row, triggerSentAt\)/)
@@ -539,7 +539,7 @@ describe('burst hardening · every bubble checked, a day at most, newest message
       fn,
       /lastReply && lastReply\.sentAt >= since\s+\? \{ OR: \[\{ sentAt: \{ gt: lastReply\.sentAt \} \}, \{ sentAt: lastReply\.sentAt, id: \{ gt: lastReply\.id \} \}\] \}\s+: \{ sentAt: \{ gte: since \} \}/,
     )
-    assert.match(fn, /take: BURST_LOAD_MAX,\s+select: \{ content: true, messageType: true, sentAt: true \},/)
+    assert.match(fn, /take: BURST_LOAD_MAX,\s+select: \{ content: true, messageType: true, metadata: true, sentAt: true \},/)
     const live = turn.slice(turn.indexOf('export async function executeAgentLayerTurn'), turn.indexOf('function persistedTurnStatus'))
     assert.match(
       live,

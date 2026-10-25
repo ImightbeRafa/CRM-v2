@@ -25,6 +25,7 @@ import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { SOFT_TENANT_AI_V1_FLAG } from '@/lib/feature-flags'
 import { BURST_SETTLE_MS, persistJob } from '@/lib/soft-ai/automation-queue'
 import { isTransientDbError } from '@/lib/db-retry'
+import { customerTextOf, isEditMessage, isRevokeMessage } from '@/lib/soft-ai/inbound-text'
 
 type InboundHookArgs = {
   tenantId: string
@@ -189,6 +190,7 @@ export async function executeSoftAiInboundTurn(
       sentAt: true,
       orderId: true,
       metadata: true,
+      messageType: true,
     },
   })
 
@@ -207,10 +209,13 @@ export async function executeSoftAiInboundTurn(
       content: string
       sentAt: Date
       orderId?: string | null
+      messageType?: string | null
+      metadata?: unknown
     }) => ({
       id: m.id,
       direction: m.direction === 'outbound' ? ('outbound' as const) : ('inbound' as const),
-      content: m.content,
+      // 2026-10-25: an edit reads as its new text, a delete as nothing (inbound-text.ts).
+      content: m.direction === 'outbound' ? m.content : customerTextOf(m),
       sentAt: new Date(m.sentAt).toISOString(),
       orderId: m.orderId || null,
     }),
@@ -402,6 +407,13 @@ export async function enqueueSoftAiAfterInbound(
   try {
     if (!args.conversationId || !args.messageId) {
       return { skippedReason: 'missing_conversation_or_message' }
+    }
+    // 2026-10-25: a deleted message ("[revoke]") asks nothing — no turn, like a reaction below (it got the after-hours
+    // line at night). An edit is answered with its NEW text: the caller passes customerTextOf as `content`; an edit with
+    // no new text left (or still the stored "[edit]" token) gets no turn either.
+    if (isRevokeMessage(args.messageType)) return { skippedReason: 'revoke' }
+    if (isEditMessage(args.messageType) && (!(args.content || '').trim() || /^\s*\[edit\]\s*$/.test(args.content))) {
+      return { skippedReason: 'edit_empty' }
     }
     // No text and no attachment (e.g. an unsupported Instagram event): the job could only fail (SOFT_AI_PAYLOAD_INVALID),
     // and as the newest job of a burst it would hold back / supersede the real question (burst = one reply).

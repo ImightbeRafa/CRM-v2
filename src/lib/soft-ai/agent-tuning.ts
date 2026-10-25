@@ -12,6 +12,7 @@
  * ('chat_agent_tune'). Never an AI call; never payment data, confirmation wording, links, Betsy markers or an amount
  * the agent can't quote. Real chats: the texts come from the database (INT-107), never from the client.
  */
+import { customerTextOf } from '@/lib/soft-ai/inbound-text'
 import 'server-only'
 
 import { Prisma } from '@prisma/client'
@@ -352,7 +353,7 @@ export async function loadTuneSource(tenantId: string, agentId: string, messageI
   if (!answersId) throw new TuneRefusal('customer_not_found', 'No encontramos el mensaje del cliente que respondió el agente.', 404)
   const customer = await prisma.chatMessage.findFirst({
     where: { id: answersId, tenantId, conversationId: msg.conversationId, direction: 'inbound' },
-    select: { id: true, content: true },
+    select: { id: true, content: true, messageType: true, metadata: true },
   })
   if (!customer) throw new TuneRefusal('customer_not_found', 'No encontramos el mensaje del cliente que respondió el agente.', 404)
   // agents2-format: one reply goes out as up to 3 messages — Corregir works on the whole reply (parts of the same
@@ -375,7 +376,8 @@ export async function loadTuneSource(tenantId: string, agentId: string, messageI
     conversationId: msg.conversationId,
     agentReply,
     customerMessageId: customer.id,
-    customerText: customer.content || '',
+    // 2026-10-25: a WhatsApp edit is corrected on its new text, not on "[edit]" (inbound-text.ts).
+    customerText: customerTextOf(customer),
     decidedByCode,
   }
 }

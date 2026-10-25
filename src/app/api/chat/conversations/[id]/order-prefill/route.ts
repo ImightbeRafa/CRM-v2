@@ -45,9 +45,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     where: { tenantId: auth.tenantId, conversationId: conversation.id, direction: 'inbound', sentAt: { gte: new Date(Date.now() - LOOKBACK_MS) } },
     orderBy: { sentAt: 'desc' },
     take: 30,
-    select: { direction: true, content: true },
+    select: { direction: true, content: true, messageType: true, metadata: true },
   })
   // SecureDog H1: one bounded copy of the customer's text (30 messages × 1 000 chars, 6 000 total) feeds every helper.
+  // 2026-10-25: a WhatsApp edit gives its corrected text (often the address), a delete nothing (inbound-text.ts).
   const customerTexts = boundedCustomerTexts(customerTextsForPrefill(rows.reverse()))
 
   const items = await prisma.inventoryItem.findMany({

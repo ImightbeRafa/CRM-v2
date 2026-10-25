@@ -27,6 +27,7 @@ import { promoInEffect } from '@/lib/soft-ai/promo'
 import { DIGIT_WORDS_RE, normalizeQuestion, sanitizeTuneQuestion } from '@/lib/soft-ai/agent-tuning-core'
 import { isTableReady } from '@/lib/soft-ai/table-ready'
 import { buildKnowledgeMap, gapAnswered, type KnowledgeDocInput, type KnowledgeMap } from '@/lib/soft-ai/knowledge-map'
+import { customerTextOf } from '@/lib/soft-ai/inbound-text'
 
 /** An optional part failed: the map still renders (that part shows as missing), the error name is logged. */
 function logSoft<T>(part: string, error: unknown, fallback: T): T {
@@ -144,14 +145,15 @@ async function loadGaps(tenantId: string, agentId: string, visibleBodies: string
   const [messages, conversations] = await Promise.all([
     prisma.chatMessage.findMany({
       where: { tenantId, id: { in: ids }, direction: 'inbound' },
-      select: { id: true, content: true },
+      select: { id: true, content: true, messageType: true, metadata: true },
     }),
     prisma.chatConversation.findMany({
       where: { tenantId, id: { in: convIds } },
       select: { id: true, peerName: true, client: { select: { name: true } } },
     }),
   ])
-  const textById = new Map(messages.map((m) => [m.id, m.content || '']))
+  // 2026-10-25: a gap asked in a WhatsApp edit shows its new text, not "[edit]" (inbound-text.ts).
+  const textById = new Map(messages.map((m) => [m.id, customerTextOf(m)]))
   const namesById = new Map(conversations.map((c) => [c.id, [c.peerName, c.client?.name].filter((n): n is string => Boolean(n))]))
   return groupGaps(
     turns.map((t) => ({

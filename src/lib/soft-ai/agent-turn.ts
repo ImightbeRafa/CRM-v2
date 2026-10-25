@@ -154,6 +154,7 @@ import { turnWasCodeDecided } from '@/lib/soft-ai/turn-origin'
 import { withAiUsageContext } from '@/lib/ai-usage/context'
 import { classifyPaymentText } from '@/lib/soft-ai/payment-classifier'
 import { effectiveTestCap } from '@/lib/soft-ai/provider-outage'
+import { customerMessageTypeOf, customerTextOf } from '@/lib/soft-ai/inbound-text'
 
 type JobPayload = {
   platform?: string | null
@@ -318,6 +319,8 @@ async function loadHistory(
       sentAt: true,
       // Burst = one reply: which earlier bubbles of the burst are photos / audios (inbound-burst.ts).
       messageType: true,
+      // 2026-10-25: a WhatsApp edit's new text lives in metadata.rawMessage (inbound-text.ts).
+      metadata: true,
     },
   })
   const kept = rows.reverse().filter((r) => r.direction === 'inbound' || r.direction === 'outbound')
@@ -325,10 +328,10 @@ async function loadHistory(
     history: kept.map((r) => ({
       id: r.id,
       direction: r.direction as 'inbound' | 'outbound',
-      content: r.content,
+      content: r.direction === 'inbound' ? customerTextOf(r) : r.content,
       sentAt: r.sentAt.toISOString(),
     })),
-    messageTypeOf: new Map(kept.map((r) => [r.id, r.messageType ?? null])),
+    messageTypeOf: new Map(kept.map((r) => [r.id, customerMessageTypeOf(r.messageType)])),
     loadedRows: rows.length,
   }
 }
@@ -366,12 +369,12 @@ async function loadUnansweredInbound(input: {
     },
     orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
     take: BURST_LOAD_MAX,
-    select: { content: true, messageType: true, sentAt: true },
+    select: { content: true, messageType: true, metadata: true, sentAt: true },
   })
   return rows.reverse().map((r) => ({
     direction: 'inbound' as const,
-    content: r.content,
-    messageType: r.messageType ?? null,
+    content: customerTextOf(r),
+    messageType: customerMessageTypeOf(r.messageType),
     sentAt: r.sentAt.toISOString(),
   }))
 }
@@ -423,7 +426,7 @@ async function markTurnSuperseded(row: ClaimedChatAutomationJob, turnId: string)
 
 async function loadTriggerMessage(messageId: string, tenantId: string, conversationId: string) {
   // SecureDog: scoped to this job's business and chat (never another tenant's message by id).
-  return prisma.chatMessage.findFirst({
+  const trigger = await prisma.chatMessage.findFirst({
     where: { id: messageId, tenantId, conversationId },
     select: {
       id: true,
@@ -435,8 +438,13 @@ async function loadTriggerMessage(messageId: string, tenantId: string, conversat
       providerMessageId: true,
       providerMediaId: true,
       mediaBlobPath: true,
+      metadata: true,
     },
   })
+  if (!trigger) return null
+  // 2026-10-25: an edit is the customer's corrected text, read as a text message (inbound-text.ts).
+  const { metadata: _metadata, ...rest } = trigger
+  return { ...rest, content: customerTextOf(trigger), messageType: customerMessageTypeOf(trigger.messageType) }
 }
 
 /** Exported for follow-up sends (follow-up.ts): same Meta call, same 24 h RESPONSE rules. */
@@ -612,13 +620,17 @@ async function ackWaitingCustomer(input: {
       (await isAiTermsAcceptedNow(row.tenantId))
     // Verifier F7: after "STOP" / "no quiero bot" the customer gets no more automatic text (the team is still alerted).
     const handoffTrigger = lastTurn.triggerMessageId
-      ? await prisma.chatMessage.findFirst({ where: { id: lastTurn.triggerMessageId, tenantId: row.tenantId }, select: { content: true } })
+      ? await prisma.chatMessage.findFirst({
+          where: { id: lastTurn.triggerMessageId, tenantId: row.tenantId },
+          select: { content: true, messageType: true, metadata: true },
+        })
       : null
     // SecureDog R3 (burst): "STOP" + "hola" while the chat waits on a person — the STOP bubble's job was superseded, so
     // every customer message since the hand-off is read, not only this one.
     const inboundSince = await prisma.chatMessage.findMany({
+      // 2026-10-25: a "STOP" typed into a WhatsApp edit counts too (inbound-text.ts).
       where: { tenantId: row.tenantId, conversationId: row.conversationId, direction: 'inbound', sentAt: { gt: since } },
-      select: { content: true },
+      select: { content: true, messageType: true, metadata: true },
       take: 50,
     })
     const key = waitingAckKey(lastTurn.id)
@@ -631,10 +643,10 @@ async function ackWaitingCustomer(input: {
       // Verifier round 2 #4: the opt-out can be the hand-off message OR this new one ("no me escriban más").
       // SecureDog (burst): the hand-off may come from another bubble of its burst ("STOP" + "por favor").
       optOut:
-        isOptOutText(handoffTrigger?.content) ||
+        isOptOutText(handoffTrigger ? customerTextOf(handoffTrigger) : null) ||
         isOptOutText(input.payload.content) ||
         burstOptOutIn(lastTurn.decisionTrace) ||
-        inboundSince.some((m) => isOptOutText(m.content)),
+        inboundSince.some((m) => isOptOutText(customerTextOf(m))),
       now: new Date(),
     })
     if (!decision.realert) return
@@ -2047,7 +2059,7 @@ async function finishDeliveryOrSuggestInner(input: {
         direction: { in: ['outbound', 'inbound'] },
         sentAt: { gte: new Date(Date.now() - REPEAT_WINDOW_MS) },
       },
-      select: { content: true, metadata: true, direction: true },
+      select: { content: true, metadata: true, direction: true, messageType: true },
       orderBy: { sentAt: 'desc' },
       take: 40,
     })
@@ -2059,7 +2071,7 @@ async function finishDeliveryOrSuggestInner(input: {
     const sinceLastAnswer: string[] = []
     for (const m of recent) {
       if (m.direction === 'outbound' && (m.metadata as { automationJobId?: unknown } | null)?.automationJobId !== input.row.id) break
-      if (m.direction === 'inbound' && m.content) sinceLastAnswer.push(m.content)
+      if (m.direction === 'inbound' && customerTextOf(m)) sinceLastAnswer.push(customerTextOf(m))
     }
     const customerText = [...sinceLastAnswer.reverse(), input.payload.content || ''].join('\n')
     const repeat = dropRepeatedParts({ text: input.outputText, previous, customerText })

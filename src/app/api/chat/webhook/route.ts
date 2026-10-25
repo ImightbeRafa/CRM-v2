@@ -17,6 +17,7 @@ import { getPageIdFromMetaChatMetadata, partnerRemovedWhatsAppWhere } from '@/li
 import { resolveWebhookSocialAccount } from '@/lib/chat-webhook-account'
 import { chatWebhookInvalidSignatureRateLimit } from '@/lib/rate-limit'
 import { enqueueSoftAiAfterInbound } from '@/lib/soft-ai/inbound-hook'
+import { customerTextOf } from '@/lib/soft-ai/inbound-text'
 import { processJobAfterSettle } from '@/lib/soft-ai/automation-processor'
 import {
   applyDeliveryStatusUpdate,
@@ -208,7 +209,8 @@ async function storeMessage(event: ParsedMetaChatMessage) {
             senderId: event.senderId,
             senderName: event.senderName || null,
             platform: event.platform as string,
-            content: event.content,
+            // 2026-10-25: an edit is answered with its new text, a delete with nothing (inbound-text.ts).
+            content: customerTextOf({ content: event.content, messageType: event.messageType, metadata: event.metadata }),
             messageType: event.messageType || null,
             conversationId: result.conversationId,
             messageId: result.messageId,
@@ -262,7 +264,7 @@ async function storeMessage(event: ParsedMetaChatMessage) {
     senderId: result.peerId,
     senderName: result.peerName,
     platform: event.platform as string,
-    content: result.content,
+    content: customerTextOf({ content: result.content, messageType: event.messageType, metadata: event.metadata }),
     messageType: event.messageType || null,
     suppressSoftAi: result.suppressSoftAi,
     conversationId: result.conversationId,

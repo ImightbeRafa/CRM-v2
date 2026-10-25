@@ -29,7 +29,7 @@ export const MONEY_WORDS_RE =
  * the last 3 messages) — where "listo, ya está" means "I paid".
  */
 /** The customer's messages since the store last wrote (oldest first) — a burst is answered by one job. */
-function unansweredCustomerTexts(history: PaymentCheckHistory, now = Date.now()): { burst: string[]; storeIndex: number } {
+export function unansweredCustomerTexts(history: PaymentCheckHistory, now = Date.now()): { burst: string[]; storeIndex: number } {
   const burst: string[] = []
   let i = history.length - 1
   for (; i >= 0; i--) {

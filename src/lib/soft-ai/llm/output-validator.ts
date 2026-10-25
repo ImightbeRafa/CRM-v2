@@ -77,9 +77,18 @@ const MORE_DONE_REPLY_RE =
  */
 const IMPLICIT_PAID_REPLY_RE =
   /(?<![\p{L}])(?:lo\s+que\s+ya\s+(?:me\s+|nos\s+|les\s+)?(?:pagaste|abonaste|depositaste|transferiste|adelantaste)|ya\s+(?:me|nos|les)\s+(?:pagaste|depositaste|transferiste|abonaste)|con\s+lo\s+que\s+(?:ya\s+)?(?:pagaste|abonaste|adelantaste))(?![\p{L}])/iu
-const IMPLICIT_PAID_SKIP_RE = /[?¿]|(?<![\p{L}])(?:si|cuando|una\s+vez|apenas|en\s+cuanto|cuando)(?![\p{L}])/iu
+/** A conditional in front of the statement ("Si ya pagaste, …", "Cuando lo que ya pagaste…"). */
+const IMPLICIT_PAID_SKIP_RE = /(?<![\p{L}])(?:si|cuando|una\s+vez|apenas|en\s+cuanto)(?![\p{L}])/iu
 function hasImplicitPaidStatement(forms: string[]): boolean {
-  return forms.some((f) => f.split(/(?<=[.!?\n])/u).some((seg) => IMPLICIT_PAID_REPLY_RE.test(seg) && !IMPLICIT_PAID_SKIP_RE.test(seg)))
+  // Verifier r3: only the question part is skipped ("Con lo que ya pagaste, ¿te lo envío hoy?" is still a statement).
+  return forms.some((f) =>
+    f.split(/(?<=[.!?\n])/u).some((seg) => {
+      const statement = seg.replace(/¿[^?]*\?/gu, ' ')
+      if (/\?\s*$/u.test(statement) && !statement.includes('¿')) return false
+      const m = IMPLICIT_PAID_REPLY_RE.exec(statement)
+      return !!m && !IMPLICIT_PAID_SKIP_RE.test(statement.slice(0, m.index + m[0].length))
+    }),
+  )
 }
 
 /**

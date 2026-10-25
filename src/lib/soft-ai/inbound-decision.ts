@@ -18,7 +18,7 @@ import {
   hasHardPaymentClaim,
   hasHardPaymentClaimLabelMasked,
   hasPaymentStatusHint,
-  hasPaymentTrace,
+  isCleanPayShipNeighbour,
   isBareOrderConfirmAsk,
   isRescuedPayShipQuestion,
   isCourtesyText,
@@ -163,6 +163,11 @@ export function decideInbound(input: {
    */
   earlierCustomerTexts?: string[]
   /**
+   * Verifier r3 (2026-10-24): the bubbles the store has NOT answered yet (since its last message, plus the SecureDog r7
+   * race window). Missing → the 10-minute window above is used (more cautious).
+   */
+  unansweredCustomerTexts?: string[]
+  /**
    * luna-10 D2: the "¿ya pagó?" model check said claim (or failed) in enforce mode — the message is treated exactly like
    * a regex payment claim (same hand-off, same notification). Can only force toward a person.
    */
@@ -210,13 +215,14 @@ export function decideInbound(input: {
     input.paymentDetailsSent === true &&
     isText &&
     [input.inboundText, ...(input.earlierCustomerTexts || [])].some((t) => isShortDoneBubble(t || ''))
-  // SecureDog r1 L1 / r2 F1+R2 (2026-10-24): "¿pago envío?" (a payment word, closed only by the new shapes) is answered
-  // only when no other recent bubble carries money — before it ("La mitad" + "¿Pago envío?") or after it ("¿Pago
-  // envío?" + "₡15 000"). A plain price question ("¿Cuánto sale el envío?") keeps the live path.
-  const burst = [...(input.earlierCustomerTexts || []), input.inboundText || '']
-  // Verifier r2 #1: only a question the new shapes rescued (live hands it off), so nothing live answers changes.
-  const payShipAt = burst.findIndex((t) => isRescuedPayShipQuestion(t || ''))
-  const payShipAfterTrace = isText && payShipAt >= 0 && burst.some((t, i) => i !== payShipAt && hasPaymentTrace(t || ''))
+  // SecureDog r1 L1 / r2 F1+R2, Verifier r2 #1 / r3 (2026-10-24): a question the new shapes rescued ("¿Pago envío?", live:
+  // a person) is answered only when every other unanswered bubble is a greeting or a plain order line (allow-list),
+  // before or after it. Plain price questions ("¿Cuánto sale el envío?") never enter here: nothing live answers changes.
+  const unanswered = input.unansweredCustomerTexts ?? input.earlierCustomerTexts ?? []
+  const burst = [...unanswered, input.inboundText || '']
+  const rescuedAt = (input.unansweredCustomerTexts ? burst : [input.inboundText || '']).map((t) => isRescuedPayShipQuestion(t || ''))
+  const payShipAfterTrace =
+    isText && rescuedAt.some(Boolean) && burst.some((t) => !isRescuedPayShipQuestion(t || '') && !isCleanPayShipNeighbour(t || ''))
   const burstClaim = doneAfterDetails || payShipAfterTrace || (input.earlierCustomerTexts || []).some(
     (t) => hasHardPaymentClaim(t, { noPaymentYet }) && !(embeddedPaymentChoice(t) && !hasHardPaymentClaimLabelMasked(t)),
   )

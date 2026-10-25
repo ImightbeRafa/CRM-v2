@@ -829,7 +829,7 @@ const PAY_TOTAL_ASK_SEG_RE = new RegExp(
 )
 /** SecureDog r1 (2026-10-24): words that never belong to a place name ("a Heredia Recibido", "a Heredia Puse Plata"). */
 const PLACE_PAY_RE =
-  /(?<![a-z])(?:recib[a-z]*|plata|dinero|puse|pus[a-z]*|di|dimos|dio|envi[a-z]*|mand[a-z]*|complet[a-z]*|confirm[a-z]*|hecho|ok|sinpe|comprobante|monto|cuenta|mitad|resto|saldo|adelanto|lleg[a-z]*|cay[a-z]*|entr[a-z]*|realiz[a-z]*|efectu[a-z]*|acredit[a-z]*|aprob[a-z]*|qued[a-z]*)(?![a-z])/
+  /(?<![a-z])(?:recib[a-z]*|plata|dinero|puse|pus[a-z]*|di|dimos|dio|envi[a-z]*|mand[a-z]*|complet[a-z]*|confirm[a-z]*|hecho|ok|sinpe|comprobante|monto|cuenta|mitad|resto|saldo|adelanto|lleg[a-z]*|cay[a-z]*|entr[a-z]*|realiz[a-z]*|efectu[a-z]*|acredit[a-z]*|aprob[a-z]*|qued[a-z]*|gracias)(?![a-z])/
 /**
  * "¿Cuánto pago de envío a Heredia?": the words after "a / para" are a place — each a capitalised name or a place
  * word (like "vivo en …"), no payment / done stem, no filler. SecureDog r1: never in the strict form (the "¿ya pagó?"
@@ -846,7 +846,7 @@ function payTotalAsk(seg: string, strict: boolean): boolean {
   return place.split(/\s+/u).every((w) => PLACE_WORD_RE.test(w) && !PLACE_FILLER_RE.test(w))
 }
 /** Verifier r1 #1: a yes / ok in front ("Sí, cuánto pago de envío?") can answer the store's "¿Pudiste pagar?". */
-const YES_PREFIX_RE = /(?<![\p{L}])(?:s[ií]|ok|okay|okey|oki|perfecto|dale|claro|bueno|va|genial|excelente|s[uú]per|listo|lista|hecho|pura\s+vida|de\s+una)(?![\p{L}])/iu
+const YES_PREFIX_RE = /(?<![\p{L}])(?:s[ií]|ok|okay|okey|oki|perfecto|dale|claro|bueno|va|genial|excelente|s[uú]per|listo|lista|hecho|pura\s+vida|de\s+una|gracias)(?![\p{L}])/iu
 /** The sentence opens with the quantity verb ("llevo 2 …"), so a stripped "si " right before it was the if. */
 const QTY_SI_RE = /^(?:llevo|compro|pido|encargo|me\s+llevo|ocupo|quiero)\s/iu
 const QTY_SI_PREFIX_RE = /(?<![\p{L}])si\s+$/iu
@@ -971,27 +971,25 @@ export function isRescuedPayShipQuestion(text: string): boolean {
   return isPayShipOnlyQuestion(text) && classifyPaymentTextRules(text) === 'payment_proof_or_risk'
 }
 /**
- * SecureDog r1 L1 / r2 F1, Verifier r2 #1/#4/#5: a bubble with MONEY in it, next to a rescued "¿pago envío?" — an amount
- * stated (₡ / $ sign, "15 mil", "15k", "15 lucas", "15.000"), a part payment / debt, a done emoji, a bare yes / done
- * bubble ("Sí", "Listo", "Ya quedó", "Ahí va"), a hard claim or a payment message. A price asked back ("₡17 900?"), a
- * quantity, a size, a phone, a postal code, an e-mail or "Mil gracias" is not money.
+ * Verifier r3 (2026-10-24): an allow-list, like every other closed shape. A rescued "¿pago envío?" is answered only when
+ * every OTHER unanswered bubble is a greeting or a plain order line ("Hola", "Quiero 3 kits", "Me interesa el avión").
+ * Anything else next to it — an amount, a yes / ok / gracias, a done word or emoji, order data, a second question — keeps
+ * the live path (a person), so this can only ever answer less than it could, never more than it should.
  */
-const PHONE_RE = /(?<!\d)\d{4}[\s-]?\d{2,4}[\s-]?\d{0,4}(?!\d)|(?<!\d)\+?506[\s-]?\d{4}[\s-]?\d{4}(?!\d)/gu
-const AMOUNT_RE =
-  /[₡¢$]\s?\d|\d\s*(?:mil|k|lucas?|tejas?|colones)(?![\p{L}])|(?<![\p{L}\d@#.,-])\d{1,3}(?:[.,\s ]\d{3})+(?![\d\p{L}@])/iu
-const YES_DONE_BUBBLE_RE = /^[\s¡!.]*(?:s[ií]|listo|lista|hecho|ya|ya\s+qued[oó]|ah[ií]\s+va|ya\s+est[aá]|de\s+una)[\s!.]*$/iu
-export function hasPaymentTrace(text: string): boolean {
-  const t = stripFormatChars((text || '').normalize('NFKC'))
-  return (
-    (!/[?¿]/.test(t) && AMOUNT_RE.test(t.replace(PHONE_RE, ' '))) ||
-    YES_DONE_BUBBLE_RE.test(t) ||
-    isShortDoneBubble(t) ||
-    /[✅✔☑💸💰💵🧾]/u.test(t) ||
-    PARTIAL_STATE_RE.test(t) ||
-    DEBT_RE.test(t) ||
-    hasHardPaymentClaim(t) ||
-    classifyPaymentText(t) === 'payment_proof_or_risk'
-  )
+const CLEAN_GREETING_RE =
+  /^[\s¡!¿.,]*(?:(?:hol+a+|holi|buenas(?:\s+(?:tardes|noches))?|buenos\s+d[ií]as|buen\s+d[ií]a|upe|disculpe?|una\s+consulta|consulta)[\s!.,]*)+$/iu
+const CLEAN_ORDER_RE =
+  /^(?:(?:hol+a+|buenas|buenos\s+d[ií]as)[\s,!.]+)?(?:quiero|queremos|me\s+interesan?|me\s+gustar[ií]a|ocupo|necesito|busco|ando\s+buscando|llevo|me\s+llevo)(?:\s+[\p{L}\d]+){0,8}[\s!.]*$/iu
+export function isCleanPayShipNeighbour(text: string): boolean {
+  const t = stripFormatChars((text || '').normalize('NFKC')).trim()
+  if (!t) return true
+  if (t.length > 120 || invisibleAsGap(text || '') !== null || hasMixedScriptWord(text || '')) return false
+  if (CLEAN_GREETING_RE.test(t)) return true
+  // A bare quantity answering "¿Cuántos querés?" ("2", "3 kits").
+  if (new RegExp(String.raw`^${QTY}[\s!.]*$`, 'iu').test(t)) return true
+  if (!CLEAN_ORDER_RE.test(t)) return false
+  if (/\d/.test(t.replace(QTY_IF_MASK_RE, ' '))) return false
+  return !YES_PREFIX_RE.test(t) && !hasPaymentWord(t) && !hasHardPaymentClaim(t) && !PARTIAL_STATE_RE.test(t) && !DEBT_RE.test(t) && !hasPastOrDoneWord(t, false)
 }
 /** An offer to send the card number by chat (one of the closed shapes above). */
 const CARD_BY_CHAT_RE =

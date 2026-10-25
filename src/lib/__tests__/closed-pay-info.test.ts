@@ -416,7 +416,7 @@ describe('pre-purchase payment questions · SecureDog r1 (2026-10-24)', () => {
 
 describe('pre-purchase payment questions · SecureDog r2 (2026-10-24)', () => {
   const route = (earlier: string[], latest: string) =>
-    decideInbound({ inboundText: latest, earlierCustomerTexts: earlier, brandFacts: FACTS, shortcuts: SHORTCUTS }).paymentClass
+    decideInbound({ inboundText: latest, earlierCustomerTexts: earlier, unansweredCustomerTexts: earlier, brandFacts: FACTS, shortcuts: SHORTCUTS }).paymentClass
 
   it('F1: an ordinary order chat keeps the live path on a plain price question', () => {
     const chats: Array<[string[], string]> = [
@@ -428,7 +428,6 @@ describe('pre-purchase payment questions · SecureDog r2 (2026-10-24)', () => {
       [['El combo de 3'], '¿Quién paga el envío?'],
       [['Ya vi los precios'], 'Cuánto sería en total con envío'],
       [['2'], '¿Pago envío?'],
-      [['Mi número es 8888-8888'], '¿Pago envío?'],
       [['Hola', 'Quiero 3 kits'], '¿Pago envío?'],
     ]
     for (const [earlier, latest] of chats) assert.notEqual(route(earlier, latest), 'payment_proof_or_risk', `${earlier.join(' | ')} → ${latest}`)
@@ -470,8 +469,9 @@ describe('pre-purchase payment questions · SecureDog r2 (2026-10-24)', () => {
 })
 
 describe('pre-purchase payment questions · Verifier r2 (2026-10-24)', () => {
-  const route = (earlier: string[], latest: string) =>
-    decideInbound({ inboundText: latest, earlierCustomerTexts: earlier, brandFacts: FACTS, shortcuts: SHORTCUTS }).paymentClass
+  // The earlier bubbles were answered by the store (in the 10-minute window, not unanswered) unless said otherwise.
+  const route = (earlier: string[], latest: string, unanswered: string[] = []) =>
+    decideInbound({ inboundText: latest, earlierCustomerTexts: earlier, unansweredCustomerTexts: unanswered, brandFacts: FACTS, shortcuts: SHORTCUTS }).paymentClass
 
   it('#1: questions live already answered keep the live path, whatever else is in the chat', () => {
     const chats: Array<[string[], string]> = [
@@ -498,7 +498,7 @@ describe('pre-purchase payment questions · Verifier r2 (2026-10-24)', () => {
   })
 
   it('#5: a bare yes / done bubble next to a rescued "¿pago envío?" goes to a person (as on live)', () => {
-    for (const yes of ['Sí', 'Listo', 'Ya quedó', 'Ahí va']) assert.equal(route([yes], '¿Pago envío?'), 'payment_proof_or_risk', yes)
+    for (const yes of ['Sí', 'Listo', 'Ya quedó', 'Ahí va', 'Sí señora', 'Ok', 'Dale', 'Perfecto', '👍', 'Gracias', 'Ahí les va']) assert.equal(route([yes], '¿Pago envío?', [yes]), 'payment_proof_or_risk', yes)
   })
 
   it('#2: the receipt cue keeps the old strict meaning; only the "¿ya pagó?" gate blocks on any yes', () => {
@@ -518,5 +518,33 @@ describe('pre-purchase payment questions · Verifier r2 (2026-10-24)', () => {
     assert.equal(isPaymentSensitiveText('¿Hay que pagar envío?'), false)
     assert.equal(isClosedPayInfoQuestion('Quiero 2. ¿A nombre de quién sale?'), false)
     assert.equal(classifyPaymentText('¿Cuánto pago de envío a Heredia Quedó?'), 'payment_proof_or_risk')
+  })
+})
+
+describe('pre-purchase payment questions · Verifier r3 allow-list (2026-10-24)', () => {
+  const route = (unanswered: string[], latest: string) =>
+    decideInbound({ inboundText: latest, earlierCustomerTexts: unanswered, unansweredCustomerTexts: unanswered, brandFacts: FACTS, shortcuts: SHORTCUTS }).paymentClass
+  it('a rescued question next to greetings, a quantity or a plain order line is answered', () => {
+    for (const u of [[], ['Hola'], ['Buenas tardes'], ['2'], ['3 kits'], ['Quiero 3 kits'], ['Me interesa el avión'], ['Hola', 'Quiero 2']]) assert.notEqual(route(u, '¿Pago envío?'), 'payment_proof_or_risk', u.join(' | '))
+  })
+  it('anything else next to it keeps the person path (as live), before or after', () => {
+    for (const u of [['₡150000'], ['15000'], ['Ok 17900'], ['quince mil'], ['diez mil colones'], ['15 rojos'], ['₡15 000 ya?'], ['¿Ya vieron? ₡15 000'], ['Sí claro'], ['Sip'], ['Simón'], ['Ahí te va'], ['Ana Mora 8888-1234 Heredia'], ['Ya hice el sinpe']]) {
+      assert.equal(route(u, '¿Pago envío?'), 'payment_proof_or_risk', u.join(' | '))
+    }
+    for (const latest of ['₡150000', 'Sí señora', 'La mitad']) assert.equal(route(['¿Pago envío?'], latest), 'payment_proof_or_risk', latest)
+  })
+  it('a reply to the agent after its answer is not swept back in (answered bubbles are not unanswered)', () => {
+    for (const latest of ['Sí', 'Ya', 'Listo']) {
+      const d = decideInbound({ inboundText: latest, earlierCustomerTexts: ['¿Pago envío?'], unansweredCustomerTexts: [], brandFacts: FACTS, shortcuts: SHORTCUTS })
+      assert.equal(d.why ?? null, null, latest)
+    }
+  })
+  it('"gracias" in front or in a place keeps the person path; a question after a statement does not hide it', () => {
+    assert.equal(classifyPaymentText('Gracias ¿pago envío?'), 'payment_proof_or_risk')
+    assert.equal(classifyPaymentText('¿Cuánto pago de envío a Heredia Gracias?'), 'payment_proof_or_risk')
+    const v = (text: string) =>
+      validateAgentOutput({ text, customerText: '¿Pago envío?', paymentContext: true, modelText: true } as unknown as Parameters<typeof validateAgentOutput>[0]).reasons
+    assert.ok(v('Con lo que ya pagaste, ¿te lo envío hoy?').includes('payment_status_claim'))
+    assert.ok(!v('Si ya pagaste, mandame el comprobante por aquí').includes('payment_status_claim'))
   })
 })

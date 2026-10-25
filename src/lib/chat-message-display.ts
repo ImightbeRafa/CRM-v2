@@ -31,7 +31,7 @@ type DisplayInput = {
 const PLACEHOLDER = /^\[([a-z_]+)\]$/
 
 /** Media placeholders are rendered by the media component, not here. */
-const MEDIA_TYPES = new Set(['image', 'audio', 'voice', 'document', 'video', 'sticker'])
+const MEDIA_TYPES = new Set(['image', 'audio', 'voice', 'document', 'video', 'sticker', 'file'])
 
 /** Known values Meta may put in `unsupported.type` (newer Graph versions). */
 const UNSUPPORTED_KIND_LABEL: Record<string, string> = {
@@ -68,11 +68,28 @@ const KNOWN_TOKENS = new Set([
   ...MEDIA_TYPES,
   'unsupported', 'unknown', 'reaction', 'contact', 'contacts', 'location', 'order', 'system',
   'request_welcome', 'ephemeral', 'interactive', 'story_mention', 'share', 'reel', 'ig_reel',
-  'template', 'fallback', 'unsupported_type', 'attachment', 'file',
+  'template', 'fallback', 'unsupported_type', 'attachment', 'file', 'ig_post', 'ig_story', 'edit', 'revoke',
 ])
 
 /** Types Meta delivers with no text, so `getWhatsAppContent` stores ''. */
-const EMPTY_BODY_TYPES = new Set(['reaction', 'interactive', 'unsupported', 'unknown'])
+const EMPTY_BODY_TYPES = new Set(['reaction', 'interactive', 'unsupported', 'unknown', 'edit', 'revoke'])
+
+/** Long IG captions are cut in the bubble; the full post opens from the link. */
+const CAPTION_MAX = 280
+
+function clip(text: unknown, max = CAPTION_MAX): string | undefined {
+  if (typeof text !== 'string') return undefined
+  const t = text.trim()
+  if (!t) return undefined
+  return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t
+}
+
+/** "50671545992" → "+506 7154 5992" (Costa Rica); other numbers get a plain "+". */
+function formatWaNumber(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !/^\d{8,15}$/.test(value)) return undefined
+  const cr = /^506(\d{4})(\d{4})$/.exec(value)
+  return cr ? `+506 ${cr[1]} ${cr[2]}` : `+${value}`
+}
 
 function placeholderType(input: DisplayInput): string | null {
   const content = (input.content || '').trim()
@@ -86,6 +103,14 @@ function placeholderType(input: DisplayInput): string | null {
 function unsupportedNotice(raw: Record<string, any> | null): ChatMessageNotice {
   const kind = typeof raw?.unsupported?.type === 'string' ? raw.unsupported.type.toLowerCase() : ''
   const what = UNSUPPORTED_KIND_LABEL[kind]
+  // 131060: WhatsApp could not deliver the message itself (deleted / not yet available on the phone).
+  if (!what && Number(raw?.errors?.[0]?.code) === 131060) {
+    return {
+      title: 'Mensaje no disponible',
+      detail: 'WhatsApp no pudo entregar este mensaje a Betsy (el cliente pudo haberlo borrado). Revisalo en el teléfono.',
+      tone: 'muted',
+    }
+  }
   return {
     title: 'Mensaje no compatible',
     detail: what
@@ -142,12 +167,32 @@ function whatsappNotice(type: string, raw: Record<string, any> | null): ChatMess
         tone: 'info',
       }
     }
-    case 'system':
+    case 'system': {
+      if (raw?.system?.type === 'user_changed_number') {
+        const newNumber = formatWaNumber(raw?.system?.wa_id)
+        return {
+          title: 'El cliente cambió de número',
+          detail: newNumber ? `Su número nuevo es ${newNumber}.` : undefined,
+          tone: 'info',
+        }
+      }
       return {
         title: 'Aviso de WhatsApp',
         detail: typeof raw?.system?.body === 'string' ? raw.system.body : undefined,
         tone: 'muted',
       }
+    }
+    case 'edit': {
+      const edited = raw?.edit?.message
+      const text = clip(edited?.text?.body, 2000) ?? clip(edited?.[edited?.type]?.caption, 2000)
+      return {
+        title: 'Editó un mensaje',
+        detail: text ? `Ahora dice:\n${text}` : 'WhatsApp no compartió el texto nuevo. Revisalo en el teléfono.',
+        tone: text ? 'info' : 'muted',
+      }
+    }
+    case 'revoke':
+      return { title: 'Eliminó un mensaje', detail: 'Se borró un mensaje para todos.', tone: 'muted' }
     case 'request_welcome':
       return { title: 'El cliente abrió el chat', tone: 'muted' }
     case 'ephemeral':
@@ -173,10 +218,36 @@ function instagramNotice(
   const attachment = Array.isArray(raw?.attachments) ? raw.attachments[0] : null
   // Server raw payload (tests / legacy): https URL. Client DTO: `hasUrl` → our media route.
   const href =
-    messageId && (attachment?.hasUrl === true || safeHttpsUrl(attachment?.payload?.url))
+    messageId &&
+    (attachment?.hasUrl === true ||
+      safeHttpsUrl(attachment?.payload?.url) ||
+      safeHttpsUrl(attachment?.payload?.story_media_url))
       ? `/api/chat/media/${encodeURIComponent(messageId)}`
       : undefined
+  const element = Array.isArray(attachment?.payload?.generic?.elements) ? attachment.payload.generic.elements[0] : null
   switch (type) {
+    case 'ig_post':
+      return {
+        title: 'Compartió una publicación',
+        detail: clip(attachment?.payload?.title),
+        href,
+        hrefLabel: href ? 'Ver publicación' : undefined,
+        tone: 'info',
+      }
+    case 'ig_story':
+      return {
+        title: 'Compartió una historia',
+        detail: href ? undefined : 'Instagram no envió la historia (pudo haber vencido).',
+        href,
+        hrefLabel: href ? 'Ver historia' : undefined,
+        tone: 'info',
+      }
+    case 'ephemeral':
+      return {
+        title: 'Foto o video temporal',
+        detail: 'El cliente envió una foto o video de "ver una vez". Instagram no lo comparte con Betsy — revisalo en la app de Instagram.',
+        tone: 'muted',
+      }
     case 'story_mention':
       return { title: 'Te mencionó en su historia', href, hrefLabel: href ? 'Ver historia' : undefined, tone: 'info' }
     case 'share':
@@ -185,19 +256,29 @@ function instagramNotice(
     case 'ig_reel':
       return { title: 'Compartió un reel', href, hrefLabel: href ? 'Ver reel' : undefined, tone: 'info' }
     case 'template':
-    case 'fallback':
+    case 'fallback': {
+      const title = clip(attachment?.payload?.title) ?? clip(element?.title)
+      const subtitle = clip(element?.subtitle)
+      const known = Boolean(title || subtitle || href)
       return {
         title: 'Compartió un enlace',
-        detail: typeof attachment?.payload?.title === 'string' ? attachment.payload.title : undefined,
+        detail: known
+          ? [title, subtitle].filter(Boolean).join('\n') || undefined
+          : 'Instagram no envió la vista previa de este enlace. Revisalo en la app de Instagram.',
         href,
         hrefLabel: href ? 'Abrir' : undefined,
-        tone: 'info',
+        tone: known ? 'info' : 'muted',
       }
+    }
     case 'unsupported_type':
     case 'unsupported':
       return {
         title: 'Mensaje no compatible',
-        detail: 'Instagram no comparte este tipo de mensaje con Betsy. Revisalo en la app de Instagram.',
+        detail: href
+          ? 'Instagram no dice qué tipo de mensaje es. Abrilo para verlo o revisalo en la app de Instagram.'
+          : 'Instagram no comparte este tipo de mensaje con Betsy. Revisalo en la app de Instagram.',
+        href,
+        hrefLabel: href ? 'Abrir' : undefined,
         tone: 'muted',
       }
     case 'attachment':
@@ -227,8 +308,12 @@ export function describeChatMessage(input: DisplayInput): ChatMessageNotice | nu
   const notice = isInstagram ? instagramNotice(type, raw, input.id) : whatsappNotice(type, raw)
   if (notice) return notice
   if (raw?.is_unsupported === true) return instagramNotice('unsupported', raw, input.id)
-  // Any other `[type]` token: never show raw brackets.
-  return { title: 'Mensaje de un tipo no soportado', detail: `Tipo: ${type}`, tone: 'muted' }
+  // Any other `[type]` token: never show raw brackets (or Meta's internal type name).
+  return {
+    title: 'Mensaje que Betsy todavía no muestra',
+    detail: `Revisalo en ${isInstagram ? 'la app de Instagram' : 'el teléfono'}.`,
+    tone: 'muted',
+  }
 }
 
 const PREVIEW_LABEL: Record<string, string> = {
@@ -243,6 +328,10 @@ const PREVIEW_LABEL: Record<string, string> = {
   system: 'Aviso de WhatsApp',
   request_welcome: 'Abrió el chat',
   ephemeral: 'Mensaje temporal',
+  ig_post: 'Publicación compartida',
+  ig_story: 'Historia compartida',
+  edit: 'Mensaje editado',
+  revoke: 'Mensaje eliminado',
   story_mention: 'Te mencionó en su historia',
   share: 'Publicación compartida',
   reel: 'Reel compartido',
@@ -284,6 +373,19 @@ export function projectRawMessageForClient(raw: unknown): Record<string, unknown
   const out: Record<string, unknown> = {}
   if (typeof r.type === 'string') out.type = r.type
   if (asRecord(r.unsupported) && typeof r.unsupported.type === 'string') out.unsupported = { type: r.unsupported.type }
+  if (Array.isArray(r.errors) && r.errors.length) out.errors = [{ code: Number(r.errors[0]?.code) || undefined }]
+  if (asRecord(r.edit) && asRecord(r.edit.message)) {
+    const m = r.edit.message
+    const kind = typeof m.type === 'string' ? m.type : undefined
+    const media = kind ? asRecord(m[kind]) : null
+    out.edit = {
+      message: {
+        type: kind,
+        text: { body: typeof m.text?.body === 'string' ? m.text.body : undefined },
+        ...(kind && kind !== 'text' && typeof media?.caption === 'string' ? { [kind]: { caption: media.caption } } : {}),
+      },
+    }
+  }
   if (asRecord(r.reaction)) out.reaction = { emoji: typeof r.reaction.emoji === 'string' ? r.reaction.emoji : '' }
   if (Array.isArray(r.contacts)) {
     out.contacts = r.contacts.slice(0, 10).map((c: any) => ({
@@ -298,14 +400,33 @@ export function projectRawMessageForClient(raw: unknown): Record<string, unknown
   if (asRecord(r.order)) {
     out.order = { product_items: Array.isArray(r.order.product_items) ? r.order.product_items.map(() => ({})) : [] }
   }
-  if (asRecord(r.system) && typeof r.system.body === 'string') out.system = { body: r.system.body }
+  if (asRecord(r.system)) {
+    out.system = {
+      body: typeof r.system.body === 'string' ? r.system.body : undefined,
+      type: typeof r.system.type === 'string' ? r.system.type : undefined,
+      wa_id: typeof r.system.wa_id === 'string' ? r.system.wa_id : undefined,
+    }
+  }
   if (asRecord(r.interactive) && typeof r.interactive.type === 'string') out.interactive = { type: r.interactive.type }
   if (Array.isArray(r.attachments)) {
     out.attachments = r.attachments.slice(0, 5).map((a: any) => ({
       type: a?.type,
       // Title is text, not a link. `hasUrl` lets the UI offer our own media route.
-      payload: { title: typeof a?.payload?.title === 'string' ? a.payload.title : undefined },
-      hasUrl: typeof a?.payload?.url === 'string',
+      payload: {
+        title: typeof a?.payload?.title === 'string' ? a.payload.title.slice(0, 2000) : undefined,
+        // Link card text only (its `url` / `image_url` are dropped like every other URL).
+        ...(Array.isArray(a?.payload?.generic?.elements)
+          ? {
+              generic: {
+                elements: a.payload.generic.elements.slice(0, 1).map((e: any) => ({
+                  title: typeof e?.title === 'string' ? e.title : undefined,
+                  subtitle: typeof e?.subtitle === 'string' ? e.subtitle : undefined,
+                })),
+              },
+            }
+          : {}),
+      },
+      hasUrl: typeof a?.payload?.url === 'string' || typeof a?.payload?.story_media_url === 'string',
     }))
   }
   if (r.is_unsupported === true) out.is_unsupported = true

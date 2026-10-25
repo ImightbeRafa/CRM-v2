@@ -8,6 +8,7 @@
  * or what the AI extracted. Anything else stays empty so the chat's own name / WhatsApp number is kept.
  */
 import { costaRicaLocations } from '@/app/ventas/components/costaRicaLocations'
+import { customerTextOf } from '@/lib/soft-ai/inbound-text'
 
 export type PrefillProduct = { id: string; name: string; type: string; baseCost: number; cantidad: number }
 
@@ -49,11 +50,16 @@ function tokens(text: string): string[] {
     .map((t) => ALIASES[t] ?? t)
 }
 
-/** Customer text worth reading: their own messages, without "[image]" / "[ig_post]" placeholders. */
-export function customerTextsForPrefill(messages: Array<{ direction: string; content?: string | null }>): string[] {
+/**
+ * Customer text worth reading: their own messages, without "[image]" / "[ig_post]" placeholders. A WhatsApp edit gives
+ * its corrected text (often the address), a delete nothing (2026-10-25, inbound-text.ts); the newest text still wins.
+ */
+export function customerTextsForPrefill(
+  messages: Array<{ direction: string; content?: string | null; messageType?: string | null; metadata?: unknown }>,
+): string[] {
   return messages
     .filter((m) => m.direction === 'inbound')
-    .map((m) => String(m.content || '').trim())
+    .map((m) => customerTextOf(m).trim())
     .filter((t) => t && !PLACEHOLDER_RE.test(t))
 }
 

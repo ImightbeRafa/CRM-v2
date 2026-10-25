@@ -194,6 +194,8 @@ export function selectHistoryWindow(
 
 export function formatHistoryForPrompt(messages: SoftAiHistoryMessage[]): string {
   return messages
+    // 2026-10-25: a customer bubble with no words (a WhatsApp delete, an edit with no new text) is no line at all.
+    .filter((m) => m.direction !== 'inbound' || (m.content || '').trim())
     .map((m) => {
       // Our own earlier messages, so the agent recognises what it already said (and doesn't repeat it).
       const who = m.direction === 'inbound' ? 'Cliente' : 'Vos (tienda)'

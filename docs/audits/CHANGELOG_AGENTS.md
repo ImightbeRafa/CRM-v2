@@ -2,8 +2,19 @@
 
 - A customer's deleted WhatsApp message (`revoke`, stored "[revoke]") no longer starts an inbox agent turn (it could get the after-hours line at night): skipped by type in `enqueueSoftAiAfterInbound`, like reactions, and the waiting sweep never re-queues it. 120 days of real rows: 14 revokes, 29 edits.
 - An edited message (`edit`, stored "[edit]") is now read as the customer's corrected text (often the address): job content (webhook + 503-retry path), agent history, burst loader, trigger (read as text), opt-out / decline checks (waiting ack, follow-up), repeat guard, legacy Soft thread, waiting sweep, Corregir, knowledge gaps and the order prefill (`customerTextsForPrefill`). A deleted bubble is no line in the model prompt. Real prod rows (read-only) match the shape read (`edit.message.text.body`, own wamid). An edit with no new text gets no turn. One pure helper: `src/lib/soft-ai/inbound-text.ts`. Stored `content` is never rewritten.
-- Not changed: the original (pre-edit / deleted) message stays in what the agent reads (open question for Rafael); Instagram edits are not parsed. Overlaps #155 (PLACEHOLDER_RE) only in neighbouring code.
+- Not changed: the original (pre-edit / deleted) message stays in what the agent reads (open question for Rafael); Instagram edits are not parsed. Built on top of #155 (merged: it made `[edit]`/`[revoke]` non-text in bursts and shows them in the inbox).
 - Advisor GO with 5 changes (all done); Verifier PASS WITH NOTES (Corregir, knowledge gaps, blank prompt line, sweep direction fixed; keyword automation rules still read "[edit]", owner rules, left). Tests: inbound-revoke-edit (15) in test:soft-ai; 3 source pins updated (inbound-burst, luna10-hard-blocks). Baseline: test:chat-harden instagram-media "lone confirmada" fails on clean wave too.
+
+## 2026-10-25 — Inbox: every message type shown clearly, no more "tipo no soportado" (claude/inbox-unsupported-msgs)
+
+- Read-only inventory of stored `[type]` placeholders (120 days) found types the inbox showed as "Mensaje de un tipo no soportado · Tipo: X" or as an empty "Compartió un enlace": IG `ig_post` (719), `ig_story` (83), `template` with an empty card (38), `ephemeral` (6), `unsupported_type` (1); WA `edit` (29), `revoke` (14), `unsupported` 131060 (11), `system` number change (3).
+- `src/lib/chat-message-display.ts`: shared post → "Compartió una publicación" + caption (280 chars) + Ver publicación; shared story → "Compartió una historia" + Ver historia; ephemeral → "Foto o video temporal" (ver una vez, Instagram does not share it); empty link card says Instagram sent no preview, a filled card shows its title/subtitle; IG unsupported_type with a URL offers Abrir; WA edit → "Editó un mensaje" + the new text; revoke → "Eliminó un mensaje"; 131060 → "Mensaje no disponible"; number change → "El cliente cambió de número" + new number. The last-resort fallback never shows Meta's type name. List previews cover every token. Client projection still drops every URL.
+- `src/lib/chat-media.ts`: `/api/chat/media/[id]` also serves a shared story (`story_media_url`, same host allowlist).
+- `SoftThreadPane`: a shared post / story whose media got cached keeps its label and caption under the media.
+- `inbound-burst.ts`: `[ephemeral]`, `[edit]`, `[revoke]`, `[unsupported_type]` are non-text for the agent, like the other tokens.
+- Not changed: the webhook still stores `[edit]` (the agent / order prefill do not read the edited text yet) — follow-up.
+- Verifier FAIL → fixed: an IG PDF/file (`[file]`) would have shown the fallback notice under the document (`file` added to media types); revoke wording made neutral (echoes can be the store's own); behavior tests added. Follow-up (not here): an inbound `[edit]`/`[revoke]` still starts an agent turn, and the agent never sees an edit's new text.
+- Tests: 11 new in chat-message-display.test.ts (shapes from real rows). test:chat-harden 798/799 (the 1 failure, instagram-media "a lone confirmada", fails at base too).
 
 ## 2026-10-24 — Meta ads_read: connect ad account + ad spend & ROAS (claude/meta-ads-read)
 

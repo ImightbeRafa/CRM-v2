@@ -1091,7 +1091,8 @@ export function SoftThreadPane({
             // A file still uploading (optimistic bubble) shows the picked file and its progress.
             const pendingMedia = showMedia && msg.id.startsWith('optimistic:')
             const mediaFetchable = showMedia && !pendingMedia && Boolean(msg.providerMediaId || msg.mediaBlobPath || hasInstagramAttachment(msg))
-            const notice = showMedia ? null : describeChatMessage(msg)
+            // A cached shared post / story / link keeps its label and caption under the media (plain photos get none).
+            const notice = showMedia && !isPlaceholder ? null : describeChatMessage(msg)
             const humanSender = !softAi && outbound ? humanOutboundSender(msg.metadata) : null
             const humanLabel = humanSender ? humanOutboundLabel(msg.metadata) : null
             const messageTime = formatMessageTime(msg.sentAt)

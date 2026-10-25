@@ -414,7 +414,9 @@ export function instagramAttachmentUrl(metadata: unknown): string | null {
       ? (metadata as Record<string, any>)
       : null
   const attachments = meta?.rawMessage?.attachments
-  const url = Array.isArray(attachments) ? attachments[0]?.payload?.url : null
+  const payload = Array.isArray(attachments) ? attachments[0]?.payload : null
+  // A shared story (`ig_story`) carries its media in `story_media_url`.
+  const url = typeof payload?.url === 'string' ? payload.url : payload?.story_media_url
   if (typeof url !== 'string') return null
   return isAllowedMetaMediaDownloadUrl(url) ? url : null
 }

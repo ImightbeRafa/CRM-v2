@@ -35,6 +35,14 @@ export const externalOrderIntakeSchema = z.object({
       z.string().optional(),
     ),
   }),
+  /**
+   * Optional cart lines `[{ name, quantity, unitPrice?, lineTotal?, sku?, variant? }]` (`lineItems` / `products`
+   * are older spellings some stores already send). Read leniently by parseWebsiteItems: an unusable list is
+   * ignored, never a rejected order.
+   */
+  items: z.unknown().optional(),
+  lineItems: z.unknown().optional(),
+  products: z.unknown().optional(),
   orderType: z.enum(['EA', 'RA']).optional(),
   pickupDate: z.string().optional(),
   shipping: shippingSchema.optional(),

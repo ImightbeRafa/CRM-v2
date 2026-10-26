@@ -13,6 +13,10 @@ export interface ExternalOrderData {
     /** Optional: inventory SKU of the exact item (display; stock matching still uses `name`). */
     sku?: string;
   };
+  /** Optional cart lines (see src/lib/orders/website-items.ts); `lineItems` / `products` are older spellings. */
+  items?: unknown;
+  lineItems?: unknown;
+  products?: unknown;
   /** Omit or EA = envío (current websites). RA = retiro; shipping may be omitted. */
   orderType?: 'EA' | 'RA';
   pickupDate?: string;

@@ -32,7 +32,7 @@
     "test:pedidos-ui": "npx tsx --test src/lib/__tests__/pedidos-aurora.test.ts src/lib/__tests__/order-submit-flow.test.ts src/lib/__tests__/order-requirements.test.ts",
     "test:lifecycle": "npx tsx --test src/lib/__tests__/order-lifecycle.test.ts src/lib/__tests__/guia-service-parity.test.ts",
     "test:mobile-ui": "npx tsx --test src/lib/__tests__/mobile-pass.test.ts",
-    "test:order-display": "npx tsx --import ./scripts/shim-server-only.mjs --test src/lib/__tests__/order-display.test.ts src/lib/__tests__/order-exact-names.test.ts src/lib/__tests__/order-number.test.ts",
+    "test:order-display": "npx tsx --import ./scripts/shim-server-only.mjs --test src/lib/__tests__/order-display.test.ts src/lib/__tests__/order-exact-names.test.ts src/lib/__tests__/order-number.test.ts src/lib/__tests__/website-order-items.test.ts src/lib/__tests__/website-order-map.test.ts src/lib/__tests__/retiro-stock-utils.test.ts",
     "test:order-number-pg": "npx tsx --import ./scripts/shim-server-only.mjs scripts/test-order-number-pg.ts",
     "test:pagination": "npx tsx --test src/lib/__tests__/server-pagination.test.ts",
     "test:bot-inbox": "npx tsx --test src/lib/__tests__/bot-inbox.test.ts",

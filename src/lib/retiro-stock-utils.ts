@@ -184,7 +184,8 @@ export function extractOrderLines(order: {
     const details = parseProductDetailsPayload(order.productDetails);
     if (Array.isArray(details) && details.length > 0) {
       const lines = details
-        .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+        // Website cart rows are display-only: stock keeps reading the product text (orders/website-items.ts).
+        .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && item.webItem !== true)
         .map((item) => ({
           rawName: detailLineLabel(item),
           qty: Math.max(1, Number(item.cantidad ?? item.quantity ?? 1) || 1),

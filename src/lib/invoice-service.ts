@@ -12,7 +12,8 @@ function invoiceItemsFromOrder(order: { product: string | null; productDetails: 
         const quantity = Math.max(1, Number(item?.cantidad || item?.quantity || 1));
         const unitPrice = totalQuantity > 0 ? order.total / totalQuantity : order.total;
         return {
-          description: String(item?.type || item?.name || order.product || 'Producto'),
+          // `itemName` alone = a website cart row (orders/website-items.ts).
+          description: String(item?.type || item?.name || item?.itemName || order.product || 'Producto'),
           quantity,
           unitPrice,
           total: unitPrice * quantity,

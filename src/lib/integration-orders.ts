@@ -113,7 +113,7 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
 /** Display-only rows for a website cart (stock keeps reading the product text; see website-items.ts). */
 function websiteCartDetails(orderData: ExternalOrderData): string | null {
   const items = parseWebsiteItems(orderData.items) ?? parseWebsiteItems(orderData.lineItems) ?? parseWebsiteItems(orderData.products);
-  return websiteItemsDetails(orderData.product.name, items);
+  return websiteItemsDetails(orderData.product.name, orderData.product.quantity, items);
 }
 
 /**

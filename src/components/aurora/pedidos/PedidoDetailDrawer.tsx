@@ -18,7 +18,7 @@ import { isCancelledFulfillment } from '@/lib/order-payment-status'
 import { canalLabel, type OrderLine } from '@/lib/order-channel-line'
 import { orderLabel, orderLabelHash, orderSecondaryId } from '@/lib/orders/order-label'
 import { formatOrderItems } from '@/lib/orders/order-items'
-import { isWebItemRow, webRowsMatchProduct } from '@/lib/orders/website-items'
+import { isWebItemRow, webRowsMatchOrder } from '@/lib/orders/website-items'
 
 const CR_TZ = 'America/Costa_Rica'
 
@@ -127,16 +127,18 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
         const json = await res.json()
         const rows = parseProducts(json?.data?.productDetails)
         // Website cart rows stop describing the order once its product was edited.
-        setProducts(rows.some(isWebItemRow) && !webRowsMatchProduct(rows, sale.product) ? [] : rows)
+        setProducts(rows.some(isWebItemRow) && !webRowsMatchOrder(rows, sale.product, sale.quantity) ? [] : rows)
         setProductsState('ready')
       })
       .catch(() => setProductsState('error'))
-  }, [sale.id, sale.product])
-  // No usable rows: the list labels, or an older website order's notes ("Pedido múltiple").
-  const fallbackItems = useMemo(
-    () => formatOrderItems({ product: sale.product, quantity: sale.quantity, comments: sale.comments, itemLines: sale.itemLines }),
-    [sale.product, sale.quantity, sale.comments, sale.itemLines],
-  )
+  }, [sale.id, sale.product, sale.quantity])
+  // No usable rows: the list labels, or an older website order's notes ("Pedido múltiple"). Only when every
+  // line has its count — plain product text keeps the "product ×quantity" view it always had.
+  const fallbackItems = useMemo(() => {
+    const lines = formatOrderItems({ product: sale.product, quantity: sale.quantity, comments: sale.comments, itemLines: sale.itemLines })
+    const counted = (sale.itemLines?.length ?? 0) > 0 || lines.every((line) => line.qty !== null)
+    return lines.length > 1 && counted ? lines : []
+  }, [sale.product, sale.quantity, sale.comments, sale.itemLines])
   const notes = typeof sale.comments === 'string' ? sale.comments.trim() : ''
   useEffect(loadProducts, [loadProducts])
 
@@ -340,14 +342,19 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
                 </li>
               ))}
             </ul>
-          ) : fallbackItems.length > 1 ? (
-            <ul className="divide-y divide-slate-100">
-              {fallbackItems.map((line, i) => (
-                <li key={i} className="py-2 text-[13px] font-medium text-slate-900">
-                  {line.label}
-                </li>
-              ))}
-            </ul>
+          ) : fallbackItems.length > 0 ? (
+            <>
+              <ul className="divide-y divide-slate-100">
+                {fallbackItems.map((line, i) => (
+                  <li key={i} className="py-2 text-[13px] font-medium text-slate-900">
+                    {line.label}
+                  </li>
+                ))}
+              </ul>
+              {[sale.size, sale.color].filter(Boolean).length > 0 ? (
+                <p className="text-[12px] text-slate-500">{[sale.size, sale.color].filter(Boolean).join(' · ')}</p>
+              ) : null}
+            </>
           ) : (
             <p className="text-[13px] text-slate-700">
               {sale.product || '—'} <span className="text-slate-400">×{sale.quantity || 1}</span>

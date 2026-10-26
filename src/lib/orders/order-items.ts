@@ -9,7 +9,7 @@
  * actually know them — never invented.
  */
 
-import { isWebItemRow, webRowsMatchProduct } from '@/lib/orders/website-items';
+import { isWebItemRow, webRowsMatchOrder } from '@/lib/orders/website-items';
 
 export type OrderItemLine = {
   name: string;
@@ -145,7 +145,7 @@ function trustedDetailLines(order: OrderItemsInput): OrderItemLine[] {
   // A website cart keeps the site's product text and counts (bags, boxes…): trust its rows while the product
   // is still the one they were written for.
   if (Array.isArray(details) && details.some(isWebItemRow)) {
-    return webRowsMatchProduct(details, order.product) ? lines.map((l) => l.line) : [];
+    return webRowsMatchOrder(details, order.product, order.quantity) ? lines.map((l) => l.line) : [];
   }
   return detailsMatchOrder(lines, order) ? lines.map((l) => l.line) : [];
 }
@@ -190,6 +190,9 @@ const GENERIC_WEB_PRODUCT = /^pedido m[uú]ltiple\b/i;
 /** "Arnés ForgeCR · Talla M/L x1 — ₡14 900" or "Combo Menta x2". */
 const COMMENT_ITEM = /^(.+?)\s+[x×](\d{1,4})(?:\s+[—–-]\s+.*)?$/;
 const COMMENT_STOP = /^comentarios?(?:\s+del)?\s+cliente\s*:/i;
+/** COMMENT_ITEM is quadratic on long whitespace runs: only short lines of the start of the notes are read. */
+const MAX_COMMENT_SCAN = 4000;
+const MAX_COMMENT_LINE = 300;
 
 /**
  * Website orders sent before the `items` intake kept their cart only in the
@@ -199,7 +202,7 @@ const COMMENT_STOP = /^comentarios?(?:\s+del)?\s+cliente\s*:/i;
  * quantity, so ordinary notes are never read as items.
  */
 export function webCommentItems(order: OrderItemsInput): OrderItemLine[] {
-  const comments = String(order.comments ?? '');
+  const comments = String(order.comments ?? '').slice(0, MAX_COMMENT_SCAN);
   if (!comments.trim()) return [];
   const generic = GENERIC_WEB_PRODUCT.test(String(order.product ?? '').trim());
   const segments = comments.split(/\r?\n|\s\|\s/).map((s) => s.trim());
@@ -208,7 +211,7 @@ export function webCommentItems(order: OrderItemsInput): OrderItemLine[] {
   const lines: OrderItemLine[] = [];
   for (const segment of header >= 0 ? segments.slice(header + 1) : segments) {
     if (COMMENT_STOP.test(segment)) break;
-    const match = segment.match(COMMENT_ITEM);
+    const match = segment.length <= MAX_COMMENT_LINE ? segment.match(COMMENT_ITEM) : null;
     // Without a header only plain "name xN" segments count ("Pago: …" has a colon).
     if (!match || (header < 0 && match[1].includes(':'))) {
       if (header >= 0 && lines.length > 0) break;
@@ -216,7 +219,8 @@ export function webCommentItems(order: OrderItemsInput): OrderItemLine[] {
     }
     lines.push(makeLine(match[1].trim().slice(0, MAX_ITEM_NAME_LEN), positiveInt(match[2]), null));
   }
-  if (lines.length === 0) return [];
+  // A cart is 2+ items: a single parsed line means the notes were not what we think.
+  if (lines.length < 2) return [];
   if (generic) return lines;
   const total = positiveInt(order.quantity);
   const sum = lines.reduce((acc, l) => acc + (l.qty ?? 0), 0);

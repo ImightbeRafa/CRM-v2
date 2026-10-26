@@ -9,8 +9,8 @@
  * - rows carry `itemName` (shown), never `type` / `name` / `sku`, so stock matching (order-lifecycle
  *   extractInventoryRequests: `sku || type || name`) finds no key and keeps reading the product text as before;
  * - rows carry `webItem: true`, which retiro stock (extractOrderLines) skips for the same reason;
- * - rows carry `webProduct` (the product text they describe), so they stop being shown once someone edits
- *   the product of the order.
+ * - rows carry `webProduct` / `webQuantity` (the product text and quantity they describe), so they stop being
+ *   shown once someone edits the product or quantity of the order.
  *
  * Whether a website cart should take items out of inventory is a product decision of its own: until then a
  * paid website order can never be rejected for stock because of this.
@@ -38,6 +38,8 @@ export type WebsiteItemRow = {
   siteSku?: string;
   webItem: true;
   webProduct: string;
+  /** The order quantity as the site sent it (bags, boxes, units). */
+  webQuantity: number;
 };
 
 const MAX_ITEMS = 50;
@@ -52,16 +54,6 @@ function text(value: unknown, max: number): string | undefined {
   return trimmed ? trimmed.slice(0, max) : undefined;
 }
 
-function variantOf(raw: Record<string, unknown>): string | undefined {
-  const direct = text(raw.variant, MAX_VARIANT);
-  if (direct) return direct;
-  if (Array.isArray(raw.flavors)) {
-    const joined = raw.flavors.filter((f) => typeof f === 'string' && f.trim()).join(' + ');
-    if (joined && joined.length <= MAX_VARIANT) return joined;
-  }
-  return undefined;
-}
-
 function parseItem(raw: unknown): WebsiteItem | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const item = raw as Record<string, unknown>;
@@ -71,7 +63,8 @@ function parseItem(raw: unknown): WebsiteItem | null {
   const unitPrice = parseCrcAmount(item.unitPrice ?? item.price);
   const lineTotal = parseCrcAmount(item.lineTotal ?? item.total);
   const sku = text(item.sku, MAX_SKU);
-  const variant = variantOf(item);
+  // Only an explicit variant: store names already carry flavors / sizes (and `flavors` may be in English).
+  const variant = text(item.variant, MAX_VARIANT);
   return {
     name,
     quantity,
@@ -93,9 +86,10 @@ export function parseWebsiteItems(value: unknown): WebsiteItem[] | undefined {
 }
 
 /** productDetails for a website cart of two or more items; null keeps today's behaviour. */
-export function websiteItemsDetails(product: string, items: WebsiteItem[] | undefined): string | null {
+export function websiteItemsDetails(product: string, quantity: number, items: WebsiteItem[] | undefined): string | null {
   const webProduct = String(product ?? '').trim();
   if (!webProduct || !items || items.length < 2) return null;
+  const webQuantity = Number(quantity);
   const rows: WebsiteItemRow[] = items.map((item) => ({
     itemName: item.name,
     cantidad: item.quantity,
@@ -105,6 +99,7 @@ export function websiteItemsDetails(product: string, items: WebsiteItem[] | unde
     ...(item.sku ? { siteSku: item.sku } : {}),
     webItem: true,
     webProduct,
+    webQuantity,
   }));
   return JSON.stringify(rows);
 }
@@ -115,10 +110,15 @@ export function isWebItemRow(row: unknown): boolean {
 }
 
 /**
- * Website rows still describe the order only while its product text is the one they were written for
- * (editing an order changes product, not productDetails).
+ * Website rows still describe the order only while its product text and quantity are the ones they were
+ * written for (editing an order changes product / quantity, not productDetails).
  */
-export function webRowsMatchProduct(rows: unknown[], product: unknown): boolean {
+export function webRowsMatchOrder(rows: unknown[], product: unknown, quantity: unknown): boolean {
   const current = String(product ?? '').trim();
-  return rows.length > 0 && rows.every((row) => isWebItemRow(row) && (row as WebsiteItemRow).webProduct === current);
+  const qty = Number(quantity);
+  return rows.length > 0 && rows.every((row) => {
+    if (!isWebItemRow(row)) return false;
+    const web = row as WebsiteItemRow;
+    return web.webProduct === current && web.webQuantity === qty;
+  });
 }

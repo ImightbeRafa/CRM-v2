@@ -6,6 +6,7 @@ import { extractInventoryRequests } from '@/lib/order-lifecycle';
 import { extractOrderLines } from '@/lib/retiro-stock-utils';
 import { buildGuiaDescription } from '@/lib/correos/utils';
 import { externalOrderIntakeSchema } from '@/lib/website-order-schema';
+import { invoiceItemsFromOrder } from '@/lib/invoice-service';
 
 const PLACEHOLDER = 'Pedido múltiple (2 productos)';
 const cart = [
@@ -35,9 +36,10 @@ describe('website cart intake', () => {
     assert.equal(parseWebsiteItems(Array.from({ length: 51 }, () => ({ name: 'A', quantity: 1 }))), undefined);
   });
 
-  it('Pura Sonrisa lineItems with flavors become a variant', () => {
-    const [item] = parseWebsiteItems([{ name: 'Combo', quantity: 2, unitPrice: '9950', flavors: ['Menta', 'Blue'] }])!;
-    assert.equal(item.variant, 'Menta + Blue');
+  it('only an explicit variant is kept (store names already carry flavors, sent in English)', () => {
+    const [item] = parseWebsiteItems([{ name: 'Combo (Menta + Blue)', quantity: 2, unitPrice: '9950', flavors: ['Peppermint', 'Blue'] }])!;
+    assert.equal(item.variant, undefined);
+    assert.equal(parseWebsiteItems([{ name: 'Arnés', quantity: 1, variant: 'Talla M/L' }])![0].variant, 'Talla M/L');
   });
 
   it('the schema keeps old payloads valid and passes items through', () => {
@@ -56,14 +58,14 @@ describe('website cart intake', () => {
   });
 
   it('only a cart of 2+ items writes details', () => {
-    assert.equal(websiteItemsDetails('Arnés', parseWebsiteItems([cart[0]])), null);
-    assert.equal(websiteItemsDetails(PLACEHOLDER, undefined), null);
-    assert.notEqual(websiteItemsDetails(PLACEHOLDER, parseWebsiteItems(cart)), null);
+    assert.equal(websiteItemsDetails('Arnés', 1, parseWebsiteItems([cart[0]])), null);
+    assert.equal(websiteItemsDetails(PLACEHOLDER, 2, undefined), null);
+    assert.notEqual(websiteItemsDetails(PLACEHOLDER, 2, parseWebsiteItems(cart)), null);
   });
 });
 
 describe('website cart rows are display-only', () => {
-  const details = websiteItemsDetails(PLACEHOLDER, parseWebsiteItems(cart))!;
+  const details = websiteItemsDetails(PLACEHOLDER, 2, parseWebsiteItems(cart))!;
   const order = { product: PLACEHOLDER, quantity: 2, productDetails: details };
 
   it('shows one line per item with its count', () => {
@@ -72,7 +74,13 @@ describe('website cart rows are display-only', () => {
   });
 
   it('trusts the rows even when the site counts differently (bags, boxes)', () => {
-    assert.equal(orderItemLabels({ ...order, quantity: 7 })?.length, 2);
+    const bags = websiteItemsDetails('Sleeping Patches CR · 7 bolsas', 7, parseWebsiteItems(cart))!;
+    assert.equal(orderItemLabels({ product: 'Sleeping Patches CR · 7 bolsas', quantity: 7, productDetails: bags })?.length, 2);
+  });
+
+  it('stops trusting them once the quantity is edited', () => {
+    assert.equal(orderItemLabels({ ...order, quantity: 1 }), undefined);
+    assert.equal(buildGuiaDescription({ ...order, quantity: 1 }), PLACEHOLDER);
   });
 
   it('stops trusting them once the product is edited', () => {
@@ -135,5 +143,36 @@ describe('older website orders: items from the notes', () => {
       comments: 'Productos:\nOtra cosa x1 — ₡1',
     };
     assert.deepEqual(formatOrderItems(ventas).map((l) => l.label), ['1× Parche Focus']);
+  });
+});
+
+describe('website cart: reviewer fixes', () => {
+  it('a single parsed line is not a cart', () => {
+    assert.deepEqual(webCommentItems({ product: PLACEHOLDER, quantity: 2, comments: 'Productos:\nSolo uno x2 — ₡1' }), []);
+  });
+
+  it('the notes parser stays fast on huge whitespace runs (any logged-in user can save notes)', () => {
+    for (const comments of [`Productos:\na${' '.repeat(128_000)}b`, `${'a '.repeat(60_000)}x1`, `Productos:\n${'x '.repeat(50_000)}`]) {
+      const started = performance.now();
+      orderItemLabels({ product: PLACEHOLDER, quantity: 1, comments });
+      formatOrderItems({ product: 'Parche Sleep', quantity: 1, comments });
+      assert.ok(performance.now() - started < 200, `took ${Math.round(performance.now() - started)} ms`);
+    }
+  });
+
+  it('invoices use each cart line\'s real price and put shipping apart', () => {
+    const rows = websiteItemsDetails(PLACEHOLDER, 3, parseWebsiteItems([
+      { name: 'Combo', quantity: 1, unitPrice: '17900', lineTotal: '17900' },
+      { name: 'Fresa', quantity: 2, unitPrice: '9900' },
+    ]))!;
+    const order = { product: PLACEHOLDER, quantity: 3, productDetails: rows, total: 40200 };
+    assert.deepEqual(invoiceItemsFromOrder(order).map((l) => [l.description, l.quantity, l.total]), [
+      ['Combo', 1, 17900], ['Fresa', 2, 19800], ['Envío', 1, 2500],
+    ]);
+    // Edited order → one line with the order total, as before.
+    assert.deepEqual(invoiceItemsFromOrder({ ...order, quantity: 2 }).map((l) => [l.description, l.total]), [[PLACEHOLDER, 40200]]);
+    // Ventas rows keep the old even split.
+    const ventas = invoiceItemsFromOrder({ product: 'A, B', quantity: 2, total: 100, productDetails: JSON.stringify([{ type: 'A', cantidad: 1 }, { type: 'B', cantidad: 1 }]) });
+    assert.deepEqual(ventas.map((l) => [l.description, l.total]), [['A', 50], ['B', 50]]);
   });
 });

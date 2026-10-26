@@ -1,5 +1,5 @@
 import { webCommentItems } from '@/lib/orders/order-items';
-import { isWebItemRow, webRowsMatchProduct } from '@/lib/orders/website-items';
+import { isWebItemRow, webRowsMatchOrder } from '@/lib/orders/website-items';
 
 /**
  * Correos WS OBSERVACIONES field limit (from official documentation).
@@ -33,7 +33,7 @@ export function buildGuiaDescription(order: {
     try {
       const details = JSON.parse(order.productDetails);
       const webCart = Array.isArray(details) && details.some(isWebItemRow);
-      if (Array.isArray(details) && details.length > 0 && (!webCart || webRowsMatchProduct(details, order.product))) {
+      if (Array.isArray(details) && details.length > 0 && (!webCart || webRowsMatchOrder(details, order.product, order.quantity))) {
         items = details.map((item: { type?: string; itemName?: string; cantidad?: number }) => ({
           // `itemName` alone = a website cart row (orders/website-items.ts).
           name: item.type || item.itemName || 'Producto',

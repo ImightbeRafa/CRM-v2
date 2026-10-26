@@ -342,7 +342,8 @@ export function applyAfterHoursText(
     if (!kind) return plan.text
     // A "no lo tengo" answer (unknown_answer) keeps what the agent did know, then says when the team writes.
     // Lane C D3: the empathetic complaint line keeps its empathy at night ("Lamento mucho… te escriben mañana").
-    const complaint = text === COMPLAINT_HANDOFF_LINE
+    // SecureDog M2: a model "complaint" is now the complaint hand-off itself — its night text keeps the empathy too.
+    const complaint = text === COMPLAINT_HANDOFF_LINE || plan.handoff.reason === 'complaint'
     // Lane C P8: "en un momento te escribe alguien" + "El equipo te escribe mañana" contradicted each other: the
     // sentences that promise right now are dropped at night (the owner's other words are kept).
     // Lane C P8 / Verifier #130: an opt-out text that promises an answer right now is replaced whole by the night line

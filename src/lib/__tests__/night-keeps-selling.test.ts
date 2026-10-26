@@ -281,3 +281,9 @@ describe('nightKeepsSelling · SecureDog H1 / M1', () => {
     }
   })
 })
+
+describe('night complaint hand-off (real-model run 2026-10-26)', () => {
+  it('a model "complaint" hand-off at night gets the empathetic line, never the bare night line', () => {
+    assert.match(applyAfterHoursText(plan('Entiendo', 'complaint'), NIGHT, OPTS), /^Lamento mucho lo que pasó 🙏 A esta hora te atiende nuestro asistente virtual/)
+  })
+})

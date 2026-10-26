@@ -239,7 +239,7 @@ export async function GET(request: NextRequest) {
         withInventoryItemNames(tenantId, orders),
       ])
       const data = named.map(({ productDetails, ...order }: any) => {
-        const itemLines = orderItemLabels({ productDetails, product: order.product, quantity: order.quantity })
+        const itemLines = orderItemLabels({ productDetails, product: order.product, quantity: order.quantity, comments: order.comments })
         const withNo = { ...order, orderNo: orderNos.get(order.id) ?? null }
         return itemLines ? { ...withNo, itemLines } : withNo
       })

@@ -17,6 +17,8 @@ import { isSinpeOrder, paymentChip, shipChip } from '@/lib/pedidos-aurora'
 import { isCancelledFulfillment } from '@/lib/order-payment-status'
 import { canalLabel, type OrderLine } from '@/lib/order-channel-line'
 import { orderLabel, orderLabelHash, orderSecondaryId } from '@/lib/orders/order-label'
+import { formatOrderItems } from '@/lib/orders/order-items'
+import { isWebItemRow, webRowsMatchOrder } from '@/lib/orders/website-items'
 
 const CR_TZ = 'America/Costa_Rica'
 
@@ -30,7 +32,17 @@ type Guia = {
 }
 
 /** `itemName` = exact inventory item (lane J), shown instead of a generic `type` like "Parche". */
-type ProductRow = { type?: string; itemName?: string; cantidad?: number; color?: string; tamano?: string; productCost?: number }
+type ProductRow = {
+  type?: string
+  itemName?: string
+  cantidad?: number
+  color?: string
+  tamano?: string
+  variant?: string
+  productCost?: number
+  /** Website cart rows: colones for the whole line (tiers round, so not always productCost × cantidad). */
+  lineTotal?: number
+}
 
 function fmtDateTime(value: string | undefined | null): string | null {
   if (!value) return null
@@ -113,11 +125,21 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
       .then(async (res) => {
         if (!res.ok) throw new Error(String(res.status))
         const json = await res.json()
-        setProducts(parseProducts(json?.data?.productDetails))
+        const rows = parseProducts(json?.data?.productDetails)
+        // Website cart rows stop describing the order once its product was edited.
+        setProducts(rows.some(isWebItemRow) && !webRowsMatchOrder(rows, sale.product, sale.quantity) ? [] : rows)
         setProductsState('ready')
       })
       .catch(() => setProductsState('error'))
-  }, [sale.id])
+  }, [sale.id, sale.product, sale.quantity])
+  // No usable rows: the list labels, or an older website order's notes ("Pedido múltiple"). Only when every
+  // line has its count — plain product text keeps the "product ×quantity" view it always had.
+  const fallbackItems = useMemo(() => {
+    const lines = formatOrderItems({ product: sale.product, quantity: sale.quantity, comments: sale.comments, itemLines: sale.itemLines })
+    const counted = (sale.itemLines?.length ?? 0) > 0 || lines.every((line) => line.qty !== null)
+    return lines.length > 1 && counted ? lines : []
+  }, [sale.product, sale.quantity, sale.comments, sale.itemLines])
+  const notes = typeof sale.comments === 'string' ? sale.comments.trim() : ''
   useEffect(loadProducts, [loadProducts])
 
   // Guía (existing shipping API; a summary without the PDF blob).
@@ -308,18 +330,31 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
                     <span className="block font-medium text-slate-900">
                       {(typeof p.itemName === 'string' && p.itemName.trim()) || p.type || 'Producto'} <span className="text-slate-400">×{p.cantidad ?? 1}</span>
                     </span>
-                    {[p.color, p.tamano].filter(Boolean).length > 0 ? (
-                      <span className="block text-[12px] text-slate-500">{[p.color, p.tamano].filter(Boolean).join(' · ')}</span>
+                    {[p.color, p.tamano, p.variant].filter(Boolean).length > 0 ? (
+                      <span className="block text-[12px] text-slate-500">{[p.color, p.tamano, p.variant].filter(Boolean).join(' · ')}</span>
                     ) : null}
                   </span>
-                  {typeof p.productCost === 'number' ? (
+                  {typeof p.lineTotal === 'number' || typeof p.productCost === 'number' ? (
                     <span className="shrink-0 tabular-nums text-slate-700">
-                      {formatCurrency((p.productCost || 0) * (p.cantidad || 1))}
+                      {formatCurrency(typeof p.lineTotal === 'number' ? p.lineTotal : (p.productCost || 0) * (p.cantidad || 1))}
                     </span>
                   ) : null}
                 </li>
               ))}
             </ul>
+          ) : fallbackItems.length > 0 ? (
+            <>
+              <ul className="divide-y divide-slate-100">
+                {fallbackItems.map((line, i) => (
+                  <li key={i} className="py-2 text-[13px] font-medium text-slate-900">
+                    {line.label}
+                  </li>
+                ))}
+              </ul>
+              {[sale.size, sale.color].filter(Boolean).length > 0 ? (
+                <p className="text-[12px] text-slate-500">{[sale.size, sale.color].filter(Boolean).join(' · ')}</p>
+              ) : null}
+            </>
           ) : (
             <p className="text-[13px] text-slate-700">
               {sale.product || '—'} <span className="text-slate-400">×{sale.quantity || 1}</span>
@@ -407,6 +442,12 @@ export function PedidoDetailDrawer({ sale, line, onClose, onEdit, onGenerateGuia
             </>
           )}
         </Section>
+
+        {notes ? (
+          <Section title="Notas">
+            <p className="whitespace-pre-line break-words text-[13px] text-slate-700">{notes}</p>
+          </Section>
+        ) : null}
 
         <Section title="Historial">
           {timeline.length === 0 ? (

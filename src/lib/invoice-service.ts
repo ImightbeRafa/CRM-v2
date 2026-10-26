@@ -2,11 +2,36 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { calculateIncludedIva } from '@/lib/invoice-calculation';
 import { deliverInvoiceEmail } from '@/lib/invoice-email';
+import { isWebItemRow, webRowsMatchOrder, type WebsiteItemRow } from '@/lib/orders/website-items';
 
-function invoiceItemsFromOrder(order: { product: string | null; productDetails: string | null; quantity: number; total: number }) {
+type InvoiceLine = { description: string; quantity: number; unitPrice: number; total: number };
+
+/**
+ * Website cart rows (orders/website-items.ts) carry each line's real price: those lines, plus the rest of the
+ * total (shipping) as its own line. Null when the rows no longer describe the order or a price is missing.
+ */
+function websiteCartInvoiceLines(order: { product: string | null; quantity: number; total: number }, rows: unknown[]): InvoiceLine[] | null {
+  if (!webRowsMatchOrder(rows, order.product, order.quantity)) return null;
+  const lines: InvoiceLine[] = [];
+  for (const raw of rows as WebsiteItemRow[]) {
+    const quantity = Math.max(1, Number(raw.cantidad) || 1);
+    const total = typeof raw.lineTotal === 'number' ? raw.lineTotal : typeof raw.productCost === 'number' ? raw.productCost * quantity : null;
+    if (total === null) return null;
+    lines.push({ description: raw.itemName, quantity, unitPrice: total / quantity, total });
+  }
+  const rest = order.total - lines.reduce((sum, line) => sum + line.total, 0);
+  if (rest < 0) return null;
+  if (rest > 0) lines.push({ description: 'Envío', quantity: 1, unitPrice: rest, total: rest });
+  return lines;
+}
+
+export function invoiceItemsFromOrder(order: { product: string | null; productDetails: string | null; quantity: number; total: number }) {
   try {
     const details = JSON.parse(order.productDetails || '[]');
-    if (Array.isArray(details) && details.length > 0) {
+    const webCart = Array.isArray(details) && details.some(isWebItemRow);
+    const cartLines = webCart ? websiteCartInvoiceLines(order, details) : null;
+    if (cartLines) return cartLines;
+    if (Array.isArray(details) && details.length > 0 && !webCart) {
       const totalQuantity = details.reduce((sum, item) => sum + Math.max(1, Number(item?.cantidad || item?.quantity || 1)), 0);
       return details.map(item => {
         const quantity = Math.max(1, Number(item?.cantidad || item?.quantity || 1));

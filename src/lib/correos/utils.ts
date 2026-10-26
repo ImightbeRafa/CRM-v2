@@ -1,3 +1,6 @@
+import { webCommentItems } from '@/lib/orders/order-items';
+import { isWebItemRow, webRowsMatchOrder } from '@/lib/orders/website-items';
+
 /**
  * Correos WS OBSERVACIONES field limit (from official documentation).
  */
@@ -10,8 +13,9 @@ const MAX_OBSERVACIONES = 200;
  *
  * Priority:
  *   1. productDetails JSON (per-item breakdown with individual quantities)
- *   2. product + quantity fields (flat summary)
- *   3. comments or fallback "Paquete"
+ *   2. item lines in an older website order's notes ("Pedido múltiple")
+ *   3. product + quantity fields (flat summary)
+ *   4. comments or fallback "Paquete"
  *
  * When the full description exceeds the limit, product names are
  * progressively shortened while quantity suffixes are always preserved.
@@ -28,15 +32,21 @@ export function buildGuiaDescription(order: {
   if (order.productDetails) {
     try {
       const details = JSON.parse(order.productDetails);
-      if (Array.isArray(details) && details.length > 0) {
-        items = details.map((item: { type?: string; cantidad?: number }) => ({
-          name: item.type || 'Producto',
+      const webCart = Array.isArray(details) && details.some(isWebItemRow);
+      if (Array.isArray(details) && details.length > 0 && (!webCart || webRowsMatchOrder(details, order.product, order.quantity))) {
+        items = details.map((item: { type?: string; itemName?: string; cantidad?: number }) => ({
+          // `itemName` alone = a website cart row (orders/website-items.ts).
+          name: item.type || item.itemName || 'Producto',
           qty: item.cantidad || 1,
         }));
       }
     } catch {
       // productDetails isn't valid JSON — fall through
     }
+  }
+
+  if (items.length === 0) {
+    items = webCommentItems(order).map((line) => ({ name: line.name, qty: line.qty ?? 1 }));
   }
 
   if (items.length === 0) {

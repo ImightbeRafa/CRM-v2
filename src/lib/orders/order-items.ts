@@ -9,6 +9,8 @@
  * actually know them — never invented.
  */
 
+import { isWebItemRow, webRowsMatchOrder } from '@/lib/orders/website-items';
+
 export type OrderItemLine = {
   name: string;
   /** null when the order text does not say how many of this item. */
@@ -22,6 +24,8 @@ export type OrderItemsInput = {
   product?: string | null;
   quantity?: number | null;
   productDetails?: unknown;
+  /** Order notes; older website orders only list their items here (see webCommentItems). */
+  comments?: string | null;
   /** Pre-formatted labels from the list APIs (see orderItemLabels). */
   itemLines?: string[] | null;
 };
@@ -135,8 +139,15 @@ function detailsMatchOrder(lines: DetailLine[], order: OrderItemsInput): boolean
 }
 
 function trustedDetailLines(order: OrderItemsInput): OrderItemLine[] {
-  const lines = linesFromDetails(parseDetails(order.productDetails));
-  return lines.length > 0 && detailsMatchOrder(lines, order) ? lines.map((l) => l.line) : [];
+  const details = parseDetails(order.productDetails);
+  const lines = linesFromDetails(details);
+  if (lines.length === 0) return [];
+  // A website cart keeps the site's product text and counts (bags, boxes…): trust its rows while the product
+  // is still the one they were written for.
+  if (Array.isArray(details) && details.some(isWebItemRow)) {
+    return webRowsMatchOrder(details, order.product, order.quantity) ? lines.map((l) => l.line) : [];
+  }
+  return detailsMatchOrder(lines, order) ? lines.map((l) => l.line) : [];
 }
 
 /** "Parche x2", "Parche ×2", "Parche (2)", "2 Parche" → name + explicit qty. */
@@ -174,6 +185,48 @@ function linesFromText(product: string, quantity: number | null | undefined): Or
   return parts.map((part) => makeLine(part, oneEach ? 1 : null, null));
 }
 
+/** Placeholder the store websites used for carts with several items. */
+const GENERIC_WEB_PRODUCT = /^pedido m[uú]ltiple\b/i;
+/** "Arnés ForgeCR · Talla M/L x1 — ₡14 900" or "Combo Menta x2". */
+const COMMENT_ITEM = /^(.+?)\s+[x×](\d{1,4})(?:\s+[—–-]\s+.*)?$/;
+const COMMENT_STOP = /^comentarios?(?:\s+del)?\s+cliente\s*:/i;
+/** COMMENT_ITEM is quadratic on long whitespace runs: only short lines of the start of the notes are read. */
+const MAX_COMMENT_SCAN = 4000;
+const MAX_COMMENT_LINE = 300;
+
+/**
+ * Website orders sent before the `items` intake kept their cart only in the
+ * notes: a "Productos:" block (one "name xN — ₡amount" per line) or, for some
+ * stores, "name xN" segments joined by " | ". Used only while the product is
+ * the "Pedido múltiple" placeholder, or when the lines add up to the order
+ * quantity, so ordinary notes are never read as items.
+ */
+export function webCommentItems(order: OrderItemsInput): OrderItemLine[] {
+  const comments = String(order.comments ?? '').slice(0, MAX_COMMENT_SCAN);
+  if (!comments.trim()) return [];
+  const generic = GENERIC_WEB_PRODUCT.test(String(order.product ?? '').trim());
+  const segments = comments.split(/\r?\n|\s\|\s/).map((s) => s.trim());
+  const header = segments.findIndex((s) => /^productos\s*:?$/i.test(s));
+  if (header < 0 && !generic) return [];
+  const lines: OrderItemLine[] = [];
+  for (const segment of header >= 0 ? segments.slice(header + 1) : segments) {
+    if (COMMENT_STOP.test(segment)) break;
+    const match = segment.length <= MAX_COMMENT_LINE ? segment.match(COMMENT_ITEM) : null;
+    // Without a header only plain "name xN" segments count ("Pago: …" has a colon).
+    if (!match || (header < 0 && match[1].includes(':'))) {
+      if (header >= 0 && lines.length > 0) break;
+      continue;
+    }
+    lines.push(makeLine(match[1].trim().slice(0, MAX_ITEM_NAME_LEN), positiveInt(match[2]), null));
+  }
+  // A cart is 2+ items: a single parsed line means the notes were not what we think.
+  if (lines.length < 2) return [];
+  if (generic) return lines;
+  const total = positiveInt(order.quantity);
+  const sum = lines.reduce((acc, l) => acc + (l.qty ?? 0), 0);
+  return lines.length > 1 && total !== null && sum === total ? lines : [];
+}
+
 export function formatOrderItems(order: OrderItemsInput): OrderItemLine[] {
   if (Array.isArray(order.itemLines)) {
     const labels = order.itemLines.map((label) => String(label ?? '').trim()).filter(Boolean);
@@ -181,16 +234,20 @@ export function formatOrderItems(order: OrderItemsInput): OrderItemLine[] {
   }
   const fromDetails = trustedDetailLines(order);
   if (fromDetails.length > 0) return fromDetails;
+  const fromComments = webCommentItems(order);
+  if (fromComments.length > 0) return fromComments;
   return linesFromText(String(order.product ?? ''), order.quantity);
 }
 
 /**
- * For list APIs: labels built from productDetails, so the client gets per-item
- * quantities without the heavy JSON. Pass product + quantity too: undefined when
- * the details are missing or stale (the client then uses the product text).
+ * For list APIs: labels built from productDetails (or an older website order's
+ * notes), so the client gets per-item quantities without the heavy JSON. Pass
+ * product + quantity + comments too: undefined when nothing trustworthy is
+ * found (the client then uses the product text).
  */
 export function orderItemLabels(order: OrderItemsInput): string[] | undefined {
-  const lines = trustedDetailLines(order);
+  const details = trustedDetailLines(order);
+  const lines = details.length > 0 ? details : webCommentItems(order);
   return lines.length > 0 ? lines.map((line) => line.label) : undefined;
 }
 

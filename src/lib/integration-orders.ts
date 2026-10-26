@@ -4,6 +4,7 @@ import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags';
 import { createLifecycleOrder } from '@/lib/order-lifecycle';
 import { mapWebsiteOrderCreate } from '@/lib/website-order-map';
 import { websiteProductDetails } from '@/lib/orders/exact-item';
+import { parseWebsiteItems, websiteItemsDetails } from '@/lib/orders/website-items';
 
 export async function createExternalOrder(tenantId: string, orderData: ExternalOrderData) {
   console.log(`[createExternalOrder] Starting for tenant ${tenantId}, order ${orderData.orderId}`);
@@ -12,7 +13,8 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
     // Use tenant-isolated Prisma client for security
     const tenantPrisma = getTenantPrisma(tenantId);
     const mapped = mapWebsiteOrderCreate(orderData);
-    const productDetails = await websiteExactDetails(tenantId, orderData);
+    // A cart of 2+ items wins over the single-item SKU details.
+    const productDetails = websiteCartDetails(orderData) ?? await websiteExactDetails(tenantId, orderData);
     const customFields = {
       external: true,
       source: orderData.source,
@@ -106,6 +108,12 @@ export async function createExternalOrder(tenantId: string, orderData: ExternalO
     console.error(`[createExternalOrder] Failed to create order:`, error);
     throw error;
   }
+}
+
+/** Display-only rows for a website cart (stock keeps reading the product text; see website-items.ts). */
+function websiteCartDetails(orderData: ExternalOrderData): string | null {
+  const items = parseWebsiteItems(orderData.items) ?? parseWebsiteItems(orderData.lineItems) ?? parseWebsiteItems(orderData.products);
+  return websiteItemsDetails(orderData.product.name, orderData.product.quantity, items);
 }
 
 /**

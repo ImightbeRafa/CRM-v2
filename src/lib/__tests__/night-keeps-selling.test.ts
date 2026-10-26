@@ -305,7 +305,6 @@ describe('nightKeepsSelling · SecureDog re-review R1–R5', () => {
       '¿Ya no aguanto más el insomnio, cuál me recomiendan?',
       'ya no aguanto el dolor de espalda, ¿cuál sirve?',
       '¿Sirve para la urticaria?',
-      'Tengo urticaria crónica, ¿lo puedo usar?',
       '¿Causa taquicardia?',
       'Sufro de taquicardia, ¿lo puedo usar?',
       '¿Me falta el aire cuando corro, sirve?',
@@ -313,6 +312,8 @@ describe('nightKeepsSelling · SecureDog re-review R1–R5', () => {
     ]) {
       assert.equal(customerNightNeed(c), null, c)
     }
+    // SecureDog H2: accepted false positive, fails safe (the event "tengo urticaria" is outside the "¿…?").
+    assert.equal(customerNightNeed('Tengo urticaria crónica, ¿lo puedo usar?'), 'safety')
     // A real alarm asked as a question still counts ("¿qué hago?" is not a pre-sale question).
     for (const c of ['me duele mucho el pecho, ¿qué hago?', 'Mi hijo se tragó un parche, ¿qué hago?', 'ya no aguanto más']) assert.equal(customerNightNeed(c), 'safety', c)
   })
@@ -339,5 +340,36 @@ describe('nightKeepsSelling · SecureDog re-review R1–R5', () => {
       const out = nightKeepsSelling(plan('Entiendo', 'escalate'), NIGHT, opts('ayuda', reason))
       assert.equal(out.plan.text, SAFETY_HANDOFF_LINE, reason)
     }
+  })
+})
+
+describe('customerNightNeed · SecureDog H2 (alarm + question in one message)', () => {
+  it('a real alarm followed by a question always counts', () => {
+    for (const c of [
+      'Se me hinchó la boca, ¿lo puedo quitar?',
+      'No puedo respirar bien desde que me puse el parche, ¿se puede quitar?',
+      'Me duele mucho el pecho desde que lo usé, ¿se puede quitar?',
+      'Me falta el aire cuando me pongo el parche, ¿qué hago?',
+      'Me salieron ronchas con el parche, ¿lo puedo seguir usando?',
+      'Me dio una reacción en la piel, ¿qué me recomiendan?',
+      'Me arde la piel cuando me lo pongo, ¿es normal?',
+      'Tengo la cara hinchada desde ayer, ¿cuál es el número de emergencias?',
+      'Me desmayé después de usarlo, ¿cuál es la dosis correcta?',
+      'me salieron ronchas cuando lo usé que hago?',
+      'Me dio taquicardia con el parche de energía, ¿es normal? ¿se puede seguir usando?',
+      '¿Qué hago? Me salieron ronchas',
+      'Mi hijo se puso un parche',
+    ]) assert.equal(customerNightNeed(c), 'safety', c)
+  })
+
+  it('pre-sale questions (the symptom inside the "¿…?" with a pre-sale word) and normal use are not a crisis', () => {
+    for (const c of [
+      '¿Lo puedo usar si tengo urticaria?',
+      '¿Me falta el aire cuando corro, me ayuda?',
+      '¿Tienen algo para los vómitos del embarazo?',
+      '¿El parche de energía da palpitaciones?',
+      '¿Lo puede usar alguien con convulsiones?',
+      'Mi mamá se puso el parche anoche y durmió muy bien, quiero otro',
+    ]) assert.equal(customerNightNeed(c), null, c)
   })
 })

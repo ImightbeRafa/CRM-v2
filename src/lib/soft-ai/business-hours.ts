@@ -411,7 +411,9 @@ const NIGHT_CRISIS_RE = wordsRe([
   String.raw`me\s+(?:quiero|voy\s+a)\s+matar|me\s+tom[eé]\s+(?:todas\s+)?(?:las\s+)?pastillas|no\s+le\s+veo\s+sentido\s+a\s+(?:la\s+)?vida|me\s+cort[eé]`,
   // SecureDog R2: "ya no aguanto (más)" only on its own — "ya no aguanto el insomnio" is a sales question.
   String.raw`ya\s+no\s+aguanto(?:\s+m[aá]s)?(?=\s*(?:[.!…,]|$|\p{Extended_Pictographic}))`,
-  String.raw`se\s+(?:puso|comi[oó]|trag[oó]|meti[oó]|tom[oó]|bebi[oó])\s+(?:\p{L}+\s+){0,2}(?:parche|tira|producto|pastillas?)|me\s+trag[eé]`,
+  // Swallowed / drank the product (anyone); "se puso / se metió" only for a child ("mi mamá se puso el parche" is use).
+  String.raw`se\s+(?:comi[oó]|trag[oó]|tom[oó]|bebi[oó])\s+(?:\p{L}+\s+){0,2}(?:parche|tira|producto|pastillas?)|me\s+trag[eé]`,
+  String.raw`(?:hij[oa]|beb[eé]|niñ[oa]|chiquit\p{L}*|nen[ea]|chiquill\p{L}*)\s+(?:\p{L}+\s+){0,3}se\s+(?:puso|meti[oó])\s+(?:\p{L}+\s+){0,2}(?:parche|tira|producto|pastillas?)`,
 ])
 /** A health alarm (something that happened). Skipped on a pre-sale question line ("¿Sirve si me falta el aire al correr?"). */
 const NIGHT_ALARM_RE = wordsRe([
@@ -423,12 +425,22 @@ const NIGHT_ALARM_RE = wordsRe([
   String.raw`tengo\s+(?:la\s+cara|los\s+labios|la\s+boca|los\s+ojos)\s+hinchad\p{L}*|me\s+sali[oó]\s+(?:un\s+|una\s+)?(?:salpullido|sarpullido|roncha\p{L}*)`,
 ])
 /** A line that asks about the product before buying ("¿Sirve para…?", "¿Lo puedo usar si…?", "¿Causa…?"). */
-const PRESALE_QUESTION_RE = /\?.*$|^\s*¿/u
-const PRESALE_WORDS_RE = /(?<![\p{L}])(?:sirve\p{L}*|puedo\s+usar\p{L}*|lo\s+puedo|se\s+puede|causa|provoca|recomiend\p{L}*|cu[aá]l|sufro|cuando|si\s+tengo|da\s+(?:alergia|mareo))(?![\p{L}])/iu
+const PRESALE_WORDS_RE = /(?<![\p{L}])(?:sirve\p{L}*|puedo\s+usar\p{L}*|puede\s+usar\p{L}*|lo\s+puedo|se\s+puede|causa|provoca|recomiend\p{L}*|cu[aá]l|sufro|cuando|si\s+tengo|tienen|hay|algo\s+para|da|me\s+ayuda)(?![\p{L}])/iu
+const NIGHT_ALARM_ALL_RE = new RegExp(NIGHT_ALARM_RE.source, 'giu')
+/**
+ * SecureDog H2: an alarm is skipped only when EVERY alarm match sits inside a "¿…?" span that also carries a pre-sale
+ * word ("¿Lo puedo usar si tengo urticaria?"). "Me salieron ronchas con el parche, ¿lo puedo seguir usando?" — the event
+ * is outside the question — always counts. A line without "¿" is never skipped.
+ */
 function nightSafetyLine(line: string): boolean {
   if (NIGHT_CRISIS_RE.test(line)) return true
-  if (!NIGHT_ALARM_RE.test(line)) return false
-  return !(PRESALE_QUESTION_RE.test(line) && PRESALE_WORDS_RE.test(line))
+  const matches = [...line.matchAll(NIGHT_ALARM_ALL_RE)]
+  if (!matches.length) return false
+  const spans = [...line.matchAll(/¿[^?¿]*\?/gu)].map((m) => ({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length, presale: PRESALE_WORDS_RE.test(m[0]) }))
+  return matches.some((m) => {
+    const at = m.index ?? 0
+    return !spans.some((s) => s.presale && at >= s.start && at < s.end)
+  })
 }
 /** Safety advice the agent gave ("Retirá el parche ya mismo y lavá la zona…") — never cut from a night reply. */
 const SAFETY_ADVICE_RE = /(?<![\p{L}])(?:(?:retir|quit|lav|enjuag|sac)(?:á|alo|ala|atelo|átelo|ate|e|en)|dej(?:á|e)\s+de\s+usarlo|suspend(?:é|elo|ela|a\s+el\s+uso)|m[eé]dic\p{L}*|emergenc\p{L}*|911)(?![\p{L}])/iu

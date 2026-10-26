@@ -383,13 +383,45 @@ export function applyAfterHoursText(
  * customer's own words decide: a complaint, an alarm or a person request keeps the true hand-off (Verifier #1).
  */
 const NIGHT_REVIEW_REASONS = new Set(['escalate', 'unknown_answer'])
+/** escalate_to_human reasons the model gives for a complaint / an alarm / a person: never downgraded at night. */
+const NIGHT_PERSON_MODEL_REASONS = new Set(['complaint', 'safety', 'opt_out', 'ownership', 'payment_or_sinpe', 'payment_claim', 'media_inbound'])
 
-/** The customer needs a person even at night: a complaint / damaged order, a health alarm, a crisis, a person request. */
-const NIGHT_PERSON_RE =
-  /(?<![\p{L}])(?:rot[oa]s?|da[ñn]ad\p{L}*|defectuos\p{L}*|(?:vino|vinieron|lleg[oó]|llegaron)\s+mal|equivocad\p{L}*|p[eé]sim\p{L}*|estafa\p{L}*|queja\p{L}*|reclamo\p{L}*|devoluci[oó]n|devolver|reembols\p{L}*|reacci[oó]n|alergi\p{L}*|al[eé]rgic\p{L}*|ronchas|picaz[oó]n|sarpullido|irritaci[oó]n|dolor\s+(?:de|en\s+el)\s+pecho|palpitaciones|falta\s+de\s+aire|no\s+puedo\s+respirar|desmay\p{L}*|convulsi\p{L}*|se\s+trag[oó]|me\s+trag[eé]|hacerme\s+da[ñn]o|suicid\p{L}*|matarme|emergencia|p[aá]s(?:a|e)me\s+con|comun[ií]c(?:a|e)me\s+con|hablar\s+con\s+(?:una\s+persona|alguien|un\s+humano|un\s+asesor|una\s+asesora)|due[ñn][oa]|encargad[oa]|gerente|supervisor\p{L}*)(?![\p{L}])/iu
+/**
+ * Backstop for the model's reason: the customer's words show a complaint (damaged / wrong / late / not working), a
+ * health alarm or crisis, or ask for a person. Pre-sale questions ("¿tienen devolución?", "¿me puede dar alergia?",
+ * "soy dueña de una tienda") are NOT matched: a symptom counts only as something that happened ("me salió una roncha").
+ */
+const NIGHT_PERSON_RE = new RegExp(
+  [
+    // Complaint about an order / the product.
+    String.raw`(?:vino|vinieron|lleg[oó]|llegaron|est[aá]|viene)\s+(?:\p{L}+\s+)?(?:rot[oa]s?|da[ñn]ad[oa]s?|mal|incomplet[oa]s?|abiert[oa]s?|equivocad[oa]s?|defectuos[oa]s?)`,
+    String.raw`me\s+(?:lleg[oó]|mandaron|enviaron)\s+otr[oa]`,
+    String.raw`no\s+(?:me\s+)?(?:funciona|funcion[oó]|sirve|sirvi[oó])`,
+    String.raw`p[eé]sim\p{L}*|(?:qu[eé]\s+)?mal\s+servicio|muy\s+molest[oa]|me\s+estafaron|estafador\p{L}*|quiero\s+(?:poner\s+)?(?:una\s+)?(?:queja|reclamo)`,
+    String.raw`quiero\s+(?:devolver|(?:la|una|mi)\s+devoluci[oó]n|(?:un|mi)\s+reembolso|que\s+me\s+devuelvan)|devu[eé]lvanme`,
+    String.raw`(?:todav[ií]a|a[uú]n)\s+no\s+(?:me\s+)?lleg\p{L}*`,
+    // Health alarm (something that happened).
+    String.raw`(?:me|le|nos)\s+(?:dio|sali[oó]|salieron|caus[oó]|provoc[oó]|est[aá]\s+dando)\s+(?:\p{L}+\s+){0,3}(?:reacci\p{L}*|alergi\p{L}*|irritaci\p{L}*|ronchas?|picaz\p{L}*|sarpullido|ampollas?|ardor|comez\p{L}*|mareo)`,
+    String.raw`(?:se\s+me|se\s+le)\s+hinch\p{L}*|me\s+arde|me\s+quem[eó]|quemadura|v[oó]mit\p{L}*|vomit\p{L}*|estoy\s+mare\p{L}*|me\s+siento\s+(?:muy\s+)?mal`,
+    String.raw`dolor\s+(?:de|en\s+el)\s+pecho|palpitaciones|falta\s+de\s+aire|no\s+puedo\s+respirar|desmay\p{L}*|convulsi\p{L}*`,
+    String.raw`se\s+(?:puso|comi[oó]|trag[oó]|meti[oó])\s+(?:\p{L}+\s+){0,2}(?:parche|tira|producto|pastilla)|me\s+trag[eé]`,
+    // Crisis.
+    String.raw`me\s+quiero\s+morir|quiero\s+morir(?:me)?|quitarme\s+la\s+vida|no\s+quiero\s+vivir|hacerme\s+da[ñn]o|cortarme|autolesi\p{L}*|suicid\p{L}*|matarme`,
+    // A person.
+    String.raw`p[aá]s(?:a|e)me\s+con|comun[ií]c(?:a|e)me\s+con|hablar\s+con\s+(?:una\s+persona|alguien|un\s+humano|un\s+asesor|una\s+asesora|el\s+due[ñn]o|la\s+due[ñn]a|el\s+encargad[oa]|la\s+encargad[oa]|el\s+gerente|un\s+supervisor)`,
+    String.raw`(?:me\s+)?(?:puede|pueden|podr[ií]a|podr[ií]an)\s+llamar|ll[aá]menme|ll[aá]mame`,
+  ].map((p) => `(?:${p})`).join('|'),
+  'iu',
+)
+const NIGHT_PERSON_WORDS_RE = new RegExp(`(?<![\\p{L}])(?:${NIGHT_PERSON_RE.source})(?![\\p{L}])`, 'iu')
 
-export function customerNeedsPersonAtNight(customerText: string | null | undefined): boolean {
-  return NIGHT_PERSON_RE.test(String(customerText || '').normalize('NFKC'))
+export function customerNeedsPersonAtNight(customerText: string | null | undefined, isComplaint?: (text: string) => boolean): boolean {
+  const t = String(customerText || '').normalize('NFKC')
+  if (NIGHT_PERSON_WORDS_RE.test(t)) return true
+  // The day's complaint check also reads pre-sale questions as one ("¿Tienen devolución?", "¿no es estafa?"): at night
+  // it counts only when the customer is not just asking a question.
+  const onlyQuestions = t.split(/\n+/).every((line) => !line.trim() || /\?\s*\p{Extended_Pictographic}*\s*$/u.test(line.trim()))
+  return !onlyQuestions && isComplaint?.(t) === true
 }
 
 /**
@@ -398,7 +430,7 @@ export function customerNeedsPersonAtNight(customerText: string | null | undefin
  * ("Te cuento que sí tenemos envíos").
  */
 const CHECK_PROMISE_RE =
-  /(?<![\p{L}])(?:confirm(?:o|amos)|revis(?:o|amos)|consult(?:o|amos)|verific(?:o|amos)|averigu(?:o|amos)|cheque(?:o|amos)|pregunt(?:o|amos)|voy\s+a\s+(?:confirm|revis|consult|verific|averigu|cheque|pregunt)\p{L}*|d[eé]j(?:ame|eme|enme)\s+(?:confirm|revis|consult|verific|averigu|cheque|pregunt)\p{L}*|permit(?:ime|ame|eme)\s+(?:confirm|revis|consult|verific|averigu|cheque|pregunt)\p{L}*|(?:te|le)\s+(?:cuento|aviso|escribo|confirmo)\s+(?:apenas|cuando|en\s+cuanto)|dame\s+un\s+(?:momento|momentito|segundo)|un\s+momentito)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:(?:confirm|revis|consult|verific|averigu|cheque|pregunt)(?:o|amos)(?![\p{L}])(?!\s+(?:que|cada)(?![\p{L}]))(?!\s*:)|voy\s+a\s+(?:confirm|revis|consult|verific|averigu|cheque|pregunt)\p{L}*|d[eé]j(?:ame|eme|enme)\s+(?:confirm|revis|consult|verific|averigu|cheque|pregunt)\p{L}*|permit(?:ime|ame|eme)\s+(?:confirm|revis|consult|verific|averigu|cheque|pregunt)\p{L}*|(?:te|le)\s+(?:cuento|aviso|escribo|confirmo)\s+(?:apenas|cuando|en\s+cuanto)|dame\s+un\s+(?:momento|momentito|segundo)|un\s+momentito)(?![\p{L}])/iu
 
 export function hasCheckPromise(text: string): boolean {
   return CHECK_PROMISE_RE.test(text)
@@ -406,28 +438,51 @@ export function hasCheckPromise(text: string): boolean {
 
 type NightPlan = { text: string; handoff: { kind: 'handoff' | 'review'; reason: string } | null }
 
+/** Sentence pieces (never inside "a. m." / "₡14.900": a split needs "!", "?", "…" or a 2-letter word + "."). */
+const SENTENCE_SPLIT_RE = /(?<=[!?…]|[^\s.]{2}\.)\s+(?=[¡¿\p{Lu}\p{Extended_Pictographic}])|\n+/u
+/** A team check promised for right now ("Enseguida te confirmo", "Dame un momento y lo reviso", "ahorita alguien te escribe"). */
+const NOW_CHECK_RE = /(?<![\p{L}])(?:alguien|te\s+paso\s+con|(?:te|le)\s+(?:escrib|contact|llam)\p{L}*)(?![\p{L}])/iu
+function isNowCheckSentence(s: string): boolean {
+  if (/^\s*dame\s+un\s+(?:momento|momentito|segundo)/iu.test(s)) return true
+  // The immediacy word + a check / a person in the SAME sentence ("Ahorita tenemos el kit en ₡14 900" is a fact).
+  return hasImmediatePromise(s) && (hasCheckPromise(s) || NOW_CHECK_RE.test(s))
+}
+
 /**
- * Run BEFORE applySafeLineCap (the safe line's loop cap keeps working). Returns the plan to send and, when the agent's
- * own answer goes out, the review to settle apart from it (so the answer keeps its images).
+ * Run BEFORE applySafeLineCap (the safe line's loop cap keeps working). Returns the plan to send, the review to settle
+ * apart from it when the agent's own answer goes out (so the answer keeps its images), and `soft` = the night turned a
+ * hand-off into a review (the chat stays on the agent).
  */
 export function nightKeepsSelling<P extends NightPlan>(
   plan: P,
   state: Pick<AfterHoursState, 'afterHours' | 'label'>,
-  opts: { safeReview: string; customerText?: string | null; cannotAnswer?: (text: string) => boolean },
-): { plan: P; review: { kind: 'review'; reason: string } | null } {
+  opts: {
+    safeReview: string
+    customerText?: string | null
+    /** Raw escalate_to_human reason the model gave ("complaint" / "safety" … never downgraded). */
+    modelReason?: string | null
+    cannotAnswer?: (text: string) => boolean
+    isComplaint?: (text: string) => boolean
+  },
+): { plan: P; review: { kind: 'review'; reason: string } | null; soft: boolean } {
   const h = plan.handoff
-  if (!state.afterHours || h?.kind !== 'handoff' || !NIGHT_REVIEW_REASONS.has(h.reason)) return { plan, review: null }
-  if (customerNeedsPersonAtNight(opts.customerText)) return { plan, review: null }
+  const unchanged = { plan, review: null, soft: false }
+  if (!state.afterHours || h?.kind !== 'handoff' || !NIGHT_REVIEW_REASONS.has(h.reason)) return unchanged
+  if (opts.modelReason && NIGHT_PERSON_MODEL_REASONS.has(opts.modelReason)) return unchanged
+  if (customerNeedsPersonAtNight(opts.customerText, opts.isComplaint)) return unchanged
   const review = { kind: 'review' as const, reason: h.reason }
   const text = plan.text.trim()
-  // Verifier #5 / #2: no answer of its own (the safe line), or a "right now" promise ("Dame un momento y lo confirmo",
-  // "Enseguida te confirmo…") that the night cannot keep: the after-hours review line, the chat stays on the agent.
-  if (!text || text === opts.safeReview.trim() || hasImmediatePromise(text) || /^dame\s+un\s+momento/iu.test(text)) {
-    return { plan: { ...plan, text: opts.safeReview, handoff: review }, review: null }
-  }
-  const promises = h.reason === 'unknown_answer' || hasCheckPromise(text) || opts.cannotAnswer?.(text) === true
-  const saysWhen = text.includes(state.label.replace(/\.$/, ''))
-  return { plan: { ...plan, handoff: null, text: promises && !saysWhen ? `${text}\n${afterHoursTeamLine(state.label)}` : text }, review }
+  // Verifier r2 #2: only the sentences that promise a team check RIGHT NOW are dropped — prices, the size guide and
+  // "Te dejo…" stay. Nothing left (or the safe line): the after-hours review line, the chat stays on the agent.
+  const pieces = text.split(SENTENCE_SPLIT_RE).map((p) => p.trim()).filter(Boolean)
+  const kept = pieces.filter((p) => hasSafetyNotice(p) || !isNowCheckSentence(p))
+  const dropped = kept.length < pieces.length
+  const body = kept.join(' ')
+  if (!body || text === opts.safeReview.trim()) return { plan: { ...plan, text: opts.safeReview, handoff: review }, review: null, soft: true }
+  const kept1 = dropped ? body : text
+  const promises = dropped || h.reason === 'unknown_answer' || hasCheckPromise(kept1) || opts.cannotAnswer?.(kept1) === true
+  const saysWhen = kept1.includes(state.label.replace(/\.$/, ''))
+  return { plan: { ...plan, handoff: null, text: promises && !saysWhen ? `${kept1}\n${afterHoursTeamLine(state.label)}` : kept1 }, review, soft: true }
 }
 
 /** Team alerts for a hand-off after hours: the dedupe key carries `:night-<opening unix seconds>` (quiet until then). */

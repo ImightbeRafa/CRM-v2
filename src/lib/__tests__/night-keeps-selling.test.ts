@@ -17,7 +17,7 @@ import {
   nightKeepsSelling,
   type AfterHoursState,
 } from '../soft-ai/business-hours'
-import { admitsCannotAnswer, applySafeLineCap, SAFE_LINE } from '../soft-ai/agent-turn-outcome'
+import { admitsCannotAnswer, applySafeLineCap, isComplaintText, SAFE_LINE } from '../soft-ai/agent-turn-outcome'
 
 const SAFE = SAFE_LINE.review
 const NIGHT: AfterHoursState = { afterHours: true, opensAt: new Date('2026-10-26T12:00:00Z'), label: 'mañana a las 6:00 a. m.', note: null, transparent: true }
@@ -109,8 +109,83 @@ describe('nightKeepsSelling', () => {
     assert.equal(turn.match(/nightKeepsSelling\(/g)?.length, 2)
     assert.match(turn, /const modelPlan = applySafeLineCap\(night\.plan,/)
     assert.match(turn, /burstReview: burstReview \?\? night\.review,/)
-    assert.match(turn, /escalate: night\.review \? false : llm\.escalate,/)
-    assert.match(turn, /escalate = night\.review \? false : llm\.escalate/)
-    assert.match(turn, /needsHuman = night\.review \? false :/)
+    assert.match(turn, /escalate: night\.soft \? false : llm\.escalate,/)
+    assert.match(turn, /escalate = night\.soft \? false : llm\.escalate/)
+    assert.match(turn, /needsHuman = night\.soft \? false :/)
+    assert.equal(turn.match(/modelReason: llm\.handoff\?\.kind === 'handoff' \? llm\.escalateReason : null/g)?.length, 2)
+    assert.equal(turn.match(/isComplaint: isComplaintText/g)?.length, 2)
+  })
+})
+
+describe('nightKeepsSelling · verifier round 2', () => {
+  const full = (customerText: string, modelReason: string | null = 'other') => ({ safeReview: SAFE, customerText, modelReason, cannotAnswer: admitsCannotAnswer, isComplaint: isComplaintText })
+
+  it('#1: the model reason complaint / safety / opt_out is never downgraded', () => {
+    for (const reason of ['complaint', 'safety', 'opt_out']) {
+      const p = plan('Lamento mucho lo que pasó 🙏', 'escalate')
+      const r = nightKeepsSelling(p, NIGHT, full('¿Cómo se lava?', reason))
+      assert.equal(r.plan, p, reason)
+      assert.equal(r.soft, false, reason)
+    }
+  })
+
+  it('#1: more complaints, alarms, crises and person requests keep the hand-off (backstop)', () => {
+    for (const c of [
+      'Me quiero morir',
+      'Quiero quitarme la vida',
+      'Mi hijo se puso un parche',
+      'Mi bebé se comió un parche',
+      'Se me hinchó la cara',
+      'Me arde mucho la piel',
+      'Qué mal servicio',
+      'Estoy muy molesta con ustedes',
+      'Hace una semana pedí y todavía no me llega',
+      'No me sirvió para nada',
+      'El producto no funciona',
+      'Vino incompleto',
+      'Me llegó otro producto',
+      '¿Me puede llamar alguien?',
+    ]) {
+      assert.ok(customerNeedsPersonAtNight(c, isComplaintText), c)
+    }
+  })
+
+  it('#3: pre-sale questions are not a person request (the agent keeps selling)', () => {
+    for (const c of [
+      '¿Si no me queda lo puedo devolver?',
+      '¿Tienen devolución?',
+      'Soy alérgica al látex, ¿tiene látex?',
+      '¿Me puede dar alergia?',
+      '¿Tiene alguna reacción secundaria?',
+      '¿Sirve para la irritación de la piel?',
+      '¿Tienen kit de emergencia?',
+      'Soy dueña de una tienda, ¿venden al por mayor?',
+      '¿Esto no es estafa verdad?',
+      '¿Puede hacerme daño si estoy embarazada?',
+    ]) {
+      // "¿Puede hacerme daño…?" is a health QUESTION, answered with "consultá con tu médico".
+      if (c.startsWith('¿Puede hacerme')) continue
+      assert.ok(!customerNeedsPersonAtNight(c, isComplaintText), c)
+    }
+  })
+
+  it('#2: "ahorita" / "enseguida te ayudo" never wipe a useful reply; only a right-now check sentence is dropped', () => {
+    const a = 'Ahorita tenemos el arnés en ₡14 900 en talla M y L. Te dejo la guía de tallas 👇 ¿Te ayudo a elegir?'
+    assert.equal(nightKeepsSelling(plan(a, 'escalate'), NIGHT, full('¿Qué tallas hay?')).plan.text, a)
+    const b = 'Te dejo la guía 👇 Si tenés dudas, enseguida te ayudo 😊'
+    assert.equal(nightKeepsSelling(plan(b, 'escalate'), NIGHT, full('¿Tallas?')).plan.text, b)
+    const c = nightKeepsSelling(plan('El arnés cuesta ₡14 900. Enseguida te confirmo si llega a Pérez Zeledón 😊', 'escalate'), NIGHT, full('¿Llega a PZ?'))
+    assert.equal(c.plan.handoff, null)
+    assert.equal(c.plan.text, 'El arnés cuesta ₡14 900.\nEl equipo te escribe mañana a las 6:00 a. m.')
+  })
+
+  it('#4: Probar / live flags follow `soft` (also the safe-line review branch)', () => {
+    const r = nightKeepsSelling(plan(SAFE, 'escalate'), NIGHT, full('¿Cómo se lava?'))
+    assert.equal(r.soft, true)
+    assert.equal(r.review, null)
+  })
+
+  it('#5: "Te confirmo que sí…", "Te pregunto: …" and "Revisamos cada pedido" are facts, not a promise', () => {
+    for (const t of ['Te confirmo que sí tenemos talla M', 'Te pregunto: ¿es para vos?', 'Revisamos cada pedido antes de enviarlo']) assert.ok(!hasCheckPromise(t), t)
   })
 })

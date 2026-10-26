@@ -93,6 +93,7 @@ import {
   behaviorForOperationMode,
   HANDOFF_REASON,
   admitsCannotAnswer,
+  isComplaintText,
   decideTurnOutcome,
   planDecisionDelivery,
   planModelTurnDelivery,
@@ -1633,12 +1634,18 @@ export async function executeAgentLayerTurn(
       customerText: turnCustomerText,
     }),
     hours,
-    { safeReview: SAFE_LINE.review, customerText: turnCustomerText, cannotAnswer: admitsCannotAnswer },
+    {
+      safeReview: SAFE_LINE.review,
+      customerText: turnCustomerText,
+      modelReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
+      cannotAnswer: admitsCannotAnswer,
+      isComplaint: isComplaintText,
+    },
   )
   const modelPlan = applySafeLineCap(night.plan, await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey))
   const finalText = withNightIntro(finalizePlannedText(modelPlan, payload, trigger.sentAt, hours), hours, nightIntroWho(resolved.agent, history))
   const modelMarkers: OutcomeMarkers = plannedMarkers(
-    { needsHuman: night.review ? false : needsHuman, fallbackUsed: llm.fallbackUsed, escalate: night.review ? false : llm.escalate },
+    { needsHuman: night.soft ? false : needsHuman, fallbackUsed: llm.fallbackUsed, escalate: night.soft ? false : llm.escalate },
     // The night review is recorded too: a lease reclaim settles it (review: the chat stays on the agent).
     modelPlan.handoff ?? night.review,
   )
@@ -1753,10 +1760,10 @@ export async function executeAgentLayerTurn(
       latencyMs: llm.latencyMs,
       fallbackUsed: llm.fallbackUsed,
     },
-    needsHuman: night.review ? false : needsHuman,
+    needsHuman: night.soft ? false : needsHuman,
     fallbackUsed: llm.fallbackUsed,
     // Night review: a normal answer — its images (size guide…) and the repeat guard apply.
-    escalate: night.review ? false : llm.escalate,
+    escalate: night.soft ? false : llm.escalate,
     // A planned safe line / hand-off text carries no images (input.handoff is set): see the image block.
     replyShortcutKey: policy.purchaseSummaryAppended ? null : llm.shortcutKey || null,
     shortcuts,
@@ -2768,7 +2775,7 @@ async function runAgentTestTurnInner(input: {
     })
     // Live parity: at night an escalation / "no lo tengo" keeps the answer and the chat on the agent (a review).
     const probarCustomerText = customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText)
-    const night = nightKeepsSelling(planned, probarHours, { safeReview: SAFE_LINE.review, customerText: probarCustomerText, cannotAnswer: admitsCannotAnswer })
+    const night = nightKeepsSelling(planned, probarHours, { safeReview: SAFE_LINE.review, customerText: probarCustomerText, cannotAnswer: admitsCannotAnswer, isComplaint: isComplaintText, modelReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null })
     const plan = night.plan
     text = withNightIntro(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), probarHours, nightIntroWho(runtimeAgent, input.history ?? []))
     handoff = plan.handoff ?? night.review
@@ -2778,9 +2785,9 @@ async function runAgentTestTurnInner(input: {
     tokens = { input: llm.inputTokens, output: llm.outputTokens, cached: llm.cachedInputTokens }
     latencyMs = llm.latencyMs
     // Live parity (Verifier #3): a night review is a normal answer — images, no "pasa a una persona".
-    needsHuman = night.review ? false : policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
+    needsHuman = night.soft ? false : policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
     fallbackUsed = llm.fallbackUsed
-    escalate = night.review ? false : llm.escalate
+    escalate = night.soft ? false : llm.escalate
     policyReasons = [
       ...(policy.needsHuman ? policy.reasons : []),
       ...(runtimeInput.salesNeedsHuman === true ? ['sales_needs_human'] : []),

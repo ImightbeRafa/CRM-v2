@@ -222,30 +222,50 @@ export function renewExpiredCampaigns(
   return outcomes.length ? { campaigns: out, outcomes } : null
 }
 
-/** Rounds about to be renewed whose text crossed the opt-out guard (per text: ≥ minCount hard opt-outs AND > maxRate). */
-async function optOutBlockedRounds(tenantId: string, rounds: RawCampaign[]): Promise<Set<string>> {
+/** How far back the guard pools a round's renewal chain (the same texts) — bounded work every 48 h. */
+const GUARD_POOL_MS = 30 * 24 * 3600_000
+
+/** The round plus the rounds it was renewed from (same texts), newest first, created within GUARD_POOL_MS. Pure. */
+export function renewalChain(all: RawCampaign[], round: RawCampaign, now: number): RawCampaign[] {
+  const byId = new Map(all.filter((c) => c && typeof c.id === 'string').map((c) => [String(c.id), c]))
+  const chain: RawCampaign[] = []
+  for (let c: RawCampaign | undefined = round; c && !chain.includes(c); c = c.renewedFrom ? byId.get(String(c.renewedFrom)) : undefined) {
+    if (now - Date.parse(String(c.createdAt)) > GUARD_POOL_MS) break
+    chain.push(c)
+  }
+  return chain
+}
+
+/**
+ * Rounds about to be renewed whose text crossed the opt-out guard (per text: ≥ minCount hard opt-outs AND > maxRate).
+ * Verifier r2: pooled over the renewal chain (same texts, like --rotate's pairStats), so a low-volume agent and an
+ * opt-out that came after a renewal still count.
+ */
+async function optOutBlockedRounds(tenantId: string, rounds: RawCampaign[], all: RawCampaign[], now: number): Promise<Set<string>> {
   const blocked = new Set<string>()
-  for (const c of rounds) {
-    const claimed = c.claimed && typeof c.claimed === 'object' ? (c.claimed as Record<string, string>) : {}
+  for (const round of rounds) {
     const perVariant: Record<string, { sent: number; out: number }> = {}
-    for (const [conversationId, v] of Object.entries(claimed)) {
-      if (String(v).endsWith('!')) continue
-      const fu = await prisma.$queryRaw<Array<{ sentAt: Date }>>`
-        SELECT "sentAt" FROM "ChatMessage"
-         WHERE "tenantId" = ${tenantId} AND "conversationId" = ${conversationId} AND "direction" = 'outbound'
-           AND "metadata"->'followUp'->>'campaignId' = ${String(c.id)}
-         ORDER BY "sentAt" ASC LIMIT 1`
-      if (!fu[0]) continue
-      const arm = (perVariant[String(v)] ??= { sent: 0, out: 0 })
-      arm.sent += 1
-      const replies = await prisma.chatMessage.findMany({
-        where: { tenantId, conversationId, direction: 'inbound', sentAt: { gt: fu[0].sentAt, lte: new Date(fu[0].sentAt.getTime() + 24 * 3600_000) } },
-        select: { content: true },
-        take: 10,
-      })
-      if (replies.some((m) => isOptOutText(m.content))) arm.out += 1
+    for (const c of renewalChain(all, round, now)) {
+      const claimed = c.claimed && typeof c.claimed === 'object' ? (c.claimed as Record<string, string>) : {}
+      for (const [conversationId, v] of Object.entries(claimed)) {
+        if (String(v).endsWith('!')) continue
+        const fu = await prisma.$queryRaw<Array<{ sentAt: Date }>>`
+          SELECT "sentAt" FROM "ChatMessage"
+           WHERE "tenantId" = ${tenantId} AND "conversationId" = ${conversationId} AND "direction" = 'outbound'
+             AND "metadata"->'followUp'->>'campaignId' = ${String(c.id)}
+           ORDER BY "sentAt" ASC LIMIT 1`
+        if (!fu[0]) continue
+        const arm = (perVariant[String(v)] ??= { sent: 0, out: 0 })
+        arm.sent += 1
+        const replies = await prisma.chatMessage.findMany({
+          where: { tenantId, conversationId, direction: 'inbound', sentAt: { gt: fu[0].sentAt, lte: new Date(fu[0].sentAt.getTime() + 24 * 3600_000) } },
+          select: { content: true },
+          take: 10,
+        })
+        if (replies.some((m) => isOptOutText(m.content))) arm.out += 1
+      }
     }
-    if (Object.values(perVariant).some((a) => a.out >= OPT_OUT_GUARD.minCount && a.out / a.sent > OPT_OUT_GUARD.maxRate)) blocked.add(String(c.id))
+    if (Object.values(perVariant).some((a) => a.out >= OPT_OUT_GUARD.minCount && a.out / a.sent > OPT_OUT_GUARD.maxRate)) blocked.add(String(round.id))
   }
   return blocked
 }
@@ -261,6 +281,8 @@ export async function renewFollowUpCampaigns(flags: FlagRow[], now: number): Pro
     const tenantId = flag.tenantId
     try {
       const raw = Array.isArray((flag.config as { campaigns?: unknown } | null)?.campaigns) ? (flag.config as { campaigns: RawCampaign[] }).campaigns : []
+      // Cheapest check (no query): nothing active, past its end and not stopped → nothing to do.
+      if (!raw.some((c) => c && c.active === true && !c.stoppedAt && Date.parse(String(c.until)) <= now)) continue
       const live = await prisma.chatAgent.findMany({ where: { tenantId, status: 'live' }, select: { id: true } })
       const liveIds = new Set(live.map((a) => a.id))
       const newId = () => `fu-${new Date(now).toISOString().slice(0, 10)}-${randomUUID().slice(0, 6)}`
@@ -268,7 +290,7 @@ export async function renewFollowUpCampaigns(flags: FlagRow[], now: number): Pro
       const dry = renewExpiredCampaigns(raw, now, liveIds, newId)
       if (!dry) continue
       const due = raw.filter((c) => c && dry.outcomes.some((o) => o.from === c.id))
-      const blocked = await optOutBlockedRounds(tenantId, due)
+      const blocked = await optOutBlockedRounds(tenantId, due, raw, now)
       const outcomes = await prisma.$transaction(async (tx) => {
         const rows = await tx.$queryRaw<Array<{ config: unknown }>>`SELECT "config" FROM "TenantFeatureFlag" WHERE "id" = ${flag.id} AND "key" = ${FOLLOW_UP_FLAG} FOR UPDATE`
         const config = (rows[0]?.config && typeof rows[0].config === 'object' ? rows[0].config : {}) as Record<string, unknown>

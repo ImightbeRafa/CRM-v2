@@ -8,7 +8,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { MAX_CAMPAIGN_HOURS, OPT_OUT_GUARD, parseFollowUpConfig, renewExpiredCampaigns, RENEW_MAX_AGE_MS } from '../soft-ai/follow-up'
+import { MAX_CAMPAIGN_HOURS, OPT_OUT_GUARD, parseFollowUpConfig, renewalChain, renewExpiredCampaigns, RENEW_MAX_AGE_MS } from '../soft-ai/follow-up'
 import { WINNER_RULE } from '../../../scripts/agent-pack/follow-up-rule'
 
 const NOW = Date.parse('2026-10-28T03:00:00Z')
@@ -100,6 +100,25 @@ describe('renewExpiredCampaigns', () => {
     assert.match(src, /if \(await followedUpBefore\(tenantId, conv\.id\)\) return 'already_followed_up'/)
     assert.match(src, /"metadata" \? 'followUp'/)
     const script = readFileSync(path.join(process.cwd(), 'scripts/agent-pack/follow-up-campaign.ts'), 'utf8')
-    assert.match(script, /c\.renewedFrom && chain\.has\(c\.renewedFrom\)/)
+    assert.match(script, /chain\.has\(c\.renewedFrom\)/)
+    // The chain is rebuilt from the locked array (a renewal between read and write is stopped too).
+    assert.match(script, /const locked = chainOf\(raw\)/)
+  })
+})
+
+describe('renewalChain (opt-out guard pool)', () => {
+  it('pools the round with the rounds it was renewed from (same texts), within 30 days, newest first', () => {
+    const a = round('a', 'forge', NOW - 200 * H)
+    const b = round('b', 'forge', NOW - 100 * H, { renewedFrom: 'a' })
+    const c = round('c', 'forge', NOW - 50 * H, { renewedFrom: 'b' })
+    const other = round('x', 'forge', NOW - 60 * H)
+    assert.deepEqual(renewalChain([a, b, c, other], c, NOW).map((r) => r.id), ['c', 'b', 'a'])
+    const old = round('old', 'forge', NOW - 40 * 24 * H)
+    const next = round('n', 'forge', NOW - 50 * H, { renewedFrom: 'old' })
+    assert.deepEqual(renewalChain([old, next], next, NOW).map((r) => r.id), ['n'])
+    // A loop never hangs.
+    const l1 = round('l1', 'forge', NOW - 50 * H, { renewedFrom: 'l2' })
+    const l2 = round('l2', 'forge', NOW - 60 * H, { renewedFrom: 'l1' })
+    assert.deepEqual(renewalChain([l1, l2], l1, NOW).map((r) => r.id), ['l1', 'l2'])
   })
 })

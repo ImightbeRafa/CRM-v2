@@ -22,7 +22,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/auditLogger'
-import { FOLLOW_UP_FLAG, FOLLOW_UP_WINDOW_MS, MAX_CAMPAIGN_HOURS, SILENT_MIN_MINUTES, followUpSkipReason, parseFollowUpConfig, type FollowUpCampaign, type FollowUpVariant } from '@/lib/soft-ai/follow-up'
+import { FOLLOW_UP_FLAG, FOLLOW_UP_WINDOW_MS, MAX_CAMPAIGN_HOURS, RENEW_MAX_AGE_MS, SILENT_MIN_MINUTES, followUpSkipReason, parseFollowUpConfig, type FollowUpCampaign, type FollowUpVariant } from '@/lib/soft-ai/follow-up'
 import { isOptOutText } from '@/lib/soft-ai/waiting-ack'
 import { loadPack } from './pack'
 import { decideWinner, WINNER_RULE, type ArmStats } from './follow-up-rule'
@@ -332,21 +332,29 @@ async function main() {
     const agentId = arg('agent')
     if (!row) throw new Error('no hay campañas')
     if (id && !campaigns.some((c) => c.id === id)) throw new Error(`no existe la campaña ${id}`)
-    // The cron renews a round under a new id (renewedFrom): an old id stops the round its chain leads to.
-    const chain = new Set(id ? [id] : [])
-    for (let grew = true; grew; ) {
-      grew = false
-      for (const c of campaigns as Array<StoredCampaign & { renewedFrom?: string }>) {
-        if (c.renewedFrom && chain.has(c.renewedFrom) && !chain.has(c.id)) {
-          chain.add(c.id)
-          grew = true
+    // The cron renews a round under a new id (renewedFrom): an old id stops the round its chain leads to. Verifier r2:
+    // the chain is rebuilt from the LOCKED array too, so a renewal between the read and the write is stopped as well.
+    const chainOf = (list: Array<{ id?: unknown; renewedFrom?: unknown }>) => {
+      const chain = new Set(id ? [id] : [])
+      for (let grew = true; grew; ) {
+        grew = false
+        for (const c of list) {
+          if (c && typeof c.id === 'string' && typeof c.renewedFrom === 'string' && chain.has(c.renewedFrom) && !chain.has(c.id)) {
+            chain.add(c.id)
+            grew = true
+          }
         }
       }
+      return chain
     }
+    const chain = chainOf(campaigns as Array<{ id?: unknown; renewedFrom?: unknown }>)
     const hit = (c: StoredCampaign) => (id ? chain.has(c.id) : agentId ? c.agentId === agentId : true)
     console.log(`${DRY ? '[dry-run] detendría' : 'Detiene'}: ${campaigns.filter((c) => hit(c) && c.active).map((c) => c.id).join(', ') || '(ninguna activa)'}`)
     if (DRY) return
-    await mutateCampaigns(row.id, stopWhere((c) => hit(c as unknown as StoredCampaign)))
+    await mutateCampaigns(row.id, (raw) => {
+      const locked = chainOf(raw)
+      return stopWhere((c) => (id ? locked.has(String(c.id)) : agentId ? c.agentId === agentId : true))(raw)
+    })
     await audit(`Follow-up A/B detenido ${id || agentId || '(todas)'}`, { campaignId: id || null, agentId: agentId || null })
     console.log('Detenida.')
     return
@@ -392,7 +400,9 @@ async function main() {
           : 'detenida'
       : Date.parse(c.until) > Date.now()
         ? 'ACTIVA'
-        : 'terminada (el cron la renueva si el agente está live)'
+        : c.keys && Date.now() - Date.parse(c.until) <= RENEW_MAX_AGE_MS
+          ? 'terminada (el cron la renueva si el agente está live)'
+          : 'terminada'
     console.log(`${c.id} · agente ${c.agentId} · ${state} · ${c.createdAt} → ${c.until} · espera ${c.silentMinMinutes} min · reservados ${Object.keys(c.claimed).length}`)
     for (const v of VARIANTS) {
       const s = stats[v]

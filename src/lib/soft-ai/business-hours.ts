@@ -379,29 +379,53 @@ export function applyAfterHoursText(
  * equipo te escribe mañana" AND move the chat to a person — nobody is there at night, so the customer got no answer
  * and every later message waited for the morning. At night those two become a review: the agent's own answer goes out
  * (with its images), the chat stays on the agent, and the team gets the alert (quiet until opening).
+ * 'escalate' is the model's catch-all (a complaint, a health alarm and "pasame con la dueña" arrive as it too), so the
+ * customer's own words decide: a complaint, an alarm or a person request keeps the true hand-off (Verifier #1).
  */
 const NIGHT_REVIEW_REASONS = new Set(['escalate', 'unknown_answer'])
 
-/** "lo confirmo", "voy a revisar", "te cuento" — the reply promises a check the team does at the next opening. */
+/** The customer needs a person even at night: a complaint / damaged order, a health alarm, a crisis, a person request. */
+const NIGHT_PERSON_RE =
+  /(?<![\p{L}])(?:rot[oa]s?|da[ñn]ad\p{L}*|defectuos\p{L}*|(?:vino|vinieron|lleg[oó]|llegaron)\s+mal|equivocad\p{L}*|p[eé]sim\p{L}*|estafa\p{L}*|queja\p{L}*|reclamo\p{L}*|devoluci[oó]n|devolver|reembols\p{L}*|reacci[oó]n|alergi\p{L}*|al[eé]rgic\p{L}*|ronchas|picaz[oó]n|sarpullido|irritaci[oó]n|dolor\s+(?:de|en\s+el)\s+pecho|palpitaciones|falta\s+de\s+aire|no\s+puedo\s+respirar|desmay\p{L}*|convulsi\p{L}*|se\s+trag[oó]|me\s+trag[eé]|hacerme\s+da[ñn]o|suicid\p{L}*|matarme|emergencia|p[aá]s(?:a|e)me\s+con|comun[ií]c(?:a|e)me\s+con|hablar\s+con\s+(?:una\s+persona|alguien|un\s+humano|un\s+asesor|una\s+asesora)|due[ñn][oa]|encargad[oa]|gerente|supervisor\p{L}*)(?![\p{L}])/iu
+
+export function customerNeedsPersonAtNight(customerText: string | null | undefined): boolean {
+  return NIGHT_PERSON_RE.test(String(customerText || '').normalize('NFKC'))
+}
+
+/**
+ * The reply promises a check the team does at the next opening (first person only: "lo confirmo", "voy a revisar",
+ * "déjeme consultar", "te aviso apenas…"). Never the customer's voseo ("lo consultás con tu médico") or a plain fact
+ * ("Te cuento que sí tenemos envíos").
+ */
 const CHECK_PROMISE_RE =
-  /(?<![\p{L}])(?:(?:lo|la|te\s+lo|te\s+la)\s+(?:confirm|revis|consult|verific)\p{L}*|(?:voy|vamos)\s+a\s+(?:confirm|revis|consult|verific|pregunt)\p{L}*|d[eé]jame\s+(?:confirm|revis|consult|verific)\p{L}*|te\s+(?:confirm|cuent|avis)\p{L}*|dame\s+un\s+momento)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:confirm(?:o|amos)|revis(?:o|amos)|consult(?:o|amos)|verific(?:o|amos)|averigu(?:o|amos)|cheque(?:o|amos)|pregunt(?:o|amos)|voy\s+a\s+(?:confirm|revis|consult|verific|averigu|cheque|pregunt)\p{L}*|d[eé]j(?:ame|eme|enme)\s+(?:confirm|revis|consult|verific|averigu|cheque|pregunt)\p{L}*|permit(?:ime|ame|eme)\s+(?:confirm|revis|consult|verific|averigu|cheque|pregunt)\p{L}*|(?:te|le)\s+(?:cuento|aviso|escribo|confirmo)\s+(?:apenas|cuando|en\s+cuanto)|dame\s+un\s+(?:momento|momentito|segundo)|un\s+momentito)(?![\p{L}])/iu
 
 export function hasCheckPromise(text: string): boolean {
   return CHECK_PROMISE_RE.test(text)
 }
 
-export function nightKeepsSelling<P extends { text: string; handoff: { kind: 'handoff' | 'review'; reason: string } | null }>(
+type NightPlan = { text: string; handoff: { kind: 'handoff' | 'review'; reason: string } | null }
+
+/**
+ * Run BEFORE applySafeLineCap (the safe line's loop cap keeps working). Returns the plan to send and, when the agent's
+ * own answer goes out, the review to settle apart from it (so the answer keeps its images).
+ */
+export function nightKeepsSelling<P extends NightPlan>(
   plan: P,
   state: Pick<AfterHoursState, 'afterHours' | 'label'>,
-  safeReview: string,
+  opts: { safeReview: string; customerText?: string | null; cannotAnswer?: (text: string) => boolean },
 ): { plan: P; review: { kind: 'review'; reason: string } | null } {
   const h = plan.handoff
   if (!state.afterHours || h?.kind !== 'handoff' || !NIGHT_REVIEW_REASONS.has(h.reason)) return { plan, review: null }
-  const text = plan.text.trim()
-  // No answer of its own (the safe line): nothing to keep selling with — the hand-off stays as it was.
-  if (!text || text === safeReview.trim()) return { plan, review: null }
+  if (customerNeedsPersonAtNight(opts.customerText)) return { plan, review: null }
   const review = { kind: 'review' as const, reason: h.reason }
-  const promises = h.reason === 'unknown_answer' || hasCheckPromise(text)
+  const text = plan.text.trim()
+  // Verifier #5 / #2: no answer of its own (the safe line), or a "right now" promise ("Dame un momento y lo confirmo",
+  // "Enseguida te confirmo…") that the night cannot keep: the after-hours review line, the chat stays on the agent.
+  if (!text || text === opts.safeReview.trim() || hasImmediatePromise(text) || /^dame\s+un\s+momento/iu.test(text)) {
+    return { plan: { ...plan, text: opts.safeReview, handoff: review }, review: null }
+  }
+  const promises = h.reason === 'unknown_answer' || hasCheckPromise(text) || opts.cannotAnswer?.(text) === true
   const saysWhen = text.includes(state.label.replace(/\.$/, ''))
   return { plan: { ...plan, handoff: null, text: promises && !saysWhen ? `${text}\n${afterHoursTeamLine(state.label)}` : text }, review }
 }

@@ -149,6 +149,7 @@ arm's denominator); holdout never calls `sendMetaText`; legacy `{A,B}` config pa
 - Checking the running totals at every `--rotate` ("peeking") makes the real false-win rate a bit above 5 %.
 
 - Orders count only when linked to the chat (the agent's flow links them; a manual order typed elsewhere is missed).
-- Until D1 lands, someone must run `--rotate` at least every 48 h per live agent or the experiment pauses.
+- 2026-10-26: the cron renews a live agent's round that ran out on its own (same texts, 48 h; stopped by the opt-out guard
+  instead when a text crosses it). `--rotate` is still how a new winner / challenger gets picked.
 - "envio" challengers say **2 a 3 días hábiles**; use them only after the live agent itself says 2–3 days (Lane C's
   shipping rules), otherwise the follow-up and the agent contradict each other.

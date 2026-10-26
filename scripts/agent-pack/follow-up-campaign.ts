@@ -332,7 +332,18 @@ async function main() {
     const agentId = arg('agent')
     if (!row) throw new Error('no hay campañas')
     if (id && !campaigns.some((c) => c.id === id)) throw new Error(`no existe la campaña ${id}`)
-    const hit = (c: StoredCampaign) => (id ? c.id === id : agentId ? c.agentId === agentId : true)
+    // The cron renews a round under a new id (renewedFrom): an old id stops the round its chain leads to.
+    const chain = new Set(id ? [id] : [])
+    for (let grew = true; grew; ) {
+      grew = false
+      for (const c of campaigns as Array<StoredCampaign & { renewedFrom?: string }>) {
+        if (c.renewedFrom && chain.has(c.renewedFrom) && !chain.has(c.id)) {
+          chain.add(c.id)
+          grew = true
+        }
+      }
+    }
+    const hit = (c: StoredCampaign) => (id ? chain.has(c.id) : agentId ? c.agentId === agentId : true)
     console.log(`${DRY ? '[dry-run] detendría' : 'Detiene'}: ${campaigns.filter((c) => hit(c) && c.active).map((c) => c.id).join(', ') || '(ninguna activa)'}`)
     if (DRY) return
     await mutateCampaigns(row.id, stopWhere((c) => hit(c as unknown as StoredCampaign)))
@@ -372,7 +383,16 @@ async function main() {
   const list = arg('id') ? campaigns.filter((c) => c.id === arg('id')) : campaigns
   for (const c of list) {
     const stats = await campaignStats(tenantId, c)
-    const state = !c.active ? 'detenida' : Date.parse(c.until) > Date.now() ? 'ACTIVA' : 'terminada'
+    const why = (c as { stopReason?: string }).stopReason
+    const state = !c.active
+      ? why === 'auto_renew'
+        ? 'renovada'
+        : why === 'opt_out_guard'
+          ? 'DETENIDA POR BAJAS'
+          : 'detenida'
+      : Date.parse(c.until) > Date.now()
+        ? 'ACTIVA'
+        : 'terminada (el cron la renueva si el agente está live)'
     console.log(`${c.id} · agente ${c.agentId} · ${state} · ${c.createdAt} → ${c.until} · espera ${c.silentMinMinutes} min · reservados ${Object.keys(c.claimed).length}`)
     for (const v of VARIANTS) {
       const s = stats[v]

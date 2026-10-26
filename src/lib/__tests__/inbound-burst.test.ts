@@ -442,7 +442,8 @@ describe('burst = one reply · wiring (source)', () => {
     const live = turn.slice(turn.indexOf('export async function executeAgentLayerTurn'), turn.indexOf('function persistedTurnStatus'))
     assert.match(live, /burstReview: burstReviewIn\(existing\.decisionTrace\),/)
     assert.match(live, /handoff: plan\.handoff,\s+burstReview,/)
-    assert.match(live, /handoff: modelPlan\.handoff,\s+burstReview,/)
+    // Rafael 2026-10-25: the night review (escalation that keeps selling) rides the same way.
+    assert.match(live, /handoff: modelPlan\.handoff,\s+\/\/[^\n]*\n\s+burstReview: burstReview \?\? night\.review,/)
     const finish = turn.slice(turn.indexOf('async function finishDeliveryOrSuggest('), turn.indexOf('async function finishDeliveryOrSuggestInner'))
     assert.match(finish, /else if \(input\.burstReview\) \{\s+await settleHandoff\(input\.row, input\.burstReview, input\.afterHours\)/)
     assert.match(finish, /if \(!input\.handoff && \(result\.status === 'suggested' \|\| result\.status === 'skipped'\)\)/)

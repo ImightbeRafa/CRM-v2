@@ -5,6 +5,7 @@
  *
  * After hours the agent still sells and answers; code adds a prompt line and swaps the customer text of a TRUE
  * hand-off for an after-hours variant (the team answers at the next opening); team alerts are created but quiet.
+ * A model escalation / "no lo tengo" at night is NOT a hand-off: see nightKeepsSelling.
  */
 import { z } from 'zod'
 
@@ -175,9 +176,11 @@ export function afterHoursPromptLine(state: AfterHoursState): string | null {
     ? 'que te atiende nuestro asistente virtual y que el equipo responde'
     : 'que a esta hora el equipo no está disponible y que responde'
   return (
-    `Fuera de horario: si el cliente pregunta por alguien o algo que requiere al equipo, decí con claridad ${who} ` +
-    `${sentenceEnd(state.label)} Nunca prometas revisar o confirmar ahora. ` +
-    `(Esto reemplaza "lo revisás y le confirmás". Precios, productos, envíos y métodos de pago los respondés normal.)` +
+    // Rafael 2026-10-25: at night the agent sells exactly like by day; only payments and a person wait for the team.
+    `Fuera de horario: seguís atendiendo y vendiendo igual que de día (precios, productos, tallas, uso, envíos, ` +
+    `métodos de pago y cerrar el pedido). Solo confirmar un pago o comprobante, un reclamo o lo que de verdad solo ` +
+    `puede hacer una persona espera al equipo: ahí decí con claridad ${who} ${sentenceEnd(state.label)} ` +
+    `Nunca prometas revisar o confirmar ahora. (Esto reemplaza "lo revisás y le confirmás".)` +
     (state.transparent
       ? ' Si todavía no te presentaste en este chat, presentate con tu nombre como asistente virtual del negocio (por ejemplo: "¡Hola! Soy <tu nombre>, asistente virtual de <negocio> 🌙").'
       : '')
@@ -367,6 +370,40 @@ export function applyAfterHoursText(
   if (opts.noteOk && !opts.noteOk(state.note)) return body
   const withNote = `${body}\n${state.note}`
   return !opts.composedOk || opts.composedOk(withNote) ? withNote : body
+}
+
+/**
+ * Rafael 2026-10-25: after hours the agent sells exactly like by day. Only payments / receipts, a refund or complaint,
+ * an order to confirm and a customer who asks for a person wait for the team. A model escalation ("other": a store fact
+ * it does not have, a health question…) or a "no lo tengo" answer at night used to replace the whole reply with "El
+ * equipo te escribe mañana" AND move the chat to a person — nobody is there at night, so the customer got no answer
+ * and every later message waited for the morning. At night those two become a review: the agent's own answer goes out
+ * (with its images), the chat stays on the agent, and the team gets the alert (quiet until opening).
+ */
+const NIGHT_REVIEW_REASONS = new Set(['escalate', 'unknown_answer'])
+
+/** "lo confirmo", "voy a revisar", "te cuento" — the reply promises a check the team does at the next opening. */
+const CHECK_PROMISE_RE =
+  /(?<![\p{L}])(?:(?:lo|la|te\s+lo|te\s+la)\s+(?:confirm|revis|consult|verific)\p{L}*|(?:voy|vamos)\s+a\s+(?:confirm|revis|consult|verific|pregunt)\p{L}*|d[eé]jame\s+(?:confirm|revis|consult|verific)\p{L}*|te\s+(?:confirm|cuent|avis)\p{L}*|dame\s+un\s+momento)(?![\p{L}])/iu
+
+export function hasCheckPromise(text: string): boolean {
+  return CHECK_PROMISE_RE.test(text)
+}
+
+export function nightKeepsSelling<P extends { text: string; handoff: { kind: 'handoff' | 'review'; reason: string } | null }>(
+  plan: P,
+  state: Pick<AfterHoursState, 'afterHours' | 'label'>,
+  safeReview: string,
+): { plan: P; review: { kind: 'review'; reason: string } | null } {
+  const h = plan.handoff
+  if (!state.afterHours || h?.kind !== 'handoff' || !NIGHT_REVIEW_REASONS.has(h.reason)) return { plan, review: null }
+  const text = plan.text.trim()
+  // No answer of its own (the safe line): nothing to keep selling with — the hand-off stays as it was.
+  if (!text || text === safeReview.trim()) return { plan, review: null }
+  const review = { kind: 'review' as const, reason: h.reason }
+  const promises = h.reason === 'unknown_answer' || hasCheckPromise(text)
+  const saysWhen = text.includes(state.label.replace(/\.$/, ''))
+  return { plan: { ...plan, handoff: null, text: promises && !saysWhen ? `${text}\n${afterHoursTeamLine(state.label)}` : text }, review }
 }
 
 /** Team alerts for a hand-off after hours: the dedupe key carries `:night-<opening unix seconds>` (quiet until then). */

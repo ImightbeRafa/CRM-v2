@@ -373,3 +373,33 @@ describe('customerNightNeed · SecureDog H2 (alarm + question in one message)', 
     ]) assert.equal(customerNightNeed(c), null, c)
   })
 })
+
+describe('customerNightNeed · SecureDog H3 (child exposure)', () => {
+  it('child cases with ages, counts, plurals, "se lo" and "en la boca" count', () => {
+    for (const c of [
+      'Mi hija de 3 años se puso un parche',
+      'Mi niño de 2 años se metió un parche en la boca',
+      'Mi hijo se tragó dos parches',
+      'el bebé se comió unos parches',
+      'mi hija se tomó dos tiras',
+      'Mi hijo se comió 2 parches',
+      'el niño se lo puso en la boca',
+      'mi nieta de 4 se tomó 2 pastillas',
+      'Mi hijo se puso un parche',
+      'mi hijo se tragó un parche',
+      'el bebé se comió una tira',
+      'mi sobrino se metió el producto en la boca',
+    ]) assert.equal(customerNightNeed(c), 'safety', c)
+  })
+
+  it('adult use stays a sale', () => {
+    for (const c of [
+      'Mi mamá se puso el parche anoche y durmió muy bien, quiero otro',
+      'Mi mamá de 60 años se puso dos parches',
+      'Mi esposo se tomó 2 pastillas para dormir y quiere probar el parche',
+      '¿Mi hijo de 12 se puede poner el parche?',
+      'Me puse el parche y dormí increíble',
+      'Mi papá se puso el parche de energía',
+    ]) assert.equal(customerNightNeed(c), null, c)
+  })
+})

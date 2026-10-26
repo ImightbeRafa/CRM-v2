@@ -412,8 +412,9 @@ const NIGHT_CRISIS_RE = wordsRe([
   // SecureDog R2: "ya no aguanto (más)" only on its own — "ya no aguanto el insomnio" is a sales question.
   String.raw`ya\s+no\s+aguanto(?:\s+m[aá]s)?(?=\s*(?:[.!…,]|$|\p{Extended_Pictographic}))`,
   // Swallowed / drank the product (anyone); "se puso / se metió" only for a child ("mi mamá se puso el parche" is use).
-  String.raw`se\s+(?:comi[oó]|trag[oó]|tom[oó]|bebi[oó])\s+(?:\p{L}+\s+){0,2}(?:parche|tira|producto|pastillas?)|me\s+trag[eé]`,
-  String.raw`(?:hij[oa]|beb[eé]|niñ[oa]|chiquit\p{L}*|nen[ea]|chiquill\p{L}*)\s+(?:\p{L}+\s+){0,3}se\s+(?:puso|meti[oó])\s+(?:\p{L}+\s+){0,2}(?:parche|tira|producto|pastillas?)`,
+  // SecureDog H3: plurals; a child also with an age / a count ("Mi hija de 3 años", "2 parches"), "se lo", "en la boca".
+  String.raw`se\s+(?:l[oa]s?\s+)?(?:comi[oó]|trag[oó]|tom[oó]|bebi[oó])\s+(?:\p{L}+\s+){0,2}(?:parches?|tiras?|productos?|pastillas?)|me\s+(?:l[oa]s?\s+)?trag[eé]`,
+  String.raw`(?:hij[oa]s?|beb[eé]s?|niñ[oa]s?|chiquit\p{L}*|nen[ea]s?|chiquill\p{L}*|sobrin[oa]s?|niet[oa]s?)\s+(?:[\p{L}\p{N}]+\s+){0,4}se\s+(?:l[oa]s?\s+)?(?:puso|meti[oó]|comi[oó]|trag[oó]|tom[oó]|bebi[oó])\s+(?:(?:[\p{L}\p{N}]+\s+){0,2}(?:parches?|tiras?|productos?|pastillas?)|(?:\p{L}+\s+){0,2}(?:en\s+)?la\s+boca)`,
 ])
 /** A health alarm (something that happened). Skipped on a pre-sale question line ("¿Sirve si me falta el aire al correr?"). */
 const NIGHT_ALARM_RE = wordsRe([

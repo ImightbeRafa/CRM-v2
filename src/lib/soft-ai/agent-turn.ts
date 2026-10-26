@@ -16,6 +16,7 @@ import {
   applyAfterHoursText,
   DEFAULT_BUSINESS_HOURS,
   IN_HOURS,
+  nightKeepsSelling,
   type AfterHoursState,
   type BusinessHours,
 } from '@/lib/soft-ai/business-hours'
@@ -91,6 +92,8 @@ import {
   applySafeLineCap,
   behaviorForOperationMode,
   HANDOFF_REASON,
+  admitsCannotAnswer,
+  isComplaintText,
   decideTurnOutcome,
   planDecisionDelivery,
   planModelTurnDelivery,
@@ -1615,7 +1618,10 @@ export async function executeAgentLayerTurn(
   })
   const needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
   // B1: what goes out is planned by code: the model reply (checked), the safe line, or the hand-off text.
-  const modelPlan = applySafeLineCap(
+  const turnCustomerText = customerTextSinceLastAnswer(history, burst.inboundText)
+  // Rafael 2026-10-25: at night an escalation / "no lo tengo" keeps the agent's answer and the chat on the agent
+  // (before the safe-line cap, so a repeated night safe line still becomes a hand-off).
+  const night = nightKeepsSelling(
     planModelTurnDelivery({
       text: policy.text,
       textOk: llm.textOk && !policy.needsHuman,
@@ -1625,14 +1631,23 @@ export async function executeAgentLayerTurn(
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
-      customerText: customerTextSinceLastAnswer(history, burst.inboundText),
+      customerText: turnCustomerText,
     }),
-    await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
+    hours,
+    {
+      safeReview: SAFE_LINE.review,
+      customerText: turnCustomerText,
+      modelReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
+      cannotAnswer: admitsCannotAnswer,
+      isComplaint: isComplaintText,
+    },
   )
+  const modelPlan = applySafeLineCap(night.plan, await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey))
   const finalText = withNightIntro(finalizePlannedText(modelPlan, payload, trigger.sentAt, hours), hours, nightIntroWho(resolved.agent, history))
   const modelMarkers: OutcomeMarkers = plannedMarkers(
-    { needsHuman, fallbackUsed: llm.fallbackUsed, escalate: llm.escalate },
-    modelPlan.handoff,
+    { needsHuman: night.soft ? false : needsHuman, fallbackUsed: llm.fallbackUsed, escalate: night.soft ? false : llm.escalate },
+    // The night review is recorded too: a lease reclaim settles it (review: the chat stays on the agent).
+    modelPlan.handoff ?? night.review,
   )
   const modelTrace = redactAgentTrace(
     withOutcomeMarkers(
@@ -1717,7 +1732,8 @@ export async function executeAgentLayerTurn(
   return finishDeliveryOrSuggest({
     plannedReply: true,
     handoff: modelPlan.handoff,
-    burstReview,
+    // The night review still alerts the team (quiet until opening) while the chat stays on the agent.
+    burstReview: burstReview ?? night.review,
     suppressSend: modelPlan.suppressSend,
     persistedMode,
     row,
@@ -1744,9 +1760,10 @@ export async function executeAgentLayerTurn(
       latencyMs: llm.latencyMs,
       fallbackUsed: llm.fallbackUsed,
     },
-    needsHuman,
+    needsHuman: night.soft ? false : needsHuman,
     fallbackUsed: llm.fallbackUsed,
-    escalate: llm.escalate,
+    // Night review: a normal answer — its images (size guide…) and the repeat guard apply.
+    escalate: night.soft ? false : llm.escalate,
     // A planned safe line / hand-off text carries no images (input.handoff is set): see the image block.
     replyShortcutKey: policy.purchaseSummaryAppended ? null : llm.shortcutKey || null,
     shortcuts,
@@ -2745,7 +2762,7 @@ async function runAgentTestTurnInner(input: {
       paymentOptions: { ...runtimeInput.salesPaymentOptions, customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText) },
     })
     // Same plan as the live turn (B1): checked model reply, safe line, or hand-off text.
-    const plan = planModelTurnDelivery({
+    const planned = planModelTurnDelivery({
       text: policy.text,
       textOk: llm.textOk && !policy.needsHuman,
       llmHandoff: llm.handoff,
@@ -2756,16 +2773,21 @@ async function runAgentTestTurnInner(input: {
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
       customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText),
     })
+    // Live parity: at night an escalation / "no lo tengo" keeps the answer and the chat on the agent (a review).
+    const probarCustomerText = customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText)
+    const night = nightKeepsSelling(planned, probarHours, { safeReview: SAFE_LINE.review, customerText: probarCustomerText, cannotAnswer: admitsCannotAnswer, isComplaint: isComplaintText, modelReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null })
+    const plan = night.plan
     text = withNightIntro(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), probarHours, nightIntroWho(runtimeAgent, input.history ?? []))
-    handoff = plan.handoff
+    handoff = plan.handoff ?? night.review
     intent = policy.intent
-    shortcutKey = plan.text !== policy.text ? null : policy.purchaseSummaryAppended ? 'sys_purchase_summary' : llm.shortcutKey || null
+    shortcutKey = planned.text !== policy.text ? null : policy.purchaseSummaryAppended ? 'sys_purchase_summary' : llm.shortcutKey || null
     highlightedAmounts = policy.highlightedAmounts
     tokens = { input: llm.inputTokens, output: llm.outputTokens, cached: llm.cachedInputTokens }
     latencyMs = llm.latencyMs
-    needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
+    // Live parity (Verifier #3): a night review is a normal answer — images, no "pasa a una persona".
+    needsHuman = night.soft ? false : policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
     fallbackUsed = llm.fallbackUsed
-    escalate = llm.escalate
+    escalate = night.soft ? false : llm.escalate
     policyReasons = [
       ...(policy.needsHuman ? policy.reasons : []),
       ...(runtimeInput.salesNeedsHuman === true ? ['sales_needs_human'] : []),

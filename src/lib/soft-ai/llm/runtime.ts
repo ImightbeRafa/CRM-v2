@@ -693,6 +693,9 @@ export function modelHandoff(reason: string | undefined, inboundText: string): T
       return { kind: 'handoff', reason: HANDOFF_REASON.optOut }
     case 'media_inbound':
       return { kind: 'handoff', reason: HANDOFF_REASON.payment }
+    // SecureDog M2: a complaint / refund the model names is the complaint hand-off (empathetic line, its own alert).
+    case 'complaint':
+      return { kind: 'handoff', reason: HANDOFF_REASON.refund }
     case 'llm_unavailable':
       // Technical by name: the safe line, the chat stays on IA.
       return { kind: 'review', reason: HANDOFF_REASON.review }

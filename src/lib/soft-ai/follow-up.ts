@@ -9,10 +9,12 @@ import 'server-only'
  * alert or a linked order, a chat whose last agent turn handed off or asked a person to look ("Dame un momento…"), a
  * customer who asked to stop or said no, a chat whose last outbound message was written by a person, a line that does
  * not answer right now, an agent without business hours. At most PER_RUN_MAX sends per cron run (shared counter).
- * Campaigns are created / stopped by an audited script and stored in TenantFeatureFlag `agent_follow_up_v1`.
+ * Campaigns are created / stopped by an audited script and stored in TenantFeatureFlag `agent_follow_up_v1`; a round
+ * that runs out on its own is renewed by the cron (renewExpiredCampaigns), so follow-ups never silently stop.
  */
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
+import { logAuditEvent } from '@/lib/auditLogger'
 import { dualWriteChatMessage, isPersistedDualWrite } from '@/lib/chat-conversation-write'
 import { decryptSocialAccessToken } from '@/lib/social-account-crypto'
 import { parseSocialRefreshToken } from '@/lib/social-account-meta'
@@ -145,7 +147,182 @@ export async function followUpSkipReason(
   const lastIn = recent.find((m) => m.direction === 'inbound')
   if (lastIn && DECLINE_RE.test(lastIn.content || '')) return 'declined'
   if (recent.some((m) => m.direction === 'outbound' && (m.metadata as { followUp?: unknown } | null)?.followUp)) return 'already_followed_up'
+  // Verifier (auto-renew): one nudge per chat EVER, not only within its last 30 messages (rounds renew every 48 h).
+  if (await followedUpBefore(tenantId, conv.id)) return 'already_followed_up'
   return null
+}
+
+/** Any follow-up ever sent in this chat (whatever round). */
+export async function followedUpBefore(tenantId: string, conversationId: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ one: number }>>`
+    SELECT 1 AS "one" FROM "ChatMessage"
+     WHERE "tenantId" = ${tenantId} AND "conversationId" = ${conversationId} AND "direction" = 'outbound'
+       AND "metadata" ? 'followUp'
+     LIMIT 1`
+  return rows.length > 0
+}
+
+type RawCampaign = Record<string, unknown>
+type FlagRow = { id: string; tenantId: string | null; scope: string; config: unknown }
+
+/** Renewal stops (never renews) a round whose text made people ask to stop — same limits as the --rotate winner rule. */
+export const OPT_OUT_GUARD = { minCount: 3, maxRate: 0.03 } as const
+/** A round that ended longer ago than this is never brought back by the cron (only --start / --rotate open it). */
+export const RENEW_MAX_AGE_MS = 7 * 24 * 3600_000
+
+export type RenewOutcome = { from: string; to: string | null; agentId: string; why: 'renewed' | 'opt_out_guard' }
+
+/**
+ * Rafael 2026-10-25 ("10/10, sin excepciones"): a round never just ends. When a live agent's NEWEST valid round ran out
+ * on its own (still `active`, past `until` by at most RENEW_MAX_AGE_MS, never stopped by hand, opened by the script with
+ * text `keys`), the cron opens the same round again for MAX_CAMPAIGN_HOURS: same texts, keys, lines and wait, fresh
+ * claims (followedUpBefore still keeps every chat to one nudge, ever). A round whose text broke the opt-out guard is
+ * stopped instead (stopReason 'opt_out_guard', audited). A round someone stopped stays stopped; picking a new winner
+ * stays with the audited --rotate script. Pure: returns the new array, or null when nothing changes.
+ */
+export function renewExpiredCampaigns(
+  raw: RawCampaign[],
+  now: number,
+  liveAgentIds: ReadonlySet<string>,
+  newId: () => string,
+  optOutBlocked: ReadonlySet<string> = new Set(),
+): { campaigns: RawCampaign[]; outcomes: RenewOutcome[] } | null {
+  const valid = new Set(parseFollowUpConfig({ campaigns: raw }).campaigns.map((c) => c.id))
+  const newest = new Map<string, RawCampaign>()
+  for (const c of raw) {
+    // Verifier: only valid rounds compete (a malformed createdAt never pins an agent).
+    if (!c || typeof c !== 'object' || !valid.has(String(c.id)) || typeof c.agentId !== 'string') continue
+    const prev = newest.get(c.agentId)
+    if (!prev || Date.parse(String(c.createdAt)) > Date.parse(String(prev.createdAt))) newest.set(c.agentId, c)
+  }
+  const running = (c: RawCampaign) => c.active === true && Date.parse(String(c.until)) > now
+  const out = [...raw]
+  const outcomes: RenewOutcome[] = []
+  for (const [agentId, c] of newest) {
+    if (!liveAgentIds.has(agentId)) continue
+    const until = Date.parse(String(c.until))
+    if (c.active !== true || c.stoppedAt || !(until <= now) || now - until > RENEW_MAX_AGE_MS) continue
+    if (!c.keys || typeof c.keys !== 'object') continue
+    const lines = c.lineIds as string[]
+    // Another agent's running round on one of these lines wins (same rule as the script).
+    if (out.some((o) => o && o.agentId !== agentId && running(o) && Array.isArray(o.lineIds) && (o.lineIds as string[]).some((l) => lines.includes(l)))) continue
+    const at = new Date(now).toISOString()
+    const index = out.indexOf(c)
+    if (optOutBlocked.has(String(c.id))) {
+      out[index] = { ...c, active: false, stoppedAt: at, stopReason: 'opt_out_guard' }
+      outcomes.push({ from: String(c.id), to: null, agentId, why: 'opt_out_guard' })
+      continue
+    }
+    const id = newId()
+    out[index] = { ...c, active: false, stoppedAt: at, stopReason: 'auto_renew' }
+    const { claimed: _claimed, stoppedAt: _s, stopReason: _r, ...rest } = c
+    out.push({ ...rest, id, createdAt: at, until: new Date(now + MAX_CAMPAIGN_HOURS * 3600_000).toISOString(), active: true, claimed: {}, renewedFrom: c.id })
+    outcomes.push({ from: String(c.id), to: id, agentId, why: 'renewed' })
+  }
+  return outcomes.length ? { campaigns: out, outcomes } : null
+}
+
+/** How far back the guard pools a round's renewal chain (the same texts) — bounded work every 48 h. */
+const GUARD_POOL_MS = 30 * 24 * 3600_000
+
+/** The round plus the rounds it was renewed from (same texts), newest first, created within GUARD_POOL_MS. Pure. */
+export function renewalChain(all: RawCampaign[], round: RawCampaign, now: number): RawCampaign[] {
+  const byId = new Map(all.filter((c) => c && typeof c.id === 'string').map((c) => [String(c.id), c]))
+  const chain: RawCampaign[] = []
+  for (let c: RawCampaign | undefined = round; c && !chain.includes(c); c = c.renewedFrom ? byId.get(String(c.renewedFrom)) : undefined) {
+    if (now - Date.parse(String(c.createdAt)) > GUARD_POOL_MS) break
+    chain.push(c)
+  }
+  return chain
+}
+
+/**
+ * Rounds about to be renewed whose text crossed the opt-out guard (per text: ≥ minCount hard opt-outs AND > maxRate).
+ * Verifier r2: pooled over the renewal chain (same texts, like --rotate's pairStats), so a low-volume agent and an
+ * opt-out that came after a renewal still count.
+ */
+async function optOutBlockedRounds(tenantId: string, rounds: RawCampaign[], all: RawCampaign[], now: number): Promise<Set<string>> {
+  const blocked = new Set<string>()
+  for (const round of rounds) {
+    const perVariant: Record<string, { sent: number; out: number }> = {}
+    for (const c of renewalChain(all, round, now)) {
+      const claimed = c.claimed && typeof c.claimed === 'object' ? (c.claimed as Record<string, string>) : {}
+      for (const [conversationId, v] of Object.entries(claimed)) {
+        if (String(v).endsWith('!')) continue
+        const fu = await prisma.$queryRaw<Array<{ sentAt: Date }>>`
+          SELECT "sentAt" FROM "ChatMessage"
+           WHERE "tenantId" = ${tenantId} AND "conversationId" = ${conversationId} AND "direction" = 'outbound'
+             AND "metadata"->'followUp'->>'campaignId' = ${String(c.id)}
+           ORDER BY "sentAt" ASC LIMIT 1`
+        if (!fu[0]) continue
+        const arm = (perVariant[String(v)] ??= { sent: 0, out: 0 })
+        arm.sent += 1
+        const replies = await prisma.chatMessage.findMany({
+          where: { tenantId, conversationId, direction: 'inbound', sentAt: { gt: fu[0].sentAt, lte: new Date(fu[0].sentAt.getTime() + 24 * 3600_000) } },
+          select: { content: true },
+          take: 10,
+        })
+        if (replies.some((m) => isOptOutText(m.content))) arm.out += 1
+      }
+    }
+    if (Object.values(perVariant).some((a) => a.out >= OPT_OUT_GUARD.minCount && a.out / a.sent > OPT_OUT_GUARD.maxRate)) blocked.add(String(round.id))
+  }
+  return blocked
+}
+
+/**
+ * Cron step before sending: renews (or opt-out-stops) expired rounds under the flag's row lock (the claim UPDATE waits).
+ * Uses the flags the caller already read; true = something changed (the caller reads them again). Never throws.
+ */
+export async function renewFollowUpCampaigns(flags: FlagRow[], now: number): Promise<boolean> {
+  let changed = false
+  for (const flag of flags) {
+    if (!flag.tenantId || flag.scope !== flag.tenantId) continue
+    const tenantId = flag.tenantId
+    try {
+      const raw = Array.isArray((flag.config as { campaigns?: unknown } | null)?.campaigns) ? (flag.config as { campaigns: RawCampaign[] }).campaigns : []
+      // Cheapest check (no query): nothing active, past its end and not stopped → nothing to do.
+      if (!raw.some((c) => c && c.active === true && !c.stoppedAt && Date.parse(String(c.until)) <= now)) continue
+      const live = await prisma.chatAgent.findMany({ where: { tenantId, status: 'live' }, select: { id: true } })
+      const liveIds = new Set(live.map((a) => a.id))
+      const newId = () => `fu-${new Date(now).toISOString().slice(0, 10)}-${randomUUID().slice(0, 6)}`
+      // Cheap check first (no lock, no message reads): would anything renew?
+      const dry = renewExpiredCampaigns(raw, now, liveIds, newId)
+      if (!dry) continue
+      const due = raw.filter((c) => c && dry.outcomes.some((o) => o.from === c.id))
+      const blocked = await optOutBlockedRounds(tenantId, due, raw, now)
+      const outcomes = await prisma.$transaction(async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ config: unknown }>>`SELECT "config" FROM "TenantFeatureFlag" WHERE "id" = ${flag.id} AND "key" = ${FOLLOW_UP_FLAG} FOR UPDATE`
+        const config = (rows[0]?.config && typeof rows[0].config === 'object' ? rows[0].config : {}) as Record<string, unknown>
+        const stored = Array.isArray(config.campaigns) ? (config.campaigns as RawCampaign[]) : []
+        const next = renewExpiredCampaigns(stored, now, liveIds, newId, blocked)
+        if (!next) return []
+        await tx.tenantFeatureFlag.update({ where: { id: flag.id }, data: { config: { ...config, campaigns: next.campaigns } as object } })
+        return next.outcomes
+      })
+      for (const o of outcomes) {
+        changed = true
+        if (o.why === 'opt_out_guard') console.warn('[follow-up] round stopped by the opt-out guard', o.from)
+        await logAuditEvent({
+          action: 'UPDATE',
+          entityType: 'FollowUpCampaign',
+          entityId: tenantId,
+          description:
+            o.why === 'renewed'
+              ? `Follow-up A/B renovado automáticamente ${o.to} (antes ${o.from})`
+              : `Follow-up A/B DETENIDO por bajas (${o.from}): no se renovó — revisar el texto con --report y --rotate`,
+          newValues: { campaignId: o.to, renewedFrom: o.from, agentId: o.agentId, why: o.why, by: 'cron' },
+          userName: 'Betsy (seguimientos automáticos)',
+          userRole: 'SYSTEM',
+          tenantId,
+        }).catch(() => {})
+      }
+    } catch (error) {
+      // Verifier: one tenant's failure never skips the others.
+      console.warn('[follow-up] renew failed', error instanceof Error ? error.name : 'unknown')
+    }
+  }
+  return changed
 }
 
 /** One cron pass over every active campaign. Never throws; returns how many follow-ups went out. */
@@ -154,7 +331,9 @@ export async function runFollowUpCampaigns(opts: { deadlineMs: number; now?: num
   const now = opts.now ?? Date.now()
   const budget = { sent: 0 }
   const stop = () => Date.now() - started > opts.deadlineMs || budget.sent >= PER_RUN_MAX
-  const flags = await prisma.tenantFeatureFlag.findMany({ where: { key: FOLLOW_UP_FLAG, enabled: true }, select: { id: true, tenantId: true, scope: true, config: true } })
+  const readFlags = () => prisma.tenantFeatureFlag.findMany({ where: { key: FOLLOW_UP_FLAG, enabled: true }, select: { id: true, tenantId: true, scope: true, config: true } })
+  let flags = await readFlags()
+  if (await renewFollowUpCampaigns(flags, now)) flags = await readFlags()
   for (const flag of flags) {
     if (!flag.tenantId || flag.scope !== flag.tenantId) continue
     // Index in the STORED array (the claim checks the id at that index too).

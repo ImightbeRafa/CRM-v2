@@ -349,10 +349,11 @@ export function applyAfterHoursText(
     // Lane C P8 / Verifier #130: an opt-out text that promises an answer right now is replaced whole by the night line
     // (an unknown_answer reply keeps every fact: it never promises a person right now).
     const promise = plan.handoff.reason === 'human_request' && hasImmediatePromise(text) && !hasSafetyNotice(text)
-    if (complaint) {
-      body = afterHoursComplaintLine(state.label, state.transparent)
-    } else if (text === SAFETY_HANDOFF_LINE) {
+    // SecureDog R1: the safety line (911) wins over the complaint line.
+    if (text === SAFETY_HANDOFF_LINE) {
       body = `${SAFETY_HANDOFF_LINE} ${afterHoursTeamLine(state.label)}`
+    } else if (complaint) {
+      body = afterHoursComplaintLine(state.label, state.transparent)
     } else if (kind === 'person' && !promise && (plan.handoff.reason === 'human_request' || plan.handoff.reason === 'unknown_answer') && text && text !== opts.safeReview.trim()) {
       // luna-10: the model already said when the team writes ("…hoy a las 8:00 a. m.") → never a second line.
       body = text.includes(state.label.replace(/\.$/, '')) ? text : `${text}\n${afterHoursTeamLine(state.label)}`
@@ -404,23 +405,37 @@ const NIGHT_COMPLAINT_RE = wordsRe([
   String.raw`quiero\s+(?:devolver|(?:la|una|mi)\s+devoluci[oó]n|(?:un|mi)\s+reembolso|que\s+me\s+devuelvan)|devu[eé]lvanme`,
   String.raw`(?:todav[ií]a|a[uú]n)\s+no\s+(?:me\s+)?lleg\p{L}*|no\s+(?:me\s+)?(?:ha|han)\s+llegado\s+(?:\p{L}+\s+){0,2}(?:pedido|paquete|nada|producto)`,
 ])
-/** A health alarm (something that happened, never a pre-sale question) or a crisis. */
-const NIGHT_SAFETY_RE = wordsRe([
-  String.raw`(?:me|le|nos)\s+(?:dio|sali[oó]|salieron|caus[oó]|provoc[oó]|est[aá]\s+dando)\s+(?:\p{L}+\s+){0,3}(?:reacci\p{L}*|alergi\p{L}*|irritaci\p{L}*|ronchas?|picaz\p{L}*|sarpullido|ampollas?|ardor|comez\p{L}*|mareo)`,
-  String.raw`tengo\s+(?:ronchas|ampollas|sarpullido|una\s+reacci[oó]n)`,
+/** A crisis or a child / swallowing emergency: always (even inside a question). */
+const NIGHT_CRISIS_RE = wordsRe([
+  String.raw`me\s+quiero\s+morir|quiero\s+morir(?:me)?|quitarme\s+la\s+vida|no\s+quiero\s+(?:seguir\s+)?viv(?:ir|iendo)|ganas\s+de\s+vivir|hacerme\s+da[ñn]o|cortarme|autolesi\p{L}*|suicid\p{L}*|matarme`,
+  String.raw`me\s+(?:quiero|voy\s+a)\s+matar|me\s+tom[eé]\s+(?:todas\s+)?(?:las\s+)?pastillas|no\s+le\s+veo\s+sentido\s+a\s+(?:la\s+)?vida|me\s+cort[eé]`,
+  // SecureDog R2: "ya no aguanto (más)" only on its own — "ya no aguanto el insomnio" is a sales question.
+  String.raw`ya\s+no\s+aguanto(?:\s+m[aá]s)?(?=\s*(?:[.!…,]|$|\p{Extended_Pictographic}))`,
+  String.raw`se\s+(?:puso|comi[oó]|trag[oó]|meti[oó]|tom[oó]|bebi[oó])\s+(?:\p{L}+\s+){0,2}(?:parche|tira|producto|pastillas?)|me\s+trag[eé]`,
+])
+/** A health alarm (something that happened). Skipped on a pre-sale question line ("¿Sirve si me falta el aire al correr?"). */
+const NIGHT_ALARM_RE = wordsRe([
+  String.raw`(?:me|le|nos)\s+(?:dio|sali[oó]|salieron|caus[oó]|provoc[oó]|est[aá]\s+dando)\s+(?:\p{L}+\s+){0,3}(?:reacci\p{L}*|alergi\p{L}*|irritaci\p{L}*|ronchas?|picaz\p{L}*|sarpullido|salpullido|ampollas?|ardor|comez\p{L}*|mareo|urticaria|taquicardia)`,
+  String.raw`tengo\s+(?:ronchas|ampollas|sarpullido|salpullido|urticaria|taquicardia|una\s+reacci[oó]n)`,
   String.raw`(?:se\s+me|se\s+le)\s+hinch\p{L}*|me\s+arde|me\s+quem[eó]|quemadura|v[oó]mit\p{L}*|vomit\p{L}*|estoy\s+mare\p{L}*|me\s+siento\s+(?:muy\s+)?mal`,
   String.raw`dolor\s+(?:de|en\s+el)\s+pecho|palpitaciones|falta\s+de\s+aire|no\s+puedo\s+respirar|desmay\p{L}*|convulsi\p{L}*`,
-  String.raw`se\s+(?:puso|comi[oó]|trag[oó]|meti[oó])\s+(?:\p{L}+\s+){0,2}(?:parche|tira|producto|pastilla)|me\s+trag[eé]`,
-  String.raw`me\s+quiero\s+morir|quiero\s+morir(?:me)?|quitarme\s+la\s+vida|no\s+quiero\s+(?:seguir\s+)?viv(?:ir|iendo)|ganas\s+de\s+vivir|hacerme\s+da[ñn]o|cortarme|autolesi\p{L}*|suicid\p{L}*|matarme`,
-  // SecureDog H1: more crisis / alarm wording.
-  String.raw`me\s+(?:quiero|voy\s+a)\s+matar|me\s+tom[eé]\s+(?:todas\s+)?(?:las\s+)?pastillas|ya\s+no\s+aguanto(?:\s+m[aá]s)?|no\s+le\s+veo\s+sentido\s+a\s+(?:la\s+)?vida|me\s+cort[eé]`,
-  String.raw`me\s+duele\s+(?:mucho\s+)?el\s+pecho|me\s+falta\s+el\s+aire|se\s+(?:tom[oó]|bebi[oó])\s+(?:\p{L}+\s+){0,2}(?:producto|parche|tira|pastillas?)`,
-  String.raw`tengo\s+(?:la\s+cara|los\s+labios|la\s+boca|los\s+ojos)\s+hinchad\p{L}*|me\s+sali[oó]\s+(?:un\s+)?(?:salpullido|sarpullido|roncha\p{L}*)|tengo\s+urticaria|urticaria|me\s+dio\s+taquicardia|taquicardia`,
+  String.raw`me\s+duele\s+(?:mucho\s+)?el\s+pecho|me\s+falta\s+el\s+aire`,
+  String.raw`tengo\s+(?:la\s+cara|los\s+labios|la\s+boca|los\s+ojos)\s+hinchad\p{L}*|me\s+sali[oó]\s+(?:un\s+|una\s+)?(?:salpullido|sarpullido|roncha\p{L}*)`,
 ])
+/** A line that asks about the product before buying ("¿Sirve para…?", "¿Lo puedo usar si…?", "¿Causa…?"). */
+const PRESALE_QUESTION_RE = /\?.*$|^\s*¿/u
+const PRESALE_WORDS_RE = /(?<![\p{L}])(?:sirve\p{L}*|puedo\s+usar\p{L}*|lo\s+puedo|se\s+puede|causa|provoca|recomiend\p{L}*|cu[aá]l|sufro|cuando|si\s+tengo|da\s+(?:alergia|mareo))(?![\p{L}])/iu
+function nightSafetyLine(line: string): boolean {
+  if (NIGHT_CRISIS_RE.test(line)) return true
+  if (!NIGHT_ALARM_RE.test(line)) return false
+  return !(PRESALE_QUESTION_RE.test(line) && PRESALE_WORDS_RE.test(line))
+}
 /** Safety advice the agent gave ("Retirá el parche ya mismo y lavá la zona…") — never cut from a night reply. */
-const SAFETY_ADVICE_RE = /(?<![\p{L}])(?:(?:retir|quit|lav|enjuag)(?:á|alo|ala|atelo|átelo|ate|e|en)|suspend(?:é|elo|ela|a\s+el\s+uso)|m[eé]dic\p{L}*|emergenc\p{L}*|911)(?![\p{L}])/iu
+const SAFETY_ADVICE_RE = /(?<![\p{L}])(?:(?:retir|quit|lav|enjuag|sac)(?:á|alo|ala|atelo|átelo|ate|e|en)|dej(?:á|e)\s+de\s+usarlo|suspend(?:é|elo|ela|a\s+el\s+uso)|m[eé]dic\p{L}*|emergenc\p{L}*|911)(?![\p{L}])/iu
 /** A hedge that qualifies the rest of the reply ("No sé si hay stock, enseguida te confirmo") — never cut alone (SecureDog M1). */
-const HEDGE_RE = /(?<![\p{L}])(?:no\s+s[eé]|no\s+(?:te\s+)?puedo|no\s+tengo|todav[ií]a\s+no|a[uú]n\s+no|no\s+estoy\s+segur\p{L}*)(?![\p{L}])/iu
+const HEDGE_RE = /(?<![\p{L}])(?:no\s+(?:lo\s+)?s[eé]|no\s+sabr[ií]a|desconozco|creo\s+que|ni\s+idea|quiz[aá]s?|no\s+(?:te\s+)?(?:lo\s+)?puedo|no\s+tengo|todav[ií]a\s+no|a[uú]n\s+no|no\s+estoy\s+segur\p{L}*)(?![\p{L}])/iu
+/** Model reasons that name a safety situation (invented words included): the 911 line, never a downgrade (SecureDog R5). */
+const SAFETY_MODEL_REASON_RE = /safety|crisis|self[_-]?harm|suicid|emergenc|health|salud|alarm|danger|peligro|medic|m[eé]dic/i
 const NIGHT_PERSON_ASK_RE = wordsRe([
   String.raw`p[aá]s(?:a|e)me\s+con|comun[ií]c(?:a|e)me\s+con|hablar\s+con\s+(?:una\s+persona|alguien|un\s+humano|un\s+asesor|una\s+asesora|el\s+due[ñn]o|la\s+due[ñn]a|el\s+encargad[oa]|la\s+encargad[oa]|el\s+gerente|un\s+supervisor)`,
   String.raw`(?:me\s+)?(?:puede|pueden|podr[ií]a|podr[ií]an)\s+llamar|ll[aá]menme|ll[aá]mame`,
@@ -431,7 +446,7 @@ export type NightNeed = 'safety' | 'complaint' | 'person'
 /** What the customer's words need from a person at night (safety first), or null. */
 export function customerNightNeed(customerText: string | null | undefined, isComplaint?: (text: string) => boolean): NightNeed | null {
   const t = String(customerText || '').normalize('NFKC')
-  if (NIGHT_SAFETY_RE.test(t)) return 'safety'
+  if (t.split(/\n+/).some(nightSafetyLine)) return 'safety'
   if (NIGHT_COMPLAINT_RE.test(t)) return 'complaint'
   if (NIGHT_PERSON_ASK_RE.test(t)) return 'person'
   // The day's complaint check also reads pre-sale questions as one ("¿Tienen devolución?", "¿no es estafa?"): at night
@@ -478,21 +493,34 @@ function isNowCheckSentence(s: string): boolean {
  * Verifier r2 #2: only the sentences that promise a team check RIGHT NOW are dropped — prices, the size guide and
  * "Te dejo…" stay. Verifier r3 #1: line by line, so lists and paragraphs (separate WhatsApp bubbles) keep their breaks.
  */
-function dropNowCheckSentences(text: string): { dropped: boolean; hedged: boolean; body: string } {
+/** Every clause of the piece is part of the promise ("Dame un momento, te paso con alguien") — nothing else would be lost. */
+function onlyPromise(piece: string): boolean {
+  return piece
+    .split(/[,;:]/)
+    .map((c) => c.trim())
+    .filter((c) => c.replace(/[\p{Extended_Pictographic}\s.!¡¿?]/gu, ''))
+    .every((c) => isNowCheckSentence(c) || hasImmediatePromise(c) || hasCheckPromise(c) || NOW_CHECK_RE.test(c) || IMMEDIATE_WORD_RE.test(c))
+}
+
+function dropNowCheckSentences(text: string): { dropped: boolean; hedged: boolean; keptNow: boolean; body: string } {
   let dropped = false
   let hedged = false
+  let keptNow = false
   const lines = text.split('\n').map((line) => {
     const pieces = line.split(SENTENCE_SPLIT_RE).map((p) => p.trim()).filter(Boolean)
-    // SecureDog H1: safety advice is never cut, even next to a "right now" promise.
-    const drop = pieces.filter((p) => !hasSafetyNotice(p) && !SAFETY_ADVICE_RE.test(p) && isNowCheckSentence(p))
+    const now = pieces.filter((p) => isNowCheckSentence(p))
+    // SecureDog H1: safety advice is never cut, even next to a "right now" promise (R4: it then needs the team line).
+    const drop = now.filter((p) => !hasSafetyNotice(p) && !SAFETY_ADVICE_RE.test(p))
+    if (drop.length < now.length) keptNow = true
     if (!drop.length) return line
     dropped = true
-    // SecureDog M1: a dropped piece that carries a hedge would leave a bare claim — the caller swaps the whole reply.
-    if (drop.some((p) => HEDGE_RE.test(p))) hedged = true
+    // SecureDog M1 / R3: a dropped piece with a hedge or anything besides the promise itself would leave a bare claim
+    // ("No lo sé con certeza, enseguida te confirmo") — the caller swaps the whole reply.
+    if (drop.some((p) => HEDGE_RE.test(p) || !onlyPromise(p))) hedged = true
     const kept = pieces.filter((p) => !drop.includes(p))
     return kept.length ? kept.join(' ') : null
   })
-  return { dropped, hedged, body: lines.filter((l): l is string => l !== null).join('\n').replace(/\n{3,}/g, '\n\n').trim() }
+  return { dropped, hedged, keptNow, body: lines.filter((l): l is string => l !== null).join('\n').replace(/\n{3,}/g, '\n\n').trim() }
 }
 
 /**
@@ -525,17 +553,22 @@ export function nightKeepsSelling<P extends NightPlan>(
     const text = plan.text.trim()
     if (!text || text === opts.safeReview.trim()) return unchanged
     const cut = dropNowCheckSentences(text)
-    if (!cut.dropped) return unchanged
+    if (!cut.dropped && !cut.keptNow) return unchanged
     const review = { kind: 'review' as const, reason: 'review' }
     if (!cut.body || cut.hedged) return { plan: { ...plan, text: opts.safeReview, handoff: review }, review: null, soft: true }
     const saysWhen = cut.body.includes(state.label.replace(/\.$/, ''))
     return { plan: { ...plan, text: saysWhen ? cut.body : `${cut.body}\n${afterHoursTeamLine(state.label)}` }, review, soft: true }
   }
+  // SecureDog R1: a customer safety signal (or a model reason that names one) gets the 911 line on a complaint hand-off
+  // too — before the reason filter below.
+  const safetyReason = Boolean(opts.modelReason && SAFETY_MODEL_REASON_RE.test(opts.modelReason))
+  if (h.kind === 'handoff' && (customerNeed === 'safety' || safetyReason) && (NIGHT_REVIEW_REASONS.has(h.reason) || h.reason === 'complaint')) {
+    return { plan: { ...plan, text: SAFETY_HANDOFF_LINE }, review: null, soft: false }
+  }
   if (h.kind !== 'handoff' || !NIGHT_REVIEW_REASONS.has(h.reason)) return unchanged
   // A complaint / an alarm / a person keeps the true hand-off; complaints and alarms get the caring night text
   // (probe 2026-10-25: "vino roto" and "no quiero seguir viviendo" only got "el equipo te escribe mañana").
-  const need: NightNeed | null =
-    customerNeed === 'safety' || opts.modelReason === 'safety' ? 'safety' : customerNeed === 'complaint' || opts.modelReason === 'complaint' ? 'complaint' : customerNeed
+  const need: NightNeed | null = customerNeed === 'complaint' || opts.modelReason === 'complaint' ? 'complaint' : customerNeed
   if (need === 'safety') return { plan: { ...plan, text: SAFETY_HANDOFF_LINE }, review: null, soft: false }
   if (need === 'complaint') return { plan: { ...plan, text: COMPLAINT_HANDOFF_LINE }, review: null, soft: false }
   if (need) return unchanged
@@ -546,10 +579,10 @@ export function nightKeepsSelling<P extends NightPlan>(
   const review = { kind: 'review' as const, reason: h.reason }
   const text = plan.text.trim()
   // Nothing left, a hedge in what would be cut, or the safe line: the after-hours review line, the chat stays on the agent.
-  const { dropped, hedged, body } = dropNowCheckSentences(text)
+  const { dropped, hedged, keptNow, body } = dropNowCheckSentences(text)
   if (!body || hedged || text === opts.safeReview.trim()) return { plan: { ...plan, text: opts.safeReview, handoff: review }, review: null, soft: true }
   const kept1 = dropped ? body : text
-  const promises = dropped || h.reason === 'unknown_answer' || hasCheckPromise(kept1) || opts.cannotAnswer?.(kept1) === true
+  const promises = dropped || keptNow || h.reason === 'unknown_answer' || hasCheckPromise(kept1) || opts.cannotAnswer?.(kept1) === true
   const saysWhen = kept1.includes(state.label.replace(/\.$/, ''))
   return { plan: { ...plan, handoff: null, text: promises && !saysWhen ? `${kept1}\n${afterHoursTeamLine(state.label)}` : kept1 }, review, soft: true }
 }

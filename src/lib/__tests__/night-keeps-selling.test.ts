@@ -287,3 +287,57 @@ describe('night complaint hand-off (real-model run 2026-10-26)', () => {
     assert.match(applyAfterHoursText(plan('Entiendo', 'complaint'), NIGHT, OPTS), /^Lamento mucho lo que pasó 🙏 A esta hora te atiende nuestro asistente virtual/)
   })
 })
+
+describe('nightKeepsSelling · SecureDog re-review R1–R5', () => {
+  const opts = (customerText: string, modelReason: string | null) => ({ safeReview: SAFE, customerText, modelReason, cannotAnswer: admitsCannotAnswer, isComplaint: isComplaintText })
+
+  it('R1: a crisis inside a complaint (model reason complaint → complaint hand-off) gets the 911 line', () => {
+    for (const c of ['no quiero seguir viviendo, ustedes me estafaron', 'el parche me dio una reacción, quiero que me devuelvan la plata']) {
+      const out = nightKeepsSelling(plan('Lamento mucho', 'complaint'), NIGHT, opts(c, 'complaint'))
+      assert.equal(out.plan.text, SAFETY_HANDOFF_LINE, c)
+      assert.equal(out.plan.handoff?.kind, 'handoff', c)
+      assert.match(applyAfterHoursText(out.plan, NIGHT, OPTS), /911/, c)
+    }
+  })
+
+  it('R2: pre-sale questions with symptom words are NOT a crisis (the agent keeps selling)', () => {
+    for (const c of [
+      '¿Ya no aguanto más el insomnio, cuál me recomiendan?',
+      'ya no aguanto el dolor de espalda, ¿cuál sirve?',
+      '¿Sirve para la urticaria?',
+      'Tengo urticaria crónica, ¿lo puedo usar?',
+      '¿Causa taquicardia?',
+      'Sufro de taquicardia, ¿lo puedo usar?',
+      '¿Me falta el aire cuando corro, sirve?',
+      '¿Me salió un sarpullido por otro producto, lo puedo usar?',
+    ]) {
+      assert.equal(customerNightNeed(c), null, c)
+    }
+    // A real alarm asked as a question still counts ("¿qué hago?" is not a pre-sale question).
+    for (const c of ['me duele mucho el pecho, ¿qué hago?', 'Mi hijo se tragó un parche, ¿qué hago?', 'ya no aguanto más']) assert.equal(customerNightNeed(c), 'safety', c)
+  })
+
+  it('R3: a dropped piece with anything besides the promise swaps the whole reply', () => {
+    for (const t of ['No lo sé con certeza, enseguida te confirmo. El envío sale mañana.', 'Creo que sí llega, enseguida te confirmo. El envío sale mañana.']) {
+      assert.equal(nightKeepsSelling(plan(t, 'escalate'), NIGHT, opts('¿Llega?', 'other')).plan.text, SAFE, t)
+    }
+    // A pure promise piece is still just dropped (the useful part stays).
+    const ok = nightKeepsSelling({ text: 'Con 1.90 m estás fuera de la guía de tallas. Dame un momento, te paso con alguien del equipo 😊', handoff: null }, NIGHT, opts('Y si mido 1.90?', null))
+    assert.equal(ok.plan.text, 'Con 1.90 m estás fuera de la guía de tallas.\nEl equipo te escribe mañana a las 6:00 a. m.')
+  })
+
+  it('R4: a kept "right now" sentence (safety advice) still gets the team line; more advice wording', () => {
+    const advice = 'Retirá el parche ya mismo y lavá la zona con agua fría, ahorita alguien del equipo te escribe.'
+    const r = nightKeepsSelling(plan(advice, 'escalate'), NIGHT, opts('¿Qué hago con el parche?', 'other'))
+    assert.match(r.plan.text, /^Retirá el parche ya mismo[\s\S]*\nEl equipo te escribe mañana a las 6:00 a\. m\.$/)
+    const r2 = nightKeepsSelling({ text: 'Sacate el parche ya mismo, enseguida alguien del equipo te escribe.', handoff: null }, NIGHT, opts('¿Qué hago con el parche?', null))
+    assert.match(r2.plan.text, /^Sacate el parche ya mismo[\s\S]*El equipo te escribe mañana/)
+  })
+
+  it('R5: invented safety-like model reasons get the 911 line', () => {
+    for (const reason of ['crisis', 'self_harm', 'emergency', 'health_alarm', 'medical']) {
+      const out = nightKeepsSelling(plan('Entiendo', 'escalate'), NIGHT, opts('ayuda', reason))
+      assert.equal(out.plan.text, SAFETY_HANDOFF_LINE, reason)
+    }
+  })
+})

@@ -411,7 +411,15 @@ const NIGHT_SAFETY_RE = wordsRe([
   String.raw`dolor\s+(?:de|en\s+el)\s+pecho|palpitaciones|falta\s+de\s+aire|no\s+puedo\s+respirar|desmay\p{L}*|convulsi\p{L}*`,
   String.raw`se\s+(?:puso|comi[oó]|trag[oó]|meti[oó])\s+(?:\p{L}+\s+){0,2}(?:parche|tira|producto|pastilla)|me\s+trag[eé]`,
   String.raw`me\s+quiero\s+morir|quiero\s+morir(?:me)?|quitarme\s+la\s+vida|no\s+quiero\s+(?:seguir\s+)?viv(?:ir|iendo)|ganas\s+de\s+vivir|hacerme\s+da[ñn]o|cortarme|autolesi\p{L}*|suicid\p{L}*|matarme`,
+  // SecureDog H1: more crisis / alarm wording.
+  String.raw`me\s+(?:quiero|voy\s+a)\s+matar|me\s+tom[eé]\s+(?:todas\s+)?(?:las\s+)?pastillas|ya\s+no\s+aguanto(?:\s+m[aá]s)?|no\s+le\s+veo\s+sentido\s+a\s+(?:la\s+)?vida|me\s+cort[eé]`,
+  String.raw`me\s+duele\s+(?:mucho\s+)?el\s+pecho|me\s+falta\s+el\s+aire|se\s+(?:tom[oó]|bebi[oó])\s+(?:\p{L}+\s+){0,2}(?:producto|parche|tira|pastillas?)`,
+  String.raw`tengo\s+(?:la\s+cara|los\s+labios|la\s+boca|los\s+ojos)\s+hinchad\p{L}*|me\s+sali[oó]\s+(?:un\s+)?(?:salpullido|sarpullido|roncha\p{L}*)|tengo\s+urticaria|urticaria|me\s+dio\s+taquicardia|taquicardia`,
 ])
+/** Safety advice the agent gave ("Retirá el parche ya mismo y lavá la zona…") — never cut from a night reply. */
+const SAFETY_ADVICE_RE = /(?<![\p{L}])(?:(?:retir|quit|lav|enjuag)(?:á|alo|ala|atelo|átelo|ate|e|en)|suspend(?:é|elo|ela|a\s+el\s+uso)|m[eé]dic\p{L}*|emergenc\p{L}*|911)(?![\p{L}])/iu
+/** A hedge that qualifies the rest of the reply ("No sé si hay stock, enseguida te confirmo") — never cut alone (SecureDog M1). */
+const HEDGE_RE = /(?<![\p{L}])(?:no\s+s[eé]|no\s+(?:te\s+)?puedo|no\s+tengo|todav[ií]a\s+no|a[uú]n\s+no|no\s+estoy\s+segur\p{L}*)(?![\p{L}])/iu
 const NIGHT_PERSON_ASK_RE = wordsRe([
   String.raw`p[aá]s(?:a|e)me\s+con|comun[ií]c(?:a|e)me\s+con|hablar\s+con\s+(?:una\s+persona|alguien|un\s+humano|un\s+asesor|una\s+asesora|el\s+due[ñn]o|la\s+due[ñn]a|el\s+encargad[oa]|la\s+encargad[oa]|el\s+gerente|un\s+supervisor)`,
   String.raw`(?:me\s+)?(?:puede|pueden|podr[ií]a|podr[ií]an)\s+llamar|ll[aá]menme|ll[aá]mame`,
@@ -469,16 +477,21 @@ function isNowCheckSentence(s: string): boolean {
  * Verifier r2 #2: only the sentences that promise a team check RIGHT NOW are dropped — prices, the size guide and
  * "Te dejo…" stay. Verifier r3 #1: line by line, so lists and paragraphs (separate WhatsApp bubbles) keep their breaks.
  */
-function dropNowCheckSentences(text: string): { dropped: boolean; body: string } {
+function dropNowCheckSentences(text: string): { dropped: boolean; hedged: boolean; body: string } {
   let dropped = false
+  let hedged = false
   const lines = text.split('\n').map((line) => {
     const pieces = line.split(SENTENCE_SPLIT_RE).map((p) => p.trim()).filter(Boolean)
-    const kept = pieces.filter((p) => hasSafetyNotice(p) || !isNowCheckSentence(p))
-    if (kept.length === pieces.length) return line
+    // SecureDog H1: safety advice is never cut, even next to a "right now" promise.
+    const drop = pieces.filter((p) => !hasSafetyNotice(p) && !SAFETY_ADVICE_RE.test(p) && isNowCheckSentence(p))
+    if (!drop.length) return line
     dropped = true
+    // SecureDog M1: a dropped piece that carries a hedge would leave a bare claim — the caller swaps the whole reply.
+    if (drop.some((p) => HEDGE_RE.test(p))) hedged = true
+    const kept = pieces.filter((p) => !drop.includes(p))
     return kept.length ? kept.join(' ') : null
   })
-  return { dropped, body: lines.filter((l): l is string => l !== null).join('\n').replace(/\n{3,}/g, '\n\n').trim() }
+  return { dropped, hedged, body: lines.filter((l): l is string => l !== null).join('\n').replace(/\n{3,}/g, '\n\n').trim() }
 }
 
 /**
@@ -503,13 +516,17 @@ export function nightKeepsSelling<P extends NightPlan>(
   if (!state.afterHours) return unchanged
   // Probe 2026-10-25: a plain answer that promises a person RIGHT NOW without escalating ("Con 1.90 m … Dame un momento,
   // te paso con alguien del equipo 😊") — at night that sentence is dropped, the team line added and the team alerted.
+  // SecureDog H1: the customer's words come first, in both branches; a customer safety signal beats any model reason.
+  const customerNeed = customerNightNeed(opts.customerText, opts.isComplaint)
   if (!h) {
+    // The model did not escalate but the customer shows an alarm / a crisis: at night that is a true hand-off with 911.
+    if (customerNeed === 'safety') return { plan: { ...plan, text: SAFETY_HANDOFF_LINE, handoff: { kind: 'handoff', reason: 'escalate' } }, review: null, soft: false }
     const text = plan.text.trim()
     if (!text || text === opts.safeReview.trim()) return unchanged
     const cut = dropNowCheckSentences(text)
     if (!cut.dropped) return unchanged
     const review = { kind: 'review' as const, reason: 'review' }
-    if (!cut.body) return { plan: { ...plan, text: opts.safeReview, handoff: review }, review: null, soft: true }
+    if (!cut.body || cut.hedged) return { plan: { ...plan, text: opts.safeReview, handoff: review }, review: null, soft: true }
     const saysWhen = cut.body.includes(state.label.replace(/\.$/, ''))
     return { plan: { ...plan, text: saysWhen ? cut.body : `${cut.body}\n${afterHoursTeamLine(state.label)}` }, review, soft: true }
   }
@@ -517,15 +534,19 @@ export function nightKeepsSelling<P extends NightPlan>(
   // A complaint / an alarm / a person keeps the true hand-off; complaints and alarms get the caring night text
   // (probe 2026-10-25: "vino roto" and "no quiero seguir viviendo" only got "el equipo te escribe mañana").
   const need: NightNeed | null =
-    opts.modelReason === 'safety' ? 'safety' : opts.modelReason === 'complaint' ? 'complaint' : customerNightNeed(opts.customerText, opts.isComplaint)
+    customerNeed === 'safety' || opts.modelReason === 'safety' ? 'safety' : customerNeed === 'complaint' || opts.modelReason === 'complaint' ? 'complaint' : customerNeed
   if (need === 'safety') return { plan: { ...plan, text: SAFETY_HANDOFF_LINE }, review: null, soft: false }
   if (need === 'complaint') return { plan: { ...plan, text: COMPLAINT_HANDOFF_LINE }, review: null, soft: false }
-  if (need || (opts.modelReason && NIGHT_PERSON_MODEL_REASONS.has(opts.modelReason))) return unchanged
+  if (need) return unchanged
+  // SecureDog H1 (fail closed): a model escalation is downgraded ONLY for reason "other" (a store fact it does not
+  // have); any other / unknown reason ("crisis", "refund", "human_request"…) keeps the true hand-off.
+  if (h.reason === 'escalate' && opts.modelReason !== 'other') return unchanged
+  if (opts.modelReason && NIGHT_PERSON_MODEL_REASONS.has(opts.modelReason)) return unchanged
   const review = { kind: 'review' as const, reason: h.reason }
   const text = plan.text.trim()
-  // Nothing left (or the safe line): the after-hours review line, the chat stays on the agent.
-  const { dropped, body } = dropNowCheckSentences(text)
-  if (!body || text === opts.safeReview.trim()) return { plan: { ...plan, text: opts.safeReview, handoff: review }, review: null, soft: true }
+  // Nothing left, a hedge in what would be cut, or the safe line: the after-hours review line, the chat stays on the agent.
+  const { dropped, hedged, body } = dropNowCheckSentences(text)
+  if (!body || hedged || text === opts.safeReview.trim()) return { plan: { ...plan, text: opts.safeReview, handoff: review }, review: null, soft: true }
   const kept1 = dropped ? body : text
   const promises = dropped || h.reason === 'unknown_answer' || hasCheckPromise(kept1) || opts.cannotAnswer?.(kept1) === true
   const saysWhen = kept1.includes(state.label.replace(/\.$/, ''))

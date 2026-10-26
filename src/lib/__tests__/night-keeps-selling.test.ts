@@ -26,7 +26,7 @@ const NIGHT: AfterHoursState = { afterHours: true, opensAt: new Date('2026-10-26
 const OPTS = { safeReview: SAFE }
 const plan = (text: string, reason: string, kind: 'handoff' | 'review' = 'handoff') => ({ text, handoff: { kind, reason } })
 const run = (text: string, reason: string, customerText = '¿Cómo se lava?') =>
-  nightKeepsSelling(plan(text, reason), NIGHT, { safeReview: SAFE, customerText, cannotAnswer: admitsCannotAnswer })
+  nightKeepsSelling(plan(text, reason), NIGHT, { safeReview: SAFE, customerText, modelReason: reason === 'escalate' ? 'other' : null, cannotAnswer: admitsCannotAnswer })
 
 describe('nightKeepsSelling', () => {
   it('Forge 2026-10-25: a size-guide answer with escalate goes out as written, the chat stays on the agent', () => {
@@ -234,5 +234,50 @@ describe('nightKeepsSelling · verifier round 2', () => {
 
   it('#5: "Te confirmo que sí…", "Te pregunto: …" and "Revisamos cada pedido" are facts, not a promise', () => {
     for (const t of ['Te confirmo que sí tenemos talla M', 'Te pregunto: ¿es para vos?', 'Revisamos cada pedido antes de enviarlo']) assert.ok(!hasCheckPromise(t), t)
+  })
+})
+
+describe('nightKeepsSelling · SecureDog H1 / M1', () => {
+  const opts = (customerText: string, modelReason: string | null) => ({ safeReview: SAFE, customerText, modelReason, cannotAnswer: admitsCannotAnswer, isComplaint: isComplaintText })
+  const answer = plan('Te dejo la guía de tallas 👇', 'escalate')
+
+  it('fail closed: only the model reason "other" is downgraded; any other / unknown reason keeps the hand-off', () => {
+    assert.equal(nightKeepsSelling(answer, NIGHT, opts('¿Tallas?', 'other')).soft, true)
+    for (const r of ['crisis', 'self_harm', 'emergency', 'health', 'health_alarm', 'refund', 'dispute', 'human_request', 'legal', 'minor', null]) {
+      const out = nightKeepsSelling(answer, NIGHT, opts('¿Tallas?', r))
+      assert.equal(out.soft, false, String(r))
+      assert.deepEqual(out.plan.handoff, answer.handoff, String(r))
+    }
+  })
+
+  it('more crisis / alarm wording → 911 line + true hand-off', () => {
+    for (const c of [
+      'me quiero matar', 'me voy a matar', 'me tomé todas las pastillas', 'ya no aguanto más', 'no le veo sentido a la vida', 'me corté',
+      'me duele mucho el pecho', 'me falta el aire', 'mi hijo se tomó el producto',
+      'tengo la cara hinchada', 'me salió un salpullido', 'tengo urticaria', 'me dio taquicardia',
+    ]) {
+      assert.equal(customerNightNeed(c), 'safety', c)
+      const out = nightKeepsSelling(answer, NIGHT, opts(c, 'other'))
+      assert.equal(out.plan.text, SAFETY_HANDOFF_LINE, c)
+      assert.equal(out.plan.handoff?.kind, 'handoff', c)
+    }
+  })
+
+  it('a customer safety signal beats the model reason complaint, and applies when the model did not escalate', () => {
+    assert.equal(nightKeepsSelling(answer, NIGHT, opts('no quiero seguir viviendo, ustedes me estafaron', 'complaint')).plan.text, SAFETY_HANDOFF_LINE)
+    const noEsc = nightKeepsSelling({ text: 'Dame un momento y te paso con alguien del equipo 😊', handoff: null }, NIGHT, opts('no quiero seguir viviendo', null))
+    assert.equal(noEsc.plan.text, SAFETY_HANDOFF_LINE)
+    assert.deepEqual(noEsc.plan.handoff, { kind: 'handoff', reason: 'escalate' })
+  })
+
+  it('safety advice is never cut; a hedge in the cut piece swaps the whole reply (no bare claim)', () => {
+    const advice = 'Retirá el parche ya mismo y lavá la zona con agua fría, ahorita alguien del equipo te escribe.'
+    assert.match(nightKeepsSelling(plan(advice, 'escalate'), NIGHT, opts('¿Qué hago?', 'other')).plan.text, /^Retirá el parche ya mismo/)
+    for (const t of ['No sé si hay stock, enseguida te confirmo. El envío sale mañana.', 'No te puedo confirmar el pago todavía, enseguida alguien del equipo te escribe. Tu pedido queda apartado.']) {
+      const r = nightKeepsSelling(plan(t, 'escalate'), NIGHT, opts('¿Hay?', 'other'))
+      assert.equal(r.plan.text, SAFE, t)
+      const r2 = nightKeepsSelling({ text: t, handoff: null }, NIGHT, opts('¿Hay?', null))
+      assert.equal(r2.plan.text, SAFE, t)
+    }
   })
 })

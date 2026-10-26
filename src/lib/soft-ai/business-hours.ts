@@ -406,7 +406,8 @@ const NIGHT_PERSON_RE = new RegExp(
     String.raw`dolor\s+(?:de|en\s+el)\s+pecho|palpitaciones|falta\s+de\s+aire|no\s+puedo\s+respirar|desmay\p{L}*|convulsi\p{L}*`,
     String.raw`se\s+(?:puso|comi[oó]|trag[oó]|meti[oó])\s+(?:\p{L}+\s+){0,2}(?:parche|tira|producto|pastilla)|me\s+trag[eé]`,
     // Crisis.
-    String.raw`me\s+quiero\s+morir|quiero\s+morir(?:me)?|quitarme\s+la\s+vida|no\s+quiero\s+vivir|hacerme\s+da[ñn]o|cortarme|autolesi\p{L}*|suicid\p{L}*|matarme`,
+    String.raw`tengo\s+(?:ronchas|ampollas|sarpullido|una\s+reacci[oó]n)|no\s+(?:me\s+)?(?:ha|han)\s+llegado\s+(?:\p{L}+\s+){0,2}(?:pedido|paquete|nada|producto)`,
+    String.raw`me\s+quiero\s+morir|quiero\s+morir(?:me)?|quitarme\s+la\s+vida|no\s+quiero\s+(?:seguir\s+)?viv(?:ir|iendo)|ganas\s+de\s+vivir|hacerme\s+da[ñn]o|cortarme|autolesi\p{L}*|suicid\p{L}*|matarme`,
     // A person.
     String.raw`p[aá]s(?:a|e)me\s+con|comun[ií]c(?:a|e)me\s+con|hablar\s+con\s+(?:una\s+persona|alguien|un\s+humano|un\s+asesor|una\s+asesora|el\s+due[ñn]o|la\s+due[ñn]a|el\s+encargad[oa]|la\s+encargad[oa]|el\s+gerente|un\s+supervisor)`,
     String.raw`(?:me\s+)?(?:puede|pueden|podr[ií]a|podr[ií]an)\s+llamar|ll[aá]menme|ll[aá]mame`,
@@ -439,7 +440,7 @@ export function hasCheckPromise(text: string): boolean {
 type NightPlan = { text: string; handoff: { kind: 'handoff' | 'review'; reason: string } | null }
 
 /** Sentence pieces (never inside "a. m." / "₡14.900": a split needs "!", "?", "…" or a 2-letter word + "."). */
-const SENTENCE_SPLIT_RE = /(?<=[!?…]|[^\s.]{2}\.)\s+(?=[¡¿\p{Lu}\p{Extended_Pictographic}])|\n+/u
+const SENTENCE_SPLIT_RE = /(?<=[!?…]|[^\s.]{2}\.|[ap]\.\s?m\.)[ \t]+(?=[¡¿\p{Lu}\p{Extended_Pictographic}])/u
 /** A team check promised for right now ("Enseguida te confirmo", "Dame un momento y lo reviso", "ahorita alguien te escribe"). */
 const NOW_CHECK_RE = /(?<![\p{L}])(?:alguien|te\s+paso\s+con|(?:te|le)\s+(?:escrib|contact|llam)\p{L}*)(?![\p{L}])/iu
 function isNowCheckSentence(s: string): boolean {
@@ -474,10 +475,16 @@ export function nightKeepsSelling<P extends NightPlan>(
   const text = plan.text.trim()
   // Verifier r2 #2: only the sentences that promise a team check RIGHT NOW are dropped — prices, the size guide and
   // "Te dejo…" stay. Nothing left (or the safe line): the after-hours review line, the chat stays on the agent.
-  const pieces = text.split(SENTENCE_SPLIT_RE).map((p) => p.trim()).filter(Boolean)
-  const kept = pieces.filter((p) => hasSafetyNotice(p) || !isNowCheckSentence(p))
-  const dropped = kept.length < pieces.length
-  const body = kept.join(' ')
+  // Verifier r3 #1: line by line, so lists and paragraphs (separate WhatsApp bubbles) keep their breaks.
+  let dropped = false
+  const lines = text.split('\n').map((line) => {
+    const pieces = line.split(SENTENCE_SPLIT_RE).map((p) => p.trim()).filter(Boolean)
+    const kept = pieces.filter((p) => hasSafetyNotice(p) || !isNowCheckSentence(p))
+    if (kept.length === pieces.length) return line
+    dropped = true
+    return kept.length ? kept.join(' ') : null
+  })
+  const body = lines.filter((l): l is string => l !== null).join('\n').replace(/\n{3,}/g, '\n\n').trim()
   if (!body || text === opts.safeReview.trim()) return { plan: { ...plan, text: opts.safeReview, handoff: review }, review: null, soft: true }
   const kept1 = dropped ? body : text
   const promises = dropped || h.reason === 'unknown_answer' || hasCheckPromise(kept1) || opts.cannotAnswer?.(kept1) === true

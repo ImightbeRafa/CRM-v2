@@ -185,6 +185,16 @@ describe('nightKeepsSelling · verifier round 2', () => {
     assert.equal(r.review, null)
   })
 
+  it('r3 #1/#2/#5: lists keep their line breaks, "a. m." does not glue sentences, more alarm phrases', () => {
+    const list = 'Talla S: 50-60 kg\nTalla M: 60-70 kg\nTalla L: 70-80 kg\n\nEnseguida te confirmo cómo se lava 😊'
+    assert.equal(nightKeepsSelling(plan(list, 'escalate'), NIGHT, full('¿Tallas?')).plan.text, 'Talla S: 50-60 kg\nTalla M: 60-70 kg\nTalla L: 70-80 kg\nEl equipo te escribe mañana a las 6:00 a. m.')
+    const am = nightKeepsSelling(plan('La entrega es mañana a las 8:00 a. m. Enseguida te confirmo la dirección.', 'escalate'), NIGHT, full('¿Cuándo llega?'))
+    assert.equal(am.plan.text, 'La entrega es mañana a las 8:00 a. m.\nEl equipo te escribe mañana a las 6:00 a. m.')
+    for (const c of ['no quiero seguir viviendo', 'tengo ronchas desde que lo usé', 'no me ha llegado nada y ya pasaron 2 semanas', '¿Por qué no me ha llegado mi pedido?']) {
+      assert.ok(customerNeedsPersonAtNight(c, isComplaintText), c)
+    }
+  })
+
   it('#5: "Te confirmo que sí…", "Te pregunto: …" and "Revisamos cada pedido" are facts, not a promise', () => {
     for (const t of ['Te confirmo que sí tenemos talla M', 'Te pregunto: ¿es para vos?', 'Revisamos cada pedido antes de enviarlo']) assert.ok(!hasCheckPromise(t), t)
   })

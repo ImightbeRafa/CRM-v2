@@ -14,6 +14,7 @@ export const PROBAR_ESCALATE_LABELS: Record<string, string> = {
   provenance: 'la respuesta tenía un dato que no salió de tus datos (precio, número…)',
   human_requested: 'pidió una persona',
   complaint: 'queja',
+  safety: 'señal de alarma de salud o crisis',
   other: 'otro motivo',
 }
 

@@ -1,3 +1,14 @@
+## 2026-10-25 — Website orders show every product of the cart (claude/web-order-items)
+
+- Before: the intake (`/api/integration/orders/create`) took one `product`, so store carts arrived as "Pedido múltiple (N productos)" with the items only in the notes; no screen (drawer, list, card, guía) showed what was bought (e.g. #2268 = Arnés 2XL + 3XL).
+- Intake accepts optional `items` (and `lineItems` / `products`, already sent by Pura Sonrisa and Prototipo), read leniently: a bad list is ignored, never a rejected order. A cart of 2+ items is stored in productDetails as display-only rows (`itemName`, `webItem`, `webProduct`, `webQuantity`); product / quantity / productCost / total stay as the site sent them.
+- Stock unchanged on purpose: lifecycle inventory finds no `sku/type/name` key and keeps reading the product text; retiro `extractOrderLines` skips `webItem` rows. Whether web carts should deduct stock is open for Rafael (a short-stock paid order would otherwise become INSUFFICIENT_STOCK).
+- Older orders: "Productos:" lines / " | " segments in the notes are shown while the product is the "Pedido múltiple" placeholder (or the lines add up to the quantity); read-only check: 132/132 stored placeholder orders parse.
+- Drawer: item list with line totals, Notas section; list APIs (`itemLines`), cards, Correos guía text and invoice lines (real line prices + Envío line) use the items. Rows stop being shown when staff edit product or quantity.
+- Stores: ForgeCR (forgecr), PatchHouse, SleepPatch send `items` on branch `betsy-items` (not deployed).
+- Reviews: Advisor plan (stock trap → display-only rows); Verifier PASS WITH NOTES (1 Medium availability = DATA-73, notes regex quadratic on whitespace → capped; 3 Low: invoice prices, drawer text-only orders, quantity edits) all fixed in 9d24cf75.
+- Tests: website-order-items.test.ts (19) + website-order-map + retiro-stock-utils added to test:order-display (90/90). tsc 0, lint 0, lifecycle 11/11, pedidos-ui 29/29, security 373/373 (perf-guards "4 KB whitespace" timing test is flaky under load; also fails at e8a04674).
+
 ## 2026-10-25 — Inbox: every message type shown clearly, no more "tipo no soportado" (claude/inbox-unsupported-msgs)
 
 - Read-only inventory of stored `[type]` placeholders (120 days) found types the inbox showed as "Mensaje de un tipo no soportado · Tipo: X" or as an empty "Compartió un enlace": IG `ig_post` (719), `ig_story` (83), `template` with an empty card (38), `ephemeral` (6), `unsupported_type` (1); WA `edit` (29), `revoke` (14), `unsupported` 131060 (11), `system` number change (3).

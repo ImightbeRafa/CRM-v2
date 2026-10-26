@@ -288,7 +288,7 @@ export function afterHoursComplaintLine(label: string, transparent = false): str
  * hours. Both an immediacy word and a reply verb (Verifier #128-3: "Ahorita tenemos el kit en ₡14 900" is a fact).
  */
 const IMMEDIATE_WORD_RE =
-  /(?<![\p{L}])(?:en\s+un\s+(?:momento|momentito|ratito|toque)|enseguida|en\s+seguida|ahorita|ahora\s+mismo|en\s+breve|ya\s+mismo|de\s+inmediato|inmediatamente)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:en\s+un\s+(?:momento|momentito|ratito|toque)|dame\s+un\s+(?:momento|momentito|segundo)|enseguida|en\s+seguida|ahorita|ahora\s+mismo|en\s+breve|ya\s+mismo|de\s+inmediato|inmediatamente)(?![\p{L}])/iu
 const REPLY_VERB_RE =
   /(?<![\p{L}])(?:te|le|les|lo|la)\s+(?:escrib\p{L}*|atiend\p{L}*|atender\p{L}*|contest\p{L}*|respond\p{L}*|ayud\p{L}*|llam\p{L}*|habl\p{L}*)|(?<![\p{L}])alguien(?![\p{L}])|(?<![\p{L}])(?:te|le)\s+paso\s+con|(?<![\p{L}])(?:te|le|les|lo|la)\s+(?:contact\p{L}*|confirm\p{L}*|avis\p{L}*)/iu
 
@@ -350,6 +350,8 @@ export function applyAfterHoursText(
     const promise = plan.handoff.reason === 'human_request' && hasImmediatePromise(text) && !hasSafetyNotice(text)
     if (complaint) {
       body = afterHoursComplaintLine(state.label, state.transparent)
+    } else if (text === SAFETY_HANDOFF_LINE) {
+      body = `${SAFETY_HANDOFF_LINE} ${afterHoursTeamLine(state.label)}`
     } else if (kind === 'person' && !promise && (plan.handoff.reason === 'human_request' || plan.handoff.reason === 'unknown_answer') && text && text !== opts.safeReview.trim()) {
       // luna-10: the model already said when the team writes ("…hoy a las 8:00 a. m.") → never a second line.
       body = text.includes(state.label.replace(/\.$/, '')) ? text : `${text}\n${afterHoursTeamLine(state.label)}`
@@ -391,39 +393,53 @@ const NIGHT_PERSON_MODEL_REASONS = new Set(['complaint', 'safety', 'opt_out', 'o
  * health alarm or crisis, or ask for a person. Pre-sale questions ("¿tienen devolución?", "¿me puede dar alergia?",
  * "soy dueña de una tienda") are NOT matched: a symptom counts only as something that happened ("me salió una roncha").
  */
-const NIGHT_PERSON_RE = new RegExp(
-  [
-    // Complaint about an order / the product.
-    String.raw`(?:vino|vinieron|lleg[oó]|llegaron|est[aá]|viene)\s+(?:\p{L}+\s+)?(?:rot[oa]s?|da[ñn]ad[oa]s?|mal|incomplet[oa]s?|abiert[oa]s?|equivocad[oa]s?|defectuos[oa]s?)`,
-    String.raw`me\s+(?:lleg[oó]|mandaron|enviaron)\s+otr[oa]`,
-    String.raw`no\s+(?:me\s+)?(?:funciona|funcion[oó]|sirve|sirvi[oó])`,
-    String.raw`p[eé]sim\p{L}*|(?:qu[eé]\s+)?mal\s+servicio|muy\s+molest[oa]|me\s+estafaron|estafador\p{L}*|quiero\s+(?:poner\s+)?(?:una\s+)?(?:queja|reclamo)`,
-    String.raw`quiero\s+(?:devolver|(?:la|una|mi)\s+devoluci[oó]n|(?:un|mi)\s+reembolso|que\s+me\s+devuelvan)|devu[eé]lvanme`,
-    String.raw`(?:todav[ií]a|a[uú]n)\s+no\s+(?:me\s+)?lleg\p{L}*`,
-    // Health alarm (something that happened).
-    String.raw`(?:me|le|nos)\s+(?:dio|sali[oó]|salieron|caus[oó]|provoc[oó]|est[aá]\s+dando)\s+(?:\p{L}+\s+){0,3}(?:reacci\p{L}*|alergi\p{L}*|irritaci\p{L}*|ronchas?|picaz\p{L}*|sarpullido|ampollas?|ardor|comez\p{L}*|mareo)`,
-    String.raw`(?:se\s+me|se\s+le)\s+hinch\p{L}*|me\s+arde|me\s+quem[eó]|quemadura|v[oó]mit\p{L}*|vomit\p{L}*|estoy\s+mare\p{L}*|me\s+siento\s+(?:muy\s+)?mal`,
-    String.raw`dolor\s+(?:de|en\s+el)\s+pecho|palpitaciones|falta\s+de\s+aire|no\s+puedo\s+respirar|desmay\p{L}*|convulsi\p{L}*`,
-    String.raw`se\s+(?:puso|comi[oó]|trag[oó]|meti[oó])\s+(?:\p{L}+\s+){0,2}(?:parche|tira|producto|pastilla)|me\s+trag[eé]`,
-    // Crisis.
-    String.raw`tengo\s+(?:ronchas|ampollas|sarpullido|una\s+reacci[oó]n)|no\s+(?:me\s+)?(?:ha|han)\s+llegado\s+(?:\p{L}+\s+){0,2}(?:pedido|paquete|nada|producto)`,
-    String.raw`me\s+quiero\s+morir|quiero\s+morir(?:me)?|quitarme\s+la\s+vida|no\s+quiero\s+(?:seguir\s+)?viv(?:ir|iendo)|ganas\s+de\s+vivir|hacerme\s+da[ñn]o|cortarme|autolesi\p{L}*|suicid\p{L}*|matarme`,
-    // A person.
-    String.raw`p[aá]s(?:a|e)me\s+con|comun[ií]c(?:a|e)me\s+con|hablar\s+con\s+(?:una\s+persona|alguien|un\s+humano|un\s+asesor|una\s+asesora|el\s+due[ñn]o|la\s+due[ñn]a|el\s+encargad[oa]|la\s+encargad[oa]|el\s+gerente|un\s+supervisor)`,
-    String.raw`(?:me\s+)?(?:puede|pueden|podr[ií]a|podr[ií]an)\s+llamar|ll[aá]menme|ll[aá]mame`,
-  ].map((p) => `(?:${p})`).join('|'),
-  'iu',
-)
-const NIGHT_PERSON_WORDS_RE = new RegExp(`(?<![\\p{L}])(?:${NIGHT_PERSON_RE.source})(?![\\p{L}])`, 'iu')
+const wordsRe = (parts: string[]) => new RegExp(`(?<![\\p{L}])(?:${parts.map((p) => `(?:${p})`).join('|')})(?![\\p{L}])`, 'iu')
 
-export function customerNeedsPersonAtNight(customerText: string | null | undefined, isComplaint?: (text: string) => boolean): boolean {
+const NIGHT_COMPLAINT_RE = wordsRe([
+  String.raw`(?:vino|vinieron|lleg[oó]|llegaron|est[aá]|viene)\s+(?:\p{L}+\s+)?(?:rot[oa]s?|da[ñn]ad[oa]s?|mal|incomplet[oa]s?|abiert[oa]s?|equivocad[oa]s?|defectuos[oa]s?)`,
+  String.raw`me\s+(?:lleg[oó]|mandaron|enviaron)\s+otr[oa]`,
+  String.raw`no\s+(?:me\s+)?(?:funciona|funcion[oó]|sirve|sirvi[oó])`,
+  String.raw`p[eé]sim\p{L}*|(?:qu[eé]\s+)?mal\s+servicio|muy\s+molest[oa]|me\s+estafaron|estafador\p{L}*|quiero\s+(?:poner\s+)?(?:una\s+)?(?:queja|reclamo)`,
+  String.raw`quiero\s+(?:devolver|(?:la|una|mi)\s+devoluci[oó]n|(?:un|mi)\s+reembolso|que\s+me\s+devuelvan)|devu[eé]lvanme`,
+  String.raw`(?:todav[ií]a|a[uú]n)\s+no\s+(?:me\s+)?lleg\p{L}*|no\s+(?:me\s+)?(?:ha|han)\s+llegado\s+(?:\p{L}+\s+){0,2}(?:pedido|paquete|nada|producto)`,
+])
+/** A health alarm (something that happened, never a pre-sale question) or a crisis. */
+const NIGHT_SAFETY_RE = wordsRe([
+  String.raw`(?:me|le|nos)\s+(?:dio|sali[oó]|salieron|caus[oó]|provoc[oó]|est[aá]\s+dando)\s+(?:\p{L}+\s+){0,3}(?:reacci\p{L}*|alergi\p{L}*|irritaci\p{L}*|ronchas?|picaz\p{L}*|sarpullido|ampollas?|ardor|comez\p{L}*|mareo)`,
+  String.raw`tengo\s+(?:ronchas|ampollas|sarpullido|una\s+reacci[oó]n)`,
+  String.raw`(?:se\s+me|se\s+le)\s+hinch\p{L}*|me\s+arde|me\s+quem[eó]|quemadura|v[oó]mit\p{L}*|vomit\p{L}*|estoy\s+mare\p{L}*|me\s+siento\s+(?:muy\s+)?mal`,
+  String.raw`dolor\s+(?:de|en\s+el)\s+pecho|palpitaciones|falta\s+de\s+aire|no\s+puedo\s+respirar|desmay\p{L}*|convulsi\p{L}*`,
+  String.raw`se\s+(?:puso|comi[oó]|trag[oó]|meti[oó])\s+(?:\p{L}+\s+){0,2}(?:parche|tira|producto|pastilla)|me\s+trag[eé]`,
+  String.raw`me\s+quiero\s+morir|quiero\s+morir(?:me)?|quitarme\s+la\s+vida|no\s+quiero\s+(?:seguir\s+)?viv(?:ir|iendo)|ganas\s+de\s+vivir|hacerme\s+da[ñn]o|cortarme|autolesi\p{L}*|suicid\p{L}*|matarme`,
+])
+const NIGHT_PERSON_ASK_RE = wordsRe([
+  String.raw`p[aá]s(?:a|e)me\s+con|comun[ií]c(?:a|e)me\s+con|hablar\s+con\s+(?:una\s+persona|alguien|un\s+humano|un\s+asesor|una\s+asesora|el\s+due[ñn]o|la\s+due[ñn]a|el\s+encargad[oa]|la\s+encargad[oa]|el\s+gerente|un\s+supervisor)`,
+  String.raw`(?:me\s+)?(?:puede|pueden|podr[ií]a|podr[ií]an)\s+llamar|ll[aá]menme|ll[aá]mame`,
+])
+
+export type NightNeed = 'safety' | 'complaint' | 'person'
+
+/** What the customer's words need from a person at night (safety first), or null. */
+export function customerNightNeed(customerText: string | null | undefined, isComplaint?: (text: string) => boolean): NightNeed | null {
   const t = String(customerText || '').normalize('NFKC')
-  if (NIGHT_PERSON_WORDS_RE.test(t)) return true
+  if (NIGHT_SAFETY_RE.test(t)) return 'safety'
+  if (NIGHT_COMPLAINT_RE.test(t)) return 'complaint'
+  if (NIGHT_PERSON_ASK_RE.test(t)) return 'person'
   // The day's complaint check also reads pre-sale questions as one ("¿Tienen devolución?", "¿no es estafa?"): at night
   // it counts only when the customer is not just asking a question.
   const onlyQuestions = t.split(/\n+/).every((line) => !line.trim() || /\?\s*\p{Extended_Pictographic}*\s*$/u.test(line.trim()))
-  return !onlyQuestions && isComplaint?.(t) === true
+  return !onlyQuestions && isComplaint?.(t) === true ? 'complaint' : null
 }
+
+export function customerNeedsPersonAtNight(customerText: string | null | undefined, isComplaint?: (text: string) => boolean): boolean {
+  return customerNightNeed(customerText, isComplaint) !== null
+}
+
+/**
+ * Night hand-off for a health alarm or a crisis (Rafael 2026-10-25, probe "no quiero seguir viviendo"): never just "el
+ * equipo te escribe mañana" — empathy and 911 first, then when the team writes. Code text (no model words).
+ */
+export const SAFETY_HANDOFF_LINE = 'Lamento mucho lo que estás pasando 💛 Si es una emergencia o estás en peligro, llamá ya al 911.'
 
 /**
  * The reply promises a check the team does at the next opening (first person only: "lo confirmo", "voy a revisar",
@@ -450,6 +466,22 @@ function isNowCheckSentence(s: string): boolean {
 }
 
 /**
+ * Verifier r2 #2: only the sentences that promise a team check RIGHT NOW are dropped — prices, the size guide and
+ * "Te dejo…" stay. Verifier r3 #1: line by line, so lists and paragraphs (separate WhatsApp bubbles) keep their breaks.
+ */
+function dropNowCheckSentences(text: string): { dropped: boolean; body: string } {
+  let dropped = false
+  const lines = text.split('\n').map((line) => {
+    const pieces = line.split(SENTENCE_SPLIT_RE).map((p) => p.trim()).filter(Boolean)
+    const kept = pieces.filter((p) => hasSafetyNotice(p) || !isNowCheckSentence(p))
+    if (kept.length === pieces.length) return line
+    dropped = true
+    return kept.length ? kept.join(' ') : null
+  })
+  return { dropped, body: lines.filter((l): l is string => l !== null).join('\n').replace(/\n{3,}/g, '\n\n').trim() }
+}
+
+/**
  * Run BEFORE applySafeLineCap (the safe line's loop cap keeps working). Returns the plan to send, the review to settle
  * apart from it when the agent's own answer goes out (so the answer keeps its images), and `soft` = the night turned a
  * hand-off into a review (the chat stays on the agent).
@@ -468,23 +500,31 @@ export function nightKeepsSelling<P extends NightPlan>(
 ): { plan: P; review: { kind: 'review'; reason: string } | null; soft: boolean } {
   const h = plan.handoff
   const unchanged = { plan, review: null, soft: false }
-  if (!state.afterHours || h?.kind !== 'handoff' || !NIGHT_REVIEW_REASONS.has(h.reason)) return unchanged
-  if (opts.modelReason && NIGHT_PERSON_MODEL_REASONS.has(opts.modelReason)) return unchanged
-  if (customerNeedsPersonAtNight(opts.customerText, opts.isComplaint)) return unchanged
+  if (!state.afterHours) return unchanged
+  // Probe 2026-10-25: a plain answer that promises a person RIGHT NOW without escalating ("Con 1.90 m … Dame un momento,
+  // te paso con alguien del equipo 😊") — at night that sentence is dropped, the team line added and the team alerted.
+  if (!h) {
+    const text = plan.text.trim()
+    if (!text || text === opts.safeReview.trim()) return unchanged
+    const cut = dropNowCheckSentences(text)
+    if (!cut.dropped) return unchanged
+    const review = { kind: 'review' as const, reason: 'review' }
+    if (!cut.body) return { plan: { ...plan, text: opts.safeReview, handoff: review }, review: null, soft: true }
+    const saysWhen = cut.body.includes(state.label.replace(/\.$/, ''))
+    return { plan: { ...plan, text: saysWhen ? cut.body : `${cut.body}\n${afterHoursTeamLine(state.label)}` }, review, soft: true }
+  }
+  if (h.kind !== 'handoff' || !NIGHT_REVIEW_REASONS.has(h.reason)) return unchanged
+  // A complaint / an alarm / a person keeps the true hand-off; complaints and alarms get the caring night text
+  // (probe 2026-10-25: "vino roto" and "no quiero seguir viviendo" only got "el equipo te escribe mañana").
+  const need: NightNeed | null =
+    opts.modelReason === 'safety' ? 'safety' : opts.modelReason === 'complaint' ? 'complaint' : customerNightNeed(opts.customerText, opts.isComplaint)
+  if (need === 'safety') return { plan: { ...plan, text: SAFETY_HANDOFF_LINE }, review: null, soft: false }
+  if (need === 'complaint') return { plan: { ...plan, text: COMPLAINT_HANDOFF_LINE }, review: null, soft: false }
+  if (need || (opts.modelReason && NIGHT_PERSON_MODEL_REASONS.has(opts.modelReason))) return unchanged
   const review = { kind: 'review' as const, reason: h.reason }
   const text = plan.text.trim()
-  // Verifier r2 #2: only the sentences that promise a team check RIGHT NOW are dropped — prices, the size guide and
-  // "Te dejo…" stay. Nothing left (or the safe line): the after-hours review line, the chat stays on the agent.
-  // Verifier r3 #1: line by line, so lists and paragraphs (separate WhatsApp bubbles) keep their breaks.
-  let dropped = false
-  const lines = text.split('\n').map((line) => {
-    const pieces = line.split(SENTENCE_SPLIT_RE).map((p) => p.trim()).filter(Boolean)
-    const kept = pieces.filter((p) => hasSafetyNotice(p) || !isNowCheckSentence(p))
-    if (kept.length === pieces.length) return line
-    dropped = true
-    return kept.length ? kept.join(' ') : null
-  })
-  const body = lines.filter((l): l is string => l !== null).join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  // Nothing left (or the safe line): the after-hours review line, the chat stays on the agent.
+  const { dropped, body } = dropNowCheckSentences(text)
   if (!body || text === opts.safeReview.trim()) return { plan: { ...plan, text: opts.safeReview, handoff: review }, review: null, soft: true }
   const kept1 = dropped ? body : text
   const promises = dropped || h.reason === 'unknown_answer' || hasCheckPromise(kept1) || opts.cannotAnswer?.(kept1) === true

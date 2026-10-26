@@ -12,7 +12,9 @@ import {
   afterHoursReviewLine,
   applyAfterHoursText,
   customerNeedsPersonAtNight,
+  customerNightNeed,
   hasCheckPromise,
+  SAFETY_HANDOFF_LINE,
   IN_HOURS,
   nightKeepsSelling,
   type AfterHoursState,
@@ -77,7 +79,9 @@ describe('nightKeepsSelling', () => {
     ]) {
       assert.ok(customerNeedsPersonAtNight(c), c)
       const p = plan('Lamento mucho lo que pasó 🙏', 'escalate')
-      assert.equal(nightKeepsSelling(p, NIGHT, { safeReview: SAFE, customerText: c }).plan, p, c)
+      const r = nightKeepsSelling(p, NIGHT, { safeReview: SAFE, customerText: c })
+      assert.deepEqual(r.plan.handoff, p.handoff, c)
+      assert.equal(r.soft, false, c)
     }
     for (const c of ['¿Cómo se lava?', 'Y si mido 1.90?', '¿Es bueno para el dolor de espalda?', '¿Puedo personalizarlo?']) assert.ok(!customerNeedsPersonAtNight(c), c)
   })
@@ -124,9 +128,42 @@ describe('nightKeepsSelling · verifier round 2', () => {
     for (const reason of ['complaint', 'safety', 'opt_out']) {
       const p = plan('Lamento mucho lo que pasó 🙏', 'escalate')
       const r = nightKeepsSelling(p, NIGHT, full('¿Cómo se lava?', reason))
-      assert.equal(r.plan, p, reason)
+      assert.deepEqual(r.plan.handoff, p.handoff, reason)
       assert.equal(r.soft, false, reason)
     }
+  })
+
+  it('probe 2026-10-25: a crisis / alarm gets empathy + 911, a complaint the empathetic line, never only "mañana"', () => {
+    for (const c of ['no quiero seguir viviendo', 'Me salió una reacción en la piel con el arnés', 'Mi hijo se tragó un parche']) {
+      const r = nightKeepsSelling(plan(SAFE, 'escalate'), NIGHT, full(c))
+      assert.equal(r.plan.handoff?.kind, 'handoff', c)
+      assert.equal(applyAfterHoursText(r.plan, NIGHT, OPTS), `${SAFETY_HANDOFF_LINE} El equipo te escribe mañana a las 6:00 a. m.`, c)
+    }
+    assert.equal(nightKeepsSelling(plan('Entiendo.', 'escalate'), NIGHT, full('¿?', 'safety')).plan.text, SAFETY_HANDOFF_LINE)
+    for (const c of ['Me llegó el pedido y vino roto 😡', 'Hace una semana pedí y todavía no me llega']) {
+      const r = nightKeepsSelling(plan(SAFE, 'escalate'), NIGHT, full(c))
+      assert.match(applyAfterHoursText(r.plan, NIGHT, OPTS), /^Lamento mucho lo que pasó 🙏 A esta hora te atiende nuestro asistente virtual 🌙 El equipo te escribe mañana/, c)
+    }
+    assert.equal(customerNightNeed('pásame con el dueño'), 'person')
+    assert.equal(customerNightNeed('¿Cómo se lava?'), null)
+  })
+
+  it('probe 2026-10-25: a plain answer promising a person right now (no escalate) is fixed at night and alerts the team', () => {
+    const p = { text: 'Con 1.90 m estás fuera de la guía de tallas, así que no te puedo recomendar una talla. Dame un momento, te paso con alguien del equipo 😊', handoff: null }
+    const r = nightKeepsSelling(p, NIGHT, full('Y si mido 1.90?'))
+    assert.equal(r.plan.text, 'Con 1.90 m estás fuera de la guía de tallas, así que no te puedo recomendar una talla.\nEl equipo te escribe mañana a las 6:00 a. m.')
+    assert.deepEqual(r.review, { kind: 'review', reason: 'review' })
+    assert.equal(r.soft, true)
+    const plain = { text: 'El arnés cuesta ₡14 900 😊', handoff: null }
+    assert.equal(nightKeepsSelling(plain, NIGHT, full('¿Precio?')).plan, plain)
+    assert.equal(nightKeepsSelling(p, IN_HOURS, full('Y si mido 1.90?')).plan, p)
+  })
+
+  it('probe 2026-10-25: "Dame un momento, te paso con alguien" never goes out next to "mañana" (opt-out at night)', () => {
+    const text = 'Dame un momento, te paso con alguien del equipo 😊'
+    const out = applyAfterHoursText(plan(text, 'human_request'), NIGHT, OPTS)
+    assert.doesNotMatch(out, /Dame un momento/)
+    assert.match(out, /El equipo te escribe mañana a las 6:00 a\. m\./)
   })
 
   it('#1: more complaints, alarms, crises and person requests keep the hand-off (backstop)', () => {

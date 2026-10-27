@@ -216,16 +216,29 @@ function hasPastOrDoneWord(segment: string, question: boolean): boolean {
   // "listo para pagar" = ready to pay (not done).
   if (PAYMENT_COMPLETION_RE.test(s.replace(/(?<![\p{L}])list[oa]s?\s+para(?![\p{L}])/giu, ' ')) && (!question || /[✅✔☑]/u.test(s))) return true
   // Verifier round 8: a capitalised word after the first one is a name or a place ("José", "Jacó", "San José").
-  for (const m of s.matchAll(/\p{L}+/gu)) {
-    const w = m[0]
-    const lw = w.toLowerCase()
-    if (!/[éíó]$/u.test(lw) || ACCENT_OK.has(lw)) continue
-    if ((m.index ?? 0) > 0 && /^\p{Lu}/u.test(w)) continue
-    if (/r[éá]$/u.test(lw) && !PAST_RE_WORDS.has(lw)) continue
-    return true
+  // Rafael 2026-10-27 (live): "Qué costó tiene y como lo pudo pedir y pagar al llegar con tarjeta" (no "?") was
+  // a payment claim because of "costó". In a sentence that opens with a question word, only a payment verb counts.
+  for (const sentence of s.split(/(?<=[.!?¿¡\n])/u)) {
+    const asks = INTERROGATIVE_LEAD_RE.test(sentence.replace(/^[\s¿¡.,!…]+/u, '').replace(LEADING_GREETING_RE, ''))
+    for (const m of sentence.matchAll(/\p{L}+/gu)) {
+      const w = m[0]
+      const lw = w.toLowerCase()
+      if (!/[éíó]$/u.test(lw) || ACCENT_OK.has(lw)) continue
+      if ((m.index ?? 0) > 0 && /^\p{Lu}/u.test(w)) continue
+      if (/r[éá]$/u.test(lw) && !PAST_RE_WORDS.has(lw)) continue
+      if (asks && !PAY_VERB_STEM_RE.test(lw)) continue
+      return true
+    }
   }
   return false
 }
+
+/** A sentence that opens like a question even without "?" ("Qué costó tiene…", "como lo puedo pedir…"). */
+const INTERROGATIVE_LEAD_RE =
+  /^(?:y\s+)?(?:qu[eé]\s+(?:cost\p{L}*|precio|vale|valor|sale)|c[oó]mo|cu[aá]nto\p{L}*|cu[aá]ndo|cu[aá]l\p{L}*|d[oó]nde|puedo|podr[ií]a|se\s+puede|pueden|aceptan|reciben|tienen|ten[eé]s|tienes|hay)(?![\p{L}])/iu
+/** Accented past forms that are still a payment act inside a question ("¿cómo hago si ya pagué?"). */
+const PAY_VERB_STEM_RE =
+  /^(?:pag|cancel|abon|deposit|transfer|transfir|sinp|mand|envi|pas|tir|gir|hic|hiz|di|d[ií]|cubr|liquid|complet|adelant)/u
 
 /** A payment noun / verb: a STATEMENT carrying one ("Está pago", "La plata está") is never plain context. */
 // SecureDog round 6: also "doing" verbs and amounts — "Le mande.", "Mi esposo se encargo.", "Se lo dio al mensajero.",
@@ -1017,11 +1030,12 @@ const CLOSED_PAY_INFO_COURTESY_RE =
   /^(?:hola|holi|buenas|buenos\s+d[ií]as|buenas\s+(?:tardes|noches)|disculpe?|perd[oó]n|ok|oki|okey|gracias|muchas\s+gracias|una\s+consulta|consulta|pura\s+vida|(?:ok\s+|okey\s+)?(?:perfecto|dale|genial|excelente|bueno|va))$/iu
 
 /**
- * Lane C D8: price / total / size / shipping-to words, or an opinion / worry about paying ("¿qué es mejor, SINPE o
+ * Lane C D8: price / total / size / shipping-to words (Rafael 2026-10-27: "Qué costó tiene…" with a typo), or an
+ * opinion / worry about paying ("¿qué es mejor, SINPE o
  * tarjeta? No quiero dar mi tarjeta") — the message asks more than which methods there are.
  */
 const ASKS_MORE_THAN_PAYMENT_RE =
-  /(?<![\p{L}])(?:cu[aá]nto|total|precio|cuesta|cuestan|vale|valen|talla|tallas|mido|peso|medida|medidas|env[ií]o\s+a|tama[nñ]o|mejor|conviene|recomend\p{L}*|segur[oa]s?|seguridad|confiable|confianza|miedo|no\s+quiero|prefiero\s+no)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:cu[aá]nto|total|precio|cuesta|cuestan|cost\p{L}*|vale|valen|sale|salen|incluye|trae|talla|tallas|mido|peso|medida|medidas|env[ií]o\s+a|tama[nñ]o|mejor|conviene|recomend\p{L}*|segur[oa]s?|seguridad|confiable|confianza|miedo|no\s+quiero|prefiero\s+no)(?![\p{L}])/iu
 
 export function classifyPaymentText(
   text: string,

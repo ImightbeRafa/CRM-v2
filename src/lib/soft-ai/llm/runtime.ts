@@ -38,7 +38,7 @@ import { softAiProviderFor, type ChatAgentTonePreset } from '@/lib/soft-ai/agent
 import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
 import { isAgentIntent } from '@/lib/soft-ai/agent-intents'
 import { HANDOFF_REASON, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
-import { hasPaymentWord, paymentHandoffReason } from '@/lib/soft-ai/payment-classifier'
+import { hasPaymentWord, isShortDoneBubble, paymentHandoffReason } from '@/lib/soft-ai/payment-classifier'
 
 export type SoftAiLlmRuntimeInput = {
   /**
@@ -523,10 +523,15 @@ export async function runSoftAiLlmRuntime(
         hasPaymentWord(customerSide) ||
         hasPaymentWord(lastStoreText) ||
         /(?<![\p{L}])(pedido|orden|compra)(?![\p{L}])/iu.test(finalText))
+    // Rafael 2026-10-27: the model asking for a person is a PAYMENT hand-off only when the customer's own words are about
+    // a payment (or a short "listo" right after the store's payment message). The store's own "mandame el comprobante"
+    // alone turned "Muchas gracias" / "Guía de tallas" escalations into "Pago por verificar".
+    const customerPaymentTalk =
+      hasPaymentWord(customerSide) || (hasPaymentWord(lastStoreText) && isShortDoneBubble(customerSide))
     const paymentRisk =
       confirmationIsPayment ||
       validation.reasons.includes('payment_status_claim') ||
-      (structured.needsHuman && (hasPaymentWord(customerSide) || hasPaymentWord(lastStoreText)))
+      (structured.needsHuman && customerPaymentTalk)
     if (paymentRisk) {
       escalate = true
       escalateReason = 'payment_claim'

@@ -218,6 +218,14 @@ function storePaymentDigits(facts: { payment?: { sinpe?: { number?: string | nul
   return [facts?.payment?.sinpe?.number, facts?.payment?.transfer?.iban].map((n) => (n || '').replace(/\D/g, '')).filter((d) => d.length >= 8)
 }
 
+/** The customer's bubbles after the store's last payment-details message (none sent yet → none). */
+function customerTextsAfterDetails(history: Array<{ direction: string; content?: string | null }>): string[] {
+  let i = history.length - 1
+  while (i >= 0 && !(history[i].direction === 'outbound' && paymentDetailsIn(history[i].content || ''))) i--
+  if (i < 0) return []
+  return history.slice(i + 1).filter((m) => m.direction === 'inbound' && m.content).map((m) => String(m.content))
+}
+
 function earlierCustomerTexts(history: Array<{ direction: string; content?: string | null; sentAt?: string | Date | null }>): string[] {
   return recentCustomerTexts(history, 10 * 60_000, 6)
 }
@@ -297,6 +305,13 @@ async function withPaymentClaimCheck(
   }
   if (mode === 'shadow') {
     step(decision, `shadow_${result.verdict}`)
+    return decision
+  }
+  // Rafael 2026-10-27: a timeout / bad answer fails closed only when the customer's unanswered words carry money or
+  // payment-state words. The check also opens on the store's own earlier payment text; a slow check on "Guía de tallas"
+  // or "Muchas gracias" is no reason for a "Pago por verificar" hand-off.
+  if (result.verdict === 'error' && !dataChoicePath && !unansweredPaymentState(input.inboundText, ctx.history).inPlay) {
+    step(decision, 'error_no_customer_money_words')
     return decision
   }
   const forced = decideInbound({ ...input, forcePaymentRisk: true })
@@ -1362,6 +1377,7 @@ export async function executeAgentLayerTurn(
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
     paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),
+    afterDetailsCustomerTexts: [...customerTextsAfterDetails(history), ...burstEarlier.map((m) => m.content || '')],
     // Lane C D1: a verbatim saved reply may state the totals the sales turn may state.
     allowedAmounts: turnSalesContext ? salesAllowedAmounts(turnSalesContext) : undefined,
     // Sleeping C2: nothing about paying in this chat yet (no payment details, receipt photo, payment words, web order).
@@ -2628,6 +2644,7 @@ async function runAgentTestTurnInner(input: {
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
     paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),
+    afterDetailsCustomerTexts: [...customerTextsAfterDetails(history), ...probarBurstEarlier.map((m) => m.content || '')],
     // Lane C D1: a verbatim saved reply may state the totals the sales turn may state.
     allowedAmounts: probarTurnSalesContext ? salesAllowedAmounts(probarTurnSalesContext) : undefined,
     // Sleeping C2: nothing about paying in this chat yet (photos / files counted from their type, like live).

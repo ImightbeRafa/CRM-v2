@@ -382,9 +382,31 @@ const NEXT_STEP: Record<SalesStage, string> = {
   metodo_pago:
     'Esperá que elija el método de pago; si preguntó otra cosa, respondé y volvé a preguntar (la pregunta de pago de abajo). No des datos de pago hasta que elija.',
   esperando_comprobante:
-    'Respondé primero lo que preguntó (breve). Ya diste los datos de pago: no los repitas salvo que los pida. Pedí lo que falte del pedido y avisá que cuando haga el pago te mande el comprobante.',
+    'Respondé primero lo que preguntó (breve). Ya diste los datos de pago: no los repitas salvo que los pida. Pedí lo que falte del pedido y avisá que cuando haga el pago te mande el comprobante. Si solo agradece, reacciona o se despide, respondé corto y cordial, sin volver a hablar del pago ni del comprobante.',
   verificando:
     'El cliente dice que ya pagó o mandó comprobante: agradecé y decí que lo revisás y le confirmás. Nunca confirmés el pago vos.',
+}
+
+/**
+ * Rafael 2026-10-27 (live): the customer already sent a receipt / said they paid after the store's payment
+ * details (or the store confirmed it). The sale is done: never ask for the payment or the receipt again.
+ */
+const PAID_STEP =
+  'El cliente YA pagó o ya mandó el comprobante (el equipo lo revisa o ya lo confirmó). NO pidas el pago ni el comprobante otra vez y no vuelvas a cerrar la venta. Si agradece, reacciona o se despide, respondé corto y cordial (por ejemplo "¡Con gusto! Cualquier cosa me escribís 😊"). Si pregunta otra cosa, respondé solo eso.'
+const RECEIPT_MEDIA_RE = /^\s*\[(?:image|imagen|foto|document|documento|file|archivo)\]\s*$/iu
+const STORE_CONFIRMED_PAYMENT_RE =
+  /(?<![\p{L}])(?:(?:pago|sinpe|comprobante|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|aplicad[oa])|recibimos\s+(?:tu|el|su)\s+(?:pago|sinpe|comprobante)|confirmamos\s+(?:tu|el|su)\s+pago)(?![\p{L}])/iu
+
+/** After the store's last payment-details message: a receipt photo / file, a "ya pagué", or the store confirming it. */
+export function paidAfterDetails(history: SoftAiHistoryMessage[], isDetails: (text: string) => boolean): boolean {
+  let i = history.length - 1
+  while (i >= 0 && !(history[i].direction === 'outbound' && isDetails(history[i].content || ''))) i--
+  if (i < 0) return false
+  return history.slice(i + 1).some((m) => {
+    const text = m.content || ''
+    if (m.direction === 'outbound') return STORE_CONFIRMED_PAYMENT_RE.test(text)
+    return RECEIPT_MEDIA_RE.test(text) || RECEIPT_RE.test(text) || hasPaymentClaimCue(text)
+  })
 }
 
 /** The customer wants a product that is AGOTADO: no close for it (no total, data or payment question). */
@@ -408,12 +430,14 @@ export function deriveSalesState(input: {
   const catalogPrices = [...(input.ctx.catalog ?? []).filter((c) => !c.soldOut), ...(input.ctx.bundles ?? [])].map((c) => Math.round(c.price))
   const shipPrices = input.ctx.shippingMethods.map((s) => Math.round(s.price)).filter((p) => p > 0)
 
+  const paymentDetailsMsg = (m: string) =>
+    (PAYMENT_WORDS_RE.test(m) && input.ctx.paymentDigits.some((d) => d.length >= 8 && digits(m).includes(d))) || PAYMENT_BLOCK_RE.test(m)
   const said = {
     price: catalogPrices.some((p) => oursAmounts.has(p)) || (catalogPrices.length === 0 && /₡\s?\d/.test(oursText)),
     shipping: shipPrices.some((p) => oursAmounts.has(p)) || /\benv[ií]o\b[^\n]{0,40}₡\s?\d/i.test(oursText),
     // A configured number next to payment words, or a code-filled method block without digits (card link, bank-only
     // transfer, contra entrega / efectivo) — Verifier 2026-10-16: those never left metodo_pago.
-    payment: ours.some((m) => (PAYMENT_WORDS_RE.test(m) && input.ctx.paymentDigits.some((d) => d.length >= 8 && digits(m).includes(d))) || PAYMENT_BLOCK_RE.test(m)),
+    payment: ours.some(paymentDetailsMsg),
     // N5: a contra-entrega / efectivo block is an ORDER handed to a person, not payment details (no receipt to ask for).
     order: ours.some((m) => ORDER_BLOCK_RE.test(m)),
     cod: /contra\s?entrega/i.test(oursText),
@@ -505,6 +529,10 @@ export function deriveSalesState(input: {
       : stage === 'metodo_pago' && chosenMethod
         ? chosenMethodStep(input.ctx, chosenMethod) + (totalStepFits ? DATA_CHOICE_TOTAL_STEP : '')
         : NEXT_STEP[stage]
+  // The receipt already came in after the details: a later message ("Muchas gracias") is post-sale, not "pagá y mandame el comprobante".
+  if (stage === 'esperando_comprobante' && !buyCue && paidAfterDetails(input.history, paymentDetailsMsg)) {
+    nextStep = PAID_STEP
+  }
   if (duplicateOrder && !buyCue) {
     nextStep = `El comprobante ya está en el pedido ${duplicateOrder}. No lo cuentes otra vez ni abras un pago nuevo. Si pide otro producto, es un pedido nuevo.`
   } else if (namedProducts && !focus && stage !== 'verificando' && stage !== 'pedido_en_revision') {

@@ -192,6 +192,8 @@ export function decideInbound(input: {
   orderDataChoice?: ChosenPaymentMethod | null
   /** SecureDog wave D final: the store already sent its payment details (sales-state paymentDetailsIn on its messages). */
   paymentDetailsSent?: boolean
+  /** The customer's bubbles sent after the store's last payment-details message (the "Listo ✅" check). Undefined = old window. */
+  afterDetailsCustomerTexts?: string[]
   /** Lane C D1: sales-state salesAllowedAmounts of this agent (live + Probar), for verbatim saved replies with a ₡ total. */
   allowedAmounts?: number[]
 }): InboundDecision {
@@ -217,10 +219,12 @@ export function decideInbound(input: {
   // SecureDog wave D final (INT-206 statement form): after the store's payment details, a short done-bubble with no
   // question ("Listo", "Listo ✅", "Hecho", "Ya quedó", "Ahí va", "ya pagúe") is a payment message.
   // Every unanswered bubble counts ("Listo" then "Gracias").
+  // Rafael 2026-10-27 (live): only bubbles sent AFTER the store's payment details. "Sinpe" (the choice the details
+  // answered) + "¿De cuánto sería el monto?" was a payment hand-off because the 10-min window still held "Sinpe".
   const doneAfterDetails =
     input.paymentDetailsSent === true &&
     isText &&
-    [input.inboundText, ...(input.earlierCustomerTexts || [])].some((t) => isShortDoneBubble(t || ''))
+    [input.inboundText, ...(input.afterDetailsCustomerTexts ?? input.earlierCustomerTexts ?? [])].some((t) => isShortDoneBubble(t || ''))
   // SecureDog r1 L1 / r2 F1+R2, Verifier r2 #1 / r3 (2026-10-24): a question the new shapes rescued ("¿Pago envío?", live:
   // a person) is answered only when every other unanswered bubble is a greeting or a plain order line (allow-list),
   // before or after it. Plain price questions ("¿Cuánto sale el envío?") never enter here: nothing live answers changes.

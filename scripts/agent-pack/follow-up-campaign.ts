@@ -24,6 +24,7 @@ import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/auditLogger'
 import { FOLLOW_UP_FLAG, FOLLOW_UP_WINDOW_MS, MAX_CAMPAIGN_HOURS, RENEW_MAX_AGE_MS, SILENT_MIN_MINUTES, followUpSkipReason, parseFollowUpConfig, type FollowUpCampaign, type FollowUpVariant } from '@/lib/soft-ai/follow-up'
 import { isOptOutText } from '@/lib/soft-ai/waiting-ack'
+import { parseStageTexts } from '@/lib/soft-ai/follow-up-state'
 import { loadPack } from './pack'
 import { decideWinner, WINNER_RULE, type ArmStats } from './follow-up-rule'
 
@@ -59,6 +60,8 @@ type FollowUpPlan = {
   /** Earlier campaigns without stored keys: campaignId → { A: key, B: key }. */
   legacy?: Record<string, Partial<Record<FollowUpVariant, string>>>
   notes?: string[]
+  /** Follow-ups v2: text key → slot texts (chose / quoted / sinpe_reminder) used when that key runs in a round. */
+  stageTexts?: Record<string, unknown>
 }
 
 function loadPlan(packDir: string): { plan: FollowUpPlan; file: string } {
@@ -227,7 +230,18 @@ async function main() {
     logAudit({ action: 'UPDATE', entityType: 'FollowUpCampaign', entityId: tenantId, description, newValues, userId: user.id, userName: `${user.name || 'Owner'} (follow-up script)`, userRole: String(member.role), tenantId })
 
   /** Validates and stores a new campaign; stops only this agent's earlier campaigns. */
-  async function createCampaign(input: { agentId: string; lineIds: string[]; a: string; b: string; keys?: [string, string]; hours: number; silent: number; why: string }) {
+  async function createCampaign(input: {
+    agentId: string
+    lineIds: string[]
+    a: string
+    b: string
+    keys?: [string, string]
+    hours: number
+    silent: number
+    why: string
+    /** Follow-ups v2: per-arm slot texts from follow-up.json `stageTexts[key]` (follow-up-state.ts). */
+    stageTexts?: FollowUpCampaign['stageTexts']
+  }) {
     const { agentId, lineIds, a, b, hours, silent } = input
     if (!agentId || !lineIds.length || !a || !b) throw new Error('--agent, --lines, --a y --b son obligatorios')
     if (a.length > 500 || b.length > 500) throw new Error('textos de máximo 500 caracteres')
@@ -252,10 +266,13 @@ async function main() {
       active: true,
       claimed: {},
       ...(input.keys ? { keys: { A: input.keys[0], B: input.keys[1] } } : {}),
+      ...(input.stageTexts ? { stageTexts: input.stageTexts } : {}),
     }
     const stopped = campaigns.filter((c) => c.agentId === agentId && c.active).map((c) => c.id)
     console.log(`${DRY ? '[dry-run] crearía' : 'Crea'} ${campaign.id} · agente ${agent.name} (${agent.status}) · líneas ${lineIds.length} (${bound} con el agente activo) · espera ${silent} min · hasta ${campaign.until}`)
     console.log(`  A${input.keys ? ` (${input.keys[0]})` : ''}: "${a}"\n  B${input.keys ? ` (${input.keys[1]})` : ''}: "${b}"`)
+    for (const [arm, slots] of Object.entries(input.stageTexts ?? {}))
+      for (const [slot, text] of Object.entries(slots ?? {})) console.log(`    ${arm} · ${slot}: "${text}"`)
     console.log(`  detiene: ${stopped.join(', ') || '(ninguna)'} · motivo: ${input.why}`)
     if (agent.status !== 'live') console.log('  OJO: el agente no está live → el motor no envía nada hasta que Rafael lo active.')
     if (row && !row.enabled && !flag('enable'))
@@ -319,7 +336,19 @@ async function main() {
       challenger = currentChallenger({ ...plan, champion, retired })
     }
     if (!challenger) throw new Error(`${plan.agentName}: no quedan retadores — agregá textos nuevos en follow-up.json (challengers)`)
-    await createCampaign({ agentId: plan.agentId, lineIds: plan.lineIds, a: plan.texts[champion], b: plan.texts[challenger], keys: [champion, challenger], hours: plan.roundHours, silent: plan.silentMinutes, why })
+    const armSlots = (key: string) => parseStageTexts(plan.stageTexts?.[key])
+    const stageTexts = { ...(armSlots(champion) ? { A: armSlots(champion) } : {}), ...(armSlots(challenger) ? { B: armSlots(challenger) } : {}) }
+    await createCampaign({
+      agentId: plan.agentId,
+      lineIds: plan.lineIds,
+      a: plan.texts[champion],
+      b: plan.texts[challenger],
+      keys: [champion, challenger],
+      hours: plan.roundHours,
+      silent: plan.silentMinutes,
+      why,
+      ...(Object.keys(stageTexts).length ? { stageTexts } : {}),
+    })
     if (!DRY && (champion !== plan.champion || JSON.stringify(retired) !== JSON.stringify(plan.retired ?? {}))) {
       writeFileSync(file, `${JSON.stringify({ ...plan, champion, retired }, null, 2)}\n`)
       console.log(`follow-up.json actualizado: campeón "${champion}".`)

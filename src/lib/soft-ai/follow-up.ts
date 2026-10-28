@@ -27,7 +27,7 @@ import { ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
 import { runPreModelGates } from '@/lib/soft-ai/agent-claim-gates'
 import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
 import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
-import { followUpStateSkip } from '@/lib/soft-ai/follow-up-state'
+import { followUpSlot, followUpStateSkip, parseStageTexts, type FollowUpSlot } from '@/lib/soft-ai/follow-up-state'
 
 export const FOLLOW_UP_FLAG = 'agent_follow_up_v1'
 /** Meta's window is 24 h after the customer's last message; keep a margin. */
@@ -55,6 +55,12 @@ export type FollowUpCampaign = {
   active: boolean
   /** conversationId → the variant it got (the claim; a chat is never followed up twice in a campaign). */
   claimed: Record<string, FollowUpVariant | `${FollowUpVariant}!`>
+  /**
+   * Follow-ups v2 (Rafael 2026-10-28): an arm's text per slot — where the chat stopped (follow-up-state.ts). A slot with
+   * no text uses that arm's texts[variant]; only an arm with a sinpe_reminder text nudges a chat whose payment details
+   * are pending. Per arm, so a winning v2 text set keeps its slots as the champion.
+   */
+  stageTexts?: Partial<Record<FollowUpVariant, Partial<Record<FollowUpSlot, string>>>>
 }
 export type FollowUpConfig = { campaigns: FollowUpCampaign[] }
 
@@ -62,6 +68,16 @@ export type FollowUpConfig = { campaigns: FollowUpCampaign[] }
 export function followUpVariant(campaignId: string, conversationId: string): FollowUpVariant {
   const byte = createHash('sha256').update(`${campaignId}:${conversationId}`).digest()[0]
   return byte % 2 === 0 ? 'A' : 'B'
+}
+
+function parseArmStageTexts(raw: unknown): FollowUpCampaign['stageTexts'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: NonNullable<FollowUpCampaign['stageTexts']> = {}
+  for (const v of ['A', 'B'] as const) {
+    const parsed = parseStageTexts((raw as Record<string, unknown>)[v])
+    if (parsed) out[v] = parsed
+  }
+  return Object.keys(out).length ? out : undefined
 }
 
 /** Campaigns with both texts, real dates and sane numbers only (anything else is dropped, never "fixed"). */
@@ -85,7 +101,11 @@ export function parseFollowUpConfig(raw: unknown): FollowUpConfig {
           Number.isFinite(c.silentMinMinutes) &&
           c.silentMinMinutes >= SILENT_MIN_MINUTES,
       )
-      .map((c) => ({ ...c, claimed: c.claimed && typeof c.claimed === 'object' && !Array.isArray(c.claimed) ? c.claimed : {} })),
+      .map((c) => ({
+        ...c,
+        claimed: c.claimed && typeof c.claimed === 'object' && !Array.isArray(c.claimed) ? c.claimed : {},
+        stageTexts: parseArmStageTexts(c.stageTexts),
+      })),
   }
 }
 
@@ -117,6 +137,7 @@ async function markFailed(flagId: string, index: number, campaignId: string, con
 export async function followUpSkipReason(
   tenantId: string,
   conv: { id: string; aiMode: string | null; tags: string[]; status: string | null },
+  opts: { sinpeReminder?: boolean } = {},
 ): Promise<string | null> {
   if (conv.aiMode === 'human' || conv.aiMode === 'paused' || conv.aiMode === 'human_takeover') return 'person_or_paused'
   if (!NUDGE_STATUSES.has(conv.status || '')) return 'stage_not_deciding'
@@ -149,11 +170,24 @@ export async function followUpSkipReason(
   if (lastIn && DECLINE_RE.test(lastIn.content || '')) return 'declined'
   // Follow-ups v2 (Rafael 2026-10-28): payment details already sent, order data given, or a named later date.
   const stateSkip = followUpStateSkip(recent)
-  if (stateSkip) return stateSkip
+  // Arm B with an owner-approved reminder: payment details pending and nothing paid since → the reminder goes out.
+  const reminder = stateSkip === 'payment_details_sent' && opts.sinpeReminder === true && followUpSlot(recent) === 'sinpe_reminder'
+  if (stateSkip && !reminder) return stateSkip
   if (recent.some((m) => m.direction === 'outbound' && (m.metadata as { followUp?: unknown } | null)?.followUp)) return 'already_followed_up'
   // Verifier (auto-renew): one nudge per chat EVER, not only within its last 30 messages (rounds renew every 48 h).
   if (await followedUpBefore(tenantId, conv.id)) return 'already_followed_up'
   return null
+}
+
+/** Follow-ups v2: the slot of a chat from its last 30 messages (newest first, like followUpSkipReason). */
+async function chatSlot(tenantId: string, conversationId: string): Promise<FollowUpSlot | null> {
+  const recent = await prisma.chatMessage.findMany({
+    where: { tenantId, conversationId },
+    orderBy: { sentAt: 'desc' },
+    take: 30,
+    select: { direction: true, content: true },
+  })
+  return followUpSlot(recent)
 }
 
 /** Any follow-up ever sent in this chat (whatever round). */
@@ -412,7 +446,9 @@ async function runCampaign(
       if (!convs.length) break
       for (const conv of convs) {
         if (stop()) return
-        if (await followUpSkipReason(tenantId, conv)) {
+        const variant = followUpVariant(c.id, conv.id)
+        const stageTexts = c.stageTexts?.[variant]
+        if (await followUpSkipReason(tenantId, conv, { sinpeReminder: Boolean(stageTexts?.sinpe_reminder) })) {
           skipped.add(conv.id)
           continue
         }
@@ -432,13 +468,18 @@ async function runCampaign(
           skipped.add(conv.id)
           continue
         }
-        const variant = followUpVariant(c.id, conv.id)
+        // Follow-ups v2: arm B picks the text for where the chat stopped (same last 30 messages the skip rules read).
+        const slot = stageTexts ? await chatSlot(tenantId, conv.id) : null
+        if (slot === 'sinpe_reminder' && !stageTexts?.sinpe_reminder) {
+          skipped.add(conv.id)
+          continue
+        }
         if (!(await claimChat(flagId, index, c.id, conv.id, variant))) {
           skipped.add(conv.id)
           continue
         }
         c.claimed[conv.id] = variant
-        const text = c.texts[variant].trim()
+        const text = ((slot && stageTexts?.[slot]) || c.texts[variant]).trim()
         const result = await sendMetaText({
           platform: account.platform,
           accessToken: token,
@@ -473,7 +514,7 @@ async function runCampaign(
             to: conv.peerId,
             platform: account.platform,
             providerMessageId: result.providerMessageId || null,
-            followUp: { campaignId: c.id, variant },
+            followUp: { campaignId: c.id, variant, ...(slot && stageTexts?.[slot] ? { slot } : {}) },
           },
           suppressSoftAi: true,
           // A nudge never pushes the chat to the top of /chats (it shows under "Seguimientos").

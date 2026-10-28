@@ -4,7 +4,8 @@
  * address or got the SINPE details, after "espero la quincena" / "ahorita no tengo plata", after "mañana le escribo".
  * No DB, no server-only: follow-up.ts reads the messages and calls this.
  */
-import { paymentDetailsIn } from '@/lib/soft-ai/sales-state'
+import { paidAfterDetails, paymentDetailsIn } from '@/lib/soft-ai/sales-state'
+import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 
 export type FollowUpStateMessage = { direction: string; content?: string | null }
 export type FollowUpStateSkip = 'payment_details_sent' | 'data_given' | 'waiting_date'
@@ -33,6 +34,8 @@ export const WAITING_DATE_RE = new RegExp(
     'no\\s+me\\s+alcanza',
     '(?:la\\s+)?(?:otra|pr[oó]xima)\\s+semana',
     'aguinaldo',
+    // "Sería para después del 15 noviembre", "hasta el viernes", "después de la quincena".
+    '(?:para\\s+)?(?:despu[eé]s|hasta)\\s+(?:del?|el|la)\\s+(?:\\d{1,2}|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|quincena|pago|mes)',
     // "Mañana le escribo", "El lunes les aviso", "Luego te confirmo": a promise to come back.
     '(?:ma[nñ]ana|luego|despu[eé]s|el\\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\\s+(?:(?:yo\\s+)?(?:le|te|les)\\s+)?(?:escribo|aviso|confirmo|hablo|contacto|pido|compro|encargo|digo)',
     '(?:le|te|les)\\s+(?:escribo|aviso|confirmo)\\s+(?:ma[nñ]ana|luego|despu[eé]s|el\\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)|la\\s+otra\\s+semana)',
@@ -56,6 +59,55 @@ export function followUpStateSkip(messages: readonly FollowUpStateMessage[], new
   if (ordered.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || ''))) return 'payment_details_sent'
   if (ordered.some((m) => m.direction === 'inbound' && customerGaveOrderData(m.content || ''))) return 'data_given'
   const lastIn = ordered.find((m) => m.direction === 'inbound')
-  if (lastIn && WAITING_DATE_RE.test(lastIn.content || '')) return 'waiting_date'
+  // A question about a date ("¿Llega hasta el viernes?") is not a promise to come back.
+  if (lastIn && !/[?¿]/u.test(lastIn.content || '') && WAITING_DATE_RE.test(lastIn.content || '')) return 'waiting_date'
   return null
+}
+
+/**
+ * Follow-ups v2, the challenger arm: where the chat stopped. The store writes one text per slot (owner-approved, in the
+ * pack's follow-up.json); a slot with no text uses the round's own text.
+ *   chose          — the customer picked something ("Quiero una bolsa", "XL", "Sería el de correr") and went quiet
+ *   quoted         — the store gave a price (₡) and the customer went quiet
+ *   sinpe_reminder — the store sent its payment details and no receipt / paid message came after them
+ */
+export type FollowUpSlot = 'chose' | 'quoted' | 'sinpe_reminder'
+export const FOLLOW_UP_SLOTS: readonly FollowUpSlot[] = ['chose', 'quoted', 'sinpe_reminder']
+
+/** The customer picked a product, size, quantity or pack (one bubble, not a question). */
+const CHOSE_RE =
+  /(?<![\p{L}])(?:(?:lo|la|los|las)\s+quiero|quiero\s+(?:un|una|uno|dos|el|la|los|las|\d)|me\s+(?:gustar[ií]a|interesa)\s+(?:el|la|un|una|uno|ordenar|pedir|llevar)|me\s+llevo|ser[ií]a\s+(?:el|la|un|una|uno|talla|\d)|talla\s+\p{L}|(?:x{0,3}l|[2-5]xl|m\/l)|(?:una|un|1|2|dos|tres)\s+(?:sola\s+)?(?:bolsa|bolsas|paquete|paquetes|caja|cajas|kit|kits|unidad|unidades|arn[eé]s)|el\s+pack|el\s+combo|solo\s+(?:una|uno|1))(?![\p{L}])/iu
+
+/** Which v2 text a quiet chat gets, from its messages (any order), or null (the round's own text). */
+export function followUpSlot(messages: readonly FollowUpStateMessage[], newestFirst = true): FollowUpSlot | null {
+  const ordered = newestFirst ? [...messages].reverse() : [...messages]
+  const history: SoftAiHistoryMessage[] = ordered.map((m, i) => ({
+    id: String(i),
+    direction: m.direction === 'outbound' ? 'outbound' : 'inbound',
+    content: m.content || '',
+    sentAt: '',
+  }))
+  if (history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content))) {
+    return paidAfterDetails(history, paymentDetailsIn) ? null : 'sinpe_reminder'
+  }
+  const lastIn = [...history].reverse().find((m) => m.direction === 'inbound')
+  if (lastIn && !/[?¿]/u.test(lastIn.content) && CHOSE_RE.test(lastIn.content)) return 'chose'
+  if (history.some((m) => m.direction === 'outbound' && /₡\s?\d/u.test(m.content))) return 'quoted'
+  return null
+}
+
+/**
+ * The owner's slot texts, kept only when they are plain words: a payment reminder never carries a number, an amount or
+ * a link (the details were already sent; a stale or wrong number must never go out unattended).
+ */
+export function parseStageTexts(raw: unknown): Partial<Record<FollowUpSlot, string>> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: Partial<Record<FollowUpSlot, string>> = {}
+  for (const slot of FOLLOW_UP_SLOTS) {
+    const t = (raw as Record<string, unknown>)[slot]
+    if (typeof t !== 'string' || !t.trim() || t.length > 400) continue
+    if (slot === 'sinpe_reminder' && /[\d₡$]|https?:|www\./iu.test(t)) continue
+    out[slot] = t.trim()
+  }
+  return Object.keys(out).length ? out : undefined
 }

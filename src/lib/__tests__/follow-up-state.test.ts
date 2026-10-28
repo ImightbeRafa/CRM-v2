@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { customerGaveOrderData, followUpStateSkip, WAITING_DATE_RE } from '../soft-ai/follow-up-state'
+import { customerGaveOrderData, followUpSlot, followUpStateSkip, parseStageTexts, WAITING_DATE_RE } from '../soft-ai/follow-up-state'
 
 const out = (content: string) => ({ direction: 'outbound', content })
 const inb = (content: string) => ({ direction: 'inbound', content })
@@ -49,5 +49,46 @@ describe('follow-ups v2: wrong sends (DeepSleep 2026-10-28)', () => {
     const src = readFileSync('src/lib/soft-ai/follow-up.ts', 'utf8')
     const at = src.indexOf('followUpStateSkip(recent)')
     assert.ok(at > src.indexOf("return 'declined'") && at < src.indexOf("return 'already_followed_up'"))
+  })
+})
+
+describe('follow-ups v2: where the chat stopped (slots)', () => {
+  it('price given, customer quiet → quoted', () => {
+    assert.equal(followUpSlot([inb('¿Cuánto cuesta el soporte?'), out('El arnés cuesta ₡14 900 con envío gratis. ¿Querés ver la guía de tallas?')], false), 'quoted')
+  })
+
+  it('customer picked something → chose (never on a question)', () => {
+    for (const t of ['Sí, lo quiero.', 'Sería xl', 'Quiero una bolsa', 'Solo una', 'el pack de 2']) {
+      assert.equal(followUpSlot([out('₡9 900'), inb(t), out('¿Envío o retiro?')], false), 'chose', t)
+    }
+    assert.equal(followUpSlot([out('₡9 900'), inb('¿Cuánto es el pack?'), out('₡19 800')], false), 'quoted')
+  })
+
+  it('payment details sent, nothing paid since → sinpe_reminder; a receipt or a store confirmation ends it', () => {
+    const details = out('Perfecto 🙌 SINPE Móvil: 6201 9914 A nombre de: Rafael García')
+    assert.equal(followUpSlot([inb('Sinpe'), details, out('Cuando lo hagás, mandame el comprobante 😊')], false), 'sinpe_reminder')
+    assert.equal(followUpSlot([inb('Sinpe'), details, inb('[image]'), out('¡Gracias! Dame un momento')], false), null)
+    assert.equal(followUpSlot([inb('Sinpe'), details, out('¡Pago recibido! 🙌')], false), null)
+  })
+
+  it('a reminder text with a number, amount or link is dropped (the details are never re-sent unattended)', () => {
+    assert.deepEqual(parseStageTexts({ sinpe_reminder: 'Cuando hagás el SINPE al 6201 9914 mandame el comprobante' }), undefined)
+    assert.deepEqual(parseStageTexts({ sinpe_reminder: 'Son ₡12 900, mandame el comprobante' }), undefined)
+    assert.deepEqual(parseStageTexts({ sinpe_reminder: 'Pagá en https://x.cr' }), undefined)
+    assert.deepEqual(parseStageTexts({ sinpe_reminder: '¡Hola! Cuando hagás el SINPE, mandame el comprobante 😊', other: 'x' }), { sinpe_reminder: '¡Hola! Cuando hagás el SINPE, mandame el comprobante 😊' })
+  })
+
+  it('a date question is not a promise; a named later date is', () => {
+    assert.equal(followUpStateSkip([inb('¿Llega hasta el viernes?')]), null)
+    assert.equal(followUpStateSkip([inb('Me interesa una 4 XL pero sería para después del 15 noviembre')]), 'waiting_date')
+  })
+
+  it('the engine: arm texts per slot, the reminder only with an owner text, slot recorded on the message', () => {
+    const src = readFileSync('src/lib/soft-ai/follow-up.ts', 'utf8')
+    assert.match(src, /const stageTexts = c\.stageTexts\?\.\[variant\]/)
+    assert.match(src, /followUpSkipReason\(tenantId, conv, \{ sinpeReminder: Boolean\(stageTexts\?\.sinpe_reminder\) \}\)/)
+    assert.match(src, /followUp: \{ campaignId: c\.id, variant, \.\.\.\(slot && stageTexts\?\.\[slot\] \? \{ slot \} : \{\}\) \}/)
+    // The review tags and every older skip rule still run first.
+    assert.ok(src.indexOf("return 'review_alert'") < src.indexOf('followUpStateSkip(recent)'))
   })
 })

@@ -683,23 +683,23 @@ const ORDER_QUESTION_RE =
  * no payment word — so nothing ("…, Juan les deposito una parte") can ride along.
  */
 const DEBT_RE = /(?<![\p{L}])(?:deb[oeí]\p{L}*|debiendo|falta\p{L}*|pendiente)(?![\p{L}])/iu
-/** The 2026-10-28 how-to-pay phrases (not live's): answered only with no part payment, debt, refund or pay act. */
-const NEW_INFO_CUE_RE =
-  /\b(proceso\s+(?:de|del|para)\s+(?:pago|pagar|compra)|opciones\s+de\s+(?:env[ií]o\s*(?:\/|y|,)\s*)?pago|(?:el\s+)?pago\s+c(?:[oó]mo|m)\s+se\s+maneja|c(?:[oó]mo|m)\s+se\s+maneja\s+el\s+pago)\b/i
-const MONEY_BACK_RE = /(?<![\p{L}])(?:devoluci[oó]n|devolver\p{L}*|devuelv\p{L}*|reembols\p{L}*|de\s+vuelta|reintegr\p{L}*|cobr(?:aron|ó)|reclam\p{L}*)(?![\p{L}])/iu
+/**
+ * The 2026-10-28 how-to-pay questions (not live's exits). SecureDog INT-240 r2: an ALLOWLIST of whole messages — an
+ * optional greeting, an optional "me gustaría saber (el precio y)", ONE question, punctuation. Nothing else may ride
+ * along ("…si mi hermana entrego la plata", "…¿qué pasa si lo hice dos veces?" go to a person).
+ */
+const NEW_INFO_SHAPE_RE = new RegExp(
+  String.raw`^(?:(?:hola|holi|buenas(?:\s+(?:tardes|noches))?|buenos\s+d[ií]as|disculpe?|una\s+consulta)[\s,.!¡]*)?` +
+    String.raw`(?:(?:me\s+gustar[ií]a|quisiera|quer[ií]a|quiero)\s+saber\s+(?:el\s+precio\s+y\s+)?)?¿?\s*` +
+    String.raw`(?:(?:cu[aá]l|c[oó]mo)\s+(?:es|ser[ií]a)\s+el\s+proceso\s+(?:de|del|para)\s+(?:pago|pagar|compra)` +
+    String.raw`|(?:el\s+)?pago\s+c(?:[oó]mo|m)\s+se\s+maneja|c(?:[oó]mo|m)\s+se\s+maneja\s+el\s+pago` +
+    String.raw`|(?:qu[eé]|cu[aá]les)\s+(?:son\s+las\s+)?opciones\s+de\s+(?:env[ií]o\s*(?:\/|y|,)\s*)?pago(?:\s+(?:tienen|hay|manejan|ofrecen))?` +
+    String.raw`|opciones\s+de\s+pago)[\s?!.😊🙂😁😄☺❤🙏🤗🥰✨\u{FE0F}\p{Emoji_Modifier}]*$`,
+  'iu',
+)
 function agentExit(value: string, cls: PaymentClassification): PaymentClassification {
   if (liveWouldAnswer(value)) return isPlainAskMessage(value) ? cls : 'payment_proof_or_risk'
-  if (
-    NEW_INFO_CUE_RE.test(value) &&
-    isPlainAskMessage(value) &&
-    !hasFreePayAct(value) &&
-    !PARTIAL_STATE_RE.test(value) &&
-    !DEBT_RE.test(value) &&
-    !REFUND_RE.test(value) &&
-    !MONEY_BACK_RE.test(value)
-  ) {
-    return cls
-  }
+  if (value.length <= 160 && NEW_INFO_SHAPE_RE.test(value.trim()) && isPlainAskMessage(value)) return cls
   return closedPaymentMessage(value) && !hasFreePayAct(value) && !PARTIAL_STATE_RE.test(value) && !DEBT_RE.test(value) ? cls : 'payment_proof_or_risk'
 }
 /* ---- end live-equivalence gate ---- */

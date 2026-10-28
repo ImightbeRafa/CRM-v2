@@ -140,3 +140,30 @@ describe('follow-ups v2: SecureDog 2026-10-28', () => {
     assert.match(readFileSync('src/lib/soft-ai/follow-up.ts', 'utf8'), /fresh\.aiMode === 'human_takeover' \|\|/)
   })
 })
+
+describe('follow-ups v2: SecureDog 2026-10-28 round 2', () => {
+  const details = { direction: 'outbound', content: 'Perfecto 🙌 SINPE Móvil: 6201 9914 A nombre de: Rafael García' }
+  it('INT-241/242: a later date anywhere after the details, a sent verb or any [placeholder] ends the reminder', () => {
+    for (const msgs of [
+      [inb('Mañana le escribo'), inb('Gracias')],
+      [inb('Ahorita no tengo plata'), inb('ok gracias')],
+      [inb('Le acabo de mandar')],
+      [{ direction: 'inbound', content: '[attachment]', messageType: null }],
+    ]) {
+      assert.equal(followUpSlot([inb('Sinpe'), details, ...msgs, out('¡Gracias!')], false), null, JSON.stringify(msgs))
+    }
+  })
+
+  it('INT-243 r2: superscript / circled digits, tens words, slang and dotted-leader domains are rejected', () => {
+    for (const t of ['Al ⁸⁸⁸⁸-⁷⁷⁷⁷ mandame el comprobante', 'Al ⑧⑧⑧⑧ por favor', 'Son ochenta mil', 'Son quince lucas', 'Pagá en mitienda․cr']) {
+      assert.equal(parseStageTexts({ sinpe_reminder: t }), undefined, t)
+    }
+  })
+
+  it('the draft pack reminders pass the filter (a sentence break is not a domain)', () => {
+    for (const e of ['🌙', '💪', '🌿']) {
+      const t = `¡Hola! ${e} Te guardo tu pedido. Cuando hagás el SINPE, mandame el comprobante por aquí y lo dejamos listo 😊`
+      assert.equal(parseStageTexts({ sinpe_reminder: t })?.sinpe_reminder, t)
+    }
+  })
+})

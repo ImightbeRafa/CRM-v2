@@ -10,7 +10,10 @@ import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 
 export type FollowUpStateMessage = { direction: string; content?: string | null; messageType?: string | null }
 /** A photo / file / audio placeholder or a file name ("[image]", "comprobante_sinpe.pdf"). */
-const MEDIA_LIKE_RE = /\[(?:image|imagen|foto|audio|voice|video|document|documento|archivo|file|sticker)\]|\.(?:pdf|jpe?g|png|heic|webp)(?![\p{L}])/iu
+const MEDIA_LIKE_RE = /\[(?:image|imagen|foto|audio|voice|video|document|documento|archivo|file|sticker)\]|^\s*\[[a-z_]+\]\s*$|\.(?:pdf|jpe?g|png|heic|webp)(?![\p{L}])/iu
+/** SecureDog INT-242 r2: a sent / done verb the claim rules may miss ("Le acabo de mandar", "ya le hice"). Reminder only. */
+const SENT_VERB_RE =
+  /(?<![\p{L}])(?:acab[oéeó]\s+de|ya\s+(?:le|te|les|lo|la)\b|mand[eéoó]|envi[eéoó]|pas[eéoó]|hic[eé]|hizo|transfer\p{L}*|deposit\p{L}*|consign\p{L}*|abon\p{L}*|cancel[eéoó]|sinpe[eéoó]|dej[eéoó]|entregu[eé]|entreg[oó]|met[ií]|meti[oó]|list[oa]|hech[oa])(?![\p{L}])/iu
 export type FollowUpStateSkip = 'payment_details_sent' | 'data_given' | 'waiting_date'
 
 /** Order data labels the customer fills in ("Nombre: …", "Provincia: …") or address words. */
@@ -107,7 +110,15 @@ export function followUpSlot(messages: readonly FollowUpStateMessage[], newestFi
     const after = ordered.slice(last + 1).filter((m) => m.direction === 'inbound')
     const clean = after.every((m) => {
       const t = m.content || ''
-      return (!m.messageType || m.messageType === 'text') && !MEDIA_LIKE_RE.test(t) && classifyPaymentText(t) === 'non_payment' && !isShortDoneBubble(t)
+      return (
+        (!m.messageType || m.messageType === 'text') &&
+        !MEDIA_LIKE_RE.test(t) &&
+        !SENT_VERB_RE.test(t) &&
+        // INT-241 r2: a later date anywhere after the details ("Mañana le escribo" then "Gracias").
+        !(!/[?¿]/u.test(t) && WAITING_DATE_RE.test(t)) &&
+        classifyPaymentText(t) === 'non_payment' &&
+        !isShortDoneBubble(t)
+      )
     })
     return clean ? 'sinpe_reminder' : null
   }
@@ -128,10 +139,12 @@ export function parseStageTexts(raw: unknown): Partial<Record<FollowUpSlot, stri
     const t = (raw as Record<string, unknown>)[slot]
     if (typeof t !== 'string' || !t.trim() || t.length > 400) continue
     // SecureDog INT-243: no digit of any script, currency sign, number word or anything shaped like a link / domain.
+    // r2: on the NFKC form (superscripts, circled digits, "․" one-dot leader), any \p{N}, and tens / slang money words.
+    const k = t.normalize('NFKC')
     if (
       slot === 'sinpe_reminder' &&
-      (/[\p{Nd}\p{Sc}]|https?:|www\.|[\p{L}\p{N}-]\.[\p{L}]{2,}/u.test(t) ||
-        /(?<![\p{L}])(?:mil|miles|cien|ciento|colones|rojos|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)(?![\p{L}])/iu.test(t))
+      (/[\p{N}\p{Sc}]|https?:|www\.|[\p{L}\p{N}-][.․。][\p{L}]{2,}/u.test(k) ||
+        /(?<![\p{L}])(?:mil|miles|cien|ciento|cientos|colones|rojos|lucas|teja|tejas|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|veinte|veinti\p{L}*|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)(?![\p{L}])/iu.test(k))
     )
       continue
     out[slot] = t.trim()

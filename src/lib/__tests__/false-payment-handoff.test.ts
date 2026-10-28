@@ -352,3 +352,20 @@ describe('verifier 2026-10-28 round 3: an emoji inside a claim', () => {
     for (const t of ['¿Cuánto cuesta? 😊', 'Quiero 2 bolsas ❤️', 'Hola 👋 ¿precio?']) assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
   })
 })
+
+describe('SecureDog 2026-10-28 round 2 (INT-240 / INT-238)', () => {
+  it('the new how-to-pay questions are whole-message shapes: anything riding along goes to a person', () => {
+    for (const t of ['¿Cuál es el proceso de pago si la señora le dejo la plata al mensajero?', '¿Cuál es el proceso de pago si mi hermana entrego la plata?', '¿Cómo se maneja el pago si Juan metio la plata en la cuenta?', '¿Cuál es el proceso de pago si mi mamá les consigno la plata?', '¿Cómo se maneja el pago? ¿Qué pasa si lo hice dos veces?', '¿Cuál es el proceso de pago? ✅', '¿Cuál es el proceso de pago? 💸']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+    for (const t of ['Hola, ¿cómo se maneja el pago?', '¿Cuál es el proceso de pago? 😊', '¿Cuál es el proceso de pago? 🙏🏻', '¿Qué opciones de pago tienen? ☺️']) {
+      assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+
+  it('an emoji with its selector inside a word or an amount still hands off', () => {
+    for (const t of ['Ya pa❤️gué', 'Ya le hi❤️ce el sin❤️pe, ¿cuándo llega?', 'Le mandé 1❤️5❤️0❤️0❤️0❤️, ¿cuándo me llega?']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+})

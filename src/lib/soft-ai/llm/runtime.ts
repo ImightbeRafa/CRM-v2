@@ -38,7 +38,7 @@ import { softAiProviderFor, type ChatAgentTonePreset } from '@/lib/soft-ai/agent
 import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
 import { isAgentIntent } from '@/lib/soft-ai/agent-intents'
 import { HANDOFF_REASON, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
-import { hasPaymentWord, isCourtesyText, isShortDoneBubble, paymentHandoffReason } from '@/lib/soft-ai/payment-classifier'
+import { hasPaymentWord, isShortDoneBubble, paymentHandoffReason } from '@/lib/soft-ai/payment-classifier'
 import { paymentDetailsIn } from '@/lib/soft-ai/sales-state'
 
 export type SoftAiLlmRuntimeInput = {
@@ -528,7 +528,11 @@ export async function runSoftAiLlmRuntime(
     // payment; right after the store's payment DETAILS, for anything but a plain thank-you ("Le acabo de mandar" has no
     // payment word); after another store payment mention ("Cuando hagás el pago, mandame el comprobante"), only for a
     // short "listo". That mention alone turned "Muchas gracias" / "Guía de tallas" into "Pago por verificar".
-    const customerPaymentTalk = escalationIsPaymentTalk(customerSide, lastStoreText)
+    const customerPaymentTalk = escalationIsPaymentTalk(
+      customerSide,
+      lastStoreText,
+      input.history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),
+    )
     const paymentRisk =
       confirmationIsPayment ||
       validation.reasons.includes('payment_status_claim') ||
@@ -690,12 +694,19 @@ export function conversationPaymentContext(history: Array<{ direction: string; c
   return history.some((m) => m.direction === 'outbound' && hasPaymentWord(m.content || ''))
 }
 
-/** Model escalation → PAYMENT hand-off (see the turn's rule): the customer's own payment words, or after the details. */
-export function escalationIsPaymentTalk(customerSide: string, lastStoreText: string): boolean {
-  return (
-    hasPaymentWord(customerSide) ||
-    (paymentDetailsIn(lastStoreText) ? !isCourtesyText(customerSide) : hasPaymentWord(lastStoreText) && isShortDoneBubble(customerSide))
-  )
+/** Thanks / goodbye words only — never a yes ("Sí", "Claro", "Ok", "Dale", a lone 👍) that can answer "¿Pudiste hacer el SINPE?". */
+const THANKS_ONLY_RE =
+  /^(?=.*\p{L})(?:[\s,.!¡¿?…]|\p{Extended_Pictographic}|\p{Emoji_Modifier}|\u{FE0F}|\u{200D}|(?<![\p{L}])(?:muchas|mil|gracias|graciass+|thanks|thank\s+you|bendiciones|saludos|feliz\s+(?:d[ií]a|tarde|noche)|buen\s+d[ií]a|buenas\s+(?:tardes|noches)|que\s+(?:est[eé]s?|est[eé]n)\s+bien|hasta\s+luego|chao|bye|igualmente|con\s+gusto|amable|muy\s+amable|pura\s+vida)(?![\p{L}]))+$/iu
+
+/**
+ * Model escalation → PAYMENT hand-off: the customer's own payment words; once the store sent payment details in this
+ * chat, anything but a plain thank-you ("Le acabo de mandar", "Sí, hace un rato"); otherwise a short "listo" right
+ * after a store payment mention. A store mention alone never makes "Guía de tallas" a payment.
+ */
+export function escalationIsPaymentTalk(customerSide: string, lastStoreText: string, detailsSent = paymentDetailsIn(lastStoreText)): boolean {
+  if (hasPaymentWord(customerSide)) return true
+  if (detailsSent) return !THANKS_ONLY_RE.test((customerSide || '').normalize('NFKC'))
+  return hasPaymentWord(lastStoreText) && isShortDoneBubble(customerSide)
 }
 
 export function modelHandoff(reason: string | undefined, inboundText: string): TurnHandoff {

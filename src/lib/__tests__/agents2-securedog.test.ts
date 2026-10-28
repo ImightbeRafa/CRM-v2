@@ -56,11 +56,11 @@ describe('INT-93: payment claims never reach a confirming reply', () => {
     const runtime = read('src/lib/soft-ai/llm/runtime.ts')
     assert.match(runtime, /validation\.reasons\.includes\('confirmation_wording'\)/)
     assert.match(runtime, /validation\.reasons\.includes\('payment_status_claim'\)/)
-    // SecureDog r9 F2: the customer side is the whole recent burst; after the store's payment details anything but a
+    // SecureDog r9 F2: the customer side is the whole recent burst; once the store sent payment details anything but a
     // thank-you stays a payment hand-off (2026-10-27: a later "mandame el comprobante" alone is not the customer's words).
     assert.match(runtime, /structured\.needsHuman && customerPaymentTalk/)
-    assert.match(runtime, /const customerPaymentTalk = escalationIsPaymentTalk\(customerSide, lastStoreText\)/)
-    assert.match(runtime, /paymentDetailsIn\(lastStoreText\) \? !isCourtesyText\(customerSide\)/)
+    assert.match(runtime, /const customerPaymentTalk = escalationIsPaymentTalk\(\s*customerSide,\s*lastStoreText,\s*input\.history\.some\(\(m\) => m\.direction === 'outbound' && paymentDetailsIn/)
+    assert.match(runtime, /if \(detailsSent\) return !THANKS_ONLY_RE\.test/)
     assert.match(runtime, /const customerSide = burstCustomerText\(input\.history, input\.inboundText \|\| ''\)/)
     // SecureDog round 6 (luna-10): the reply check reads the whole burst since the store last wrote.
     assert.match(runtime, /customerText: burstCustomerText\(input\.history, input\.inboundText\)/)

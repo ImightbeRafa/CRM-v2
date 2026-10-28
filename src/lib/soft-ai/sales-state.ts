@@ -397,30 +397,43 @@ const PAID_STEP =
 const RECEIPT_MEDIA_RE = /^\s*\[(?:image|imagen|foto|document|documento|file|archivo)\]\s*$/iu
 /** "Ahorita le mando el comprobante", "mañana le paso": a payment still to come (the prompt must not say it is paid). */
 const PAY_LATER_RE =
-  /(?<![\p{L}])(?:ahorita|en\s+un\s+(?:rato|momento|toque)|m[aá]s\s+tarde|ma[nñ]ana|luego|despu[eé]s|voy\s+a|vamos\s+a|(?:le|te|les)\s+(?:mando|env[ií]o|paso|hago)|cuando\s+(?:pueda|tenga|me\s+paguen))(?![\p{L}])/iu
+  /(?<![\p{L}])(?:ahorita|en\s+un\s+(?:rato|momento|toque)|m[aá]s\s+tarde|ma[nñ]ana|luego|despu[eé]s|voy\s+a|vamos\s+a|(?:le|te|les)\s+(?:mando|env[ií]o|paso|hago)|\p{L}+(?:ar|er|ir)[eé](?![\p{L}])|orita|al\s+rato|en\s+la\s+(?:tarde|noche|ma[nñ]ana)|hoy|apenas|cuando\s+(?:pueda|tenga|me\s+paguen))(?![\p{L}])/iu
 /** Past tense only: "Pago recibido", "recibimos tu SINPE" — never "…y te confirmamos el pago" (a promise). */
 const STORE_CONFIRMED_PAYMENT_RE =
   /(?<![\p{L}])(?:(?:pago|sinpe|comprobante|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|aplicad[oa])|recibimos\s+(?:tu|el|su)\s+(?:pago|sinpe|comprobante))(?![\p{L}])/iu
 
+/** A question without "?" ("Me confirma a qué número envío el comprobante"). */
+const ASKS_RE = /(?<![\p{L}])(?:qu[eé]|d[oó]nde|c[oó]mo|cu[aá]l|cu[aá]ndo|me\s+confirm\p{L}*)(?![\p{L}])/iu
+/** Receipt nouns alone ("le mandaré el comprobante", "comprobante en la tarde") are not a payment act. */
+const RECEIPT_NOUN_RE = /(?<![\p{L}])(?:comprobantes?|capturas?|pantallazos?|adjuntos?|fotos?)(?![\p{L}])/giu
+
+/** A customer bubble that says the payment was made: a receipt photo / file, or a past-tense claim (not a promise). */
+function customerPaidEvidence(text: string): boolean {
+  if (RECEIPT_MEDIA_RE.test(text)) return true
+  const act = text.replace(RECEIPT_NOUN_RE, ' ')
+  return hasHardPaymentClaim(act) && !/[?¿]/u.test(text) && !ASKS_RE.test(text) && !PAY_LATER_RE.test(text) && paymentHandoffReason(text) !== 'complaint'
+}
+
 /**
- * After the store's last payment-details message: a receipt photo / file or a hard "ya pagué" from the customer (not a
- * refund / complaint), or the store saying it received it — and no new sale started after that (a buy cue or a new ₡
- * quote: "también quiero el Energy Patch" is a new close, not post-sale).
+ * After the store's last payment-details message: the LATEST paid evidence (customer receipt / past-tense claim, or the
+ * store saying it received it), with no new sale started after it — a customer buy cue, or a store ₡ quote that is not
+ * itself a payment confirmation ("también quiero el Energy Patch" → "₡12 900" is a new close, not post-sale).
  */
 export function paidAfterDetails(history: SoftAiHistoryMessage[], isDetails: (text: string) => boolean): boolean {
   let i = history.length - 1
   while (i >= 0 && !(history[i].direction === 'outbound' && isDetails(history[i].content || ''))) i--
   if (i < 0) return false
   const after = history.slice(i + 1)
-  const paidAt = after.findIndex((m) => {
+  let paidAt = -1
+  after.forEach((m, j) => {
     const text = m.content || ''
-    if (m.direction === 'outbound') return STORE_CONFIRMED_PAYMENT_RE.test(text)
-    return RECEIPT_MEDIA_RE.test(text) || (hasHardPaymentClaim(text) && !/[?¿]/u.test(text) && !PAY_LATER_RE.test(text) && paymentHandoffReason(text) !== 'complaint')
+    if (m.direction === 'outbound' ? STORE_CONFIRMED_PAYMENT_RE.test(text) : customerPaidEvidence(text)) paidAt = j
   })
   if (paidAt < 0) return false
-  return !after
-    .slice(paidAt + 1)
-    .some((m) => (m.direction === 'inbound' ? BUY_RE.test(m.content || '') : /₡\s?\d/u.test(m.content || '')))
+  return !after.slice(paidAt + 1).some((m) => {
+    const text = m.content || ''
+    return m.direction === 'inbound' ? BUY_RE.test(text) : /₡\s?\d/u.test(text) && !STORE_CONFIRMED_PAYMENT_RE.test(text)
+  })
 }
 
 /** The customer wants a product that is AGOTADO: no close for it (no total, data or payment question). */

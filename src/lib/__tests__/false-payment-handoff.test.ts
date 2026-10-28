@@ -126,6 +126,17 @@ describe('model escalation → payment hand-off', () => {
     assert.equal(escalationIsPaymentTalk('Muchas gracias', DETAILS), false)
   })
 
+  it('once details were sent, a claim with no money word stays payment even after a later store message (Verifier r2 F1)', () => {
+    const later = '1-2 días hábiles 😊 Cuando hagás el pago, mandame el comprobante'
+    for (const t of ['Le acabo de mandar', 'Sí', 'Claro que sí', 'Así es', 'Sí, hace un rato', 'Hace un rato', '👍', 'Ok', 'Dale']) {
+      assert.equal(escalationIsPaymentTalk(t, later, true), true, t)
+      assert.equal(escalationIsPaymentTalk(t, '¿Pudiste hacer el SINPE al 6201 9914?'), true, t)
+    }
+    for (const t of ['Muchas gracias', 'Gracias 🙏', 'Mil gracias, muy amable', 'Pura vida, gracias!']) {
+      assert.equal(escalationIsPaymentTalk(t, later, true), false, t)
+    }
+  })
+
   it('a store payment MENTION (not the details) alone does not make "gracias" / "guía de tallas" a payment', () => {
     const mention = '¡Con gusto! Cuando hagás el pago, mandame el comprobante por aquí.'
     assert.equal(escalationIsPaymentTalk('Muchas gracias', mention), false)
@@ -181,6 +192,22 @@ describe('after the receipt the agent stops asking for the payment', () => {
     assert.doesNotMatch(deriveSalesState({ history: second, inboundText: 'Sí porfa', ctx: CTX }).nextStep, /YA pagó/)
   })
 
+  it('Verifier r2 F2: promises are not paid; a confirmation with ₡ keeps post-sale; the latest receipt wins', () => {
+    for (const later of ['Le mandaré el comprobante', 'El comprobante se lo mando en la noche', 'Transfiero hoy y envío comprobante', 'Orita mando comprobante', 'Me confirma a qué número envío el comprobante', 'Al rato le transfiero y mando comprobante', 'Comprobante en la tarde']) {
+      assert.doesNotMatch(deriveSalesState({ history: [msg(1, 'outbound', DETAILS), msg(2, 'inbound', later)], inboundText: 'ok', ctx: CTX }).nextStep, /YA pagó/, later)
+    }
+    const confirmed = [msg(1, 'outbound', DETAILS), msg(2, 'inbound', '[image]'), msg(3, 'outbound', 'Recibimos tu pago de ₡17 900, ¡gracias!')]
+    assert.match(deriveSalesState({ history: confirmed, inboundText: '¿Cuándo me llega?', ctx: CTX }).nextStep, /YA pagó/)
+    const twoOrders = [
+      msg(1, 'outbound', DETAILS),
+      msg(2, 'inbound', '[image]'),
+      msg(3, 'inbound', 'Ah y también quiero el Energy Patch'),
+      msg(4, 'outbound', 'El Energy Patch cuesta ₡12 900'),
+      msg(5, 'inbound', '[image]'),
+    ]
+    assert.match(deriveSalesState({ history: twoOrders, inboundText: 'Muchas gracias', ctx: CTX }).nextStep, /YA pagó/)
+  })
+
   it('a receipt from BEFORE the latest details does not count', () => {
     const history = [msg(1, 'outbound', DETAILS), msg(2, 'inbound', '[image]'), msg(3, 'outbound', DETAILS)]
     assert.doesNotMatch(deriveSalesState({ history, inboundText: 'ok', ctx: CTX }).nextStep, /YA pagó/)
@@ -193,7 +220,7 @@ describe('wiring (source)', () => {
 
   it('a model escalation uses the payment-talk rule', () => {
     assert.match(runtime, /structured\.needsHuman && customerPaymentTalk/)
-    assert.match(runtime, /const customerPaymentTalk = escalationIsPaymentTalk\(customerSide, lastStoreText\)/)
+    assert.match(runtime, /const customerPaymentTalk = escalationIsPaymentTalk\(\s*customerSide,\s*lastStoreText,\s*input\.history\.some/)
     assert.doesNotMatch(runtime, /structured\.needsHuman && \(hasPaymentWord\(customerSide\) \|\| hasPaymentWord\(lastStoreText\)\)/)
   })
 

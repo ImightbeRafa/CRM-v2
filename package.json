@@ -58,6 +58,7 @@
     "test:workforce-state": "npx tsx src/lib/__tests__/workforce-time-entry-state.test.ts",
     "test:payroll-bounds": "npx tsx src/lib/__tests__/payroll-cr-day-bounds.test.ts",
     "test:correos-credentials": "npx tsx --test src/lib/__tests__/correos-credentials.test.ts src/lib/__tests__/review-environment.test.ts",
+    "test:correos-v3": "npx tsx --import ./scripts/shim-server-only.mjs --test src/lib/__tests__/correos-v3-*.test.ts src/lib/__tests__/correos-credentials.test.ts",
     "cf:typecheck": "tsc -p tsconfig.cf-worker.json",
     "cf:deploy": "npx wrangler deploy",
     "audit:dead": "knip --no-exit-code",

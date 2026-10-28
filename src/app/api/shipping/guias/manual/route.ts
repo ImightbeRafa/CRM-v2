@@ -32,12 +32,13 @@ export async function POST(request: NextRequest) {
       select: { id: true },
     });
     if (duplicate) return NextResponse.json({ error: `Guía ${entry.guiaNumber} is already assigned` }, { status: 409 });
-    // A number that belongs to another business is never accepted (SecureDog DATA-74): same generic answer.
-    const elsewhere = await globalPrisma.shippingGuia.findFirst({
+    // A real Correos number (AA123456789CR) that another business already holds is never accepted (SecureDog DATA-74).
+    // Short hand-typed numbers ("1", "123") are per business and not checked across businesses.
+    const elsewhere = /^[A-Z]{2}\d{9}CR$/.test(entry.guiaNumber) && await globalPrisma.shippingGuia.findFirst({
       where: { tenantId: { not: tenantId }, OR: [{ guiaNumber: entry.guiaNumber }, { trackingNumber: entry.guiaNumber }] },
       select: { id: true },
     });
-    if (elsewhere) return NextResponse.json({ error: `Guía ${entry.guiaNumber} is already assigned` }, { status: 409 });
+    if (elsewhere) return NextResponse.json({ error: `La guía ${entry.guiaNumber} no se puede usar.` }, { status: 409 });
   }
 
   const saved = [];

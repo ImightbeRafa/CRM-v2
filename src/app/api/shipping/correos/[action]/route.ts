@@ -35,7 +35,8 @@ const bad = (error: string, status = 400) => NextResponse.json({ error }, { stat
 const s = (v: unknown, max = 100) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const GUIA_RE = /^[A-Za-z0-9-]{4,50}$/;
 const CODE_RE = /^\d{1,2}$/;
-const READ_PER_MIN = 120;
+// A Producción batch of 60 orders fires an address check + a quote per order (verifier G).
+const READ_PER_MIN = 600;
 const WRITE_PER_MIN = 5;
 /** Pickups a store may ask Correos for in 24 h (trucks under the platform account, INT-238). */
 const PICKUPS_PER_DAY = 5;
@@ -176,7 +177,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
     if (action === 'quote') {
       const origin = tenantOrigin(settings);
-      if (!origin) return bad('Configurá el lugar de origen en Configuración › Envíos para cotizar.', 409);
+      if (!origin) return bad('Configurá el lugar de origen en el asistente de configuración › Envíos para cotizar.', 409);
       const d = body?.dims;
       const dims = d && typeof d === 'object' ? { alto: Number(d.alto) || 0, largo: Number(d.largo) || 0, ancho: Number(d.ancho) || 0 } : null;
       const pesoG = Number(body?.pesoG) || Number(settings.ws_default_weight_g) || 500;
@@ -191,12 +192,17 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       const requested = Array.isArray(body?.guias) ? body.guias.map((x: unknown) => s(x, 50)).filter((x: string) => GUIA_RE.test(x)) : [];
       const owned = await tenantOwnsGuias(tenantId, requested);
       if (owned.length === 0) return bad('Elegí guías de esta tienda.');
+      // Same key again (retry): answer with what happened to it, before the 24 h filter (verifier B).
+      // Scoped per store so two stores can never collide on a key.
+      const scopedKey = createHash('sha256').update(`${tenantId}\0${key}`).digest('hex').slice(0, 64);
+      const prior = await pickupStatus(scopedKey);
+      if (prior && prior !== 'failed') return NextResponse.json({ ok: prior === 'sent', duplicate: true, status: prior, guias: owned });
       const recent = await recentPickupLoad(tenantId);
       if (recent.count >= PICKUPS_PER_DAY) return bad(`Máximo ${PICKUPS_PER_DAY} recolecciones por día. Probá mañana o llamá a Correos.`, 429);
       const guias = owned.filter((g) => !recent.guias.has(g));
       if (guias.length === 0) return bad('Esas guías ya tienen una recolección solicitada en las últimas 24 h.', 409);
       const origin = tenantOrigin(settings);
-      if (!origin) return bad('Configurá el lugar de origen en Configuración › Envíos.', 409);
+      if (!origin) return bad('Configurá el lugar de origen en el asistente de configuración › Envíos.', 409);
       const address = s(body?.address, 300) || s(settings.ws_sender_address, 300);
       if (!address) return bad('Falta la dirección de recolección.');
 
@@ -204,10 +210,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       // Each store asks under its own cédula: never the platform's (INT-238).
       const cedula = s(settings.correos_pickup_cedula, 20);
       const correo = s(settings.correos_pickup_email, 150);
-      if (!cedula || !correo) return bad('Falta la cédula y el correo para recolecciones (Configuración › Envíos).', 409);
+      if (!cedula || !correo) return bad('Falta la cédula y el correo para recolecciones (asistente de configuración › Envíos).', 409);
 
-      // Scoped per store so two stores can never collide on a key.
-      const scopedKey = createHash('sha256').update(`${tenantId}\0${key}`).digest('hex').slice(0, 64);
       const claim = await claimPickup({ key: scopedKey, tenantId, userId: userId ?? null, guias, address, environment: platform?.config.environment ?? 'prod' });
       if (claim === 'duplicate') {
         const status = await pickupStatus(scopedKey);

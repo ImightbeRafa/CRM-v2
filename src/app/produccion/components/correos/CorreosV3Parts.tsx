@@ -130,12 +130,14 @@ function BranchPicker({
   district,
   value,
   onPick,
+  onClear,
 }: {
   province: string;
   canton: string;
   district: string;
   value: { codigo: string } | null;
   onPick: (b: V3Branch) => void;
+  onClear: () => void;
 }) {
   const [branches, setBranches] = useState<V3Branch[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -149,6 +151,7 @@ function BranchPicker({
     let alive = true;
     setLoading(true);
     setError(null);
+    setBranches(null); // never auto-pick from the previous canton's list (verifier F)
     const q = new URLSearchParams({ province, canton, district });
     getJson(`/api/shipping/correos/branches?${q}`)
       .then((d) => alive && setBranches(d.branches || []))
@@ -164,10 +167,11 @@ function BranchPicker({
     if (!branches) return;
     if (value && !branches.some((b) => b.codigo === value.codigo)) {
       if (branches.length === 1) onPick(branches[0]);
+      else onClear();
       return;
     }
     if (branches.length === 1 && !value) onPick(branches[0]);
-  }, [branches, value, onPick]);
+  }, [branches, value, onPick, onClear]);
 
   if (!province || !canton) return <p className="text-xs text-amber-600">Elegí provincia y cantón para ver las sucursales.</p>;
   if (loading) return <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Buscando sucursales…</p>;
@@ -336,6 +340,7 @@ export function V3OrderExtras({
   }, [toBranch]);
 
   const pick = useMemo(() => (b: V3Branch) => emit({ branch: { codigo: b.codigo, nombre: b.nombre } }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const clearPick = useMemo(() => () => emit({ branch: null }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="mt-2.5 space-y-2 border-t border-border/50 pt-2.5" data-testid="v3-order-extras">
@@ -379,7 +384,7 @@ export function V3OrderExtras({
       {toBranch && (
         <div>
           <div className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">Sucursal donde retira el cliente</div>
-          <BranchPicker province={province} canton={canton} district={district} value={value.branch} onPick={pick} />
+          <BranchPicker province={province} canton={canton} district={district} value={value.branch} onPick={pick} onClear={clearPick} />
         </div>
       )}
 

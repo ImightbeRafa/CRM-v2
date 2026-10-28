@@ -61,7 +61,7 @@ export async function saveV3Guia(input: {
   destZip?: string | null;
 }): Promise<boolean> {
   return safe(false, async () => {
-    await prisma.$executeRaw`
+    const affected = await prisma.$executeRaw`
       INSERT INTO lm_correos_guias (guia_number, shipping_guia_id, crm_tenant_id, crm_order_id, order_number, api_version,
         environment, tipo_destino, codigo_sucursal, sucursal_nombre, zpl, monto_flete, peso_g, dest_zip, last_status, next_check_at)
       VALUES (${input.guiaNumber}, ${input.shippingGuiaId ?? null}, ${input.tenantId}, ${input.crmOrderId ?? null},
@@ -80,6 +80,8 @@ export async function saveV3Guia(input: {
       -- is taken over; a v3 row of another business is never overwritten (its ZPL never moves).
       WHERE lm_correos_guias.crm_tenant_id = EXCLUDED.crm_tenant_id OR lm_correos_guias.api_version = 'soap'
     `;
+    // Another store's v3 row holds this number: leave it and its history alone (verifier C).
+    if (affected === 0) return false;
     // Events written under someone else before the take-over are dropped.
     await prisma.$executeRaw`
       DELETE FROM lm_correos_tracking_events WHERE guia_number = ${input.guiaNumber} AND crm_tenant_id <> ${input.tenantId}

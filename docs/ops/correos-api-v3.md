@@ -39,6 +39,8 @@ Without 065 everything still works; the v3 extras (ZPL, branch, tracking history
 5. **Deploy** the branch (merged onto the live line).
 6. Set `CORREOS_V3_ALLOWED=1` on the host that should talk to Correos v3 (production only; never on the
    Railway preview, which shares the database: without this flag the DB switch does nothing there).
+   On Cloudflare: `npx wrangler secret put CORREOS_V3_ALLOWED` (and later `CORREOS_TRACKING_SYNC`), then redeploy;
+   the Worker forwards only the keys listed in `CONTAINER_ENV_KEYS` (src/cf-container-worker.ts), v3 keys included.
 7. Logística › Config › Correos CR › API v3 (super admin only): user, password, client code, service 1564,
    environment **Pruebas**, the pilot store's tenant id under "Tiendas que pueden usar v3", check "Habilitar",
    Guardar, "Probar conexión".

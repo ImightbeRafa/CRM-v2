@@ -83,8 +83,11 @@ describe('Correos guía ownership (SecureDog DATA-74)', () => {
       { tenantId: 'A', carrier: 'correos_cr', status: 'failed', guiaNumber: 'PY3CR', trackingNumber: null },
       { tenantId: 'A', carrier: 'correos_cr', status: 'completed', guiaNumber: 'PY4CR', trackingNumber: 'PY4CR' },
       { tenantId: 'B', carrier: 'manual', status: 'completed', guiaNumber: 'PY4CR', trackingNumber: 'PY4CR' },
+      { tenantId: 'A', carrier: 'correos_cr', status: 'completed', guiaNumber: 'PY5CR', trackingNumber: 'PY5CR' },
+      { tenantId: 'B', carrier: 'correos_cr', status: 'completed', guiaNumber: 'PY5CR', trackingNumber: 'PY5CR' },
     ];
-    assert.deepEqual(ownedGuiaNumbers('A', ['PY1CR', 'PY2CR', 'PY3CR', 'PY4CR'], rows), ['PY1CR']);
+    // A hand-typed number elsewhere never blocks the owner; two Correos-issued holders = nobody.
+    assert.deepEqual(ownedGuiaNumbers('A', ['PY1CR', 'PY2CR', 'PY3CR', 'PY4CR', 'PY5CR'], rows), ['PY1CR', 'PY4CR']);
     // B typed A's number as a manual guía: B gets nothing.
     assert.deepEqual(ownedGuiaNumbers('B', ['PY1CR', 'PY4CR'], rows), []);
   });

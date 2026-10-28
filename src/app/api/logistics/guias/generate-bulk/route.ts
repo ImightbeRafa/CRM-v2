@@ -50,7 +50,7 @@ type ClaimResult = { state: 'claimed' } | { state: 'existing'; guiaNumber?: stri
 async function claimCorreosGuia(order: { id: string; orderId: string; tenantId: string }, key: string): Promise<ClaimResult> {
     // A completed Correos guía from before the claim existed (or from another screen) is reused, never re-registered.
     const done = await prisma.shippingGuia.findFirst({
-        where: { tenantId: order.tenantId, orderId: order.orderId, status: 'completed', carrier: { contains: 'correos' }, guiaNumber: { not: null } },
+        where: { tenantId: order.tenantId, orderId: order.orderId, status: 'completed', carrier: { contains: 'correos', mode: 'insensitive' }, guiaNumber: { not: null } },
         orderBy: { createdAt: 'desc' },
         select: { guiaNumber: true },
     });
@@ -385,7 +385,8 @@ export async function POST(req: NextRequest) {
             })().catch((err: unknown) => {
                 console.error(`[Logistics Guia] order ${verified.orderId} failed:`, err instanceof Error ? err.message : err);
                 if (results.length === before) {
-                    results.push({ success: false, orderId: verified.orderId, orderDbId: verified.id || '', error: 'Error inesperado: revisá esta orden antes de reintentar.' });
+                    // reused: never persisted, so a DB blip can't mark an existing completed guía failed (verifier K).
+                    results.push({ success: false, orderId: verified.orderId, orderDbId: verified.id || '', error: 'Error inesperado: revisá esta orden antes de reintentar.', reused: true });
                 }
             });
             const fresh = results.slice(before).filter(r => !r.reused);

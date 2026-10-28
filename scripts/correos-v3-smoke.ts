@@ -1,8 +1,8 @@
 /**
  * Live smoke test for the Correos v3 API.
  *
- *   npx tsx scripts/correos-v3-smoke.ts            # read-only: login, geo, branches, quote, tracking
- *   npx tsx scripts/correos-v3-smoke.ts --register # ALSO registers one test guía (test env only,
+ *   npx tsx --import ./scripts/shim-server-only.mjs scripts/correos-v3-smoke.ts            # read-only
+ *   npx tsx --import ./scripts/shim-server-only.mjs scripts/correos-v3-smoke.ts --register # ALSO one test guía (test env only,
  *                                                  # needs CORREOS_V3_SMOKE_ALLOW_WRITE=1)
  *
  * Reads CORREOS_V3_TEST_* (or CORREOS_V3_* with CORREOS_V3_ENV=prod) from the environment / .env.local.

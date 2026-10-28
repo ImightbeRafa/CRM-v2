@@ -47,8 +47,11 @@ export function ownedGuiaNumbers(tenantId: string, list: string[], rows: GuiaOwn
   for (const r of rows) {
     const numbers = [r.guiaNumber, r.trackingNumber].filter((n): n is string => !!n && list.includes(n));
     for (const n of numbers) {
+      const issued = r.status === 'completed' && /correos/i.test(r.carrier) && r.carrier !== 'manual';
+      if (!issued) continue;
+      // Only another store's Correos-issued guía contests a number; a hand-typed one never blocks the owner.
       if (r.tenantId !== tenantId) contested.add(n);
-      else if (r.status === 'completed' && /correos/i.test(r.carrier) && r.carrier !== 'manual') mine.add(n);
+      else mine.add(n);
     }
   }
   return list.filter((g) => mine.has(g) && !contested.has(g));

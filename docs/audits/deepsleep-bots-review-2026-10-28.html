@@ -1,0 +1,210 @@
+<title>DeepSleep Bots Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; numbers strip, then ranked problems, each with what the chat showed and the fix. */
+:root{
+  --bg:#f6f7f5; --surface:#ffffff; --fg:#1b2420; --muted:#5d6a64; --line:#dde3df;
+  --accent:#2f6b57; --accent-soft:#e3efe9; --warn:#a2561b; --warn-soft:#f8ebdf; --bad:#a3302a; --bad-soft:#f7e3e1; --ok:#2f6b57;
+  --display:"Fraunces", Georgia, serif; --body:"IBM Plex Sans", system-ui, sans-serif; --mono:"IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121815; --surface:#19211d; --fg:#e6ece8; --muted:#9aa8a1; --line:#2b3631;
+  --accent:#7cc4a8; --accent-soft:#1f3229; --warn:#e3a26b; --warn-soft:#33261a; --bad:#ef8a83; --bad-soft:#3a1f1d; --ok:#7cc4a8; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121815; --surface:#19211d; --fg:#e6ece8; --muted:#9aa8a1; --line:#2b3631;
+  --accent:#7cc4a8; --accent-soft:#1f3229; --warn:#e3a26b; --warn-soft:#33261a; --bad:#ef8a83; --bad-soft:#3a1f1d; --ok:#7cc4a8; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.6 var(--body)}
+.wrap{max-width:860px;margin:0 auto;padding-block:40px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:36px}
+h1,h2{font-family:var(--display);font-weight:600;text-wrap:balance;margin:0;line-height:1.2}
+h1{font-size:2.1rem} h2{font-size:1.45rem} h3{font-size:1.02rem;margin:0;font-weight:600}
+p{margin:0;max-width:68ch} .muted{color:var(--muted)}
+.eyebrow{font:500 .74rem/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+header{display:flex;flex-direction:column;gap:12px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.stat{background:var(--surface);padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+.stat b{font:500 1.5rem/1.1 var(--mono);font-variant-numeric:tabular-nums}
+.stat span{font-size:.82rem;color:var(--muted)}
+section{display:flex;flex-direction:column;gap:14px}
+.issue{display:grid;grid-template-columns:44px 1fr;gap:6px 14px;padding:18px 0;border-top:1px solid var(--line)}
+.issue .rank{font:500 .9rem/1.6 var(--mono);color:var(--muted)}
+.issue .body{display:flex;flex-direction:column;gap:8px;min-width:0}
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:500 .72rem/1 var(--mono);padding:5px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+.chip.bad{background:var(--bad-soft);color:var(--bad)} .chip.warn{background:var(--warn-soft);color:var(--warn)}
+blockquote{margin:0;padding:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:8px;font-size:.9rem;display:flex;flex-direction:column;gap:4px}
+blockquote .who{font:500 .7rem/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.fix{font-size:.92rem} .fix strong{color:var(--accent)}
+ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px} li{max-width:68ch}
+.table{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:.88rem;background:var(--surface)}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:500 .72rem/1.2 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+.callout{background:var(--accent-soft);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:8px}
+code{font:.85em var(--mono);background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">DeepSleep · last 7 days · 2026-10-21 → 10-28 · read-only review</div>
+  <h1>DeepSleep bots review</h1>
+  <p class="muted">Every chat that Forge, Sleeping, PatchHouse, Pura Sonrisa and Prototipo answered in the last week, read end to end, plus the bot's own decision records. The goal: find the clear, repeated mistakes that cost sales, and the order to fix them. It builds on draft PR #160 (false "Pago por verificar" hand-offs).</p>
+</header>
+
+<div class="stats">
+  <div class="stat"><b>1,373</b><span>chats answered by a bot</span></div>
+  <div class="stat"><b>2,912</b><span>bot turns</span></div>
+  <div class="stat"><b>~2%</b><span>chats linked to an order (30)</span></div>
+  <div class="stat"><b>969</b><span>follow-ups sent · ~9% got a reply</span></div>
+  <div class="stat"><b>214</b><span>bot messages saved as a person (bug, fixed)</span></div>
+  <div class="stat"><b>200</b><span>hand-offs / reviews</span></div>
+</div>
+
+<div class="callout">
+  <h3>The short version</h3>
+  <p>Prices and safety answers are right almost every time. The bots lose sales in three places. They stop after the first price answer with a soft yes/no question. They say "Dame un momento" for things they already know. And the follow-ups use the same generic line for everyone. One real code bug made all of this worse: on Instagram, about 1 in 20 bot messages was saved as if a person wrote it. When that happened the rest of the reply was dropped and later customer messages were ignored.</p>
+  <p class="muted">The order count only includes orders linked to the chat. Orders the team typed in by hand without a link are missing, so the real rate is somewhat higher.</p>
+</div>
+
+<section>
+  <div class="eyebrow">Per store</div>
+  <div class="table"><table>
+    <thead><tr><th>Bot</th><th>Chats</th><th>With order</th><th>Person stepped in</th><th>Follow-up sent → replied</th><th>Hand-off chats</th></tr></thead>
+    <tbody>
+      <tr><td>Forge (Andrés)</td><td class="n">623</td><td class="n">10</td><td class="n">166</td><td class="n">391 → 34</td><td class="n">61</td></tr>
+      <tr><td>Sleeping (Vale)</td><td class="n">555</td><td class="n">11</td><td class="n">108</td><td class="n">446 → 37</td><td class="n">62</td></tr>
+      <tr><td>PatchHouse (Sofi)</td><td class="n">184</td><td class="n">3</td><td class="n">58</td><td class="n">132 → 17</td><td class="n">27</td></tr>
+      <tr><td>Pura Sonrisa</td><td class="n">7</td><td class="n">3</td><td class="n">3</td><td class="n">2 → 0</td><td class="n">3</td></tr>
+      <tr><td>Prototipo (Dani)</td><td class="n">4</td><td class="n">0</td><td class="n">1</td><td class="n">3 → 0</td><td class="n">0</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">"Person stepped in" includes the 214 bot messages that were wrongly saved as a person (problem 1), so real staff work is lower than shown.</p>
+</section>
+
+<section>
+  <div class="eyebrow">Ranked by lost sales</div>
+  <h2>What goes wrong</h2>
+
+  <div class="issue"><div class="rank">1</div><div class="body">
+    <h3>Bot messages saved as a person, rest of the reply dropped</h3>
+    <div class="tags"><span class="chip bad">code bug</span><span class="chip">fixed in PR #160</span></div>
+    <p>Instagram sends back a copy ("echo") of every message the bot sends. When that copy was saved first, the bot's own save was thrown away as a duplicate. The message then looked like a person wrote it. The bot's next bubble checked "did a person reply?", saw it, and stopped. Often the lost bubble was the price or the question.</p>
+    <blockquote><span class="who">Sleeping · Mauren · 10-27 00:39</span>"De Pérez Zeledón, cuánto cuestan ?" → only "¡Hola! Soy Vale de Sleeping Patches CR 🌙" went out. No price, no follow-up.</blockquote>
+    <p>7 days: 129 replies and 85 follow-ups saved as a person; 47 replies cut short; 140 customer messages skipped in chats no person had taken over.</p>
+    <p class="fix"><strong>Fix:</strong> when the bot's save matches the echo of the same message, the bot's mark now wins. A person's own messages are never relabeled. Committed on top of PR #160, tests added.</p>
+  </div></div>
+
+  <div class="issue"><div class="rank">2</div><div class="body">
+    <h3>The chat stops at the first price answer</h3>
+    <div class="tags"><span class="chip warn">sales flow</span><span class="chip">all stores</span></div>
+    <p>About 3 in 4 chats are one ad question ("¿Cuánto cuesta…?"), one bot answer ending in a soft yes/no question, then silence. The bot rarely gives a reason to buy, rarely offers the pack saving, and asks something the customer has to think about.</p>
+    <blockquote><span class="who">Forge · typical</span>"El arnés cuesta ₡14 900… ¿Querés que te pase la guía de tallas?" → no reply. When people did say "Sí", the bot often asked the same question again instead of sending the guide.</blockquote>
+    <blockquote><span class="who">PatchHouse · typical</span>"₡9 900. ¿Cuál parche te interesa: Focus, Energy, Stress Relief o Dopamine?" → no reply. No recommendation, no combo.</blockquote>
+    <p class="fix"><strong>Fix:</strong> the first answer gives the price, one line of value, and one easy next step. Forge: send the size guide right away and ask height and weight. Sleeping: "2 bolsas ₡19 800, te ahorrás el envío". PatchHouse: ask what they want to improve, then recommend one. When the customer says "Sí", do the thing that was offered. Never ask the same question twice.</p>
+  </div></div>
+
+  <div class="issue"><div class="rank">3</div><div class="body">
+    <h3>"Dame un momento" for things the bot already knows</h3>
+    <div class="tags"><span class="chip warn">hand-off rules</span><span class="chip warn">knowledge gaps</span></div>
+    <p>A hand-off makes the customer wait 15 min to 19 h, and the bot stays silent the whole time. Most were avoidable:</p>
+    <ul>
+      <li><b>Model errors (24):</b> on 10-22 the AI provider failed for two hours, and every price question got "Dame un momento y te confirmo".</li>
+      <li><b>Blocked drafts (~27):</b> the safety check threw away a normal answer to "¿Cuánto cuesta un paquete?", "¿Hay descuento por mayor?" or "¿Son seguros con alergias?" and sent the waiting line instead.</li>
+      <li><b>Forge sizes out of the table (~15):</b> "Mido 1.80 pero peso 65 kg" → "no quiero recomendarte una talla equivocada". Staff answered hours later with the same rule every time: weight decides.</li>
+      <li><b>Missing facts:</b> Forge's WhatsApp number, how to wash the harness, delivery to a post office, pickup hours, bulk discount, and the GLP-1 waitlist that staff already run.</li>
+      <li><b>Night line on easy questions:</b> "A esta hora te atiende nuestro asistente virtual… el equipo te escribe a las 9:00". That goes against "night sells like day".</li>
+    </ul>
+    <p class="fix"><strong>Fix:</strong> on a model error, retry once, then send a reply built from the store's own data (price, pack, shipping) instead of the waiting line. Give a blocked draft one rewrite before handing off. Add the missing facts to each store's knowledge, including Forge's weight-first size rule and the waitlist.</p>
+  </div></div>
+
+  <div class="issue"><div class="rank">4</div><div class="body">
+    <h3>Follow-ups: one generic line, once, at any stage</h3>
+    <div class="tags"><span class="chip warn">follow-ups</span></div>
+    <p>There are six texts in total, two per store. Each chat gets one ever, about 2 to 20 hours later, whatever happened in the chat.</p>
+    <div class="table"><table>
+      <thead><tr><th>Text (start)</th><th>Sent</th><th>Replied</th></tr></thead>
+      <tbody>
+        <tr><td>🌿 ¿Ya sabés cuál parche te gustaría probar?</td><td class="n">79</td><td class="n">16.5%</td></tr>
+        <tr><td>🌙 ¿Te quedó alguna duda sobre los parches de descanso?</td><td class="n">226</td><td class="n">11.5%</td></tr>
+        <tr><td>💪 ¿Te quedó alguna duda sobre el arnés?</td><td class="n">200</td><td class="n">11.5%</td></tr>
+        <tr><td>🌿 ¿Te quedó alguna duda sobre los parches?</td><td class="n">53</td><td class="n">7.5%</td></tr>
+        <tr><td>💪 ¿Ya conocés cómo funciona el Arnés ForgeCR?</td><td class="n">191</td><td class="n">5.8%</td></tr>
+        <tr><td>🌙 Te cuento que el pack de 2 bolsas cuesta ₡19 800…</td><td class="n">220</td><td class="n">5.0%</td></tr>
+      </tbody>
+    </table></div>
+    <p>Wrong moments seen: after the customer already gave size and address or got the SINPE details; after "espero la quincena" or "ahorita no tengo plata"; "¿Ya conocés cómo funciona?" to people who already got the explanation. Missing ones: SINPE details sent but no receipt, with no reminder.</p>
+    <p class="fix"><strong>Fix:</strong> write the follow-up from where the chat stopped (the product, size or question they left open), for example "¿Te reservo el XL? Solo ocupo tu dirección". Skip anyone who already gave data or paid. Respect a date they named. Add a payment reminder after SINPE details. Allow a second touch at about 24 h, still inside Meta's window. The direct question about one product has the best reply rate, so lean that way.</p>
+  </div></div>
+
+  <div class="issue"><div class="rank">5</div><div class="body">
+    <h3>The data form scares buyers off</h3>
+    <div class="tags"><span class="chip warn">sales flow</span></div>
+    <p>About 8 of 10 customers who reached "pasame estos datos" with the 7-field list never answered. Pura Sonrisa sent the form and the payment menu together before the flavor was even picked.</p>
+    <p class="fix"><strong>Fix:</strong> one question per bubble, in order: product/size → home or pickup → name and address in one free line → payment method. The chats that converted with no person all followed that order and took under 15 min.</p>
+  </div></div>
+
+  <div class="issue"><div class="rank">6</div><div class="body">
+    <h3>False payment hand-offs from an older message</h3>
+    <div class="tags"><span class="chip">PR #160 covers part</span></div>
+    <p>PR #160 fixes the cases from your screenshots ("Qué costó tiene…", "De cuando sería el monto?", "Muchas gracias" after a receipt). The audit still shows hand-offs triggered by an <em>earlier</em> payment message ("Muy buenas tardes", "¿Solo un modelo tiene?", "No tienen un manual?" after delivery, "Tarjeta contra entrega :)" as a plain choice). 26 hand-offs in 7 days were flagged as likely false.</p>
+    <p class="fix"><strong>Fix:</strong> after merge, rerun <code>handoff-audit.ts</code> and see which are left. A hand-off should come from the newest message, not a SINPE word from earlier in the chat.</p>
+  </div></div>
+
+  <div class="issue"><div class="rank">7</div><div class="body">
+    <h3>Smaller ones</h3>
+    <div class="tags"><span class="chip">polish</span></div>
+    <ul>
+      <li>Several questions in one burst → only the last one answered (Rodrigo: price, how to use, where to buy → only "where").</li>
+      <li>Repeated greeting / two "Soy Sofi" intros when the ad sends the question twice.</li>
+      <li>A thank-you photo → "¿Me contás por escrito qué necesitás?".</li>
+      <li>"Porque tan caro?" got no value answer (₡330 per night).</li>
+      <li>English customers answered in Spanish (Sleeping).</li>
+      <li>"tómate" (tú) in a voseo store.</li>
+    </ul>
+  </div></div>
+</section>
+
+<section>
+  <div class="eyebrow">Keep</div>
+  <h2>What already works</h2>
+  <ul>
+    <li>Prices are correct in practically every chat (₡14 900 / ₡26 900; ₡9 900 + ₡3 000 / ₡19 800 / ₡28 500).</li>
+    <li>Health and safety answers are careful: no claims, "mayores de 18", "consultá a tu médico".</li>
+    <li>Payment method is asked before the SINPE details, and receipts go to a person quickly.</li>
+    <li>When a customer cooperates, the bot closes alone in 4 to 15 minutes (Felipe, Samuel, Alex on Forge; Yese on Sleeping; Lau on PatchHouse).</li>
+  </ul>
+</section>
+
+<section>
+  <div class="eyebrow">For Rafael and the team</div>
+  <h2>Decisions and data to fix by hand</h2>
+  <ul>
+    <li><b>Prices staff type differ from the bot:</b> Sleeping "2 por ₡21 900" and "2 por ₡22 800" vs the bot's ₡19 800. PatchHouse "2X ₡20 900" vs the bot's combo ₡22 800. The site is the source of truth; staff saved replies need updating.</li>
+    <li><b>Pickup hours and shipping time differ:</b> bot "todos los días 9 a 6" vs staff "L–V 9–6:30, S 9–3". Bot 2–3 días vs staff 1–2 días.</li>
+    <li><b>"WASCR-QUARKCR"</b> appears to customers as a pickup place name.</li>
+    <li><b>Risk:</b> a staff reply told an upset PatchHouse customer the patches are "aprobados por la FDA".</li>
+    <li><b>Pura Sonrisa:</b> after staff set up contra entrega, the bot answered "Muchas gracias" with the SINPE details.</li>
+    <li><b>Still open from PR #160:</b> "Ya pagué" with no photo. Ask for the comprobante, or hand off right away?</li>
+    <li><b>New question:</b> after a hand-off, may the bot keep answering non-payment questions (delivery time, sizes) if no person replied within, say, 10 minutes?</li>
+  </ul>
+</section>
+
+<section>
+  <div class="eyebrow">Proposed order</div>
+  <h2>Fix plan</h2>
+  <div class="table"><table>
+    <thead><tr><th>Step</th><th>What</th><th>Expected effect</th></tr></thead>
+    <tbody>
+      <tr><td class="n">0 · done</td><td>Echo bug (problem 1), in PR #160</td><td>No more cut replies or ignored customers on Instagram</td></tr>
+      <tr><td class="n">1</td><td>Model-error retry + store-data fallback; one rewrite for blocked drafts</td><td>Removes most "Dame un momento" on plain questions</td></tr>
+      <tr><td class="n">2</td><td>First answer + next step per store; act on "Sí"; shorter data steps</td><td>Moves the 3 in 4 price-only chats forward</td></tr>
+      <tr><td class="n">3</td><td>Knowledge: Forge size rule, WhatsApp, care, pickup, discount, waitlist</td><td>Fewer hand-offs and staff typing</td></tr>
+      <tr><td class="n">4</td><td>Follow-ups from the chat's state, payment reminder, second touch</td><td>More replies from quiet buyers</td></tr>
+      <tr><td class="n">5</td><td>Hand-off from the newest message only; rerun audit after #160</td><td>Fewer false "Pago por verificar"</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">Each step gets measured against this same week with the audit script before and after. Nothing here is deployed; production deploys stay with Rafael.</p>
+</section>
+</div>

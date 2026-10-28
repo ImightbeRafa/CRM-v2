@@ -24,6 +24,17 @@ interface SenderSettings {
   ws_sender_address: string;
   ws_sender_zip: string;
   ws_sender_phone: string;
+  /** Origin place for Correos v3 quotes and pickups. */
+  ws_sender_province: string;
+  ws_sender_canton: string;
+  ws_sender_district: string;
+  /** Default package weight in grams for guías (v3). */
+  ws_default_weight_g: string;
+  /** 'v3' = this store uses the new Correos REST API (when the platform has it on). */
+  correos_api: 'soap' | 'v3';
+  /** Requester for Correos pickups (Correos asks for cédula + email). */
+  correos_pickup_cedula: string;
+  correos_pickup_email: string;
 }
 
 const EMPTY_SETTINGS: SenderSettings = {
@@ -31,6 +42,13 @@ const EMPTY_SETTINGS: SenderSettings = {
   ws_sender_address: '',
   ws_sender_zip: '',
   ws_sender_phone: '',
+  ws_sender_province: '',
+  ws_sender_canton: '',
+  ws_sender_district: '',
+  ws_default_weight_g: '',
+  correos_api: 'soap',
+  correos_pickup_cedula: '',
+  correos_pickup_email: '',
 };
 
 export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: WizardStepProps) {
@@ -40,6 +58,9 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [platformConfigured, setPlatformConfigured] = useState<boolean | null>(null);
+  const [v3Available, setV3Available] = useState(false);
+  // Keys of ShippingConfig.settings this form does not edit; kept on save.
+  const [otherSettings, setOtherSettings] = useState<Record<string, unknown>>({});
   const { toast } = useToast();
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
@@ -55,6 +76,7 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
       const res = await fetch('/api/config/correos-status', { credentials: 'include' });
       const data = await res.json();
       setPlatformConfigured(data.configured ?? false);
+      setV3Available(!!data.v3?.enabled);
     } catch {
       setPlatformConfigured(false);
     }
@@ -74,7 +96,17 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
             ws_sender_address: s.ws_sender_address || '',
             ws_sender_zip: s.ws_sender_zip || '',
             ws_sender_phone: s.ws_sender_phone || '',
+            ws_sender_province: s.ws_sender_province || '',
+            ws_sender_canton: s.ws_sender_canton || '',
+            ws_sender_district: s.ws_sender_district || '',
+            ws_default_weight_g: s.ws_default_weight_g ? String(s.ws_default_weight_g) : '',
+            correos_api: s.correos_api === 'v3' ? 'v3' : 'soap',
+            correos_pickup_cedula: s.correos_pickup_cedula || '',
+            correos_pickup_email: s.correos_pickup_email || '',
           };
+          const rest: Record<string, unknown> = { ...s };
+          for (const k of Object.keys(EMPTY_SETTINGS)) delete rest[k];
+          setOtherSettings(rest);
           setSettings(loaded);
           setInitial(loaded);
           if (loaded.ws_sender_name) {
@@ -98,7 +130,7 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
         carrier: 'correos_cr',
         name: 'Correos de Costa Rica',
         isDefault: true,
-        settings,
+        settings: { ...otherSettings, ...settings },
       };
       const res = await fetch('/api/config/shipping-config', {
         method: existingConfigId ? 'PUT' : 'POST',
@@ -121,6 +153,8 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
   };
 
   const hasSender = !!settings.ws_sender_name;
+  const phoneOk = /^[2-9]\d{7}$/.test(settings.ws_sender_phone.replace(/\D/g, '').replace(/^506(?=\d{8}$)/, ''));
+  const zipOk = /^\d{5}$/.test(settings.ws_sender_zip.trim());
 
   if (loading) {
     return (
@@ -211,6 +245,70 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
           </div>
         </div>
       </div>
+
+      {/* Origin + Correos v3 */}
+      <div>
+        <h3 className="text-base font-semibold text-gray-900 mb-1 flex items-center gap-2">
+          <MapPin className="h-4 w-4 text-gray-500" />
+          Lugar de origen
+        </h3>
+        <p className="text-xs text-gray-500 mb-3">Se usa para cotizar el envío real y para pedir recolecciones a Correos.</p>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <Label className="mb-1 block">Provincia</Label>
+            <Input value={settings.ws_sender_province} onChange={e => update('ws_sender_province', e.target.value)} placeholder="San José" />
+          </div>
+          <div>
+            <Label className="mb-1 block">Cantón</Label>
+            <Input value={settings.ws_sender_canton} onChange={e => update('ws_sender_canton', e.target.value)} placeholder="Montes de Oca" />
+          </div>
+          <div>
+            <Label className="mb-1 block">Distrito</Label>
+            <Input value={settings.ws_sender_district} onChange={e => update('ws_sender_district', e.target.value)} placeholder="San Pedro" />
+          </div>
+          <div>
+            <Label className="mb-1 block">Peso por paquete (g)</Label>
+            <Input value={settings.ws_default_weight_g} onChange={e => update('ws_default_weight_g', e.target.value.replace(/\D/g, ''))} placeholder="500" inputMode="numeric" />
+          </div>
+        </div>
+        {hasSender && (!phoneOk || !zipOk) && (
+          <p className="text-xs text-amber-700 mt-2">
+            {!phoneOk && 'El teléfono del remitente debe tener 8 dígitos. '}
+            {!zipOk && 'El código postal debe tener 5 dígitos.'}
+          </p>
+        )}
+      </div>
+
+      {v3Available && (
+        <Card className="p-4 border-au-line-d9d2ff">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 accent-au-ink-5b6cff"
+              checked={settings.correos_api === 'v3'}
+              onChange={e => setSettings(prev => ({ ...prev, correos_api: e.target.checked ? 'v3' : 'soap' }))}
+            />
+            <span className="text-sm">
+              <span className="font-medium text-gray-900">Usar la nueva API de Correos (v3)</span>
+              <span className="block text-gray-500 text-xs mt-0.5">
+                Entrega en sucursal, etiqueta térmica, cotización real con medidas, aviso de zonas restringidas y recolecciones.
+              </span>
+            </span>
+          </label>
+          {settings.correos_api === 'v3' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 pl-7">
+              <div>
+                <Label className="mb-1 block text-xs">Cédula para recolecciones</Label>
+                <Input value={settings.correos_pickup_cedula} onChange={e => update('correos_pickup_cedula', e.target.value)} placeholder="1-1111-1111" />
+              </div>
+              <div>
+                <Label className="mb-1 block text-xs">Correo para recolecciones</Label>
+                <Input type="email" value={settings.correos_pickup_email} onChange={e => update('correos_pickup_email', e.target.value)} placeholder="envios@mitienda.com" />
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Actions */}
       <div className="flex flex-col sm:flex-row gap-3 pt-2">

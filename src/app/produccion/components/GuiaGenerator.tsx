@@ -31,6 +31,17 @@ import {
 } from 'lucide-react';
 import { formatGuiaFailureDetail, formatGuiaFailureLabel } from '@/lib/correos/auth-error';
 import {
+  EMPTY_V3_ORDER,
+  PackageBox,
+  PickupPanel,
+  TrackingTimeline,
+  V3OrderExtras,
+  crc,
+  statusTone,
+  type V3OrderState,
+  type V3Package,
+} from './correos/CorreosV3Parts';
+import {
   costaRicaLocations,
   provinceNames,
   type ProvinceData,
@@ -85,6 +96,7 @@ interface GuiaStatus {
   pdfFileName: string | null;
   createdAt: string;
   updatedAt: string;
+  trackingNumber?: string | null;
   customerName: string | null;
   product: string | null;
   province: string | null;
@@ -128,12 +140,26 @@ interface VerifiedOrder {
 
 // ─── Location Row ───────────────────────────────────────────
 
+interface GuiaExtra {
+  api: 'v3' | 'soap';
+  tipoDestino: 'DOM' | 'SUC' | null;
+  sucursal: string | null;
+  hasZpl: boolean;
+  montoFlete: number | null;
+  status: string | null;
+  statusLabel: string | null;
+  deliveredAt: string | null;
+  receivedBy: string | null;
+}
+
 function LocationRow({
   order,
   onChange,
+  children,
 }: {
   order: VerifiedOrder;
   onChange: (updates: Partial<VerifiedOrder>) => void;
+  children?: React.ReactNode;
 }) {
   const [cantonSearch, setCantonSearch] = useState(order.canton);
   const [districtSearch, setDistrictSearch] = useState(order.district);
@@ -333,6 +359,7 @@ function LocationRow({
           }`}
         />
       </div>
+      {children}
     </div>
   );
 }
@@ -355,6 +382,18 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
   const [showVerification, setShowVerification] = useState(false);
   const [verifiedOrders, setVerifiedOrders] = useState<VerifiedOrder[]>([]);
   const [generationResults, setGenerationResults] = useState<any>(null);
+
+  // Correos API v3 (store opted in + platform switch on)
+  const [useV3, setUseV3] = useState(false);
+  const [v3Env, setV3Env] = useState<string | null>(null);
+  const [pkg, setPkg] = useState<V3Package>({ pesoG: 500, alto: 0, largo: 0, ancho: 0 });
+  const [v3Orders, setV3Orders] = useState<Record<string, V3OrderState>>({});
+  const [guiaExtras, setGuiaExtras] = useState<Record<string, GuiaExtra>>({});
+  const [trackingOpen, setTrackingOpen] = useState<string | null>(null);
+  const [pickupSel, setPickupSel] = useState<Set<string>>(new Set());
+  const [pickupOpen, setPickupOpen] = useState(false);
+  const [historyNotice, setHistoryNotice] = useState<string | null>(null);
+  const setV3Order = useCallback((orderId: string, v: V3OrderState) => setV3Orders((prev) => ({ ...prev, [orderId]: v })), []);
 
   useEffect(() => {
     if (open) {
@@ -399,8 +438,14 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
           const statusRes = await fetch('/api/config/correos-status', { credentials: 'include' });
           const statusData = await statusRes.json();
           setHasCorreosConfig(statusData.configured ?? false);
+          const storeV3 = !!statusData.v3?.enabled && correosConfig?.settings?.correos_api === 'v3';
+          setUseV3(storeV3);
+          setV3Env(storeV3 ? statusData.v3?.environment ?? null : null);
+          const w = Number(correosConfig?.settings?.ws_default_weight_g);
+          if (storeV3 && w > 0) setPkg((p) => ({ ...p, pesoG: w }));
         } catch {
           setHasCorreosConfig(false);
+          setUseV3(false);
         }
       }
     } catch {
@@ -474,8 +519,12 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
     });
   };
 
-  const allValid = verifiedOrders.length > 0 && verifiedOrders.every((o) => o.valid);
-  const validCount = verifiedOrders.filter((o) => o.valid).length;
+  const v3Ready = (orderId: string) => !useV3 || !!v3Orders[orderId]?.ready;
+  const allValid = verifiedOrders.length > 0 && verifiedOrders.every((o) => o.valid && v3Ready(o.orderId));
+  const validCount = verifiedOrders.filter((o) => o.valid && v3Ready(o.orderId)).length;
+  const v3QuoteSum = useV3
+    ? verifiedOrders.reduce((sum, o) => sum + (v3Orders[o.orderId]?.quoteTotal ?? 0), 0)
+    : 0;
 
   // ── Generate with verified data ───────────────────────────
 
@@ -505,6 +554,19 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
             district: o.district,
             address: o.address,
           })),
+          ...(useV3
+            ? {
+                pesoG: pkg.pesoG || undefined,
+                dims: { alto: pkg.alto, largo: pkg.largo, ancho: pkg.ancho },
+                branches: verifiedOrders
+                  .map((o) => ({ orderId: o.orderId, b: v3Orders[o.orderId]?.branch }))
+                  .filter((x) => x.b)
+                  .map((x) => ({ orderId: x.orderId, codigoSucursal: x.b!.codigo, sucursalNombre: x.b!.nombre })),
+                barrios: verifiedOrders
+                  .map((o) => ({ orderId: o.orderId, barrio: v3Orders[o.orderId]?.barrio?.trim() }))
+                  .filter((x) => x.barrio),
+              }
+            : {}),
         }),
       });
 
@@ -624,11 +686,43 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
       const response = await fetch('/api/shipping/guias/status', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
-        setGuiasHistory(data.data.guias || []);
+        const list: GuiaStatus[] = data.data.guias || [];
+        setGuiasHistory(list);
+        const numbers = list.map((g) => g.guiaNumber).filter((n): n is string => !!n).slice(0, 200);
+        if (numbers.length) {
+          fetch(`/api/shipping/correos/extras?guias=${encodeURIComponent(numbers.join(','))}`, { credentials: 'include' })
+            .then((r) => (r.ok ? r.json() : { extras: {} }))
+            .then((d) => setGuiaExtras(d.extras || {}))
+            .catch(() => {});
+        }
       }
     } catch {}
     setLoadingHistory(false);
   };
+
+  const downloadZPL = async (guiaId: string, guiaNumber: string | null) => {
+    try {
+      const response = await fetch(`/api/shipping/guias/download/${guiaId}?format=zpl`, { credentials: 'include' });
+      if (!response.ok) return;
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `guia-${guiaNumber || guiaId}.zpl`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch {}
+  };
+
+  const togglePickup = (guiaNumber: string) =>
+    setPickupSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(guiaNumber)) next.delete(guiaNumber);
+      else next.add(guiaNumber);
+      return next;
+    });
 
   useEffect(() => {
     if (open && activeTab === 'history') loadGuiasHistory();
@@ -941,10 +1035,38 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
 
             {/* Verification list */}
             <ScrollArea className="h-[min(350px,50dvh)] sm:h-[400px] px-5 py-3">
+              {useV3 && (
+                <div className="mb-3">
+                  <PackageBox value={pkg} onChange={setPkg} />
+                </div>
+              )}
               {verifiedOrders.map((o, idx) => (
-                <LocationRow key={o.orderId} order={o} onChange={(updates) => updateVerifiedOrder(idx, updates)} />
+                <LocationRow key={o.orderId} order={o} onChange={(updates) => updateVerifiedOrder(idx, updates)}>
+                  {useV3 && (
+                    <V3OrderExtras
+                      province={o.province}
+                      canton={o.canton}
+                      district={o.district}
+                      deliveryType={deliveryType}
+                      pkg={pkg}
+                      value={v3Orders[o.orderId] ?? EMPTY_V3_ORDER}
+                      onChange={(v) => setV3Order(o.orderId, v)}
+                    />
+                  )}
+                </LocationRow>
               ))}
             </ScrollArea>
+            {useV3 && verifiedOrders.length > 0 && (
+              <div className="px-5 py-2 border-t flex items-center justify-between text-xs bg-muted/20">
+                <span className="text-muted-foreground">
+                  {deliveryType === 'Domicilio' ? 'Entrega a domicilio' : 'Retiro en sucursal'} · {verifiedOrders.length} paquete(s)
+                  {v3Env === 'test' && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">PRUEBAS</span>}
+                </span>
+                <span>
+                  Total Correos estimado <strong className="tabular-nums">{crc(v3QuoteSum)}</strong>
+                </span>
+              </div>
+            )}
 
             {/* Generation results */}
             {generationResults && (
@@ -1046,10 +1168,28 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
                 </div>
               ) : (
                 <div className="space-y-2">
+                  {historyNotice && (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300">
+                      {historyNotice}
+                    </div>
+                  )}
+                  {pickupOpen && (
+                    <PickupPanel
+                      guias={[...pickupSel]}
+                      onCancel={() => setPickupOpen(false)}
+                      onDone={(msg) => {
+                        setPickupOpen(false);
+                        setPickupSel(new Set());
+                        setHistoryNotice(msg);
+                      }}
+                    />
+                  )}
                   {guiasHistory.map((guia) => {
                     const location = [guia.province, guia.canton, guia.district]
                       .filter(Boolean)
                       .join(', ');
+                    const extra = guia.guiaNumber ? guiaExtras[guia.guiaNumber] : undefined;
+                    const canPickup = useV3 && guia.status === 'completed' && !!guia.guiaNumber && extra?.status !== 'delivered' && extra?.status !== 'returned';
 
                     return (
                       <div
@@ -1066,6 +1206,13 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
                           <div className="flex-1 min-w-0">
                             {/* Guia number + status */}
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              {canPickup && (
+                                <Checkbox
+                                  aria-label={`Incluir ${guia.guiaNumber} en la recolección`}
+                                  checked={pickupSel.has(guia.guiaNumber!)}
+                                  onCheckedChange={() => togglePickup(guia.guiaNumber!)}
+                                />
+                              )}
                               <span className="font-bold text-sm tracking-wide">
                                 {guia.guiaNumber || 'Sin número'}
                               </span>
@@ -1092,6 +1239,19 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
                                   ? formatGuiaFailureLabel(guia.errorMessage)
                                   : guia.status}
                               </Badge>
+                              {extra?.statusLabel && (
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone(extra.status)}`}>
+                                  {extra.statusLabel}
+                                </span>
+                              )}
+                              {extra?.tipoDestino === 'SUC' && (
+                                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
+                                  Sucursal{extra.sucursal ? `: ${extra.sucursal}` : ''}
+                                </span>
+                              )}
+                              {extra?.montoFlete ? (
+                                <span className="text-[10px] text-muted-foreground tabular-nums">{crc(extra.montoFlete)}</span>
+                              ) : null}
                             </div>
 
                             {/* Customer + product */}
@@ -1119,11 +1279,34 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
                               )}
                               <p className="text-muted-foreground">
                                 {new Date(guia.createdAt).toLocaleString('es-CR')}
+                                {extra?.receivedBy && extra.status === 'delivered' ? ` · Recibió ${extra.receivedBy}` : ''}
                               </p>
                             </div>
+                            {trackingOpen === guia.guiaNumber && guia.guiaNumber && (
+                              <div className="mt-3 rounded-md border bg-background p-3">
+                                <TrackingTimeline guiaNumber={guia.guiaNumber} />
+                              </div>
+                            )}
                           </div>
 
-                          <div>
+                          <div className="flex flex-col items-end gap-1.5">
+                            {useV3 && guia.status === 'completed' && guia.guiaNumber && (
+                              <Button
+                                size="sm"
+                                variant={trackingOpen === guia.guiaNumber ? 'secondary' : 'ghost'}
+                                className="gap-1.5"
+                                onClick={() => setTrackingOpen(trackingOpen === guia.guiaNumber ? null : guia.guiaNumber)}
+                              >
+                                <Search className="h-3.5 w-3.5" />
+                                Rastrear
+                              </Button>
+                            )}
+                            {extra?.hasZpl && (
+                              <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => downloadZPL(guia.id, guia.guiaNumber)}>
+                                <Printer className="h-3.5 w-3.5" />
+                                Térmica
+                              </Button>
+                            )}
                             {guia.hasPdf ? (
                               <Button
                                 onClick={() =>
@@ -1159,6 +1342,20 @@ export function GuiaGenerator({ orders, open, onClose, onUpdateOrder, surface = 
             {/* History footer */}
             <div className="px-5 py-3 border-t bg-muted/20 flex items-center justify-between">
               <p className="text-xs text-muted-foreground">Total: {guiasHistory.length} guía(s)</p>
+              {useV3 && (
+                <Button
+                  onClick={() => {
+                    setHistoryNotice(null);
+                    setPickupOpen(true);
+                  }}
+                  size="sm"
+                  disabled={pickupSel.size === 0 || pickupOpen}
+                  className="gap-1.5 ml-auto mr-2"
+                >
+                  <Truck className="h-3.5 w-3.5" />
+                  Solicitar recolección{pickupSel.size ? ` (${pickupSel.size})` : ''}
+                </Button>
+              )}
               <Button
                 onClick={loadGuiasHistory}
                 variant="outline"

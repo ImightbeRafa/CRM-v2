@@ -15,6 +15,9 @@ import { CorreosWebService, buildGuiaDescription, buildFullAddress, resolveCorre
 import { CorreosAuthError, isCorreosCredentialRejection } from '@/lib/correos/auth-error';
 import { shouldUseBotLifecycleV2, shouldUseOrderLifecycleV2, type OrderLifecycleAdapter } from '@/lib/feature-flags';
 import { setLifecycleOrderStatus } from '@/lib/order-lifecycle';
+import { getCorreosV3ForWrite } from '@/lib/correos/v3/select';
+import { saveV3Guia } from '@/lib/correos/v3/store';
+import type { CorreosV3Service, V3GuiaInput, V3GuiaOutcome } from '@/lib/correos/v3/service';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +57,22 @@ export interface GuiaGenerationOptions {
    * resolved the order is skipped with an error so a person checks the address first.
    */
   requireResolvedPostalCode?: boolean;
+  /** Correos v3 only: package weight in grams (else the store default, else 500 g). */
+  pesoG?: number;
+  /** Correos v3 only: package size in cm for the real quote. */
+  dims?: { alto: number; largo: number; ancho: number } | null;
+  /** Correos v3 only: the branch each order is picked up at (deliveryType Sucursal / Punto de correo). */
+  branches?: Array<{ orderId: string; codigoSucursal: string; sucursalNombre?: string }>;
+  /** Correos v3 only: barrio per order, checked against Correos restricted zones. */
+  barrios?: Array<{ orderId: string; barrio: string }>;
+}
+
+/** Correos v3 outcome → claim handling. Exported for tests. */
+export function v3ClaimAction(outcome: V3GuiaOutcome): 'complete' | 'release' | 'unknown' {
+  if (outcome.ok) return 'complete';
+  // Not sent, or Correos answered with a refusal: nothing was registered → the order can be retried.
+  if (!outcome.sent || !outcome.unknown) return 'release';
+  return 'unknown';
 }
 
 const inFlightGuiaKeys = new Set<string>();
@@ -127,8 +146,16 @@ export async function generateGuiasForOrders(
 
   const settings = (shippingConfig?.settings as Record<string, any>) ?? {};
 
-  let wsCreds;
+  // Correos API v3 when the platform has it on and this store chose it; SOAP otherwise (unchanged).
+  let v3: CorreosV3Service | null = null;
   try {
+    v3 = await getCorreosV3ForWrite(settings, tenantId);
+  } catch (e) {
+    console.warn('[GuiaService] Correos v3 selection failed, using SOAP:', e instanceof Error ? e.message : e);
+  }
+
+  let wsCreds;
+  if (!v3) try {
     const resolved = await resolveCorreosWSCredentials();
     wsCreds = resolved.credentials;
     console.log(`[GuiaService] Using Correos credentials from ${resolved.source}`);
@@ -175,7 +202,13 @@ export async function generateGuiasForOrders(
     phone: settings.ws_sender_phone || '00000000',
   };
 
-  const ws = new CorreosWebService(wsCreds);
+  const ws = wsCreds ? new CorreosWebService(wsCreds) : null;
+  const branchMap = new Map((options.branches || []).map(b => [b.orderId, b]));
+  const barrioMap = new Map((options.barrios || []).map(b => [b.orderId, b.barrio]));
+  const v3PesoG = Number(options.pesoG) || Number(settings.ws_default_weight_g) || 500;
+  const v3Origin = settings.ws_sender_province && settings.ws_sender_canton && settings.ws_sender_district
+    ? { province: settings.ws_sender_province, canton: settings.ws_sender_canton, district: settings.ws_sender_district }
+    : null;
   const locationMap = new Map((options.verifiedLocations || []).map(location => [location.orderId, location]));
   const deliveryType = options.deliveryType || 'Domicilio';
   const useLifecycleV2 = options.adapter === 'bot'
@@ -240,7 +273,40 @@ export async function generateGuiasForOrders(
       const addressData = verified ? { ...order, ...verified } : order;
       let destZip = '10101';
       let destZipResolved = false;
-      if (addressData.province && addressData.canton && addressData.district) {
+      // v3: every check (phone, zip, branch, restricted barrio, freight quote) runs BEFORE the claim,
+      // so a fixable data problem never blocks the order.
+      let v3Input: V3GuiaInput | null = null;
+      let v3Prepared: Awaited<ReturnType<CorreosV3Service['prepareGuia']>> | null = null;
+      const v3Branch = branchMap.get(order.orderId);
+      if (v3) {
+        const tipoDestino = deliveryType === 'Domicilio' ? 'DOM' : 'SUC';
+        v3Input = {
+          dest: {
+            name: order.customerName || '',
+            phone: order.phone,
+            address: tipoDestino === 'DOM' ? buildFullAddress(addressData) : (addressData.address || ''),
+            province: addressData.province,
+            canton: addressData.canton,
+            district: addressData.district,
+            barrio: barrioMap.get(order.orderId) ?? null,
+          },
+          sender: { name: sender.name, phone: sender.phone, address: sender.address, zip: sender.zip },
+          origin: v3Origin,
+          pesoG: v3PesoG,
+          dims: options.dims ?? null,
+          tipoDestino,
+          codigoSucursal: v3Branch?.codigoSucursal ?? null,
+          observaciones: `${buildGuiaDescription(order as any)}`,
+        };
+        try {
+          v3Prepared = await v3.prepareGuia(v3Input);
+        } catch (prepErr) {
+          return { success: false, orderId: order.orderId, error: prepErr instanceof Error ? prepErr.message : 'No se pudo validar la guía con Correos.' };
+        }
+        if (!v3Prepared.ok) return { success: false, orderId: order.orderId, error: v3Prepared.error };
+        destZip = v3Prepared.destZip || '';
+        destZipResolved = tipoDestino === 'SUC' || Boolean(v3Prepared.destZip);
+      } else if (ws && addressData.province && addressData.canton && addressData.district) {
         try {
           destZip = await withTimeout(ws.getPostalCode(addressData.province, addressData.canton, addressData.district), options.timeoutMs || 12_000);
           destZipResolved = Boolean(destZip);
@@ -308,6 +374,94 @@ export async function generateGuiasForOrders(
         };
       }
 
+      if (v3 && v3Input && v3Prepared?.ok) {
+        const outcome = await v3.createGuia(v3Input, v3Prepared);
+        const action = v3ClaimAction(outcome);
+        if (!outcome.ok) {
+          if (action === 'release') {
+            await globalPrisma.orderLifecycleOperation.deleteMany({
+              where: { tenantId, adapter: CORREOS_PROVIDER_ADAPTER, idempotencyKey: externalClaimKey },
+            });
+          } else {
+            await globalPrisma.orderLifecycleOperation.updateMany({
+              where: { tenantId, adapter: CORREOS_PROVIDER_ADAPTER, idempotencyKey: externalClaimKey },
+              data: { result: { state: 'provider_unknown', api: 'v3', failedAt: new Date().toISOString() } },
+            });
+          }
+          return { success: false, orderId: order.orderId, error: outcome.error };
+        }
+        const guiaData: any = {
+          orderId: order.orderId,
+          carrier,
+          guiaNumber: outcome.guiaNumber,
+          trackingNumber: outcome.guiaNumber,
+          status: 'completed',
+          serviceType: deliveryType,
+          cost: outcome.montoFlete || null,
+          weight: outcome.pesoG / 1000,
+          tenant: { connect: { id: tenantId } },
+        };
+        if (outcome.pdf) {
+          guiaData.pdfData = outcome.pdf;
+          guiaData.pdfFileName = `guia-${outcome.guiaNumber}.pdf`;
+        }
+        // Record the Correos number on the claim first: if saving below fails, the number is not lost
+        // and the order stays blocked from a second registration.
+        await globalPrisma.orderLifecycleOperation.updateMany({
+          where: { tenantId, adapter: CORREOS_PROVIDER_ADAPTER, idempotencyKey: externalClaimKey },
+          data: { result: { state: 'completed', api: 'v3', guiaNumber: outcome.guiaNumber, completedAt: new Date().toISOString() } },
+        });
+        if (existing) {
+          await tenantPrisma.shippingGuia.delete({ where: { id: existing.id } });
+        }
+        const created = await tenantPrisma.shippingGuia.create({ data: guiaData });
+        try {
+          await saveV3Guia({
+            guiaNumber: outcome.guiaNumber,
+            shippingGuiaId: created.id,
+            tenantId,
+            crmOrderId: order.id,
+            orderNumber: order.orderId,
+            environment: v3.environment,
+            tipoDestino: v3Input.tipoDestino,
+            codigoSucursal: v3Input.codigoSucursal,
+            sucursalNombre: v3Branch?.sucursalNombre ?? null,
+            zpl: outcome.zpl,
+            montoFlete: outcome.montoFlete,
+            pesoG: outcome.pesoG,
+            destZip: outcome.destZip,
+          });
+        } catch (e) {
+          console.warn(`[GuiaService] v3 extras not saved for ${order.orderId}:`, e instanceof Error ? e.message : e);
+        }
+        try {
+          await markOrderShipped(order, `guia:${order.id}:${outcome.guiaNumber}`);
+        } catch (e) {
+          console.warn(`[GuiaService] Failed to update order status for ${order.orderId}:`, e);
+        }
+        try {
+          await globalPrisma.$executeRaw`
+            INSERT INTO lm_orders (crm_order_id, crm_tenant_id, carrier, status)
+            VALUES (${order.id}, ${tenantId}, 'correos', 'Guía Creada')
+            ON CONFLICT (crm_order_id) DO UPDATE
+            SET carrier = 'correos', status = 'Guía Creada', updated_at = NOW()
+          `;
+        } catch (lmErr) {
+          console.warn(`[GuiaService] Failed to upsert lm_orders for ${order.orderId}:`, lmErr);
+        }
+        return {
+          success: true,
+          orderId: order.orderId,
+          guiaNumber: outcome.guiaNumber,
+          trackingNumber: outcome.guiaNumber,
+          pdfBuffer: outcome.pdf ?? undefined,
+          pdfFileName: `guia-${outcome.guiaNumber}.pdf`,
+        };
+      }
+
+      if (!ws) {
+        return { success: false, orderId: order.orderId, error: 'Correos WS credentials are not configured.' };
+      }
       const res = await withTimeout(ws.generateAndRegisterGuia({
         customerName: order.customerName || 'Destinatario',
         customerPhone: order.phone || '00000000',

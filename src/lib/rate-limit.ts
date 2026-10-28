@@ -11,7 +11,7 @@ if (hasRedis) {
   redis = new Redis({ url: redisUrl!, token: redisToken! });
 }
 
-function createRedisLimiter(config: { prefix: string; maxRequests: number; windowMs: number }) {
+export function createRedisLimiter(config: { prefix: string; maxRequests: number; windowMs: number }) {
   if (!redis) return null;
 
   const windowSec = Math.ceil(config.windowMs / 1000);

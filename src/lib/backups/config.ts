@@ -54,6 +54,18 @@ export const REQUIRED_LM_TABLES = [
 export type RequiredLmTable = (typeof REQUIRED_LM_TABLES)[number];
 
 /**
+ * lm_* tables whose migration is written but not applied on every database yet. Backed up like every lm_*
+ * table when present (discovery), but NOT required: a backup must not abort before the SQL is applied.
+ * Move each one to REQUIRED_LM_TABLES once its migration is live.
+ * 065_correos_v3.sql (2026-10-28): lm_correos_guias, lm_correos_tracking_events, lm_correos_pickups.
+ */
+export const PENDING_LM_TABLES = [
+  'lm_correos_guias',
+  'lm_correos_pickups',
+  'lm_correos_tracking_events',
+] as const;
+
+/**
  * Prisma / CRM tables included in hot (mid-day) backups in addition to all lm_*.
  * Case-sensitive Postgres identifiers as created by Prisma.
  */

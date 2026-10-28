@@ -67,8 +67,17 @@ export type A2ToolName = (typeof A2_TOOL_NAMES)[number]
 export const AL2_TOOL_NAMES = ['use_shortcut'] as const
 export type Al2ToolName = (typeof AL2_TOOL_NAMES)[number]
 
-export const AGENT_TOOL_NAMES = [...A1_TOOL_NAMES, ...A2_TOOL_NAMES, ...AL2_TOOL_NAMES] as const
+/** Correos de Costa Rica API v3 reads (branches, address check). Off unless the agent has them on. */
+export const A3_TOOL_NAMES = ['find_correos_branches', 'check_correos_address'] as const
+export type A3ToolName = (typeof A3_TOOL_NAMES)[number]
+
+export const AGENT_TOOL_NAMES = [...A1_TOOL_NAMES, ...A2_TOOL_NAMES, ...AL2_TOOL_NAMES, ...A3_TOOL_NAMES] as const
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number]
+
+/** Tools a new agent starts with: everything except the opt-in Correos reads (A3). */
+export const DEFAULT_AGENT_TOOL_NAMES: readonly AgentToolName[] = AGENT_TOOL_NAMES.filter(
+  (t) => !(A3_TOOL_NAMES as readonly string[]).includes(t),
+)
 
 export type ChatAgentTonePreset = 'warm_concise' | 'formal' | 'playful'
 export type ChatAgentOperationMode = 'ai_full' | 'ai_suggest' | 'human_only'

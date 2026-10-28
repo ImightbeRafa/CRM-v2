@@ -3,11 +3,24 @@ import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { encrypt } from '@/lib/encryption';
 import { withTenantContext } from '@/lib/tenantContext';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
+import { hasPermission } from '@/lib/rbac';
 
 const WS_CREDENTIAL_KEYS = [
   'ws_username', 'ws_password', 'ws_sistema',
   'ws_usuario_id', 'ws_servicio_id', 'ws_cod_cliente',
 ];
+
+const CORREOS_V3_SETTING_KEYS = [
+  'correos_api', 'ws_sender_province', 'ws_sender_canton', 'ws_sender_district', 'ws_default_weight_g',
+  'correos_pickup_cedula', 'correos_pickup_email',
+] as const;
+
+/** Pickup cédula (personal data, Ley 8968) only in full for people who can edit the config (SecureDog DATA-76). */
+function maskPickupCedula(settings: any, canEdit: boolean): any {
+  if (canEdit || !settings || typeof settings !== 'object' || !settings.correos_pickup_cedula) return settings;
+  const digits = String(settings.correos_pickup_cedula).replace(/\D/g, '');
+  return { ...settings, correos_pickup_cedula: `•••${digits.slice(-3)}` };
+}
 
 function stripWSCredentials(settings: any): any {
   if (!settings || typeof settings !== 'object') return settings ?? null;
@@ -38,6 +51,7 @@ export async function GET(request: NextRequest) {
         if (safe.settings && typeof safe.settings === 'object' && safe.settings.ws_password) {
           safe.settings = { ...safe.settings, ws_password: '***' };
         }
+        safe.settings = maskPickupCedula(safe.settings, hasPermission(role, 'update_config'));
         return safe;
       });
 
@@ -173,7 +187,20 @@ export async function PUT(request: NextRequest) {
       const passwordToStore = (password && password !== '***') ? encrypt(password) : undefined;
       const apiKeyToStore = apiKey ? encrypt(apiKey) : apiKey;
 
-      const mergedSettings = stripWSCredentials(settings);
+      let mergedSettings = stripWSCredentials(settings);
+      // Correos v3 keys are edited in the setup wizard only: a save from another screen that does not send
+      // them keeps the stored values instead of silently switching the store back to SOAP (verifier #4).
+      if (mergedSettings && typeof mergedSettings === 'object') {
+        const current = await prisma.shippingConfig.findFirst({ where: { id, tenantId }, select: { settings: true } });
+        const prev = (current?.settings && typeof current.settings === 'object' ? current.settings : {}) as Record<string, unknown>;
+        for (const key of CORREOS_V3_SETTING_KEYS) {
+          if (!(key in mergedSettings) && key in prev) mergedSettings = { ...mergedSettings, [key]: prev[key] };
+        }
+        // A masked cédula coming back from GET never overwrites the stored one.
+        if (typeof mergedSettings.correos_pickup_cedula === 'string' && mergedSettings.correos_pickup_cedula.startsWith('•')) {
+          mergedSettings = { ...mergedSettings, correos_pickup_cedula: prev.correos_pickup_cedula ?? '' };
+        }
+      }
 
       const updateData: any = {
         carrier,

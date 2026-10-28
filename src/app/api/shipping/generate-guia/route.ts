@@ -8,6 +8,33 @@ import { generateGuiasForOrders } from '@/lib/shipping/guia-service';
 
 const DELIVERY_TYPES = ['Domicilio', 'Sucursal', 'Punto de correo'] as const;
 
+const shortStr = (v: unknown, max: number) => (typeof v === 'string' && v.trim() && v.length <= max ? v.trim() : null);
+
+/** Correos v3 extras (weight, size, branch / barrio per order). Ignored by the SOAP path. */
+function parseV3Options(body: any) {
+  const pesoG = Number(body?.pesoG);
+  const d = body?.dims;
+  const dim = (v: unknown) => Math.min(300, Math.max(0, Number(v) || 0));
+  const branches = Array.isArray(body?.branches)
+    ? body.branches
+        .map((b: any) => ({ orderId: shortStr(b?.orderId, 64), codigoSucursal: shortStr(b?.codigoSucursal, 20), sucursalNombre: shortStr(b?.sucursalNombre, 200) ?? undefined }))
+        .filter((b: any) => b.orderId && b.codigoSucursal)
+        .slice(0, 200)
+    : [];
+  const barrios = Array.isArray(body?.barrios)
+    ? body.barrios
+        .map((b: any) => ({ orderId: shortStr(b?.orderId, 64), barrio: shortStr(b?.barrio, 120) }))
+        .filter((b: any) => b.orderId && b.barrio)
+        .slice(0, 200)
+    : [];
+  return {
+    ...(Number.isFinite(pesoG) && pesoG > 0 && pesoG <= 30_000 ? { pesoG: Math.round(pesoG) } : {}),
+    ...(d && typeof d === 'object' ? { dims: { alto: dim(d.alto), largo: dim(d.largo), ancho: dim(d.ancho) } } : {}),
+    branches,
+    barrios,
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const auth = await authenticateAPIWithPermission(request, 'update_production');
@@ -27,6 +54,7 @@ export async function POST(request: NextRequest) {
       const batch = await generateGuiasForOrders(tenantId, orderIds, carrier, {
         deliveryType,
         verifiedLocations: Array.isArray(verifiedLocations) ? verifiedLocations : [],
+        ...parseV3Options(body),
         adapter: 'tenant-guia',
         userId,
         concurrency: 3,

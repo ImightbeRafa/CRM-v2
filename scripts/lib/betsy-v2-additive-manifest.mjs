@@ -49,6 +49,7 @@ export const FILES = {
   '063': '063_chat_answered_marker.sql',
   '062': '062_order_number.sql',
   '064': '064_meta_ad_connection.sql',
+  '065': '065_correos_v3.sql',
 };
 
 export const DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024';
@@ -109,6 +110,7 @@ export const EXPECTED_TABLES = {
   '061': ['AiProviderStatus'],
   '062': ['OrderNumberCounter'],
   '064': ['MetaAdConnection'],
+  '065': ['lm_correos_guias', 'lm_correos_tracking_events', 'lm_correos_pickups'],
 };
 
 export const EXPECTED_COLUMNS = {
@@ -132,6 +134,7 @@ export const EXPECTED_COLUMNS = {
   '063': [['ChatConversation', 'answeredAt'], ['ChatConversation', 'answeredByUserId'], ['ChatConversation', 'answeredThroughAt']],
   '062': [['Order', 'orderNo'], ['OrderNumberCounter', 'lastNo']],
   '064': [['MetaAdConnection', 'accessToken'], ['MetaAdConnection', 'metaUserId'], ['MetaAdConnection', 'storeFxRate']],
+  '065': [['lm_correos_guias', 'zpl'], ['lm_correos_guias', 'next_check_at'], ['lm_correos_tracking_events', 'crm_tenant_id'], ['lm_correos_pickups', 'idempotency_key']],
   '060': [['AiBillingRate', 'markupBps'], ['AiCreditLedger', 'sourceKey'], ['AiCreditPurchase', 'ref'], ['AiCreditPurchase', 'lastEvent'], ['AiTenantSpendLimit', 'monthlyLimitMicros']],
   '031': [['ChatMessage', 'senderUserId']],
   '034': [['User', 'sessionVersion'], ['User', 'passwordChangedAt']],

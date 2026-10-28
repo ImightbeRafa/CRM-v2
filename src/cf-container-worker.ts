@@ -150,6 +150,26 @@ interface Env {
   CORREOS_WS_SISTEMA?: string;
   CORREOS_WS_USERNAME?: string;
   CORREOS_WS_USUARIO_ID?: string;
+  // Correos API v3 (docs/ops/correos-api-v3.md)
+  CORREOS_V3_ALLOWED?: string;
+  CORREOS_V3_ENABLED?: string;
+  CORREOS_V3_ENV?: string;
+  CORREOS_V3_TENANTS?: string;
+  CORREOS_V3_USER?: string;
+  CORREOS_V3_PASSWORD?: string;
+  CORREOS_V3_COD_CLIENTE?: string;
+  CORREOS_V3_SERVICIO?: string;
+  CORREOS_V3_USUARIO_ID?: string;
+  CORREOS_V3_BASE_URL?: string;
+  CORREOS_V3_TEST_USER?: string;
+  CORREOS_V3_TEST_PASSWORD?: string;
+  CORREOS_V3_TEST_COD_CLIENTE?: string;
+  CORREOS_V3_TEST_SERVICIO?: string;
+  CORREOS_V3_TEST_USUARIO_ID?: string;
+  CORREOS_V3_TEST_BASE_URL?: string;
+  CORREOS_V3_PROXY_URL?: string;
+  CORREOS_TRACKING_SYNC?: string;
+  CORREOS_TRACKING_LM_STATUS?: string;
   FINANCE_API_KEY?: string;
   BACKUP_API_KEY?: string;
   BACKUP_RETENTION_DAYS?: string;
@@ -264,6 +284,26 @@ const CONTAINER_ENV_KEYS = [
   "CORREOS_WS_SISTEMA",
   "CORREOS_WS_USERNAME",
   "CORREOS_WS_USUARIO_ID",
+  // Correos API v3: host gate, switch, allowlist, credentials, tracking sync.
+  "CORREOS_V3_ALLOWED",
+  "CORREOS_V3_ENABLED",
+  "CORREOS_V3_ENV",
+  "CORREOS_V3_TENANTS",
+  "CORREOS_V3_USER",
+  "CORREOS_V3_PASSWORD",
+  "CORREOS_V3_COD_CLIENTE",
+  "CORREOS_V3_SERVICIO",
+  "CORREOS_V3_USUARIO_ID",
+  "CORREOS_V3_BASE_URL",
+  "CORREOS_V3_TEST_USER",
+  "CORREOS_V3_TEST_PASSWORD",
+  "CORREOS_V3_TEST_COD_CLIENTE",
+  "CORREOS_V3_TEST_SERVICIO",
+  "CORREOS_V3_TEST_USUARIO_ID",
+  "CORREOS_V3_TEST_BASE_URL",
+  "CORREOS_V3_PROXY_URL",
+  "CORREOS_TRACKING_SYNC",
+  "CORREOS_TRACKING_LM_STATUS",
   "FINANCE_API_KEY",
   "BACKUP_API_KEY",
   "BACKUP_RETENTION_DAYS",
@@ -319,7 +359,8 @@ const CRON_PATHS: Record<string, readonly string[]> = {
   // ai-budget (F2): owner AI budget alerts / optional per-business auto-pause; no-op without budgets.
   // channel-silence (last: Graph probes can be slow): dead-line alarm, a busy WA / IG line went quiet or lost its token.
   // support-dispatch: support ticket outbox (webhook + emails); no-op unless SUPPORT_PIPELINE_ENABLED=true.
-  "*/5 * * * *": ["/api/cron/bot-inbox", "/api/cron/meta-attribution", "/api/cron/support-dispatch", "/api/cron/ai-budget", "/api/cron/channel-silence"],
+  // correos-tracking: follows open Correos guías (v3); no-op unless CORREOS_TRACKING_SYNC=1 and v3 is on in production.
+  "*/5 * * * *": ["/api/cron/bot-inbox", "/api/cron/meta-attribution", "/api/cron/support-dispatch", "/api/cron/correos-tracking", "/api/cron/ai-budget", "/api/cron/channel-silence"],
   // chat-workspace (Phase 2b): assignment rules / auto-close / reopen; no-op unless a business turned them on.
   "*/1 * * * *": ["/api/cron/chat-automation", "/api/cron/chat-workspace"],
   "30 3 * * *": ["/api/cron/chat-agent-retention", "/api/cron/workspace-retention"],

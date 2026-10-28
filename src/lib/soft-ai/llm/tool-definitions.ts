@@ -97,6 +97,40 @@ const TOOL_DEFS: Record<AgentToolName, SoftAiToolDefinition> = {
     },
     strict: true,
   },
+  find_correos_branches: {
+    type: 'function',
+    name: 'find_correos_branches',
+    description:
+      'Sucursales de Correos de Costa Rica en un cantón (nombre, dirección, horario). Para clientes que retiran en sucursal. No da precios de envío: el precio lo dicen tus datos de la tienda.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        province: { type: 'string', description: 'Provincia (ej. San José)' },
+        canton: { type: 'string', description: 'Cantón (ej. Pérez Zeledón)' },
+      },
+      required: ['province', 'canton'],
+    },
+    strict: true,
+  },
+  check_correos_address: {
+    type: 'function',
+    name: 'check_correos_address',
+    description:
+      'Revisa con Correos si provincia / cantón / distrito existen, el código postal, si hay sucursal en el distrito y si el barrio es zona restringida para entrega a domicilio.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        province: { type: 'string' },
+        canton: { type: 'string' },
+        district: { type: 'string' },
+        barrio: { type: ['string', 'null'] },
+      },
+      required: ['province', 'canton', 'district', 'barrio'],
+    },
+    strict: true,
+  },
   escalate_to_human: {
     type: 'function',
     name: 'escalate_to_human',

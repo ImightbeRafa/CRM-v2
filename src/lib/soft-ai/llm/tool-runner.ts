@@ -203,7 +203,79 @@ async function findOwnedOrder(ctx: SoftAiToolRunContext, orderNumberHint?: strin
   return findOwnedOrderShared(ownershipCtx(ctx), orderNumberHint)
 }
 
-type TrackingSnapshot = { status: string | null; lastEvents: Array<{ when: string; event: string; place: string }> }
+type TrackingSnapshot = { status: string | null; deliveredAt?: string | null; lastEvents: Array<{ when: string; event: string; place: string }> }
+
+const CORREOS_TOOL_CAP_MS = 5000
+
+function withCap<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([p, new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))])
+}
+
+const PLACE_RE = /^[\p{L}\p{N} .,'-]{2,60}$/u
+
+function placeArg(v: unknown): string | null {
+  const s = typeof v === 'string' ? v.trim() : ''
+  return PLACE_RE.test(s) ? s : null
+}
+
+async function runFindCorreosBranches(ctx: SoftAiToolRunContext, args: Record<string, unknown>): Promise<SoftAiToolRunResult> {
+  const province = placeArg(args.province)
+  const canton = placeArg(args.canton)
+  if (!province || !canton) return { ok: false, name: 'find_correos_branches', result: { error: 'invalid_place' } }
+  if (ctx.sandbox) {
+    return { ok: true, name: 'find_correos_branches', result: { sandbox: true, branches: [{ name: 'Sucursal Central', address: 'San José Centro', hours: 'Lunes a Viernes 8:00 a.m. - 5:00 p.m.' }] } }
+  }
+  try {
+    const { getCorreosV3ForRead } = await import('@/lib/correos/v3/select')
+    const v3 = await getCorreosV3ForRead()
+    if (!v3) return { ok: false, name: 'find_correos_branches', result: { error: 'not_available' } }
+    const r = await withCap(v3.branchesFor({ province, canton, district: null }), CORREOS_TOOL_CAP_MS)
+    if (!r) return { ok: false, name: 'find_correos_branches', result: { error: 'timeout' } }
+    return {
+      ok: true,
+      name: 'find_correos_branches',
+      result: {
+        province,
+        canton,
+        branches: r.branches.slice(0, 6).map((b) => ({ name: b.nombre, address: b.direccion, hours: b.horario })),
+        note: r.branches.length === 0 ? 'Correos no tiene sucursal en ese cantón; sugerí un cantón vecino.' : null,
+      },
+    }
+  } catch {
+    return { ok: false, name: 'find_correos_branches', result: { error: 'not_available' } }
+  }
+}
+
+async function runCheckCorreosAddress(ctx: SoftAiToolRunContext, args: Record<string, unknown>): Promise<SoftAiToolRunResult> {
+  const province = placeArg(args.province)
+  const canton = placeArg(args.canton)
+  const district = placeArg(args.district)
+  const barrio = args.barrio == null ? null : placeArg(args.barrio)
+  if (!province || !canton || !district) return { ok: false, name: 'check_correos_address', result: { error: 'invalid_place' } }
+  if (ctx.sandbox) {
+    return { ok: true, name: 'check_correos_address', result: { sandbox: true, valid: true, postalCode: '10101', branchInDistrict: true, restricted: false } }
+  }
+  try {
+    const { getCorreosV3ForRead } = await import('@/lib/correos/v3/select')
+    const v3 = await getCorreosV3ForRead()
+    if (!v3) return { ok: false, name: 'check_correos_address', result: { error: 'not_available' } }
+    const r = await withCap(v3.checkAddress({ province, canton, district, barrio }), CORREOS_TOOL_CAP_MS)
+    if (!r) return { ok: false, name: 'check_correos_address', result: { error: 'timeout' } }
+    return {
+      ok: true,
+      name: 'check_correos_address',
+      result: {
+        valid: !!r.place,
+        postalCode: r.codigoPostal,
+        branchInDistrict: r.poseeSucursal,
+        restricted: r.restricted,
+        note: r.restricted ? 'Zona restringida para entrega a domicilio: ofrecé retiro en sucursal.' : r.place ? null : 'Correos no reconoce esa dirección; pedí provincia, cantón y distrito.',
+      },
+    }
+  } catch {
+    return { ok: false, name: 'check_correos_address', result: { error: 'not_available' } }
+  }
+}
 const trackingCache = new Map<string, { at: number; value: TrackingSnapshot | null }>()
 const TRACKING_CACHE_MS = 10 * 60_000
 
@@ -220,6 +292,24 @@ async function correosTrackingEvents(guiaNumber: string): Promise<TrackingSnapsh
 
 async function correosTrackingEventsUncached(guiaNumber: string): Promise<TrackingSnapshot | null> {
   if (!/^[A-Za-z0-9-]{4,30}$/.test(guiaNumber)) return null
+  // Correos API v3 first (status words + delivered date + who received); SOAP below as fallback.
+  try {
+    const { getCorreosV3ForRead } = await import('@/lib/correos/v3/select')
+    const v3 = await getCorreosV3ForRead()
+    if (v3) {
+      const t = await withCap(v3.track(guiaNumber), CORREOS_TOOL_CAP_MS)
+      if (t) {
+        const { SHIPMENT_STATUS_LABEL } = await import('@/lib/correos/v3/mappers')
+        return {
+          status: SHIPMENT_STATUS_LABEL[t.status] || t.statusText,
+          deliveredAt: t.deliveredAt,
+          lastEvents: t.events.slice(-3).map((e) => ({ when: String(e.at || ''), event: e.description, place: String(e.place || '') })),
+        }
+      }
+    }
+  } catch {
+    // fall through to SOAP
+  }
   try {
     const { resolveCorreosWSCredentials } = await import('@/lib/correos/credentials')
     const { CorreosWebService } = await import('@/lib/correos/correosWebService')
@@ -390,6 +480,7 @@ async function runGetShippingStatus(
       carrier,
       orderId: row.orderId,
       lastEvents: tracking?.lastEvents ?? [],
+      ...(tracking?.deliveredAt ? { deliveredAt: tracking.deliveredAt } : {}),
     },
   }
 }
@@ -479,6 +570,10 @@ export async function runA1Tool(
       return runGetShippingStatus(ctx, args)
     case 'use_shortcut':
       return runUseShortcut(ctx, args)
+    case 'find_correos_branches':
+      return runFindCorreosBranches(ctx, args)
+    case 'check_correos_address':
+      return runCheckCorreosAddress(ctx, args)
     case 'escalate_to_human':
       return runEscalate(ctx, args)
     default: {

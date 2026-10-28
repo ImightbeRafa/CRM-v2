@@ -118,7 +118,7 @@ import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
 import { decideInbound, decisionOrderDataChoice, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import { paymentCheckGate, paymentCheckMode, runPaymentClaimCheck } from '@/lib/soft-ai/llm/payment-claim-check'
-import { customerTextsSinceStore, unansweredPaymentState } from '@/lib/soft-ai/payment-claim-check-core'
+import { customerTextsSinceStore, unansweredCustomerTexts, unansweredPaymentState } from '@/lib/soft-ai/payment-claim-check-core'
 import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
 import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
@@ -155,7 +155,7 @@ import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 import { readSoftTenantAiConfig } from '@/lib/feature-flags'
 import { turnWasCodeDecided } from '@/lib/soft-ai/turn-origin'
 import { withAiUsageContext } from '@/lib/ai-usage/context'
-import { classifyPaymentText } from '@/lib/soft-ai/payment-classifier'
+import { classifyPaymentText, isCourtesyText } from '@/lib/soft-ai/payment-classifier'
 import { effectiveTestCap } from '@/lib/soft-ai/provider-outage'
 
 type JobPayload = {
@@ -326,7 +326,10 @@ async function withPaymentClaimCheck(
     result.verdict === 'error' &&
     !dataChoicePath &&
     input.paymentDetailsSent !== true &&
-    !unansweredPaymentState(input.inboundText, ctx.history).inPlay
+    !unansweredPaymentState(input.inboundText, ctx.history).inPlay &&
+    // Verifier r4 (a): only a thank-you / greeting or a question — "Le acabo de mandar" with the number from the bio
+    // (no details in the chat, no money word) still fails closed.
+    [...unansweredCustomerTexts(ctx.history).burst, input.inboundText].every((t) => !t?.trim() || isCourtesyText(t) || /[?¿]/u.test(t))
   ) {
     step(decision, 'error_no_customer_money_words')
     return decision

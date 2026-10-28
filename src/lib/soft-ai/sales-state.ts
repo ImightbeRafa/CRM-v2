@@ -400,7 +400,7 @@ const PAY_LATER_RE =
   /(?<![\p{L}])(?:ahorita|en\s+un\s+(?:rato|momento|toque)|m[aá]s\s+tarde|ma[nñ]ana|luego|despu[eé]s|voy\s+a|vamos\s+a|(?:le|te|les)\s+(?:mando|env[ií]o|paso|hago)|\p{L}+(?:ar|er|ir)[eé](?![\p{L}])|orita|al\s+rato|en\s+la\s+(?:tarde|noche|ma[nñ]ana)|hoy|apenas|cuando\s+(?:pueda|tenga|me\s+paguen))(?![\p{L}])/iu
 /** Past tense only: "Pago recibido", "recibimos tu SINPE" — never "…y te confirmamos el pago" (a promise). */
 const STORE_CONFIRMED_PAYMENT_RE =
-  /(?<![\p{L}])(?:(?:pago|sinpe|comprobante|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|aplicad[oa])|recibimos\s+(?:tu|el|su)\s+(?:pago|sinpe|comprobante))(?![\p{L}])/iu
+  /(?<![\p{L}])(?:(?:pago|sinpe|comprobante|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|aplicad[oa])|recibimos\s+(?:tu|el|su)\s+(?:pago|sinpe|comprobante)|ya\s+(?:nos\s+|me\s+)?(?:lleg[oó]|cay[oó]|entr[oó])|ya\s+lo\s+(?:vi|vimos|revis[eé]|revisamos))(?![\p{L}])|^[\s¡!]*(?:recibid[oa]|confirmad[oa])(?![\p{L}])/iu
 
 const PAYMENT_FAILED_RE =
   /(?<![\p{L}])(?:rechaz\p{L}*|declin\p{L}*|error|fall[oó]|por\s+equivocaci[oó]n|otr[oa]\s+(?:n[uú]mero|cuenta)|cuenta\s+vieja|doble|mitad|parte|adelanto|falta\p{L}*|todav[ií]a)(?![\p{L}])/iu

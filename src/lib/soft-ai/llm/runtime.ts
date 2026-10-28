@@ -697,18 +697,18 @@ export function conversationPaymentContext(history: Array<{ direction: string; c
 const THANKS_ONLY_RE =
   /^(?=.*\p{L})(?:[\s,.!¡¿?…😊🙏🥰❤😁☺😄😃🤗✨💕💚🌸🙌]|[\u{1F3FB}-\u{1F3FF}\u{FE0F}\u{200D}]|(?<![\p{L}])(?:muchas|mil\s+gracias|gracias|graciass+|thanks|thank\s+you|bendiciones|saludos|feliz\s+(?:d[ií]a|tarde|noche)|buen\s+d[ií]a|buenas\s+(?:tardes|noches)|que\s+(?:est[eé]s?|est[eé]n)\s+bien|hasta\s+luego|chao|bye|igualmente|con\s+gusto|amable|muy\s+amable)(?![\p{L}]))+$/iu
 
-/** Payment details sent in the last 48 h and no payment received since (a finished sale is not an open payment). */
+/** Payment details sent in the last 7 days and no payment received since (a finished sale is not an open payment). */
 export function openPaymentDetails(history: SoftAiHistoryMessage[], now = Date.now()): boolean {
   const recent = history.some((m) => {
     const at = new Date(m.sentAt).getTime()
-    return m.direction === 'outbound' && paymentDetailsIn(m.content || '') && (!Number.isFinite(at) || now - at <= 48 * 60 * 60_000)
+    return m.direction === 'outbound' && paymentDetailsIn(m.content || '') && (!Number.isFinite(at) || now - at <= 7 * 24 * 60 * 60_000)
   })
   return recent && !paidAfterDetails(history, paymentDetailsIn)
 }
 
 /**
  * Model escalation → PAYMENT hand-off: the customer's own payment words; while payment details are open (sent in the
- * last 48 h, nothing received since), anything but a plain thank-you ("Le acabo de mandar", "Sí, hace un rato"); otherwise a short "listo" right
+ * last 7 days, nothing received since), anything but a plain thank-you ("Le acabo de mandar", "Sí, hace un rato"); otherwise a short "listo" right
  * after a store payment mention. A store mention alone never makes "Guía de tallas" a payment.
  */
 export function escalationIsPaymentTalk(customerSide: string, lastStoreText: string, detailsSent = paymentDetailsIn(lastStoreText)): boolean {

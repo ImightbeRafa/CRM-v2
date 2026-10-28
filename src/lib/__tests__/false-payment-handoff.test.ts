@@ -143,7 +143,9 @@ describe('model escalation → payment hand-off', () => {
     assert.equal(openPaymentDetails([m('outbound', DETAILS, 30), m('inbound', 'Le acabo de mandar', 5)]), true)
     assert.equal(openPaymentDetails([m('outbound', DETAILS, 300), m('inbound', '[image]', 290), m('outbound', '¡Con gusto! Tu pedido sale mañana 😊', 280)]), false)
     assert.equal(openPaymentDetails([m('outbound', DETAILS, 300), m('outbound', 'Pago recibido ✅ ¡Gracias!', 200)]), false)
-    assert.equal(openPaymentDetails([m('outbound', DETAILS, 4 * 24 * 60), m('outbound', 'Hola 😊 ¿En qué te ayudo?', 10)]), false)
+    assert.equal(openPaymentDetails([m('outbound', DETAILS, 8 * 24 * 60), m('outbound', 'Hola 😊 ¿En qué te ayudo?', 10)]), false)
+    // Verifier r4 F2: a late payer (details 4 days ago) is still open.
+    assert.equal(openPaymentDetails([m('outbound', DETAILS, 4 * 24 * 60), m('outbound', '¿Pudiste hacer el SINPE?', 10)]), true)
     const done = [m('outbound', DETAILS, 300), m('inbound', '[image]', 290), m('outbound', 'Tu pedido sale mañana', 280)]
     for (const t of ['Guía de tallas', '¿Cuándo me llega?', '¿Tienen talla M?']) {
       assert.equal(escalationIsPaymentTalk(t, 'Tu pedido sale mañana', openPaymentDetails(done)), false, t)
@@ -230,6 +232,19 @@ describe('after the receipt the agent stops asking for the payment', () => {
     assert.match(deriveSalesState({ history: twoOrders, inboundText: 'Muchas gracias', ctx: CTX }).nextStep, /YA pagó/)
   })
 
+  it('captioned / document receipts with other store confirmations count (Verifier r4 F1)', () => {
+    for (const [receipt, store] of [
+      ['Listo ✅', '¡Recibido! 🙌 Sale mañana'],
+      ['Ahí está', 'Confirmado ✅ ¡gracias!'],
+      ['comprobante_sinpe.pdf', 'Recibido, gracias 🙌'],
+      ['Listo', 'Ya nos llegó 🙌 gracias'],
+      ['Ya está', 'Perfecto, ya lo vi. Sale mañana'],
+    ]) {
+      const history = [msg(1, 'outbound', DETAILS), msg(2, 'inbound', receipt), msg(3, 'outbound', store)]
+      assert.match(deriveSalesState({ history, inboundText: '¿Cuándo me llega?', ctx: CTX }).nextStep, /YA pagó/, store)
+    }
+  })
+
   it('a failed, negated, partial or misdirected payment is not "paid" (Verifier r3 F3)', () => {
     for (const later of ['No he pagado', 'Todavía no he pagado', 'Me rechazó la tarjeta', 'Le hice el sinpe pero me salió rechazado', 'Ya le pagué a otro número por error', 'Ya pagué pero a la cuenta vieja', 'Se me cobró doble', 'Ya le pagué la mitad']) {
       assert.doesNotMatch(deriveSalesState({ history: [msg(1, 'outbound', DETAILS), msg(2, 'inbound', later)], inboundText: 'ok', ctx: CTX }).nextStep, /YA pagó/, later)
@@ -254,6 +269,10 @@ describe('wiring (source)', () => {
 
   it('the payment check fails closed on error after the details, and before them only with customer money words', () => {
     assert.match(turn, /result\.verdict === 'error' &&\s*!dataChoicePath &&\s*input\.paymentDetailsSent !== true &&\s*!unansweredPaymentState\(/)
+  })
+
+  it('the error bypass also needs every unanswered bubble to be courtesy or a question (Verifier r4 a)', () => {
+    assert.match(turn, /\.every\(\(t\) => !t\?\.trim\(\) \|\| isCourtesyText\(t\) \|\| \/\[\?¿\]\/u\.test\(t\)\)/)
   })
 
   it('live and Probar pass the bubbles after the details', () => {

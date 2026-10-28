@@ -56,7 +56,7 @@ const CLAIM_CUE_RE = new RegExp(
       near(String.raw`(hice|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|acabo\s+de\s+(pagar|hacer|mandar|enviar|pasar|transferir|depositar|cancelar))`, PAY_NOUN),
       // A lone "pagado" with a thanks / emoji tail ("pagado ❤️", "Pagado, gracias 😊") is read by withoutEmojiTail (linear);
       // Verifier 2026-10-28: never widen this tail (three whitespace runs in a row are cubic on a 4 KB message).
-      String.raw`pagu[eé]|deposit[eé]|transfer[ií]|^\s*¿?\s*pagad[oa]\s*[?!.✅👍]*\s*$`,
+      String.raw`pagu[eé]|deposit[eé]|transfer[ií]|^\s*¿?\s*(?:ya\s+)?pagad[oa]\s*[?!.✅👍]*\s*$`,
       // SecureDog INT-140: "we / they paid" — third-person past always; the -amos forms (also present tense: "¿cómo
       // pagamos?") only after "ya" or with a past marker ("lo pagamos ayer").
       // Verifier round 6: "abonar" (a part payment) and a declined / rejected card or transfer are claims too.
@@ -606,8 +606,7 @@ const CUSTOMER_LOOKALIKE_RE = new RegExp(`[${Object.keys(CUSTOMER_LOOKALIKE).joi
 
 export function hasHardPaymentClaim(text: string, opts: { noPaymentYet?: boolean } = {}): boolean {
   if (hasHardPaymentClaimOnce(text, opts)) return true
-  const bare = withoutEmojiTail(text)
-  return bare !== null && hasHardPaymentClaimOnce(bare, opts)
+  return extraReadings(text).some((r) => hasHardPaymentClaimOnce(r, opts))
 }
 
 function hasHardPaymentClaimOnce(text: string, opts: { noPaymentYet?: boolean }): boolean {
@@ -1074,6 +1073,23 @@ function stripEmojiTail(t: string): string {
   while (end > 0 && EMOJI_TAIL_CHAR_RE.test(chars[end - 1])) end--
   return end === chars.length ? t : chars.slice(0, end).join('')
 }
+/** Verifier 2026-10-28 r2: emoji (with selectors / joiners / skin tones) read as a gap and as nothing ("pagu❤️é", "Le mandé ❤️ 15 mil"). */
+const PICTO_RUN_RE = /\p{Extended_Pictographic}[\u{FE0E}\u{FE0F}\u{200D}\p{Emoji_Modifier}\p{Extended_Pictographic}]*/gu
+function withoutEmoji(text: string): string[] {
+  const t = (text || '').slice(0, 4000)
+  if (!/\p{Extended_Pictographic}/u.test(t)) return []
+  return [t.replace(PICTO_RUN_RE, ' '), t.replace(PICTO_RUN_RE, '')]
+}
+/** Every extra reading a hand-off check also judges (any claim among them wins — only ever adds hand-offs). */
+function extraReadings(text: string): string[] {
+  const out: string[] = []
+  // Emoji out first, then the thanks / smiley tail of each reading ("pagad❤️o gracias" → "pagado").
+  for (const r of [text, ...withoutEmoji(text)]) {
+    const tail = withoutEmojiTail(r)
+    out.push(r, ...(tail !== null ? [tail] : []))
+  }
+  return [...new Set(out)].filter((r) => r.trim() && r !== text)
+}
 function withoutEmojiTail(text: string): string | null {
   const t = (text || '').slice(0, 2000)
   let bare = stripEmojiTail(t)
@@ -1090,8 +1106,7 @@ export function classifyPaymentText(
 ): PaymentClassification {
   const cls = classifyPaymentTextOnce(text, opts)
   if (cls === 'payment_proof_or_risk') return cls
-  const bare = withoutEmojiTail(text)
-  return bare !== null && classifyPaymentTextOnce(bare, opts) === 'payment_proof_or_risk' ? 'payment_proof_or_risk' : cls
+  return extraReadings(text).some((r) => classifyPaymentTextOnce(r, opts) === 'payment_proof_or_risk') ? 'payment_proof_or_risk' : cls
 }
 
 function classifyPaymentTextOnce(

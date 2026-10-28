@@ -442,7 +442,7 @@ async function main() {
     for (const v of VARIANTS) {
       const s = stats[v]
       console.log(
-        `  ${v} (${keyOf(c, v, plan)}): enviados ${s.sent} · fallidos ${s.failed} · respondieron ${s.replied} (${pct(s.replied, s.sent)}) · pedidos ${s.ordered} (${pct(s.ordered, s.sent)}) · ${crc(s.revenue)} · bajas ${s.optedOut} (${pct(s.optedOut, s.sent)}) · "no gracias" ${s.softNo} · por línea ${JSON.stringify(s.byLine)}`,
+        `  ${v} (${keyOf(c, v, plan)}): enviados ${s.sent} · fallidos ${s.failed} · respondieron ${s.replied} (${pct(s.replied, s.sent)}) · pedidos ${s.ordered} (${pct(s.ordered, s.sent)}) · ${crc(s.revenue)} · bajas ${s.optedOut} (${pct(s.optedOut, s.sent)}) · "no gracias" ${s.softNo} · recordatorios SINPE ${s.reminders} (aparte) · por línea ${JSON.stringify(s.byLine)}`,
       )
       console.log(`     "${c.texts[v]}"`)
       if (flag('replies')) for (const r of s.replies) console.log(`       ↳ ${r}`)

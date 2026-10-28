@@ -343,3 +343,12 @@ describe('SecureDog 2026-10-28 (INT-238 / INT-240)', () => {
     }
   })
 })
+
+describe('verifier 2026-10-28 round 3: an emoji inside a claim', () => {
+  it('a claim with an emoji in the middle of a word or sentence still hands off', () => {
+    for (const t of ['Le mandé ❤️ 15 mil', 'pagu❤️é', 'ya pagado ✌️', 'Ya pa❤gué', 'Ya le hi❤ce el sin❤pe, ¿cuándo llega?']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+    for (const t of ['¿Cuánto cuesta? 😊', 'Quiero 2 bolsas ❤️', 'Hola 👋 ¿precio?']) assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
+  })
+})

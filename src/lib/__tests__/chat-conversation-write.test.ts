@@ -407,3 +407,35 @@ test('025 unique SQL ships gated and is not default-applied', () => {
   assert.match(manifest, /DEFAULT_APPLY_FILES = '018,019,020,021,022,023,024'/)
   assert.doesNotMatch(manifest, /DEFAULT_APPLY_FILES = '[^']*025/)
 })
+
+test('echo-first AI send: the AI metadata adopts the bare Instagram echo (DeepSleep audit 2026-10-28)', async () => {
+  const { adoptedEchoMetadata } = await import('../chat-conversation-write')
+  const echo = { isEcho: true, platform: 'instagram', providerMessageId: 'mid.1', rawMessage: { mid: 'mid.1' } }
+  const ai = { softAi: true, agentId: 'a1', turnId: 't1', partIndex: 0, partCount: 2, replyBy: 'agent' }
+  const merged = adoptedEchoMetadata(echo, ai)
+  assert.ok(merged)
+  assert.equal(merged.softAi, true)
+  assert.equal(merged.turnId, 't1')
+  assert.equal(merged.isEcho, true)
+  assert.equal(merged.providerMessageId, 'mid.1')
+  // Follow-ups carry softAi too.
+  assert.equal(adoptedEchoMetadata(echo, { softAi: true, followUp: { campaignId: 'c' } })?.followUp !== undefined, true)
+})
+
+test('echo adoption never relabels a person or an already-marked row', async () => {
+  const { adoptedEchoMetadata } = await import('../chat-conversation-write')
+  const echo = { isEcho: true }
+  // A person's echo with no AI write: nothing to adopt.
+  assert.equal(adoptedEchoMetadata(echo, undefined), null)
+  assert.equal(adoptedEchoMetadata(echo, { senderUserId: 'u1' }), null)
+  // An inbox send (pending row with the sender) or a row already marked: untouched.
+  assert.equal(adoptedEchoMetadata({ senderUserId: 'u1' }, { softAi: true }), null)
+  assert.equal(adoptedEchoMetadata({ isEcho: true, senderUserId: 'u1' }, { softAi: true }), null)
+  assert.equal(adoptedEchoMetadata({ isEcho: true, softAi: true }, { softAi: true }), null)
+  assert.equal(adoptedEchoMetadata(null, { softAi: true }), null)
+})
+
+test('both duplicate paths of dualWrite adopt the echo', () => {
+  const source = readFileSync('src/lib/chat-conversation-write.ts', 'utf8')
+  assert.equal(source.match(/await adoptSoftAiEcho\(/g)?.length, 2)
+})

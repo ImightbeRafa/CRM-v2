@@ -38,7 +38,8 @@ import { softAiProviderFor, type ChatAgentTonePreset } from '@/lib/soft-ai/agent
 import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
 import { isAgentIntent } from '@/lib/soft-ai/agent-intents'
 import { HANDOFF_REASON, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
-import { hasPaymentWord, isShortDoneBubble, paymentHandoffReason } from '@/lib/soft-ai/payment-classifier'
+import { hasPaymentWord, isCourtesyText, isShortDoneBubble, paymentHandoffReason } from '@/lib/soft-ai/payment-classifier'
+import { paymentDetailsIn } from '@/lib/soft-ai/sales-state'
 
 export type SoftAiLlmRuntimeInput = {
   /**
@@ -523,11 +524,11 @@ export async function runSoftAiLlmRuntime(
         hasPaymentWord(customerSide) ||
         hasPaymentWord(lastStoreText) ||
         /(?<![\p{L}])(pedido|orden|compra)(?![\p{L}])/iu.test(finalText))
-    // Rafael 2026-10-27: the model asking for a person is a PAYMENT hand-off only when the customer's own words are about
-    // a payment (or a short "listo" right after the store's payment message). The store's own "mandame el comprobante"
-    // alone turned "Muchas gracias" / "Guía de tallas" escalations into "Pago por verificar".
-    const customerPaymentTalk =
-      hasPaymentWord(customerSide) || (hasPaymentWord(lastStoreText) && isShortDoneBubble(customerSide))
+    // Rafael 2026-10-27: the model asking for a person is a PAYMENT hand-off when the customer's own words are about a
+    // payment; right after the store's payment DETAILS, for anything but a plain thank-you ("Le acabo de mandar" has no
+    // payment word); after another store payment mention ("Cuando hagás el pago, mandame el comprobante"), only for a
+    // short "listo". That mention alone turned "Muchas gracias" / "Guía de tallas" into "Pago por verificar".
+    const customerPaymentTalk = escalationIsPaymentTalk(customerSide, lastStoreText)
     const paymentRisk =
       confirmationIsPayment ||
       validation.reasons.includes('payment_status_claim') ||
@@ -687,6 +688,14 @@ export function conversationPaymentContext(history: Array<{ direction: string; c
   const mediaRe = /\[(image|imagen|foto|audio|voice|video|document|documento|archivo|sticker)/i
   if ([inboundText, ...inbound].some((t) => hasPaymentWord(t) || mediaRe.test(t))) return true
   return history.some((m) => m.direction === 'outbound' && hasPaymentWord(m.content || ''))
+}
+
+/** Model escalation → PAYMENT hand-off (see the turn's rule): the customer's own payment words, or after the details. */
+export function escalationIsPaymentTalk(customerSide: string, lastStoreText: string): boolean {
+  return (
+    hasPaymentWord(customerSide) ||
+    (paymentDetailsIn(lastStoreText) ? !isCourtesyText(customerSide) : hasPaymentWord(lastStoreText) && isShortDoneBubble(customerSide))
+  )
 }
 
 export function modelHandoff(reason: string | undefined, inboundText: string): TurnHandoff {

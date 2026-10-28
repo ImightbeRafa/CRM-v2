@@ -22,6 +22,7 @@ import {
   NEGATION_RE,
   paymentChoiceGrammar,
   paymentChoiceShape,
+  paymentHandoffReason,
   pendingMethodMention,
   type PaymentChoiceMethod,
 } from '@/lib/soft-ai/payment-classifier'
@@ -394,19 +395,32 @@ const NEXT_STEP: Record<SalesStage, string> = {
 const PAID_STEP =
   'El cliente YA pagó o ya mandó el comprobante (el equipo lo revisa o ya lo confirmó). NO pidas el pago ni el comprobante otra vez y no vuelvas a cerrar la venta. Si agradece, reacciona o se despide, respondé corto y cordial (por ejemplo "¡Con gusto! Cualquier cosa me escribís 😊"). Si pregunta otra cosa, respondé solo eso.'
 const RECEIPT_MEDIA_RE = /^\s*\[(?:image|imagen|foto|document|documento|file|archivo)\]\s*$/iu
+/** "Ahorita le mando el comprobante", "mañana le paso": a payment still to come (the prompt must not say it is paid). */
+const PAY_LATER_RE =
+  /(?<![\p{L}])(?:ahorita|en\s+un\s+(?:rato|momento|toque)|m[aá]s\s+tarde|ma[nñ]ana|luego|despu[eé]s|voy\s+a|vamos\s+a|(?:le|te|les)\s+(?:mando|env[ií]o|paso|hago)|cuando\s+(?:pueda|tenga|me\s+paguen))(?![\p{L}])/iu
+/** Past tense only: "Pago recibido", "recibimos tu SINPE" — never "…y te confirmamos el pago" (a promise). */
 const STORE_CONFIRMED_PAYMENT_RE =
-  /(?<![\p{L}])(?:(?:pago|sinpe|comprobante|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|aplicad[oa])|recibimos\s+(?:tu|el|su)\s+(?:pago|sinpe|comprobante)|confirmamos\s+(?:tu|el|su)\s+pago)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:(?:pago|sinpe|comprobante|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|aplicad[oa])|recibimos\s+(?:tu|el|su)\s+(?:pago|sinpe|comprobante))(?![\p{L}])/iu
 
-/** After the store's last payment-details message: a receipt photo / file, a "ya pagué", or the store confirming it. */
+/**
+ * After the store's last payment-details message: a receipt photo / file or a hard "ya pagué" from the customer (not a
+ * refund / complaint), or the store saying it received it — and no new sale started after that (a buy cue or a new ₡
+ * quote: "también quiero el Energy Patch" is a new close, not post-sale).
+ */
 export function paidAfterDetails(history: SoftAiHistoryMessage[], isDetails: (text: string) => boolean): boolean {
   let i = history.length - 1
   while (i >= 0 && !(history[i].direction === 'outbound' && isDetails(history[i].content || ''))) i--
   if (i < 0) return false
-  return history.slice(i + 1).some((m) => {
+  const after = history.slice(i + 1)
+  const paidAt = after.findIndex((m) => {
     const text = m.content || ''
     if (m.direction === 'outbound') return STORE_CONFIRMED_PAYMENT_RE.test(text)
-    return RECEIPT_MEDIA_RE.test(text) || RECEIPT_RE.test(text) || hasPaymentClaimCue(text)
+    return RECEIPT_MEDIA_RE.test(text) || (hasHardPaymentClaim(text) && !/[?¿]/u.test(text) && !PAY_LATER_RE.test(text) && paymentHandoffReason(text) !== 'complaint')
   })
+  if (paidAt < 0) return false
+  return !after
+    .slice(paidAt + 1)
+    .some((m) => (m.direction === 'inbound' ? BUY_RE.test(m.content || '') : /₡\s?\d/u.test(m.content || '')))
 }
 
 /** The customer wants a product that is AGOTADO: no close for it (no total, data or payment question). */

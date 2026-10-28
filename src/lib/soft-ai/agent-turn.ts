@@ -218,12 +218,24 @@ function storePaymentDigits(facts: { payment?: { sinpe?: { number?: string | nul
   return [facts?.payment?.sinpe?.number, facts?.payment?.transfer?.iban].map((n) => (n || '').replace(/\D/g, '')).filter((d) => d.length >= 8)
 }
 
-/** The customer's bubbles after the store's last payment-details message (none sent yet → none). */
-function customerTextsAfterDetails(history: Array<{ direction: string; content?: string | null }>): string[] {
-  let i = history.length - 1
-  while (i >= 0 && !(history[i].direction === 'outbound' && paymentDetailsIn(history[i].content || ''))) i--
-  if (i < 0) return []
-  return history.slice(i + 1).filter((m) => m.direction === 'inbound' && m.content).map((m) => String(m.content))
+/**
+ * The "Listo ✅" check's bubbles: the customer's messages from the last 10 min (same window as before) that come after
+ * the store's first payment-details message of that window (else its last one) — never the choice the details answered ("Sinpe" → details → "¿De cuánto
+ * sería el monto?"), and a "listo" typed between two details bubbles still counts.
+ */
+export function customerTextsAfterDetails(
+  history: Array<{ direction: string; content?: string | null; sentAt?: string | Date | null }>,
+  now = Date.now(),
+): string[] {
+  const recent = (m: { sentAt?: string | Date | null }) => {
+    const at = m.sentAt ? new Date(m.sentAt).getTime() : NaN
+    return Number.isFinite(at) && now - at <= 10 * 60_000
+  }
+  const details = history.flatMap((m, i) => (m.direction === 'outbound' && paymentDetailsIn(m.content || '') ? [i] : []))
+  if (!details.length) return []
+  // The first details bubble of this window (two bubbles: SINPE then IBAN), else the last one sent before it.
+  const anchor = details.find((i) => recent(history[i])) ?? details[details.length - 1]
+  return history.slice(anchor + 1).filter((m) => m.direction === 'inbound' && m.content && recent(m)).map((m) => String(m.content))
 }
 
 function earlierCustomerTexts(history: Array<{ direction: string; content?: string | null; sentAt?: string | Date | null }>): string[] {
@@ -307,10 +319,15 @@ async function withPaymentClaimCheck(
     step(decision, `shadow_${result.verdict}`)
     return decision
   }
-  // Rafael 2026-10-27: a timeout / bad answer fails closed only when the customer's unanswered words carry money or
-  // payment-state words. The check also opens on the store's own earlier payment text; a slow check on "Guía de tallas"
-  // or "Muchas gracias" is no reason for a "Pago por verificar" hand-off.
-  if (result.verdict === 'error' && !dataChoicePath && !unansweredPaymentState(input.inboundText, ctx.history).inPlay) {
+  // Rafael 2026-10-27: before the store sent its payment details, a timeout / bad answer fails closed only when the
+  // customer's unanswered words carry money or payment-state words (a slow check on "Guía de tallas" is no reason for a
+  // "Pago por verificar" hand-off). After the details it always fails closed ("Le acabo de mandar" has no money word).
+  if (
+    result.verdict === 'error' &&
+    !dataChoicePath &&
+    input.paymentDetailsSent !== true &&
+    !unansweredPaymentState(input.inboundText, ctx.history).inPlay
+  ) {
     step(decision, 'error_no_customer_money_words')
     return decision
   }

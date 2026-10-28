@@ -56,7 +56,9 @@ const CLAIM_CUE_RE = new RegExp(
       near(String.raw`(hice|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|acabo\s+de\s+(pagar|hacer|mandar|enviar|pasar|transferir|depositar|cancelar))`, PAY_NOUN),
       // A lone "pagado" with a thanks / emoji tail ("pagado ❤️", "Pagado, gracias 😊") is read by withoutEmojiTail (linear);
       // Verifier 2026-10-28: never widen this tail (three whitespace runs in a row are cubic on a 4 KB message).
-      String.raw`pagu[eé]|deposit[eé]|transfer[ií]|^\s*¿?\s*(?:ya\s+)?pagad[oa]\s*[?!.✅👍]*\s*$`,
+      // SecureDog INT-239 r3: one optional "¿" run and ONE tail class (the old "\s*¿?\s*…\s*[…]*\s*$" was cubic).
+      // Also behind a greeting / "listo" ("Listo, ya pagado", "hola, ya pagado" — never claims before, even live).
+      String.raw`pagu[eé]|deposit[eé]|transfer[ií]|^\s*(?:(?:hola|buenas|listo|lista|ok|okey|perfecto|dale|ya)[,.!]?\s+){0,2}(?:¿\s*)?(?:ya\s+)?pagad[oa][\s?!.✅👍]*$`,
       // SecureDog INT-140: "we / they paid" — third-person past always; the -amos forms (also present tense: "¿cómo
       // pagamos?") only after "ya" or with a past marker ("lo pagamos ayer").
       // Verifier round 6: "abonar" (a part payment) and a declined / rejected card or transfer are claims too.
@@ -605,6 +607,7 @@ const CUSTOMER_LOOKALIKE: Record<string, string> = {
 const CUSTOMER_LOOKALIKE_RE = new RegExp(`[${Object.keys(CUSTOMER_LOOKALIKE).join("")}]`, "gu")
 
 export function hasHardPaymentClaim(text: string, opts: { noPaymentYet?: boolean } = {}): boolean {
+  if ((text || '').length > MAX_CLASSIFIED_CHARS) return true
   if (hasHardPaymentClaimOnce(text, opts)) return true
   return extraReadings(text).some((r) => hasHardPaymentClaimOnce(r, opts))
 }
@@ -1073,6 +1076,8 @@ function stripEmojiTail(t: string): string {
   while (end > 0 && EMOJI_TAIL_CHAR_RE.test(chars[end - 1])) end--
   return end === chars.length ? t : chars.slice(0, end).join('')
 }
+/** Longer customer bubbles go to a person unread (SecureDog INT-239 r3; the safe direction). */
+const MAX_CLASSIFIED_CHARS = 4000
 /** Verifier 2026-10-28 r2: emoji (with selectors / joiners / skin tones) read as a gap and as nothing ("pagu❤️é", "Le mandé ❤️ 15 mil"). */
 const PICTO_RUN_RE = /\p{Extended_Pictographic}[\u{FE0E}\u{FE0F}\u{200D}\p{Emoji_Modifier}\p{Extended_Pictographic}]*/gu
 function withoutEmoji(text: string): string[] {
@@ -1104,6 +1109,8 @@ export function classifyPaymentText(
   text: string,
   opts: { awaitingPaymentMethod?: boolean; noPaymentYet?: boolean; nothingPaidYet?: boolean } = {},
 ): PaymentClassification {
+  // SecureDog INT-239 r3: a customer bubble over 4 KB is never judged by the rules (cost) — a person reads it.
+  if ((text || '').length > MAX_CLASSIFIED_CHARS) return 'payment_proof_or_risk'
   const cls = classifyPaymentTextOnce(text, opts)
   if (cls === 'payment_proof_or_risk') return cls
   return extraReadings(text).some((r) => classifyPaymentTextOnce(r, opts) === 'payment_proof_or_risk') ? 'payment_proof_or_risk' : cls

@@ -369,3 +369,15 @@ describe('SecureDog 2026-10-28 round 2 (INT-240 / INT-238)', () => {
     }
   })
 })
+
+describe('SecureDog 2026-10-28 round 3 (INT-239)', () => {
+  it('whitespace or emoji on both sides of "pagado" stays fast; over 4 KB goes to a person unread', () => {
+    for (const s of [' '.repeat(1900) + 'pagado' + ' '.repeat(1900) + 'x', '⠀'.repeat(1900) + 'pagado' + '⠀'.repeat(1900) + 'x', '❤ '.repeat(600) + 'pagado' + ' ❤'.repeat(600) + ' x']) {
+      const t0 = performance.now()
+      classifyPaymentText(s)
+      hasHardPaymentClaim(s, {})
+      assert.ok(performance.now() - t0 < 1500, `${Math.round(performance.now() - t0)} ms`)
+    }
+    assert.equal(classifyPaymentText('hola ' + 'a'.repeat(5000)), 'payment_proof_or_risk')
+  })
+})

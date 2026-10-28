@@ -404,19 +404,20 @@ function fmtWhen(s: string | null) {
   return Number.isNaN(d.getTime()) ? s : d.toLocaleString('es-CR', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-export function TrackingTimeline({ guiaNumber }: { guiaNumber: string }) {
+/** endpoint: store route by default; logistics passes /api/logistics/tracking?envioId= */
+export function TrackingTimeline({ guiaNumber, endpoint }: { guiaNumber: string; endpoint?: string }) {
   const [data, setData] = useState<{ live: boolean; tracking: Tracking } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
-    getJson(`/api/shipping/correos/track?guia=${encodeURIComponent(guiaNumber)}`)
+    getJson(endpoint ? `${endpoint}${encodeURIComponent(guiaNumber)}` : `/api/shipping/correos/track?guia=${encodeURIComponent(guiaNumber)}`)
       .then((d) => alive && setData(d))
       .catch((e) => alive && setError(e.message));
     return () => {
       alive = false;
     };
-  }, [guiaNumber]);
+  }, [guiaNumber, endpoint]);
 
   if (error) return <p className="text-xs text-red-500">{error}</p>;
   if (!data) return <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Consultando a Correos…</p>;

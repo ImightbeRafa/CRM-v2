@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from 'fs/promises';
 import path from 'path';
-import { REQUIRED_LM_TABLES } from './config';
+import { PENDING_LM_TABLES, REQUIRED_LM_TABLES } from './config';
 
 /** Match lm_* only in SQL table positions, not index/column/constraint names. */
 const LM_TABLE_SQL_RES = [
@@ -79,7 +79,8 @@ export function compareCoverage(
   const refSet = new Set(referencedInCode);
   const reqSet = new Set<string>(required);
 
-  const referencedButUnlisted = referencedInCode.filter((t) => !reqSet.has(t));
+  const pendingSet = new Set<string>(PENDING_LM_TABLES);
+  const referencedButUnlisted = referencedInCode.filter((t) => !reqSet.has(t) && !pendingSet.has(t));
   const allowlistedButUnreferenced = required.filter((t) => !refSet.has(t));
 
   let liveMissingRequired: string[] | undefined;

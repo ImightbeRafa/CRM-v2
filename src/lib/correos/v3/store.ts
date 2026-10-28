@@ -195,10 +195,31 @@ export async function markCheckFailed(guiaNumber: string) {
   });
 }
 
-export async function dueForTracking(limit: number): Promise<Array<{ guia_number: string; crm_tenant_id: string; shipping_guia_id: string | null; last_status: CorreosShipmentStatus | null }>> {
+/**
+ * Enrolls recent completed Correos guías (any API, e.g. SOAP or the staff bot) so the sync follows them too.
+ * Only real Correos numbers (two letters + 9 digits + CR); manual guías are skipped.
+ */
+export async function enrollRecentGuias(days = 14, limit = 200): Promise<number> {
+  return safe(0, () =>
+    prisma.$executeRaw`
+      INSERT INTO lm_correos_guias (guia_number, shipping_guia_id, crm_tenant_id, order_number, api_version, environment, next_check_at)
+      SELECT DISTINCT ON (g."guiaNumber") g."guiaNumber", g.id, g."tenantId", g."orderId", 'soap', 'prod', now()
+      FROM "ShippingGuia" g
+      WHERE g.status = 'completed' AND g.carrier ILIKE '%correos%'
+        AND g."guiaNumber" ~ '^[A-Z]{2}[0-9]{9}CR$'
+        AND g."createdAt" > now() - make_interval(days => ${days})
+        AND NOT EXISTS (SELECT 1 FROM lm_correos_guias c WHERE c.guia_number = g."guiaNumber")
+      ORDER BY g."guiaNumber", g."createdAt" DESC
+      LIMIT ${limit}
+      ON CONFLICT (guia_number) DO NOTHING
+    `,
+  );
+}
+
+export async function dueForTracking(limit: number): Promise<Array<{ guia_number: string; crm_tenant_id: string; shipping_guia_id: string | null; crm_order_id: string | null; last_status: CorreosShipmentStatus | null }>> {
   return safe([], () =>
     prisma.$queryRaw`
-      SELECT guia_number, crm_tenant_id, shipping_guia_id, last_status FROM lm_correos_guias
+      SELECT guia_number, crm_tenant_id, shipping_guia_id, crm_order_id, last_status FROM lm_correos_guias
       WHERE closed = false AND next_check_at <= now() AND environment = 'prod'
       ORDER BY next_check_at ASC LIMIT ${Math.max(1, Math.min(limit, 200))}
     `,

@@ -131,6 +131,8 @@ const TOOL_LABELS: Record<string, string> = {
   search_approved_knowledge: 'Buscar conocimiento aprobado',
   get_order_status: 'Estado de pedido',
   get_shipping_status: 'Estado de envío',
+  find_correos_branches: 'Sucursales de Correos',
+  check_correos_address: 'Revisar dirección (Correos)',
   escalate_to_human: 'Escalar a humano',
   use_shortcut: 'Usar atajo',
 }

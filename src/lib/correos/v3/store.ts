@@ -78,7 +78,8 @@ export async function saveV3Guia(input: {
         updated_at = now()
       -- Correos registering the guía decides who owns it (SecureDog DATA-75): a row the tracker made earlier
       -- is taken over; a v3 row of another business is never overwritten (its ZPL never moves).
-      WHERE lm_correos_guias.crm_tenant_id = EXCLUDED.crm_tenant_id OR lm_correos_guias.api_version = 'soap'
+      WHERE lm_correos_guias.crm_tenant_id = EXCLUDED.crm_tenant_id
+         OR (lm_correos_guias.api_version = 'soap' AND lm_correos_guias.environment = EXCLUDED.environment)
     `;
     // Another store's v3 row holds this number: leave it and its history alone (verifier C).
     if (affected === 0) return false;
@@ -226,7 +227,9 @@ export async function enrollRecentGuias(days = 14, limit = 200): Promise<number>
         AND g."createdAt" > now() - make_interval(days => ${days}::int)
         AND NOT EXISTS (SELECT 1 FROM lm_correos_guias c WHERE c.guia_number = g."guiaNumber")
         -- a number held by two businesses is ambiguous: never follow it automatically
-        AND NOT EXISTS (SELECT 1 FROM "ShippingGuia" o WHERE o."guiaNumber" = g."guiaNumber" AND o."tenantId" <> g."tenantId")
+        AND NOT EXISTS (SELECT 1 FROM "ShippingGuia" o WHERE o."tenantId" <> g."tenantId"
+          AND (o."guiaNumber" = g."guiaNumber" OR o."trackingNumber" = g."guiaNumber")
+          AND o.status = 'completed' AND o.carrier ILIKE '%correos%')
       ORDER BY g."guiaNumber", g."createdAt" DESC
       LIMIT ${limit}
       ON CONFLICT (guia_number) DO NOTHING
@@ -258,7 +261,7 @@ export async function claimPickup(input: { key: string; tenantId: string; userId
       INSERT INTO lm_correos_pickups (idempotency_key, crm_tenant_id, requested_by, guia_numbers, pickup_address, environment)
       VALUES (${input.key}, ${input.tenantId}, ${input.userId}, ${input.guias}::text[], ${input.address.slice(0, 400)}, ${input.environment})
       ON CONFLICT (idempotency_key) DO UPDATE SET status = 'pending', error = NULL, guia_numbers = EXCLUDED.guia_numbers,
-        pickup_address = EXCLUDED.pickup_address, updated_at = now()
+        pickup_address = EXCLUDED.pickup_address, created_at = now(), updated_at = now()
       WHERE lm_correos_pickups.status = 'failed' AND lm_correos_pickups.crm_tenant_id = EXCLUDED.crm_tenant_id
     `;
     return n > 0 ? 'claimed' : 'duplicate';

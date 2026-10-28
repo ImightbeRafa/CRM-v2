@@ -38,7 +38,8 @@ export async function runCorreosTrackingSync(opts: { limit?: number; concurrency
   const env = opts.env ?? process.env;
   const summary: TrackingSyncSummary = { enrolled: 0, checked: 0, changed: 0, failed: 0 };
   if (env.CORREOS_TRACKING_SYNC !== '1') return { ...summary, skipped: 'CORREOS_TRACKING_SYNC is off' };
-  const v3 = await getCorreosV3ForRead().catch(() => null);
+  // 8 s, no retries: a hanging Correos can't hold the 5-minute cron list (SecureDog INFRA-31).
+  const v3 = await getCorreosV3ForRead({ timeoutMs: 8_000, readRetries: 0 }).catch(() => null);
   if (!v3) return { ...summary, skipped: 'Correos v3 is off' };
   if (v3.environment !== 'prod') return { ...summary, skipped: 'Correos v3 is on the test environment' };
 

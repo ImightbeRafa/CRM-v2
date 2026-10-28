@@ -101,6 +101,8 @@ export interface CorreosV3ClientOptions {
   env?: NodeJS.Dict<string>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  /** Read retries on 503 / network (default 2). */
+  readRetries?: number;
 }
 
 export class CorreosV3Client {
@@ -112,6 +114,7 @@ export class CorreosV3Client {
   private readonly cacheKey: string;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly readRetries: number;
 
   constructor(config: CorreosV3Config, options: CorreosV3ClientOptions = {}) {
     const env = options.env ?? process.env;
@@ -122,6 +125,7 @@ export class CorreosV3Client {
     this.proxySecret = proxySecretFor(this.baseUrl, env);
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    this.readRetries = options.readRetries ?? READ_RETRIES;
     this.cacheKey = createHash('sha256')
       .update(`${this.baseUrl}\0${config.username}\0${config.password}`)
       .digest('hex');
@@ -245,7 +249,7 @@ export class CorreosV3Client {
           body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
         });
       } catch (err) {
-        if (opts.retry && attempt < READ_RETRIES) {
+        if (opts.retry && attempt < this.readRetries) {
           attempt++;
           await this.sleep(500 * attempt);
           continue;
@@ -264,7 +268,7 @@ export class CorreosV3Client {
         tokenCache.delete(this.cacheKey);
         continue;
       }
-      if (res.status === 503 && opts.retry && attempt < READ_RETRIES) {
+      if (res.status === 503 && opts.retry && attempt < this.readRetries) {
         attempt++;
         await this.sleep(500 * attempt);
         continue;

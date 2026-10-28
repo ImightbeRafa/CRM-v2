@@ -101,3 +101,14 @@ ALTER TABLE public.lm_correos_tracking_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lm_correos_pickups ENABLE ROW LEVEL SECURITY;
 
 COMMIT;
+
+-- Cross-store lookups by guía number (ownership, manual guía check, enrollment) — SecureDog DB-08.
+-- Plain CREATE INDEX in its own short transaction (the gated apply sends one simple query; see 032).
+-- Apply in the madrugada: it briefly blocks writes on "ShippingGuia" while it builds.
+-- Rollback: DROP INDEX IF EXISTS "ShippingGuia_guiaNumber_idx", "ShippingGuia_trackingNumber_idx";
+BEGIN;
+SET LOCAL lock_timeout = '3s';
+SET LOCAL statement_timeout = '120s';
+CREATE INDEX IF NOT EXISTS "ShippingGuia_guiaNumber_idx" ON public."ShippingGuia" ("guiaNumber") WHERE "guiaNumber" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "ShippingGuia_trackingNumber_idx" ON public."ShippingGuia" ("trackingNumber") WHERE "trackingNumber" IS NOT NULL;
+COMMIT;

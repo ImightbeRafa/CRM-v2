@@ -16,7 +16,6 @@ async function superAdminId(req: NextRequest): Promise<string | null> {
   return u?.isSuperAdmin ? token.sub : null;
 }
 
-const maskCedula = (v: string) => (v ? `•••${v.replace(/\D/g, '').slice(-3)}` : '');
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -59,10 +58,7 @@ export async function GET(req: NextRequest) {
       codCliente: db[V3_DB_KEYS.codCliente] || '',
       servicioId: db[V3_DB_KEYS.servicioId] || '',
       usuarioId: db[V3_DB_KEYS.usuarioId] || '',
-      pickupCedula: maskCedula(db[V3_DB_KEYS.pickupCedula] || ''),
-      hasPickupCedula: !!db[V3_DB_KEYS.pickupCedula],
       tenants: db[V3_DB_KEYS.tenants] || '',
-      pickupEmail: db[V3_DB_KEYS.pickupEmail] || '',
       baseUrl: resolveV3BaseUrl(resolved?.config.environment ?? environment),
       status: {
         configured: !!resolved,
@@ -95,8 +91,6 @@ export async function PATCH(req: NextRequest) {
   const servicioId = str(body.servicioId, 10);
   if (codCliente && !/^\d{1,15}$/.test(codCliente)) errors.push('Código de cliente: solo números.');
   if (servicioId && !/^\d{1,6}$/.test(servicioId)) errors.push('Código de servicio: solo números.');
-  const email = str(body.pickupEmail, 150);
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Correo de recolección inválido.');
   if (errors.length) return NextResponse.json({ error: errors.join(' ') }, { status: 400 });
 
   const tenants = typeof body.tenants === 'string' ? body.tenants.trim().slice(0, 4000) : undefined;
@@ -104,6 +98,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Tiendas: IDs separados por coma, o * para todas.' }, { status: 400 });
   }
   const before = await resolveV3Config();
+  const beforeDb = await readKeys();
   const changed: string[] = [];
   try {
     if (typeof body.enabled === 'boolean') await upsert(V3_DB_KEYS.enabled, body.enabled ? '1' : '0', 'Correos API v3 platform switch');
@@ -116,12 +111,12 @@ export async function PATCH(req: NextRequest) {
     if (servicioId !== undefined && servicioId) await upsert(V3_DB_KEYS.servicioId, servicioId, 'Correos API v3 service code');
     const usuarioId = str(body.usuarioId, 20);
     if (usuarioId !== undefined) await upsert(V3_DB_KEYS.usuarioId, usuarioId, 'Correos API v3 usuarioId');
-    const cedula = str(body.pickupCedula, 20);
-    if (cedula !== undefined && !cedula.startsWith('•')) await upsert(V3_DB_KEYS.pickupCedula, cedula, 'Cédula for Correos pickup requests');
-    if (email !== undefined) await upsert(V3_DB_KEYS.pickupEmail, email, 'Email for Correos pickup requests');
+    // Pickups always use each store's own cédula / email: the platform ones are not stored (AUTH-62).
     if (tenants !== undefined) await upsert(V3_DB_KEYS.tenants, tenants, 'Stores allowed to write through Correos API v3 (* = all)');
-    for (const k of ['enabled', 'environment', 'username', 'password', 'codCliente', 'servicioId', 'usuarioId', 'pickupCedula', 'pickupEmail', 'tenants']) {
-      if (body[k] !== undefined && body[k] !== '') changed.push(k);
+    // Only keys whose stored value really changed (the form always sends everything).
+    const afterDb = await readKeys();
+    for (const [name, key] of Object.entries(V3_DB_KEYS)) {
+      if ((beforeDb[key] ?? '') !== (afterDb[key] ?? '')) changed.push(name);
     }
     __resetV3SelectCache();
     // Credentials / environment changed: revoke the old refresh token (best effort).

@@ -1,6 +1,7 @@
 import 'server-only';
 import { resolveV3Config, type ResolvedV3Config } from './config';
 import { CorreosV3Service } from './service';
+import type { CorreosV3ClientOptions } from './client';
 
 /**
  * Which Correos API a call uses.
@@ -52,9 +53,9 @@ async function loadConfig(): Promise<ResolvedV3Config | null> {
 }
 
 /** The v3 service for a read, or null when reads should stay on SOAP. */
-export async function getCorreosV3ForRead(): Promise<CorreosV3Service | null> {
+export async function getCorreosV3ForRead(options?: CorreosV3ClientOptions): Promise<CorreosV3Service | null> {
   const resolved = await loadConfig();
-  return decideCorreosApi({ resolved, purpose: 'read' }) === 'v3' && resolved ? new CorreosV3Service(resolved.config) : null;
+  return decideCorreosApi({ resolved, purpose: 'read' }) === 'v3' && resolved ? new CorreosV3Service(resolved.config, options) : null;
 }
 
 /** The v3 service for a write by this store, or null for SOAP. */

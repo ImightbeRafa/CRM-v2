@@ -700,6 +700,9 @@ model ShippingGuia {
   @@index([tenantId, orderId])
   @@index([tenantId, carrier])
   @@index([tenantId, status])
+  // 065_correos_v3.sql (partial, raw SQL): cross-store lookups by number (SecureDog DB-08)
+  @@index([guiaNumber])
+  @@index([trackingNumber])
 }
 
 // ============================================================================

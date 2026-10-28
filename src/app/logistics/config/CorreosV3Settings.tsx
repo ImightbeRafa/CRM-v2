@@ -13,8 +13,6 @@ type V3State = {
   codCliente: string;
   servicioId: string;
   usuarioId: string;
-  pickupCedula: string;
-  pickupEmail: string;
   /** Stores allowed to make guías / pickups through v3: "*" or tenant ids. */
   tenants: string;
   baseUrl: string;
@@ -75,7 +73,7 @@ export function CorreosV3Settings() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           enabled: s.enabled, environment: s.environment, username: s.username, codCliente: s.codCliente,
-          servicioId: s.servicioId, usuarioId: s.usuarioId, pickupCedula: s.pickupCedula, pickupEmail: s.pickupEmail, tenants: s.tenants,
+          servicioId: s.servicioId, usuarioId: s.usuarioId, tenants: s.tenants,
           ...(password ? { password } : {}),
         }),
       });
@@ -152,14 +150,6 @@ export function CorreosV3Settings() {
           <div>
             <label style={label} htmlFor="v3-uid">Usuario ID (opcional)</label>
             <input id="v3-uid" style={input} value={s.usuarioId} onChange={(e) => set('usuarioId', e.target.value)} />
-          </div>
-        </div>
-
-        <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 12 }}>
-          <p style={{ ...label, marginBottom: 10 }}>Solicitudes de recolección (Correos pide cédula y correo del solicitante)</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-            <input aria-label="Cédula para recolecciones" style={input} value={s.pickupCedula} onChange={(e) => set('pickupCedula', e.target.value)} placeholder="Cédula" />
-            <input aria-label="Correo para recolecciones" style={input} value={s.pickupEmail} onChange={(e) => set('pickupEmail', e.target.value)} placeholder="correo@empresa.com" type="email" />
           </div>
         </div>
 

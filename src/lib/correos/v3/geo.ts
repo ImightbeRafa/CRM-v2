@@ -23,7 +23,9 @@ async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
   if (pending) return pending as Promise<T>;
   const p = load()
     .then((value) => {
-      if (cache.size > 5000) cache.clear();
+      // Empty lists are not cached; past 5000 entries the oldest go first (Map keeps insertion order).
+      if (Array.isArray(value) && value.length === 0) return value;
+      while (cache.size >= 5000) cache.delete(cache.keys().next().value as string);
       cache.set(key, { at: Date.now(), value });
       return value;
     })

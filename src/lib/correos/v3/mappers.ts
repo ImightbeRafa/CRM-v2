@@ -118,7 +118,8 @@ export function normalizeTracking(guiaNumber: string, r: V3Rastreo | null): Norm
   const last = events.at(-1);
   const statusText = e?.estado ?? last?.description ?? null;
   return {
-    guiaNumber: e?.envioId || guiaNumber,
+    // Always the number we asked for (ownership was checked on it), never what Correos echoes back.
+    guiaNumber,
     status: classifyStatus(e?.estado || last?.description, e?.fechaEntrega),
     statusText,
     statusCode: e?.codigoEstado ?? null,

@@ -105,8 +105,12 @@ export async function GET(req: NextRequest, { params }: Ctx) {
       const d = s(q.get('distrito'), 3);
       if ([p, c, d].some((x) => x && !CODE_RE.test(x))) return bad('Parámetros inválidos');
       if (level === 'provincias') return NextResponse.json({ items: await v3.geo.provincias() });
+      // Each code must exist in its (cached) parent list before Correos is asked for the next level (INT-251).
+      if (p && !(await v3.geo.provincias()).some((x) => x.codigo === p)) return bad('Provincia desconocida');
       if (level === 'cantones' && p) return NextResponse.json({ items: await v3.geo.cantones(p) });
+      if (c && !(await v3.geo.cantones(p)).some((x) => x.codigo === c)) return bad('Cantón desconocido');
       if (level === 'distritos' && p && c) return NextResponse.json({ items: await v3.geo.distritos(p, c) });
+      if (d && !(await v3.geo.distritos(p, c)).some((x) => x.codigo === d)) return bad('Distrito desconocido');
       if (level === 'barrios' && p && c && d) return NextResponse.json({ items: await v3.geo.barrios(p, c, d) });
       return bad('Parámetros inválidos');
     }

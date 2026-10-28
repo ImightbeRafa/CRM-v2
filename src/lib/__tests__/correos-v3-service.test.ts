@@ -51,7 +51,8 @@ describe('Correos v3 mappers', () => {
       ...FIXTURES.rastreo.datos,
       eventos: [...FIXTURES.rastreo.datos.eventos, { fecha: '2026-06-05T08:00:00', ubicacion: 'CTP', codigo: 'EMC', descripcion: 'EN TRANSITO', recibidoPor: '', latitud: 0, longitud: 0 }],
     } as any);
-    assert.equal(t.guiaNumber, 'PY002036568CR');
+    // stored under the number we asked for, never Correos' echo (DATA-79 d)
+    assert.equal(t.guiaNumber, 'X');
     assert.equal(t.status, 'in_transit');
     assert.equal(t.events.length, 2);
     assert.equal(t.events[1].lat, null);

@@ -303,10 +303,10 @@ describe('false payment hand-offs, round 2 (real messages)', () => {
   })
 
   it('"¿Cuál es el proceso de pago?" asks how to pay; "ya hice el proceso de pago" is a claim', () => {
-    for (const t of ['¿Cuál es el proceso de pago?', 'Cual es el proceso de compra', '¿Cómo es el proceso para pagar?']) {
+    for (const t of ['¿Cuál es el proceso de pago?', 'Cual es el proceso de compra', '¿Cómo es el proceso para pagar?', 'El pago cm se maneja ?', '¿Qué opciones de pago tienen?', 'Buenas me gustaría saber el precio y qué opciones de envío / pago tienen']) {
       assert.equal(classifyPaymentText(t), 'payment_info_safe', t)
     }
-    for (const t of ['Ya hice el proceso de pago', 'Ya terminé el proceso de pago ✅', 'El proceso de pago ya quedó']) {
+    for (const t of ['Ya hice el proceso de pago', 'Ya terminé el proceso de pago ✅', 'El proceso de pago ya quedó', 'El pago ya se hizo, cómo se maneja el pago?', 'Ya le pagué con sinpe o efectivo?']) {
       assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
     }
   })

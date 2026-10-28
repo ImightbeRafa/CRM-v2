@@ -24,9 +24,10 @@ const CONFIRM_CUE_RE =
 const RISK_CUE_RE =
   /\b(reembolso|devoluci[oó]n\s+del\s+dinero|me\s+cobraron|doble\s+cobro|reclamo|disputa|fraude)\b/i
 
-// Rafael 2026-10-28 (live): "¿Cuál es el proceso de pago?" asks how to pay (it was a payment hand-off).
+// Rafael 2026-10-28 (live): "¿Cuál es el proceso de pago?", "El pago cm se maneja ?", "qué opciones de envío / pago
+// tienen" ask how to pay (they were payment hand-offs).
 const INFO_CUE_RE =
-  /\b(c[oó]mo\s+(pago|puedo\s+pagar|se\s+paga)|proceso\s+(?:de|del|para)\s+(?:pago|pagar|compra)|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|aceptan|n[uú]mero\s+(de\s+)?sinpe|sinpe\s+m[oó]vil|tarjeta|cuenta\s+(bancaria|iban)|transferencia)\b/i
+  /\b(c[oó]mo\s+(pago|puedo\s+pagar|se\s+paga)|proceso\s+(?:de|del|para)\s+(?:pago|pagar|compra)|opciones\s+de\s+(?:env[ií]o\s*(?:\/|y|,)\s*)?pago|(?:el\s+)?pago\s+c(?:[oó]mo|m)\s+se\s+maneja|c(?:[oó]mo|m)\s+se\s+maneja\s+el\s+pago|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|aceptan|n[uú]mero\s+(de\s+)?sinpe|sinpe\s+m[oó]vil|tarjeta|cuenta\s+(bancaria|iban)|transferencia)\b/i
 
 const COD_QUESTION_RE =
   /(?<![\p{L}])(contra\s?entrega|pag(o|ar)\s+(al\s+recibir|cuando\s+(lo\s+|la\s+|me\s+)?(recib|lleg))|pago\s+en\s+efectivo\s+al|pag(o|ar)\s+(en|con)\s+efectivo(?![\p{L}]))/iu

@@ -327,3 +327,19 @@ describe('verifier 2026-10-28 round 2', () => {
     }
   })
 })
+
+describe('SecureDog 2026-10-28 (INT-238 / INT-240)', () => {
+  it('INT-238: invisible marks after digits or letters still hand off; only an emoji\'s own selector is ignored', () => {
+    const F = '️'
+    for (const t of [`Le mandé 1${F}5${F}0${F}0${F}0${F}, ¿cuándo me llega?`, `15${F}0${F}00`, 'Le mandé 1͏5000, ¿cuándo llega?', `pa${F}gué`]) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', JSON.stringify(t))
+    }
+    for (const t of ['Excelente, gracias ☺️', '🤷‍♂️', 'Muchas gracias ❤️']) assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
+  })
+
+  it('INT-240: a part payment or debt next to the new how-to-pay phrases goes to a person', () => {
+    for (const t of ['¿Cuál es el proceso de pago si mi esposo puso la mitad?', '¿Cómo se maneja el pago si mi esposo les dio la mitad al mensajero?', '¿Qué opciones de pago hay para lo que debo?', '¿Cuánto falta y cuál es el proceso de pago si mi esposo puso la mitad?']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+})

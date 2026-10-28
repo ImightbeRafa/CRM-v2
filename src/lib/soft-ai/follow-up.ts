@@ -161,7 +161,7 @@ export async function followUpSkipReason(
     where: { tenantId, conversationId: conv.id },
     orderBy: { sentAt: 'desc' },
     take: 30,
-    select: { direction: true, content: true, metadata: true },
+    select: { direction: true, content: true, metadata: true, messageType: true },
   })
   const lastOut = recent.find((m) => m.direction === 'outbound')
   if (!lastOut || (lastOut.metadata as { softAi?: unknown } | null)?.softAi !== true) return 'last_reply_by_person'
@@ -187,7 +187,7 @@ async function chatSlot(tenantId: string, conversationId: string): Promise<Follo
     where: { tenantId, conversationId },
     orderBy: { sentAt: 'desc' },
     take: 30,
-    select: { direction: true, content: true },
+    select: { direction: true, content: true, messageType: true },
   })
   return followUpSlot(recent)
 }
@@ -464,6 +464,8 @@ async function runCampaign(
           fresh.lastMessageDirection !== 'outbound' ||
           fresh.aiMode === 'human' ||
           fresh.aiMode === 'paused' ||
+          // SecureDog 2026-10-28 (pre-existing): same modes as followUpSkipReason.
+          fresh.aiMode === 'human_takeover' ||
           fresh.tags.includes(PAYMENT_REVIEW_TAG) ||
           fresh.tags.includes(ORDER_REVIEW_TAG)
         ) {

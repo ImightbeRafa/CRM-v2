@@ -113,3 +113,30 @@ describe('follow-ups v2: verifier 2026-10-28', () => {
     assert.match(src, /followUp\?\.slot === 'sinpe_reminder'\) \{\s+s\.reminders\+\+\s+continue/)
   })
 })
+
+describe('follow-ups v2: SecureDog 2026-10-28', () => {
+  const details = { direction: 'outbound', content: 'Perfecto 🙌 SINPE Móvil: 6201 9914 A nombre de: Rafael García' }
+  it('INT-242: anything payment-like after the details ends the reminder', () => {
+    for (const m of [
+      { direction: 'inbound', content: 'Listo', messageType: 'image' },
+      { direction: 'inbound', content: 'comprobante_sinpe.pdf', messageType: 'document' },
+      { direction: 'inbound', content: 'Ya le pasé la mitad' },
+      { direction: 'inbound', content: 'Me cobraron doble' },
+      { direction: 'inbound', content: 'Listo' },
+      { direction: 'inbound', content: '[image]' },
+    ]) {
+      assert.equal(followUpSlot([inb('Sinpe'), details, m, out('¡Gracias!')], false), null, m.content)
+    }
+    assert.equal(followUpSlot([inb('Sinpe'), details, inb('¿Y llega mañana a Heredia?'), out('Sí, 2 a 3 días')], false), 'sinpe_reminder')
+  })
+
+  it('INT-243: a reminder text with any digit, currency, number word or domain is dropped', () => {
+    for (const t of ['Cuando hagás el SINPE al ８８８８-７７７７ mandame el comprobante', 'Son quince mil colones', 'Pagá en mitienda.cr/pago', 'Mirá bit.ly/x', 'Son € a pagar']) {
+      assert.equal(parseStageTexts({ sinpe_reminder: t }), undefined, t)
+    }
+  })
+
+  it('the send-time recheck also stops on human_takeover', () => {
+    assert.match(readFileSync('src/lib/soft-ai/follow-up.ts', 'utf8'), /fresh\.aiMode === 'human_takeover' \|\|/)
+  })
+})

@@ -489,13 +489,15 @@ const LOOKALIKE_SCRIPT_RES = [
   /\p{Script=Georgian}/u,
   /\p{Script=Coptic}/u,
 ]
+/** A pictograph followed by its variation selectors / joiners (kept: the pictograph). */
+const EMOJI_SELECTOR_RE = /(\p{Extended_Pictographic})[\u{FE0E}\u{FE0F}\u{200D}]+/gu
 export function hasMixedScriptWord(text: string): boolean {
   // Verifier final: unit symbols are not look-alikes ("500µg", "10kΩ"; NFKC turns µ / Ω into Greek letters).
   const units = (text || '').normalize('NFKC').replace(/[μµ](?=[gmlsLVAFW])/gu, 'u').replace(/[ΩΩ]/gu, 'O')
-  // Rafael 2026-10-28 (live): an emoji's own variation selector (U+FE0F is a mark: "☺️", "❤️",
-  // "✌️") is no word — "Excelente, gracias ☺️" was a hard payment claim. A mark inside a word still counts (and the
-  // invisible-as-gap reading still catches "pa️gué").
-  const words = (units.match(/[\p{L}\p{M}]+/gu) ?? []).filter((w) => /\p{L}/u.test(w))
+  // Rafael 2026-10-28 (live): an emoji's OWN variation selector / joiner ("☺️", "❤️", "🤷‍♂️" — U+FE0F is a mark) is no
+  // word: "Excelente, gracias ☺️" was a hard payment claim. SecureDog INT-238: only right after a pictograph — a mark
+  // after a digit or letter ("Le mandé 1️5️0️0️0️", "pa️gué") still counts.
+  const words = units.replace(EMOJI_SELECTOR_RE, '$1').match(/[\p{L}\p{M}]+/gu) ?? []
   const latinMessage = words.some((w) => /^[\p{Script=Latin}\p{M}]+$/u.test(w))
   for (const w of words) {
     if (ODD_LATIN_RE.test(w)) return true

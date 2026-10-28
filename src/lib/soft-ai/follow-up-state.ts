@@ -5,9 +5,12 @@
  * No DB, no server-only: follow-up.ts reads the messages and calls this.
  */
 import { paidAfterDetails, paymentDetailsIn } from '@/lib/soft-ai/sales-state'
+import { classifyPaymentText, isShortDoneBubble } from '@/lib/soft-ai/payment-classifier'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 
-export type FollowUpStateMessage = { direction: string; content?: string | null }
+export type FollowUpStateMessage = { direction: string; content?: string | null; messageType?: string | null }
+/** A photo / file / audio placeholder or a file name ("[image]", "comprobante_sinpe.pdf"). */
+const MEDIA_LIKE_RE = /\[(?:image|imagen|foto|audio|voice|video|document|documento|archivo|file|sticker)\]|\.(?:pdf|jpe?g|png|heic|webp)(?![\p{L}])/iu
 export type FollowUpStateSkip = 'payment_details_sent' | 'data_given' | 'waiting_date'
 
 /** Order data labels the customer fills in ("Nombre: …", "Provincia: …") or address words. */
@@ -94,7 +97,19 @@ export function followUpSlot(messages: readonly FollowUpStateMessage[], newestFi
     sentAt: '',
   }))
   if (history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content))) {
-    return paidAfterDetails(history, paymentDetailsIn) ? null : 'sinpe_reminder'
+    if (paidAfterDetails(history, paymentDetailsIn)) return null
+    // SecureDog INT-242: every customer bubble after the last details is plain text with nothing about paying (no photo
+    // / file — a captioned receipt is stored as its caption — no "listo", part payment, double charge or refund).
+    let last = -1
+    ordered.forEach((m, i) => {
+      if (m.direction === 'outbound' && paymentDetailsIn(m.content || '')) last = i
+    })
+    const after = ordered.slice(last + 1).filter((m) => m.direction === 'inbound')
+    const clean = after.every((m) => {
+      const t = m.content || ''
+      return (!m.messageType || m.messageType === 'text') && !MEDIA_LIKE_RE.test(t) && classifyPaymentText(t) === 'non_payment' && !isShortDoneBubble(t)
+    })
+    return clean ? 'sinpe_reminder' : null
   }
   const lastIn = [...history].reverse().find((m) => m.direction === 'inbound')
   if (lastIn && !/[?¿]/u.test(lastIn.content) && CHOSE_RE.test(lastIn.content)) return 'chose'
@@ -112,7 +127,13 @@ export function parseStageTexts(raw: unknown): Partial<Record<FollowUpSlot, stri
   for (const slot of FOLLOW_UP_SLOTS) {
     const t = (raw as Record<string, unknown>)[slot]
     if (typeof t !== 'string' || !t.trim() || t.length > 400) continue
-    if (slot === 'sinpe_reminder' && /[\d₡$]|https?:|www\./iu.test(t)) continue
+    // SecureDog INT-243: no digit of any script, currency sign, number word or anything shaped like a link / domain.
+    if (
+      slot === 'sinpe_reminder' &&
+      (/[\p{Nd}\p{Sc}]|https?:|www\.|[\p{L}\p{N}-]\.[\p{L}]{2,}/u.test(t) ||
+        /(?<![\p{L}])(?:mil|miles|cien|ciento|colones|rojos|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)(?![\p{L}])/iu.test(t))
+    )
+      continue
     out[slot] = t.trim()
   }
   return Object.keys(out).length ? out : undefined

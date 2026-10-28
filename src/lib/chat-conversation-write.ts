@@ -449,6 +449,19 @@ async function adoptSoftAiEcho(
   await client.chatMessage.update({ where: { id: row.id }, data: { metadata: merged as Prisma.InputJsonValue } })
 }
 
+/** Best effort: the duplicate result stands whatever happens here (name / code only in the log). */
+async function adoptSoftAiEchoSafe(input: DualWriteMessageInput, existingId: string | null | undefined): Promise<void> {
+  try {
+    await adoptSoftAiEcho(prisma as unknown as Prisma.TransactionClient, input, existingId)
+  } catch (error) {
+    const e = error as { name?: unknown; code?: unknown } | null
+    console.error('[chat-conversation-write] echo adoption failed', {
+      name: typeof e?.name === 'string' ? e.name : undefined,
+      code: typeof e?.code === 'string' ? e.code : undefined,
+    })
+  }
+}
+
 /**
  * Upsert conversation + insert message in one transaction.
  * Existing provider id / P2002 → duplicate skip (no aggregate bump).
@@ -512,7 +525,6 @@ export async function dualWriteChatMessage(
           providerMessageId,
         )
         if (existing) {
-          await adoptSoftAiEcho(tx, input, existing.id)
           return {
             ok: true as const,
             duplicate: true as const,
@@ -610,6 +622,8 @@ export async function dualWriteChatMessage(
       // The chat was created by a concurrent first message: it exists now, one rerun picks it up.
       result = await withDbRetry(writeOnce)
     }
+    // After the transaction: a failed adoption never turns the duplicate into a write failure (Verifier 2026-10-28 #3).
+    if (result.ok && result.duplicate) await adoptSoftAiEchoSafe(input, result.messageId)
     if (result.ok && !result.duplicate) {
       touchSocialAccountActivity(input.socialAccountId, input.direction)
     }
@@ -619,7 +633,7 @@ export async function dualWriteChatMessage(
       const dup = providerMessageId
         ? await findExistingByProviderId(prisma as unknown as Prisma.TransactionClient, input.socialAccountId, providerMessageId).catch(() => null)
         : null
-      await adoptSoftAiEcho(prisma as unknown as Prisma.TransactionClient, input, dup?.id).catch(() => undefined)
+      await adoptSoftAiEchoSafe(input, dup?.id)
       return {
         ok: true,
         duplicate: true,

@@ -435,7 +435,11 @@ test('echo adoption never relabels a person or an already-marked row', async () 
   assert.equal(adoptedEchoMetadata(null, { softAi: true }), null)
 })
 
-test('both duplicate paths of dualWrite adopt the echo', () => {
+test('both duplicate paths of dualWrite adopt the echo, after the transaction and never failing the write', () => {
   const source = readFileSync('src/lib/chat-conversation-write.ts', 'utf8')
-  assert.equal(source.match(/await adoptSoftAiEcho\(/g)?.length, 2)
+  assert.equal(source.match(/await adoptSoftAiEchoSafe\(/g)?.length, 2)
+  assert.match(source, /if \(result\.ok && result\.duplicate\) await adoptSoftAiEchoSafe\(input, result\.messageId\)/)
+  // Never inside writeOnce's transaction.
+  const writeOnce = source.slice(source.indexOf('const writeOnce = '), source.indexOf('let result: DualWriteResult'))
+  assert.doesNotMatch(writeOnce, /adoptSoftAiEcho/)
 })

@@ -27,6 +27,7 @@ import { ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
 import { runPreModelGates } from '@/lib/soft-ai/agent-claim-gates'
 import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
 import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
+import { followUpStateSkip } from '@/lib/soft-ai/follow-up-state'
 
 export const FOLLOW_UP_FLAG = 'agent_follow_up_v1'
 /** Meta's window is 24 h after the customer's last message; keep a margin. */
@@ -146,6 +147,9 @@ export async function followUpSkipReason(
   if (recent.some((m) => m.direction === 'inbound' && isOptOutText(m.content))) return 'opted_out'
   const lastIn = recent.find((m) => m.direction === 'inbound')
   if (lastIn && DECLINE_RE.test(lastIn.content || '')) return 'declined'
+  // Follow-ups v2 (Rafael 2026-10-28): payment details already sent, order data given, or a named later date.
+  const stateSkip = followUpStateSkip(recent)
+  if (stateSkip) return stateSkip
   if (recent.some((m) => m.direction === 'outbound' && (m.metadata as { followUp?: unknown } | null)?.followUp)) return 'already_followed_up'
   // Verifier (auto-renew): one nudge per chat EVER, not only within its last 30 messages (rounds renew every 48 h).
   if (await followedUpBefore(tenantId, conv.id)) return 'already_followed_up'

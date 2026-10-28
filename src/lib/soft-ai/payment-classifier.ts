@@ -11,7 +11,7 @@ export type PaymentClassification = 'non_payment' | 'payment_info_safe' | 'payme
 const PROOF_CUE_RE =
   // "ya te/les/lo pagué", "listo, ya lo pagué", "te mandé el sinpe" (accent-safe start: JS \b misses after á/é).
   // SecureDog wave D r2 #7: two pronouns ("ya te la mandé", "ya se lo pasé") and a "Pagado." sentence before a question.
-  /(?<![\p{L}\p{N}_])(ya\s+(?:((le|te|les|lo|la|se)\s+){0,2}(pagu[eé]|hice|mand[eé]|transfer[ií]|deposit[eé])|((le|te|les|lo|la|se)\s+){1,2}(?:pas[eé]|envi[eé]|realic[eé]|di)(?=[ \t]*(?:$|[\n.!,?¿✅👍]|(?:la\s+plata|el\s+dinero|el\s+sinpe|el\s+pago|la\s+mitad|el\s+resto|la\s+transferencia|el\s+dep[oó]sito)(?![\p{L}]))))(?![\p{L}])|(?:(?:te|le|les|se)\s+(?:lo|la)\s+(?:envi[eé]|mand[eé]|pas[eé])\s+(?:hace\s+(?:un\s+)?rato|ahorita|hace\s+\p{L}+\s+minutos)|ahorita\s+(?:te|le|les|se)\s+(?:lo\s+|la\s+)?(?:pas[eé]|mand[eé]|envi[eé])(?=[ \t]*(?:$|[\n.!,?¿]))|(?:te|le|les|se)\s+(?:lo|la)\s+acabo\s+de\s+(?:mandar|enviar|pasar|depositar|transferir)|acabo\s+de\s+(?:pagar|transferir|depositar|hacer\s+el\s+(?:sinpe|pago|dep[oó]sito)))(?![\p{L}])|(?:^|(?<=[\n.!,]))[ \t]*pagad[oa][ \t]*[!.✅👍]*[ \t]*(?=$|[\n.!?¿])|comprobante|adjunto|captura|pantallazo|(le|te|les)\s+(envi[eé]|mand[eé])\s+(el\s+(sinpe|pago|comprobante)|la\s+plata|el\s+dinero)|pago\s+(realizado|hecho|listo)|listo\s+el\s+(pago|sinpe)|(ya\s+)?(est[aá]|qued[oó])\s+pagad[oa]|^\s*pagad[oa]\s*[!.✅👍]*\s*$|ref(?:erencia)?\s*\d)/iu
+  /(?<![\p{L}\p{N}_])(ya\s+(?:((le|te|les|lo|la|se)\s+){0,2}(pagu[eé]|hice|mand[eé]|transfer[ií]|deposit[eé])|((le|te|les|lo|la|se)\s+){1,2}(?:pas[eé]|envi[eé]|realic[eé]|di)(?=[ \t]*(?:$|[\n.!,?¿✅👍]|(?:la\s+plata|el\s+dinero|el\s+sinpe|el\s+pago|la\s+mitad|el\s+resto|la\s+transferencia|el\s+dep[oó]sito)(?![\p{L}]))))(?![\p{L}])|(?:(?:te|le|les|se)\s+(?:lo|la)\s+(?:envi[eé]|mand[eé]|pas[eé])\s+(?:hace\s+(?:un\s+)?rato|ahorita|hace\s+\p{L}+\s+minutos)|ahorita\s+(?:te|le|les|se)\s+(?:lo\s+|la\s+)?(?:pas[eé]|mand[eé]|envi[eé])(?=[ \t]*(?:$|[\n.!,?¿]))|(?:te|le|les|se)\s+(?:lo|la)\s+acabo\s+de\s+(?:mandar|enviar|pasar|depositar|transferir)|acabo\s+de\s+(?:pagar|transferir|depositar|hacer\s+el\s+(?:sinpe|pago|dep[oó]sito)))(?![\p{L}])|(?:^|(?<=[\n.!,]))[ \t]*pagad[oa][ \t!.✅👍]*(?=$|[\n.!?¿])|comprobante|adjunto|captura|pantallazo|(le|te|les)\s+(envi[eé]|mand[eé])\s+(el\s+(sinpe|pago|comprobante)|la\s+plata|el\s+dinero)|pago\s+(realizado|hecho|listo)|listo\s+el\s+(pago|sinpe)|(ya\s+)?(est[aá]|qued[oó])\s+pagad[oa]|^\s*pagad[oa][\s!.✅👍]*$|ref(?:erencia)?\s*\d)/iu
 
 /**
  * Unicode-aware: JS \\b treats á/ó as non-word, so "llegó" and "confirman" would miss. Bare confirm / review verbs stay
@@ -1260,7 +1260,9 @@ function isPaymentInfoQuestion(value: string): boolean {
 
 /** Any payment word at all (media caption check: a photo with "sinpe" / "pago" is treated as a receipt). */
 export function hasPaymentWord(text: string): boolean {
-  const read = (t: string) => PAYMENT_RE.test(t) || hasPaymentProofCue(t) || hasPaymentClaimCue(t)
+  // SecureDog 2026-10-28 r3: same 4 KB cap as the classifier (a longer bubble is payment context — the safe side).
+  if ((text || '').length > MAX_CLASSIFIED_CHARS) return true
+  const read =(t: string) => PAYMENT_RE.test(t) || hasPaymentProofCue(t) || hasPaymentClaimCue(t)
   // SecureDog INT-201 / M1: invisible characters read as gaps too; English / PT / FR payment state opens the context.
   const gapped = invisibleAsGap(text)
   return read(text || '') || (gapped !== null && read(gapped)) || hasForeignPaymentState(text)

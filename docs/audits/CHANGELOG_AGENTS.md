@@ -1,3 +1,10 @@
+## 2026-10-28 (review rounds) — Verifier ×3 + SecureDog ×3 on follow-ups v2 / payment filter
+
+- Verifier r1 FAIL (cubic widened "pagado" tail 8.9 s / 4 KB; reminder over a named date; A/B bias from reminders; INFO_CUE widened live gate) → fixed 5f69895d. r2 PASS WITH NOTES (emoji inside a claim no longer handed off) → f010c594: extra readings with pictographs as a gap / nothing, each tail-stripped. r3 not needed beyond SecureDog.
+- SecureDog r1 BLOCK INT-238 (marks after digits skipped), INT-239 (ReDoS), INT-240 (live gate) High + INT-241/242/243 Low → c4760096, e137b673 (whole-message allowlist for the new how-to-pay questions), 153cc377 (linear lone-pagado rule, 4 KB cap). r3 PASS WITH NOTES → this commit: PROOF_CUE_RE lone-pagado tails single-run, hasPaymentWord 4 KB cap (64 KB: 6.8 s → 0 ms).
+- Register (Notion › Security Findings): INT-238..243 Fixed→Verified; INT-244 (non-pictograph separator splits a claim, pre-existing, Medium) and INT-245 (old live branch + part payment, pre-existing, Low) Open.
+- Grids vs PR #160 after every round: 0 claim phrases weaker than their own words, 0 safe phrases newly flagged. test:soft-ai 1663/1664 (PDF worker timeout, base), test:security 373/373, test:chat-harden 803/804 (base).
+
 ## 2026-10-28 (later) — Follow-ups v2 + wording-only payment hand-offs (claude/pr160-review, Rafael GO steps 1–3)
 
 - Rafael 2026-10-28: "Ya pagué" → a person (kept); data form stays one chunk (first-answer rework waits); follow-ups first.

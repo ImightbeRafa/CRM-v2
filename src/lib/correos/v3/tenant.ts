@@ -1,3 +1,4 @@
+import 'server-only';
 import { prisma } from '@/lib/db';
 
 /** The store's active Correos ShippingConfig.settings (sender, origin, correos_api …), or {}. */
@@ -16,18 +17,39 @@ export function tenantOrigin(settings: Record<string, any>) {
     : null;
 }
 
-/** True when this guía number belongs to one of the store's guías (tracking / pickup ownership). */
+/**
+ * Guía numbers that Correos issued to THIS store (SecureDog DATA-74): a completed Correos guía of the store
+ * (never a hand-typed "manual" one), and no other store holds the same number. Anything else is not the
+ * store's to track, pick up or download — a manual guía could otherwise point at someone else's package.
+ */
 export async function tenantOwnsGuias(tenantId: string, guiaNumbers: string[]): Promise<string[]> {
   const list = [...new Set(guiaNumbers)].slice(0, 200);
   if (list.length === 0) return [];
   const rows = await prisma.shippingGuia.findMany({
-    where: { tenantId, OR: [{ guiaNumber: { in: list } }, { trackingNumber: { in: list } }] },
-    select: { guiaNumber: true, trackingNumber: true },
+    where: { OR: [{ guiaNumber: { in: list } }, { trackingNumber: { in: list } }] },
+    select: { tenantId: true, carrier: true, status: true, guiaNumber: true, trackingNumber: true },
   });
-  const owned = new Set<string>();
+  return ownedGuiaNumbers(tenantId, list, rows);
+}
+
+export interface GuiaOwnershipRow {
+  tenantId: string;
+  carrier: string;
+  status: string;
+  guiaNumber: string | null;
+  trackingNumber: string | null;
+}
+
+/** Pure rule behind tenantOwnsGuias (unit-tested). */
+export function ownedGuiaNumbers(tenantId: string, list: string[], rows: GuiaOwnershipRow[]): string[] {
+  const mine = new Set<string>();
+  const contested = new Set<string>();
   for (const r of rows) {
-    if (r.guiaNumber) owned.add(r.guiaNumber);
-    if (r.trackingNumber) owned.add(r.trackingNumber);
+    const numbers = [r.guiaNumber, r.trackingNumber].filter((n): n is string => !!n && list.includes(n));
+    for (const n of numbers) {
+      if (r.tenantId !== tenantId) contested.add(n);
+      else if (r.status === 'completed' && /correos/i.test(r.carrier) && r.carrier !== 'manual') mine.add(n);
+    }
   }
-  return list.filter((g) => owned.has(g));
+  return list.filter((g) => mine.has(g) && !contested.has(g));
 }

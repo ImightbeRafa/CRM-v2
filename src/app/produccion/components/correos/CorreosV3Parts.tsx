@@ -80,7 +80,7 @@ function useDebounced<T>(value: T, ms: number) {
 async function getJson(url: string, init?: RequestInit) {
   const res = await fetch(url, { credentials: 'include', ...init });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || `Error ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(data?.error || `Error ${res.status}`), { status: res.status });
   return data;
 }
 
@@ -159,9 +159,14 @@ function BranchPicker({
     };
   }, [province, canton, district]);
 
-  // One branch in the canton: pick it for the user.
+  // One branch in the canton: pick it for the user. A pick that is not in this canton's list is replaced.
   useEffect(() => {
-    if (branches?.length === 1 && !value) onPick(branches[0]);
+    if (!branches) return;
+    if (value && !branches.some((b) => b.codigo === value.codigo)) {
+      if (branches.length === 1) onPick(branches[0]);
+      return;
+    }
+    if (branches.length === 1 && !value) onPick(branches[0]);
   }, [branches, value, onPick]);
 
   if (!province || !canton) return <p className="text-xs text-amber-600">Elegí provincia y cantón para ver las sucursales.</p>;
@@ -239,15 +244,31 @@ export function V3OrderExtras({
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const latest = useRef(value);
   latest.current = value;
+  // Readiness always uses the current props, also from callbacks created on an earlier render.
+  const props = useRef({ toBranch, province, canton, district, onChange });
+  props.current = { toBranch, province, canton, district, onChange };
 
   const emit = (patch: Partial<V3OrderState>) => {
+    const p = props.current;
     const next = { ...latest.current, ...patch };
-    const ready = toBranch ? !!next.branch : next.restricted !== true && !!province && !!canton && !!district;
-    const problem = toBranch
+    const ready = p.toBranch ? !!next.branch : next.restricted !== true && !!p.province && !!p.canton && !!p.district;
+    const problem = p.toBranch
       ? next.branch ? null : 'Elegí la sucursal'
       : next.restricted ? 'Zona restringida: usá entrega en sucursal' : null;
-    onChange({ ...next, ready, problem });
+    latest.current = { ...next, ready, problem };
+    p.onChange(latest.current);
   };
+
+  // A branch belongs to a canton: a new province / canton drops the old pick.
+  const cantonKey = `${province}|${canton}`;
+  const prevCanton = useRef(cantonKey);
+  useEffect(() => {
+    if (prevCanton.current !== cantonKey) {
+      prevCanton.current = cantonKey;
+      if (latest.current.branch) emit({ branch: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cantonKey]);
 
   // Address check (domicilio): postal code + restricted barrio.
   useEffect(() => {
@@ -471,8 +492,9 @@ export function PickupPanel({ guias, onDone, onCancel }: { guias: string[]; onDo
   const [phone, setPhone] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // One key per panel: a double click or a retry after a network blip can't ask twice.
-  const key = useMemo(() => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`), []);
+  // One key per attempt: a double click or a network blip can't ask twice; a definite refusal gets a new key.
+  const newKey = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const [key, setKey] = useState(newKey);
 
   const send = async () => {
     setSending(true);
@@ -483,9 +505,18 @@ export function PickupPanel({ guias, onDone, onCancel }: { guias: string[]; onDo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ guias, address: address || undefined, contactName: contactName || undefined, phone: phone || undefined, idempotencyKey: key }),
       });
+      if (d.duplicate && d.status !== 'sent') {
+        setError(d.status === 'unknown'
+          ? 'No sabemos si Correos recibió la solicitud. Revisá con Correos antes de pedirla otra vez.'
+          : 'Esta solicitud ya se está enviando.');
+        return;
+      }
       onDone(d.duplicate ? 'Esa recolección ya estaba solicitada.' : `Recolección solicitada para ${d.guias?.length ?? guias.length} guía(s). Correos te contactará.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo solicitar');
+      // Only a definite refusal (4xx) gets a fresh key; a 5xx / network error may have reached Correos.
+      const status = (e as { status?: number })?.status;
+      if (status && status >= 400 && status < 500) setKey(newKey());
     } finally {
       setSending(false);
     }

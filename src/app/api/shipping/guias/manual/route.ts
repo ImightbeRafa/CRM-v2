@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
+import { prisma as globalPrisma } from '@/lib/db';
 import { shouldUseOrderLifecycleV2 } from '@/lib/feature-flags';
 import { setLifecycleOrderStatus } from '@/lib/order-lifecycle';
 
@@ -31,6 +32,12 @@ export async function POST(request: NextRequest) {
       select: { id: true },
     });
     if (duplicate) return NextResponse.json({ error: `Guía ${entry.guiaNumber} is already assigned` }, { status: 409 });
+    // A number that belongs to another business is never accepted (SecureDog DATA-74): same generic answer.
+    const elsewhere = await globalPrisma.shippingGuia.findFirst({
+      where: { tenantId: { not: tenantId }, OR: [{ guiaNumber: entry.guiaNumber }, { trackingNumber: entry.guiaNumber }] },
+      select: { id: true },
+    });
+    if (elsewhere) return NextResponse.json({ error: `Guía ${entry.guiaNumber} is already assigned` }, { status: 409 });
   }
 
   const saved = [];

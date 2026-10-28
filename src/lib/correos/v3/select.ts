@@ -1,3 +1,4 @@
+import 'server-only';
 import { resolveV3Config, type ResolvedV3Config } from './config';
 import { CorreosV3Service } from './service';
 
@@ -20,14 +21,20 @@ export function tenantWantsV3(settings: unknown): boolean {
   return !!settings && typeof settings === 'object' && (settings as Record<string, unknown>).correos_api === 'v3';
 }
 
+export function tenantMayWriteV3(resolved: Pick<ResolvedV3Config, 'writeTenants'> | null, tenantId: string | null | undefined): boolean {
+  if (!resolved || !tenantId) return false;
+  return resolved.writeTenants === '*' || resolved.writeTenants.includes(tenantId);
+}
+
 export function decideCorreosApi(input: {
-  resolved: Pick<ResolvedV3Config, 'enabled'> | null;
+  resolved: Pick<ResolvedV3Config, 'enabled' | 'writeTenants'> | null;
   purpose: 'write' | 'read';
   tenantSettings?: unknown;
+  tenantId?: string | null;
 }): CorreosApi {
   if (!input.resolved || !input.resolved.enabled) return 'soap';
   if (input.purpose === 'read') return 'v3';
-  return tenantWantsV3(input.tenantSettings) ? 'v3' : 'soap';
+  return tenantWantsV3(input.tenantSettings) && tenantMayWriteV3(input.resolved, input.tenantId) ? 'v3' : 'soap';
 }
 
 let cached: { at: number; value: ResolvedV3Config | null } | null = null;
@@ -51,19 +58,20 @@ export async function getCorreosV3ForRead(): Promise<CorreosV3Service | null> {
 }
 
 /** The v3 service for a write by this store, or null for SOAP. */
-export async function getCorreosV3ForWrite(tenantSettings: unknown): Promise<CorreosV3Service | null> {
+export async function getCorreosV3ForWrite(tenantSettings: unknown, tenantId: string): Promise<CorreosV3Service | null> {
   const resolved = await loadConfig();
-  return decideCorreosApi({ resolved, purpose: 'write', tenantSettings }) === 'v3' && resolved
+  return decideCorreosApi({ resolved, purpose: 'write', tenantSettings, tenantId }) === 'v3' && resolved
     ? new CorreosV3Service(resolved.config)
     : null;
 }
 
-/** Status for settings screens (no secrets). */
-export async function correosV3Status() {
+/** Status for settings screens (no secrets). With a tenantId: may this store write through v3. */
+export async function correosV3Status(tenantId?: string | null) {
   const resolved = await loadConfig();
   return {
     configured: !!resolved,
     enabled: !!resolved?.enabled,
+    storeAllowed: !!resolved?.enabled && tenantMayWriteV3(resolved, tenantId),
     environment: resolved?.config.environment ?? null,
     source: resolved?.source ?? null,
   };

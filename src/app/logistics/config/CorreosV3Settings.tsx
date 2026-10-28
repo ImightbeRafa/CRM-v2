@@ -15,6 +15,8 @@ type V3State = {
   usuarioId: string;
   pickupCedula: string;
   pickupEmail: string;
+  /** Stores allowed to make guías / pickups through v3: "*" or tenant ids. */
+  tenants: string;
   baseUrl: string;
   status: { configured: boolean; source: string | null; activeEnvironment: string | null; enabled: boolean };
 };
@@ -73,7 +75,7 @@ export function CorreosV3Settings() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           enabled: s.enabled, environment: s.environment, username: s.username, codCliente: s.codCliente,
-          servicioId: s.servicioId, usuarioId: s.usuarioId, pickupCedula: s.pickupCedula, pickupEmail: s.pickupEmail,
+          servicioId: s.servicioId, usuarioId: s.usuarioId, pickupCedula: s.pickupCedula, pickupEmail: s.pickupEmail, tenants: s.tenants,
           ...(password ? { password } : {}),
         }),
       });
@@ -161,6 +163,14 @@ export function CorreosV3Settings() {
           </div>
         </div>
 
+        <div>
+          <label style={label} htmlFor="v3-tenants">Tiendas que pueden usar v3 (IDs separados por coma, o * para todas)</label>
+          <textarea id="v3-tenants" style={{ ...input, minHeight: 56, fontFamily: 'monospace' }} value={s.tenants} onChange={(e) => set('tenants', e.target.value)} placeholder="cmteij…, cmab12…" />
+          <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, margin: '4px 0 0' }}>
+            Una tienda solo genera guías y recolecciones con v3 si está en esta lista y además lo activó en su configuración de envíos. Solo un super admin puede guardar.
+          </p>
+        </div>
+
         {error && <p role="alert" style={{ color: '#f87171', fontSize: 12, margin: 0 }}>{error}</p>}
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -188,7 +198,7 @@ export function CorreosV3Settings() {
         )}
 
         <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, margin: 0, lineHeight: 1.6 }}>
-          Cada tienda elige v3 en Configuración › Envíos. Mientras v3 esté apagado, todo sigue por el Web Service SOAP de arriba.
+          Cada tienda permitida elige v3 en el asistente de configuración › Envíos. Mientras v3 esté apagado (o el servidor no tenga CORREOS_V3_ALLOWED=1), todo sigue por el Web Service SOAP de arriba.
         </p>
       </div>
     </div>

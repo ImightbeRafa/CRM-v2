@@ -76,7 +76,7 @@ describe('Correos v3 config + selection', () => {
   it('prefers a complete DB set, decrypts the password, never mixes sources', () => {
     const r = selectV3Config({
       db: { correos_v3_username: 'db', correos_v3_password: 'enc:x', correos_v3_cod_cliente: '1', correos_v3_servicio_id: '1564', correos_v3_env: 'prod', correos_v3_enabled: '1' },
-      env: { CORREOS_V3_USER: 'env', CORREOS_V3_PASSWORD: 'envp' },
+      env: { CORREOS_V3_USER: 'env', CORREOS_V3_PASSWORD: 'envp', CORREOS_V3_ALLOWED: '1' },
       decrypt: (v) => (v === 'enc:x' ? 'plain' : v),
     });
     assert.equal(r?.source, 'logistics_db');
@@ -86,6 +86,19 @@ describe('Correos v3 config + selection', () => {
 
     const half = selectV3Config({ db: { correos_v3_username: 'db' }, env: {} });
     assert.equal(half, null);
+  });
+
+  it('the DB switch alone does not turn v3 on: the host must allow it (shared DB with preview)', () => {
+    const db = { correos_v3_username: 'db', correos_v3_password: 'p', correos_v3_cod_cliente: '1', correos_v3_servicio_id: '1564', correos_v3_enabled: '1' };
+    assert.equal(selectV3Config({ db, env: {} })?.enabled, false);
+    assert.equal(selectV3Config({ db, env: { CORREOS_V3_ALLOWED: '1' } })?.enabled, true);
+  });
+
+  it('parses the store allowlist for writes', () => {
+    const base = { correos_v3_username: 'db', correos_v3_password: 'p', correos_v3_cod_cliente: '1', correos_v3_servicio_id: '1564' };
+    assert.equal(selectV3Config({ db: { ...base, correos_v3_tenants: '*' }, env: {} })?.writeTenants, '*');
+    assert.deepEqual(selectV3Config({ db: { ...base, correos_v3_tenants: 'cmabc123, cmdef456 bad!' }, env: {} })?.writeTenants, ['cmabc123', 'cmdef456']);
+    assert.deepEqual(selectV3Config({ db: base, env: {} })?.writeTenants, []);
   });
 
   it('reads test env vars when CORREOS_V3_ENV is test (default)', () => {
@@ -98,12 +111,17 @@ describe('Correos v3 config + selection', () => {
     assert.equal(r?.enabled, false);
   });
 
-  it('uses SOAP unless switched on; writes also need the store opt-in', () => {
+  it('uses SOAP unless switched on; writes need the store opt-in AND the platform allowlist', () => {
+    const all = { enabled: true, writeTenants: '*' as const };
     assert.equal(decideCorreosApi({ resolved: null, purpose: 'read' }), 'soap');
-    assert.equal(decideCorreosApi({ resolved: { enabled: false }, purpose: 'read' }), 'soap');
-    assert.equal(decideCorreosApi({ resolved: { enabled: true }, purpose: 'read' }), 'v3');
-    assert.equal(decideCorreosApi({ resolved: { enabled: true }, purpose: 'write', tenantSettings: {} }), 'soap');
-    assert.equal(decideCorreosApi({ resolved: { enabled: true }, purpose: 'write', tenantSettings: { correos_api: 'v3' } }), 'v3');
+    assert.equal(decideCorreosApi({ resolved: { enabled: false, writeTenants: '*' }, purpose: 'read' }), 'soap');
+    assert.equal(decideCorreosApi({ resolved: all, purpose: 'read' }), 'v3');
+    assert.equal(decideCorreosApi({ resolved: all, purpose: 'write', tenantSettings: {}, tenantId: 't1' }), 'soap');
+    assert.equal(decideCorreosApi({ resolved: all, purpose: 'write', tenantSettings: { correos_api: 'v3' }, tenantId: 't1' }), 'v3');
+    const list = { enabled: true, writeTenants: ['t1'] };
+    assert.equal(decideCorreosApi({ resolved: list, purpose: 'write', tenantSettings: { correos_api: 'v3' }, tenantId: 't1' }), 'v3');
+    assert.equal(decideCorreosApi({ resolved: list, purpose: 'write', tenantSettings: { correos_api: 'v3' }, tenantId: 't2' }), 'soap');
+    assert.equal(decideCorreosApi({ resolved: { enabled: true, writeTenants: [] }, purpose: 'write', tenantSettings: { correos_api: 'v3' }, tenantId: 't1' }), 'soap');
     assert.equal(tenantWantsV3(null), false);
   });
 });
@@ -203,9 +221,23 @@ describe('Correos v3 service', () => {
 
   it('a Correos 400 is a clean refusal (sent, not unknown)', async () => {
     const { svc } = service({ '/guiasweb/registrar': () => new Response(JSON.stringify({ exito: false, mensaje: 'Sucursal inválida', datos: null, errores: [] }), { status: 400 }) });
-    const r = await svc.createGuia({ dest: { name: 'Ana', phone: '88887777', address: 'x', province: '1', canton: '01', district: '01' }, sender: SENDER, tipoDestino: 'SUC', codigoSucursal: 'ZZ', montoFlete: 0 });
+    const r = await svc.createGuia({ dest: { name: 'Ana', phone: '88887777', address: 'x', province: '', canton: '', district: '' }, sender: SENDER, tipoDestino: 'SUC', codigoSucursal: 'ZZ', montoFlete: 0 });
     assert.equal(!r.ok && r.unknown, false);
     assert.equal(!r.ok && r.error, 'Sucursal inválida');
+  });
+
+  it('refuses a branch that is not in the customer canton before calling registrar', async () => {
+    const { fake, svc } = service();
+    const r = await svc.createGuia({ dest: { name: 'Ana', phone: '88887777', address: 'x', province: 'San José', canton: 'San José', district: 'Carmen' }, sender: SENDER, tipoDestino: 'SUC', codigoSucursal: 'AL99', montoFlete: 0 });
+    assert.equal(!r.ok && r.field, 'codigoSucursal');
+    assert.equal(!r.ok && r.sent, false);
+    assert.equal(fake.calls.filter((c) => c.path === '/guiasweb/registrar').length, 0);
+  });
+
+  it('a 2xx without a readable body on registrar is "unknown", never a clean refusal', async () => {
+    const { svc } = service({ '/guiasweb/registrar': () => new Response('', { status: 200 }) });
+    const r = await svc.createGuia({ dest: { name: 'Ana', phone: '88887777', address: 'x', province: '', canton: '', district: '' }, sender: SENDER, tipoDestino: 'SUC', codigoSucursal: 'SJ01', montoFlete: 0 });
+    assert.equal(!r.ok && r.unknown, true);
   });
 
   it('a rejected login is "not sent"', async () => {
@@ -230,6 +262,17 @@ describe('Correos v3 service', () => {
     assert.equal(body.provincia, '1');
     assert.equal(body.codigoPostal, '10101');
     assert.equal(body.cedula, '111111111');
+  });
+});
+
+describe('Correos v3 relay secret', () => {
+  it('goes only to the exact https relay origin', async () => {
+    const { proxySecretFor } = await import('../correos/v3/client');
+    const env = { CORREOS_PROXY_URL: 'https://relay.example.com', CORREOS_PROXY_SECRET: 's3' };
+    assert.equal(proxySecretFor('https://relay.example.com/v3/prod', env), 's3');
+    assert.equal(proxySecretFor('https://relay.example.com.evil.io/v3/prod', env), '');
+    assert.equal(proxySecretFor('https://amistadpro.correos.go.cr:449/api/v3', env), '');
+    assert.equal(proxySecretFor('http://relay.example.com/v3/prod', { ...env, CORREOS_PROXY_URL: 'http://relay.example.com' }), '');
   });
 });
 

@@ -74,6 +74,11 @@ export type A3ToolName = (typeof A3_TOOL_NAMES)[number]
 export const AGENT_TOOL_NAMES = [...A1_TOOL_NAMES, ...A2_TOOL_NAMES, ...AL2_TOOL_NAMES, ...A3_TOOL_NAMES] as const
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number]
 
+/** Tools a new agent starts with: everything except the opt-in Correos reads (A3). */
+export const DEFAULT_AGENT_TOOL_NAMES: readonly AgentToolName[] = AGENT_TOOL_NAMES.filter(
+  (t) => !(A3_TOOL_NAMES as readonly string[]).includes(t),
+)
+
 export type ChatAgentTonePreset = 'warm_concise' | 'formal' | 'playful'
 export type ChatAgentOperationMode = 'ai_full' | 'ai_suggest' | 'human_only'
 export type ChatAgentStatus = 'draft' | 'live' | 'archived'

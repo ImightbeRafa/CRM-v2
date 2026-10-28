@@ -65,6 +65,20 @@ export function resolveV3BaseUrl(
   return DIRECT_BASE[environment];
 }
 
+/** The relay secret goes only to the configured relay's exact origin (SecureDog INFRA-28). */
+export function proxySecretFor(baseUrl: string, env: NodeJS.Dict<string>): string {
+  const proxy = env.CORREOS_V3_PROXY_URL || env.CORREOS_PROXY_URL;
+  const secret = env.CORREOS_PROXY_SECRET;
+  if (!proxy || !secret) return '';
+  try {
+    const a = new URL(baseUrl);
+    const b = new URL(proxy);
+    return a.origin === b.origin && a.protocol === 'https:' ? secret : '';
+  } catch {
+    return '';
+  }
+}
+
 interface CachedToken {
   accessToken: string;
   refreshToken: string | null;
@@ -105,7 +119,7 @@ export class CorreosV3Client {
     this.baseUrl = (config.baseUrl || resolveV3BaseUrl(config.environment, env)).replace(/\/+$/, '');
     this.fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init));
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    this.proxySecret = this.baseUrl.includes('correos.go.cr') ? '' : env.CORREOS_PROXY_SECRET || '';
+    this.proxySecret = proxySecretFor(this.baseUrl, env);
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.cacheKey = createHash('sha256')
@@ -275,7 +289,8 @@ export class CorreosV3Client {
           (res.status === 401 ? 'Correos rechazó las credenciales' : '') ||
           (res.status === 503 ? 'Correos no está disponible en este momento' : '') ||
           `Correos respondió ${res.status}`;
-        throw new CorreosV3Error(message, res.ok ? 422 : res.status, errores);
+        // A 2xx without a readable envelope is NOT a refusal: for a write it means "maybe registered".
+        throw new CorreosV3Error(message, res.ok ? (env ? 422 : 502) : res.status, errores);
       }
       return env.datos as T;
     }

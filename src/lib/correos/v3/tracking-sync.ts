@@ -1,3 +1,4 @@
+import 'server-only';
 import { prisma } from '@/lib/db';
 import { getCorreosV3ForRead } from './select';
 import { SHIPMENT_STATUS_LM, type CorreosShipmentStatus } from './mappers';
@@ -41,9 +42,10 @@ export async function runCorreosTrackingSync(opts: { limit?: number; concurrency
   if (!v3) return { ...summary, skipped: 'Correos v3 is off' };
   if (v3.environment !== 'prod') return { ...summary, skipped: 'Correos v3 is on the test environment' };
 
-  const deadline = Date.now() + (opts.budgetMs ?? 45_000);
+  // Short budget: this runs in the sequential 5-min list before the channel-silence alarm (SecureDog INFRA-30).
+  const deadline = Date.now() + (opts.budgetMs ?? 20_000);
   summary.enrolled = await enrollRecentGuias();
-  const due = await dueForTracking(opts.limit ?? 40);
+  const due = await dueForTracking(opts.limit ?? 25);
   const moveLm = env.CORREOS_TRACKING_LM_STATUS === '1';
 
   await mapLimit(

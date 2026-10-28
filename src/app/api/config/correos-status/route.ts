@@ -19,8 +19,9 @@ export async function GET(req: NextRequest) {
 
   let v3: { enabled: boolean; environment: string | null } = { enabled: false, environment: null };
   try {
-    const s = await correosV3Status();
-    v3 = { enabled: s.configured && s.enabled, environment: s.environment };
+    // "enabled" for this store = platform switch on AND the store is on the v3 allowlist.
+    const s = await correosV3Status((token as { tenantId?: string | null }).tenantId ?? null);
+    v3 = { enabled: s.configured && s.storeAllowed, environment: s.environment };
   } catch {
     // v3 status is optional
   }

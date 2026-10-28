@@ -11,7 +11,7 @@ import { isSoftAiProviderConfigured } from '@/lib/soft-ai/llm/client'
 import { recordAgentVersionSnapshot } from '@/lib/soft-ai/agent-improvement'
 import { agentHasInventoryMap, loadMappedInventoryIds } from '@/lib/soft-ai/agent-inventory-map'
 import {
-  AGENT_TOOL_NAMES,
+  DEFAULT_AGENT_TOOL_NAMES,
   AGENT_INSTRUCTIONS_MAX,
   AGENT_NAME_MAX,
   DEFAULT_AGENT_VOICE,
@@ -279,7 +279,7 @@ export async function createChatAgent(input: {
   const systemInstructions = (
     input.systemInstructions?.trim() || DEFAULT_AGENT_VOICE
   ).slice(0, AGENT_INSTRUCTIONS_MAX)
-  const enabledTools = (input.enabledTools || [...AGENT_TOOL_NAMES]).filter(isAgentToolName)
+  const enabledTools = (input.enabledTools || [...DEFAULT_AGENT_TOOL_NAMES]).filter(isAgentToolName)
   let introductionNames: string[] = []
   try {
     introductionNames = normalizeIntroductionNames(input.introductionNames ?? [])
@@ -825,7 +825,7 @@ export async function ensureStarterDefaults(input: {
         tonePreset: 'warm_concise',
         model: DEFAULT_CHAT_AGENT_MODEL,
         operationMode: 'ai_suggest',
-        enabledTools: [...AGENT_TOOL_NAMES],
+        enabledTools: [...DEFAULT_AGENT_TOOL_NAMES],
         introductionNames: [],
         paymentAlwaysHuman: true,
         brandFacts: {},

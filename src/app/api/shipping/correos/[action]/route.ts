@@ -2,14 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import { authenticateAPI } from '@/lib/auth-helpers';
 import { hasPermission } from '@/lib/rbac';
-import { rateLimit } from '@/lib/rate-limit';
+import { createRedisLimiter, rateLimitAsync } from '@/lib/rate-limit';
 import { getCorreosV3ForRead, getCorreosV3ForWrite } from '@/lib/correos/v3/select';
 import { CorreosV3Error } from '@/lib/correos/v3/client';
 import { SHIPMENT_STATUS_LABEL } from '@/lib/correos/v3/mappers';
-import { claimPickup, ensureTracked, finishPickup, getEvents, getGuiaExtras, recentPickups, saveTracking } from '@/lib/correos/v3/store';
+import { claimPickup, ensureTracked, finishPickup, getEvents, getGuiaExtras, pickupStatus, recentPickupLoad, recentPickups, saveTracking } from '@/lib/correos/v3/store';
 import { loadTenantCorreosSettings, tenantOrigin, tenantOwnsGuias } from '@/lib/correos/v3/tenant';
-import { resolveV3Config, V3_DB_KEYS } from '@/lib/correos/v3/config';
-import { prisma } from '@/lib/db';
+import { resolveV3Config } from '@/lib/correos/v3/config';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,6 +34,13 @@ type Ctx = { params: Promise<{ action: string }> };
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
 const s = (v: unknown, max = 100) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const GUIA_RE = /^[A-Za-z0-9-]{4,50}$/;
+const CODE_RE = /^\d{1,2}$/;
+const READ_PER_MIN = 120;
+const WRITE_PER_MIN = 5;
+/** Pickups a store may ask Correos for in 24 h (trucks under the platform account, INT-238). */
+const PICKUPS_PER_DAY = 5;
+const readLimiter = createRedisLimiter({ prefix: 'correos-v3-r', maxRequests: READ_PER_MIN, windowMs: 60_000 });
+const writeLimiter = createRedisLimiter({ prefix: 'correos-v3-w', maxRequests: WRITE_PER_MIN, windowMs: 60_000 });
 
 function v3Error(e: unknown) {
   if (e instanceof CorreosV3Error) {
@@ -52,7 +58,12 @@ async function guard(req: NextRequest, write: boolean) {
     ? hasPermission(auth.role, 'update_production')
     : hasPermission(auth.role, 'view_production') || hasPermission(auth.role, 'view_sales');
   if (!allowed) return { res: bad('Forbidden', 403) } as const;
-  const rl = rateLimit(`correos-v3:${auth.tenantId}:${write ? 'w' : 'r'}`, { windowMs: 60_000, maxRequests: write ? 10 : 240, identifier: 'correos-v3' });
+  // Shared across containers (Upstash) so stores cannot burn the platform's Correos quota (INT-239).
+  const rl = await rateLimitAsync(`${auth.tenantId}`, write ? writeLimiter : readLimiter, {
+    windowMs: 60_000,
+    maxRequests: write ? WRITE_PER_MIN : READ_PER_MIN,
+    prefix: write ? 'correos-v3-w' : 'correos-v3-r',
+  });
   if (!rl.allowed) return { res: NextResponse.json({ error: 'Demasiadas consultas, esperá un momento.' }, { status: 429, headers: rl.headers }) } as const;
   return { auth } as const;
 }
@@ -91,6 +102,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
       const p = s(q.get('provincia'), 2);
       const c = s(q.get('canton'), 3);
       const d = s(q.get('distrito'), 3);
+      if ([p, c, d].some((x) => x && !CODE_RE.test(x))) return bad('Parámetros inválidos');
       if (level === 'provincias') return NextResponse.json({ items: await v3.geo.provincias() });
       if (level === 'cantones' && p) return NextResponse.json({ items: await v3.geo.cantones(p) });
       if (level === 'distritos' && p && c) return NextResponse.json({ items: await v3.geo.distritos(p, c) });
@@ -110,9 +122,16 @@ export async function GET(req: NextRequest, { params }: Ctx) {
       if (!owned) return bad('Guía no encontrada', 404);
       try {
         const t = await v3.track(guia);
-        await ensureTracked({ guiaNumber: guia, tenantId });
+        await ensureTracked({ guiaNumber: guia, tenantId, environment: v3.environment });
         await saveTracking(tenantId, t);
-        return NextResponse.json({ live: true, tracking: { ...t, statusLabel: SHIPMENT_STATUS_LABEL[t.status] } });
+        // Only what the timeline shows (no recipient name / phone / address from Correos).
+        return NextResponse.json({
+          live: true,
+          tracking: {
+            guiaNumber: t.guiaNumber, status: t.status, statusLabel: SHIPMENT_STATUS_LABEL[t.status], statusText: t.statusText,
+            deliveredAt: t.deliveredAt, deliveredTo: t.deliveredTo, events: t.events,
+          },
+        });
       } catch (e) {
         // Correos down: show what we stored.
         const events = await getEvents(tenantId, guia);
@@ -146,7 +165,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   }
 
   const settings = await loadTenantCorreosSettings(tenantId);
-  const v3 = write ? await getCorreosV3ForWrite(settings).catch(() => null) : await getCorreosV3ForRead().catch(() => null);
+  const v3 = write ? await getCorreosV3ForWrite(settings, tenantId).catch(() => null) : await getCorreosV3ForRead().catch(() => null);
   if (!v3) return bad(write ? 'Esta tienda no usa la API v3 de Correos.' : 'La API v3 de Correos no está activa.', 409);
 
   try {
@@ -162,33 +181,38 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       const dims = d && typeof d === 'object' ? { alto: Number(d.alto) || 0, largo: Number(d.largo) || 0, ancho: Number(d.ancho) || 0 } : null;
       const pesoG = Number(body?.pesoG) || Number(settings.ws_default_weight_g) || 500;
       const quote = await v3.quote({ origin, dest: { province: s(body?.dest?.province), canton: s(body?.dest?.canton), district: s(body?.dest?.district) }, pesoG, dims });
-      return NextResponse.json({ quote, pesoG });
+      // Only the total: the platform's negotiated discount is not a store's business (DATA-78).
+      return NextResponse.json({ quote: { total: quote.total }, pesoG });
     }
 
     if (action === 'pickup') {
       const key = s(body?.idempotencyKey, 80);
       if (!/^[A-Za-z0-9_-]{8,80}$/.test(key)) return bad('Falta la clave de la solicitud.');
       const requested = Array.isArray(body?.guias) ? body.guias.map((x: unknown) => s(x, 50)).filter((x: string) => GUIA_RE.test(x)) : [];
-      const guias = await tenantOwnsGuias(tenantId, requested);
-      if (guias.length === 0) return bad('Elegí guías de esta tienda.');
+      const owned = await tenantOwnsGuias(tenantId, requested);
+      if (owned.length === 0) return bad('Elegí guías de esta tienda.');
+      const recent = await recentPickupLoad(tenantId);
+      if (recent.count >= PICKUPS_PER_DAY) return bad(`Máximo ${PICKUPS_PER_DAY} recolecciones por día. Probá mañana o llamá a Correos.`, 429);
+      const guias = owned.filter((g) => !recent.guias.has(g));
+      if (guias.length === 0) return bad('Esas guías ya tienen una recolección solicitada en las últimas 24 h.', 409);
       const origin = tenantOrigin(settings);
       if (!origin) return bad('Configurá el lugar de origen en Configuración › Envíos.', 409);
       const address = s(body?.address, 300) || s(settings.ws_sender_address, 300);
       if (!address) return bad('Falta la dirección de recolección.');
 
       const platform = await resolveV3Config();
-      const db = await prisma.$queryRaw<{ key: string; value: string }[]>`
-        SELECT key, value FROM lm_carrier_configs WHERE key IN (${V3_DB_KEYS.pickupCedula}, ${V3_DB_KEYS.pickupEmail})
-      `.catch(() => []);
-      const cfg = Object.fromEntries(db.map((r) => [r.key, r.value]));
-      const cedula = s(settings.correos_pickup_cedula, 20) || cfg[V3_DB_KEYS.pickupCedula] || '';
-      const correo = s(settings.correos_pickup_email, 150) || cfg[V3_DB_KEYS.pickupEmail] || '';
+      // Each store asks under its own cédula: never the platform's (INT-238).
+      const cedula = s(settings.correos_pickup_cedula, 20);
+      const correo = s(settings.correos_pickup_email, 150);
       if (!cedula || !correo) return bad('Falta la cédula y el correo para recolecciones (Configuración › Envíos).', 409);
 
       // Scoped per store so two stores can never collide on a key.
       const scopedKey = createHash('sha256').update(`${tenantId}\0${key}`).digest('hex').slice(0, 64);
       const claim = await claimPickup({ key: scopedKey, tenantId, userId: userId ?? null, guias, address, environment: platform?.config.environment ?? 'prod' });
-      if (claim === 'duplicate') return NextResponse.json({ ok: true, duplicate: true, guias });
+      if (claim === 'duplicate') {
+        const status = await pickupStatus(scopedKey);
+        return NextResponse.json({ ok: status === 'sent', duplicate: true, status, guias });
+      }
       if (claim === 'unavailable') return bad('Las recolecciones aún no están habilitadas (falta aplicar la base de datos).', 409);
 
       const fullName = s(body?.contactName, 200) || s(settings.ws_sender_name, 200);

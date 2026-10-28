@@ -1,3 +1,4 @@
+import 'server-only';
 import type { CorreosV3Config, CorreosV3Environment } from './types';
 
 /**
@@ -10,7 +11,11 @@ import type { CorreosV3Config, CorreosV3Environment } from './types';
  *   CORREOS_V3_* when it is "prod".
  *
  * The kill switch `correos_v3_enabled` (DB) / CORREOS_V3_ENABLED (env) must be
- * "1" before any store can use v3.
+ * "1" before any store can use v3, AND the host must allow it with CORREOS_V3_ALLOWED=1
+ * (the DB is shared with the Railway preview: switching v3 on there must not reach a host
+ * that was not deployed for it — SecureDog INFRA-29).
+ * Writes (guías, pickups) also need the store in `correos_v3_tenants` ("*" = every store
+ * that chose v3) — a store cannot opt itself into the platform account (INT-238).
  */
 
 export const V3_DB_KEYS = {
@@ -23,6 +28,7 @@ export const V3_DB_KEYS = {
   usuarioId: 'correos_v3_usuario_id',
   pickupCedula: 'correos_v3_pickup_cedula',
   pickupEmail: 'correos_v3_pickup_email',
+  tenants: 'correos_v3_tenants',
 } as const;
 
 export type V3Source = 'logistics_db' | 'environment';
@@ -31,6 +37,14 @@ export interface ResolvedV3Config {
   config: CorreosV3Config;
   source: V3Source;
   enabled: boolean;
+  /** Stores allowed to write through v3: '*' or a list of tenant ids. */
+  writeTenants: '*' | string[];
+}
+
+export function parseWriteTenants(raw: string | null | undefined): '*' | string[] {
+  const s = String(raw ?? '').trim();
+  if (s === '*') return '*';
+  return s.split(/[\s,]+/).map((x) => x.trim()).filter((x) => /^[A-Za-z0-9_-]{6,64}$/.test(x)).slice(0, 500);
 }
 
 function nonEmpty(v: string | null | undefined): v is string {
@@ -71,7 +85,8 @@ export function selectV3Config(input: {
 }): ResolvedV3Config | null {
   const { db, env } = input;
   const dec = input.decrypt ?? ((v: string) => v);
-  const enabled = db[V3_DB_KEYS.enabled] === '1' || env.CORREOS_V3_ENABLED === '1';
+  const enabled = (db[V3_DB_KEYS.enabled] === '1' || env.CORREOS_V3_ENABLED === '1') && env.CORREOS_V3_ALLOWED === '1';
+  const writeTenants = parseWriteTenants(db[V3_DB_KEYS.tenants] ?? env.CORREOS_V3_TENANTS);
 
   const dbEnv = parseV3Environment(db[V3_DB_KEYS.environment]);
   let dbPassword: string | undefined;
@@ -88,7 +103,7 @@ export function selectV3Config(input: {
     db[V3_DB_KEYS.servicioId],
     db[V3_DB_KEYS.usuarioId],
   );
-  if (fromDb) return { config: fromDb, source: 'logistics_db', enabled };
+  if (fromDb) return { config: fromDb, source: 'logistics_db', enabled, writeTenants };
 
   const envEnv = parseV3Environment(env.CORREOS_V3_ENV);
   const p = envEnv === 'test' ? 'CORREOS_V3_TEST_' : 'CORREOS_V3_';
@@ -100,7 +115,7 @@ export function selectV3Config(input: {
     env[`${p}SERVICIO`],
     env[`${p}USUARIO_ID`],
   );
-  if (fromEnv) return { config: fromEnv, source: 'environment', enabled };
+  if (fromEnv) return { config: fromEnv, source: 'environment', enabled, writeTenants };
   return null;
 }
 

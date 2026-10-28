@@ -73,3 +73,40 @@ describe('Correos inbox agent tools', () => {
     assert.doesNotMatch(src, /\.quote\(/);
   });
 });
+
+describe('Correos guía ownership (SecureDog DATA-74)', () => {
+  it('only counts completed Correos guías of this store that no other store holds', async () => {
+    const { ownedGuiaNumbers } = await import('../correos/v3/tenant');
+    const rows = [
+      { tenantId: 'A', carrier: 'correos_cr', status: 'completed', guiaNumber: 'PY1CR', trackingNumber: 'PY1CR' },
+      { tenantId: 'A', carrier: 'manual', status: 'completed', guiaNumber: 'PY2CR', trackingNumber: 'PY2CR' },
+      { tenantId: 'A', carrier: 'correos_cr', status: 'failed', guiaNumber: 'PY3CR', trackingNumber: null },
+      { tenantId: 'A', carrier: 'correos_cr', status: 'completed', guiaNumber: 'PY4CR', trackingNumber: 'PY4CR' },
+      { tenantId: 'B', carrier: 'manual', status: 'completed', guiaNumber: 'PY4CR', trackingNumber: 'PY4CR' },
+    ];
+    assert.deepEqual(ownedGuiaNumbers('A', ['PY1CR', 'PY2CR', 'PY3CR', 'PY4CR'], rows), ['PY1CR']);
+    // B typed A's number as a manual guía: B gets nothing.
+    assert.deepEqual(ownedGuiaNumbers('B', ['PY1CR', 'PY4CR'], rows), []);
+  });
+
+  it('manual guías cannot take a number another store already has', () => {
+    const src = readFileSync('src/app/api/shipping/guias/manual/route.ts', 'utf8');
+    assert.match(src, /tenantId: \{ not: tenantId \}/);
+  });
+
+  it('events are unique per store and a registration takes over tracker-made rows only', () => {
+    const sql = readFileSync('supabase/migrations/065_correos_v3.sql', 'utf8');
+    assert.match(sql, /lm_correos_tracking_events \(crm_tenant_id, guia_number,/);
+    const store = readFileSync('src/lib/correos/v3/store.ts', 'utf8');
+    assert.match(store, /WHERE lm_correos_guias\.crm_tenant_id = EXCLUDED\.crm_tenant_id OR lm_correos_guias\.api_version = 'soap'/);
+    assert.match(store, /if \(prev\[0\] && prev\[0\]\.crm_tenant_id !== tenantId\) return null;/);
+    assert.match(store, /make_interval\(days => \$\{days\}::int\)/);
+  });
+
+  it('pickups: own cédula only, daily cap, no platform fallback', () => {
+    const route = readFileSync('src/app/api/shipping/correos/[action]/route.ts', 'utf8');
+    assert.doesNotMatch(route, /pickupCedula\]/);
+    assert.match(route, /PICKUPS_PER_DAY/);
+    assert.match(route, /rateLimitAsync\(/);
+  });
+});

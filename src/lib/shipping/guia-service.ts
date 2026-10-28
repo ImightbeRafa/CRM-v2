@@ -149,7 +149,7 @@ export async function generateGuiasForOrders(
   // Correos API v3 when the platform has it on and this store chose it; SOAP otherwise (unchanged).
   let v3: CorreosV3Service | null = null;
   try {
-    v3 = await getCorreosV3ForWrite(settings);
+    v3 = await getCorreosV3ForWrite(settings, tenantId);
   } catch (e) {
     console.warn('[GuiaService] Correos v3 selection failed, using SOAP:', e instanceof Error ? e.message : e);
   }
@@ -405,14 +405,16 @@ export async function generateGuiasForOrders(
           guiaData.pdfData = outcome.pdf;
           guiaData.pdfFileName = `guia-${outcome.guiaNumber}.pdf`;
         }
-        if (existing) {
-          await tenantPrisma.shippingGuia.delete({ where: { id: existing.id } });
-        }
-        const created = await tenantPrisma.shippingGuia.create({ data: guiaData });
+        // Record the Correos number on the claim first: if saving below fails, the number is not lost
+        // and the order stays blocked from a second registration.
         await globalPrisma.orderLifecycleOperation.updateMany({
           where: { tenantId, adapter: CORREOS_PROVIDER_ADAPTER, idempotencyKey: externalClaimKey },
           data: { result: { state: 'completed', api: 'v3', guiaNumber: outcome.guiaNumber, completedAt: new Date().toISOString() } },
         });
+        if (existing) {
+          await tenantPrisma.shippingGuia.delete({ where: { id: existing.id } });
+        }
+        const created = await tenantPrisma.shippingGuia.create({ data: guiaData });
         try {
           await saveV3Guia({
             guiaNumber: outcome.guiaNumber,

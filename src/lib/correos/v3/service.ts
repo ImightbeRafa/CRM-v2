@@ -189,6 +189,13 @@ export class CorreosV3Service {
     if (input.tipoDestino === 'SUC') {
       codigoSucursal = clip(input.codigoSucursal, 20) || undefined;
       if (!codigoSucursal) return fail('Elegí la sucursal de Correos donde el cliente retira.', 'codigoSucursal');
+      // The branch must be one Correos lists for the customer's canton (a stale pick after an address change).
+      if (input.dest.province && input.dest.canton) {
+        const { branches } = await this.branchesFor({ province: input.dest.province, canton: input.dest.canton, district: null });
+        if (branches.length > 0 && !branches.some((b) => b.codigo === codigoSucursal)) {
+          return fail('La sucursal elegida no es de ese cantón. Elegila de nuevo.', 'codigoSucursal');
+        }
+      }
     } else {
       const check = await this.checkAddress(input.dest);
       if (!check.place) return fail(check.problems[0] || 'Dirección inválida.', 'dest.place');

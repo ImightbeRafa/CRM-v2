@@ -1,3 +1,4 @@
+import 'server-only';
 import { prisma } from '@/lib/db';
 import type { CorreosV3Environment, V3TipoDestino } from './types';
 import { CLOSED_STATUSES, nextCheckDelayMs, type CorreosShipmentStatus, type NormalizedTracking } from './mappers';
@@ -68,20 +69,31 @@ export async function saveV3Guia(input: {
         ${input.sucursalNombre?.slice(0, 200) ?? null}, ${input.zpl?.slice(0, 200_000) ?? null}, ${input.montoFlete ?? null},
         ${input.pesoG ?? null}, ${input.destZip ?? null}, 'created', now() + interval '2 hours')
       ON CONFLICT (guia_number) DO UPDATE SET
+        crm_tenant_id = EXCLUDED.crm_tenant_id, crm_order_id = EXCLUDED.crm_order_id, order_number = EXCLUDED.order_number,
+        api_version = 'v3', environment = EXCLUDED.environment, tipo_destino = EXCLUDED.tipo_destino,
+        codigo_sucursal = EXCLUDED.codigo_sucursal, sucursal_nombre = EXCLUDED.sucursal_nombre, monto_flete = EXCLUDED.monto_flete,
+        peso_g = EXCLUDED.peso_g, dest_zip = EXCLUDED.dest_zip,
         shipping_guia_id = COALESCE(EXCLUDED.shipping_guia_id, lm_correos_guias.shipping_guia_id),
         zpl = COALESCE(EXCLUDED.zpl, lm_correos_guias.zpl),
         updated_at = now()
+      -- Correos registering the guía decides who owns it (SecureDog DATA-75): a row the tracker made earlier
+      -- is taken over; a v3 row of another business is never overwritten (its ZPL never moves).
+      WHERE lm_correos_guias.crm_tenant_id = EXCLUDED.crm_tenant_id OR lm_correos_guias.api_version = 'soap'
+    `;
+    // Events written under someone else before the take-over are dropped.
+    await prisma.$executeRaw`
+      DELETE FROM lm_correos_tracking_events WHERE guia_number = ${input.guiaNumber} AND crm_tenant_id <> ${input.tenantId}
     `;
     return true;
   });
 }
 
 /** Starts tracking a guía made elsewhere (SOAP / manual) so the sync can follow it. */
-export async function ensureTracked(input: { guiaNumber: string; tenantId: string; shippingGuiaId?: string | null; orderNumber?: string | null }) {
+export async function ensureTracked(input: { guiaNumber: string; tenantId: string; shippingGuiaId?: string | null; orderNumber?: string | null; environment?: CorreosV3Environment }) {
   return safe(false, async () => {
     await prisma.$executeRaw`
-      INSERT INTO lm_correos_guias (guia_number, shipping_guia_id, crm_tenant_id, order_number, api_version, next_check_at)
-      VALUES (${input.guiaNumber}, ${input.shippingGuiaId ?? null}, ${input.tenantId}, ${input.orderNumber ?? null}, 'soap', now())
+      INSERT INTO lm_correos_guias (guia_number, shipping_guia_id, crm_tenant_id, order_number, api_version, environment, next_check_at)
+      VALUES (${input.guiaNumber}, ${input.shippingGuiaId ?? null}, ${input.tenantId}, ${input.orderNumber ?? null}, 'soap', ${input.environment ?? 'prod'}, now())
       ON CONFLICT (guia_number) DO NOTHING
     `;
     return true;
@@ -148,16 +160,18 @@ function toDate(s: string | null | undefined): Date | null {
  */
 export async function saveTracking(tenantId: string, t: NormalizedTracking, now = new Date()): Promise<{ previous: CorreosShipmentStatus | null; newEvents: number } | null> {
   return safe(null, async () => {
-    const prev = await prisma.$queryRaw<{ last_status: CorreosShipmentStatus | null; created_at: Date }[]>`
-      SELECT last_status, created_at FROM lm_correos_guias WHERE guia_number = ${t.guiaNumber} AND crm_tenant_id = ${tenantId} LIMIT 1
+    const prev = await prisma.$queryRaw<{ last_status: CorreosShipmentStatus | null; created_at: Date; crm_tenant_id: string }[]>`
+      SELECT last_status, created_at, crm_tenant_id FROM lm_correos_guias WHERE guia_number = ${t.guiaNumber} LIMIT 1
     `;
+    // Never write events / state into a guía another business owns.
+    if (prev[0] && prev[0].crm_tenant_id !== tenantId) return null;
     let newEvents = 0;
     for (const ev of t.events.slice(-100)) {
       newEvents += await prisma.$executeRaw`
         INSERT INTO lm_correos_tracking_events (guia_number, crm_tenant_id, event_at, codigo, descripcion, ubicacion, recibido_por, lat, lng)
         VALUES (${t.guiaNumber}, ${tenantId}, ${toDate(ev.at)}, ${(ev.code ?? '').slice(0, 20)}, ${ev.description.slice(0, 300)},
           ${ev.place?.slice(0, 120) ?? null}, ${ev.receivedBy?.slice(0, 120) ?? null}, ${ev.lat}, ${ev.lng})
-        ON CONFLICT (guia_number, coalesce(event_at, 'epoch'::timestamptz), codigo, descripcion) DO NOTHING
+        ON CONFLICT (crm_tenant_id, guia_number, coalesce(event_at, 'epoch'::timestamptz), codigo, descripcion) DO NOTHING
       `;
     }
     const createdAt = prev[0]?.created_at ?? now;
@@ -207,8 +221,10 @@ export async function enrollRecentGuias(days = 14, limit = 200): Promise<number>
       FROM "ShippingGuia" g
       WHERE g.status = 'completed' AND g.carrier ILIKE '%correos%'
         AND g."guiaNumber" ~ '^[A-Z]{2}[0-9]{9}CR$'
-        AND g."createdAt" > now() - make_interval(days => ${days})
+        AND g."createdAt" > now() - make_interval(days => ${days}::int)
         AND NOT EXISTS (SELECT 1 FROM lm_correos_guias c WHERE c.guia_number = g."guiaNumber")
+        -- a number held by two businesses is ambiguous: never follow it automatically
+        AND NOT EXISTS (SELECT 1 FROM "ShippingGuia" o WHERE o."guiaNumber" = g."guiaNumber" AND o."tenantId" <> g."tenantId")
       ORDER BY g."guiaNumber", g."createdAt" DESC
       LIMIT ${limit}
       ON CONFLICT (guia_number) DO NOTHING
@@ -230,13 +246,18 @@ export { CLOSED_STATUSES };
 
 // ─── Pickups ────────────────────────────────────────────────────────────────
 
-/** Claims a pickup key. Returns false if this key was already used (double click / retry). */
+/**
+ * Claims a pickup key. A key whose earlier attempt definitely failed (Correos refused / bad data) can be
+ * claimed again; one that is pending, sent or unknown is a duplicate (double click / retry).
+ */
 export async function claimPickup(input: { key: string; tenantId: string; userId: string | null; guias: string[]; address: string; environment: CorreosV3Environment }): Promise<'claimed' | 'duplicate' | 'unavailable'> {
   try {
     const n = await prisma.$executeRaw`
       INSERT INTO lm_correos_pickups (idempotency_key, crm_tenant_id, requested_by, guia_numbers, pickup_address, environment)
       VALUES (${input.key}, ${input.tenantId}, ${input.userId}, ${input.guias}::text[], ${input.address.slice(0, 400)}, ${input.environment})
-      ON CONFLICT (idempotency_key) DO NOTHING
+      ON CONFLICT (idempotency_key) DO UPDATE SET status = 'pending', error = NULL, guia_numbers = EXCLUDED.guia_numbers,
+        pickup_address = EXCLUDED.pickup_address, updated_at = now()
+      WHERE lm_correos_pickups.status = 'failed' AND lm_correos_pickups.crm_tenant_id = EXCLUDED.crm_tenant_id
     `;
     return n > 0 ? 'claimed' : 'duplicate';
   } catch (e) {
@@ -253,6 +274,22 @@ export async function finishPickup(key: string, status: 'sent' | 'failed' | 'unk
     `;
     return true;
   });
+}
+
+/** Pickups asked in the last 24 h by this store: how many, and which guías they covered (not failed ones). */
+export async function recentPickupLoad(tenantId: string): Promise<{ count: number; guias: Set<string> }> {
+  const rows = await safe<Array<{ guia_numbers: string[] }>>([], () =>
+    prisma.$queryRaw`
+      SELECT guia_numbers FROM lm_correos_pickups
+      WHERE crm_tenant_id = ${tenantId} AND status <> 'failed' AND created_at > now() - interval '24 hours'
+    `,
+  );
+  return { count: rows.length, guias: new Set(rows.flatMap((r) => r.guia_numbers)) };
+}
+
+export async function pickupStatus(key: string): Promise<string | null> {
+  const rows = await safe<Array<{ status: string }>>([], () => prisma.$queryRaw`SELECT status FROM lm_correos_pickups WHERE idempotency_key = ${key} LIMIT 1`);
+  return rows[0]?.status ?? null;
 }
 
 export async function recentPickups(tenantId: string, limit = 10) {

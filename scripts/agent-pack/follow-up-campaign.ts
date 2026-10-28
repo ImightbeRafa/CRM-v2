@@ -84,8 +84,9 @@ function keyOf(c: StoredCampaign, v: FollowUpVariant, plan?: FollowUpPlan): stri
   return byText ?? `${c.id}:${v}`
 }
 
-type VariantStats = { sent: number; failed: number; replied: number; ordered: number; revenue: number; optedOut: number; softNo: number; byLine: Record<string, number>; replies: string[] }
-const emptyStats = (): VariantStats => ({ sent: 0, failed: 0, replied: 0, ordered: 0, revenue: 0, optedOut: 0, softNo: 0, byLine: {}, replies: [] })
+/** `reminders`: SINPE reminders (follow-ups v2) — only the arm with a reminder text reaches those chats, so they never count toward the winner rule. */
+type VariantStats = { sent: number; failed: number; replied: number; ordered: number; revenue: number; optedOut: number; softNo: number; reminders: number; byLine: Record<string, number>; replies: string[] }
+const emptyStats = (): VariantStats => ({ sent: 0, failed: 0, replied: 0, ordered: 0, revenue: 0, optedOut: 0, softNo: 0, reminders: 0, byLine: {}, replies: [] })
 
 /** Read-only: what each variant of one campaign did. Reply = customer wrote within 24 h; order = linked within 7 days. */
 async function campaignStats(tenantId: string, c: StoredCampaign): Promise<Record<FollowUpVariant, VariantStats>> {
@@ -96,11 +97,16 @@ async function campaignStats(tenantId: string, c: StoredCampaign): Promise<Recor
     if (!s) continue
     const fu = await prisma.chatMessage.findFirst({
       where: { tenantId, conversationId: convId, direction: 'outbound', metadata: { path: ['followUp', 'campaignId'], equals: c.id } },
-      select: { sentAt: true, socialAccountId: true },
+      select: { sentAt: true, socialAccountId: true, metadata: true },
     })
     // Claimed but never stored as sent (or marked failed): not counted as sent (keeps the rates honest).
     if (String(raw).endsWith('!') || !fu) {
       s.failed++
+      continue
+    }
+    // Verifier 2026-10-28: a SINPE reminder reached a chat the other arm never nudges (it was close to paying) → apart.
+    if ((fu.metadata as { followUp?: { slot?: unknown } } | null)?.followUp?.slot === 'sinpe_reminder') {
+      s.reminders++
       continue
     }
     s.sent++

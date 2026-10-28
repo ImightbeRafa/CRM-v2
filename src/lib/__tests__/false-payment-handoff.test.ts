@@ -311,3 +311,19 @@ describe('false payment hand-offs, round 2 (real messages)', () => {
     }
   })
 })
+
+describe('verifier 2026-10-28 round 2', () => {
+  it('stays fast on a 4 KB whitespace run (the "pagado" rule is never widened)', () => {
+    const s = 'pagado' + ' '.repeat(4000) + 'x'
+    const t0 = performance.now()
+    classifyPaymentText(s)
+    hasHardPaymentClaim(s, {})
+    assert.ok(performance.now() - t0 < 2000, `${Math.round(performance.now() - t0)} ms`)
+  })
+
+  it('the new how-to-pay phrases never cover a part payment, a debt or a refund', () => {
+    for (const t of ['¿Cuál es el proceso de pago de la otra mitad?', '¿cómo se maneja el pago del saldo pendiente?', '¿cuál es el proceso de pago? quiero mi plata de vuelta']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+})

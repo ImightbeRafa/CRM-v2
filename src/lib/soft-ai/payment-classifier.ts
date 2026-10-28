@@ -54,8 +54,9 @@ const CLAIM_CUE_RE = new RegExp(
   String.raw`(?<![\p{L}\p{N}_])(` +
     [
       near(String.raw`(hice|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|acabo\s+de\s+(pagar|hacer|mandar|enviar|pasar|transferir|depositar|cancelar))`, PAY_NOUN),
-      // Rafael 2026-10-28: a lone "pagado" / "ya pagado" with a thanks or any emoji ("pagado ❤️", "Pagado, gracias 😊") too.
-      String.raw`pagu[eé]|deposit[eé]|transfer[ií]|^\s*¿?\s*(?:ya\s+)?pagad[oa]\s*,?\s*(?:gracias|muchas\s+gracias)?[\s?!.,:)✅👍\p{Extended_Pictographic}\p{Emoji_Modifier}\u{FE0F}\u{200D}]*$`,
+      // A lone "pagado" with a thanks / emoji tail ("pagado ❤️", "Pagado, gracias 😊") is read by withoutEmojiTail (linear);
+      // Verifier 2026-10-28: never widen this tail (three whitespace runs in a row are cubic on a 4 KB message).
+      String.raw`pagu[eé]|deposit[eé]|transfer[ií]|^\s*¿?\s*pagad[oa]\s*[?!.✅👍]*\s*$`,
       // SecureDog INT-140: "we / they paid" — third-person past always; the -amos forms (also present tense: "¿cómo
       // pagamos?") only after "ya" or with a past marker ("lo pagamos ayer").
       // Verifier round 6: "abonar" (a part payment) and a declined / rejected card or transfer are claims too.
@@ -641,8 +642,11 @@ const LIVE_COD_RE = /(?<![\p{L}])(contra\s?entrega|pag(o|ar)\s+(al\s+recibir|cua
 const LIVE_PAYMENT_RE = /\b(sinpe|transferencia|pago|pagar|comprobante|ib[aá]n|cuenta\s*banc|deposit[oa]|efectivo\s*contra)\b/i
 const LIVE_PAYMENT_QUESTION_RE = /(?<![\p{L}])((puedo|se\s+puede|pued[eo]n|aceptan|hay\s+que|tengo\s+que|debo)(\s+\p{L}+){0,2}\s+(pagar|pago|pagarles|pagarte)|(c[oó]mo|cu[aá]ndo|d[oó]nde|qu[eé]\s+formas?\s+de)(\s+\p{L}+){0,2}\s+(pago|pagar|se\s+paga|pagos)|(reciben|tienen|aceptan|usan|trabajan\s+con)\s+(sinpe|transferencias?|tarjetas?|efectivo))(?![\p{L}])/iu
 const LIVE_INFO_Q_RE = /(adelantad|anticipad|con\s+qu[eé]\s+banco|qu[eé]\s+bancos?|a\s+qu[eé]\s+(n[uú]mero|cuenta)|aceptan\s+(tarjetas?|sinpe|transferencias?|efectivo)|se\s+puede\s+pagar\s+con|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|cu[aá]ndo\s+(se\s+)?paga|pago\s+al\s+recibir|pagar\s+al\s+recibir)/iu
+/** Verifier 2026-10-28: live's exits stay verbatim — INFO_CUE_RE as it was before the 2026-10-28 phrases. */
+const LIVE_INFO_CUE_RE =
+  /\b(c[oó]mo\s+(pago|puedo\s+pagar|se\s+paga)|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|aceptan|n[uú]mero\s+(de\s+)?sinpe|sinpe\s+m[oó]vil|tarjeta|cuenta\s+(bancaria|iban)|transferencia)\b/i
 function liveWouldAnswer(v: string): boolean {
-  if (LIVE_COD_RE.test(v) || INFO_CUE_RE.test(v)) return true
+  if (LIVE_COD_RE.test(v) || LIVE_INFO_CUE_RE.test(v)) return true
   if (!LIVE_PAYMENT_RE.test(v)) return true
   if (LIVE_PAYMENT_QUESTION_RE.test(v)) return true
   return /[?¿]/.test(v) && LIVE_INFO_Q_RE.test(v) && !PAYMENT_STATUS_CUE_RE.test(v)
@@ -678,8 +682,23 @@ const ORDER_QUESTION_RE =
  * no payment word — so nothing ("…, Juan les deposito una parte") can ride along.
  */
 const DEBT_RE = /(?<![\p{L}])(?:deb[oeí]\p{L}*|debiendo|falta\p{L}*|pendiente)(?![\p{L}])/iu
+/** The 2026-10-28 how-to-pay phrases (not live's): answered only with no part payment, debt, refund or pay act. */
+const NEW_INFO_CUE_RE =
+  /\b(proceso\s+(?:de|del|para)\s+(?:pago|pagar|compra)|opciones\s+de\s+(?:env[ií]o\s*(?:\/|y|,)\s*)?pago|(?:el\s+)?pago\s+c(?:[oó]mo|m)\s+se\s+maneja|c(?:[oó]mo|m)\s+se\s+maneja\s+el\s+pago)\b/i
+const MONEY_BACK_RE = /(?<![\p{L}])(?:devoluci[oó]n|devolver\p{L}*|devuelv\p{L}*|reembols\p{L}*|de\s+vuelta|reintegr\p{L}*|cobr(?:aron|ó)|reclam\p{L}*)(?![\p{L}])/iu
 function agentExit(value: string, cls: PaymentClassification): PaymentClassification {
   if (liveWouldAnswer(value)) return isPlainAskMessage(value) ? cls : 'payment_proof_or_risk'
+  if (
+    NEW_INFO_CUE_RE.test(value) &&
+    isPlainAskMessage(value) &&
+    !hasFreePayAct(value) &&
+    !PARTIAL_STATE_RE.test(value) &&
+    !DEBT_RE.test(value) &&
+    !REFUND_RE.test(value) &&
+    !MONEY_BACK_RE.test(value)
+  ) {
+    return cls
+  }
   return closedPaymentMessage(value) && !hasFreePayAct(value) && !PARTIAL_STATE_RE.test(value) && !DEBT_RE.test(value) ? cls : 'payment_proof_or_risk'
 }
 /* ---- end live-equivalence gate ---- */

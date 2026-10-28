@@ -27,7 +27,7 @@ import { ORDER_REVIEW_TAG, PAYMENT_REVIEW_TAG } from '@/lib/crm-stages'
 import { runPreModelGates } from '@/lib/soft-ai/agent-claim-gates'
 import { isAiTermsAcceptedNow } from '@/lib/soft-ai/agent-ai-terms-server'
 import { readAgentKillState } from '@/lib/soft-ai/agent-kill-switch'
-import { followUpSlot, followUpStateSkip, parseStageTexts, type FollowUpSlot } from '@/lib/soft-ai/follow-up-state'
+import { customerNamedLaterDate, followUpSlot, followUpStateSkip, parseStageTexts, type FollowUpSlot } from '@/lib/soft-ai/follow-up-state'
 
 export const FOLLOW_UP_FLAG = 'agent_follow_up_v1'
 /** Meta's window is 24 h after the customer's last message; keep a margin. */
@@ -171,7 +171,9 @@ export async function followUpSkipReason(
   // Follow-ups v2 (Rafael 2026-10-28): payment details already sent, order data given, or a named later date.
   const stateSkip = followUpStateSkip(recent)
   // Arm B with an owner-approved reminder: payment details pending and nothing paid since → the reminder goes out.
-  const reminder = stateSkip === 'payment_details_sent' && opts.sinpeReminder === true && followUpSlot(recent) === 'sinpe_reminder'
+  // Verifier 2026-10-28: never over a named later date ("espero la quincena y le hago el sinpe").
+  const reminder =
+    stateSkip === 'payment_details_sent' && opts.sinpeReminder === true && followUpSlot(recent) === 'sinpe_reminder' && !customerNamedLaterDate(recent)
   if (stateSkip && !reminder) return stateSkip
   if (recent.some((m) => m.direction === 'outbound' && (m.metadata as { followUp?: unknown } | null)?.followUp)) return 'already_followed_up'
   // Verifier (auto-renew): one nudge per chat EVER, not only within its last 30 messages (rounds renew every 48 h).

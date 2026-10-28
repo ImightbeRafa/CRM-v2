@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { customerGaveOrderData, followUpSlot, followUpStateSkip, parseStageTexts, WAITING_DATE_RE } from '../soft-ai/follow-up-state'
+import { customerGaveOrderData, customerNamedLaterDate, followUpSlot, followUpStateSkip, parseStageTexts, WAITING_DATE_RE } from '../soft-ai/follow-up-state'
 
 const out = (content: string) => ({ direction: 'outbound', content })
 const inb = (content: string) => ({ direction: 'inbound', content })
@@ -90,5 +90,26 @@ describe('follow-ups v2: where the chat stopped (slots)', () => {
     assert.match(src, /followUp: \{ campaignId: c\.id, variant, \.\.\.\(slot && stageTexts\?\.\[slot\] \? \{ slot \} : \{\}\) \}/)
     // The review tags and every older skip rule still run first.
     assert.ok(src.indexOf("return 'review_alert'") < src.indexOf('followUpStateSkip(recent)'))
+  })
+})
+
+describe('follow-ups v2: verifier 2026-10-28', () => {
+  it('a named later date after the payment details blocks the reminder too', () => {
+    const src = readFileSync('src/lib/soft-ai/follow-up.ts', 'utf8')
+    assert.match(src, /followUpSlot\(recent\) === 'sinpe_reminder' && !customerNamedLaterDate\(recent\)/)
+    for (const t of ['Ok, espero la quincena y le hago el sinpe', 'Ahorita no tengo plata, cuando me paguen le aviso', 'Mañana le escribo']) {
+      assert.equal(customerNamedLaterDate([inb(t)]), true, t)
+    }
+  })
+
+  it('a smaller order or "después del pago" is not a later date', () => {
+    for (const t of ['No me alcanza para el pack, mejor solo una', 'Ok entonces lo envían después del pago']) {
+      assert.equal(WAITING_DATE_RE.test(t), false, t)
+    }
+  })
+
+  it('SINPE reminders never count toward the A/B winner rule', () => {
+    const src = readFileSync('scripts/agent-pack/follow-up-campaign.ts', 'utf8')
+    assert.match(src, /followUp\?\.slot === 'sinpe_reminder'\) \{\s+s\.reminders\+\+\s+continue/)
   })
 })

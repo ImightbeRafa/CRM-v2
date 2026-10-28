@@ -31,11 +31,12 @@ export const WAITING_DATE_RE = new RegExp(
     'cuando\\s+(?:tenga|reciba)\\s+(?:la\\s+)?(?:plata|platica|dinero|pago|salario)',
     'no\\s+tengo\\s+(?:plata|platica|dinero|presupuesto)',
     'ahorita\\s+no\\s+(?:tengo|puedo|me\\s+alcanza)',
-    'no\\s+me\\s+alcanza',
+    // Not "no me alcanza para el pack, mejor solo una" (a smaller order, still buying).
+    'no\\s+me\\s+alcanza(?!\\s+para\\s+(?:el|la|los|las|un|una|dos)\\b)',
     '(?:la\\s+)?(?:otra|pr[oó]xima)\\s+semana',
     'aguinaldo',
     // "Sería para después del 15 noviembre", "hasta el viernes", "después de la quincena".
-    '(?:para\\s+)?(?:despu[eé]s|hasta)\\s+(?:del?|el|la)\\s+(?:\\d{1,2}|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|quincena|pago|mes)',
+    '(?:para\\s+)?(?:despu[eé]s|hasta)\\s+(?:del?|el|la)\\s+(?:\\d{1,2}|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|quincena|mes)',
     // "Mañana le escribo", "El lunes les aviso", "Luego te confirmo": a promise to come back.
     '(?:ma[nñ]ana|luego|despu[eé]s|el\\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\\s+(?:(?:yo\\s+)?(?:le|te|les)\\s+)?(?:escribo|aviso|confirmo|hablo|contacto|pido|compro|encargo|digo)',
     '(?:le|te|les)\\s+(?:escribo|aviso|confirmo)\\s+(?:ma[nñ]ana|luego|despu[eé]s|el\\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)|la\\s+otra\\s+semana)',
@@ -59,9 +60,14 @@ export function followUpStateSkip(messages: readonly FollowUpStateMessage[], new
   if (ordered.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || ''))) return 'payment_details_sent'
   if (ordered.some((m) => m.direction === 'inbound' && customerGaveOrderData(m.content || ''))) return 'data_given'
   const lastIn = ordered.find((m) => m.direction === 'inbound')
-  // A question about a date ("¿Llega hasta el viernes?") is not a promise to come back.
-  if (lastIn && !/[?¿]/u.test(lastIn.content || '') && WAITING_DATE_RE.test(lastIn.content || '')) return 'waiting_date'
+  if (customerNamedLaterDate(ordered)) return 'waiting_date'
   return null
+}
+
+/** The customer's LAST message names a later moment (newest first). A date question ("¿Llega hasta el viernes?") is not. */
+export function customerNamedLaterDate(newestFirst: readonly FollowUpStateMessage[]): boolean {
+  const lastIn = newestFirst.find((m) => m.direction === 'inbound')
+  return Boolean(lastIn && !/[?¿]/u.test(lastIn.content || '') && WAITING_DATE_RE.test(lastIn.content || ''))
 }
 
 /**

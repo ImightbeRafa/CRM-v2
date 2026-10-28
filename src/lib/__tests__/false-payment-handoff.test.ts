@@ -279,3 +279,35 @@ describe('wiring (source)', () => {
     assert.equal(turn.match(/afterDetailsCustomerTexts: \[\.\.\.customerTextsAfterDetails\(history\)/g)?.length, 2)
   })
 })
+
+/** Rafael 2026-10-28 — DeepSleep 7-day review: three wording-only false hand-offs left after the first fix. */
+describe('false payment hand-offs, round 2 (real messages)', () => {
+  it('an emoji with its style character is not a payment claim ("Excelente, gracias ☺️", "Muchas gracias ❤️")', () => {
+    for (const t of ['Excelente, gracias ☺️', 'Por favor ☺️', 'Muchas gracias ❤️', 'gracias ✌️', '☺️', '🤷‍♂️']) {
+      assert.equal(hasHardPaymentClaim(t, {}), false, t)
+      assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+
+  it('real claims with the same emoji, and disguised letters, still go to a person', () => {
+    for (const t of ['Ya pagué ❤️', 'Listo, ya le hice el SINPE ☺️', 'ya pa️gué', 'Yа lе hicе еl sinpе', 'Ya раցսе́', 'Listo, pagado ❤️', 'Listo, pagado gracias', 'pagado, muchas gracias 😊', 'pagado ❤️']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+
+  it('"Tarjeta contra entrega :)" is the contra-entrega choice; claims with a card stay with a person', () => {
+    assert.equal(classifyPaymentText('Tarjeta contra entrega :)'), 'non_payment')
+    for (const t of ['Ya pagué con tarjeta :)', 'Listo, tarjeta', 'Tarjeta ✅', 'tarjeta contra entrega 12000']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+
+  it('"¿Cuál es el proceso de pago?" asks how to pay; "ya hice el proceso de pago" is a claim', () => {
+    for (const t of ['¿Cuál es el proceso de pago?', 'Cual es el proceso de compra', '¿Cómo es el proceso para pagar?']) {
+      assert.equal(classifyPaymentText(t), 'payment_info_safe', t)
+    }
+    for (const t of ['Ya hice el proceso de pago', 'Ya terminé el proceso de pago ✅', 'El proceso de pago ya quedó']) {
+      assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    }
+  })
+})

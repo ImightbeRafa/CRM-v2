@@ -14,7 +14,7 @@ import { RESERVED_SHORTCUT_SEEDS } from '@/lib/soft-ai/shortcuts'
 import { deriveSalesState, type SalesContext } from '@/lib/soft-ai/sales-state'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
 import { customerTextsAfterDetails } from '@/lib/soft-ai/agent-turn'
-import { escalationIsPaymentTalk } from '@/lib/soft-ai/llm/runtime'
+import { escalationIsPaymentTalk, openPaymentDetails } from '@/lib/soft-ai/llm/runtime'
 
 const FACTS = parseBrandFacts({
   payment: { shareWithCustomers: true, methods: ['sinpe', 'contra_entrega'], sinpe: { number: '62019914', holderName: 'Rafael García' } },
@@ -132,8 +132,30 @@ describe('model escalation → payment hand-off', () => {
       assert.equal(escalationIsPaymentTalk(t, later, true), true, t)
       assert.equal(escalationIsPaymentTalk(t, '¿Pudiste hacer el SINPE al 6201 9914?'), true, t)
     }
-    for (const t of ['Muchas gracias', 'Gracias 🙏', 'Mil gracias, muy amable', 'Pura vida, gracias!']) {
+    for (const t of ['Muchas gracias', 'Gracias 🙏', 'Mil gracias, muy amable']) {
       assert.equal(escalationIsPaymentTalk(t, later, true), false, t)
+    }
+  })
+
+  it('a finished or old sale is not open payment details (Verifier r3 F1)', () => {
+    const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString()
+    const m = (direction: 'inbound' | 'outbound', content: string, min: number) => ({ id: content, direction, content, sentAt: ago(min) })
+    assert.equal(openPaymentDetails([m('outbound', DETAILS, 30), m('inbound', 'Le acabo de mandar', 5)]), true)
+    assert.equal(openPaymentDetails([m('outbound', DETAILS, 300), m('inbound', '[image]', 290), m('outbound', '¡Con gusto! Tu pedido sale mañana 😊', 280)]), false)
+    assert.equal(openPaymentDetails([m('outbound', DETAILS, 300), m('outbound', 'Pago recibido ✅ ¡Gracias!', 200)]), false)
+    assert.equal(openPaymentDetails([m('outbound', DETAILS, 4 * 24 * 60), m('outbound', 'Hola 😊 ¿En qué te ayudo?', 10)]), false)
+    const done = [m('outbound', DETAILS, 300), m('inbound', '[image]', 290), m('outbound', 'Tu pedido sale mañana', 280)]
+    for (const t of ['Guía de tallas', '¿Cuándo me llega?', '¿Tienen talla M?']) {
+      assert.equal(escalationIsPaymentTalk(t, 'Tu pedido sale mañana', openPaymentDetails(done)), false, t)
+    }
+  })
+
+  it('money / yes emoji and CR yes-words are not a thank-you (Verifier r3 F2)', () => {
+    for (const t of ['Gracias 🧾', 'Gracias 💸', 'Mil gracias 💰', 'Gracias 💳', 'Gracias 📸', 'Gracias 👍', 'Pura vida 👍', 'Pura vida', 'Mil']) {
+      assert.equal(escalationIsPaymentTalk(t, 'Cuando hagás el pago, mandame el comprobante', true), true, t)
+    }
+    for (const t of ['Gracias 🙏', 'Mil gracias 😊', 'Muchas gracias ❤️']) {
+      assert.equal(escalationIsPaymentTalk(t, 'Cuando hagás el pago, mandame el comprobante', true), false, t)
     }
   })
 
@@ -208,6 +230,12 @@ describe('after the receipt the agent stops asking for the payment', () => {
     assert.match(deriveSalesState({ history: twoOrders, inboundText: 'Muchas gracias', ctx: CTX }).nextStep, /YA pagó/)
   })
 
+  it('a failed, negated, partial or misdirected payment is not "paid" (Verifier r3 F3)', () => {
+    for (const later of ['No he pagado', 'Todavía no he pagado', 'Me rechazó la tarjeta', 'Le hice el sinpe pero me salió rechazado', 'Ya le pagué a otro número por error', 'Ya pagué pero a la cuenta vieja', 'Se me cobró doble', 'Ya le pagué la mitad']) {
+      assert.doesNotMatch(deriveSalesState({ history: [msg(1, 'outbound', DETAILS), msg(2, 'inbound', later)], inboundText: 'ok', ctx: CTX }).nextStep, /YA pagó/, later)
+    }
+  })
+
   it('a receipt from BEFORE the latest details does not count', () => {
     const history = [msg(1, 'outbound', DETAILS), msg(2, 'inbound', '[image]'), msg(3, 'outbound', DETAILS)]
     assert.doesNotMatch(deriveSalesState({ history, inboundText: 'ok', ctx: CTX }).nextStep, /YA pagó/)
@@ -220,7 +248,7 @@ describe('wiring (source)', () => {
 
   it('a model escalation uses the payment-talk rule', () => {
     assert.match(runtime, /structured\.needsHuman && customerPaymentTalk/)
-    assert.match(runtime, /const customerPaymentTalk = escalationIsPaymentTalk\(\s*customerSide,\s*lastStoreText,\s*input\.history\.some/)
+    assert.match(runtime, /const customerPaymentTalk = escalationIsPaymentTalk\(customerSide, lastStoreText, openPaymentDetails\(input\.history\)\)/)
     assert.doesNotMatch(runtime, /structured\.needsHuman && \(hasPaymentWord\(customerSide\) \|\| hasPaymentWord\(lastStoreText\)\)/)
   })
 

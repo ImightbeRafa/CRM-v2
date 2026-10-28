@@ -402,6 +402,8 @@ const PAY_LATER_RE =
 const STORE_CONFIRMED_PAYMENT_RE =
   /(?<![\p{L}])(?:(?:pago|sinpe|comprobante|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|aplicad[oa])|recibimos\s+(?:tu|el|su)\s+(?:pago|sinpe|comprobante))(?![\p{L}])/iu
 
+const PAYMENT_FAILED_RE =
+  /(?<![\p{L}])(?:rechaz\p{L}*|declin\p{L}*|error|fall[oó]|por\s+equivocaci[oó]n|otr[oa]\s+(?:n[uú]mero|cuenta)|cuenta\s+vieja|doble|mitad|parte|adelanto|falta\p{L}*|todav[ií]a)(?![\p{L}])/iu
 /** A question without "?" ("Me confirma a qué número envío el comprobante"). */
 const ASKS_RE = /(?<![\p{L}])(?:qu[eé]|d[oó]nde|c[oó]mo|cu[aá]l|cu[aá]ndo|me\s+confirm\p{L}*)(?![\p{L}])/iu
 /** Receipt nouns alone ("le mandaré el comprobante", "comprobante en la tarde") are not a payment act. */
@@ -410,6 +412,8 @@ const RECEIPT_NOUN_RE = /(?<![\p{L}])(?:comprobantes?|capturas?|pantallazos?|adj
 /** A customer bubble that says the payment was made: a receipt photo / file, or a past-tense claim (not a promise). */
 function customerPaidEvidence(text: string): boolean {
   if (RECEIPT_MEDIA_RE.test(text)) return true
+  // A negated, failed, partial or misdirected payment is not paid ("No he pagado", "me rechazó la tarjeta", "la mitad").
+  if (NEGATION_RE.test(text) || PAYMENT_FAILED_RE.test(text)) return false
   const act = text.replace(RECEIPT_NOUN_RE, ' ')
   return hasHardPaymentClaim(act) && !/[?¿]/u.test(text) && !ASKS_RE.test(text) && !PAY_LATER_RE.test(text) && paymentHandoffReason(text) !== 'complaint'
 }

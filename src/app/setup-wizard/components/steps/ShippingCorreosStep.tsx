@@ -32,6 +32,9 @@ interface SenderSettings {
   ws_default_weight_g: string;
   /** 'v3' = this store uses the new Correos REST API (when the platform has it on). */
   correos_api: 'soap' | 'v3';
+  /** Requester for Correos pickups (Correos asks for cédula + email). */
+  correos_pickup_cedula: string;
+  correos_pickup_email: string;
 }
 
 const EMPTY_SETTINGS: SenderSettings = {
@@ -44,6 +47,8 @@ const EMPTY_SETTINGS: SenderSettings = {
   ws_sender_district: '',
   ws_default_weight_g: '',
   correos_api: 'soap',
+  correos_pickup_cedula: '',
+  correos_pickup_email: '',
 };
 
 export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: WizardStepProps) {
@@ -96,6 +101,8 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
             ws_sender_district: s.ws_sender_district || '',
             ws_default_weight_g: s.ws_default_weight_g ? String(s.ws_default_weight_g) : '',
             correos_api: s.correos_api === 'v3' ? 'v3' : 'soap',
+            correos_pickup_cedula: s.correos_pickup_cedula || '',
+            correos_pickup_email: s.correos_pickup_email || '',
           };
           const rest: Record<string, unknown> = { ...s };
           for (const k of Object.keys(EMPTY_SETTINGS)) delete rest[k];
@@ -288,6 +295,18 @@ export function ShippingCorreosStep({ markCompleted, markUnsavedChanges }: Wizar
               </span>
             </span>
           </label>
+          {settings.correos_api === 'v3' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 pl-7">
+              <div>
+                <Label className="mb-1 block text-xs">Cédula para recolecciones</Label>
+                <Input value={settings.correos_pickup_cedula} onChange={e => update('correos_pickup_cedula', e.target.value)} placeholder="1-1111-1111" />
+              </div>
+              <div>
+                <Label className="mb-1 block text-xs">Correo para recolecciones</Label>
+                <Input type="email" value={settings.correos_pickup_email} onChange={e => update('correos_pickup_email', e.target.value)} placeholder="envios@mitienda.com" />
+              </div>
+            </div>
+          )}
         </Card>
       )}
 

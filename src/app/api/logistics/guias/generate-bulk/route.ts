@@ -3,6 +3,13 @@ import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { CorreosWebService, buildGuiaDescription, buildFullAddress } from '@/lib/correos';
 import type { CorreosWSCredentials } from '@/lib/correos';
+import { Prisma } from '@prisma/client';
+import { resolveV3Config } from '@/lib/correos/v3/config';
+import { getCorreosV3ForWrite } from '@/lib/correos/v3/select';
+import { saveV3Guia } from '@/lib/correos/v3/store';
+import { loadTenantCorreosSettings, tenantOrigin } from '@/lib/correos/v3/tenant';
+import type { V3GuiaInput } from '@/lib/correos/v3/service';
+import { v3ClaimAction } from '@/lib/shipping/guia-service';
 
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
@@ -15,6 +22,11 @@ interface VerifiedOrder {
     district: string;
     address: string;
     deliveryType: 'Domicilio' | 'Sucursal' | 'Punto de correo';
+    /** Correos v3 only */
+    barrio?: string;
+    pesoG?: number;
+    codigoSucursal?: string;
+    sucursalNombre?: string;
 }
 
 interface GuiaResult {
@@ -25,6 +37,59 @@ interface GuiaResult {
     error?: string;
     pdfBuffer?: Buffer;
     pdfFileName?: string;
+    /** Answer came from an existing claim/guía: nothing new to persist. */
+    reused?: boolean;
+}
+
+const CORREOS_PROVIDER_ADAPTER = 'correos-provider';
+
+type ClaimResult = { state: 'claimed' } | { state: 'existing'; guiaNumber?: string } | { state: 'busy' };
+
+/** The once-per-order Correos claim shared with src/lib/shipping/guia-service.ts and the staff bot. */
+async function claimCorreosGuia(order: { id: string; orderId: string; tenantId: string }, key: string): Promise<ClaimResult> {
+    try {
+        await prisma.orderLifecycleOperation.create({
+            data: {
+                tenantId: order.tenantId,
+                adapter: CORREOS_PROVIDER_ADAPTER,
+                operation: 'correos_guia_external_claim',
+                idempotencyKey: key,
+                orderId: order.id,
+                result: { state: 'claimed', claimedAt: new Date().toISOString(), channel: 'logistics-bulk' },
+            },
+        });
+        return { state: 'claimed' };
+    } catch (e) {
+        if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) throw e;
+        const completed = await prisma.shippingGuia.findFirst({
+            where: { tenantId: order.tenantId, orderId: order.orderId, status: 'completed', guiaNumber: { not: null } },
+            orderBy: { createdAt: 'desc' },
+            select: { guiaNumber: true },
+        });
+        if (completed) return { state: 'existing', guiaNumber: completed.guiaNumber ?? undefined };
+        // provider_failed = Correos answered with an error, nothing was registered: safe to take over.
+        const taken = await prisma.orderLifecycleOperation.updateMany({
+            where: {
+                tenantId: order.tenantId, adapter: CORREOS_PROVIDER_ADAPTER, idempotencyKey: key,
+                result: { path: ['state'], equals: 'provider_failed' },
+            },
+            data: { result: { state: 'claimed', claimedAt: new Date().toISOString(), channel: 'logistics-bulk', retake: true } },
+        });
+        return taken.count > 0 ? { state: 'claimed' } : { state: 'busy' };
+    }
+}
+
+async function settleClaim(tenantId: string, key: string, result: Prisma.InputJsonValue) {
+    await prisma.orderLifecycleOperation.updateMany({
+        where: { tenantId, adapter: CORREOS_PROVIDER_ADAPTER, idempotencyKey: key },
+        data: { result },
+    });
+}
+
+async function releaseClaim(tenantId: string, key: string) {
+    await prisma.orderLifecycleOperation.deleteMany({
+        where: { tenantId, adapter: CORREOS_PROVIDER_ADAPTER, idempotencyKey: key },
+    }).catch(() => {});
 }
 
 type DbOrder = {
@@ -89,7 +154,9 @@ export async function POST(req: NextRequest) {
         const cfg: Record<string, string> = {};
         for (const row of credRows) cfg[row.key] = row.value;
 
-        if (!cfg.correos_ws_username || !cfg.correos_ws_password) {
+        const v3Platform = await resolveV3Config().catch(() => null);
+        const hasSoap = !!(cfg.correos_ws_username && cfg.correos_ws_password);
+        if (!hasSoap && !v3Platform?.enabled) {
             return NextResponse.json(
                 { error: 'Correos Web Service credentials not configured. Go to Configuracion -> Correos CR to set them up.' },
                 { status: 400 }
@@ -149,14 +216,35 @@ export async function POST(req: NextRequest) {
             phone: cfg.correos_ws_sender_phone || '00000000',
         };
 
-        const ws = new CorreosWebService(wsCreds);
+        const ws = hasSoap ? new CorreosWebService(wsCreds) : null;
         const results: GuiaResult[] = [];
+        const v3Extras = new Map<string, Omit<Parameters<typeof saveV3Guia>[0], 'guiaNumber' | 'shippingGuiaId'>>();
+        // Per store: Correos v3 when the platform has it on and the store chose it.
+        const tenantSettings = new Map<string, Record<string, any>>();
+        const v3For = async (tenantId: string) => {
+            if (!tenantSettings.has(tenantId)) tenantSettings.set(tenantId, await loadTenantCorreosSettings(tenantId).catch(() => ({})));
+            const settings = tenantSettings.get(tenantId)!;
+            return { v3: await getCorreosV3ForWrite(settings).catch(() => null), settings };
+        };
 
         console.log(`[Logistics Guia WS] Starting generation for ${verifiedOrders.length} orders...`);
 
         for (const verified of verifiedOrders) {
             const dbOrder = orderMap.get(verified.id || verified.orderId);
             if (!dbOrder) continue;
+
+            // Same once-per-order claim as the store flow and the staff bot (correos-guia:<Order.id>),
+            // so this screen can never register a second Correos guía for an order.
+            const claimKey = `correos-guia:${dbOrder.id}`;
+            const claim = await claimCorreosGuia(dbOrder, claimKey);
+            if (claim.state === 'existing') {
+                results.push({ success: true, orderId: dbOrder.orderId, orderDbId: dbOrder.id, guiaNumber: claim.guiaNumber, reused: true });
+                continue;
+            }
+            if (claim.state === 'busy') {
+                results.push({ success: false, orderId: dbOrder.orderId, orderDbId: dbOrder.id, error: 'La guía está en proceso o requiere reconciliación. Revisala antes de reintentar.', reused: true });
+                continue;
+            }
 
             try {
                 await prisma.order.update({
@@ -168,7 +256,54 @@ export async function POST(req: NextRequest) {
                         address: verified.address || dbOrder.address,
                     },
                 });
+            } catch {
+                await releaseClaim(dbOrder.tenantId, claimKey);
+                results.push({ success: false, orderId: dbOrder.orderId, orderDbId: dbOrder.id, error: 'No se pudo guardar la dirección verificada.' });
+                continue;
+            }
 
+            const { v3, settings } = await v3For(dbOrder.tenantId);
+            if (v3) {
+                const tipoDestino = verified.deliveryType === 'Domicilio' || !verified.deliveryType ? 'DOM' : 'SUC';
+                const input: V3GuiaInput = {
+                    dest: {
+                        name: dbOrder.customerName || '', phone: dbOrder.phone,
+                        address: tipoDestino === 'DOM'
+                            ? buildFullAddress({ province: verified.province, canton: verified.canton, district: verified.district, address: verified.address || dbOrder.address })
+                            : (verified.address || dbOrder.address || ''),
+                        province: verified.province, canton: verified.canton, district: verified.district, barrio: verified.barrio ?? null,
+                    },
+                    sender: { name: sender.name, phone: sender.phone, address: sender.address, zip: sender.zip },
+                    origin: tenantOrigin(settings),
+                    pesoG: Number(verified.pesoG) || Number(settings.ws_default_weight_g) || 500,
+                    tipoDestino,
+                    codigoSucursal: verified.codigoSucursal ?? null,
+                    observaciones: buildGuiaDescription(dbOrder),
+                };
+                const outcome = await v3.createGuia(input);
+                const action = v3ClaimAction(outcome);
+                if (outcome.ok) {
+                    await settleClaim(dbOrder.tenantId, claimKey, { state: 'completed', api: 'v3', guiaNumber: outcome.guiaNumber, completedAt: new Date().toISOString() });
+                    results.push({ success: true, orderId: dbOrder.orderId, orderDbId: dbOrder.id, guiaNumber: outcome.guiaNumber, pdfBuffer: outcome.pdf ?? undefined });
+                    v3Extras.set(outcome.guiaNumber, {
+                        tenantId: dbOrder.tenantId, crmOrderId: dbOrder.id, orderNumber: dbOrder.orderId, environment: v3.environment,
+                        tipoDestino, codigoSucursal: verified.codigoSucursal ?? null, sucursalNombre: verified.sucursalNombre ?? null,
+                        zpl: outcome.zpl, montoFlete: outcome.montoFlete, pesoG: outcome.pesoG, destZip: outcome.destZip,
+                    });
+                } else {
+                    if (action === 'release') await releaseClaim(dbOrder.tenantId, claimKey);
+                    else await settleClaim(dbOrder.tenantId, claimKey, { state: 'provider_unknown', api: 'v3', failedAt: new Date().toISOString() });
+                    results.push({ success: false, orderId: dbOrder.orderId, orderDbId: dbOrder.id, error: outcome.error });
+                }
+                continue;
+            }
+            if (!ws) {
+                await releaseClaim(dbOrder.tenantId, claimKey);
+                results.push({ success: false, orderId: dbOrder.orderId, orderDbId: dbOrder.id, error: 'Correos Web Service credentials not configured.' });
+                continue;
+            }
+
+            try {
                 let destZip = '10101';
                 try {
                     destZip = await ws.getPostalCode(verified.province, verified.canton, verified.district);
@@ -204,7 +339,15 @@ export async function POST(req: NextRequest) {
                     error: result.error,
                     pdfBuffer: result.pdfBuffer,
                 });
+                if (result.success && result.guiaNumber) {
+                    await settleClaim(dbOrder.tenantId, claimKey, { state: 'completed', guiaNumber: result.guiaNumber, completedAt: new Date().toISOString() });
+                } else {
+                    // Correos answered with an error code: nothing registered, the order can be retried.
+                    await releaseClaim(dbOrder.tenantId, claimKey);
+                }
             } catch (err: any) {
+                // Thrown mid-call (network / timeout): Correos may have registered it → keep the claim.
+                await settleClaim(dbOrder.tenantId, claimKey, { state: 'provider_unknown', failedAt: new Date().toISOString() }).catch(() => {});
                 const safeMsg = isCorreosError(err.message)
                     ? err.message
                     : 'Guia generation failed due to a connection or service error';
@@ -217,7 +360,15 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        const savedGuias = await persistGuiaResults(results, orderMap);
+        const savedGuias = await persistGuiaResults(results.filter(r => !r.reused), orderMap);
+        for (const g of savedGuias) {
+            const extra = g.guiaNumber ? v3Extras.get(g.guiaNumber) : undefined;
+            if (extra && g.guiaNumber) {
+                await saveV3Guia({ ...extra, guiaNumber: g.guiaNumber, shippingGuiaId: g.id }).catch((e) => {
+                    console.warn(`[Logistics Guia] v3 extras not saved for ${g.guiaNumber}:`, e instanceof Error ? e.message : e);
+                });
+            }
+        }
         const processingTime = Date.now() - startTime;
         const successful = results.filter(r => r.success).length;
         const failed = results.filter(r => !r.success).length;

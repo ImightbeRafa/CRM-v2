@@ -4,6 +4,7 @@ import { orderLabelHash } from '@/lib/orders/order-label';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Truck, Mail, Printer, CheckSquare, Square, Search, RefreshCw, Package, Zap, CheckCircle, AlertTriangle, X, Download, Clock, FileText, Banknote, Phone, MapPin, Mailbox } from 'lucide-react';
 import { useTenantConfig } from '@/hooks/useTenantConfig';
+import { generateBulkInChunks } from '@/lib/correos/bulk-client';
 import OrderItemsList from '@/components/orders/OrderItemsList';
 import {
     costaRicaLocations,
@@ -193,6 +194,7 @@ export default function GuiasPage() {
     const [verifiedOrders, setVerifiedOrders] = useState<VerifiedOrder[]>([]);
     const [deliveryType, setDeliveryType] = useState<'Domicilio' | 'Sucursal' | 'Punto de correo'>('Domicilio');
     const [generating, setGenerating] = useState(false);
+    const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
     const [generationResults, setGenerationResults] = useState<any>(null);
 
     // History state
@@ -321,15 +323,12 @@ export default function GuiasPage() {
                     district: o.district, address: o.address, deliveryType: o.deliveryType,
                 })),
             };
-            const res = await fetch('/api/logistics/guias/generate-bulk', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                setGenerationResults({ error: data.error || 'Error generating guías' });
+            const data = await generateBulkInChunks(payload.orders, { onProgress: (done, total) => setBulkProgress({ done, total }) });
+            if ('error' in data) {
+                setGenerationResults(data.partial ? { ...data.partial, error: data.error } : { error: data.error });
+                if (data.partial) load();
             } else {
-                setGenerationResults(data.data);
+                setGenerationResults(data);
                 load();
             }
         } catch (e: any) {
@@ -603,7 +602,7 @@ export default function GuiasPage() {
                                 ) : (
                                     <button onClick={generateGuias} disabled={!allValid || generating}
                                         style={{ padding: '10px 24px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.5)', background: allValid ? 'rgba(52,211,153,0.15)' : 'transparent', color: allValid ? '#34d399' : 'rgba(255,255,255,0.2)', fontWeight: 700, fontSize: 13, cursor: allValid ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 7, opacity: allValid ? 1 : 0.5 }}>
-                                        {generating ? <><RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> Generando...</> : <><Zap size={13} /> Confirmar y Generar ({verifiedOrders.length})</>}
+                                        {generating ? <><RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> Generando{bulkProgress && bulkProgress.total > 10 ? ` ${bulkProgress.done}/${bulkProgress.total}` : '...'}</> : <><Zap size={13} /> Confirmar y Generar ({verifiedOrders.length})</>}
                                     </button>
                                 )}
                             </div>

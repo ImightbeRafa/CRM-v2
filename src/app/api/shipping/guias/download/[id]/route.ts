@@ -6,6 +6,7 @@ import { withTenantContext } from '@/lib/tenantContext';
 import { prisma as globalPrisma } from '@/lib/db';
 import { getCorreosAutomatedShippingCost } from '@/lib/correos-gam-pricing';
 import { stampCorreosGamZoneOnPdf } from '@/lib/pdf/correosGamStamp';
+import { getZpl } from '@/lib/correos/v3/store';
 
 export async function GET(
   request: NextRequest,
@@ -44,6 +45,19 @@ export async function GET(
 
       if (!guia) {
         return NextResponse.json({ error: 'Guía not found' }, { status: 404 });
+      }
+
+      // Thermal label (Correos v3 returns ZPL next to the PDF): ?format=zpl
+      if (request.nextUrl.searchParams.get('format') === 'zpl') {
+        const zpl = guia.guiaNumber ? await getZpl(tenantId, guia.guiaNumber) : null;
+        if (!zpl) return NextResponse.json({ error: 'ZPL not available for this guía' }, { status: 404 });
+        return new NextResponse(zpl, {
+          headers: {
+            'Content-Type': 'application/x-zpl; charset=utf-8',
+            'Content-Disposition': `attachment; filename="guia-${guia.guiaNumber}.zpl"`,
+            'Cache-Control': 'private, no-store',
+          },
+        });
       }
 
       if (!guia.pdfData) {

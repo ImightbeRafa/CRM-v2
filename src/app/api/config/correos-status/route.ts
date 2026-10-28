@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getLiveToken } from '@/lib/live-token';
 import { resolveCorreosWSCredentials } from '@/lib/correos';
+import { correosV3Status } from '@/lib/correos/v3/select';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,10 +17,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  let v3: { enabled: boolean; environment: string | null } = { enabled: false, environment: null };
+  try {
+    const s = await correosV3Status();
+    v3 = { enabled: s.configured && s.enabled, environment: s.environment };
+  } catch {
+    // v3 status is optional
+  }
+
   try {
     const { source } = await resolveCorreosWSCredentials();
-    return NextResponse.json({ configured: true, source });
+    return NextResponse.json({ configured: true, source, v3 });
   } catch {
-    return NextResponse.json({ configured: false });
+    return NextResponse.json({ configured: v3.enabled, v3 });
   }
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Save, RefreshCw, Eye, EyeOff, MessageSquare, Megaphone, Check, Link2, Package, Building2, User, CalendarDays } from 'lucide-react';
 import { useTenantConfig, type TenantConfig } from '@/hooks/useTenantConfig';
+import { CorreosV3Settings } from './CorreosV3Settings';
 
 interface FeedbackTicket {
   id: string; tenantId: string; userId: string; category: string; subject: string;
@@ -355,6 +356,8 @@ export default function ConfigPage() {
                             <strong style={{ color: 'rgba(255,255,255,0.55)' }}>Nota:</strong> Los datos del remitente aparecerán impresos en cada guía de Correos CR. Asegúrese de que la dirección, código postal y teléfono sean correctos.
                         </p>
                     </div>
+
+                    <CorreosV3Settings />
                 </div>
             )}
 

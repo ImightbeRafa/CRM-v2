@@ -11,7 +11,7 @@ export type PaymentClassification = 'non_payment' | 'payment_info_safe' | 'payme
 const PROOF_CUE_RE =
   // "ya te/les/lo pagué", "listo, ya lo pagué", "te mandé el sinpe" (accent-safe start: JS \b misses after á/é).
   // SecureDog wave D r2 #7: two pronouns ("ya te la mandé", "ya se lo pasé") and a "Pagado." sentence before a question.
-  /(?<![\p{L}\p{N}_])(ya\s+(?:((le|te|les|lo|la|se)\s+){0,2}(pagu[eé]|hice|mand[eé]|transfer[ií]|deposit[eé])|((le|te|les|lo|la|se)\s+){1,2}(?:pas[eé]|envi[eé]|realic[eé]|di)(?=[ \t]*(?:$|[\n.!,?¿✅👍]|(?:la\s+plata|el\s+dinero|el\s+sinpe|el\s+pago|la\s+mitad|el\s+resto|la\s+transferencia|el\s+dep[oó]sito)(?![\p{L}]))))(?![\p{L}])|(?:(?:te|le|les|se)\s+(?:lo|la)\s+(?:envi[eé]|mand[eé]|pas[eé])\s+(?:hace\s+(?:un\s+)?rato|ahorita|hace\s+\p{L}+\s+minutos)|ahorita\s+(?:te|le|les|se)\s+(?:lo\s+|la\s+)?(?:pas[eé]|mand[eé]|envi[eé])(?=[ \t]*(?:$|[\n.!,?¿]))|(?:te|le|les|se)\s+(?:lo|la)\s+acabo\s+de\s+(?:mandar|enviar|pasar|depositar|transferir)|acabo\s+de\s+(?:pagar|transferir|depositar|hacer\s+el\s+(?:sinpe|pago|dep[oó]sito)))(?![\p{L}])|(?:^|(?<=[\n.!,]))[ \t]*pagad[oa][ \t]*[!.✅👍]*[ \t]*(?=$|[\n.!?¿])|comprobante|adjunto|captura|pantallazo|(le|te|les)\s+(envi[eé]|mand[eé])\s+(el\s+(sinpe|pago|comprobante)|la\s+plata|el\s+dinero)|pago\s+(realizado|hecho|listo)|listo\s+el\s+(pago|sinpe)|(ya\s+)?(est[aá]|qued[oó])\s+pagad[oa]|^\s*pagad[oa]\s*[!.✅👍]*\s*$|ref(?:erencia)?\s*\d)/iu
+  /(?<![\p{L}\p{N}_])(ya\s+(?:((le|te|les|lo|la|se)\s+){0,2}(pagu[eé]|hice|mand[eé]|transfer[ií]|deposit[eé])|((le|te|les|lo|la|se)\s+){1,2}(?:pas[eé]|envi[eé]|realic[eé]|di)(?=[ \t]*(?:$|[\n.!,?¿✅👍]|(?:la\s+plata|el\s+dinero|el\s+sinpe|el\s+pago|la\s+mitad|el\s+resto|la\s+transferencia|el\s+dep[oó]sito)(?![\p{L}]))))(?![\p{L}])|(?:(?:te|le|les|se)\s+(?:lo|la)\s+(?:envi[eé]|mand[eé]|pas[eé])\s+(?:hace\s+(?:un\s+)?rato|ahorita|hace\s+\p{L}+\s+minutos)|ahorita\s+(?:te|le|les|se)\s+(?:lo\s+|la\s+)?(?:pas[eé]|mand[eé]|envi[eé])(?=[ \t]*(?:$|[\n.!,?¿]))|(?:te|le|les|se)\s+(?:lo|la)\s+acabo\s+de\s+(?:mandar|enviar|pasar|depositar|transferir)|acabo\s+de\s+(?:pagar|transferir|depositar|hacer\s+el\s+(?:sinpe|pago|dep[oó]sito)))(?![\p{L}])|(?:^|(?<=[\n.!,]))[ \t]*pagad[oa][ \t!.✅👍]*(?=$|[\n.!?¿])|comprobante|adjunto|captura|pantallazo|(le|te|les)\s+(envi[eé]|mand[eé])\s+(el\s+(sinpe|pago|comprobante)|la\s+plata|el\s+dinero)|pago\s+(realizado|hecho|listo)|listo\s+el\s+(pago|sinpe)|(ya\s+)?(est[aá]|qued[oó])\s+pagad[oa]|^\s*pagad[oa][\s!.✅👍]*$|ref(?:erencia)?\s*\d)/iu
 
 /**
  * Unicode-aware: JS \\b treats á/ó as non-word, so "llegó" and "confirman" would miss. Bare confirm / review verbs stay
@@ -24,8 +24,10 @@ const CONFIRM_CUE_RE =
 const RISK_CUE_RE =
   /\b(reembolso|devoluci[oó]n\s+del\s+dinero|me\s+cobraron|doble\s+cobro|reclamo|disputa|fraude)\b/i
 
+// Rafael 2026-10-28 (live): "¿Cuál es el proceso de pago?", "El pago cm se maneja ?", "qué opciones de envío / pago
+// tienen" ask how to pay (they were payment hand-offs).
 const INFO_CUE_RE =
-  /\b(c[oó]mo\s+(pago|puedo\s+pagar|se\s+paga)|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|aceptan|n[uú]mero\s+(de\s+)?sinpe|sinpe\s+m[oó]vil|tarjeta|cuenta\s+(bancaria|iban)|transferencia)\b/i
+  /\b(c[oó]mo\s+(pago|puedo\s+pagar|se\s+paga)|proceso\s+(?:de|del|para)\s+(?:pago|pagar|compra)|opciones\s+de\s+(?:env[ií]o\s*(?:\/|y|,)\s*)?pago|(?:el\s+)?pago\s+c(?:[oó]mo|m)\s+se\s+maneja|c(?:[oó]mo|m)\s+se\s+maneja\s+el\s+pago|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|aceptan|n[uú]mero\s+(de\s+)?sinpe|sinpe\s+m[oó]vil|tarjeta|cuenta\s+(bancaria|iban)|transferencia)\b/i
 
 const COD_QUESTION_RE =
   /(?<![\p{L}])(contra\s?entrega|pag(o|ar)\s+(al\s+recibir|cuando\s+(lo\s+|la\s+|me\s+)?(recib|lleg))|pago\s+en\s+efectivo\s+al|pag(o|ar)\s+(en|con)\s+efectivo(?![\p{L}]))/iu
@@ -52,7 +54,11 @@ const CLAIM_CUE_RE = new RegExp(
   String.raw`(?<![\p{L}\p{N}_])(` +
     [
       near(String.raw`(hice|mand[eé]|envi[eé]|pas[eé]|transfer[ií]|deposit[eé]|acabo\s+de\s+(pagar|hacer|mandar|enviar|pasar|transferir|depositar|cancelar))`, PAY_NOUN),
-      String.raw`pagu[eé]|deposit[eé]|transfer[ií]|^\s*¿?\s*pagad[oa]\s*[?!.✅👍]*\s*$`,
+      // A lone "pagado" with a thanks / emoji tail ("pagado ❤️", "Pagado, gracias 😊") is read by withoutEmojiTail (linear);
+      // Verifier 2026-10-28: never widen this tail (three whitespace runs in a row are cubic on a 4 KB message).
+      // SecureDog INT-239 r3: one optional "¿" run and ONE tail class (the old "\s*¿?\s*…\s*[…]*\s*$" was cubic).
+      // Also behind a greeting / "listo" ("Listo, ya pagado", "hola, ya pagado" — never claims before, even live).
+      String.raw`pagu[eé]|deposit[eé]|transfer[ií]|^\s*(?:(?:hola|buenas|listo|lista|ok|okey|perfecto|dale|ya)[,.!]?\s+){0,2}(?:¿\s*)?(?:ya\s+)?pagad[oa][\s?!.✅👍]*$`,
       // SecureDog INT-140: "we / they paid" — third-person past always; the -amos forms (also present tense: "¿cómo
       // pagamos?") only after "ya" or with a past marker ("lo pagamos ayer").
       // Verifier round 6: "abonar" (a part payment) and a declined / rejected card or transfer are claims too.
@@ -216,7 +222,9 @@ function hasPastOrDoneWord(segment: string, question: boolean): boolean {
   // "listo para pagar" = ready to pay (not done).
   if (PAYMENT_COMPLETION_RE.test(s.replace(/(?<![\p{L}])list[oa]s?\s+para(?![\p{L}])/giu, ' ')) && (!question || /[✅✔☑]/u.test(s))) return true
   // Verifier round 8: a capitalised word after the first one is a name or a place ("José", "Jacó", "San José").
-  for (const m of s.matchAll(/\p{L}+/gu)) {
+  // Rafael 2026-10-27 (live): "Qué costó tiene…" — "costó" after a price word is the noun "costo" with a stray accent,
+  // not a past tense. Only that typo is masked; every other accented past form still counts.
+  for (const m of s.replace(PRICE_COSTO_TYPO_RE, '$1 costo').matchAll(/\p{L}+/gu)) {
     const w = m[0]
     const lw = w.toLowerCase()
     if (!/[éíó]$/u.test(lw) || ACCENT_OK.has(lw)) continue
@@ -226,6 +234,8 @@ function hasPastOrDoneWord(segment: string, question: boolean): boolean {
   }
   return false
 }
+
+const PRICE_COSTO_TYPO_RE = /(?<![\p{L}])(qu[eé]|cu[aá]nto|el|su|un|ese|este)\s+cost[oó](?![\p{L}])/giu
 
 /** A payment noun / verb: a STATEMENT carrying one ("Está pago", "La plata está") is never plain context. */
 // SecureDog round 6: also "doing" verbs and amounts — "Le mande.", "Mi esposo se encargo.", "Se lo dio al mensajero.",
@@ -481,10 +491,15 @@ const LOOKALIKE_SCRIPT_RES = [
   /\p{Script=Georgian}/u,
   /\p{Script=Coptic}/u,
 ]
+/** A pictograph followed by its variation selectors / joiners (kept: the pictograph). */
+const EMOJI_SELECTOR_RE = /(\p{Extended_Pictographic})[\u{FE0E}\u{FE0F}\u{200D}]+/gu
 export function hasMixedScriptWord(text: string): boolean {
   // Verifier final: unit symbols are not look-alikes ("500µg", "10kΩ"; NFKC turns µ / Ω into Greek letters).
   const units = (text || '').normalize('NFKC').replace(/[μµ](?=[gmlsLVAFW])/gu, 'u').replace(/[ΩΩ]/gu, 'O')
-  const words = units.match(/[\p{L}\p{M}]+/gu) ?? []
+  // Rafael 2026-10-28 (live): an emoji's OWN variation selector / joiner ("☺️", "❤️", "🤷‍♂️" — U+FE0F is a mark) is no
+  // word: "Excelente, gracias ☺️" was a hard payment claim. SecureDog INT-238: only right after a pictograph — a mark
+  // after a digit or letter ("Le mandé 1️5️0️0️0️", "pa️gué") still counts.
+  const words = units.replace(EMOJI_SELECTOR_RE, '$1').match(/[\p{L}\p{M}]+/gu) ?? []
   const latinMessage = words.some((w) => /^[\p{Script=Latin}\p{M}]+$/u.test(w))
   for (const w of words) {
     if (ODD_LATIN_RE.test(w)) return true
@@ -592,6 +607,12 @@ const CUSTOMER_LOOKALIKE: Record<string, string> = {
 const CUSTOMER_LOOKALIKE_RE = new RegExp(`[${Object.keys(CUSTOMER_LOOKALIKE).join("")}]`, "gu")
 
 export function hasHardPaymentClaim(text: string, opts: { noPaymentYet?: boolean } = {}): boolean {
+  if ((text || '').length > MAX_CLASSIFIED_CHARS) return true
+  if (hasHardPaymentClaimOnce(text, opts)) return true
+  return extraReadings(text).some((r) => hasHardPaymentClaimOnce(r, opts))
+}
+
+function hasHardPaymentClaimOnce(text: string, opts: { noPaymentYet?: boolean }): boolean {
   const gapped = invisibleAsGap(text)
   return (
     hardClaimIn(stripFormatChars((text || '').normalize('NFKC')), opts) ||
@@ -625,8 +646,11 @@ const LIVE_COD_RE = /(?<![\p{L}])(contra\s?entrega|pag(o|ar)\s+(al\s+recibir|cua
 const LIVE_PAYMENT_RE = /\b(sinpe|transferencia|pago|pagar|comprobante|ib[aá]n|cuenta\s*banc|deposit[oa]|efectivo\s*contra)\b/i
 const LIVE_PAYMENT_QUESTION_RE = /(?<![\p{L}])((puedo|se\s+puede|pued[eo]n|aceptan|hay\s+que|tengo\s+que|debo)(\s+\p{L}+){0,2}\s+(pagar|pago|pagarles|pagarte)|(c[oó]mo|cu[aá]ndo|d[oó]nde|qu[eé]\s+formas?\s+de)(\s+\p{L}+){0,2}\s+(pago|pagar|se\s+paga|pagos)|(reciben|tienen|aceptan|usan|trabajan\s+con)\s+(sinpe|transferencias?|tarjetas?|efectivo))(?![\p{L}])/iu
 const LIVE_INFO_Q_RE = /(adelantad|anticipad|con\s+qu[eé]\s+banco|qu[eé]\s+bancos?|a\s+qu[eé]\s+(n[uú]mero|cuenta)|aceptan\s+(tarjetas?|sinpe|transferencias?|efectivo)|se\s+puede\s+pagar\s+con|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|cu[aá]ndo\s+(se\s+)?paga|pago\s+al\s+recibir|pagar\s+al\s+recibir)/iu
+/** Verifier 2026-10-28: live's exits stay verbatim — INFO_CUE_RE as it was before the 2026-10-28 phrases. */
+const LIVE_INFO_CUE_RE =
+  /\b(c[oó]mo\s+(pago|puedo\s+pagar|se\s+paga)|formas?\s+de\s+pago|m[eé]todos?\s+de\s+pago|aceptan|n[uú]mero\s+(de\s+)?sinpe|sinpe\s+m[oó]vil|tarjeta|cuenta\s+(bancaria|iban)|transferencia)\b/i
 function liveWouldAnswer(v: string): boolean {
-  if (LIVE_COD_RE.test(v) || INFO_CUE_RE.test(v)) return true
+  if (LIVE_COD_RE.test(v) || LIVE_INFO_CUE_RE.test(v)) return true
   if (!LIVE_PAYMENT_RE.test(v)) return true
   if (LIVE_PAYMENT_QUESTION_RE.test(v)) return true
   return /[?¿]/.test(v) && LIVE_INFO_Q_RE.test(v) && !PAYMENT_STATUS_CUE_RE.test(v)
@@ -662,8 +686,23 @@ const ORDER_QUESTION_RE =
  * no payment word — so nothing ("…, Juan les deposito una parte") can ride along.
  */
 const DEBT_RE = /(?<![\p{L}])(?:deb[oeí]\p{L}*|debiendo|falta\p{L}*|pendiente)(?![\p{L}])/iu
+/**
+ * The 2026-10-28 how-to-pay questions (not live's exits). SecureDog INT-240 r2: an ALLOWLIST of whole messages — an
+ * optional greeting, an optional "me gustaría saber (el precio y)", ONE question, punctuation. Nothing else may ride
+ * along ("…si mi hermana entrego la plata", "…¿qué pasa si lo hice dos veces?" go to a person).
+ */
+const NEW_INFO_SHAPE_RE = new RegExp(
+  String.raw`^(?:(?:hola|holi|buenas(?:\s+(?:tardes|noches))?|buenos\s+d[ií]as|disculpe?|una\s+consulta)[\s,.!¡]*)?` +
+    String.raw`(?:(?:me\s+gustar[ií]a|quisiera|quer[ií]a|quiero)\s+saber\s+(?:el\s+precio\s+y\s+)?)?¿?\s*` +
+    String.raw`(?:(?:cu[aá]l|c[oó]mo)\s+(?:es|ser[ií]a)\s+el\s+proceso\s+(?:de|del|para)\s+(?:pago|pagar|compra)` +
+    String.raw`|(?:el\s+)?pago\s+c(?:[oó]mo|m)\s+se\s+maneja|c(?:[oó]mo|m)\s+se\s+maneja\s+el\s+pago` +
+    String.raw`|(?:qu[eé]|cu[aá]les)\s+(?:son\s+las\s+)?opciones\s+de\s+(?:env[ií]o\s*(?:\/|y|,)\s*)?pago(?:\s+(?:tienen|hay|manejan|ofrecen))?` +
+    String.raw`|opciones\s+de\s+pago)[\s?!.😊🙂😁😄☺❤🙏🤗🥰✨\u{FE0F}\p{Emoji_Modifier}]*$`,
+  'iu',
+)
 function agentExit(value: string, cls: PaymentClassification): PaymentClassification {
   if (liveWouldAnswer(value)) return isPlainAskMessage(value) ? cls : 'payment_proof_or_risk'
+  if (value.length <= 160 && NEW_INFO_SHAPE_RE.test(value.trim()) && isPlainAskMessage(value)) return cls
   return closedPaymentMessage(value) && !hasFreePayAct(value) && !PARTIAL_STATE_RE.test(value) && !DEBT_RE.test(value) ? cls : 'payment_proof_or_risk'
 }
 /* ---- end live-equivalence gate ---- */
@@ -1017,13 +1056,67 @@ const CLOSED_PAY_INFO_COURTESY_RE =
   /^(?:hola|holi|buenas|buenos\s+d[ií]as|buenas\s+(?:tardes|noches)|disculpe?|perd[oó]n|ok|oki|okey|gracias|muchas\s+gracias|una\s+consulta|consulta|pura\s+vida|(?:ok\s+|okey\s+)?(?:perfecto|dale|genial|excelente|bueno|va))$/iu
 
 /**
- * Lane C D8: price / total / size / shipping-to words, or an opinion / worry about paying ("¿qué es mejor, SINPE o
+ * Lane C D8: price / total / size / shipping-to words (Rafael 2026-10-27: "Qué costó tiene…" with a typo), or an
+ * opinion / worry about paying ("¿qué es mejor, SINPE o
  * tarjeta? No quiero dar mi tarjeta") — the message asks more than which methods there are.
  */
 const ASKS_MORE_THAN_PAYMENT_RE =
-  /(?<![\p{L}])(?:cu[aá]nto|total|precio|cuesta|cuestan|vale|valen|talla|tallas|mido|peso|medida|medidas|env[ií]o\s+a|tama[nñ]o|mejor|conviene|recomend\p{L}*|segur[oa]s?|seguridad|confiable|confianza|miedo|no\s+quiero|prefiero\s+no)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:cu[aá]nto|total|precio|cuesta|cuestan|cost\p{L}*|vale|valen|sale|salen|incluye|trae|talla|tallas|mido|peso|medida|medidas|env[ií]o\s+a|tama[nñ]o|mejor|conviene|recomend\p{L}*|segur[oa]s?|seguridad|confiable|confianza|miedo|no\s+quiero|prefiero\s+no)(?![\p{L}])/iu
+
+/**
+ * Rafael 2026-10-28: a trailing emoji / smiley run ("❤️", "😊", ":)", "!!") — never "?" — removed. A message is judged at
+ * least as strictly as its words without that tail ("Listo, pagado ❤️" = "Listo, pagado").
+ */
+const EMOJI_TAIL_CHAR_RE = /^[\s.,!:;)(\p{Extended_Pictographic}\p{Emoji_Modifier}\u{FE0E}\u{FE0F}\u{200D}\u{20E3}]$/u
+const TRAILING_THANKS_RE = /(?<![\p{L}])(?:muchas\s+gracias|mil\s+gracias|gracias|graciass+)$/iu
+/** Linear (SecureDog R2-1: no end-anchored character-class regex on customer text): walk back over tail characters. */
+function stripEmojiTail(t: string): string {
+  const chars = Array.from(t)
+  let end = chars.length
+  while (end > 0 && EMOJI_TAIL_CHAR_RE.test(chars[end - 1])) end--
+  return end === chars.length ? t : chars.slice(0, end).join('')
+}
+/** Longer customer bubbles go to a person unread (SecureDog INT-239 r3; the safe direction). */
+const MAX_CLASSIFIED_CHARS = 4000
+/** Verifier 2026-10-28 r2: emoji (with selectors / joiners / skin tones) read as a gap and as nothing ("pagu❤️é", "Le mandé ❤️ 15 mil"). */
+const PICTO_RUN_RE = /\p{Extended_Pictographic}[\u{FE0E}\u{FE0F}\u{200D}\p{Emoji_Modifier}\p{Extended_Pictographic}]*/gu
+function withoutEmoji(text: string): string[] {
+  const t = (text || '').slice(0, 4000)
+  if (!/\p{Extended_Pictographic}/u.test(t)) return []
+  return [t.replace(PICTO_RUN_RE, ' '), t.replace(PICTO_RUN_RE, '')]
+}
+/** Every extra reading a hand-off check also judges (any claim among them wins — only ever adds hand-offs). */
+function extraReadings(text: string): string[] {
+  const out: string[] = []
+  // Emoji out first, then the thanks / smiley tail of each reading ("pagad❤️o gracias" → "pagado").
+  for (const r of [text, ...withoutEmoji(text)]) {
+    const tail = withoutEmojiTail(r)
+    out.push(r, ...(tail !== null ? [tail] : []))
+  }
+  return [...new Set(out)].filter((r) => r.trim() && r !== text)
+}
+function withoutEmojiTail(text: string): string | null {
+  const t = (text || '').slice(0, 2000)
+  let bare = stripEmojiTail(t)
+  // The thanks word sits at the very end now; the lookbehind regex reads only the last 20 characters.
+  const end = bare.slice(-20)
+  const thanks = TRAILING_THANKS_RE.exec(end)
+  if (thanks) bare = stripEmojiTail(bare.slice(0, bare.length - end.length + thanks.index))
+  return bare !== t && bare.trim() ? bare : null
+}
 
 export function classifyPaymentText(
+  text: string,
+  opts: { awaitingPaymentMethod?: boolean; noPaymentYet?: boolean; nothingPaidYet?: boolean } = {},
+): PaymentClassification {
+  // SecureDog INT-239 r3: a customer bubble over 4 KB is never judged by the rules (cost) — a person reads it.
+  if ((text || '').length > MAX_CLASSIFIED_CHARS) return 'payment_proof_or_risk'
+  const cls = classifyPaymentTextOnce(text, opts)
+  if (cls === 'payment_proof_or_risk') return cls
+  return extraReadings(text).some((r) => classifyPaymentTextOnce(r, opts) === 'payment_proof_or_risk') ? 'payment_proof_or_risk' : cls
+}
+
+function classifyPaymentTextOnce(
   text: string,
   opts: { awaitingPaymentMethod?: boolean; noPaymentYet?: boolean; nothingPaidYet?: boolean } = {},
 ): PaymentClassification {
@@ -1167,7 +1260,9 @@ function isPaymentInfoQuestion(value: string): boolean {
 
 /** Any payment word at all (media caption check: a photo with "sinpe" / "pago" is treated as a receipt). */
 export function hasPaymentWord(text: string): boolean {
-  const read = (t: string) => PAYMENT_RE.test(t) || hasPaymentProofCue(t) || hasPaymentClaimCue(t)
+  // SecureDog 2026-10-28 r3: same 4 KB cap as the classifier (a longer bubble is payment context — the safe side).
+  if ((text || '').length > MAX_CLASSIFIED_CHARS) return true
+  const read =(t: string) => PAYMENT_RE.test(t) || hasPaymentProofCue(t) || hasPaymentClaimCue(t)
   // SecureDog INT-201 / M1: invisible characters read as gaps too; English / PT / FR payment state opens the context.
   const gapped = invisibleAsGap(text)
   return read(text || '') || (gapped !== null && read(gapped)) || hasForeignPaymentState(text)
@@ -1292,10 +1387,11 @@ function foldChoice(text: string): string {
     .trim()
 }
 
-const METHOD = String.raw`(sinpe(?: movil)?|transferencia(?: bancaria)?|tarjeta(?: de (?:credito|debito))?|contra ?entrega|al recibir(?:lo|la)?|efectivo)`
+// Rafael 2026-10-28 (live): "Tarjeta contra entrega :)" — card ON delivery is the contra-entrega choice, not a claim.
+const METHOD = String.raw`(tarjeta (?:contra ?entrega|al recibir(?:lo|la)?)|sinpe(?: movil)?|transferencia(?: bancaria)?|tarjeta(?: de (?:credito|debito))?|contra ?entrega|al recibir(?:lo|la)?|efectivo)`
 // Rafael 2026-10-25 (Dani Probar): "seria sinpe" — "sería / va a ser / lo pago por / elijo / escojo" + the method only.
 const LEAD = String.raw`(?:(?:prefiero pagar|prefiero|mejor|quiero pagar|voy a pagar|quisiera pagar|(?:te|le|les) pago|pago|seria|va a ser|lo pago|lo voy a pagar|elijo|escojo)\s+)?(?:(?:por|con|en)\s+)?(?:el\s+|la\s+)?`
-const TAIL = String.raw`(?:\s*,?\s*(?:porfa|por favor|gracias|pls|esta bien|mejor|entonces|por la web|por la pagina|en la web|en la pagina)){0,3}[\s.!🙏😊🙌]*`
+const TAIL = String.raw`(?:\s*,?\s*(?:porfa|por favor|gracias|pls|esta bien|mejor|entonces|por la web|por la pagina|en la web|en la pagina)){0,3}(?:\s*(?::\)|:d|\(:))?[\s.!🙏😊🙌☺😁😄]*`
 // Pura Sonrisa P4: the imperative ask too ("Por SINPE, pasame el número", "mandame los datos").
 const ASK_HEAD = String.raw`¿?\s*(?:me\s+(?:pasas|pasa|das|da)|pasame|mandame|dame|regalame|enviame|cual\s+es|a\s+que)\s+(?:el\s+|los\s+|la\s+)?(?:numero|cuenta|link|datos)`
 const ASK_TAIL = String.raw`\s*\?*${TAIL}`
@@ -1311,6 +1407,7 @@ const CHOICE_REJECT_RE = /[\d#₡¢$✅✔☑👍💸]|(?<![\p{L}])ref(?![\p{L}]
 function methodOf(word: string): PaymentChoiceMethod {
   if (word.startsWith('sinpe')) return 'sinpe'
   if (word.startsWith('transferencia')) return 'transferencia'
+  if (/^tarjeta (?:contra|al recibir)/u.test(word)) return 'contra_entrega'
   if (word.startsWith('tarjeta')) return 'tarjeta'
   if (word === 'efectivo') return 'efectivo'
   return 'contra_entrega'

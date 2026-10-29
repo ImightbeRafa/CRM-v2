@@ -22,6 +22,7 @@ import {
   NEGATION_RE,
   paymentChoiceGrammar,
   paymentChoiceShape,
+  paymentHandoffReason,
   pendingMethodMention,
   type PaymentChoiceMethod,
 } from '@/lib/soft-ai/payment-classifier'
@@ -382,9 +383,61 @@ const NEXT_STEP: Record<SalesStage, string> = {
   metodo_pago:
     'Esperá que elija el método de pago; si preguntó otra cosa, respondé y volvé a preguntar (la pregunta de pago de abajo). No des datos de pago hasta que elija.',
   esperando_comprobante:
-    'Respondé primero lo que preguntó (breve). Ya diste los datos de pago: no los repitas salvo que los pida. Pedí lo que falte del pedido y avisá que cuando haga el pago te mande el comprobante.',
+    'Respondé primero lo que preguntó (breve). Ya diste los datos de pago: no los repitas salvo que los pida. Pedí lo que falte del pedido y avisá que cuando haga el pago te mande el comprobante. Si solo agradece, reacciona o se despide, respondé corto y cordial, sin volver a hablar del pago ni del comprobante.',
   verificando:
     'El cliente dice que ya pagó o mandó comprobante: agradecé y decí que lo revisás y le confirmás. Nunca confirmés el pago vos.',
+}
+
+/**
+ * Rafael 2026-10-27 (live): the customer already sent a receipt / said they paid after the store's payment
+ * details (or the store confirmed it). The sale is done: never ask for the payment or the receipt again.
+ */
+const PAID_STEP =
+  'El cliente YA pagó o ya mandó el comprobante (el equipo lo revisa o ya lo confirmó). NO pidas el pago ni el comprobante otra vez y no vuelvas a cerrar la venta. Si agradece, reacciona o se despide, respondé corto y cordial (por ejemplo "¡Con gusto! Cualquier cosa me escribís 😊"). Si pregunta otra cosa, respondé solo eso.'
+const RECEIPT_MEDIA_RE = /^\s*\[(?:image|imagen|foto|document|documento|file|archivo)\]\s*$/iu
+/** "Ahorita le mando el comprobante", "mañana le paso": a payment still to come (the prompt must not say it is paid). */
+const PAY_LATER_RE =
+  /(?<![\p{L}])(?:ahorita|en\s+un\s+(?:rato|momento|toque)|m[aá]s\s+tarde|ma[nñ]ana|luego|despu[eé]s|voy\s+a|vamos\s+a|(?:le|te|les)\s+(?:mando|env[ií]o|paso|hago)|\p{L}+(?:ar|er|ir)[eé](?![\p{L}])|orita|al\s+rato|en\s+la\s+(?:tarde|noche|ma[nñ]ana)|hoy|apenas|cuando\s+(?:pueda|tenga|me\s+paguen))(?![\p{L}])/iu
+/** Past tense only: "Pago recibido", "recibimos tu SINPE" — never "…y te confirmamos el pago" (a promise). */
+const STORE_CONFIRMED_PAYMENT_RE =
+  /(?<![\p{L}])(?:(?:pago|sinpe|comprobante|transferencia)\s+(?:recibid[oa]|confirmad[oa]|verificad[oa]|aplicad[oa])|recibimos\s+(?:tu|el|su)\s+(?:pago|sinpe|comprobante)|ya\s+(?:nos\s+|me\s+)?(?:lleg[oó]|cay[oó]|entr[oó])|ya\s+lo\s+(?:vi|vimos|revis[eé]|revisamos))(?![\p{L}])|^[\s¡!]*(?:recibid[oa]|confirmad[oa])(?![\p{L}])/iu
+
+const PAYMENT_FAILED_RE =
+  /(?<![\p{L}])(?:rechaz\p{L}*|declin\p{L}*|error|fall[oó]|por\s+equivocaci[oó]n|otr[oa]\s+(?:n[uú]mero|cuenta)|cuenta\s+vieja|doble|mitad|parte|adelanto|falta\p{L}*|todav[ií]a)(?![\p{L}])/iu
+/** A question without "?" ("Me confirma a qué número envío el comprobante"). */
+const ASKS_RE = /(?<![\p{L}])(?:qu[eé]|d[oó]nde|c[oó]mo|cu[aá]l|cu[aá]ndo|me\s+confirm\p{L}*)(?![\p{L}])/iu
+/** Receipt nouns alone ("le mandaré el comprobante", "comprobante en la tarde") are not a payment act. */
+const RECEIPT_NOUN_RE = /(?<![\p{L}])(?:comprobantes?|capturas?|pantallazos?|adjuntos?|fotos?)(?![\p{L}])/giu
+
+/** A customer bubble that says the payment was made: a receipt photo / file, or a past-tense claim (not a promise). */
+function customerPaidEvidence(text: string): boolean {
+  if (RECEIPT_MEDIA_RE.test(text)) return true
+  // A negated, failed, partial or misdirected payment is not paid ("No he pagado", "me rechazó la tarjeta", "la mitad").
+  if (NEGATION_RE.test(text) || PAYMENT_FAILED_RE.test(text)) return false
+  const act = text.replace(RECEIPT_NOUN_RE, ' ')
+  return hasHardPaymentClaim(act) && !/[?¿]/u.test(text) && !ASKS_RE.test(text) && !PAY_LATER_RE.test(text) && paymentHandoffReason(text) !== 'complaint'
+}
+
+/**
+ * After the store's last payment-details message: the LATEST paid evidence (customer receipt / past-tense claim, or the
+ * store saying it received it), with no new sale started after it — a customer buy cue, or a store ₡ quote that is not
+ * itself a payment confirmation ("también quiero el Energy Patch" → "₡12 900" is a new close, not post-sale).
+ */
+export function paidAfterDetails(history: SoftAiHistoryMessage[], isDetails: (text: string) => boolean): boolean {
+  let i = history.length - 1
+  while (i >= 0 && !(history[i].direction === 'outbound' && isDetails(history[i].content || ''))) i--
+  if (i < 0) return false
+  const after = history.slice(i + 1)
+  let paidAt = -1
+  after.forEach((m, j) => {
+    const text = m.content || ''
+    if (m.direction === 'outbound' ? STORE_CONFIRMED_PAYMENT_RE.test(text) : customerPaidEvidence(text)) paidAt = j
+  })
+  if (paidAt < 0) return false
+  return !after.slice(paidAt + 1).some((m) => {
+    const text = m.content || ''
+    return m.direction === 'inbound' ? BUY_RE.test(text) : /₡\s?\d/u.test(text) && !STORE_CONFIRMED_PAYMENT_RE.test(text)
+  })
 }
 
 /** The customer wants a product that is AGOTADO: no close for it (no total, data or payment question). */
@@ -408,12 +461,14 @@ export function deriveSalesState(input: {
   const catalogPrices = [...(input.ctx.catalog ?? []).filter((c) => !c.soldOut), ...(input.ctx.bundles ?? [])].map((c) => Math.round(c.price))
   const shipPrices = input.ctx.shippingMethods.map((s) => Math.round(s.price)).filter((p) => p > 0)
 
+  const paymentDetailsMsg = (m: string) =>
+    (PAYMENT_WORDS_RE.test(m) && input.ctx.paymentDigits.some((d) => d.length >= 8 && digits(m).includes(d))) || PAYMENT_BLOCK_RE.test(m)
   const said = {
     price: catalogPrices.some((p) => oursAmounts.has(p)) || (catalogPrices.length === 0 && /₡\s?\d/.test(oursText)),
     shipping: shipPrices.some((p) => oursAmounts.has(p)) || /\benv[ií]o\b[^\n]{0,40}₡\s?\d/i.test(oursText),
     // A configured number next to payment words, or a code-filled method block without digits (card link, bank-only
     // transfer, contra entrega / efectivo) — Verifier 2026-10-16: those never left metodo_pago.
-    payment: ours.some((m) => (PAYMENT_WORDS_RE.test(m) && input.ctx.paymentDigits.some((d) => d.length >= 8 && digits(m).includes(d))) || PAYMENT_BLOCK_RE.test(m)),
+    payment: ours.some(paymentDetailsMsg),
     // N5: a contra-entrega / efectivo block is an ORDER handed to a person, not payment details (no receipt to ask for).
     order: ours.some((m) => ORDER_BLOCK_RE.test(m)),
     cod: /contra\s?entrega/i.test(oursText),
@@ -505,6 +560,10 @@ export function deriveSalesState(input: {
       : stage === 'metodo_pago' && chosenMethod
         ? chosenMethodStep(input.ctx, chosenMethod) + (totalStepFits ? DATA_CHOICE_TOTAL_STEP : '')
         : NEXT_STEP[stage]
+  // The receipt already came in after the details: a later message ("Muchas gracias") is post-sale, not "pagá y mandame el comprobante".
+  if (stage === 'esperando_comprobante' && !buyCue && paidAfterDetails(input.history, paymentDetailsMsg)) {
+    nextStep = PAID_STEP
+  }
   if (duplicateOrder && !buyCue) {
     nextStep = `El comprobante ya está en el pedido ${duplicateOrder}. No lo cuentes otra vez ni abras un pago nuevo. Si pide otro producto, es un pedido nuevo.`
   } else if (namedProducts && !focus && stage !== 'verificando' && stage !== 'pedido_en_revision') {

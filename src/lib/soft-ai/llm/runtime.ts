@@ -38,7 +38,8 @@ import { softAiProviderFor, type ChatAgentTonePreset } from '@/lib/soft-ai/agent
 import type { ApprovedKnowledgeSlice } from '@/lib/soft-ai/knowledge-types'
 import { isAgentIntent } from '@/lib/soft-ai/agent-intents'
 import { HANDOFF_REASON, type TurnHandoff } from '@/lib/soft-ai/agent-turn-outcome'
-import { hasPaymentWord, paymentHandoffReason } from '@/lib/soft-ai/payment-classifier'
+import { hasPaymentWord, isShortDoneBubble, paymentHandoffReason } from '@/lib/soft-ai/payment-classifier'
+import { paidAfterDetails, paymentDetailsIn } from '@/lib/soft-ai/sales-state'
 
 export type SoftAiLlmRuntimeInput = {
   /**
@@ -523,10 +524,15 @@ export async function runSoftAiLlmRuntime(
         hasPaymentWord(customerSide) ||
         hasPaymentWord(lastStoreText) ||
         /(?<![\p{L}])(pedido|orden|compra)(?![\p{L}])/iu.test(finalText))
+    // Rafael 2026-10-27: the model asking for a person is a PAYMENT hand-off when the customer's own words are about a
+    // payment; right after the store's payment DETAILS, for anything but a plain thank-you ("Le acabo de mandar" has no
+    // payment word); after another store payment mention ("Cuando hagás el pago, mandame el comprobante"), only for a
+    // short "listo". That mention alone turned "Muchas gracias" / "Guía de tallas" into "Pago por verificar".
+    const customerPaymentTalk = escalationIsPaymentTalk(customerSide, lastStoreText, openPaymentDetails(input.history))
     const paymentRisk =
       confirmationIsPayment ||
       validation.reasons.includes('payment_status_claim') ||
-      (structured.needsHuman && (hasPaymentWord(customerSide) || hasPaymentWord(lastStoreText)))
+      (structured.needsHuman && customerPaymentTalk)
     if (paymentRisk) {
       escalate = true
       escalateReason = 'payment_claim'
@@ -682,6 +688,33 @@ export function conversationPaymentContext(history: Array<{ direction: string; c
   const mediaRe = /\[(image|imagen|foto|audio|voice|video|document|documento|archivo|sticker)/i
   if ([inboundText, ...inbound].some((t) => hasPaymentWord(t) || mediaRe.test(t))) return true
   return history.some((m) => m.direction === 'outbound' && hasPaymentWord(m.content || ''))
+}
+
+/**
+ * Thanks / goodbye words only, with friendly emoji only — never a yes ("Sí", "Ok", "Dale", "Pura vida", a 👍) or a money
+ * emoji (🧾 💸 💳 📸) that can answer "¿Pudiste hacer el SINPE?".
+ */
+const THANKS_ONLY_RE =
+  /^(?=.*\p{L})(?:[\s,.!¡¿?…😊🙏🥰❤😁☺😄😃🤗✨💕💚🌸🙌]|[\u{1F3FB}-\u{1F3FF}\u{FE0F}\u{200D}]|(?<![\p{L}])(?:muchas|mil\s+gracias|gracias|graciass+|thanks|thank\s+you|bendiciones|saludos|feliz\s+(?:d[ií]a|tarde|noche)|buen\s+d[ií]a|buenas\s+(?:tardes|noches)|que\s+(?:est[eé]s?|est[eé]n)\s+bien|hasta\s+luego|chao|bye|igualmente|con\s+gusto|amable|muy\s+amable)(?![\p{L}]))+$/iu
+
+/** Payment details sent in the last 7 days and no payment received since (a finished sale is not an open payment). */
+export function openPaymentDetails(history: SoftAiHistoryMessage[], now = Date.now()): boolean {
+  const recent = history.some((m) => {
+    const at = new Date(m.sentAt).getTime()
+    return m.direction === 'outbound' && paymentDetailsIn(m.content || '') && (!Number.isFinite(at) || now - at <= 7 * 24 * 60 * 60_000)
+  })
+  return recent && !paidAfterDetails(history, paymentDetailsIn)
+}
+
+/**
+ * Model escalation → PAYMENT hand-off: the customer's own payment words; while payment details are open (sent in the
+ * last 7 days, nothing received since), anything but a plain thank-you ("Le acabo de mandar", "Sí, hace un rato"); otherwise a short "listo" right
+ * after a store payment mention. A store mention alone never makes "Guía de tallas" a payment.
+ */
+export function escalationIsPaymentTalk(customerSide: string, lastStoreText: string, detailsSent = paymentDetailsIn(lastStoreText)): boolean {
+  if (hasPaymentWord(customerSide)) return true
+  if (detailsSent) return !THANKS_ONLY_RE.test((customerSide || '').normalize('NFKC'))
+  return hasPaymentWord(lastStoreText) && isShortDoneBubble(customerSide)
 }
 
 export function modelHandoff(reason: string | undefined, inboundText: string): TurnHandoff {

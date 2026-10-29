@@ -416,6 +416,52 @@ async function findExistingByProviderId(
   })
 }
 
+function metaRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+}
+
+/**
+ * Rafael 2026-10-28 (DeepSleep audit): Instagram's echo of an AI / follow-up send often lands before the send's own
+ * write, so the row kept the echo metadata (no `softAi`). The inbox showed it as a person, and the next part of the
+ * reply stopped ("a person replied" → partial_delivery), later customer messages were skipped (human_before_send).
+ * Same provider message id = the very message the AI sent: the AI write's metadata wins over the bare echo.
+ * Returns null when the existing row is not a bare echo (a person's send, or already marked) — nothing changes.
+ */
+export function adoptedEchoMetadata(existing: unknown, incoming: Record<string, unknown> | undefined): Record<string, unknown> | null {
+  const prev = metaRecord(existing)
+  if (incoming?.softAi !== true) return null
+  if (prev.isEcho !== true || prev.softAi === true || prev.senderUserId) return null
+  return { ...prev, ...incoming, isEcho: true }
+}
+
+async function adoptSoftAiEcho(
+  client: Prisma.TransactionClient,
+  input: DualWriteMessageInput,
+  existingId: string | null | undefined,
+): Promise<void> {
+  if (!existingId || input.direction !== 'outbound' || input.metadata?.softAi !== true) return
+  const row = await client.chatMessage.findFirst({
+    where: { id: existingId, tenantId: input.tenantId, direction: 'outbound' },
+    select: { id: true, metadata: true },
+  })
+  const merged = row ? adoptedEchoMetadata(row.metadata, input.metadata) : null
+  if (!row || !merged) return
+  await client.chatMessage.update({ where: { id: row.id }, data: { metadata: merged as Prisma.InputJsonValue } })
+}
+
+/** Best effort: the duplicate result stands whatever happens here (name / code only in the log). */
+async function adoptSoftAiEchoSafe(input: DualWriteMessageInput, existingId: string | null | undefined): Promise<void> {
+  try {
+    await adoptSoftAiEcho(prisma as unknown as Prisma.TransactionClient, input, existingId)
+  } catch (error) {
+    const e = error as { name?: unknown; code?: unknown } | null
+    console.error('[chat-conversation-write] echo adoption failed', {
+      name: typeof e?.name === 'string' ? e.name : undefined,
+      code: typeof e?.code === 'string' ? e.code : undefined,
+    })
+  }
+}
+
 /**
  * Upsert conversation + insert message in one transaction.
  * Existing provider id / P2002 → duplicate skip (no aggregate bump).
@@ -576,6 +622,8 @@ export async function dualWriteChatMessage(
       // The chat was created by a concurrent first message: it exists now, one rerun picks it up.
       result = await withDbRetry(writeOnce)
     }
+    // After the transaction: a failed adoption never turns the duplicate into a write failure (Verifier 2026-10-28 #3).
+    if (result.ok && result.duplicate) await adoptSoftAiEchoSafe(input, result.messageId)
     if (result.ok && !result.duplicate) {
       touchSocialAccountActivity(input.socialAccountId, input.direction)
     }
@@ -585,6 +633,7 @@ export async function dualWriteChatMessage(
       const dup = providerMessageId
         ? await findExistingByProviderId(prisma as unknown as Prisma.TransactionClient, input.socialAccountId, providerMessageId).catch(() => null)
         : null
+      await adoptSoftAiEchoSafe(input, dup?.id)
       return {
         ok: true,
         duplicate: true,

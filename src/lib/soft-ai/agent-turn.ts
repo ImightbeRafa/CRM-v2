@@ -118,7 +118,7 @@ import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
 import { loadApprovedKnowledgeForAgent } from '@/lib/soft-ai/knowledge-repository'
 import { decideInbound, decisionOrderDataChoice, type InboundDecision } from '@/lib/soft-ai/inbound-decision'
 import { paymentCheckGate, paymentCheckMode, runPaymentClaimCheck } from '@/lib/soft-ai/llm/payment-claim-check'
-import { customerTextsSinceStore, unansweredPaymentState } from '@/lib/soft-ai/payment-claim-check-core'
+import { customerTextsSinceStore, unansweredCustomerTexts, unansweredPaymentState } from '@/lib/soft-ai/payment-claim-check-core'
 import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
 import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
@@ -155,7 +155,7 @@ import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 import { readSoftTenantAiConfig } from '@/lib/feature-flags'
 import { turnWasCodeDecided } from '@/lib/soft-ai/turn-origin'
 import { withAiUsageContext } from '@/lib/ai-usage/context'
-import { classifyPaymentText } from '@/lib/soft-ai/payment-classifier'
+import { classifyPaymentText, isCourtesyText } from '@/lib/soft-ai/payment-classifier'
 import { effectiveTestCap } from '@/lib/soft-ai/provider-outage'
 
 type JobPayload = {
@@ -216,6 +216,26 @@ function customerTextSinceLastAnswer(history: Array<{ direction: string; content
 /** The store's configured SINPE number / IBAN (digits): a message from the store carrying one = payment details. */
 function storePaymentDigits(facts: { payment?: { sinpe?: { number?: string | null } | null; transfer?: { iban?: string | null } | null } | null } | null | undefined): string[] {
   return [facts?.payment?.sinpe?.number, facts?.payment?.transfer?.iban].map((n) => (n || '').replace(/\D/g, '')).filter((d) => d.length >= 8)
+}
+
+/**
+ * The "Listo ✅" check's bubbles: the customer's messages from the last 10 min (same window as before) that come after
+ * the store's first payment-details message of that window (else its last one) — never the choice the details answered ("Sinpe" → details → "¿De cuánto
+ * sería el monto?"), and a "listo" typed between two details bubbles still counts.
+ */
+export function customerTextsAfterDetails(
+  history: Array<{ direction: string; content?: string | null; sentAt?: string | Date | null }>,
+  now = Date.now(),
+): string[] {
+  const recent = (m: { sentAt?: string | Date | null }) => {
+    const at = m.sentAt ? new Date(m.sentAt).getTime() : NaN
+    return Number.isFinite(at) && now - at <= 10 * 60_000
+  }
+  const details = history.flatMap((m, i) => (m.direction === 'outbound' && paymentDetailsIn(m.content || '') ? [i] : []))
+  if (!details.length) return []
+  // The first details bubble of this window (two bubbles: SINPE then IBAN), else the last one sent before it.
+  const anchor = details.find((i) => recent(history[i])) ?? details[details.length - 1]
+  return history.slice(anchor + 1).filter((m) => m.direction === 'inbound' && m.content && recent(m)).map((m) => String(m.content))
 }
 
 function earlierCustomerTexts(history: Array<{ direction: string; content?: string | null; sentAt?: string | Date | null }>): string[] {
@@ -297,6 +317,21 @@ async function withPaymentClaimCheck(
   }
   if (mode === 'shadow') {
     step(decision, `shadow_${result.verdict}`)
+    return decision
+  }
+  // Rafael 2026-10-27: before the store sent its payment details, a timeout / bad answer fails closed only when the
+  // customer's unanswered words carry money or payment-state words (a slow check on "Guía de tallas" is no reason for a
+  // "Pago por verificar" hand-off). After the details it always fails closed ("Le acabo de mandar" has no money word).
+  if (
+    result.verdict === 'error' &&
+    !dataChoicePath &&
+    input.paymentDetailsSent !== true &&
+    !unansweredPaymentState(input.inboundText, ctx.history).inPlay &&
+    // Verifier r4 (a): only a thank-you / greeting or a question — "Le acabo de mandar" with the number from the bio
+    // (no details in the chat, no money word) still fails closed.
+    [...unansweredCustomerTexts(ctx.history).burst, input.inboundText].every((t) => !t?.trim() || isCourtesyText(t) || /[?¿]/u.test(t))
+  ) {
+    step(decision, 'error_no_customer_money_words')
     return decision
   }
   const forced = decideInbound({ ...input, forcePaymentRisk: true })
@@ -1362,6 +1397,7 @@ export async function executeAgentLayerTurn(
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
     paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),
+    afterDetailsCustomerTexts: [...customerTextsAfterDetails(history), ...burstEarlier.map((m) => m.content || '')],
     // Lane C D1: a verbatim saved reply may state the totals the sales turn may state.
     allowedAmounts: turnSalesContext ? salesAllowedAmounts(turnSalesContext) : undefined,
     // Sleeping C2: nothing about paying in this chat yet (no payment details, receipt photo, payment words, web order).
@@ -2628,6 +2664,7 @@ async function runAgentTestTurnInner(input: {
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
     paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),
+    afterDetailsCustomerTexts: [...customerTextsAfterDetails(history), ...probarBurstEarlier.map((m) => m.content || '')],
     // Lane C D1: a verbatim saved reply may state the totals the sales turn may state.
     allowedAmounts: probarTurnSalesContext ? salesAllowedAmounts(probarTurnSalesContext) : undefined,
     // Sleeping C2: nothing about paying in this chat yet (photos / files counted from their type, like live).

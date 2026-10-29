@@ -11,6 +11,10 @@ import { isReservedShortcutKey, type RuntimeShortcut } from '@/lib/soft-ai/short
 
 const MAX_IMAGES_PER_REPLY = 3
 
+function isReplyImage(asset: AgentAsset): boolean {
+  return asset.mimeType === 'image/jpeg' || asset.mimeType === 'image/png'
+}
+
 export type ReplyImage = {
   assetId: string
   url: string
@@ -78,10 +82,28 @@ export function selectReplyImages(input: {
   if (!row?.id) return { key: null, images: [] }
   const sent = new Set(input.alreadySent ?? [])
   const images = (input.assetsByShortcut.get(row.id) ?? [])
-    .filter((a) => !sent.has(a.id) && !sent.has(a.sha256))
+    .filter((a) => isReplyImage(a) && !sent.has(a.id) && !sent.has(a.sha256))
     .slice(0, MAX_IMAGES_PER_REPLY)
     .map((a) => ({ assetId: a.id, url: a.url, mimeType: a.mimeType, name: a.name, width: a.width, height: a.height }))
   return { key: row.key, images }
+}
+
+/** The one H.264 clip on this saved reply, if this chat has not already received it. */
+export function selectReplyVideo(input: {
+  shortcutKey: string | null | undefined
+  shortcuts: RuntimeShortcut[]
+  assetsByShortcut: Map<string, AgentAsset[]>
+  alreadySent?: Iterable<string>
+}): ReplyImage | null {
+  if (!input.shortcutKey) return null
+  const row = input.shortcuts.find((s) => s.key === input.shortcutKey && isImageEligibleShortcut(s))
+  if (!row?.id) return null
+  const sent = new Set(input.alreadySent ?? [])
+  const video = (input.assetsByShortcut.get(row.id) ?? []).find(
+    (a) => a.mimeType === 'video/mp4' && !sent.has(a.id) && !sent.has(a.sha256),
+  )
+  if (!video) return null
+  return { assetId: video.id, url: video.url, mimeType: video.mimeType, name: video.name, width: video.width, height: video.height }
 }
 
 /** Saved replies that would really send an image now (≥1 not yet sent in this chat). The catalog only marks these. */
@@ -89,7 +111,7 @@ export function sendableImageReplyIds(assetsByShortcut: Map<string, AgentAsset[]
   const sent = new Set(alreadySent)
   const out = new Set<string>()
   for (const [shortcutId, list] of assetsByShortcut) {
-    if (list.some((a) => !sent.has(a.id) && !sent.has(a.sha256))) out.add(shortcutId)
+    if (list.some((a) => isReplyImage(a) && !sent.has(a.id) && !sent.has(a.sha256))) out.add(shortcutId)
   }
   return out
 }

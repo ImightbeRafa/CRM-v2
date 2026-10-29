@@ -56,7 +56,27 @@ function ascii(bytes: Uint8Array, start: number, len: number): string {
   return String.fromCharCode(...bytes.subarray(start, start + len))
 }
 
-/** Magic-number sniff for the media types WhatsApp accepts. */
+/** Agent shortcut videos: H.264 MP4 only, under 8 MB. HEVC (hvc1) plays on almost no WhatsApp phone. */
+export const AGENT_VIDEO_MAX_BYTES = 8 * 1024 * 1024
+
+function latin1Head(bytes: Uint8Array, max: number): string {
+  const n = Math.min(bytes.length, max)
+  let out = ''
+  for (let i = 0; i < n; i += 4096) {
+    out += String.fromCharCode(...bytes.subarray(i, Math.min(n, i + 4096)))
+  }
+  return out
+}
+
+/** True only for a real H.264 MP4 the agent may store and send. Rejects HEVC and anything over the cap. */
+export function isAgentH264Mp4(bytes: Uint8Array): boolean {
+  if (bytes.length === 0 || bytes.length > AGENT_VIDEO_MAX_BYTES) return false
+  if (sniffMediaMime(bytes) !== 'video/mp4') return false
+  const head = latin1Head(bytes, 65536)
+  if (head.includes('hvc1') || head.includes('hev1') || head.includes('hev2')) return false
+  return head.includes('avc1')
+}
+
 export function sniffMediaMime(bytes: Uint8Array): string | null {
   if (startsWith(bytes, [0xff, 0xd8, 0xff])) return 'image/jpeg'
   if (startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png'

@@ -3,14 +3,16 @@ import 'server-only'
  * Instagram (Facebook Page login) photo sends: upload the bytes to the Page's message_attachments (platform=instagram)
  * → attachment_id, then send it to the customer. Same host / token / appsecret proof as the Instagram text send
  * (api/chat/send). Never a public URL of our private files: Meta gets the bytes, never a link to them.
- * Instagram only takes JPG / PNG photos up to 8 MB here (video / audio / documents stay WhatsApp-only).
+ * The inbox composer still sends JPG / PNG only. An agent shortcut may also send one H.264 MP4 up to 8 MB.
  */
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
 import { redactMetaMessage } from '@/lib/social-account-token-health'
 
 export const INSTAGRAM_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+export const INSTAGRAM_VIDEO_MAX_BYTES = 8 * 1024 * 1024
 export const INSTAGRAM_IMAGE_MIMES: ReadonlySet<string> = new Set(['image/jpeg', 'image/png'])
 export const INSTAGRAM_MEDIA_ONLY_PHOTOS = 'Por Instagram solo se pueden enviar fotos JPG o PNG.'
+const INSTAGRAM_VIDEO_REJECTED = 'Instagram no aceptó el video.'
 
 async function readJson(res: Response): Promise<any> {
   const text = await res.text()
@@ -53,6 +55,70 @@ export async function uploadInstagramImage(opts: {
     return { ok: false, error: redactMetaMessage(String(data?.error?.message || ''), opts.accessToken) || 'Instagram no aceptó la foto.' }
   }
   return { ok: true, attachmentId }
+}
+
+/**
+ * Upload one H.264 MP4 for an agent shortcut. Same private-bytes rule as photos: Meta gets the file, never a link.
+ * Capped at 8 MB so a turn still has time to send the text if the upload is slow.
+ */
+export async function uploadInstagramVideo(opts: {
+  pageId: string | null | undefined
+  accessToken: string
+  bytes: Uint8Array
+  timeoutMs: number
+}): Promise<{ ok: true; attachmentId: string } | { ok: false; error: string; data?: unknown }> {
+  if (opts.bytes.length === 0 || opts.bytes.length > INSTAGRAM_VIDEO_MAX_BYTES) return { ok: false, error: INSTAGRAM_VIDEO_REJECTED }
+  const form = new FormData()
+  form.append('platform', 'instagram')
+  form.append('message', JSON.stringify({ attachment: { type: 'video', payload: { is_reusable: true } } }))
+  form.append('filedata', new Blob([new Uint8Array(opts.bytes)], { type: 'video/mp4' }), 'video.mp4')
+  const url = addAppSecretProofToUrl(buildMetaGraphUrl(instagramPath(opts.pageId, 'message_attachments')), opts.accessToken)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${opts.accessToken}` },
+    body: form,
+    signal: AbortSignal.timeout(opts.timeoutMs),
+  })
+  const data = await readJson(res)
+  const attachmentId = data?.attachment_id != null ? String(data.attachment_id) : ''
+  if (!res.ok || !attachmentId) {
+    return { ok: false, error: redactMetaMessage(String(data?.error?.message || ''), opts.accessToken) || INSTAGRAM_VIDEO_REJECTED }
+  }
+  return { ok: true, attachmentId }
+}
+
+/** Send an uploaded video inside the 24 h window. One type only: a second type could deliver twice. */
+export async function sendInstagramVideo(opts: {
+  pageId: string | null | undefined
+  accessToken: string
+  recipient: string
+  attachmentId: string
+  timeoutMs: number
+}): Promise<
+  | { ok: true; providerMessageId: string | null }
+  | { ok: false; error: string; rejected: boolean }
+> {
+  const url = addAppSecretProofToUrl(buildMetaGraphUrl(instagramPath(opts.pageId, 'messages')), opts.accessToken)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${opts.accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_type: 'RESPONSE',
+      recipient: { id: opts.recipient },
+      message: { attachment: { type: 'video', payload: { attachment_id: opts.attachmentId } } },
+    }),
+    signal: AbortSignal.timeout(opts.timeoutMs),
+  })
+  const data = await readJson(res)
+  if (res.ok) {
+    const id = data?.message_id || data?.messages?.[0]?.id
+    return { ok: true, providerMessageId: id ? String(id) : null }
+  }
+  return {
+    ok: false,
+    error: redactMetaMessage(String(data?.error?.message || ''), opts.accessToken) || INSTAGRAM_VIDEO_REJECTED,
+    rejected: res.status >= 400 && res.status < 500,
+  }
 }
 
 /**

@@ -13,6 +13,7 @@ import sharp from 'sharp'
 import { prisma } from '@/lib/db'
 import { isColumnReady, isTableReady } from '@/lib/soft-ai/table-ready'
 import { chatStorageGet, chatStoragePut, isChatStorageConfigured } from '@/lib/chat-storage'
+import { AGENT_VIDEO_MAX_BYTES, isAgentH264Mp4 } from '@/lib/chat-outbound-media'
 import { hasRasterPhotoSignature, withImageDecodeSlot } from '@/lib/chat-media-thumb'
 
 export const MAX_ASSET_INPUT_BYTES = 8 * 1024 * 1024
@@ -24,7 +25,7 @@ export type AgentAsset = {
   id: string
   name: string
   caption: string | null
-  mimeType: 'image/jpeg' | 'image/png'
+  mimeType: 'image/jpeg' | 'image/png' | 'video/mp4'
   sizeBytes: number
   width: number | null
   height: number | null
@@ -57,7 +58,7 @@ function mapAsset(r: Record<string, unknown>, agentId: string): AgentAsset {
     id: String(r.id),
     name: String(r.name),
     caption: r.caption ? String(r.caption) : null,
-    mimeType: r.mimeType === 'image/png' ? 'image/png' : 'image/jpeg',
+    mimeType: r.mimeType === 'image/png' ? 'image/png' : r.mimeType === 'video/mp4' ? 'video/mp4' : 'image/jpeg',
     sizeBytes: Number(r.sizeBytes ?? 0),
     width: r.width == null ? null : Number(r.width),
     height: r.height == null ? null : Number(r.height),
@@ -149,6 +150,65 @@ export async function storeAgentAsset(input: {
   const row = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT * FROM "ChatAgentAsset" WHERE "tenantId" = ${input.tenantId} AND "sha256" = ${sha256} LIMIT 1`
   if (!row[0]) throw new AgentAssetError('storage')
+  return mapAsset(row[0], input.agentId)
+}
+
+/**
+ * Store one H.264 MP4 for a shortcut. Not re-encoded (sharp would reject it). Same sha is the same row.
+ * The database only accepts video/mp4 after migration 065; do not link the row to a live shortcut until
+ * this send path is the server that is running.
+ */
+export async function storeAgentVideo(input: {
+  tenantId: string
+  agentId: string
+  bytes: Buffer
+  name: string
+  caption?: string | null
+  userId: string
+  width?: number | null
+  height?: number | null
+}): Promise<AgentAsset> {
+  if (!(await agentAssetsReady())) throw new AgentAssetError('not_ready')
+  const bytes = new Uint8Array(input.bytes)
+  if (!isAgentH264Mp4(bytes)) throw new AgentAssetError(bytes.length > AGENT_VIDEO_MAX_BYTES ? 'too_large' : 'not_image')
+  const sha256 = createHash('sha256').update(bytes).digest('hex')
+  const existing = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    SELECT * FROM "ChatAgentAsset" WHERE "tenantId" = ${input.tenantId} AND "sha256" = ${sha256} LIMIT 1`
+  if (existing[0]) {
+    if (existing[0].mimeType !== 'video/mp4') throw new AgentAssetError('not_image')
+    const shared = existing[0].agentId && existing[0].agentId !== input.agentId
+    await prisma.$executeRaw`
+      UPDATE "ChatAgentAsset" SET "status" = 'active', "updatedAt" = NOW(),
+             "agentId" = CASE WHEN ${Boolean(shared)} THEN NULL ELSE "agentId" END
+       WHERE "id" = ${String(existing[0].id)} AND "tenantId" = ${input.tenantId}`
+    const row = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+      SELECT * FROM "ChatAgentAsset" WHERE "id" = ${String(existing[0].id)} AND "tenantId" = ${input.tenantId} LIMIT 1`
+    return mapAsset(row[0], input.agentId)
+  }
+  const used = await prisma.$queryRaw<Array<{ bytes: bigint | null }>>`
+    SELECT COALESCE(SUM("sizeBytes"), 0)::bigint AS "bytes" FROM "ChatAgentAsset" WHERE "tenantId" = ${input.tenantId}`
+  if (Number(used[0]?.bytes ?? 0) + bytes.length > ASSET_QUOTA_BYTES) throw new AgentAssetError('quota')
+  const blobPath = `agent-assets/${input.tenantId}/${sha256}.mp4`
+  try {
+    await chatStoragePut(blobPath, bytes, 'video/mp4', { overwrite: true })
+  } catch {
+    throw new AgentAssetError('storage')
+  }
+  const id = randomUUID()
+  const name = (input.name || 'video').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 80) || 'video'
+  const caption = input.caption ? input.caption.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 300) || null : null
+  const width = input.width ?? null
+  const height = input.height ?? null
+  await prisma.$executeRaw`
+    INSERT INTO "ChatAgentAsset"
+      ("id", "tenantId", "agentId", "kind", "name", "caption", "blobPath", "publicUrl", "mimeType", "sizeBytes",
+       "width", "height", "sha256", "status", "createdBy", "createdAt", "updatedAt")
+    VALUES (${id}, ${input.tenantId}, ${input.agentId}, 'other', ${name}, ${caption}, ${blobPath}, ${assetUrl(input.agentId, id)},
+            'video/mp4', ${bytes.length}, ${width}, ${height}, ${sha256}, 'active', ${input.userId}, NOW(), NOW())
+    ON CONFLICT DO NOTHING`
+  const row = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    SELECT * FROM "ChatAgentAsset" WHERE "tenantId" = ${input.tenantId} AND "sha256" = ${sha256} LIMIT 1`
+  if (!row[0] || row[0].mimeType !== 'video/mp4') throw new AgentAssetError('storage')
   return mapAsset(row[0], input.agentId)
 }
 

@@ -4,9 +4,12 @@ import { readFileSync } from 'node:fs'
 import {
   INSTAGRAM_IMAGE_MAX_BYTES,
   INSTAGRAM_MEDIA_ONLY_PHOTOS,
+  INSTAGRAM_VIDEO_MAX_BYTES,
   instagramPath,
   sendInstagramImage,
+  sendInstagramVideo,
   uploadInstagramImage,
+  uploadInstagramVideo,
 } from '../instagram-media'
 import { IG_OUTBOUND_ACCEPT } from '../chat-outbound-media'
 
@@ -147,6 +150,34 @@ describe('instagram photos · SecureDog', () => {
     const r = await uploadInstagramImage({ pageId: '1', accessToken: token, bytes: PNG, mime: 'image/png', timeoutMs: 1000 })
     assert.equal(r.ok, false)
     assert.ok(!r.ok && !r.error.includes(token) && !('data' in r))
+  })
+})
+
+describe('instagram agent video · upload', () => {
+  const clip = new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 1, 2, 3])
+
+  it('uploads an H.264 clip as a reusable video attachment and sends that type once', async () => {
+    mockFetch([{ status: 200, body: { attachment_id: 'vid-1' } }])
+    const up = await uploadInstagramVideo({ pageId: '1007', accessToken: 'tok', bytes: clip, timeoutMs: 1000 })
+    assert.deepEqual(up, { ok: true, attachmentId: 'vid-1' })
+    const form = calls[0].init.body as FormData
+    assert.equal(form.get('platform'), 'instagram')
+    assert.deepEqual(JSON.parse(String(form.get('message'))), { attachment: { type: 'video', payload: { is_reusable: true } } })
+    mockFetch([{ status: 200, body: { message_id: 'm-vid' } }])
+    const sent = await sendInstagramVideo({ pageId: '1007', accessToken: 'tok', recipient: 'ig-user', attachmentId: 'vid-1', timeoutMs: 1000 })
+    assert.deepEqual(sent, { ok: true, providerMessageId: 'm-vid' })
+    assert.equal(calls.length, 1)
+    const body = JSON.parse(String(calls[0].init.body))
+    assert.equal(body.message.attachment.type, 'video')
+  })
+
+  it('refuses an empty or oversized clip before calling Meta', async () => {
+    mockFetch([{ status: 200, body: { attachment_id: 'nope' } }])
+    const empty = await uploadInstagramVideo({ pageId: '1007', accessToken: 'tok', bytes: new Uint8Array(), timeoutMs: 1000 })
+    const big = await uploadInstagramVideo({ pageId: '1007', accessToken: 'tok', bytes: new Uint8Array(INSTAGRAM_VIDEO_MAX_BYTES + 1), timeoutMs: 1000 })
+    assert.equal(empty.ok, false)
+    assert.equal(big.ok, false)
+    assert.equal(calls.length, 0)
   })
 })
 

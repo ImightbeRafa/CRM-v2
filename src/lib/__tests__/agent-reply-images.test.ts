@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { extractShortcutTag, selectReplyImages } from '@/lib/soft-ai/reply-images'
+import { extractShortcutTag, selectReplyImages, selectReplyVideo, sendableImageReplyIds } from '@/lib/soft-ai/reply-images'
 import {
   SALES_REPLY_TEMPLATES,
   guideShortcutCatalog,
@@ -169,8 +169,29 @@ test('Verifier 2026-10-09: tag-only / template replies never become an empty or 
   assert.match(runtime, /key: repaired\.key \}/)
 })
 
+test('a shortcut video is not sent as a photo, and only once per chat', () => {
+  const clip = { ...asset('v1'), mimeType: 'video/mp4' as const, name: 'vuelo.mp4' }
+  const shortcuts = [reply({ id: 'sv', key: 'pt_verlo' })]
+  const assetsByShortcut = new Map([['sv', [clip, asset('i1')]]])
+  assert.deepEqual(selectReplyImages({ shortcutKey: 'pt_verlo', shortcuts, assetsByShortcut }).images.map((i) => i.assetId), ['i1'])
+  assert.equal(selectReplyVideo({ shortcutKey: 'pt_verlo', shortcuts, assetsByShortcut })?.assetId, 'v1')
+  assert.equal(selectReplyVideo({ shortcutKey: 'pt_verlo', shortcuts, assetsByShortcut, alreadySent: ['sha-v1'] }), null)
+  assert.deepEqual([...sendableImageReplyIds(new Map([['sv', [clip]]]))], [])
+})
+
+test('live reply sends the clip before the photos, and the text still goes out if the clip fails', () => {
+  const turn = readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
+  const videoAt = turn.indexOf('await sendAgentVideoOnce(')
+  const imagesAt = turn.indexOf('await sendAgentImagesOnce(')
+  assert.ok(videoAt > 0 && videoAt < imagesAt)
+  const send = readFileSync('src/lib/soft-ai/agent-media-send.ts', 'utf8')
+  assert.match(send, /if \(!isAgentH264Mp4\(bytes\)\) return false/)
+  assert.match(send, /kind: 'video'/)
+  assert.match(send, /console\.warn\('\[agent video\] clip skipped'/)
+  assert.match(readFileSync('src/lib/soft-ai/agent-assets.ts', 'utf8'), /r\.mimeType === 'video\/mp4' \? 'video\/mp4'/)
+})
+
 test('only replies whose image would really go out are marked "(va con imagen)"', async () => {
-  const { sendableImageReplyIds } = await import('@/lib/soft-ai/reply-images')
   const map = new Map([['s1', [asset('i1')]], ['s2', [asset('i2'), asset('i3')]]])
   assert.deepEqual([...sendableImageReplyIds(map, ['i1', 'sha-i2'])], ['s2'])
   assert.deepEqual([...sendableImageReplyIds(map, ['i1', 'i2', 'i3'])], [])

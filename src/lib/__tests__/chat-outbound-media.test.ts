@@ -2,9 +2,11 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
+  AGENT_VIDEO_MAX_BYTES,
   WA_OUTBOUND_LIMITS,
   buildWhatsAppMediaMessage,
   classifyOutboundMedia,
+  isAgentH264Mp4,
   outboundMediaContent,
   sanitizeOutboundFilename,
 } from '@/lib/chat-outbound-media'
@@ -121,4 +123,26 @@ test('MEDIA-P2: uploads stay under the 10 MB middleware body copy; route needs C
   assert.match(route, /if \(!declared\) return jsonError\('Falta el tamaño del archivo\.', 411\)/)
   // client-safe: the composer imports this module
   assert.doesNotMatch(readFileSync('src/lib/chat-outbound-media.ts', 'utf8'), /from '@\/lib\/chat-media'/)
+})
+
+function shortcutMp4(codec: string): Uint8Array {
+  const buf = Buffer.alloc(64)
+  buf.writeUInt32BE(32, 0)
+  buf.write('ftyp', 4, 'latin1')
+  buf.write('isom', 8, 'latin1')
+  buf.write(codec, 24, 'latin1')
+  return new Uint8Array(buf)
+}
+
+test('agent clips are H.264 MP4 under 8 MB; HEVC is refused', () => {
+  assert.equal(isAgentH264Mp4(shortcutMp4('avc1')), true)
+  assert.equal(isAgentH264Mp4(shortcutMp4('hvc1')), false)
+  const both = shortcutMp4('avc1')
+  both.set(new TextEncoder().encode('hvc1'), 40)
+  assert.equal(isAgentH264Mp4(both), false)
+  assert.equal(isAgentH264Mp4(new Uint8Array()), false)
+  assert.equal(isAgentH264Mp4(JPEG), false)
+  const big = new Uint8Array(AGENT_VIDEO_MAX_BYTES + 1)
+  big.set(shortcutMp4('avc1'))
+  assert.equal(isAgentH264Mp4(big), false)
 })

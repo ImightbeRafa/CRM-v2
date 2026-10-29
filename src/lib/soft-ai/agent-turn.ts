@@ -122,10 +122,10 @@ import { customerTextsSinceStore, unansweredCustomerTexts, unansweredPaymentStat
 import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
 import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
-import { selectReplyImages, sendableImageReplyIds, type ReplyImage } from '@/lib/soft-ai/reply-images'
+import { selectReplyImages, selectReplyVideo, sendableImageReplyIds, type ReplyImage } from '@/lib/soft-ai/reply-images'
 import type { AgentAsset } from '@/lib/soft-ai/agent-assets'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
-import { AGENT_IMAGE_DEADLINE_MS, loadSentAgentImageShas, sendAgentImagesOnce } from '@/lib/soft-ai/agent-media-send'
+import { AGENT_IMAGE_DEADLINE_MS, loadSentAgentImageShas, loadSentAgentVideoShas, sendAgentImagesOnce, sendAgentVideoOnce } from '@/lib/soft-ai/agent-media-send'
 import { applyFinalOutputPolicy, splitReplyParts, validateAgentOutput } from '@/lib/soft-ai/llm/output-validator'
 import { AGENT_PARTS_DEADLINE_MS, planReplyParts, remainderPart } from '@/lib/soft-ai/reply-parts'
 import { DEFAULT_REPLY_PACE, planPartWait, type ReplyPace } from '@/lib/soft-ai/reply-pace'
@@ -2146,36 +2146,42 @@ async function finishDeliveryOrSuggestInner(input: {
     .then(Boolean)
   // A re-run of a job whose text was already attempted sends no new images (they belong to that first answer).
   if (!textAlreadyClaimed && ((platform === 'whatsapp' && account.accountId) || platform === 'instagram') && input.outputText && !input.escalate && !input.handoff && input.replyAssets?.size && !repeatAllDropped) {
+    const byId = new Map([...input.replyAssets.values()].flat().map((a) => [a.id, a]))
+    const mediaCtx = {
+      job: {
+        id: input.row.id,
+        deliveryKey: input.row.deliveryKey,
+        tenantId: input.row.tenantId,
+        socialAccountId: input.row.socialAccountId,
+        peerId: input.row.peerId,
+        messageId: input.row.messageId,
+      },
+      platform: platform === 'instagram' ? ('instagram' as const) : ('whatsapp' as const),
+      phoneNumberId: account.accountId || '',
+      pageId: account.pageId || meta.pageId,
+      accessToken,
+      agent: { id: input.agent.id, version: input.agent.version, name: input.agent.name, emoji: input.agent.emoji },
+      turnId: input.turnId,
+      peerName: input.payload.senderName || input.conversation.peerName || null,
+      deadlineAt: (input.startedAt ?? Date.now()) + AGENT_IMAGE_DEADLINE_MS,
+    }
+    const video = selectReplyVideo({
+      shortcutKey: input.replyShortcutKey,
+      shortcuts: input.shortcuts ?? [],
+      assetsByShortcut: input.replyAssets,
+      alreadySent: await loadSentAgentVideoShas(input.row.tenantId, input.row.conversationId),
+    })
+    const videoAsset = video ? byId.get(video.assetId) : undefined
+    if (videoAsset) await sendAgentVideoOnce(mediaCtx, videoAsset)
     const pick = selectReplyImages({
       shortcutKey: input.replyShortcutKey,
       shortcuts: input.shortcuts ?? [],
       assetsByShortcut: input.replyAssets,
       alreadySent: await loadSentAgentImageShas(input.row.tenantId, input.row.conversationId),
     })
-    const byId = new Map([...input.replyAssets.values()].flat().map((a) => [a.id, a]))
     const assets = pick.images.map((img) => byId.get(img.assetId)).filter((a): a is AgentAsset => Boolean(a))
     if (assets.length) {
-      await sendAgentImagesOnce(
-        {
-          job: {
-            id: input.row.id,
-            deliveryKey: input.row.deliveryKey,
-            tenantId: input.row.tenantId,
-            socialAccountId: input.row.socialAccountId,
-            peerId: input.row.peerId,
-            messageId: input.row.messageId,
-          },
-          platform: platform === 'instagram' ? 'instagram' : 'whatsapp',
-          phoneNumberId: account.accountId || '',
-          pageId: account.pageId || meta.pageId,
-          accessToken,
-          agent: { id: input.agent.id, version: input.agent.version, name: input.agent.name, emoji: input.agent.emoji },
-          turnId: input.turnId,
-          peerName: input.payload.senderName || input.conversation.peerName || null,
-          deadlineAt: (input.startedAt ?? Date.now()) + AGENT_IMAGE_DEADLINE_MS,
-        },
-        assets,
-      )
+      await sendAgentImagesOnce(mediaCtx, assets)
     }
   }
 
@@ -2860,6 +2866,10 @@ async function runAgentTestTurnInner(input: {
     text && !escalate && !notBound && !needsHuman && !fallbackUsed && imageChannel(account.platform)
       ? selectReplyImages({ shortcutKey, shortcuts, assetsByShortcut: replyAssets, alreadySent: input.sentImageIds }).images
       : []
+  const video =
+    text && !escalate && !notBound && !needsHuman && !fallbackUsed && imageChannel(account.platform)
+      ? selectReplyVideo({ shortcutKey, shortcuts, assetsByShortcut: replyAssets, alreadySent: input.sentImageIds })
+      : null
   const toolTrace = redactAgentTrace(
     withOutcomeMarkers(
       {
@@ -2872,7 +2882,7 @@ async function runAgentTestTurnInner(input: {
         highlightedAmounts,
         historyCount: history.length,
         salesState: salesTrace,
-        attachments: images.map((img) => img.assetId),
+        attachments: [...images.map((img) => img.assetId), ...(video ? [video.assetId] : [])],
       },
       markers,
     ),

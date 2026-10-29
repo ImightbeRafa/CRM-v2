@@ -1,3 +1,10 @@
+## 2026-10-29 — Forge sizes and wash, Prototipo greeting and how-it-works clip (cursor/bot-flow-2026-10-29)
+
+- Rafael GO 2026-10-29. PatchHouse not touched. No deploy. The flight clip is not linked: an older server would send an mp4 as a jpeg.
+- Forge (live copy): weight picks the size (M/L 51–60 … 4XL 91–100). Height alone asks for weight. Under 51 or over 100 kg: no size, not the nearest one. Mixed height/weight follows the weight, never "te queda perfecto". Wash: hand, cold water, shade, no bleach, no dryer. The old "entre dos, la más pequeña" / "el agente no elige" lines are gone from the FAQ, the brand book and `fg_tallas`. Rafael 2026-10-29: the size-guide photo stays on every size answer — instructions say again "SIEMPRE mandá la guía de tallas". The photo was never unlinked.
+- Prototipo (live copy): greeting is text only (the dad-and-son photo is unlinked, the file stays). The gift photo is unlinked; the gift text stays. New verbatim `pt_verlo` answers how it works / how it flies / a video, with price, shipping, payment and prototipocr.com. The clip itself waits for this branch to be the running server, after migration 065.
+- Code: one H.264 MP4 per shortcut, once per chat, before the photos, on WhatsApp and on the agent Instagram path. HEVC and anything over 8 MB are refused. A failed clip does not block the text. The inbox composer still sends photos only.
+
 ## 2026-10-28 (review rounds) — Verifier ×3 + SecureDog ×3 on follow-ups v2 / payment filter
 
 - Verifier r1 FAIL (cubic widened "pagado" tail 8.9 s / 4 KB; reminder over a named date; A/B bias from reminders; INFO_CUE widened live gate) → fixed 5f69895d. r2 PASS WITH NOTES (emoji inside a claim no longer handed off) → f010c594: extra readings with pictographs as a gap / nothing, each tail-stripped. r3 not needed beyond SecureDog.

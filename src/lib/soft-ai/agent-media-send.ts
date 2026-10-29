@@ -9,12 +9,12 @@ import 'server-only'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { addAppSecretProofToUrl, buildMetaGraphUrl } from '@/lib/meta-api'
-import { buildWhatsAppMediaMessage } from '@/lib/chat-outbound-media'
+import { buildWhatsAppMediaMessage, isAgentH264Mp4 } from '@/lib/chat-outbound-media'
 import { buildMediaCacheMetadataPatch } from '@/lib/chat-media'
 import { dualWriteChatMessage, isPersistedDualWrite } from '@/lib/chat-conversation-write'
 import { deliverOnce } from '@/lib/soft-ai/automation-delivery'
 import { readAgentAssetBytes, type AgentAsset } from '@/lib/soft-ai/agent-assets'
-import { INSTAGRAM_IMAGE_MAX_BYTES, INSTAGRAM_IMAGE_MIMES, sendInstagramImage, uploadInstagramImage } from '@/lib/instagram-media'
+import { INSTAGRAM_IMAGE_MAX_BYTES, INSTAGRAM_IMAGE_MIMES, INSTAGRAM_VIDEO_MAX_BYTES, sendInstagramImage, sendInstagramVideo, uploadInstagramImage, uploadInstagramVideo } from '@/lib/instagram-media'
 
 const META_TIMEOUT_MS = 8_000
 /** Meta keeps uploaded media ~30 days: reuse an id for 25. */
@@ -27,12 +27,21 @@ const UPLOAD_MIN_LEFT_MS = 12_000
 
 /** Image hashes the agent already sent in this chat (last 30 days). */
 export async function loadSentAgentImageShas(tenantId: string, conversationId: string): Promise<string[]> {
+  return loadSentAgentMediaShas(tenantId, conversationId, 'image')
+}
+
+/** Video hashes the agent already sent in this chat (last 30 days). One clip per chat. */
+export async function loadSentAgentVideoShas(tenantId: string, conversationId: string): Promise<string[]> {
+  return loadSentAgentMediaShas(tenantId, conversationId, 'video')
+}
+
+async function loadSentAgentMediaShas(tenantId: string, conversationId: string, messageType: 'image' | 'video'): Promise<string[]> {
   const rows = await prisma.chatMessage.findMany({
     where: {
       tenantId,
       conversationId,
       direction: 'outbound',
-      messageType: 'image',
+      messageType,
       sentAt: { gte: new Date(Date.now() - SENT_LOOKBACK_MS) },
       metadata: { path: ['softAi'], equals: true },
     },
@@ -48,13 +57,19 @@ export async function loadSentAgentImageShas(tenantId: string, conversationId: s
   return out
 }
 
-async function reusableMediaId(tenantId: string, socialAccountId: string, sha: string, platform: 'whatsapp' | 'instagram'): Promise<string | null> {
+async function reusableMediaId(
+  tenantId: string,
+  socialAccountId: string,
+  sha: string,
+  platform: 'whatsapp' | 'instagram',
+  messageType: 'image' | 'video' = 'image',
+): Promise<string | null> {
   const row = await prisma.chatMessage.findFirst({
     where: {
       tenantId,
       socialAccountId,
       direction: 'outbound',
-      messageType: 'image',
+      messageType,
       // WhatsApp: the uploaded media id; Instagram: the reusable attachment id kept in metadata.
       ...(platform === 'whatsapp' ? { providerMediaId: { not: null } } : {}),
       sentAt: { gte: new Date(Date.now() - MEDIA_ID_REUSE_MS) },
@@ -227,4 +242,146 @@ export async function sendAgentImagesOnce(ctx: AgentImageSend, assets: AgentAsse
     }
   }
   return sent
+}
+
+/** A 6 MB clip needs more than a photo. If this much time is not left, the text still goes out. */
+const VIDEO_MIN_LEFT_MS = 16_000
+const VIDEO_UPLOAD_TIMEOUT_MS = 20_000
+
+function videoBudget(deadlineAt: number): number {
+  return Math.max(1_000, Math.min(VIDEO_UPLOAD_TIMEOUT_MS, deadlineAt - Date.now()))
+}
+
+async function uploadVideoToInstagram(pageId: string | null, accessToken: string, bytes: Uint8Array, deadlineAt: number): Promise<string | null> {
+  if (bytes.length === 0 || bytes.length > INSTAGRAM_VIDEO_MAX_BYTES) return null
+  const up = await uploadInstagramVideo({ pageId, accessToken, bytes, timeoutMs: videoBudget(deadlineAt) })
+  return up.ok ? up.attachmentId : null
+}
+
+async function uploadVideoToWhatsApp(phoneNumberId: string, accessToken: string, bytes: Uint8Array, deadlineAt: number): Promise<string | null> {
+  const form = new FormData()
+  form.append('messaging_product', 'whatsapp')
+  form.append('type', 'video/mp4')
+  form.append('file', new Blob([bytes], { type: 'video/mp4' }), 'video.mp4')
+  const url = addAppSecretProofToUrl(buildMetaGraphUrl(`${phoneNumberId}/media`), accessToken, { purpose: 'whatsapp' })
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+    signal: AbortSignal.timeout(videoBudget(deadlineAt)),
+  })
+  const data = (await res.json().catch(() => ({}))) as { id?: unknown }
+  return res.ok && typeof data.id === 'string' ? data.id : null
+}
+
+/**
+ * One H.264 clip for this reply, once per chat. Same rules as photos: upload before the
+ * exactly-once claim, never twice, never on a hand-off (the caller skips that), and a
+ * failure never throws — the text reply still goes out.
+ */
+export async function sendAgentVideoOnce(ctx: AgentImageSend, asset: AgentAsset): Promise<boolean> {
+  if (asset.mimeType !== 'video/mp4') return false
+  const platform = ctx.platform ?? 'whatsapp'
+  try {
+    if (ctx.deadlineAt - Date.now() < VIDEO_MIN_LEFT_MS) return false
+    const raw = await readAssetBytesBy(asset, ctx.deadlineAt)
+    const bytes = new Uint8Array(raw)
+    if (!isAgentH264Mp4(bytes)) return false
+    if (Date.now() >= ctx.deadlineAt) return false
+    const cached = await reusableMediaId(ctx.job.tenantId, ctx.job.socialAccountId, asset.sha256, platform, 'video')
+    if (!cached && ctx.deadlineAt - Date.now() < VIDEO_MIN_LEFT_MS) return false
+    const mediaId =
+      cached ||
+      (platform === 'instagram'
+        ? await uploadVideoToInstagram(ctx.pageId ?? null, ctx.accessToken, bytes, ctx.deadlineAt)
+        : await uploadVideoToWhatsApp(ctx.phoneNumberId, ctx.accessToken, bytes, ctx.deadlineAt))
+    if (!mediaId) return false
+    let igFreshId: string | null = null
+    const delivery = await deliverOnce({
+      jobId: ctx.job.id,
+      deliveryKey: `${ctx.job.deliveryKey}:vid:${asset.sha256.slice(0, 32)}`,
+      kind: 'video',
+      contentHash: asset.sha256,
+      send: async () => {
+        if (platform === 'instagram') {
+          const pageId = ctx.pageId ?? null
+          let r = await sendInstagramVideo({ pageId, accessToken: ctx.accessToken, recipient: ctx.job.peerId, attachmentId: mediaId, timeoutMs: META_TIMEOUT_MS })
+          if (!r.ok && r.rejected && cached) {
+            const fresh = await uploadVideoToInstagram(pageId, ctx.accessToken, bytes, ctx.deadlineAt)
+            if (fresh) {
+              igFreshId = fresh
+              r = await sendInstagramVideo({ pageId, accessToken: ctx.accessToken, recipient: ctx.job.peerId, attachmentId: fresh, timeoutMs: META_TIMEOUT_MS })
+            }
+          }
+          if (!r.ok) throw new Error('META_VIDEO_SEND_FAILED')
+          return { providerMessageId: r.providerMessageId || undefined }
+        }
+        const url = addAppSecretProofToUrl(buildMetaGraphUrl(`${ctx.phoneNumberId}/messages`), ctx.accessToken, { purpose: 'whatsapp' })
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ctx.accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildWhatsAppMediaMessage({ to: ctx.job.peerId, kind: 'video', mediaId })),
+          signal: AbortSignal.timeout(META_TIMEOUT_MS),
+        })
+        const data = (await res.json().catch(() => ({}))) as { messages?: Array<{ id?: string }> }
+        if (!res.ok) throw new Error('META_VIDEO_SEND_FAILED')
+        return { providerMessageId: data.messages?.[0]?.id }
+      },
+      providerDeliveryId: (r) => r.providerMessageId,
+    })
+    if (delivery.skipped) return false
+    const providerMessageId = delivery.providerDeliveryId || null
+    const write = await dualWriteChatMessage({
+      tenantId: ctx.job.tenantId,
+      socialAccountId: ctx.job.socialAccountId,
+      direction: 'outbound',
+      content: '[video]',
+      sentAt: new Date(),
+      peerId: ctx.job.peerId,
+      peerName: ctx.peerName,
+      providerMessageId,
+      messageType: 'video',
+      providerMediaId: platform === 'whatsapp' ? mediaId : null,
+      mediaMimeType: 'video/mp4',
+      mediaFilename: asset.name,
+      answersMessageId: ctx.job.messageId,
+      deliveryStatus: 'sent',
+      platform,
+      metadata: {
+        softAi: true,
+        agentId: ctx.agent.id,
+        agentVersion: ctx.agent.version,
+        agentName: ctx.agent.name,
+        agentEmoji: ctx.agent.emoji ?? null,
+        turnId: ctx.turnId,
+        agentAssetId: asset.id,
+        agentAssetSha: asset.sha256,
+        to: ctx.job.peerId,
+        platform,
+        ...(platform === 'instagram' ? { igAttachmentId: igFreshId || mediaId } : {}),
+        providerMessageId,
+        automationJobId: ctx.job.id,
+      },
+      suppressSoftAi: true,
+    })
+    if (isPersistedDualWrite(write)) {
+      const ref = { mediaBlobPath: asset.blobPath, mediaCacheStatus: 'ready' as const, mediaMimeType: 'video/mp4' as const, mediaFilename: asset.name }
+      const row = await prisma.chatMessage.findFirst({ where: { id: write.messageId, tenantId: ctx.job.tenantId }, select: { metadata: true } })
+      const meta = row?.metadata && typeof row.metadata === 'object' ? (row.metadata as Record<string, unknown>) : {}
+      await prisma.chatMessage.updateMany({
+        where: { id: write.messageId, tenantId: ctx.job.tenantId },
+        data: {
+          mediaBlobPath: asset.blobPath,
+          mediaCacheStatus: 'ready',
+          mediaSizeBytes: asset.sizeBytes,
+          mediaCachedAt: new Date(),
+          metadata: buildMediaCacheMetadataPatch(meta, ref) as Prisma.InputJsonValue,
+        },
+      })
+    }
+    return true
+  } catch (error) {
+    console.warn('[agent video] clip skipped', error instanceof Error ? error.message.slice(0, 60) : 'unknown')
+    return false
+  }
 }

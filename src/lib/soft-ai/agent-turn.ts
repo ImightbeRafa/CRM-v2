@@ -2672,7 +2672,7 @@ async function runAgentTestTurnInner(input: {
     raceCustomerTexts: customerTextsSinceStore(history).race,
     replyStyle: runtimeAgent.replyStyle,
     shortcuts,
-    skipVerbatimIds: verbatimIdsBlockedByMissingImage(replyAssets, input.sentImageIds, imageChannel(account.platform)),
+    skipVerbatimIds: verbatimIdsBlockedByMissingImage(replyAssets, input.sentImageIds ?? [], imageChannel(account.platform)),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
     paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),

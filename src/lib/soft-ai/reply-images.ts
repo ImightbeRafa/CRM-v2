@@ -106,6 +106,26 @@ export function selectReplyVideo(input: {
   return { assetId: video.id, url: video.url, mimeType: video.mimeType, name: video.name, width: video.width, height: video.height }
 }
 
+/**
+ * Verbatim text that says "here is the photo" must not go out when that photo cannot.
+ * A clip-only reply stays verbatim: the words stand alone, and the clip is once per chat.
+ * On a channel that cannot send photos, every reply that has a file is left to the model.
+ */
+export function verbatimIdsBlockedByMissingImage(
+  assetsByShortcut: Map<string, AgentAsset[]>,
+  alreadySent: Iterable<string>,
+  channelSendsImages: boolean,
+): Set<string> {
+  if (!channelSendsImages) return new Set(assetsByShortcut.keys())
+  const live = sendableImageReplyIds(assetsByShortcut, alreadySent)
+  const blocked = new Set<string>()
+  for (const [id, list] of assetsByShortcut) {
+    if (!list.some(isReplyImage)) continue
+    if (!live.has(id)) blocked.add(id)
+  }
+  return blocked
+}
+
 /** Saved replies that would really send an image now (≥1 not yet sent in this chat). The catalog only marks these. */
 export function sendableImageReplyIds(assetsByShortcut: Map<string, AgentAsset[]>, alreadySent: Iterable<string> = []): Set<string> {
   const sent = new Set(alreadySent)

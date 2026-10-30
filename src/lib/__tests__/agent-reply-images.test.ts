@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { extractShortcutTag, selectReplyImages, selectReplyVideo, sendableImageReplyIds } from '@/lib/soft-ai/reply-images'
+import { extractShortcutTag, selectReplyImages, selectReplyVideo, sendableImageReplyIds, verbatimIdsBlockedByMissingImage } from '@/lib/soft-ai/reply-images'
 import {
   SALES_REPLY_TEMPLATES,
   guideShortcutCatalog,
@@ -177,6 +177,12 @@ test('a shortcut video is not sent as a photo, and only once per chat', () => {
   assert.equal(selectReplyVideo({ shortcutKey: 'pt_verlo', shortcuts, assetsByShortcut })?.assetId, 'v1')
   assert.equal(selectReplyVideo({ shortcutKey: 'pt_verlo', shortcuts, assetsByShortcut, alreadySent: ['sha-v1'] }), null)
   assert.deepEqual([...sendableImageReplyIds(new Map([['sv', [clip]]]))], [])
+  const clipOnly = new Map([['sv', [clip]]])
+  assert.equal(verbatimIdsBlockedByMissingImage(clipOnly, [], true).size, 0)
+  assert.equal(verbatimIdsBlockedByMissingImage(clipOnly, [], false).has('sv'), true)
+  const photoUsed = new Map([['sv', [asset('i1')]]])
+  assert.equal(verbatimIdsBlockedByMissingImage(photoUsed, ['sha-i1'], true).has('sv'), true)
+  assert.equal(verbatimIdsBlockedByMissingImage(photoUsed, [], true).size, 0)
 })
 
 test('live reply sends the clip before the photos, and the text still goes out if the clip fails', () => {
@@ -189,6 +195,7 @@ test('live reply sends the clip before the photos, and the text still goes out i
   assert.match(send, /kind: 'video'/)
   assert.match(send, /console\.warn\('\[agent video\] clip skipped'/)
   assert.match(readFileSync('src/lib/soft-ai/agent-assets.ts', 'utf8'), /r\.mimeType === 'video\/mp4' \? 'video\/mp4'/)
+  assert.match(turn, /verbatimIdsBlockedByMissingImage/)
 })
 
 test('only replies whose image would really go out are marked "(va con imagen)"', async () => {

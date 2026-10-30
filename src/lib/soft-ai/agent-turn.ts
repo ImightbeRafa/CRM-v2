@@ -122,7 +122,7 @@ import { customerTextsSinceStore, unansweredCustomerTexts, unansweredPaymentStat
 import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
 import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
-import { selectReplyImages, selectReplyVideo, sendableImageReplyIds, type ReplyImage } from '@/lib/soft-ai/reply-images'
+import { selectReplyImages, selectReplyVideo, sendableImageReplyIds, verbatimIdsBlockedByMissingImage, type ReplyImage } from '@/lib/soft-ai/reply-images'
 import type { AgentAsset } from '@/lib/soft-ai/agent-assets'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import { AGENT_IMAGE_DEADLINE_MS, loadSentAgentImageShas, loadSentAgentVideoShas, sendAgentImagesOnce, sendAgentVideoOnce } from '@/lib/soft-ai/agent-media-send'
@@ -1373,9 +1373,14 @@ export async function executeAgentLayerTurn(
   const shortcuts = await listRuntimeShortcuts(row.tenantId, resolved.agent.id)
   const replyAssets = await loadReplyAssets(row.tenantId, resolved.agent.id)
   // Only replies whose image would really go out are marked "(va con imagen)" (WhatsApp / Instagram, not yet sent in this chat).
+  const channelSendsImages = imageChannel(payload.platform)
+  const sentReplyMediaIds =
+    channelSendsImages && replyAssets.size
+      ? await loadSentAgentImageShas(row.tenantId, row.conversationId)
+      : []
   const liveImageReplyIds =
-    imageChannel(payload.platform) && replyAssets.size
-      ? sendableImageReplyIds(replyAssets, await loadSentAgentImageShas(row.tenantId, row.conversationId))
+    channelSendsImages && replyAssets.size
+      ? sendableImageReplyIds(replyAssets, sentReplyMediaIds)
       : new Set<string>()
   // The turn budget starts before the "¿ya pagó?" check (it can take up to 4.5 s).
   const turnBudgetStartedAt = Date.now()
@@ -1393,7 +1398,8 @@ export async function executeAgentLayerTurn(
     replyStyle: resolved.agent.replyStyle,
     shortcuts,
     // A keyword reply WITH images whose image can't go out now ("Te paso la guía 👇" with nothing) → model answers.
-    skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !liveImageReplyIds.has(id))),
+    // A clip-only reply keeps its verbatim text; the clip itself is sent once and never blocks the words.
+    skipVerbatimIds: verbatimIdsBlockedByMissingImage(replyAssets, sentReplyMediaIds, channelSendsImages),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
     paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),
@@ -2666,7 +2672,7 @@ async function runAgentTestTurnInner(input: {
     raceCustomerTexts: customerTextsSinceStore(history).race,
     replyStyle: runtimeAgent.replyStyle,
     shortcuts,
-    skipVerbatimIds: new Set([...replyAssets.keys()].filter((id) => !probarImageReplyIds.has(id))),
+    skipVerbatimIds: verbatimIdsBlockedByMissingImage(replyAssets, input.sentImageIds, imageChannel(account.platform)),
     awaitingPaymentMethod: awaitingPaymentMethodChoice(history),
     // SecureDog wave D final (INT-206 statement form): the store already sent its payment details.
     paymentDetailsSent: history.some((m) => m.direction === 'outbound' && paymentDetailsIn(m.content || '')),

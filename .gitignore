@@ -33,6 +33,9 @@ scripts/*
 !scripts/agent-pack/
 scripts/agent-pack/*
 !scripts/agent-pack/*.ts
+!scripts/agent-review/
+scripts/agent-review/*
+!scripts/agent-review/*.ts
 !scripts/chat-inbox-backfill.ts
 !scripts/chat-inbox-verify.ts
 !scripts/chat-inbox-v2-cutover.ts

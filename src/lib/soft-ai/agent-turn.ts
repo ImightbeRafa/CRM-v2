@@ -21,6 +21,7 @@ import {
   type BusinessHours,
 } from '@/lib/soft-ai/business-hours'
 import { loadAgentSalesContext } from '@/lib/soft-ai/agent-sales-context'
+import { loadSizeGuideKey, sizeGuideFallbackKey } from '@/lib/soft-ai/size-guide'
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import {
@@ -1392,6 +1393,8 @@ export async function executeAgentLayerTurn(
     channelSendsImages && replyAssets.size
       ? sendableImageReplyIds(replyAssets, sentReplyMediaIds)
       : new Set<string>()
+  // Size-guide fallback (flag agent_size_guide_v1, default off): the agent's configured guide saved reply, if any.
+  const sizeGuideKey = channelSendsImages && replyAssets.size ? await loadSizeGuideKey(row.tenantId, resolved.agent.id) : null
   // The turn budget starts before the "¿ya pagó?" check (it can take up to 4.5 s).
   const turnBudgetStartedAt = Date.now()
   // "Que costo tiene" + photo: the text is answered, a person still looks at the photo (a receipt keeps its path).
@@ -1594,6 +1597,7 @@ export async function executeAgentLayerTurn(
       replyShortcutKey: decision.shortcutKey,
       shortcuts,
       replyAssets,
+      sizeGuide: sizeGuideKey ? { key: sizeGuideKey, customerText: customerTextSinceLastAnswer(history, burst.inboundText) } : null,
       startedAt: turnStartedAt,
       afterHours: hours,
     })
@@ -1826,6 +1830,7 @@ export async function executeAgentLayerTurn(
     replyShortcutKey: policy.purchaseSummaryAppended ? null : llm.shortcutKey || null,
     shortcuts,
     replyAssets,
+    sizeGuide: sizeGuideKey ? { key: sizeGuideKey, customerText: turnCustomerText } : null,
     startedAt: turnStartedAt,
     afterHours: hours,
   })
@@ -1960,6 +1965,8 @@ async function finishDeliveryOrSuggestInner(input: {
   replyShortcutKey?: string | null
   shortcuts?: RuntimeShortcut[]
   replyAssets?: Map<string, AgentAsset[]>
+  /** Size-guide fallback (size-guide.ts): a price / size question also gets this guide's image when the reply has none. */
+  sizeGuide?: { key: string; customerText: string } | null
   /** When the job started: images are skipped once the turn is late (the job times out at 42 s). */
   startedAt?: number
   /** B1: the text was planned by code (never a silent draft for needsHuman / fallback / escalate). */
@@ -2195,12 +2202,32 @@ async function finishDeliveryOrSuggestInner(input: {
     })
     const videoAsset = video ? byId.get(video.assetId) : undefined
     if (videoAsset) await sendAgentVideoOnce(mediaCtx, videoAsset)
-    const pick = selectReplyImages({
+    const ownPick = selectReplyImages({
       shortcutKey: input.replyShortcutKey,
       shortcuts: input.shortcuts ?? [],
       assetsByShortcut: input.replyAssets,
       alreadySent: await loadSentAgentImageShas(input.row.tenantId, input.row.conversationId),
     })
+    // Size guide on a price / size question (flag agent_size_guide_v1): only when the reply's own saved reply has no
+    // image; once per chat (same sent-image check); never on a hand-off (this block already skips those).
+    const guideSent = !ownPick.images.length && input.sizeGuide && !input.needsHuman
+      ? await loadSentAgentImageShas(input.row.tenantId, input.row.conversationId)
+      : null
+    const guideKey =
+      guideSent && input.sizeGuide
+        ? sizeGuideFallbackKey({
+            guideKey: input.sizeGuide.key,
+            customerText: input.sizeGuide.customerText,
+            replyText: input.outputText,
+            replyShortcutKey: input.replyShortcutKey,
+            shortcuts: input.shortcuts ?? [],
+            assetsByShortcut: input.replyAssets,
+            alreadySent: guideSent,
+          })
+        : null
+    const pick = guideKey && guideSent
+      ? selectReplyImages({ shortcutKey: guideKey, shortcuts: input.shortcuts ?? [], assetsByShortcut: input.replyAssets, alreadySent: guideSent })
+      : ownPick
     const assets = pick.images.map((img) => byId.get(img.assetId)).filter((a): a is AgentAsset => Boolean(a))
     if (assets.length) {
       await sendAgentImagesOnce(mediaCtx, assets)
@@ -2888,10 +2915,23 @@ async function runAgentTestTurnInner(input: {
   const wouldSend = outcome.outcome === 'send'
   decision.decisionTrace.wouldSend = wouldSend
   // Images of the saved reply it used (code-picked, never twice in the same chat; none on a hand-off).
+  // Live parity: the size-guide fallback (flag agent_size_guide_v1) when the reply's own saved reply has no image.
+  const probarGuideKey =
+    text && !escalate && !notBound && !needsHuman && !fallbackUsed && !handoff && imageChannel(account.platform)
+      ? sizeGuideFallbackKey({
+          guideKey: await loadSizeGuideKey(input.tenantId, runtimeAgent.id),
+          customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText),
+          replyText: text,
+          replyShortcutKey: shortcutKey,
+          shortcuts,
+          assetsByShortcut: replyAssets,
+          alreadySent: input.sentImageIds,
+        })
+      : null
   const images =
     // Same as live: WhatsApp / Instagram, never on a hand-off / needs-a-person / fallback answer.
     text && !escalate && !notBound && !needsHuman && !fallbackUsed && imageChannel(account.platform)
-      ? selectReplyImages({ shortcutKey, shortcuts, assetsByShortcut: replyAssets, alreadySent: input.sentImageIds }).images
+      ? selectReplyImages({ shortcutKey: probarGuideKey ?? shortcutKey, shortcuts, assetsByShortcut: replyAssets, alreadySent: input.sentImageIds }).images
       : []
   const video =
     text && !escalate && !notBound && !needsHuman && !fallbackUsed && imageChannel(account.platform)

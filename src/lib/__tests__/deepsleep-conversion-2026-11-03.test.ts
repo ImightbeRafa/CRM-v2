@@ -13,6 +13,15 @@ import { RESERVED_SHORTCUT_SEEDS, matchVerbatimShortcut } from '@/lib/soft-ai/sh
 import { mediaInboundPlan } from '@/lib/soft-ai/llm/safety-router'
 import { followUpSlot, followUpStateSkip } from '@/lib/soft-ai/follow-up-state'
 import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
+import {
+  DEEPSLEEP_AGENTS,
+  FORGE_COLOR_LINE,
+  FORGE_SHIPPING_LINE,
+  FORGE_WASH_LINE,
+  PURA_STAGE,
+  STAGE_TEXTS,
+  planFollowUpCampaignsOnEnable,
+} from '@/lib/soft-ai/deepsleep-conversion-pack'
 
 const FACTS = parseBrandFacts({
   payment: { shareWithCustomers: true, methods: ['sinpe', 'contra_entrega'], sinpe: { number: '62019914', holderName: 'Rafael García' } },
@@ -204,5 +213,47 @@ describe('fg_tallas keyword matching includes kg / kilos / peso / mido', () => {
     for (const t of ['peso 80 kg', 'mido 1.70', 'son 70 kilos', 'qué talla']) {
       assert.equal(matchVerbatimShortcut(t, [row])?.key, 'fg_tallas', t)
     }
+  })
+})
+
+describe('follow-up enable: only intended DeepSleep agents; PatchHouse untouched', () => {
+  it('planFollowUpCampaignsOnEnable activates Forge/Sleeping/Pura/Prototipo and keeps PatchHouse', () => {
+    const before = [
+      { id: 'c-forge', agentId: DEEPSLEEP_AGENTS.forge, active: false, texts: { A: 'x', B: 'y' } },
+      { id: 'c-sleep', agentId: DEEPSLEEP_AGENTS.sleeping, active: false, texts: { A: 'x', B: 'y' } },
+      { id: 'c-pura', agentId: DEEPSLEEP_AGENTS.pura, active: false, texts: { A: 'x', B: 'y' } },
+      { id: 'c-proto', agentId: DEEPSLEEP_AGENTS.prototipo, active: true, texts: { A: 'x', B: 'y' } },
+      { id: 'c-patch', agentId: DEEPSLEEP_AGENTS.patchhouse, active: false, texts: { A: 'old', B: 'old' }, stageTexts: { A: { quoted: 'keep-me' } } },
+    ]
+    const next = planFollowUpCampaignsOnEnable(before)
+    assert.equal(next.find((c) => c.id === 'c-forge')!.active, true)
+    assert.equal(next.find((c) => c.id === 'c-sleep')!.active, true)
+    assert.equal(next.find((c) => c.id === 'c-pura')!.active, true)
+    assert.equal(next.find((c) => c.id === 'c-proto')!.active, true)
+    const patch = next.find((c) => c.id === 'c-patch')!
+    assert.equal(patch.active, false, 'PatchHouse must stay inactive')
+    assert.deepEqual(patch.stageTexts, { A: { quoted: 'keep-me' } })
+    assert.equal(next.find((c) => c.id === 'c-pura')!.stageTexts, PURA_STAGE)
+    assert.equal(next.find((c) => c.id === 'c-sleep')!.stageTexts, STAGE_TEXTS)
+    assert.equal(next.find((c) => c.id === 'c-proto')!.stageTexts, STAGE_TEXTS)
+  })
+
+  it('generic STAGE_TEXTS never mention Arnés or slash product menus (Sleeping/Prototipo safe)', () => {
+    const blob = JSON.stringify(STAGE_TEXTS)
+    assert.equal(/arn[eé]s/i.test(blob), false)
+    assert.equal(blob.includes(' / '), false)
+    assert.equal(STAGE_TEXTS.A.quoted, '¡Hola! 😊 ¿Querés que te lo aparte?')
+    assert.equal(STAGE_TEXTS.B.quoted, '¡Hola! ¿Todavía te interesa? Te lo puedo apartar hoy mismo 🚚')
+    assert.equal(PURA_STAGE.B.quoted, '¡Hola! ¿Te armo el Combo 2 cajas a ₡19 900 ya con envío? 😊')
+  })
+
+  it('owner-confirmed Forge facts: black only, nationwide shipping, wash line, no smell claim', () => {
+    assert.equal(FORGE_COLOR_LINE, 'Por ahora viene solo en negro 🖤')
+    assert.equal(FORGE_SHIPPING_LINE, '2 a 3 días hábiles')
+    assert.match(FORGE_WASH_LINE, /mano con agua fría/)
+    assert.match(FORGE_WASH_LINE, /no al sol directo/)
+    assert.match(FORGE_WASH_LINE, /No lo metás en lavadora ni secadora/)
+    assert.equal(/olor|huele|olfato/i.test(FORGE_WASH_LINE), false)
+    assert.equal(/según zona/i.test(FORGE_SHIPPING_LINE), false)
   })
 })

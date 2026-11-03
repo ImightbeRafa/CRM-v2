@@ -23,6 +23,16 @@ import { listShortcuts, updateShortcut } from '@/lib/soft-ai/shortcut-admin'
 import { createKnowledgeSource, approveKnowledgeSource, bindKnowledgeToAgent, unbindKnowledgeFromAgent } from '@/lib/soft-ai/knowledge-admin'
 import { hashKnowledgeBody } from '@/lib/soft-ai/knowledge-repository'
 import { FOLLOW_UP_FLAG, parseFollowUpConfig } from '@/lib/soft-ai/follow-up'
+import {
+  DEEPSLEEP_AGENTS as AGENTS,
+  FOLLOW_UP_ENABLE_AGENT_IDS,
+  FORGE_COLOR_LINE,
+  FORGE_SHIPPING_LINE,
+  FORGE_WASH_LINE,
+  PURA_STAGE,
+  STAGE_TEXTS,
+  planFollowUpCampaignsOnEnable,
+} from '@/lib/soft-ai/deepsleep-conversion-pack'
 
 const APPLY = process.argv.includes('--apply')
 const DRY = !APPLY || process.argv.includes('--dry-run')
@@ -31,14 +41,6 @@ const PATCHHOUSE_NOSTOCK = process.argv.includes('--patchhouse-nostock')
 
 const TENANT_ID = 'cmhsibjue0004js04gie724nx'
 const ACTOR_EMAIL_FALLBACK = 'rafael@betsycrm.com'
-
-const AGENTS = {
-  forge: 'cmub1rziw0005l704mebpx4xc',
-  sleeping: 'cmv9xf14x0001vitkkhx2vxd4',
-  patchhouse: 'cmv8mpajv0001vii8x9cey29a',
-  pura: 'cmvda4onv0001vip0rj6q7jkt',
-  prototipo: 'cmvdaghtc0001vi98x3abfr1r',
-} as const
 
 /** Desired shortcut patches (key → fields). Missing keys are skipped with a warning. */
 const SHORTCUT_PATCHES: Record<string, Record<string, { keywords?: string[]; body?: string; deliveryMode?: string }>> = {
@@ -126,22 +128,22 @@ const SHORTCUT_PATCHES: Record<string, Record<string, { keywords?: string[]; bod
         'tallas tienen',
       ],
       body:
-        'Te dejo la guía de tallas 👇 El peso es el que manda: M/L 51–60 kg, XL 61–70, 2XL 71–80, 3XL 81–90 y 4XL 91–100. Si solo me das la estatura, pedime el peso. Por debajo de 51 kg o por encima de 100 kg no tenemos talla (no te recomiendo la más cercana).',
+        'Te dejo la guía de tallas 👇 La talla va por peso: M/L 51–60 kg, XL 61–70, 2XL 71–80, 3XL 81–90 y 4XL 91–100. Por ahora no tenemos talla para menos de 51 kg ni más de 100 kg. ¿Cuánto pesás?',
     },
     fg_saludo: {
       body:
-        '¡Hola! Soy Andrés de ForgeCR 💪 El Arnés ForgeCR es un corrector de postura delgado y discreto: lleva los hombros hacia atrás y se puede usar debajo de la ropa. Cuesta ₡14 900 con envío incluido a todo el país. ¿Te lo aparto o querés saber cómo funciona?',
+        '¡Hola! Soy Andrés de ForgeCR 💪 El Arnés ForgeCR es un corrector de postura delgado que te ayuda a llevar los hombros hacia atrás. Cuesta ₡14 900 con envío incluido a todo el país. ¿Te lo aparto o querés saber cómo funciona?',
     },
     fg_dolor: {
-      keywords: ['dolor de espalda', 'dolores de espalda', 'lumbar', 'me duele la espalda', 'padezco', 'dolor', 'espalda'],
+      keywords: ['dolor de espalda', 'dolores de espalda', 'lumbar', 'me duele la espalda', 'padezco'],
       body:
-        'Entiendo 💙 El arnés es una ayuda para la postura, no un tratamiento médico ni un alivio garantizado del dolor. Si el dolor es fuerte o crónico, consultalo con tu médico antes de usarlo. Si querés probarlo para postura, ¿me decís tu peso para ver la talla?',
+        'Entiendo 💙 El arnés ayuda con la postura, pero no es un tratamiento médico ni garantiza quitar el dolor. Si el dolor es fuerte o crónico, consultá primero con tu médico. Si querés probarlo para la postura, ¿cuánto pesás para ver tu talla?',
     },
   },
   [AGENTS.pura]: {
     ps_saludo: {
       body:
-        '¡Hola! Soy Laura de Pura Sonrisa CR 😁 Tiras blanqueadoras: 1 caja ₡10 450 + envío ₡3 000; Combo 2 cajas ₡19 900 ya con envío; Pack 4 sabores ₡37 900 ya con envío. Sabores: Menta, Sandía, Blue Raspberry y Fresa. ¿Cuál te gustaría?',
+        '¡Hola! Soy Laura de Pura Sonrisa CR 😁 Las tiras blanqueadoras salen ₡10 450 la caja (+ ₡3 000 de envío), o el Combo 2 cajas a ₡19 900 ya con envío. También está el Pack 4 sabores a ₡37 900 con envío. ¿Cuál te gustaría?',
     },
     ps_precios: {
       keywords: ['pack', 'sabores', '9 mil', 'barato', 'dejás', 'dejas', 'precio', 'cuesta', 'cuánto', 'cuanto', 'vale'],
@@ -151,16 +153,18 @@ const SHORTCUT_PATCHES: Record<string, Record<string, { keywords?: string[]; bod
   },
 }
 
-const FORGE_INSTRUCTIONS = `Sos Andrés de ForgeCR 💪 (Arnés ForgeCR, corrector de postura, Costa Rica). Español de Costa Rica, tuteando, cálido y breve, emojis suaves, máximo 3 líneas y UNA sola pregunta por mensaje.
+const FORGE_INSTRUCTIONS = `Sos Andrés de ForgeCR 💪 (Arnés ForgeCR, corrector de postura, Costa Rica). Español de Costa Rica con voseo (vos: querés, preferís, tenés), cálido y breve, emojis suaves, máximo 3 líneas y UNA sola pregunta por mensaje.
 Flujo: si preguntan el precio o "¿cuánto cuesta el soporte de ForgeCR?", respondé con el nombre real (Arnés ForgeCR), ₡14 900, Pack de 2 ₡26 900, envío incluido, y UNA pregunta que avance la compra (apartar / cómo funciona / talla solo si ya quieren comprar). NO ofrezcas la guía de tallas en el saludo ni en cada precio.
-Talla / guía / fg_tallas: solo cuando preguntan talla, peso, kg, kilos, mido, medidas, o cuando ya quieren comprar. El peso manda (M/L 51–60 … 4XL 91–100 kg). Solo estatura: pedí el peso. Fuera de 51–100 kg: decí con honestidad que no hay talla (nunca la más cercana) y no pases a una persona a menos que insistan. Lavado: mano, agua fría, sombra; sin cloro ni secadora.
+Talla / guía / fg_tallas: solo cuando preguntan talla, peso, kg, kilos, mido, medidas, o cuando ya quieren comprar. El peso manda (M/L 51–60 … 4XL 91–100 kg). Solo estatura: pedí el peso. Fuera de 51–100 kg: decí con honestidad que no hay talla (nunca la más cercana) y no pases a una persona a menos que insistan.
+Color: solo negro. Si preguntan por colores: "${FORGE_COLOR_LINE}" y después UNA pregunta que avance (apartar / talla / cómo funciona).
+Envío: ${FORGE_SHIPPING_LINE} a todo el país (no digas "según zona").
+Lavado: ${FORGE_WASH_LINE} Sin claims de olor.
 Dolor de espalda: ayuda de postura, no tratamiento médico; dolor fuerte o crónico → médico; después pedí el peso para talla; sin handoff.
 Para comprar ("lo quiero"): 1) talla y cantidad 2) ¿envío o retiro? 3) datos en lista 4) cómo preferís pagar. Nunca juntes datos y pago.
-Handoff solo por: comprobante / ya pagué, queja, mayoreo / logo o nombre personalizado.
-Colores exactos del arnés: TODO_OWNER (no inventar). Días de envío por provincia: TODO_OWNER (decir 2 a 3 días hábiles según zona si no hay dato).`
+Handoff solo por: comprobante / ya pagué, queja, mayoreo / logo o nombre personalizado.`
 
-const PURA_INSTRUCTIONS = `Sos Laura de Pura Sonrisa CR 😁 (tiras blanqueadoras dentales, Costa Rica). Español de Costa Rica, tuteando, cálida y breve, emojis suaves, máximo 3 líneas y UNA sola pregunta por mensaje.
-Opener: precio y opciones primero (1 caja ₡10 450 + envío ₡3 000; Combo 2 ₡19 900 ya con envío; Pack 4 sabores ₡37 900 ya con envío), luego UNA pregunta (sabor o combo).
+const PURA_INSTRUCTIONS = `Sos Laura de Pura Sonrisa CR 😁 (tiras blanqueadoras dentales, Costa Rica). Español de Costa Rica con voseo (vos: querés, preferís, tenés), cálido y breve, emojis suaves, máximo 3 líneas y UNA sola pregunta por mensaje.
+Opener: precio y opciones primero (1 caja ₡10 450 + envío ₡3 000; Combo 2 ₡19 900 ya con envío; Pack 4 sabores ₡37 900 ya con envío), luego UNA pregunta (combo o sabor en el siguiente mensaje).
 Flujo compra: 1) sabores 2) ¿envío o retiro? 3) datos en lista 4) pago. Nunca juntes datos y pago.
 Salud: cosmético, no un tratamiento. Ante sensibilidad, brackets o embarazo, sugerí consultar al dentista/médico.
 Handoff solo: comprobante / ya pagué, queja, mayoreo.`
@@ -186,7 +190,14 @@ const KNOWLEDGE_UPSERTS: Array<{
     name: 'FAQ — cómo pagar / pedir / envío / lavado / mayoreo',
     kind: 'faq',
     body:
-      'Cómo pagar: SINPE, transferencia, tarjeta en forge.shopping (Tilopay) o contra entrega en el GAM. Cómo pedir: talla + cantidad → envío o retiro → datos → pago. Envío: incluido en el precio actual a todo CR; 2 a 3 días hábiles según zona (TODO_OWNER: días exactos por provincia). Lavado: a mano, agua fría, sombra; sin cloro ni secadora; frecuencia según uso (TODO_OWNER si hay línea fija). Olor: la tela no debe oler mal si se lava así (TODO_OWNER si hay claim de fábrica). Descuento por volumen / mayoreo / logo o nombre: pasar a una persona. Colores exactos: TODO_OWNER.',
+      `Cómo pagar: SINPE, transferencia, tarjeta en forge.shopping (Tilopay) o contra entrega en el GAM. Cómo pedir: talla + cantidad → envío o retiro → datos → pago. Envío: incluido en el precio actual a todo CR; llega en ${FORGE_SHIPPING_LINE} a todo el país. Lavado: ${FORGE_WASH_LINE} Color: solo negro; si preguntan: "${FORGE_COLOR_LINE}" y una pregunta que avance. Descuento por volumen / mayoreo / logo o nombre: pasar a una persona. Sin claims de olor.`,
+  },
+  {
+    agentId: AGENTS.forge,
+    name: 'FAQ — color (solo negro)',
+    kind: 'faq',
+    body:
+      `El Arnés ForgeCR por ahora viene solo en negro. Respuesta al cliente: "${FORGE_COLOR_LINE}" y después una pregunta que avance la compra (apartar, talla o cómo funciona).`,
   },
   {
     agentId: AGENTS.forge,
@@ -197,43 +208,7 @@ const KNOWLEDGE_UPSERTS: Array<{
   },
 ]
 
-/** Prepared follow-up stage texts (owner-approved tone). Applied only with --enable-follow-ups. */
-const STAGE_TEXTS = {
-  A: {
-    quoted: '¡Hola! 😊 ¿Te ayudo a elegir talla o preferís que te aparte el Arnés / el producto?',
-    size: '¡Hola! 😊 ¿Confirmamos tu talla y te armo el pedido?',
-    how_it_works: '¡Hola! 😊 ¿Te quedó claro cómo funciona o querés que te ayude a pedir el tuyo?',
-    shipping_details: '¡Hola! 😊 ¿Me pasás los datos que faltan para preparar tu pedido?',
-    chose: '¡Hola! 😊 ¿Seguimos con tu pedido?',
-    sinpe_reminder: '¡Hola! Cuando hagas el SINPE, mandame el comprobante por aquí y lo revisamos 😊',
-  },
-  B: {
-    quoted: '¡Hola! Te recuerdo el precio y, si querés, te ayudo a cerrar el pedido 🚚',
-    size: '¡Hola! Si ya tenés el peso, te digo la talla y lo apartamos 😊',
-    how_it_works: '¡Hola! Si querés verlo / armar el pedido, acá estoy 🙌',
-    shipping_details: '¡Hola! ¿Seguimos con la dirección para enviártelo?',
-    chose: '¡Hola! ¿Lo dejamos listo hoy?',
-    sinpe_reminder: '¡Hola! Si ya hiciste el SINPE, mandame el comprobante y lo revisamos 😊',
-  },
-}
-
-const PURA_STAGE = {
-  A: {
-    ...STAGE_TEXTS.A,
-    quoted:
-      '¡Hola! 😁 Te recuerdo: 1 caja ₡10 450 + envío ₡3 000; Combo 2 ₡19 900 ya con envío; Pack 4 sabores ₡37 900. ¿Cuál te armamos?',
-  },
-  B: {
-    ...STAGE_TEXTS.B,
-    quoted:
-      '¡Hola! Si querés, te armo el Combo 2 cajas a ₡19 900 ya con envío, o 1 caja con el sabor que elijas 😊',
-  },
-}
-
 const TODOS = [
-  'Forge: colores exactos del Arnés ForgeCR (no inventar).',
-  'Forge / todos: días de envío exactos por provincia (hoy: 2–3 días hábiles según zona).',
-  'Forge: frecuencia de lavado / olor — línea fija del fabricante si existe.',
   'PatchHouse: texto de sin stock — solo con --patchhouse-nostock; agente sigue pausado salvo GO.',
   'Follow-ups: activar con --enable-follow-ups después de revisar stageTexts; revert con deepsleep-conversion-revert.ts.',
 ]
@@ -403,23 +378,16 @@ async function prepareFollowUps() {
     return
   }
   const cfg = parseFollowUpConfig(flag.config)
-  const next = {
-    ...cfg,
-    campaigns: cfg.campaigns.map((c) => {
-      const pura = c.agentId === AGENTS.pura
-      return {
-        ...c,
-        stageTexts: pura ? PURA_STAGE : STAGE_TEXTS,
-        // Keep active state unless we are explicitly enabling quiet rounds for DeepSleep.
-        active: c.active || true,
-      }
-    }),
-  }
-  console.log(`  ~ writing stageTexts onto ${next.campaigns.length} campaign(s); enabled=true`)
+  const campaigns = planFollowUpCampaignsOnEnable(cfg.campaigns)
+  const activated = campaigns.filter((c) => FOLLOW_UP_ENABLE_AGENT_IDS.has(c.agentId) && c.active)
+  const skipped = campaigns.filter((c) => !FOLLOW_UP_ENABLE_AGENT_IDS.has(c.agentId))
+  console.log(
+    `  ~ stageTexts + active=true on ${activated.length} intended campaign(s) (Forge/Sleeping/Pura/Prototipo); keep state on ${skipped.length} other(s) incl. PatchHouse; flag enabled=true`,
+  )
   if (!DRY) {
     await prisma.tenantFeatureFlag.update({
       where: { id: flag.id },
-      data: { enabled: true, config: next as object, updatedAt: new Date() },
+      data: { enabled: true, config: { ...cfg, campaigns } as object, updatedAt: new Date() },
     })
   }
 }

@@ -32,6 +32,7 @@ const AGENTS: Record<string, string> = {
 const NEW_FAQ_NAMES = [
   'FAQ — dolor de espalda (sin claims médicos)',
   'FAQ — cómo pagar / pedir / envío / lavado / mayoreo',
+  'FAQ — color (solo negro)',
   'FAQ — cambio de talla',
 ]
 

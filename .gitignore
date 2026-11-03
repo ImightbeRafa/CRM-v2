@@ -33,6 +33,9 @@ scripts/*
 !scripts/agent-pack/
 scripts/agent-pack/*
 !scripts/agent-pack/*.ts
+!scripts/agent-review/
+scripts/agent-review/*
+!scripts/agent-review/*.ts
 !scripts/chat-inbox-backfill.ts
 !scripts/chat-inbox-verify.ts
 !scripts/chat-inbox-v2-cutover.ts
@@ -47,6 +50,11 @@ scripts/agent-pack/*
 !scripts/lib/betsy-v2-additive-manifest.mjs
 !scripts/lib/chat-scale-constants.ts
 !scripts/lib/chat-scale-db-guard.ts
+!scripts/lib/deepsleep-conversion-ids.ts
+!scripts/lib/out-path-guard.ts
+!scripts/lib/meta-review-demo.ts
+scripts/agent-pack/out/
+scripts/agent-review/out/
 SDK_V2_FINAL_CONFIGURATION.txt
 SDK_V2_IMPLEMENTATION.txt
 # Documentation and Notes (local only)

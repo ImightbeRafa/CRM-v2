@@ -19,11 +19,15 @@ describe('D1: a verbatim saved reply with an authorized total', () => {
   })
   it('the decision passes allowedAmounts to every saved reply; live and Probar compute them from one sales context', () => {
     const d = read('src/lib/soft-ai/inbound-decision.ts')
-    assert.match(d, /shortcuts: input\.shortcuts,\s+quoteAmounts: input\.allowedAmounts,/)
-    assert.equal((d.match(/facts: input\.brandFacts,\s+allowedAmounts: input\.allowedAmounts,/g) ?? []).length >= 10, true)
+    // DeepSleep 2026-11-03: finish() spreads dealCtx (allowedAmounts + includedShippingAmounts + deals) into every saved reply.
+    assert.match(d, /quoteAmounts: input\.allowedAmounts,/)
+    assert.match(d, /includedShippingAmounts: input\.includedShippingAmounts,/)
+    assert.equal((d.match(/\.\.\.dealCtx,/g) ?? []).length >= 10, true)
     const t = read('src/lib/soft-ai/agent-turn.ts')
     assert.match(t, /allowedAmounts: turnSalesContext \? salesAllowedAmounts\(turnSalesContext\) : undefined,/)
     assert.match(t, /allowedAmounts: probarTurnSalesContext \? salesAllowedAmounts\(probarTurnSalesContext\) : undefined,/)
+    assert.match(t, /includedShippingAmounts: turnSalesContext/)
+    assert.match(t, /includedShippingAmounts: probarTurnSalesContext/)
     assert.match(t, /salesContext: turnSalesContext,/)
     assert.match(t, /salesContext: probarTurnSalesContext,/)
   })

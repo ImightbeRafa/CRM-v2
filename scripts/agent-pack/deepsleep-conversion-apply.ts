@@ -25,6 +25,9 @@ import { join } from 'node:path'
 import { prisma } from '@/lib/db'
 import { updateChatAgent } from '@/lib/soft-ai/agent-admin'
 import { listShortcuts, updateShortcut } from '@/lib/soft-ai/shortcut-admin'
+import { validateShortcutForSave } from '@/lib/soft-ai/shortcuts'
+import { AGENT_INSTRUCTIONS_MAX } from '@/lib/soft-ai/agent-types'
+import { KNOWLEDGE_BODY_MAX, KNOWLEDGE_NAME_MAX, isKnowledgeKind } from '@/lib/soft-ai/knowledge-types'
 import { createKnowledgeSource, approveKnowledgeSource, bindKnowledgeToAgent, unbindKnowledgeFromAgent } from '@/lib/soft-ai/knowledge-admin'
 import { hashKnowledgeBody } from '@/lib/soft-ai/knowledge-repository'
 import { FOLLOW_UP_FLAG } from '@/lib/soft-ai/follow-up'
@@ -61,6 +64,9 @@ function arg(name: string): string | null {
 }
 
 /** Desired shortcut patches (key → fields). Missing keys are skipped with a warning. */
+// Keyword lists stay within validateShortcutForSave's 20-keyword cap. matchVerbatimShortcut is a case-insensitive
+// whole-word match with NO accent folding, so accent pairs (cómo/como) both stay; a phrase that contains a kept
+// single keyword as a whole word ("un video" ⊃ "video", "qué talla" ⊃ "talla") is dropped — it matches nothing new.
 const SHORTCUT_PATCHES: Record<string, Record<string, { keywords?: string[]; body?: string; deliveryMode?: string }>> = {
   [AGENTS.prototipo]: {
     pt_verlo: {
@@ -68,8 +74,6 @@ const SHORTCUT_PATCHES: Record<string, Record<string, { keywords?: string[]; bod
         'cómo funciona',
         'como funciona',
         'verlo',
-        'verlo funcionando',
-        'verlo volar',
         'cómo vuela',
         'como vuela',
         'cómo se arma',
@@ -78,12 +82,8 @@ const SHORTCUT_PATCHES: Record<string, Record<string, { keywords?: string[]; bod
         'como se usa',
         'demostración',
         'demostracion',
-        'un video',
-        'el video',
         'video',
-        'video tutorial',
         'tutorial',
-        'tutorial para armarlo',
         'armar',
         'armarlo',
         'comofunciona',
@@ -124,11 +124,6 @@ const SHORTCUT_PATCHES: Record<string, Record<string, { keywords?: string[]; bod
         'tallas',
         'medida',
         'medidas',
-        'guía de tallas',
-        'guia de tallas',
-        'qué talla',
-        'cual talla',
-        'cuál talla',
         'mido',
         'peso',
         'kg',
@@ -141,7 +136,6 @@ const SHORTCUT_PATCHES: Record<string, Record<string, { keywords?: string[]; bod
         'guía',
         'guia',
         'me queda',
-        'tallas tienen',
       ],
       body:
         'Te dejo la guía de tallas 👇 La talla va por peso: M/L 51–60 kg, XL 61–70, 2XL 71–80, 3XL 81–90 y 4XL 91–100. Por ahora no tenemos talla para menos de 51 kg ni más de 100 kg. ¿Cuánto pesás?',
@@ -292,6 +286,65 @@ function writeBackup(backup: ConversionBackupV2, dir: string): string {
   return path
 }
 
+/** Fields of each planned shortcut row that the change keeps (updateShortcut merges the patch onto them). */
+const SHORTCUT_ROWS = new Map<string, { key: string; title: string; kind: string; intents: string[]; deliveryMode: string }>()
+
+/**
+ * Every planned change checked against the limits its save path enforces, BEFORE the backup and the first write:
+ * - shortcut: validateShortcutForSave (what shortcut-admin assertSave runs: ≤20 keywords, body ≤1500, title, kind,
+ *   delivery mode, intents, no confirmation wording) on the same merged draft updateShortcut builds;
+ * - instructions: updateChatAgent silently cuts systemInstructions to AGENT_INSTRUCTIONS_MAX — refuse instead;
+ * - knowledge: createKnowledgeSource limits (kind, name ≤KNOWLEDGE_NAME_MAX — longer names are cut and the
+ *   name+hash idempotency lookup would never match again — body ≤KNOWLEDGE_BODY_MAX, body stored trimmed).
+ */
+function validatePlannedChanges(changes: BackupChange[], knowledgeBodies: typeof KNOWLEDGE_UPSERTS): string[] {
+  const errors: string[] = []
+  for (const ch of changes) {
+    if (ch.kind === 'shortcut') {
+      const row = SHORTCUT_ROWS.get(ch.shortcutId)
+      if (!row) {
+        errors.push(`shortcut ${ch.shortcutKey}: row metadata missing`)
+        continue
+      }
+      const result = validateShortcutForSave({ ...row, keywords: ch.after.keywords, body: ch.after.body })
+      if (!result.ok) {
+        errors.push(
+          `shortcut ${ch.shortcutKey}: ${result.code} (keywords=${ch.after.keywords.length}/20, body=${ch.after.body.trim().length}/1500)`,
+        )
+      }
+      continue
+    }
+    if (ch.kind === 'instructions') {
+      const len = ch.after.trim().length
+      if (!len) errors.push(`instructions ${AGENT_LABELS[ch.agentId] ?? ch.agentId}: empty`)
+      if (len > AGENT_INSTRUCTIONS_MAX) {
+        errors.push(
+          `instructions ${AGENT_LABELS[ch.agentId] ?? ch.agentId}: ${len} chars > AGENT_INSTRUCTIONS_MAX ${AGENT_INSTRUCTIONS_MAX} (updateChatAgent would cut it to ${JSON.stringify(ch.after.trim().slice(AGENT_INSTRUCTIONS_MAX - 40, AGENT_INSTRUCTIONS_MAX))}…)`,
+        )
+      }
+      continue
+    }
+    if (ch.kind === 'knowledge') {
+      const item = knowledgeBodies.find((i) => i.agentId === ch.agentId && i.name === ch.name)
+      if (!item) {
+        errors.push(`knowledge "${ch.name}": no body in KNOWLEDGE_UPSERTS`)
+        continue
+      }
+      if (!isKnowledgeKind(item.kind)) errors.push(`knowledge "${item.name}": INVALID_KIND ${item.kind}`)
+      const name = item.name.trim()
+      if (!name || name.length > KNOWLEDGE_NAME_MAX) {
+        errors.push(`knowledge "${item.name}": name ${name.length} chars (1..${KNOWLEDGE_NAME_MAX})`)
+      }
+      const body = item.body.trim()
+      if (!body || body.length > KNOWLEDGE_BODY_MAX) {
+        errors.push(`knowledge "${item.name}": body ${body.length} chars (1..${KNOWLEDGE_BODY_MAX})`)
+      }
+      if (body !== item.body) errors.push(`knowledge "${item.name}": body has outer whitespace (stored trimmed, hash would differ)`)
+    }
+  }
+  return errors
+}
+
 async function planShortcutChanges(
   agentId: string,
   patches: Record<string, { keywords?: string[]; body?: string }>,
@@ -313,6 +366,13 @@ async function planShortcutChanges(
     if (row.body.trim() !== nextBody.trim()) {
       console.log(`      body: ${JSON.stringify(row.body.slice(0, 120))} → ${JSON.stringify(nextBody.slice(0, 120))}`)
     }
+    SHORTCUT_ROWS.set(row.id, {
+      key: row.key,
+      title: row.title,
+      kind: row.kind,
+      intents: [...row.intents],
+      deliveryMode: row.deliveryMode,
+    })
     out.push({
       kind: 'shortcut',
       agentId,
@@ -579,6 +639,15 @@ async function main() {
     changes,
   }
   console.log(`\nPlanned changes: ${changes.length}`)
+  const validationErrors = validatePlannedChanges(changes, KNOWLEDGE_UPSERTS)
+  if (validationErrors.length) {
+    console.log(`Validation: ${validationErrors.length} error(s) — nothing will be written:`)
+    for (const e of validationErrors) console.log(`  ✗ ${e}`)
+    process.exitCode = 1
+    if (!DRY) throw new Error(`Refusing --apply: ${validationErrors.length} planned change(s) fail save-time validation`)
+  } else {
+    console.log(`Validation: all ${changes.length} planned change(s) pass save-time checks`)
+  }
   if (DRY) {
     console.log(`Backup would be written under ${backupDir}/deepsleep-conversion-backup-*.json`)
   } else {

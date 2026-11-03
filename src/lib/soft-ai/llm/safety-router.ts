@@ -144,6 +144,9 @@ export function mediaInboundPlan(input: {
   // Explicit (B6): a sticker is never a receipt and needs no person; a voice note is an audio.
   if (input.messageType === 'sticker') return 'ask_in_writing'
   if (!isMediaMessageType(input.messageType) && input.messageType !== 'voice') return null
+  // DeepSleep 2026-11-03: an audio / voice note cannot be a receipt photo — always ask them to type it
+  // (even while waiting for a comprobante). Photos and documents keep the receipt path.
+  if (input.messageType === 'audio' || input.messageType === 'voice') return 'ask_in_writing'
   const caption = MEDIA_PLACEHOLDER_RE.test(input.caption || '') ? '' : (input.caption || '')
   if (input.awaitingReceipt) return 'receipt'
   if (caption && (hasPaymentWord(caption) || classifyPaymentText(caption) !== 'non_payment')) return 'receipt'

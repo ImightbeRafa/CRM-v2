@@ -79,16 +79,32 @@ export function customerNamedLaterDate(newestFirst: readonly FollowUpStateMessag
 /**
  * Follow-ups v2, the challenger arm: where the chat stopped. The store writes one text per slot (owner-approved, in the
  * pack's follow-up.json); a slot with no text uses the round's own text.
- *   chose          — the customer picked something ("Quiero una bolsa", "XL", "Sería el de correr") and went quiet
- *   quoted         — the store gave a price (₡) and the customer went quiet
- *   sinpe_reminder — the store sent its payment details and no receipt / paid message came after them
+ *   chose             — the customer picked something ("Quiero una bolsa", "XL", "Sería el de correr") and went quiet
+ *   quoted            — the store gave a price (₡) and the customer went quiet (no later size / how-it-works / data ask)
+ *   size              — last stage was size / talla / peso
+ *   how_it_works      — last stage was how it works / video / demo
+ *   shipping_details  — the store asked for order data (nombre / dirección / …) and the customer went quiet
+ *   sinpe_reminder    — the store sent its payment details and no receipt / paid message came after them
  */
-export type FollowUpSlot = 'chose' | 'quoted' | 'sinpe_reminder'
-export const FOLLOW_UP_SLOTS: readonly FollowUpSlot[] = ['chose', 'quoted', 'sinpe_reminder']
+export type FollowUpSlot = 'chose' | 'quoted' | 'size' | 'how_it_works' | 'shipping_details' | 'sinpe_reminder'
+export const FOLLOW_UP_SLOTS: readonly FollowUpSlot[] = ['chose', 'quoted', 'size', 'how_it_works', 'shipping_details', 'sinpe_reminder']
 
 /** The customer picked a product, size, quantity or pack (one bubble, not a question). */
 const CHOSE_RE =
   /(?<![\p{L}])(?:(?:lo|la|los|las)\s+quiero|quiero\s+(?:un|una|uno|dos|el|la|los|las|\d)|me\s+(?:gustar[ií]a|interesa)\s+(?:el|la|un|una|uno|ordenar|pedir|llevar)|me\s+llevo|ser[ií]a\s+(?:el|la|un|una|uno|talla|\d)|talla\s+\p{L}|(?:x{0,3}l|[2-5]xl|m\/l)|(?:una|un|1|2|dos|tres)\s+(?:sola\s+)?(?:bolsa|bolsas|paquete|paquetes|caja|cajas|kit|kits|unidad|unidades|arn[eé]s)|el\s+pack|el\s+combo|solo\s+(?:una|uno|1))(?![\p{L}])/iu
+
+/** Customer asked about size / weight (DeepSleep 2026-11-03). */
+const SIZE_ASK_RE =
+  /(?<![\p{L}])(?:talla|tallas|gu[ií]a\s+de\s+tallas|peso|pes[oó]|kilos?|\d+\s*kg|mido|estatura|medidas?|me\s+queda)(?![\p{L}])/iu
+/** Store actually answered a size (table / "te queda XL"), not merely offered the guide after a price. */
+const SIZE_ANSWER_RE =
+  /(?<![\p{L}])(?:el\s+peso\s+(?:es\s+)?(?:el\s+que\s+)?manda|te\s+queda\s+(?:talla\s+)?(?:x{0,3}l|[2-5]xl|m\/l)|(?:M\/L|XL|2XL|3XL|4XL)\s*51|51\s*[–-]\s*60\s*kg)(?![\p{L}])/iu
+/** How-it-works / video / demo. */
+const HOW_IT_WORKS_STAGE_RE =
+  /(?<![\p{L}])(?:c[oó]mo\s+funciona|c[oó]mo\s+se\s+(?:usa|arma|pone)|verlo|video|tutorial|demostraci[oó]n|c[oó]mo\s+vuela)(?![\p{L}])/iu
+/** Store asked for shipping / order data. */
+const SHIPPING_DETAILS_ASK_RE =
+  /(?<![\p{L}])(?:nombre\s+completo|para\s+preparar\s+tu\s+pedido|me\s+pas[aá]s?(?:\s+por\s+favor)?\s*:|direcci[oó]n\s+exacta|provincia|cant[oó]n|distrito)(?![\p{L}])/iu
 
 /** Which v2 text a quiet chat gets, from its messages (any order), or null (the round's own text). */
 export function followUpSlot(messages: readonly FollowUpStateMessage[], newestFirst = true): FollowUpSlot | null {
@@ -122,7 +138,15 @@ export function followUpSlot(messages: readonly FollowUpStateMessage[], newestFi
     })
     return clean ? 'sinpe_reminder' : null
   }
+  // Prefer the most recent stage signal (newest outbound / inbound), so a price opener that later asked for size
+  // nudges about size — not a generic "¿te quedó alguna duda?" after ₡.
+  const lastOut = [...history].reverse().find((m) => m.direction === 'outbound')
   const lastIn = [...history].reverse().find((m) => m.direction === 'inbound')
+  if (lastOut && SHIPPING_DETAILS_ASK_RE.test(lastOut.content)) return 'shipping_details'
+  if ((lastIn && SIZE_ASK_RE.test(lastIn.content)) || (lastOut && SIZE_ANSWER_RE.test(lastOut.content))) return 'size'
+  if ((lastOut && HOW_IT_WORKS_STAGE_RE.test(lastOut.content)) || (lastIn && HOW_IT_WORKS_STAGE_RE.test(lastIn.content))) {
+    return 'how_it_works'
+  }
   if (lastIn && !/[?¿]/u.test(lastIn.content) && CHOSE_RE.test(lastIn.content)) return 'chose'
   if (history.some((m) => m.direction === 'outbound' && /₡\s?\d/u.test(m.content))) return 'quoted'
   return null

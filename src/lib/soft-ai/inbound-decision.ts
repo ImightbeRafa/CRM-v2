@@ -9,7 +9,7 @@ import {
   type BrandFacts,
   type ReplyStyle,
 } from '@/lib/soft-ai/brand-facts'
-import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
+import { applyFinalOutputPolicy, type FreeShippingRule } from '@/lib/soft-ai/llm/output-validator'
 import {
   asksMoreThanPayment,
   isCardByChatOffer,
@@ -101,6 +101,14 @@ function finish(input: {
   facts: BrandFacts
   /** Lane C D1: the amounts the sales turn may say (bundle / catalog prices, shipping): a saved reply may say them too. */
   allowedAmounts?: number[]
+  /**
+   * Same deal context the model path gets (DeepSleep 2026-11-03): an owner-authored verbatim shortcut that quotes an
+   * authorized "envío incluido" combo (pt_verlo) must not be held as deal_offer. Never a blanket exemption — invented
+   * discounts and free-shipping wording outside the rule still fail.
+   */
+  allowedDeals?: Array<'free_shipping' | 'special_price'>
+  freeShippingRule?: FreeShippingRule | null
+  includedShippingAmounts?: number[]
   replyStyle?: ReplyStyle | null
   shortcuts: RuntimeShortcut[]
   forceNeedsHuman?: boolean
@@ -115,6 +123,9 @@ function finish(input: {
     replyStyle: input.replyStyle,
     shortcuts: input.shortcuts,
     quoteAmounts: input.allowedAmounts,
+    allowedDeals: input.allowedDeals,
+    freeShippingRule: input.freeShippingRule,
+    includedShippingAmounts: input.includedShippingAmounts,
   })
   const reasons = [...new Set([...(input.extraReasons || []), ...policy.reasons])]
   const needsHuman = input.forceNeedsHuman || policy.needsHuman || input.escalate
@@ -196,7 +207,17 @@ export function decideInbound(input: {
   afterDetailsCustomerTexts?: string[]
   /** Lane C D1: sales-state salesAllowedAmounts of this agent (live + Probar), for verbatim saved replies with a ₡ total. */
   allowedAmounts?: number[]
+  /** Same deal context as the model path — owner verbatim shortcuts may quote included-shipping combos. */
+  allowedDeals?: Array<'free_shipping' | 'special_price'>
+  freeShippingRule?: FreeShippingRule | null
+  includedShippingAmounts?: number[]
 }): InboundDecision {
+  const dealCtx = {
+    allowedAmounts: input.allowedAmounts,
+    allowedDeals: input.allowedDeals,
+    freeShippingRule: input.freeShippingRule ?? null,
+    includedShippingAmounts: input.includedShippingAmounts,
+  }
   // SecureDog r1 INT-159: the relaxation needs a text message AND no bubble of the burst (this one included) hinting at
   // a payment's state ("¿Me confirmás?" + "¿Les llegó?" stays a payment hand-off).
   const isText = !input.messageType || input.messageType === 'text'
@@ -275,7 +296,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
-      allowedAmounts: input.allowedAmounts,
+      ...dealCtx,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
@@ -293,7 +314,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
-      allowedAmounts: input.allowedAmounts,
+      ...dealCtx,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       handoff: input.messageType === 'sticker' ? null : { kind: 'review', reason: HANDOFF_REASON.review },
@@ -310,7 +331,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
-      allowedAmounts: input.allowedAmounts,
+      ...dealCtx,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
@@ -336,7 +357,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
-      allowedAmounts: input.allowedAmounts,
+      ...dealCtx,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
@@ -399,7 +420,7 @@ export function decideInbound(input: {
         paymentClass,
         steps,
         facts: input.brandFacts,
-        allowedAmounts: input.allowedAmounts,
+        ...dealCtx,
         replyStyle: input.replyStyle,
         shortcuts: input.shortcuts,
         forceNeedsHuman: true,
@@ -423,7 +444,7 @@ export function decideInbound(input: {
         paymentClass,
         steps,
         facts: input.brandFacts,
-        allowedAmounts: input.allowedAmounts,
+        ...dealCtx,
         replyStyle: input.replyStyle,
         shortcuts: input.shortcuts,
       })
@@ -450,7 +471,7 @@ export function decideInbound(input: {
         paymentClass,
         steps,
         facts: input.brandFacts,
-        allowedAmounts: input.allowedAmounts,
+        ...dealCtx,
         replyStyle: input.replyStyle,
         shortcuts: input.shortcuts,
       })
@@ -465,7 +486,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
-      allowedAmounts: input.allowedAmounts,
+      ...dealCtx,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
@@ -511,7 +532,7 @@ export function decideInbound(input: {
           paymentClass,
           steps,
           facts: input.brandFacts,
-          allowedAmounts: input.allowedAmounts,
+          ...dealCtx,
           replyStyle: input.replyStyle,
           shortcuts: input.shortcuts,
         })
@@ -536,7 +557,7 @@ export function decideInbound(input: {
         paymentClass,
         steps,
         facts: input.brandFacts,
-        allowedAmounts: input.allowedAmounts,
+        ...dealCtx,
         replyStyle: input.replyStyle,
         shortcuts: input.shortcuts,
       })
@@ -554,7 +575,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
-      allowedAmounts: input.allowedAmounts,
+      ...dealCtx,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: true,
@@ -580,7 +601,7 @@ export function decideInbound(input: {
       paymentClass,
       steps,
       facts: input.brandFacts,
-      allowedAmounts: input.allowedAmounts,
+      ...dealCtx,
       replyStyle: input.replyStyle,
       shortcuts: input.shortcuts,
       forceNeedsHuman: verbatim.kind === 'handoff',

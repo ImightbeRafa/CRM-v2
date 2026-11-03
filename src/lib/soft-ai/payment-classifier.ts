@@ -537,12 +537,20 @@ export function isShortDoneBubble(text: string): boolean {
 }
 
 /**
+ * DeepSleep 2026-11-03: "voy a confirmar mi peso / talla / dirección" is sales, not a payment confirm cue.
+ * Bare "confirmame" / "me confirmás el sinpe" still count.
+ */
+const CONFIRM_NON_PAYMENT_OBJ_RE =
+  /(?<![\p{L}])confirm\p{L}*\s+(?:(?:mi|el|la|los|las|su|tus?|mis)\s+)?(?:peso|talla|medidas?|estatura|altura|direcci[oó]n|datos|correo|tel[eé]fono|n[uú]mero\s+de\s+tel|horario|cita|retiro|env[ií]o)(?![\p{L}])/iu
+
+/**
  * A bare confirm / review verb stays a payment cue (SecureDog INT-93) — except a bare order-confirm ask in a chat where
  * nothing about paying happened yet (no payment details sent, no receipt photo, no payment words from the customer,
  * no web order): then it is an ordinary sales message.
  */
 function confirmCueCounts(value: string, noPaymentYet: boolean): boolean {
   if (!CONFIRM_CUE_RE.test(value)) return false
+  if (CONFIRM_NON_PAYMENT_OBJ_RE.test(value)) return false
   return !(noPaymentYet && isBareOrderConfirmAsk(value))
 }
 
@@ -576,6 +584,22 @@ export function maskNonPaymentPhrases(value: string): string {
   const arrival = out.replace(DELIVERY_ARRIVAL_RE, ' ')
   if (arrival !== out && (!arrival.replace(FRIENDLY_RE, '').replace(/[\s,.!¡¿?…]+/gu, '') || isCourtesyText(arrival))) out = arrival
   return out
+}
+
+/**
+ * DeepSleep 2026-11-03: a future "le/te paso el comprobante" next to asking for the SINPE number is a how-to-pay
+ * promise, not a receipt. Past / attached receipts ("te mandé el comprobante", "adjunto el comprobante") stay.
+ */
+const FUTURE_RECEIPT_PROMISE_RE =
+  /(?<![\p{L}])(?:y\s+)?(?:(?:le|te|les)\s+paso|paso)\s+el\s+comprobante(?:\s+por\s+(?:ac[aá]|aqu[ií]|este\s+chat))?(?![\p{L}])/giu
+export function maskFutureReceiptPromise(value: string): string {
+  // Only blank when the bubble is still asking how to pay (a number / datos ask or a "?"); a lone "te paso el
+  // comprobante" after paying stays a claim.
+  if (!/[?¿]/u.test(value) && !/(?:n[uú]mero|datos|cuenta|a\s+qu[eé])/iu.test(value)) return value
+  if (/(?<![\p{L}])(?:ya\s+)?(?:te|le|les)\s+(?:mand[eé]|envi[eé]|pas[eé])\s+el\s+comprobante|adjunto\s+(?:el\s+)?comprobante(?![\p{L}])/iu.test(value)) {
+    return value
+  }
+  return value.replace(FUTURE_RECEIPT_PROMISE_RE, ' ')
 }
 
 /**
@@ -1165,7 +1189,8 @@ function classifyPaymentTextRules(
   // embeddedPaymentChoice runs every claim check below itself (hasHardPaymentClaim included) and rejects any cue.
   if (opts.nothingPaidYet && embeddedPaymentChoice(text)) return 'payment_info_safe'
   // SecureDog: full-width / invisible-character spellings ("ＳＩＮＰＥ ✅", "he\u200Bcho") are read as plain text.
-  const value = maskNonPaymentPhrases(stripFormatChars((text || '').normalize('NFKC')))
+  // DeepSleep 2026-11-03: "¿a qué número… y le paso el comprobante?" is a how-to-pay ask, not a receipt claim.
+  const value = maskFutureReceiptPromise(maskNonPaymentPhrases(stripFormatChars((text || '').normalize('NFKC'))))
   if (!value.trim()) return 'non_payment'
   if (SENT_AMOUNT_CLAIM_RE.test(value)) return 'payment_proof_or_risk'
   if (
@@ -1241,10 +1266,56 @@ function classifyPaymentTextRules(
   if (isHowPayShipQuestion(value)) return 'payment_info_safe'
   // Prototipo shoppers: closed pre-purchase questions naming a method (how to order / how much with shipping).
   if (isPrePurchaseMethodQuestion(value)) return 'payment_info_safe'
+  // DeepSleep 2026-11-03 (weekly review): how-to-pay / shipping / later-buy questions that still carried a payment
+  // noun and fell into the fail-closed path. Direct answer (not agentExit): these shapes are already whole-message
+  // allowlisted and claim-checked above; agentExit would fail-close them again on live-equivalence.
+  if (isSalesPayQuestion(value)) return 'payment_info_safe'
+  // "oki sinpe" / ack + one method (no digit, no done word): a method choice even before the store asked.
+  if (isAckMethodChoice(value)) return 'non_payment'
   if (PAYMENT_RE.test(value)) {
     return 'payment_proof_or_risk'
   }
   return 'non_payment'
+}
+
+/**
+ * DeepSleep weekly review (2026-11-03): closed how-to-pay / shipping / later-buy questions that must not hand off.
+ * Whole-message allowlist after every claim check. Pure.
+ */
+const SALES_PAY_Q_RE = new RegExp(
+  [
+    // "¿se te hace / se hace el pago en el sitio / la página / la web?"
+    String.raw`(?:bueno\s+|y\s+|entonces\s+)?(?:se\s+(?:te\s+)?hace|se\s+paga|puedo\s+pagar|pagan?)\s+(?:el\s+pago\s+)?(?:en|por)\s+(?:el\s+|la\s+)?(?:sitio|p[aá]gina|web|tienda\s+en\s+l[ií]nea)`,
+    // "esperando un pago para poder comprar" / "apenas pueda hacer el pago los contacto"
+    String.raw`(?:estoy\s+)?esperando\s+(?:un\s+|el\s+|mi\s+)?pago\s+para\s+(?:poder\s+)?(?:realizar\s+)?(?:la\s+)?compra`,
+    String.raw`(?:si\s+)?(?:apenas|cuando)\s+(?:pueda|tenga)\s+(?:hacer\s+)?(?:el\s+)?pago\s+(?:los\s+|les\s+|te\s+)?(?:contacto|aviso|escribo|pido|compro)`,
+    String.raw`me\s+interesan?\s+si\s+(?:apenas|cuando)\s+(?:pueda|tenga)\s+(?:hacer\s+)?(?:el\s+)?pago`,
+    // "ya viene pago el envío" / "en ese precio … viene pago el envío" (included shipping, not a claim)
+    String.raw`(?:ya\s+)?viene\s+pago\s+el\s+env[ií]o|(?:el\s+)?env[ií]o\s+(?:ya\s+)?(?:viene|est[aá]|sale)\s+pago`,
+    // "retirar … y pagar ahí" / "pasar a retirar … y ahí pagar" / "pagar ahí mismo"
+    String.raw`(?:retir\p{L}*|pasar\s+a\s+retir\p{L}*).{0,80}?pag\p{L}*`,
+    String.raw`pag\p{L}*\s+(?:ah[ií]|alla|all[aá])(?:\s+mismo)?(?:\s+al\s+retir\p{L}*)?`,
+    String.raw`ah[ií]\s+pag\p{L}*`,
+  ]
+    .map((p) => `(?:${p})`)
+    .join('|'),
+  'iu',
+)
+export function isSalesPayQuestion(text: string): boolean {
+  const v = stripFormatChars((text || '').normalize('NFKC'))
+  if (!v.trim() || v.length > 220) return false
+  // A past-tense claim or a receipt word that is not a future "le paso el comprobante" keeps the person path.
+  if (/(?<![\p{L}])(?:ya\s+pagu[eé]|pagu[eé]|comprobante\s+(?:adjunto|enviado)|adjunto\s+el\s+comprobante)(?![\p{L}])/iu.test(v)) return false
+  return SALES_PAY_Q_RE.test(v)
+}
+
+/** "oki sinpe", "dale sinpe móvil" — ack + one clean method, no digit / done word. Pure. */
+const ACK_METHOD_RE =
+  /^(?:ok|oki|okey|dale|claro|perfecto|listo|lista|va|bueno)[\s,!.]*?(?:por\s+|con\s+|en\s+)?(?:el\s+|la\s+)?(sinpe(?:\s+m[oó]vil)?|transferencia(?:\s+bancaria)?|tarjeta|contra\s?entrega|efectivo)[\s.!🙏😊🙌]*$/iu
+export function isAckMethodChoice(text: string): boolean {
+  const v = stripFormatChars((text || '').normalize('NFKC')).replace(/\s+/gu, ' ').trim()
+  if (!v || v.length > 60 || /[\d#₡¢$✅✔☑👍💸]/u.test(v)) return false
+  return ACK_METHOD_RE.test(foldChoice(v))
 }
 
 /** Plain info questions about HOW the store takes payment (explicit list — never a generic "question" heuristic). */
@@ -1390,11 +1461,13 @@ function foldChoice(text: string): string {
 // Rafael 2026-10-28 (live): "Tarjeta contra entrega :)" — card ON delivery is the contra-entrega choice, not a claim.
 const METHOD = String.raw`(tarjeta (?:contra ?entrega|al recibir(?:lo|la)?)|sinpe(?: movil)?|transferencia(?: bancaria)?|tarjeta(?: de (?:credito|debito))?|contra ?entrega|al recibir(?:lo|la)?|efectivo)`
 // Rafael 2026-10-25 (Dani Probar): "seria sinpe" — "sería / va a ser / lo pago por / elijo / escojo" + the method only.
-const LEAD = String.raw`(?:(?:prefiero pagar|prefiero|mejor|quiero pagar|voy a pagar|quisiera pagar|(?:te|le|les) pago|pago|seria|va a ser|lo pago|lo voy a pagar|elijo|escojo)\s+)?(?:(?:por|con|en)\s+)?(?:el\s+|la\s+)?`
+// DeepSleep 2026-11-03: "oki sinpe", "preferiría pagarlo de una vez con sinpe".
+const LEAD = String.raw`(?:(?:ok|oki|okey|dale|claro|perfecto|listo|lista)\s+)?(?:(?:prefiero pagar|preferiria pagar(?:lo|la)?|prefiero|mejor|quiero pagar|voy a pagar|quisiera pagar|preferiria|(?:te|le|les) pago|pago|seria|va a ser|lo pago|lo voy a pagar|elijo|escojo)(?:\s+de\s+una\s+vez)?\s+)?(?:(?:por|con|en)\s+)?(?:el\s+|la\s+)?`
 const TAIL = String.raw`(?:\s*,?\s*(?:porfa|por favor|gracias|pls|esta bien|mejor|entonces|por la web|por la pagina|en la web|en la pagina)){0,3}(?:\s*(?::\)|:d|\(:))?[\s.!🙏😊🙌☺😁😄]*`
 // Pura Sonrisa P4: the imperative ask too ("Por SINPE, pasame el número", "mandame los datos").
-const ASK_HEAD = String.raw`¿?\s*(?:me\s+(?:pasas|pasa|das|da)|pasame|mandame|dame|regalame|enviame|cual\s+es|a\s+que)\s+(?:el\s+|los\s+|la\s+)?(?:numero|cuenta|link|datos)`
-const ASK_TAIL = String.raw`\s*\?*${TAIL}`
+// DeepSleep 2026-11-03: "¿a qué número sería, y le paso el comprobante por acá?" (future receipt promise, not a claim).
+const ASK_HEAD = String.raw`¿?\s*(?:me\s+(?:pasas|pasa|das|da)|pasame|mandame|dame|regalame|enviame|cual\s+es|a\s+que)\s+(?:el\s+|los\s+|la\s+)?(?:numero|cuenta|link|datos)(?:\s+seria)?`
+const ASK_TAIL = String.raw`(?:\s*,?\s*(?:y\s+(?:le|te|les)\s+paso\s+el\s+comprobante(?:\s+por\s+(?:aca|aqui))?)?)?\s*\?*${TAIL}`
 /** "SINPE", "por sinpe porfa", "Prefiero SINPE 🙏", "pago al recibirlo", "en efectivo". */
 const CHOICE_RE = new RegExp(String.raw`^${LEAD}${METHOD}${TAIL}$`, 'u')
 /** "quiero pagar por sinpe, ¿me pasás el número?" */

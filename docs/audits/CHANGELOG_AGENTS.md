@@ -1,3 +1,13 @@
+## 2026-11-03 — DeepSleep conversion fixes (weekly review Oct 27–Nov 2)
+
+- Owner-approved fixes from the read-only weekly review (1.9% chat→order; pt_verlo 0/4 clips; false payment handoffs; "Dame un momento" stalls; Forge price opener always offering the size guide; follow-ups off / wrong stage copy).
+- **Code:** `finish()` / `decideInbound` get the same deal context as the model path (`allowedDeals` / `freeShippingRule` / `includedShippingAmounts`) so owner verbatim `pt_verlo` ("₡29 800 con envío incluido") is not held as `deal_offer`. Audio/voice never counts as a receipt (`mediaInboundPlan` → ask in writing). Payment classifier: confirm-my-weight, ack+SINPE, future "le paso el comprobante", "viene pago el envío", pickup+pay-there, waiting-for-salary, website how-to-pay — sales, not claims; real "ya pagué" / receipt / SINPE proof unchanged. Follow-up slots: `size` / `how_it_works` / `shipping_details` (+ existing chose/quoted/sinpe_reminder).
+- **Data (not applied here):** idempotent `scripts/agent-pack/deepsleep-conversion-apply.ts` (`--dry-run` default, `--apply`, `--enable-follow-ups`, `--patchhouse-nostock`) + matching revert. Records `ChatAgentVersion`. PatchHouse stays paused.
+- **Weekly metrics:** `scripts/agent-review/weekly.ts` (read-only Prisma, JSON+md, no PII).
+- **Migration 065:** PR #159's `065_correos_v3.sql` collides with the already-applied video/mp4 065 on prod. Do not renumber existing files; Correos should ship as **066** (or next free). This PR adds no SQL.
+- **Rollback (Worker version ids, not git SHAs):** live as of 2026-10-29 note = Worker `642a586b` / container 114 (`betsy-main-enam-1`). Changelog rollback target `6d613dba`. `cd5c70a0` is not a git object in this repo (likely another Worker version). Confirm with `wrangler deployments list --name betsy-crm-daytime-smoke` before deploy; roll back with `npx wrangler rollback <id> --name betsy-crm-daytime-smoke`.
+- Tests: `deepsleep-conversion-2026-11-03.test.ts` (payment replay, pt_verlo deal context, audio ask-in-writing, follow-up stages, fg_tallas keywords).
+
 ## 2026-10-29 — Forge sizes and wash, Prototipo greeting and how-it-works clip (cursor/bot-flow-2026-10-29)
 
 - Rafael GO 2026-10-29. PatchHouse not touched. Live: Worker `642a586b`, container image version 114 (`betsy-main-enam-1`, health ok). Rollback Worker remains `6d613dba`. A clip-only shortcut keeps its verbatim text. Migration 065 is applied. `pt_verlo` now has the H.264 clip (6.2 MB). Forge still says "SIEMPRE mandá la guía de tallas" (version 154).

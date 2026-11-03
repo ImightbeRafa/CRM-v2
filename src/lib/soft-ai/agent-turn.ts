@@ -111,7 +111,17 @@ import { notifyHandoff } from '@/lib/soft-ai/handoff-notify'
 import { decideWaitingAck, isOptOutText, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS, WAITING_ALERT_THROTTLE_MS } from '@/lib/soft-ai/waiting-ack'
 import { isSoftAiOutboundMetadata } from '@/lib/soft-ai/agent-inbox-projection'
 import { dropRepeatedParts, REPEAT_WINDOW_MS } from '@/lib/soft-ai/repeat-guard'
-import { awaitingPaymentMethodChoice, isMediaLikeMessageType, mediaAwaitingReceipt, noPaymentYet, orderDataChoice, paymentDetailsIn, salesAllowedAmounts } from '@/lib/soft-ai/sales-state'
+import {
+  awaitingPaymentMethodChoice,
+  isMediaLikeMessageType,
+  mediaAwaitingReceipt,
+  noPaymentYet,
+  orderDataChoice,
+  paymentDetailsIn,
+  salesAllowedAmounts,
+  salesAllowedDeals,
+  salesFreeShippingRule,
+} from '@/lib/soft-ai/sales-state'
 import { duplicateReceiptReply, isPaymentHandoff } from '@/lib/soft-ai/repeat-order'
 import { loadSettledSale } from '@/lib/soft-ai/settled-sale'
 import { isMissingRelationError } from '@/lib/soft-ai/agent-schema'
@@ -1406,6 +1416,12 @@ export async function executeAgentLayerTurn(
     afterDetailsCustomerTexts: [...customerTextsAfterDetails(history), ...burstEarlier.map((m) => m.content || '')],
     // Lane C D1: a verbatim saved reply may state the totals the sales turn may state.
     allowedAmounts: turnSalesContext ? salesAllowedAmounts(turnSalesContext) : undefined,
+    // DeepSleep 2026-11-03: same deal context as the model path so owner verbatim shortcuts (pt_verlo) pass.
+    allowedDeals: turnSalesContext ? salesAllowedDeals(turnSalesContext) : undefined,
+    freeShippingRule: turnSalesContext ? salesFreeShippingRule(turnSalesContext) : null,
+    includedShippingAmounts: turnSalesContext
+      ? (turnSalesContext.bundles ?? []).filter((b) => b.shippingIncluded).map((b) => Math.round(b.price))
+      : undefined,
     // Sleeping C2: nothing about paying in this chat yet (no payment details, receipt photo, payment words, web order).
     // SecureDog r1 MEDIA-16: the trigger too (a receipt photo sent as the newest bubble ends "no payment yet").
     noPaymentYet: noPaymentYet([
@@ -2679,6 +2695,11 @@ async function runAgentTestTurnInner(input: {
     afterDetailsCustomerTexts: [...customerTextsAfterDetails(history), ...probarBurstEarlier.map((m) => m.content || '')],
     // Lane C D1: a verbatim saved reply may state the totals the sales turn may state.
     allowedAmounts: probarTurnSalesContext ? salesAllowedAmounts(probarTurnSalesContext) : undefined,
+    allowedDeals: probarTurnSalesContext ? salesAllowedDeals(probarTurnSalesContext) : undefined,
+    freeShippingRule: probarTurnSalesContext ? salesFreeShippingRule(probarTurnSalesContext) : null,
+    includedShippingAmounts: probarTurnSalesContext
+      ? (probarTurnSalesContext.bundles ?? []).filter((b) => b.shippingIncluded).map((b) => Math.round(b.price))
+      : undefined,
     // Sleeping C2: nothing about paying in this chat yet (photos / files counted from their type, like live).
     noPaymentYet: noPaymentYet([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }]),
     orderDataChoice: orderDataChoice([...history, ...probarBurstEarlier, { direction: 'inbound', content: probarTrigger.content, messageType: probarTrigger.messageType }], {

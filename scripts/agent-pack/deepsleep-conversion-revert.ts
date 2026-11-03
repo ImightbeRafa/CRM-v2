@@ -1,31 +1,34 @@
 /**
- * Revert DeepSleep conversion data apply (2026-11-03) from a backup JSON file.
+ * Revert DeepSleep conversion data apply from a backup JSON (v2 change log).
  *
- * CRM161-01/02: refuses to run without --backup=<path> (or the newest file in --backup-dir).
- * Restores ChatAgent instructions + brandFacts, every ChatAgentShortcut row, knowledge bindings
- * (re-binds the pre-apply docs; unbinds apply-added FAQ titles), and the RAW agent_follow_up_v1
- * config + enabled bit — never sets other campaigns active:false.
+ * CRM161-09: requires explicit --backup=<path> (no newest-file fallback). Before each write,
+ * compares the live value to what apply wrote (`after`); on mismatch skips + warns unless --force.
+ * CRM161-10: restores only the fields/rows recorded in `changes`.
+ * CRM161-11: follow-up restore touches only active + stageTexts on patched campaign ids
+ * (preserves claimed entries and campaigns added after apply).
+ * CRM161-14: follow-up flag restore only with explicit --restore-follow-ups
+ * (--disable-follow-ups remains an alias).
  *
  *   node --env-file=.env.local --import tsx --import ./scripts/shim-server-only.mjs \
  *     scripts/agent-pack/deepsleep-conversion-revert.ts \
  *     --confirm-tenant=deepsleepp-cr-1762740734630 \
  *     --backup=scripts/agent-pack/out/deepsleep-conversion-backup-….json \
- *     [--dry-run] [--apply] [--agent=forge|prototipo|pura|sleeping|all] \
- *     [--version=N] [--actor-email=rafael@betsycrm.com]
- *
- * --disable-follow-ups is accepted as an alias that restores the RAW follow-up flag from the backup
- * (enabled + config verbatim). It does NOT invent active:false on other campaigns.
+ *     [--dry-run] [--apply] [--force] [--restore-follow-ups] \
+ *     [--actor-email=rafael@betsycrm.com]
  */
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
 import { prisma } from '@/lib/db'
 import { updateChatAgent } from '@/lib/soft-ai/agent-admin'
 import { listShortcuts, updateShortcut } from '@/lib/soft-ai/shortcut-admin'
 import { bindKnowledgeToAgent, unbindKnowledgeFromAgent } from '@/lib/soft-ai/knowledge-admin'
 import { FOLLOW_UP_FLAG } from '@/lib/soft-ai/follow-up'
-import { ConversionBackupV1 } from '@/lib/soft-ai/deepsleep-conversion-pack'
 import {
-  DEEPSLEEP_AGENTS,
+  BackupChange,
+  ConversionBackupV2,
+  restoreRawFollowUpCampaignFields,
+  sameJson,
+} from '@/lib/soft-ai/deepsleep-conversion-pack'
+import {
   DEEPSLEEP_OWNER_EMAIL,
   DEEPSLEEP_TENANT_ID,
   DEEPSLEEP_TENANT_SLUG,
@@ -33,24 +36,10 @@ import {
 
 const APPLY = process.argv.includes('--apply')
 const DRY = !APPLY || process.argv.includes('--dry-run')
+const FORCE = process.argv.includes('--force')
 const RESTORE_FOLLOW_UPS =
-  process.argv.includes('--disable-follow-ups') || process.argv.includes('--restore-follow-ups')
+  process.argv.includes('--restore-follow-ups') || process.argv.includes('--disable-follow-ups')
 const TENANT_ID = DEEPSLEEP_TENANT_ID
-
-const AGENTS: Record<string, string> = {
-  forge: DEEPSLEEP_AGENTS.forge,
-  sleeping: DEEPSLEEP_AGENTS.sleeping,
-  pura: DEEPSLEEP_AGENTS.pura,
-  prototipo: DEEPSLEEP_AGENTS.prototipo,
-}
-
-/** FAQ titles introduced by the apply script — unbound after restoring pre-apply bindings. */
-const NEW_FAQ_NAMES = [
-  'FAQ — dolor de espalda (sin claims médicos)',
-  'FAQ — cómo pagar / pedir / envío / lavado / mayoreo',
-  'FAQ — color (solo negro)',
-  'FAQ — cambio de talla',
-]
 
 function arg(name: string): string | null {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`))
@@ -76,44 +65,22 @@ function requireConfirmTenant(slug: string) {
   }
 }
 
-function parseVersionArg(): number | null {
-  const raw = arg('version')
-  if (raw == null) return null
-  if (!/^\d+$/.test(raw)) {
-    throw new Error(`Invalid --version=${raw}: must be a non-negative integer`)
-  }
-  const n = Number(raw)
-  if (!Number.isInteger(n) || n < 0) {
-    throw new Error(`Invalid --version=${raw}: must be a non-negative integer`)
-  }
-  return n
-}
-
+/** CRM161-09: explicit --backup only — never fall back to newest file in a directory. */
 function resolveBackupPath(): string {
   const explicit = arg('backup')
-  if (explicit) {
-    if (!existsSync(explicit)) throw new Error(`Backup file not found: ${explicit}`)
-    return explicit
-  }
-  const dir = arg('backup-dir') || join(process.cwd(), 'scripts/agent-pack/out')
-  if (!existsSync(dir)) {
+  if (!explicit) {
     throw new Error(
-      `Refusing: no --backup=… and backup dir missing (${dir}). Apply first (writes a timestamped JSON), then revert with --backup=<path>.`,
+      'Refusing: pass --backup=<path> to the exact JSON apply wrote. Newest-file fallback removed (CRM161-09).',
     )
   }
-  const files = readdirSync(dir)
-    .filter((f) => f.startsWith('deepsleep-conversion-backup-') && f.endsWith('.json'))
-    .sort()
-  if (!files.length) {
-    throw new Error(`Refusing: no deepsleep-conversion-backup-*.json in ${dir}. Pass --backup=<path>.`)
-  }
-  return join(dir, files[files.length - 1]!)
+  if (!existsSync(explicit)) throw new Error(`Backup file not found: ${explicit}`)
+  return explicit
 }
 
-function loadBackup(path: string): ConversionBackupV1 {
-  const raw = JSON.parse(readFileSync(path, 'utf8')) as ConversionBackupV1
-  if (raw?.version !== 1 || !raw.agents || typeof raw.agents !== 'object') {
-    throw new Error(`Backup ${path} is not a ConversionBackupV1`)
+function loadBackup(path: string): ConversionBackupV2 {
+  const raw = JSON.parse(readFileSync(path, 'utf8')) as ConversionBackupV2
+  if (raw?.version !== 2 || !Array.isArray(raw.changes)) {
+    throw new Error(`Backup ${path} is not a ConversionBackupV2 (version:2 + changes[])`)
   }
   if (raw.tenantId !== TENANT_ID) {
     throw new Error(`Backup tenantId ${raw.tenantId} != ${TENANT_ID}`)
@@ -149,127 +116,141 @@ async function resolveActor() {
   }
 }
 
-async function restoreAgent(
-  agentId: string,
-  label: string,
-  backup: ConversionBackupV1,
-  versionPin: number | null,
-  act: Awaited<ReturnType<typeof resolveActor>>,
-) {
-  const snap = backup.agents[agentId]
-  if (!snap) {
-    console.log(`! ${label}: not in backup`)
-    return
-  }
-  if (versionPin != null && snap.version !== versionPin) {
-    console.log(
-      `! ${label}: backup agent version is ${snap.version}, --version=${versionPin} does not match — refusing this agent`,
-    )
-    return
-  }
-  console.log(`~ ${label}: restore from backup (pre-apply v${snap.version})`)
+type Actor = Awaited<ReturnType<typeof resolveActor>>
 
-  if (!DRY) {
-    await updateChatAgent({
-      tenantId: TENANT_ID,
-      agentId,
-      ...act,
-      patch: {
-        systemInstructions: snap.systemInstructions ?? '',
-        ...(snap.brandFacts !== undefined ? { brandFacts: snap.brandFacts as object } : {}),
-      },
-    })
-  } else {
-    console.log(`  instructions: ${String(snap.systemInstructions || '').slice(0, 80)}…`)
+function mismatchWarn(label: string): boolean {
+  if (FORCE) {
+    console.log(`  ! ${label}: live ≠ apply after — continuing (--force)`)
+    return false
   }
+  console.log(`  ! ${label}: live ≠ apply after — SKIP (pass --force to overwrite)`)
+  return true
+}
 
-  const { shortcuts: live } = await listShortcuts(TENANT_ID, agentId)
-  for (const want of snap.shortcuts) {
-    const key = String(want.key || '')
-    const row = live.find((x) => x.key === key)
-    if (!row) {
-      console.log(`  ! shortcut ${key} missing live — skip`)
-      continue
-    }
-    console.log(`  shortcut ${key}`)
-    if (!DRY) {
-      await updateShortcut({
-        tenantId: TENANT_ID,
-        agentId,
-        shortcutId: row.id,
-        ...act,
-        patch: {
-          ...(Array.isArray(want.keywords) ? { keywords: want.keywords as string[] } : {}),
-          ...(typeof want.body === 'string' ? { body: want.body } : {}),
-        },
-      })
-    }
-  }
-
-  // Unbind apply-added FAQ titles, then re-bind every pre-apply sourceId from the backup.
-  const applyDocs = await prisma.chatKnowledgeSource.findMany({
-    where: { tenantId: TENANT_ID, name: { in: NEW_FAQ_NAMES } },
-    select: { id: true, name: true },
+async function revertInstructions(ch: Extract<BackupChange, { kind: 'instructions' }>, act: Actor) {
+  const live = await prisma.chatAgent.findFirst({
+    where: { id: ch.agentId, tenantId: TENANT_ID },
+    select: { systemInstructions: true },
   })
-  for (const d of applyDocs) {
-    console.log(`  unbind apply knowledge "${d.name}"`)
-    if (!DRY) {
-      await unbindKnowledgeFromAgent({
-        tenantId: TENANT_ID,
-        agentId,
-        sourceId: d.id,
-        ...act,
-      }).catch(() => null)
-    }
+  if (!live) {
+    console.log(`! instructions ${ch.agentId}: agent missing — skip`)
+    return
   }
-  for (const b of snap.knowledgeBindings) {
-    console.log(`  re-bind knowledge ${b.name || b.sourceId}`)
-    if (!DRY) {
-      await bindKnowledgeToAgent({
-        tenantId: TENANT_ID,
-        agentId,
-        sourceId: b.sourceId,
-        ...act,
-      }).catch((e) => console.log(`    ! bind failed: ${String(e)}`))
-    }
+  const liveVal = live.systemInstructions ?? null
+  if ((liveVal || '').trim() !== (ch.after || '').trim()) {
+    if (mismatchWarn(`instructions ${ch.agentId}`)) return
+  } else {
+    console.log(`~ instructions ${ch.agentId}`)
+  }
+  if (DRY) return
+  await updateChatAgent({
+    tenantId: TENANT_ID,
+    agentId: ch.agentId,
+    ...act,
+    patch: { systemInstructions: ch.before ?? '' },
+  })
+}
+
+async function revertShortcut(ch: Extract<BackupChange, { kind: 'shortcut' }>, act: Actor) {
+  const { shortcuts } = await listShortcuts(TENANT_ID, ch.agentId)
+  const row = shortcuts.find((s) => s.id === ch.shortcutId) || shortcuts.find((s) => s.key === ch.shortcutKey)
+  if (!row) {
+    console.log(`! shortcut ${ch.shortcutKey}: missing live — skip`)
+    return
+  }
+  const liveAfter = { keywords: row.keywords, body: row.body }
+  if (!sameJson(liveAfter.keywords, ch.after.keywords) || liveAfter.body.trim() !== ch.after.body.trim()) {
+    if (mismatchWarn(`shortcut ${ch.shortcutKey}`)) return
+  } else {
+    console.log(`~ shortcut ${ch.shortcutKey}`)
+  }
+  if (DRY) return
+  await updateShortcut({
+    tenantId: TENANT_ID,
+    agentId: ch.agentId,
+    shortcutId: row.id,
+    ...act,
+    patch: { keywords: ch.before.keywords, body: ch.before.body },
+  })
+}
+
+async function revertKnowledge(ch: Extract<BackupChange, { kind: 'knowledge' }>, act: Actor) {
+  const bound = await prisma.chatAgentKnowledgeSource.findMany({
+    where: { tenantId: TENANT_ID, agentId: ch.agentId },
+    select: { sourceId: true },
+  })
+  const liveIds = new Set(bound.map((b) => b.sourceId))
+  // Compare live to what apply wrote: the afterBoundSourceId must still be bound.
+  if (ch.afterBoundSourceId && !liveIds.has(ch.afterBoundSourceId)) {
+    if (mismatchWarn(`knowledge "${ch.name}" (after id unbound)`)) return
+  } else {
+    console.log(`~ knowledge "${ch.name}"`)
+  }
+  if (DRY) return
+  if (ch.afterBoundSourceId) {
+    await unbindKnowledgeFromAgent({
+      tenantId: TENANT_ID,
+      agentId: ch.agentId,
+      sourceId: ch.afterBoundSourceId,
+      ...act,
+    }).catch(() => null)
+  }
+  for (const oldId of ch.beforeBoundSourceIds) {
+    if (oldId === ch.afterBoundSourceId) continue
+    await bindKnowledgeToAgent({
+      tenantId: TENANT_ID,
+      agentId: ch.agentId,
+      sourceId: oldId,
+      ...act,
+    }).catch((e) => console.log(`    ! re-bind ${oldId}: ${String(e)}`))
   }
 }
 
-async function restoreFollowUps(backup: ConversionBackupV1) {
-  if (!RESTORE_FOLLOW_UPS && !APPLY) {
-    // dry-run without the flag still shows intent when backup has a flag
-  }
-  if (!backup.followUpFlag) {
-    console.log('! backup has no follow-up flag row — skip FU restore')
-    return
-  }
+async function revertFollowUp(ch: Extract<BackupChange, { kind: 'follow_up' }>) {
   const live = await prisma.tenantFeatureFlag.findFirst({
-    where: { id: backup.followUpFlag.id, key: FOLLOW_UP_FLAG },
-    select: { id: true },
+    where: { id: ch.flagId, key: FOLLOW_UP_FLAG },
   })
   if (!live) {
-    console.log(`! follow-up flag id ${backup.followUpFlag.id} missing live`)
+    console.log(`! follow-up flag ${ch.flagId} missing — skip`)
     return
   }
-  console.log(
-    `~ restore RAW agent_follow_up_v1 from backup (enabled=${backup.followUpFlag.enabled}; no active:false invent)`,
-  )
-  if (!DRY) {
-    await prisma.tenantFeatureFlag.update({
-      where: { id: backup.followUpFlag.id },
-      data: {
-        enabled: backup.followUpFlag.enabled,
-        config: backup.followUpFlag.config as object,
-        updatedAt: new Date(),
-      },
-    })
+  if (live.enabled !== ch.afterEnabled) {
+    if (mismatchWarn(`follow-up enabled (live=${live.enabled} after=${ch.afterEnabled})`)) return
   }
+  const liveCampaigns = Array.isArray((live.config as { campaigns?: unknown[] } | null)?.campaigns)
+    ? ((live.config as { campaigns: Array<Record<string, unknown>> }).campaigns)
+    : []
+  for (const id of ch.patchedCampaignIds) {
+    const row = liveCampaigns.find((c) => c.id === id)
+    const expected = ch.afterByCampaignId[id]
+    if (!row || !expected) continue
+    const liveSlice = { active: Boolean(row.active), stageTexts: row.stageTexts }
+    if (!sameJson(liveSlice.active, expected.active) || !sameJson(liveSlice.stageTexts, expected.stageTexts)) {
+      if (mismatchWarn(`follow-up campaign ${id} active/stageTexts`)) return
+    }
+  }
+  console.log(
+    `~ restore follow-up flag enabled=${ch.beforeEnabled}; active+stageTexts on ${ch.patchedCampaignIds.length} campaign(s)`,
+  )
+  if (DRY) return
+  const nextConfig = restoreRawFollowUpCampaignFields(
+    live.config,
+    ch.patchedCampaignIds,
+    ch.beforeByCampaignId,
+  )
+  await prisma.tenantFeatureFlag.update({
+    where: { id: ch.flagId },
+    data: {
+      enabled: ch.beforeEnabled,
+      config: nextConfig as object,
+      updatedAt: new Date(),
+    },
+  })
 }
 
 async function main() {
-  console.log(`DeepSleep conversion revert — ${DRY ? 'DRY-RUN' : 'APPLY'}`)
+  console.log(`DeepSleep conversion revert — ${DRY ? 'DRY-RUN' : 'APPLY'}${FORCE ? ' (--force)' : ''}`)
   console.log(`DB host: ${dbHost()}`)
-  const versionPin = parseVersionArg()
   const tenant = await prisma.tenant.findUnique({
     where: { id: TENANT_ID },
     select: { id: true, slug: true, name: true },
@@ -282,25 +263,44 @@ async function main() {
 
   const backupPath = resolveBackupPath()
   const backup = loadBackup(backupPath)
-  console.log(`Backup: ${backupPath} (created ${backup.createdAt})`)
+  console.log(`Backup: ${backupPath} (created ${backup.createdAt}; ${backup.changes.length} change(s))`)
 
   const act = await resolveActor()
   console.log(`Actor: ${act.actorName} role=${act.actorRole}`)
 
-  const which = arg('agent') || 'all'
-  const ids =
-    which === 'all' ? Object.entries(AGENTS) : Object.entries(AGENTS).filter(([k]) => k === which)
-  if (!ids.length) throw new Error(`Unknown --agent=${which}`)
-
-  for (const [label, id] of ids) {
-    await restoreAgent(id, label, backup, versionPin, act)
+  let fuChanges = 0
+  for (const ch of backup.changes) {
+    if (ch.kind === 'instructions') {
+      await revertInstructions(ch, act)
+      continue
+    }
+    if (ch.kind === 'shortcut') {
+      await revertShortcut(ch, act)
+      continue
+    }
+    if (ch.kind === 'knowledge') {
+      await revertKnowledge(ch, act)
+      continue
+    }
+    if (ch.kind === 'follow_up') {
+      fuChanges += 1
+      if (!RESTORE_FOLLOW_UPS) {
+        console.log(
+          `= follow-up change recorded — skipped (pass --restore-follow-ups to restore enabled + active/stageTexts)`,
+        )
+        continue
+      }
+      await revertFollowUp(ch)
+      continue
+    }
+    const _exhaustive: never = ch
+    void _exhaustive
   }
 
-  // Always restore FU from backup when --disable-follow-ups / --restore-follow-ups, or when applying a full revert.
-  if (RESTORE_FOLLOW_UPS || (APPLY && which === 'all')) {
-    await restoreFollowUps(backup)
-  } else {
-    console.log('Follow-ups: skipped (pass --disable-follow-ups / --restore-follow-ups to restore RAW flag from backup)')
+  if (!fuChanges) {
+    console.log('Follow-ups: no follow_up change in this backup')
+  } else if (!RESTORE_FOLLOW_UPS) {
+    console.log('Follow-ups: skipped (CRM161-14 — require --restore-follow-ups)')
   }
 
   console.log(`Done (${DRY ? 'dry-run — re-run with --apply' : 'applied'}).`)

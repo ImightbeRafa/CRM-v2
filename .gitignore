@@ -51,6 +51,7 @@ scripts/agent-review/*
 !scripts/lib/chat-scale-constants.ts
 !scripts/lib/chat-scale-db-guard.ts
 !scripts/lib/deepsleep-conversion-ids.ts
+!scripts/lib/out-path-guard.ts
 !scripts/lib/meta-review-demo.ts
 scripts/agent-pack/out/
 scripts/agent-review/out/

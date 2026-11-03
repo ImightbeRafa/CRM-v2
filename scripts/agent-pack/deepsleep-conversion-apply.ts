@@ -5,8 +5,9 @@
  * functions the UI uses (version bump + ChatAgentVersion snapshot). PatchHouse stays paused; its
  * no-stock line is behind `--patchhouse-nostock` (separate opt-in).
  *
- * BEFORE any write, saves a full timestamped JSON backup (agents + shortcuts + knowledge bindings +
- * RAW agent_follow_up_v1 config) under scripts/agent-pack/out/ (gitignored) or --backup-dir.
+ * BEFORE any write, saves a timestamped ConversionBackupV2 (change log: before+after per field)
+ * under scripts/agent-pack/out/ (gitignored) or --backup-dir (must be gitignored /tmp / outside repo).
+ * Revert needs that exact --backup= path (no newest-file fallback); FU restore needs --restore-follow-ups.
  *
  *   node --env-file=.env.local --import tsx --import ./scripts/shim-server-only.mjs \
  *     scripts/agent-pack/deepsleep-conversion-apply.ts \
@@ -28,13 +29,15 @@ import { createKnowledgeSource, approveKnowledgeSource, bindKnowledgeToAgent, un
 import { hashKnowledgeBody } from '@/lib/soft-ai/knowledge-repository'
 import { FOLLOW_UP_FLAG } from '@/lib/soft-ai/follow-up'
 import {
-  ConversionBackupV1,
+  BackupChange,
+  ConversionBackupV2,
   HARNESS_COLOR_LINE as FORGE_COLOR_LINE,
   HARNESS_SHIPPING_LINE as FORGE_SHIPPING_LINE,
   HARNESS_WASH_LINE as FORGE_WASH_LINE,
   PURA_STAGE,
   STAGE_TEXTS,
   patchRawFollowUpConfigEnable,
+  sameJson,
 } from '@/lib/soft-ai/deepsleep-conversion-pack'
 import {
   DEEPSLEEP_AGENTS as AGENTS,
@@ -43,6 +46,7 @@ import {
   DEEPSLEEP_TENANT_SLUG,
   FOLLOW_UP_ENABLE_AGENT_IDS,
 } from '../lib/deepsleep-conversion-ids'
+import { resolveRepoOutPath } from '../lib/out-path-guard'
 
 const APPLY = process.argv.includes('--apply')
 const DRY = !APPLY || process.argv.includes('--dry-run')
@@ -231,10 +235,6 @@ const AGENT_LABELS: Record<string, string> = {
   [AGENTS.prototipo]: 'Prototipo ventas',
 }
 
-function sameJson(a: unknown, b: unknown) {
-  return JSON.stringify(a) === JSON.stringify(b)
-}
-
 function dbHost(): string {
   const url = process.env.DATABASE_URL || process.env.DIRECT_URL || ''
   try {
@@ -282,65 +282,9 @@ async function resolveActor(label: string) {
   }
 }
 
-async function captureBackup(tenantSlug: string): Promise<ConversionBackupV1> {
-  const agentIds = Object.values(AGENTS)
-  const agents: ConversionBackupV1['agents'] = {}
-  for (const id of agentIds) {
-    const row = await prisma.chatAgent.findFirst({
-      where: { id, tenantId: TENANT_ID },
-      select: {
-        id: true,
-        name: true,
-        systemInstructions: true,
-        brandFacts: true,
-        version: true,
-      },
-    })
-    if (!row) continue
-    const { shortcuts } = await listShortcuts(TENANT_ID, id)
-    const bindings = await prisma.chatAgentKnowledgeSource.findMany({
-      where: { tenantId: TENANT_ID, agentId: id },
-      select: { sourceId: true },
-    })
-    const sources =
-      bindings.length === 0
-        ? []
-        : await prisma.chatKnowledgeSource.findMany({
-            where: { tenantId: TENANT_ID, id: { in: bindings.map((b) => b.sourceId) } },
-            select: { id: true, name: true, contentHash: true },
-          })
-    const byId = Object.fromEntries(sources.map((s) => [s.id, s]))
-    agents[id] = {
-      id: row.id,
-      name: row.name,
-      systemInstructions: row.systemInstructions,
-      brandFacts: row.brandFacts,
-      version: row.version,
-      shortcuts: shortcuts.map((s) => ({ ...s })),
-      knowledgeBindings: bindings.map((b) => ({
-        sourceId: b.sourceId,
-        name: byId[b.sourceId]?.name || '',
-        contentHash: byId[b.sourceId]?.contentHash ?? null,
-      })),
-    }
-  }
-  const fu = await prisma.tenantFeatureFlag.findFirst({
-    where: { key: FOLLOW_UP_FLAG, OR: [{ scope: TENANT_ID }, { tenantId: TENANT_ID }] },
-    select: { id: true, enabled: true, config: true },
-  })
-  return {
-    version: 1,
-    createdAt: new Date().toISOString(),
-    tenantId: TENANT_ID,
-    tenantSlug,
-    agents,
-    followUpFlag: fu
-      ? { id: fu.id, enabled: fu.enabled, config: structuredClone(fu.config) }
-      : null,
-  }
-}
+type Actor = Awaited<ReturnType<typeof resolveActor>>
 
-function writeBackup(backup: ConversionBackupV1, dir: string): string {
+function writeBackup(backup: ConversionBackupV2, dir: string): string {
   mkdirSync(dir, { recursive: true })
   const stamp = backup.createdAt.replace(/[:.]/g, '-')
   const path = join(dir, `deepsleep-conversion-backup-${stamp}.json`)
@@ -348,11 +292,11 @@ function writeBackup(backup: ConversionBackupV1, dir: string): string {
   return path
 }
 
-async function patchShortcuts(
+async function planShortcutChanges(
   agentId: string,
   patches: Record<string, { keywords?: string[]; body?: string }>,
-  act: Awaited<ReturnType<typeof resolveActor>>,
-) {
+): Promise<BackupChange[]> {
+  const out: BackupChange[] = []
   const { shortcuts } = await listShortcuts(TENANT_ID, agentId)
   for (const [key, patch] of Object.entries(patches)) {
     const row = shortcuts.find((s) => s.key === key)
@@ -364,36 +308,46 @@ async function patchShortcuts(
     const nextBody = patch.body ?? row.body
     const changed = !sameJson(row.keywords, nextKeywords) || row.body.trim() !== nextBody.trim()
     console.log(`  ${changed ? '~' : '='} shortcut ${key}${changed ? '' : ' (unchanged)'}`)
-    if (changed) {
-      console.log(`      keywords: ${JSON.stringify(row.keywords)} → ${JSON.stringify(nextKeywords)}`)
-      if (row.body.trim() !== nextBody.trim()) {
-        console.log(`      body: ${JSON.stringify(row.body.slice(0, 120))} → ${JSON.stringify(nextBody.slice(0, 120))}`)
-      }
-      if (!DRY) {
-        await updateShortcut({
-          tenantId: TENANT_ID,
-          agentId,
-          shortcutId: row.id,
-          actorUserId: act.actorUserId,
-          actorName: act.actorName,
-          actorRole: act.actorRole,
-          patch: { keywords: nextKeywords, body: nextBody },
-        })
-      }
+    if (!changed) continue
+    console.log(`      keywords: ${JSON.stringify(row.keywords)} → ${JSON.stringify(nextKeywords)}`)
+    if (row.body.trim() !== nextBody.trim()) {
+      console.log(`      body: ${JSON.stringify(row.body.slice(0, 120))} → ${JSON.stringify(nextBody.slice(0, 120))}`)
     }
+    out.push({
+      kind: 'shortcut',
+      agentId,
+      shortcutKey: key,
+      shortcutId: row.id,
+      before: { keywords: [...row.keywords], body: row.body },
+      after: { keywords: [...nextKeywords], body: nextBody },
+    })
   }
+  return out
 }
 
-async function upsertKnowledge(
-  agentId: string,
-  items: typeof KNOWLEDGE_UPSERTS,
-  act: Awaited<ReturnType<typeof resolveActor>>,
-) {
+async function planInstructionChange(agentId: string, name: string, next: string): Promise<BackupChange | null> {
+  const row = await prisma.chatAgent.findFirst({
+    where: { id: agentId, tenantId: TENANT_ID },
+    select: { systemInstructions: true, version: true },
+  })
+  if (!row) {
+    console.log(`  ! agent ${name} missing`)
+    return null
+  }
+  const before = row.systemInstructions
+  const changed = (before || '').trim() !== next.trim()
+  console.log(`  ${changed ? '~' : '='} instructions ${name} v${row.version}${changed ? '' : ' (unchanged)'}`)
+  if (!changed) return null
+  return { kind: 'instructions', agentId, before, after: next }
+}
+
+async function planKnowledgeChanges(agentId: string, items: typeof KNOWLEDGE_UPSERTS): Promise<BackupChange[]> {
+  const out: BackupChange[] = []
   for (const item of items.filter((i) => i.agentId === agentId)) {
     const hash = hashKnowledgeBody(item.body)
     const existing = await prisma.chatKnowledgeSource.findFirst({
       where: { tenantId: TENANT_ID, name: item.name, contentHash: hash },
-      select: { id: true, status: true },
+      select: { id: true },
     })
     const bound = existing
       ? await prisma.chatAgentKnowledgeSource.findFirst({
@@ -406,79 +360,31 @@ async function upsertKnowledge(
       continue
     }
     console.log(`  ~ knowledge "${item.name}"`)
-    if (DRY) continue
-    let id = existing?.id
-    if (!id) {
-      const created = await createKnowledgeSource({
-        tenantId: TENANT_ID,
-        actorUserId: act.actorUserId,
-        actorName: act.actorName,
-        actorRole: act.actorRole,
-        kind: item.kind,
-        name: item.name,
-        body: item.body,
-      })
-      id = created.id
-      await approveKnowledgeSource({
-        tenantId: TENANT_ID,
-        sourceId: id,
-        actorUserId: act.actorUserId,
-        actorName: act.actorName,
-        actorRole: act.actorRole,
-      })
-    }
-    const old = await prisma.chatKnowledgeSource.findMany({
-      where: { tenantId: TENANT_ID, name: item.name, NOT: { id } },
+    const sameTitle = await prisma.chatKnowledgeSource.findMany({
+      where: { tenantId: TENANT_ID, name: item.name },
       select: { id: true },
     })
-    for (const o of old) {
-      await unbindKnowledgeFromAgent({
-        tenantId: TENANT_ID,
-        agentId,
-        sourceId: o.id,
-        actorUserId: act.actorUserId,
-        actorName: act.actorName,
-        actorRole: act.actorRole,
-      }).catch(() => null)
+    const beforeBound: string[] = []
+    for (const s of sameTitle) {
+      const b = await prisma.chatAgentKnowledgeSource.findFirst({
+        where: { tenantId: TENANT_ID, agentId, sourceId: s.id },
+        select: { id: true },
+      })
+      if (b) beforeBound.push(s.id)
     }
-    await bindKnowledgeToAgent({
-      tenantId: TENANT_ID,
+    out.push({
+      kind: 'knowledge',
       agentId,
-      sourceId: id!,
-      actorUserId: act.actorUserId,
-      actorName: act.actorName,
-      actorRole: act.actorRole,
+      name: item.name,
+      beforeBoundSourceIds: beforeBound,
+      afterBoundSourceId: existing?.id ?? null,
+      afterContentHash: hash,
     })
   }
+  return out
 }
 
-async function patchInstructions(
-  agentId: string,
-  name: string,
-  next: string,
-  act: Awaited<ReturnType<typeof resolveActor>>,
-) {
-  const row = await prisma.chatAgent.findFirst({
-    where: { id: agentId, tenantId: TENANT_ID },
-    select: { systemInstructions: true, version: true },
-  })
-  if (!row) {
-    console.log(`  ! agent ${name} missing`)
-    return
-  }
-  const changed = (row.systemInstructions || '').trim() !== next.trim()
-  console.log(`  ${changed ? '~' : '='} instructions ${name} v${row.version}${changed ? '' : ' (unchanged)'}`)
-  if (changed && !DRY) {
-    await updateChatAgent({
-      tenantId: TENANT_ID,
-      agentId,
-      ...act,
-      patch: { systemInstructions: next },
-    })
-  }
-}
-
-async function prepareFollowUps() {
+async function planFollowUpChange(): Promise<BackupChange | null> {
   const flag = await prisma.tenantFeatureFlag.findFirst({
     where: { key: FOLLOW_UP_FLAG, OR: [{ scope: TENANT_ID }, { tenantId: TENANT_ID }] },
   })
@@ -487,25 +393,121 @@ async function prepareFollowUps() {
   console.log('Prepared stageTexts (Pura Sonrisa, includes price/options):', JSON.stringify(PURA_STAGE, null, 2))
   if (!ENABLE_FOLLOW_UPS) {
     console.log('Skip enabling campaigns (pass --enable-follow-ups to write stageTexts onto active rounds / create).')
-    return
+    return null
   }
   if (!flag) {
     console.log('! No agent_follow_up_v1 row — create one with follow-up-campaign.ts --create first.')
-    return
+    return null
   }
-  // CRM161-04: patch RAW config only for intended agent campaigns; preserve all other keys.
+  const stageTextsFor = (agentId: string) => (agentId === AGENTS.pura ? PURA_STAGE : STAGE_TEXTS)
   const { next, patchedIds, skippedIds } = patchRawFollowUpConfigEnable(flag.config, {
     enableAgentIds: FOLLOW_UP_ENABLE_AGENT_IDS,
-    stageTextsFor: (agentId) => (agentId === AGENTS.pura ? PURA_STAGE : STAGE_TEXTS),
+    stageTextsFor,
   })
   console.log(
     `  ~ raw-patch stageTexts+active on ${patchedIds.length} campaign(s); leave ${skippedIds.length} other(s) untouched; flag enabled=true`,
   )
-  if (!DRY) {
-    await prisma.tenantFeatureFlag.update({
-      where: { id: flag.id },
-      data: { enabled: true, config: next as object, updatedAt: new Date() },
-    })
+  const beforeByCampaignId: Record<string, { active: boolean; stageTexts?: unknown }> = {}
+  const afterByCampaignId: Record<string, { active: boolean; stageTexts?: unknown }> = {}
+  const rawCampaigns = Array.isArray((flag.config as { campaigns?: unknown[] } | null)?.campaigns)
+    ? ((flag.config as { campaigns: Array<Record<string, unknown>> }).campaigns)
+    : []
+  const nextCampaigns = Array.isArray((next as { campaigns?: unknown[] })?.campaigns)
+    ? ((next as { campaigns: Array<Record<string, unknown>> }).campaigns)
+    : []
+  for (const id of patchedIds) {
+    const before = rawCampaigns.find((c) => c.id === id)
+    const after = nextCampaigns.find((c) => c.id === id)
+    if (before) {
+      beforeByCampaignId[id] = {
+        active: Boolean(before.active),
+        stageTexts: before.stageTexts,
+      }
+    }
+    if (after) {
+      afterByCampaignId[id] = {
+        active: Boolean(after.active),
+        stageTexts: after.stageTexts,
+      }
+    }
+  }
+  return {
+    kind: 'follow_up',
+    flagId: flag.id,
+    beforeEnabled: flag.enabled,
+    afterEnabled: true,
+    patchedCampaignIds: patchedIds,
+    beforeByCampaignId,
+    afterByCampaignId,
+  }
+}
+
+async function applyChanges(changes: BackupChange[], act: Actor, knowledgeBodies: typeof KNOWLEDGE_UPSERTS) {
+  for (const ch of changes) {
+    if (ch.kind === 'instructions') {
+      await updateChatAgent({
+        tenantId: TENANT_ID,
+        agentId: ch.agentId,
+        ...act,
+        patch: { systemInstructions: ch.after },
+      })
+      continue
+    }
+    if (ch.kind === 'shortcut') {
+      await updateShortcut({
+        tenantId: TENANT_ID,
+        agentId: ch.agentId,
+        shortcutId: ch.shortcutId,
+        ...act,
+        patch: { keywords: ch.after.keywords, body: ch.after.body },
+      })
+      continue
+    }
+    if (ch.kind === 'knowledge') {
+      const item = knowledgeBodies.find((i) => i.agentId === ch.agentId && i.name === ch.name)
+      if (!item) continue
+      let id = ch.afterBoundSourceId
+      if (!id) {
+        const created = await createKnowledgeSource({
+          tenantId: TENANT_ID,
+          ...act,
+          kind: item.kind,
+          name: item.name,
+          body: item.body,
+        })
+        id = created.id
+        await approveKnowledgeSource({ tenantId: TENANT_ID, sourceId: id, ...act })
+        ch.afterBoundSourceId = id
+      }
+      for (const oldId of ch.beforeBoundSourceIds) {
+        if (oldId === id) continue
+        await unbindKnowledgeFromAgent({
+          tenantId: TENANT_ID,
+          agentId: ch.agentId,
+          sourceId: oldId,
+          ...act,
+        }).catch(() => null)
+      }
+      await bindKnowledgeToAgent({
+        tenantId: TENANT_ID,
+        agentId: ch.agentId,
+        sourceId: id,
+        ...act,
+      })
+      continue
+    }
+    if (ch.kind === 'follow_up') {
+      const flag = await prisma.tenantFeatureFlag.findFirst({ where: { id: ch.flagId } })
+      if (!flag) continue
+      const { next } = patchRawFollowUpConfigEnable(flag.config, {
+        enableAgentIds: FOLLOW_UP_ENABLE_AGENT_IDS,
+        stageTextsFor: (agentId) => (agentId === AGENTS.pura ? PURA_STAGE : STAGE_TEXTS),
+      })
+      await prisma.tenantFeatureFlag.update({
+        where: { id: ch.flagId },
+        data: { enabled: ch.afterEnabled, config: next as object, updatedAt: new Date() },
+      })
+    }
   }
 }
 
@@ -527,27 +529,31 @@ async function main() {
   const act = await resolveActor('deepsleep-conversion-apply')
   console.log(`Actor: ${act.actorName} role=${act.actorRole}`)
 
-  const backupDir = arg('backup-dir') || join(process.cwd(), 'scripts/agent-pack/out')
-  const backup = await captureBackup(tenant.slug)
-  if (DRY) {
-    console.log(`Backup would be written under ${backupDir}/deepsleep-conversion-backup-*.json (${Object.keys(backup.agents).length} agents)`)
-  } else {
-    const path = writeBackup(backup, backupDir)
-    console.log(`Backup saved BEFORE writes: ${path}`)
-  }
+  const backupDir = resolveRepoOutPath(
+    arg('backup-dir') || join(process.cwd(), 'scripts/agent-pack/out'),
+    '--backup-dir',
+  )
+
+  const changes: BackupChange[] = []
 
   console.log('\n== Prototipo ==')
-  await patchShortcuts(AGENTS.prototipo, SHORTCUT_PATCHES[AGENTS.prototipo], act)
+  changes.push(...(await planShortcutChanges(AGENTS.prototipo, SHORTCUT_PATCHES[AGENTS.prototipo])))
   console.log(`  note: ${PROTOTIPO_INSTRUCTIONS_NOTE}`)
 
   console.log('\n== Forge ==')
-  await patchShortcuts(AGENTS.forge, SHORTCUT_PATCHES[AGENTS.forge], act)
-  await patchInstructions(AGENTS.forge, AGENT_LABELS[AGENTS.forge], FORGE_INSTRUCTIONS, act)
-  await upsertKnowledge(AGENTS.forge, KNOWLEDGE_UPSERTS, act)
+  changes.push(...(await planShortcutChanges(AGENTS.forge, SHORTCUT_PATCHES[AGENTS.forge])))
+  {
+    const ch = await planInstructionChange(AGENTS.forge, AGENT_LABELS[AGENTS.forge], FORGE_INSTRUCTIONS)
+    if (ch) changes.push(ch)
+  }
+  changes.push(...(await planKnowledgeChanges(AGENTS.forge, KNOWLEDGE_UPSERTS)))
 
   console.log('\n== Pura Sonrisa ==')
-  await patchShortcuts(AGENTS.pura, SHORTCUT_PATCHES[AGENTS.pura], act)
-  await patchInstructions(AGENTS.pura, AGENT_LABELS[AGENTS.pura], PURA_INSTRUCTIONS, act)
+  changes.push(...(await planShortcutChanges(AGENTS.pura, SHORTCUT_PATCHES[AGENTS.pura])))
+  {
+    const ch = await planInstructionChange(AGENTS.pura, AGENT_LABELS[AGENTS.pura], PURA_INSTRUCTIONS)
+    if (ch) changes.push(ch)
+  }
 
   console.log('\n== Sleeping ==')
   console.log('  = no copy change in this slice (payment/follow-up code covers it)')
@@ -560,7 +566,29 @@ async function main() {
     console.log('  = paused / untouched (pass --patchhouse-nostock to opt in the no-stock line)')
   }
 
-  await prepareFollowUps()
+  {
+    const fu = await planFollowUpChange()
+    if (fu) changes.push(fu)
+  }
+
+  const backup: ConversionBackupV2 = {
+    version: 2,
+    createdAt: new Date().toISOString(),
+    tenantId: TENANT_ID,
+    tenantSlug: tenant.slug,
+    changes,
+  }
+  console.log(`\nPlanned changes: ${changes.length}`)
+  if (DRY) {
+    console.log(`Backup would be written under ${backupDir}/deepsleep-conversion-backup-*.json`)
+  } else {
+    let path = writeBackup(backup, backupDir)
+    console.log(`Backup saved BEFORE writes: ${path}`)
+    await applyChanges(changes, act, KNOWLEDGE_UPSERTS)
+    // Amend knowledge afterBoundSourceId now that creates ran.
+    path = writeBackup(backup, backupDir)
+    console.log(`Backup updated after knowledge ids: ${path}`)
+  }
 
   console.log('\n== TODO facts for the owner ==')
   for (const t of TODOS) console.log(`  - ${t}`)

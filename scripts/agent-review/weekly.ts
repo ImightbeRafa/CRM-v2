@@ -10,12 +10,13 @@
  *     [--split=2026-10-30T00:15:00Z] [--out=scripts/agent-review/out/weekly-YYYY-MM-DD]
  *
  * Window defaults = last completed CR week (Mon 00:00 CR = Mon 06:00 UTC → next Mon).
- * Default --out is under scripts/agent-review/out/ (gitignored). Never write under docs/audits/.
- * Digits, emails, phones, person names and street addresses are masked. Never print raw PII.
+ * Default --out is under scripts/agent-review/out/ (gitignored). CRM161-12: aggregate metrics only
+ * (no reply text samples). CRM161-13: --out must be gitignored, under /tmp, or outside the repo.
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { prisma } from '@/lib/db'
+import { resolveRepoOutPath } from '../lib/out-path-guard'
 
 const TENANT_SLUG = 'deepsleepp-cr-1762740734630'
 const LIVE_NAMES = ['Forge ventas', 'Sleeping ventas', 'PatchHouse ventas', 'Pura Sonrisa ventas', 'Prototipo ventas']
@@ -25,26 +26,6 @@ const STALL_RE = /dame un momento|ya lo reviso|te confirmo/i
 function arg(name: string): string | null {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`))
   return hit ? hit.slice(name.length + 3) : null
-}
-
-/** Mask digits, emails, phones, likely person names and street addresses. Pure. */
-export function mask(s: string): string {
-  return (s || '')
-    .normalize('NFKC')
-    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
-    .replace(/(?<!\d)(?:\+?506[\s-]?)?[2-8]\d{3}[\s.-]?\d{4}(?!\d)/g, '[phone]')
-    .replace(/\d/g, '#')
-    // Street / address cues (CR + generic)
-    .replace(
-      /\b(?:calle|avenida|av\.?|boulevard|blvd\.?|barrio|urb\.?|urbanizaci[oó]n|residencial|condominio|depto\.?|apartamento|apto\.?|casa\s+n[uú]mero|km\.?)\b[^,\n]{0,60}/gi,
-      '[address]',
-    )
-    // Labeled person names (customer fields / "me llamo …")
-    .replace(
-      /\b(?:me\s+llamo|mi\s+nombre\s+es|nombre\s*(?:completo)?\s*[:=]|cliente\s*[:=])\s+[\p{L}][\p{L}'’.\-]*(?:\s+[\p{L}][\p{L}'’.\-]*){0,3}/giu,
-      '[name]',
-    )
-    .slice(0, 160)
 }
 
 function defaultWindow(): { s: Date; e: Date; d: Date } {
@@ -66,11 +47,10 @@ async function main() {
   const s = new Date(arg('start') || win.s.toISOString())
   const e = new Date(arg('end') || win.e.toISOString())
   const d = new Date(arg('split') || win.d.toISOString())
-  const outBase =
-    arg('out') || join(process.cwd(), 'scripts/agent-review/out', `weekly-${s.toISOString().slice(0, 10)}`)
-  if (/docs\/audits\//.test(outBase)) {
-    throw new Error('Refusing to write under docs/audits/ — use scripts/agent-review/out/ or --out=/tmp/…')
-  }
+  const outBase = resolveRepoOutPath(
+    arg('out') || join(process.cwd(), 'scripts/agent-review/out', `weekly-${s.toISOString().slice(0, 10)}`),
+    '--out',
+  )
 
   const tenant = await prisma.tenant.findFirst({ where: { slug: TENANT_SLUG }, select: { id: true, name: true, slug: true } })
   if (!tenant) throw new Error(`Tenant ${TENANT_SLUG} not found`)
@@ -222,19 +202,6 @@ async function main() {
       .map(([k, n]) => ({ key: k, n })),
     prototipo: { pt_verlo: ptVerlo.length, blocked_deal_offer: ptBlocked.length },
     forge: { replies: forgeReplies.length, fg_tallas: forgeFgTallas },
-    // Anonymized stall / payment samples (masked, capped)
-    samples: {
-      stalls: stalls.slice(0, 15).map((t) => ({
-        bot: nameOf[t.agentId],
-        out: mask(t.outputText || ''),
-        shortcut: t.shortcutKey,
-      })),
-      payment_handoffs: paymentHandoff.slice(0, 15).map((t) => ({
-        bot: nameOf[t.agentId],
-        out: mask(t.outputText || ''),
-        reason: (t.decisionTrace as { outcomeMarkers?: { handoffReason?: string } } | null)?.outcomeMarkers?.handoffReason,
-      })),
-    },
   }
 
   const md = [
@@ -268,7 +235,7 @@ async function main() {
     ``,
     `## Notes`,
     ``,
-    `- Read-only. No customer PII. Digits → \`#\`; emails/phones/names/addresses masked.`,
+    `- Read-only. Aggregate metrics only — no reply text samples (CRM161-12).`,
     `- Definitions match docs from the weekly review SQL pack (real turns, reply = delivered/partially_delivered, handoff from decisionTrace.outcomeMarkers).`,
     ``,
   ].join('\n')

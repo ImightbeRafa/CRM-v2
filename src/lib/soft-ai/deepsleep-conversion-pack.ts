@@ -121,27 +121,84 @@ export function patchRawFollowUpConfigEnable(
   return { next: cloned, patchedIds, skippedIds }
 }
 
-export type ConversionBackupV1 = {
-  version: 1
+/** CRM161-10: only fields/rows the apply script actually changed. */
+export type BackupChange =
+  | {
+      kind: 'instructions'
+      agentId: string
+      before: string | null
+      after: string
+    }
+  | {
+      kind: 'shortcut'
+      agentId: string
+      shortcutKey: string
+      shortcutId: string
+      before: { keywords: string[]; body: string }
+      after: { keywords: string[]; body: string }
+    }
+  | {
+      kind: 'knowledge'
+      agentId: string
+      name: string
+      beforeBoundSourceIds: string[]
+      /** Filled when apply creates/binds the new doc; may be null in a dry-run plan. */
+      afterBoundSourceId: string | null
+      afterContentHash: string
+    }
+  | {
+      kind: 'follow_up'
+      flagId: string
+      beforeEnabled: boolean
+      afterEnabled: boolean
+      patchedCampaignIds: string[]
+      beforeByCampaignId: Record<string, { active: boolean; stageTexts?: unknown }>
+      afterByCampaignId: Record<string, { active: boolean; stageTexts?: unknown }>
+    }
+
+export type ConversionBackupV2 = {
+  version: 2
   createdAt: string
   tenantId: string
   tenantSlug: string
-  agents: Record<
-    string,
-    {
-      id: string
-      name: string
-      systemInstructions: string | null
-      brandFacts: unknown
-      version: number
-      shortcuts: Array<Record<string, unknown>>
-      knowledgeBindings: Array<{ sourceId: string; name: string; contentHash: string | null }>
-    }
-  >
-  followUpFlag: null | {
-    id: string
-    enabled: boolean
-    /** RAW config as stored — restore verbatim. */
-    config: unknown
+  changes: BackupChange[]
+}
+
+/** @deprecated kept for type name stability in older docs */
+export type ConversionBackupV1 = ConversionBackupV2
+
+/**
+ * CRM161-11: restore only active + stageTexts on the patched campaign ids inside the LIVE
+ * raw config. Preserves claimed maps, other keys, and campaigns added after apply.
+ */
+export function restoreRawFollowUpCampaignFields(
+  liveConfig: unknown,
+  patchedCampaignIds: string[],
+  beforeByCampaignId: Record<string, { active: boolean; stageTexts?: unknown }>,
+): unknown {
+  const cloned = structuredClone(liveConfig ?? { campaigns: [] }) as {
+    campaigns?: unknown[]
+    [k: string]: unknown
   }
+  if (!Array.isArray(cloned.campaigns)) return cloned
+  const want = new Set(patchedCampaignIds)
+  cloned.campaigns = cloned.campaigns.map((entry) => {
+    if (!entry || typeof entry !== 'object') return entry
+    const c = entry as Record<string, unknown>
+    const id = typeof c.id === 'string' ? c.id : ''
+    if (!want.has(id)) return c
+    const before = beforeByCampaignId[id]
+    if (!before) return c
+    const next: Record<string, unknown> = { ...c, active: before.active }
+    if ('stageTexts' in before) {
+      if (before.stageTexts === undefined) delete next.stageTexts
+      else next.stageTexts = structuredClone(before.stageTexts)
+    }
+    return next
+  })
+  return cloned
+}
+
+export function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
 }

@@ -21,7 +21,9 @@ import {
   STAGE_TEXTS,
   patchRawFollowUpConfigEnable,
   planFollowUpCampaignsOnEnable,
+  restoreRawFollowUpCampaignFields,
 } from '@/lib/soft-ai/deepsleep-conversion-pack'
+import { assertAllowedOutPath, isUnderTmp, pathIsOutsideRepo } from '../../../scripts/lib/out-path-guard'
 
 /** Mirror of scripts/lib/deepsleep-conversion-ids.ts (kept out of soft-ai for A1). */
 const AGENTS = {
@@ -309,5 +311,88 @@ describe('follow-up enable: only intended DeepSleep agents; PatchHouse untouched
     assert.equal(n.campaigns[1]!.active, true)
     assert.deepEqual(n.campaigns[1]!.stageTexts, { A: { quoted: 'keep-me' } })
     assert.deepEqual(n.campaigns[1]!.claimed, { z: 9 })
+  })
+
+  it('restoreRawFollowUpCampaignFields only restores active+stageTexts on patched ids (CRM161-11)', () => {
+    const live = {
+      version: 9,
+      claimedGlobal: { keep: true },
+      campaigns: [
+        {
+          id: 'c-forge',
+          agentId: AGENTS.forge,
+          active: true,
+          stageTexts: STAGE_TEXTS,
+          claimed: { later: 1 },
+          texts: { A: 'live' },
+        },
+        {
+          id: 'c-new',
+          agentId: 'new-agent',
+          active: true,
+          stageTexts: { A: { quoted: 'brand new' } },
+          claimed: { n: 2 },
+        },
+        {
+          id: 'c-patch',
+          agentId: AGENTS.patchhouse,
+          active: false,
+          stageTexts: { A: { quoted: 'untouched' } },
+        },
+      ],
+    }
+    const next = restoreRawFollowUpCampaignFields(
+      live,
+      ['c-forge'],
+      { 'c-forge': { active: false, stageTexts: { A: { quoted: 'old' } } } },
+    ) as typeof live
+    assert.equal(next.version, 9)
+    assert.deepEqual(next.claimedGlobal, { keep: true })
+    assert.equal(next.campaigns.length, 3)
+    assert.equal(next.campaigns[0]!.active, false)
+    assert.deepEqual(next.campaigns[0]!.stageTexts, { A: { quoted: 'old' } })
+    assert.deepEqual(next.campaigns[0]!.claimed, { later: 1 }, 'later claimed entries preserved')
+    assert.equal(next.campaigns[0]!.texts.A, 'live')
+    assert.equal(next.campaigns[1]!.active, true, 'new campaign preserved')
+    assert.deepEqual(next.campaigns[1]!.claimed, { n: 2 })
+    assert.equal(next.campaigns[2]!.active, false)
+    assert.deepEqual(next.campaigns[2]!.stageTexts, { A: { quoted: 'untouched' } })
+  })
+})
+
+describe('CRM161-13 out path guard', () => {
+  const root = '/workspace'
+  it('allows /tmp and paths outside the repo without git check', () => {
+    assert.equal(isUnderTmp('/tmp/weekly.json'), true)
+    assert.equal(pathIsOutsideRepo('/var/tmp/out', root), true)
+    assert.equal(
+      assertAllowedOutPath('/tmp/x', { repoRoot: root, label: '--out', isGitIgnored: () => false }),
+      '/tmp/x',
+    )
+    assert.equal(
+      assertAllowedOutPath('/home/ubuntu/outside', { repoRoot: root, label: '--out', isGitIgnored: () => false }),
+      '/home/ubuntu/outside',
+    )
+  })
+
+  it('refuses in-repo paths that are not gitignored', () => {
+    assert.throws(
+      () =>
+        assertAllowedOutPath('docs/audits/weekly.json', {
+          repoRoot: root,
+          label: '--out',
+          isGitIgnored: () => false,
+        }),
+      /not gitignored/,
+    )
+  })
+
+  it('allows in-repo paths when git check-ignore matches', () => {
+    const abs = assertAllowedOutPath('scripts/agent-review/out/weekly', {
+      repoRoot: root,
+      label: '--out',
+      isGitIgnored: () => true,
+    })
+    assert.match(abs, /scripts\/agent-review\/out\/weekly$/)
   })
 })

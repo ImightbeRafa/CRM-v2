@@ -21,7 +21,6 @@ import {
   type BusinessHours,
 } from '@/lib/soft-ai/business-hours'
 import { loadAgentSalesContext } from '@/lib/soft-ai/agent-sales-context'
-import { loadSizeGuideKey, sizeGuideFallbackKey } from '@/lib/soft-ai/size-guide'
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import {
@@ -134,6 +133,7 @@ import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
 import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
 import { selectReplyImages, selectReplyVideo, sendableImageReplyIds, verbatimIdsBlockedByMissingImage, type ReplyImage } from '@/lib/soft-ai/reply-images'
+import { loadSizeGuideKey, sizeGuideFallbackKey } from '@/lib/soft-ai/size-guide'
 import type { AgentAsset } from '@/lib/soft-ai/agent-assets'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import { AGENT_IMAGE_DEADLINE_MS, loadSentAgentImageShas, loadSentAgentVideoShas, sendAgentImagesOnce, sendAgentVideoOnce } from '@/lib/soft-ai/agent-media-send'

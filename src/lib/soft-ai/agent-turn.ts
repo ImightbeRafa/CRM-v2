@@ -21,6 +21,8 @@ import {
   type BusinessHours,
 } from '@/lib/soft-ai/business-hours'
 import { loadAgentSalesContext } from '@/lib/soft-ai/agent-sales-context'
+import { FIRST_GREETING_FLAG, withFirstGreeting } from '@/lib/soft-ai/first-greeting'
+import { isTenantFeatureEnabled } from '@/lib/feature-flags'
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import {
@@ -261,6 +263,22 @@ function nightIntroWho(
     name: (agent.introductionNames || []).find((n) => typeof n === 'string' && n.trim()) ?? null,
     store: agent.brandFacts?.storeName ?? null,
     introduced: history.some((h) => h.direction === 'outbound'),
+  }
+}
+
+/**
+ * First-reply greeting (flag FIRST_GREETING_FLAG, default off): on only when nobody wrote to this customer yet — not
+ * in the loaded window and not anywhere in the chat (a long burst can push an old reply out of the window). Any read
+ * error → off (the turn never fails for a hello).
+ */
+async function firstGreetingOn(tenantId: string, conversationId: string, history: Array<{ direction: string }>): Promise<boolean> {
+  if (history.some((h) => h.direction === 'outbound')) return false
+  try {
+    if (!(await isTenantFeatureEnabled(tenantId, FIRST_GREETING_FLAG))) return false
+    const prior = await prisma.chatMessage.findFirst({ where: { tenantId, conversationId, direction: 'outbound' }, select: { id: true } })
+    return !prior
+  } catch {
+    return false
   }
 }
 
@@ -1382,6 +1400,7 @@ export async function executeAgentLayerTurn(
     isMediaLikeMessageType(trigger.messageType) || burstEarlier.some((m) => isMediaLikeMessageType(m.messageType)) ? turnSalesContext : null
   const shortcuts = await listRuntimeShortcuts(row.tenantId, resolved.agent.id)
   const replyAssets = await loadReplyAssets(row.tenantId, resolved.agent.id)
+  const greetFirst = await firstGreetingOn(row.tenantId, row.conversationId, history)
   // Only replies whose image would really go out are marked "(va con imagen)" (WhatsApp / Instagram, not yet sent in this chat).
   const channelSendsImages = imageChannel(payload.platform)
   const sentReplyMediaIds =
@@ -1495,7 +1514,11 @@ export async function executeAgentLayerTurn(
       planDecisionDelivery({ text: decision.text, textOk: decision.textOk, handoff: decision.handoff }),
       await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
     )
-    const handledText = withNightIntro(finalizePlannedText(plan, payload, trigger.sentAt, hours), hours, nightIntroWho(resolved.agent, history))
+    const handledText = withNightIntro(
+      withFirstGreeting(finalizePlannedText(plan, payload, trigger.sentAt, hours), nightIntroWho(resolved.agent, history), greetFirst),
+      hours,
+      nightIntroWho(resolved.agent, history),
+    )
     const outputHash = hashSoftAiOutput(handledText)
     const handledMarkers: OutcomeMarkers = plannedMarkers(
       { needsHuman: decision.needsHuman, fallbackUsed: false, escalate: decision.escalate },
@@ -1701,7 +1724,11 @@ export async function executeAgentLayerTurn(
     },
   )
   const modelPlan = applySafeLineCap(night.plan, await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey))
-  const finalText = withNightIntro(finalizePlannedText(modelPlan, payload, trigger.sentAt, hours), hours, nightIntroWho(resolved.agent, history))
+  const finalText = withNightIntro(
+    withFirstGreeting(finalizePlannedText(modelPlan, payload, trigger.sentAt, hours), nightIntroWho(resolved.agent, history), greetFirst),
+    hours,
+    nightIntroWho(resolved.agent, history),
+  )
   const modelMarkers: OutcomeMarkers = plannedMarkers(
     { needsHuman: night.soft ? false : needsHuman, fallbackUsed: llm.fallbackUsed, escalate: night.soft ? false : llm.escalate },
     // The night review is recorded too: a lease reclaim settles it (review: the chat stays on the agent).
@@ -2585,6 +2612,9 @@ async function runAgentTestTurnInner(input: {
 
   const shortcuts = await listRuntimeShortcuts(input.tenantId, runtimeAgent.id)
   const replyAssets = await loadReplyAssets(input.tenantId, runtimeAgent.id)
+  // Probar parity: the test chat has no stored messages, so only its own history counts.
+  const probarGreetFirst =
+    !(input.history ?? []).some((h) => h.direction === 'outbound') && (await isTenantFeatureEnabled(input.tenantId, FIRST_GREETING_FLAG).catch(() => false))
   const history = windowedAgentHistory(
     (input.history || []).map((message, index) => ({
       id: `test-${index}`,
@@ -2847,7 +2877,11 @@ async function runAgentTestTurnInner(input: {
     const probarCustomerText = customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText)
     const night = nightKeepsSelling(planned, probarHours, { safeReview: SAFE_LINE.review, customerText: probarCustomerText, cannotAnswer: admitsCannotAnswer, isComplaint: isComplaintText, modelReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null })
     const plan = night.plan
-    text = withNightIntro(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), probarHours, nightIntroWho(runtimeAgent, input.history ?? []))
+    text = withNightIntro(
+      withFirstGreeting(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), nightIntroWho(runtimeAgent, input.history ?? []), probarGreetFirst),
+      probarHours,
+      nightIntroWho(runtimeAgent, input.history ?? []),
+    )
     handoff = plan.handoff ?? night.review
     intent = policy.intent
     shortcutKey = planned.text !== policy.text ? null : policy.purchaseSummaryAppended ? 'sys_purchase_summary' : llm.shortcutKey || null
@@ -2864,7 +2898,11 @@ async function runAgentTestTurnInner(input: {
     ]
   } else {
     const plan = planDecisionDelivery({ text: decision.text, textOk: decision.textOk, handoff: decision.handoff })
-    text = withNightIntro(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), probarHours, nightIntroWho(runtimeAgent, input.history ?? []))
+    text = withNightIntro(
+      withFirstGreeting(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), nightIntroWho(runtimeAgent, input.history ?? []), probarGreetFirst),
+      probarHours,
+      nightIntroWho(runtimeAgent, input.history ?? []),
+    )
     handoff = plan.handoff
     needsHuman = decision.needsHuman
     escalate = decision.escalate

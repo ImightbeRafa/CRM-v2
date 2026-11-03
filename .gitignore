@@ -50,6 +50,10 @@ scripts/agent-review/*
 !scripts/lib/betsy-v2-additive-manifest.mjs
 !scripts/lib/chat-scale-constants.ts
 !scripts/lib/chat-scale-db-guard.ts
+!scripts/lib/deepsleep-conversion-ids.ts
+!scripts/lib/meta-review-demo.ts
+scripts/agent-pack/out/
+scripts/agent-review/out/
 SDK_V2_FINAL_CONFIGURATION.txt
 SDK_V2_IMPLEMENTATION.txt
 # Documentation and Notes (local only)

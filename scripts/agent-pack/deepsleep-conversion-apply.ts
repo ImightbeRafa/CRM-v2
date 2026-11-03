@@ -5,42 +5,56 @@
  * functions the UI uses (version bump + ChatAgentVersion snapshot). PatchHouse stays paused; its
  * no-stock line is behind `--patchhouse-nostock` (separate opt-in).
  *
- * Follow-ups: prints the prepared stageTexts and enables `agent_follow_up_v1` campaigns only with
- * `--enable-follow-ups` (flag-gated, reversible via the revert script).
+ * BEFORE any write, saves a full timestamped JSON backup (agents + shortcuts + knowledge bindings +
+ * RAW agent_follow_up_v1 config) under scripts/agent-pack/out/ (gitignored) or --backup-dir.
  *
  *   node --env-file=.env.local --import tsx --import ./scripts/shim-server-only.mjs \
- *     scripts/agent-pack/deepsleep-conversion-apply.ts [--dry-run] [--apply] \
- *     [--enable-follow-ups] [--patchhouse-nostock]
+ *     scripts/agent-pack/deepsleep-conversion-apply.ts \
+ *     --confirm-tenant=deepsleepp-cr-1762740734630 \
+ *     [--dry-run] [--apply] [--enable-follow-ups] [--patchhouse-nostock] \
+ *     [--backup-dir=scripts/agent-pack/out] [--actor-email=rafael@betsycrm.com]
  *
  * Default is --dry-run (prints the diff, writes nothing). --apply writes.
  *
- * SAFETY: never touches model / bindings / status / unlock. Refuses non-DeepSleep tenants.
+ * SAFETY: never touches model / bindings / status / unlock. Requires --confirm-tenant=<slug>.
  * Does NOT invent unknown facts — TODOs are listed at the end.
  */
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { prisma } from '@/lib/db'
 import { updateChatAgent } from '@/lib/soft-ai/agent-admin'
 import { listShortcuts, updateShortcut } from '@/lib/soft-ai/shortcut-admin'
 import { createKnowledgeSource, approveKnowledgeSource, bindKnowledgeToAgent, unbindKnowledgeFromAgent } from '@/lib/soft-ai/knowledge-admin'
 import { hashKnowledgeBody } from '@/lib/soft-ai/knowledge-repository'
-import { FOLLOW_UP_FLAG, parseFollowUpConfig } from '@/lib/soft-ai/follow-up'
+import { FOLLOW_UP_FLAG } from '@/lib/soft-ai/follow-up'
 import {
-  DEEPSLEEP_AGENTS as AGENTS,
-  FOLLOW_UP_ENABLE_AGENT_IDS,
-  FORGE_COLOR_LINE,
-  FORGE_SHIPPING_LINE,
-  FORGE_WASH_LINE,
+  ConversionBackupV1,
+  HARNESS_COLOR_LINE as FORGE_COLOR_LINE,
+  HARNESS_SHIPPING_LINE as FORGE_SHIPPING_LINE,
+  HARNESS_WASH_LINE as FORGE_WASH_LINE,
   PURA_STAGE,
   STAGE_TEXTS,
-  planFollowUpCampaignsOnEnable,
+  patchRawFollowUpConfigEnable,
 } from '@/lib/soft-ai/deepsleep-conversion-pack'
+import {
+  DEEPSLEEP_AGENTS as AGENTS,
+  DEEPSLEEP_OWNER_EMAIL,
+  DEEPSLEEP_TENANT_ID,
+  DEEPSLEEP_TENANT_SLUG,
+  FOLLOW_UP_ENABLE_AGENT_IDS,
+} from '../lib/deepsleep-conversion-ids'
 
 const APPLY = process.argv.includes('--apply')
 const DRY = !APPLY || process.argv.includes('--dry-run')
 const ENABLE_FOLLOW_UPS = process.argv.includes('--enable-follow-ups')
 const PATCHHOUSE_NOSTOCK = process.argv.includes('--patchhouse-nostock')
 
-const TENANT_ID = 'cmhsibjue0004js04gie724nx'
-const ACTOR_EMAIL_FALLBACK = 'rafael@betsycrm.com'
+const TENANT_ID = DEEPSLEEP_TENANT_ID
+
+function arg(name: string): string | null {
+  const hit = process.argv.find((a) => a.startsWith(`--${name}=`))
+  return hit ? hit.slice(name.length + 3) : null
+}
 
 /** Desired shortcut patches (key → fields). Missing keys are skipped with a warning. */
 const SHORTCUT_PATCHES: Record<string, Record<string, { keywords?: string[]; body?: string; deliveryMode?: string }>> = {
@@ -68,14 +82,12 @@ const SHORTCUT_PATCHES: Record<string, Record<string, { keywords?: string[]; bod
         'tutorial para armarlo',
         'armar',
         'armarlo',
-        // typos seen / likely
         'comofunciona',
         'como funcina',
         'vido',
         'vídeo',
         'videoo',
       ],
-      // Keep price + shipping; "envío incluido" is authorized via includedShippingAmounts on the code path.
       body:
         'Así vuela. El kit sale ₡14 900; con el envío son ₡17 900. Dos kits: ₡29 800 con envío incluido. Pagás por SINPE, transferencia, tarjeta en prototipocr.com, o contra entrega en el GAM. ¿Te lo enviamos?',
     },
@@ -189,15 +201,13 @@ const KNOWLEDGE_UPSERTS: Array<{
     agentId: AGENTS.forge,
     name: 'FAQ — cómo pagar / pedir / envío / lavado / mayoreo',
     kind: 'faq',
-    body:
-      `Cómo pagar: SINPE, transferencia, tarjeta en forge.shopping (Tilopay) o contra entrega en el GAM. Cómo pedir: talla + cantidad → envío o retiro → datos → pago. Envío: incluido en el precio actual a todo CR; llega en ${FORGE_SHIPPING_LINE} a todo el país. Lavado: ${FORGE_WASH_LINE} Color: solo negro; si preguntan: "${FORGE_COLOR_LINE}" y una pregunta que avance. Descuento por volumen / mayoreo / logo o nombre: pasar a una persona. Sin claims de olor.`,
+    body: `Cómo pagar: SINPE, transferencia, tarjeta en forge.shopping (Tilopay) o contra entrega en el GAM. Cómo pedir: talla + cantidad → envío o retiro → datos → pago. Envío: incluido en el precio actual a todo CR; llega en ${FORGE_SHIPPING_LINE} a todo el país. Lavado: ${FORGE_WASH_LINE} Color: solo negro; si preguntan: "${FORGE_COLOR_LINE}" y una pregunta que avance. Descuento por volumen / mayoreo / logo o nombre: pasar a una persona. Sin claims de olor.`,
   },
   {
     agentId: AGENTS.forge,
     name: 'FAQ — color (solo negro)',
     kind: 'faq',
-    body:
-      `El Arnés ForgeCR por ahora viene solo en negro. Respuesta al cliente: "${FORGE_COLOR_LINE}" y después una pregunta que avance la compra (apartar, talla o cómo funciona).`,
+    body: `El Arnés ForgeCR por ahora viene solo en negro. Respuesta al cliente: "${FORGE_COLOR_LINE}" y después una pregunta que avance la compra (apartar, talla o cómo funciona).`,
   },
   {
     agentId: AGENTS.forge,
@@ -210,40 +220,139 @@ const KNOWLEDGE_UPSERTS: Array<{
 
 const TODOS = [
   'PatchHouse: texto de sin stock — solo con --patchhouse-nostock; agente sigue pausado salvo GO.',
-  'Follow-ups: activar con --enable-follow-ups después de revisar stageTexts; revert con deepsleep-conversion-revert.ts.',
+  'Follow-ups: activar con --enable-follow-ups después de revisar stageTexts; revert with backup file.',
 ]
 
-function flag(name: string) {
-  return process.argv.includes(name)
+const AGENT_LABELS: Record<string, string> = {
+  [AGENTS.forge]: 'Forge ventas',
+  [AGENTS.sleeping]: 'Sleeping ventas',
+  [AGENTS.patchhouse]: 'PatchHouse ventas',
+  [AGENTS.pura]: 'Pura Sonrisa ventas',
+  [AGENTS.prototipo]: 'Prototipo ventas',
 }
 
 function sameJson(a: unknown, b: unknown) {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
-async function actor() {
-  const user =
-    (await prisma.user.findFirst({
-      where: { OR: [{ email: ACTOR_EMAIL_FALLBACK }, { email: { contains: 'rafa', mode: 'insensitive' } }] },
-      select: { id: true, name: true, email: true },
-      orderBy: { createdAt: 'asc' },
-    })) ?? null
-  if (!user) throw new Error('No actor user found for audit')
-  const member = await prisma.membership.findFirst({
-    where: { userId: user.id, tenantId: TENANT_ID, isActive: true },
-    select: { role: true },
-  })
-  if (!member || !['OWNER', 'ADMIN', 'SUPER_ADMIN'].includes(String(member.role)) && String(member.role) !== 'OWNER') {
-    // Soft check — cloud may use a service actor; still require membership.
-  }
-  return {
-    actorUserId: user.id,
-    actorName: `${user.name || user.email} (deepsleep-conversion-apply)`,
-    actorRole: String(member?.role ?? 'OWNER'),
+function dbHost(): string {
+  const url = process.env.DATABASE_URL || process.env.DIRECT_URL || ''
+  try {
+    return new URL(url).host || '(unparseable DATABASE_URL)'
+  } catch {
+    return url ? '(unparseable DATABASE_URL)' : '(no DATABASE_URL)'
   }
 }
 
-async function patchShortcuts(agentId: string, patches: Record<string, { keywords?: string[]; body?: string }>, act: Awaited<ReturnType<typeof actor>>) {
+function requireConfirmTenant(slug: string) {
+  const confirm = arg('confirm-tenant')
+  if (!confirm) {
+    throw new Error('Refusing: pass --confirm-tenant=<slug> (e.g. --confirm-tenant=deepsleepp-cr-1762740734630)')
+  }
+  if (confirm !== slug) {
+    throw new Error(`Refusing: --confirm-tenant=${confirm} does not match live slug ${slug}`)
+  }
+}
+
+async function resolveActor(label: string) {
+  const email = (arg('actor-email') || DEEPSLEEP_OWNER_EMAIL).trim().toLowerCase()
+  const user = await prisma.user.findFirst({
+    where: { email: { equals: email, mode: 'insensitive' } },
+    select: { id: true, name: true, email: true },
+  })
+  if (!user?.email || user.email.toLowerCase() !== email) {
+    throw new Error(`No user with exact email ${email}`)
+  }
+  const member = await prisma.membership.findFirst({
+    where: {
+      userId: user.id,
+      tenantId: TENANT_ID,
+      isActive: true,
+      role: { in: ['OWNER', 'ADMIN'] },
+    },
+    select: { role: true },
+  })
+  if (!member) {
+    throw new Error(`User ${email} has no active OWNER/ADMIN membership on DeepSleep`)
+  }
+  return {
+    actorUserId: user.id,
+    actorName: `${user.name || user.email} (${label})`,
+    actorRole: String(member.role),
+  }
+}
+
+async function captureBackup(tenantSlug: string): Promise<ConversionBackupV1> {
+  const agentIds = Object.values(AGENTS)
+  const agents: ConversionBackupV1['agents'] = {}
+  for (const id of agentIds) {
+    const row = await prisma.chatAgent.findFirst({
+      where: { id, tenantId: TENANT_ID },
+      select: {
+        id: true,
+        name: true,
+        systemInstructions: true,
+        brandFacts: true,
+        version: true,
+      },
+    })
+    if (!row) continue
+    const { shortcuts } = await listShortcuts(TENANT_ID, id)
+    const bindings = await prisma.chatAgentKnowledgeSource.findMany({
+      where: { tenantId: TENANT_ID, agentId: id },
+      select: { sourceId: true },
+    })
+    const sources =
+      bindings.length === 0
+        ? []
+        : await prisma.chatKnowledgeSource.findMany({
+            where: { tenantId: TENANT_ID, id: { in: bindings.map((b) => b.sourceId) } },
+            select: { id: true, name: true, contentHash: true },
+          })
+    const byId = Object.fromEntries(sources.map((s) => [s.id, s]))
+    agents[id] = {
+      id: row.id,
+      name: row.name,
+      systemInstructions: row.systemInstructions,
+      brandFacts: row.brandFacts,
+      version: row.version,
+      shortcuts: shortcuts.map((s) => ({ ...s })),
+      knowledgeBindings: bindings.map((b) => ({
+        sourceId: b.sourceId,
+        name: byId[b.sourceId]?.name || '',
+        contentHash: byId[b.sourceId]?.contentHash ?? null,
+      })),
+    }
+  }
+  const fu = await prisma.tenantFeatureFlag.findFirst({
+    where: { key: FOLLOW_UP_FLAG, OR: [{ scope: TENANT_ID }, { tenantId: TENANT_ID }] },
+    select: { id: true, enabled: true, config: true },
+  })
+  return {
+    version: 1,
+    createdAt: new Date().toISOString(),
+    tenantId: TENANT_ID,
+    tenantSlug,
+    agents,
+    followUpFlag: fu
+      ? { id: fu.id, enabled: fu.enabled, config: structuredClone(fu.config) }
+      : null,
+  }
+}
+
+function writeBackup(backup: ConversionBackupV1, dir: string): string {
+  mkdirSync(dir, { recursive: true })
+  const stamp = backup.createdAt.replace(/[:.]/g, '-')
+  const path = join(dir, `deepsleep-conversion-backup-${stamp}.json`)
+  writeFileSync(path, JSON.stringify(backup, null, 2))
+  return path
+}
+
+async function patchShortcuts(
+  agentId: string,
+  patches: Record<string, { keywords?: string[]; body?: string }>,
+  act: Awaited<ReturnType<typeof resolveActor>>,
+) {
   const { shortcuts } = await listShortcuts(TENANT_ID, agentId)
   for (const [key, patch] of Object.entries(patches)) {
     const row = shortcuts.find((s) => s.key === key)
@@ -278,7 +387,7 @@ async function patchShortcuts(agentId: string, patches: Record<string, { keyword
 async function upsertKnowledge(
   agentId: string,
   items: typeof KNOWLEDGE_UPSERTS,
-  act: Awaited<ReturnType<typeof actor>>,
+  act: Awaited<ReturnType<typeof resolveActor>>,
 ) {
   for (const item of items.filter((i) => i.agentId === agentId)) {
     const hash = hashKnowledgeBody(item.body)
@@ -318,7 +427,6 @@ async function upsertKnowledge(
         actorRole: act.actorRole,
       })
     }
-    // Unbind older same-title docs so the new fact wins.
     const old = await prisma.chatKnowledgeSource.findMany({
       where: { tenantId: TENANT_ID, name: item.name, NOT: { id } },
       select: { id: true },
@@ -344,8 +452,16 @@ async function upsertKnowledge(
   }
 }
 
-async function patchInstructions(agentId: string, name: string, next: string, act: Awaited<ReturnType<typeof actor>>) {
-  const row = await prisma.chatAgent.findFirst({ where: { id: agentId, tenantId: TENANT_ID }, select: { systemInstructions: true, version: true } })
+async function patchInstructions(
+  agentId: string,
+  name: string,
+  next: string,
+  act: Awaited<ReturnType<typeof resolveActor>>,
+) {
+  const row = await prisma.chatAgent.findFirst({
+    where: { id: agentId, tenantId: TENANT_ID },
+    select: { systemInstructions: true, version: true },
+  })
   if (!row) {
     console.log(`  ! agent ${name} missing`)
     return
@@ -377,29 +493,48 @@ async function prepareFollowUps() {
     console.log('! No agent_follow_up_v1 row — create one with follow-up-campaign.ts --create first.')
     return
   }
-  const cfg = parseFollowUpConfig(flag.config)
-  const campaigns = planFollowUpCampaignsOnEnable(cfg.campaigns)
-  const activated = campaigns.filter((c) => FOLLOW_UP_ENABLE_AGENT_IDS.has(c.agentId) && c.active)
-  const skipped = campaigns.filter((c) => !FOLLOW_UP_ENABLE_AGENT_IDS.has(c.agentId))
+  // CRM161-04: patch RAW config only for intended agent campaigns; preserve all other keys.
+  const { next, patchedIds, skippedIds } = patchRawFollowUpConfigEnable(flag.config, {
+    enableAgentIds: FOLLOW_UP_ENABLE_AGENT_IDS,
+    stageTextsFor: (agentId) => (agentId === AGENTS.pura ? PURA_STAGE : STAGE_TEXTS),
+  })
   console.log(
-    `  ~ stageTexts + active=true on ${activated.length} intended campaign(s) (Forge/Sleeping/Pura/Prototipo); keep state on ${skipped.length} other(s) incl. PatchHouse; flag enabled=true`,
+    `  ~ raw-patch stageTexts+active on ${patchedIds.length} campaign(s); leave ${skippedIds.length} other(s) untouched; flag enabled=true`,
   )
   if (!DRY) {
     await prisma.tenantFeatureFlag.update({
       where: { id: flag.id },
-      data: { enabled: true, config: { ...cfg, campaigns } as object, updatedAt: new Date() },
+      data: { enabled: true, config: next as object, updatedAt: new Date() },
     })
   }
 }
 
 async function main() {
-  console.log(`DeepSleep conversion apply — ${DRY ? 'DRY-RUN' : 'APPLY'} (enable-follow-ups=${ENABLE_FOLLOW_UPS}, patchhouse-nostock=${PATCHHOUSE_NOSTOCK})`)
-  const tenant = await prisma.tenant.findUnique({ where: { id: TENANT_ID }, select: { id: true, slug: true, name: true } })
-  if (!tenant || !String(tenant.slug || '').startsWith('deepsleep')) {
-    throw new Error(`Refusing: tenant ${TENANT_ID} is not DeepSleep (got ${tenant?.slug})`)
+  console.log(
+    `DeepSleep conversion apply — ${DRY ? 'DRY-RUN' : 'APPLY'} (enable-follow-ups=${ENABLE_FOLLOW_UPS}, patchhouse-nostock=${PATCHHOUSE_NOSTOCK})`,
+  )
+  console.log(`DB host: ${dbHost()}`)
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: TENANT_ID },
+    select: { id: true, slug: true, name: true },
+  })
+  if (!tenant || tenant.slug !== DEEPSLEEP_TENANT_SLUG) {
+    throw new Error(`Refusing: tenant ${TENANT_ID} slug is ${tenant?.slug}, expected ${DEEPSLEEP_TENANT_SLUG}`)
   }
-  const act = await actor()
-  console.log(`Actor: ${act.actorName}`)
+  console.log(`Tenant: ${tenant.name} (${tenant.slug} / ${tenant.id})`)
+  requireConfirmTenant(tenant.slug)
+
+  const act = await resolveActor('deepsleep-conversion-apply')
+  console.log(`Actor: ${act.actorName} role=${act.actorRole}`)
+
+  const backupDir = arg('backup-dir') || join(process.cwd(), 'scripts/agent-pack/out')
+  const backup = await captureBackup(tenant.slug)
+  if (DRY) {
+    console.log(`Backup would be written under ${backupDir}/deepsleep-conversion-backup-*.json (${Object.keys(backup.agents).length} agents)`)
+  } else {
+    const path = writeBackup(backup, backupDir)
+    console.log(`Backup saved BEFORE writes: ${path}`)
+  }
 
   console.log('\n== Prototipo ==')
   await patchShortcuts(AGENTS.prototipo, SHORTCUT_PATCHES[AGENTS.prototipo], act)
@@ -407,17 +542,12 @@ async function main() {
 
   console.log('\n== Forge ==')
   await patchShortcuts(AGENTS.forge, SHORTCUT_PATCHES[AGENTS.forge], act)
-  const forge = await prisma.chatAgent.findFirst({ where: { id: AGENTS.forge }, select: { systemInstructions: true } })
-  // Keep payment / pickup tails from the live instructions if present after our opener block.
-  const forgeTail = (forge?.systemInstructions || '').includes('Para comprar')
-    ? ''
-    : ''
-  await patchInstructions(AGENTS.forge, 'Forge ventas', FORGE_INSTRUCTIONS + forgeTail, act)
+  await patchInstructions(AGENTS.forge, AGENT_LABELS[AGENTS.forge], FORGE_INSTRUCTIONS, act)
   await upsertKnowledge(AGENTS.forge, KNOWLEDGE_UPSERTS, act)
 
   console.log('\n== Pura Sonrisa ==')
   await patchShortcuts(AGENTS.pura, SHORTCUT_PATCHES[AGENTS.pura], act)
-  await patchInstructions(AGENTS.pura, 'Pura Sonrisa ventas', PURA_INSTRUCTIONS, act)
+  await patchInstructions(AGENTS.pura, AGENT_LABELS[AGENTS.pura], PURA_INSTRUCTIONS, act)
 
   console.log('\n== Sleeping ==')
   console.log('  = no copy change in this slice (payment/follow-up code covers it)')
@@ -425,7 +555,6 @@ async function main() {
   console.log('\n== PatchHouse ==')
   if (PATCHHOUSE_NOSTOCK) {
     console.log('  ~ would set no-stock line (opt-in). Agent status left unchanged.')
-    // Intentionally no write without an owner-approved body — placeholder only.
     console.log('  TODO_OWNER: exact no-stock sentence for PatchHouse.')
   } else {
     console.log('  = paused / untouched (pass --patchhouse-nostock to opt in the no-stock line)')
@@ -437,9 +566,6 @@ async function main() {
   for (const t of TODOS) console.log(`  - ${t}`)
 
   console.log(`\nDone (${DRY ? 'dry-run — re-run with --apply to write' : 'applied'}).`)
-  if (flag('--help')) {
-    // no-op
-  }
 }
 
 main()

@@ -7,12 +7,14 @@
  *   node --env-file=.env.local --import tsx --import ./scripts/shim-server-only.mjs \
  *     scripts/agent-review/weekly.ts \
  *     [--start=2026-10-27T06:00:00Z] [--end=2026-11-03T06:00:00Z] \
- *     [--split=2026-10-30T00:15:00Z] [--out=docs/audits/weekly-YYYY-MM-DD]
+ *     [--split=2026-10-30T00:15:00Z] [--out=scripts/agent-review/out/weekly-YYYY-MM-DD]
  *
  * Window defaults = last completed CR week (Mon 00:00 CR = Mon 06:00 UTC → next Mon).
- * Digits in any residual text are masked as #. Customer names / phones / addresses are never printed.
+ * Default --out is under scripts/agent-review/out/ (gitignored). Never write under docs/audits/.
+ * Digits, emails, phones, person names and street addresses are masked. Never print raw PII.
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { prisma } from '@/lib/db'
 
 const TENANT_SLUG = 'deepsleepp-cr-1762740734630'
@@ -25,12 +27,23 @@ function arg(name: string): string | null {
   return hit ? hit.slice(name.length + 3) : null
 }
 
-function mask(s: string): string {
+/** Mask digits, emails, phones, likely person names and street addresses. Pure. */
+export function mask(s: string): string {
   return (s || '')
     .normalize('NFKC')
-    .replace(/\d/g, '#')
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
     .replace(/(?<!\d)(?:\+?506[\s-]?)?[2-8]\d{3}[\s.-]?\d{4}(?!\d)/g, '[phone]')
+    .replace(/\d/g, '#')
+    // Street / address cues (CR + generic)
+    .replace(
+      /\b(?:calle|avenida|av\.?|boulevard|blvd\.?|barrio|urb\.?|urbanizaci[oó]n|residencial|condominio|depto\.?|apartamento|apto\.?|casa\s+n[uú]mero|km\.?)\b[^,\n]{0,60}/gi,
+      '[address]',
+    )
+    // Labeled person names (customer fields / "me llamo …")
+    .replace(
+      /\b(?:me\s+llamo|mi\s+nombre\s+es|nombre\s*(?:completo)?\s*[:=]|cliente\s*[:=])\s+[\p{L}][\p{L}'’.\-]*(?:\s+[\p{L}][\p{L}'’.\-]*){0,3}/giu,
+      '[name]',
+    )
     .slice(0, 160)
 }
 
@@ -53,7 +66,11 @@ async function main() {
   const s = new Date(arg('start') || win.s.toISOString())
   const e = new Date(arg('end') || win.e.toISOString())
   const d = new Date(arg('split') || win.d.toISOString())
-  const outBase = arg('out') || `docs/audits/weekly-${s.toISOString().slice(0, 10)}`
+  const outBase =
+    arg('out') || join(process.cwd(), 'scripts/agent-review/out', `weekly-${s.toISOString().slice(0, 10)}`)
+  if (/docs\/audits\//.test(outBase)) {
+    throw new Error('Refusing to write under docs/audits/ — use scripts/agent-review/out/ or --out=/tmp/…')
+  }
 
   const tenant = await prisma.tenant.findFirst({ where: { slug: TENANT_SLUG }, select: { id: true, name: true, slug: true } })
   if (!tenant) throw new Error(`Tenant ${TENANT_SLUG} not found`)
@@ -251,7 +268,7 @@ async function main() {
     ``,
     `## Notes`,
     ``,
-    `- Read-only. No customer PII. Digits masked as \`#\`.`,
+    `- Read-only. No customer PII. Digits → \`#\`; emails/phones/names/addresses masked.`,
     `- Definitions match docs from the weekly review SQL pack (real turns, reply = delivered/partially_delivered, handoff from decisionTrace.outcomeMarkers).`,
     ``,
   ].join('\n')

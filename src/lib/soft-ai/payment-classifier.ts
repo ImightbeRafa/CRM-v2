@@ -538,10 +538,10 @@ export function isShortDoneBubble(text: string): boolean {
 
 /**
  * DeepSleep 2026-11-03: "voy a confirmar mi peso / talla / dirección" is sales, not a payment confirm cue.
- * Bare "confirmame" / "me confirmás el sinpe" still count.
+ * Bare "¿me confirmás la talla?" / "confirmame el precio" still count as confirm cues (B5 / INT-93).
  */
 const CONFIRM_NON_PAYMENT_OBJ_RE =
-  /(?<![\p{L}])confirm\p{L}*\s+(?:(?:mi|el|la|los|las|su|tus?|mis)\s+)?(?:peso|talla|medidas?|estatura|altura|direcci[oó]n|datos|correo|tel[eé]fono|n[uú]mero\s+de\s+tel|horario|cita|retiro|env[ií]o)(?![\p{L}])/iu
+  /(?:voy\s+a|vamos\s+a|para|quiero|necesito)\s+confirm\p{L}*\s+(?:(?:mi|el|la|los|las|su|tus?|mis)\s+)?(?:peso|talla|medidas?|estatura|altura|direcci[oó]n|datos|correo|tel[eé]fono|n[uú]mero\s+de\s+tel|horario|cita|retiro)(?![\p{L}])/iu
 
 /**
  * A bare confirm / review verb stays a payment cue (SecureDog INT-93) — except a bare order-confirm ask in a chat where
@@ -1292,20 +1292,27 @@ const SALES_PAY_Q_RE = new RegExp(
     String.raw`me\s+interesan?\s+si\s+(?:apenas|cuando)\s+(?:pueda|tenga)\s+(?:hacer\s+)?(?:el\s+)?pago`,
     // "ya viene pago el envío" / "en ese precio … viene pago el envío" (included shipping, not a claim)
     String.raw`(?:ya\s+)?viene\s+pago\s+el\s+env[ií]o|(?:el\s+)?env[ií]o\s+(?:ya\s+)?(?:viene|est[aá]|sale)\s+pago`,
-    // "retirar … y pagar ahí" / "pasar a retirar … y ahí pagar" / "pagar ahí mismo"
-    String.raw`(?:retir\p{L}*|pasar\s+a\s+retir\p{L}*).{0,80}?pag\p{L}*`,
-    String.raw`pag\p{L}*\s+(?:ah[ií]|alla|all[aá])(?:\s+mismo)?(?:\s+al\s+retir\p{L}*)?`,
-    String.raw`ah[ií]\s+pag\p{L}*`,
+    // Pickup + pay there — tight patterns only (no .{0,N} span: "ya lo tengo pago" / "ya quedó pago" must stay claims).
+    String.raw`(?:pasar\s+a\s+)?retir\p{L}*\s+(?:a\s+\p{L}+\s+)?(?:y\s+|para\s+)?(?:ah[ií]\s+)?pag(?:ar)(?:\s+ah[ií]|\s+all[aá]|\s+mismo)?`,
+    String.raw`pag(?:ar)\s+(?:ah[ií]|alla|all[aá])(?:\s+mismo)?(?:\s+al\s+retir\p{L}*)?`,
+    String.raw`ah[ií]\s+pag(?:ar)`,
   ]
     .map((p) => `(?:${p})`)
     .join('|'),
   'iu',
 )
+
+/** Past-tense / completed "pago|pagado" after ya/quedó/está/tengo — never a sales how-to-pay question. */
+const PAID_AFTER_STATE_RE =
+  /(?:ya|qued[oó]|est[aá]|tengo)\s+(?:lo\s+|la\s+|el\s+)?(?:pago|pagado)\b/iu
+
 export function isSalesPayQuestion(text: string): boolean {
   const v = stripFormatChars((text || '').normalize('NFKC'))
   if (!v.trim() || v.length > 220) return false
   // A past-tense claim or a receipt word that is not a future "le paso el comprobante" keeps the person path.
   if (/(?<![\p{L}])(?:ya\s+pagu[eé]|pagu[eé]|comprobante\s+(?:adjunto|enviado)|adjunto\s+el\s+comprobante)(?![\p{L}])/iu.test(v)) return false
+  // "pasé a retirar y ya lo tengo pago" / "retiro el sábado, ya quedó pago" — paid state, not pickup+pay Q.
+  if (PAID_AFTER_STATE_RE.test(v)) return false
   return SALES_PAY_Q_RE.test(v)
 }
 

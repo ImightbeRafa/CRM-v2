@@ -14,14 +14,24 @@ import { mediaInboundPlan } from '@/lib/soft-ai/llm/safety-router'
 import { followUpSlot, followUpStateSkip } from '@/lib/soft-ai/follow-up-state'
 import { applyFinalOutputPolicy } from '@/lib/soft-ai/llm/output-validator'
 import {
-  DEEPSLEEP_AGENTS,
-  FORGE_COLOR_LINE,
-  FORGE_SHIPPING_LINE,
-  FORGE_WASH_LINE,
+  HARNESS_COLOR_LINE,
+  HARNESS_SHIPPING_LINE,
+  HARNESS_WASH_LINE,
   PURA_STAGE,
   STAGE_TEXTS,
+  patchRawFollowUpConfigEnable,
   planFollowUpCampaignsOnEnable,
 } from '@/lib/soft-ai/deepsleep-conversion-pack'
+
+/** Mirror of scripts/lib/deepsleep-conversion-ids.ts (kept out of soft-ai for A1). */
+const AGENTS = {
+  forge: 'cmub1rziw0005l704mebpx4xc',
+  sleeping: 'cmv9xf14x0001vitkkhx2vxd4',
+  patchhouse: 'cmv8mpajv0001vii8x9cey29a',
+  pura: 'cmvda4onv0001vip0rj6q7jkt',
+  prototipo: 'cmvdaghtc0001vi98x3abfr1r',
+} as const
+const ENABLE_IDS: ReadonlySet<string> = new Set([AGENTS.forge, AGENTS.sleeping, AGENTS.pura, AGENTS.prototipo])
 
 const FACTS = parseBrandFacts({
   payment: { shareWithCustomers: true, methods: ['sinpe', 'contra_entrega'], sinpe: { number: '62019914', holderName: 'Rafael García' } },
@@ -121,6 +131,9 @@ describe('payment: live false positives stay with the agent; real claims still h
     'Ya pagué el envío',
     'Listo, ya le hice el SINPE',
     'Hola cómo está, efectué la transferencia de 25.000',
+    'pasé a retirar y ya lo tengo pago',
+    'retiro el sábado, ya quedó pago',
+    'sinpe hecho',
   ]
 
   it('replay of anonymized safe phrasings is never payment_proof_or_risk', () => {
@@ -140,6 +153,9 @@ describe('payment: live false positives stay with the agent; real claims still h
     assert.equal(isAckMethodChoice('Ya pagué'), false)
     assert.equal(isSalesPayQuestion('viene pago el envío?'), true)
     assert.equal(isSalesPayQuestion('Ya pagué'), false)
+    assert.equal(isSalesPayQuestion('pasé a retirar y ya lo tengo pago'), false)
+    assert.equal(isSalesPayQuestion('retiro el sábado, ya quedó pago'), false)
+    assert.equal(isSalesPayQuestion('hay manera de retirar y pagar ahi mismo'), true)
   })
 
   it('decideInbound does not escalate on the safe replay set', () => {
@@ -219,13 +235,17 @@ describe('fg_tallas keyword matching includes kg / kilos / peso / mido', () => {
 describe('follow-up enable: only intended DeepSleep agents; PatchHouse untouched', () => {
   it('planFollowUpCampaignsOnEnable activates Forge/Sleeping/Pura/Prototipo and keeps PatchHouse', () => {
     const before = [
-      { id: 'c-forge', agentId: DEEPSLEEP_AGENTS.forge, active: false, texts: { A: 'x', B: 'y' } },
-      { id: 'c-sleep', agentId: DEEPSLEEP_AGENTS.sleeping, active: false, texts: { A: 'x', B: 'y' } },
-      { id: 'c-pura', agentId: DEEPSLEEP_AGENTS.pura, active: false, texts: { A: 'x', B: 'y' } },
-      { id: 'c-proto', agentId: DEEPSLEEP_AGENTS.prototipo, active: true, texts: { A: 'x', B: 'y' } },
-      { id: 'c-patch', agentId: DEEPSLEEP_AGENTS.patchhouse, active: false, texts: { A: 'old', B: 'old' }, stageTexts: { A: { quoted: 'keep-me' } } },
+      { id: 'c-forge', agentId: AGENTS.forge, active: false, texts: { A: 'x', B: 'y' } },
+      { id: 'c-sleep', agentId: AGENTS.sleeping, active: false, texts: { A: 'x', B: 'y' } },
+      { id: 'c-pura', agentId: AGENTS.pura, active: false, texts: { A: 'x', B: 'y' } },
+      { id: 'c-proto', agentId: AGENTS.prototipo, active: true, texts: { A: 'x', B: 'y' } },
+      { id: 'c-patch', agentId: AGENTS.patchhouse, active: false, texts: { A: 'old', B: 'old' }, stageTexts: { A: { quoted: 'keep-me' } } },
     ]
-    const next = planFollowUpCampaignsOnEnable(before)
+    const stageTextsFor = (agentId: string) => (agentId === AGENTS.pura ? PURA_STAGE : STAGE_TEXTS)
+    const next = planFollowUpCampaignsOnEnable(before, {
+      enableAgentIds: ENABLE_IDS,
+      stageTextsFor,
+    })
     assert.equal(next.find((c) => c.id === 'c-forge')!.active, true)
     assert.equal(next.find((c) => c.id === 'c-sleep')!.active, true)
     assert.equal(next.find((c) => c.id === 'c-pura')!.active, true)
@@ -247,13 +267,47 @@ describe('follow-up enable: only intended DeepSleep agents; PatchHouse untouched
     assert.equal(PURA_STAGE.B.quoted, '¡Hola! ¿Te armo el Combo 2 cajas a ₡19 900 ya con envío? 😊')
   })
 
-  it('owner-confirmed Forge facts: black only, nationwide shipping, wash line, no smell claim', () => {
-    assert.equal(FORGE_COLOR_LINE, 'Por ahora viene solo en negro 🖤')
-    assert.equal(FORGE_SHIPPING_LINE, '2 a 3 días hábiles')
-    assert.match(FORGE_WASH_LINE, /mano con agua fría/)
-    assert.match(FORGE_WASH_LINE, /no al sol directo/)
-    assert.match(FORGE_WASH_LINE, /No lo metás en lavadora ni secadora/)
-    assert.equal(/olor|huele|olfato/i.test(FORGE_WASH_LINE), false)
-    assert.equal(/según zona/i.test(FORGE_SHIPPING_LINE), false)
+  it('owner-confirmed harness facts: black only, nationwide shipping, wash line, no smell claim', () => {
+    assert.equal(HARNESS_COLOR_LINE, 'Por ahora viene solo en negro 🖤')
+    assert.equal(HARNESS_SHIPPING_LINE, '2 a 3 días hábiles')
+    assert.match(HARNESS_WASH_LINE, /mano con agua fría/)
+    assert.match(HARNESS_WASH_LINE, /no al sol directo/)
+    assert.match(HARNESS_WASH_LINE, /No lo metás en lavadora ni secadora/)
+    assert.equal(/olor|huele|olfato/i.test(HARNESS_WASH_LINE), false)
+    assert.equal(/según zona/i.test(HARNESS_SHIPPING_LINE), false)
+  })
+
+  it('patchRawFollowUpConfigEnable preserves foreign keys and PatchHouse campaigns', () => {
+    const raw = {
+      version: 9,
+      experimental: { keep: true },
+      campaigns: [
+        { id: 'c-forge', agentId: AGENTS.forge, active: false, texts: { A: 'x', B: 'y' }, claimed: { a: 1 }, weirdExtra: 42 },
+        {
+          id: 'c-patch',
+          agentId: AGENTS.patchhouse,
+          active: true,
+          texts: { A: 'ph', B: 'ph' },
+          stageTexts: { A: { quoted: 'keep-me' } },
+          claimed: { z: 9 },
+        },
+      ],
+    }
+    const { next, patchedIds, skippedIds } = patchRawFollowUpConfigEnable(raw, {
+      enableAgentIds: ENABLE_IDS,
+      stageTextsFor: (agentId) => (agentId === AGENTS.pura ? PURA_STAGE : STAGE_TEXTS),
+    })
+    const n = next as typeof raw
+    assert.equal(n.version, 9)
+    assert.deepEqual(n.experimental, { keep: true })
+    assert.equal(patchedIds.length, 1)
+    assert.deepEqual(skippedIds, ['c-patch'])
+    assert.equal(n.campaigns[0]!.active, true)
+    assert.equal(n.campaigns[0]!.weirdExtra, 42)
+    assert.deepEqual(n.campaigns[0]!.claimed, { a: 1 })
+    assert.equal(n.campaigns[0]!.stageTexts, STAGE_TEXTS)
+    assert.equal(n.campaigns[1]!.active, true)
+    assert.deepEqual(n.campaigns[1]!.stageTexts, { A: { quoted: 'keep-me' } })
+    assert.deepEqual(n.campaigns[1]!.claimed, { z: 9 })
   })
 })

@@ -539,7 +539,8 @@ describe('3c. deterministic replies', () => {
     assert.equal((turn.match(/awaitingPaymentMethod: awaitingPaymentMethodChoice\(history\),/g) || []).length, 2)
     // luna-10 (verifier round 4): both call sites pass the sales payment options plus the customer's text since the
     // store last answered (for [[DATOS_PAGO]] names-only vs details).
-    assert.equal((turn.match(/paymentOptions: \{ \.\.\.runtimeInput\.salesPaymentOptions, customerText: customerTextSinceLastAnswer\(/g) || []).length, 2)
+    // 2026-11-04: plus the card-by-team switch (live and Probar read the same flag).
+    assert.equal((turn.match(/paymentOptions: \{ \.\.\.runtimeInput\.salesPaymentOptions, cardByTeam(?:: probarCardByTeam)?, customerText: customerTextSinceLastAnswer\(/g) || []).length, 2)
   })
 })
 

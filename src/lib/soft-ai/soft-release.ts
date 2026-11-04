@@ -183,13 +183,16 @@ export async function runSoftReleaseSweep(opts: { nowMs?: number } = {}): Promis
               select: { sentAt: true },
             })
           : null
-        const from = lastOutBefore?.sentAt ?? trigger?.sentAt ?? t.createdAt
-        const inbound = await prisma.chatMessage.findMany({
-          where: { tenantId, conversationId: conv.id, direction: 'inbound', sentAt: { gt: from } },
+        // Verifier r2: a first-contact chat has no store message before the trigger — the trigger itself is included.
+        const sentAt = lastOutBefore ? { gt: lastOutBefore.sentAt } : { gte: trigger?.sentAt ?? t.createdAt }
+        const rows = await prisma.chatMessage.findMany({
+          where: { tenantId, conversationId: conv.id, direction: 'inbound', sentAt },
           orderBy: { sentAt: 'asc' },
           take: 20,
           select: { id: true, content: true, messageType: true, sentAt: true },
         })
+        // A 👍 reaction is not a message: never the trigger, never "the customer's words".
+        const inbound = rows.filter((m) => (m.messageType || '').toLowerCase() !== 'reaction' && !/^\[reaction\]$/i.test((m.content || '').trim()))
         const hoursSetup = await loadHoursSetup(tenantId, t.agentId).catch(() => null)
         const hours = hoursSetup ? afterHoursState(hoursSetup.hours, new Date(nowMs), { aiDisclosure: hoursSetup.aiDisclosure }) : null
         const decision = decideSoftRelease({

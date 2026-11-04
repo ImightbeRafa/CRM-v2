@@ -557,6 +557,24 @@ export function decideInbound(input: {
         steps.push({ step: 'payment_info', outcome: 'model', reason: 'link_plus_product_question' })
         return continueToModel(paymentClass, steps)
       }
+      // Card by team: "¿me pasás el link de pago?" → a person makes the link (true hand-off), never the website.
+      if (linkAsk && input.cardByTeam && paymentMethodsOf(input.brandFacts).includes('tarjeta')) {
+        steps.push({ step: 'payment_info', outcome: 'handoff', reason: 'card_link_team' })
+        return finish({
+          text: `Claro 🙌\n${CARD_BY_TEAM_LINE}`,
+          intent: 'payment_info',
+          shortcutKey: 'sys_payment_soon',
+          escalate: true,
+          paymentClass,
+          steps,
+          facts: input.brandFacts,
+          ...dealCtx,
+          replyStyle: input.replyStyle,
+          shortcuts: input.shortcuts,
+          forceNeedsHuman: true,
+          handoff: { kind: 'handoff', reason: HANDOFF_REASON.paymentData },
+        })
+      }
       const named = linkAsk
         ? 'tarjeta'
         : isCueFreePaymentChoiceText(input.inboundText)
@@ -589,11 +607,13 @@ export function decideInbound(input: {
       // body is used instead, and the details go out only when the customer asked for them.
       const shortcut = seedShortcut('sys_payment_info', input.shortcuts)
       const dumpsDetails = /brand\.payment\.summary/.test(shortcut.body)
+      // Card by team: the method list says "tarjeta", never "tarjeta (en la web)" (no card link / website for the labels).
+      const labelFacts = input.cardByTeam ? cardByTeamLabelFacts(input.brandFacts) : input.brandFacts
       const text = dumpsDetails
         ? customerAskedPaymentDetails(input.inboundText)
-          ? paymentDetailsText(input.brandFacts) || renderShortcutTemplate(PAYMENT_INFO_BODY, { facts: input.brandFacts })
-          : renderShortcutTemplate(PAYMENT_INFO_BODY, { facts: input.brandFacts }) || paymentMethodsQuestion(input.brandFacts)
-        : renderShortcutTemplate(shortcut.body, { facts: input.brandFacts })
+          ? paymentDetailsText(input.brandFacts, input.cardByTeam) || renderShortcutTemplate(PAYMENT_INFO_BODY, { facts: labelFacts })
+          : renderShortcutTemplate(PAYMENT_INFO_BODY, { facts: labelFacts }) || paymentMethodsQuestion(input.brandFacts, input.cardByTeam)
+        : renderShortcutTemplate(shortcut.body, { facts: labelFacts })
       return finish({
         text,
         intent: 'payment_info',
@@ -703,6 +723,11 @@ function continueToModel(paymentClass: PaymentClassification, steps: DecisionSte
  * with the configured details, vertical) and, in a second message, what to do next. Null for contra entrega (the
  * model confirms zone + order, then a person takes it).
  */
+/** Facts for the method LABELS only: no card link / website, so "tarjeta" is not "tarjeta (en la web)". */
+function cardByTeamLabelFacts(facts: BrandFacts): BrandFacts {
+  return { ...facts, website: undefined, payment: facts.payment ? { ...facts.payment, cardUrl: undefined } : facts.payment } as BrandFacts
+}
+
 export function paymentChoiceReply(method: ChosenPaymentMethod, opener = 'Perfecto 🙌'): string | null {
   switch (method) {
     case 'sinpe':

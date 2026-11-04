@@ -210,7 +210,8 @@ describe('B1 wiring (source asserts)', () => {
     assert.match(settle, /OR: \[\{ aiMode: null \}, \{ aiMode: \{ not: 'paused' \} \}\]/)
     assert.match(settle, /await notifyHandoff\(\{/)
     assert.match(settle, /finally \{\s*\/\/[^\n]*\n\s*if \(input\.handoff\) await settleHandoff\(input\.row, input\.handoff, input\.afterHours\)/)
-    assert.match(settle, /if \(!input\.handoff && \(result\.status === 'suggested' \|\| result\.status === 'skipped'\)\)/)
+    // A soft release that sent nothing stays silent (`!released`): the hand-off alert is still open.
+    assert.match(settle, /if \(!input\.handoff && !released && \(result\.status === 'suggested' \|\| result\.status === 'skipped'\)\)/)
     assert.match(turn, /import \{ notifyHandoff \} from '@\/lib\/soft-ai\/handoff-notify'/)
   })
   it('planned text is what is stored and hashed; the held model reply only in the redacted trace', () => {

@@ -5,6 +5,7 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { classifyPaymentText, isSalesPayQuestion, maskFutureReceiptPromise } from '@/lib/soft-ai/payment-classifier'
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
 import { newestOpenRoundIds, planFollowUpCampaignsOnEnable, patchRawFollowUpConfigEnable, restoreRawFollowUpCampaignFields } from '@/lib/soft-ai/deepsleep-conversion-pack'
@@ -161,5 +162,30 @@ describe('card by team (Rafael 2026-11-04: a person makes the Tilopay link)', as
     const plan = planModelTurnDelivery({ text: `Perfecto 🙌\n${CARD_BY_TEAM_LINE}`, textOk: true, llmHandoff: null, cardByTeam: true })
     assert.deepEqual(plan.handoff, { kind: 'handoff', reason: 'payment_details' })
     assert.match(plan.text, /Te preparo el link/)
+  })
+})
+
+describe('verifier r2 — card label, link ask, soft-release gate', async () => {
+  const { parseBrandFacts } = await import('@/lib/soft-ai/brand-facts')
+  const { paymentMethodsQuestion } = await import('@/lib/soft-ai/payment-guard')
+  const facts = parseBrandFacts({
+    schemaVersion: 1,
+    website: 'https://forge.shopping',
+    payment: { shareWithCustomers: true, methods: ['sinpe', 'tarjeta', 'contra_entrega'], sinpe: { number: '62019914', holderName: 'Rafael García' } },
+  })
+  it('card by team: no "(en la web)" in the method list; a link ask hands off', () => {
+    assert.doesNotMatch(paymentMethodsQuestion(facts, true), /en la web/)
+    assert.match(paymentMethodsQuestion(facts, false), /en la web/)
+    const d = decideInbound({ inboundText: '¿Me pasás el link de pago?', messageType: 'text', brandFacts: facts, shortcuts: [], cardByTeam: true } as never)
+    assert.equal(d.escalate, true)
+    assert.match(d.text || '', /Te preparo el link de pago/)
+  })
+  it('the gate re-reads the flag, declines on a newer customer message and on a repeat', () => {
+    const src = readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
+    assert.match(src, /return decline\('flag_off'\)/)
+    assert.match(src, /return decline\('customer_wrote_again'\)/)
+    assert.match(src, /if \(input\.payload\.softRelease && repeat\.dropped\.length\) \{/)
+    const sweep = readFileSync('src/lib/soft-ai/soft-release.ts', 'utf8')
+    assert.match(sweep, /!== 'reaction'/)
   })
 })

@@ -447,7 +447,7 @@ describe('burst = one reply · wiring (source)', () => {
     assert.match(live, /handoff: modelPlan\.handoff,\s+\/\/[^\n]*\n\s+burstReview: burstReview \?\? night\.review,/)
     const finish = turn.slice(turn.indexOf('async function finishDeliveryOrSuggest('), turn.indexOf('async function finishDeliveryOrSuggestInner'))
     assert.match(finish, /else if \(input\.burstReview\) \{\s+await settleHandoff\(input\.row, input\.burstReview, input\.afterHours\)/)
-    assert.match(finish, /if \(!input\.handoff && \(result\.status === 'suggested' \|\| result\.status === 'skipped'\)\)/)
+    assert.match(finish, /if \(!input\.handoff && !released && \(result\.status === 'suggested' \|\| result\.status === 'skipped'\)\)/)
   })
 
   it('Probar sandbox: a reply to an earlier queued message is in the history of the next one', () => {

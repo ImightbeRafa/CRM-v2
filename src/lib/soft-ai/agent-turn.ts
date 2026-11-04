@@ -25,7 +25,7 @@ import { FIRST_GREETING_FLAG, withFirstGreeting } from '@/lib/soft-ai/first-gree
 import { isTenantFeatureEnabled } from '@/lib/feature-flags'
 import { CARD_BY_TEAM_FLAG } from '@/lib/soft-ai/payment-guard'
 import { prisma } from '@/lib/db'
-import { safeHandoffSubReason, softReleaseReplyOk, SOFT_RELEASE_PROMPT_LINE } from '@/lib/soft-ai/soft-release'
+import { safeHandoffSubReason, softReleaseReplyOk, SOFT_RELEASE_FLAG, SOFT_RELEASE_PROMPT_LINE } from '@/lib/soft-ai/soft-release'
 import { staffControlledAfter } from '@/lib/chat-agent-control'
 import { Prisma } from '@prisma/client'
 import {
@@ -1439,6 +1439,8 @@ export async function executeAgentLayerTurn(
   })
   // Rafael 2026-11-04: card → a person makes the Tilopay link (tenant flag, default off).
   const cardByTeam = await isTenantFeatureEnabled(row.tenantId, CARD_BY_TEAM_FLAG).catch(() => false)
+  // The method list then says "tarjeta" (not "en la web"): a person sends the link.
+  if (cardByTeam && turnSalesContext) turnSalesContext.cardOnWeb = false
   const decisionBase = {
     brandFacts: resolved.agent.brandFacts,
     cardByTeam,
@@ -1976,7 +1978,8 @@ async function finishDeliveryOrSuggest(
   }
   // notifyHandoff already told the team: no second "La IA no respondió" alert.
   // A burst photo review alone does not say the customer got no reply: that alert still goes out.
-  if (!input.handoff && (result.status === 'suggested' || result.status === 'skipped')) {
+  // A soft release that sent nothing is silent: the original hand-off alert is still open for the team.
+  if (!input.handoff && !released && (result.status === 'suggested' || result.status === 'skipped')) {
     const turn = await prisma.chatAgentTurn.findUnique({ where: { id: input.turnId }, select: { skipReason: true } })
     void notifyAiNoReply({ tenantId: input.row.tenantId, conversationId: input.row.conversationId, reason: turn?.skipReason })
   }
@@ -2014,6 +2017,15 @@ async function softReleaseGate(input: Parameters<typeof finishDeliveryOrSuggestI
     return decline('needs_person')
   }
   if (!softReleaseReplyOk(input.outputText)) return decline('not_an_answer')
+  // Verifier r2: the switch is re-read at send time (turned off after the job was queued → nothing goes out).
+  if (!(await isTenantFeatureEnabled(row.tenantId, SOFT_RELEASE_FLAG).catch(() => false))) return decline('flag_off')
+  // Verifier r2: a customer message that arrived after this job's trigger (a receipt photo, a complaint) was never
+  // checked by the sweep — the chat stays with the person.
+  const newer = await prisma.chatMessage.findFirst({
+    where: { tenantId: row.tenantId, conversationId: row.conversationId, direction: 'inbound', sentAt: { gt: input.trigger.sentAt } },
+    select: { id: true },
+  })
+  if (newer) return decline('customer_wrote_again')
   const handoffTurn = await prisma.chatAgentTurn.findFirst({
     where: { id: input.payload.softRelease as string, tenantId: row.tenantId, conversationId: row.conversationId },
     select: { createdAt: true },
@@ -2255,6 +2267,11 @@ async function finishDeliveryOrSuggestInner(input: {
     }
     const customerText = [...sinceLastAnswer.reverse(), input.payload.content || ''].join('\n')
     const repeat = dropRepeatedParts({ text: input.outputText, previous, customerText })
+    // Verifier r2: a soft release that would repeat itself (or end on the safe line) sends nothing; the outer function
+    // gives the chat back to the person.
+    if (input.payload.softRelease && repeat.dropped.length) {
+      return persistDecidedTurn({ turnId: input.turnId, outcome: { outcome: 'skip', reason: 'soft_release_declined' }, operationMode: input.agent.operationMode, setMode: false })
+    }
     if (repeat.dropped.length && repeat.kept.length) {
       outgoingText = repeat.kept.join('\n\n')
     } else if (repeat.dropped.length) {
@@ -2820,6 +2837,7 @@ async function runAgentTestTurnInner(input: {
   })
   // Parity: same card-by-team switch as the live turn.
   const probarCardByTeam = await isTenantFeatureEnabled(input.tenantId, CARD_BY_TEAM_FLAG).catch(() => false)
+  if (probarCardByTeam && probarTurnSalesContext) probarTurnSalesContext.cardOnWeb = false
   const probarDecisionBase = {
     brandFacts: runtimeAgent.brandFacts,
     cardByTeam: probarCardByTeam,

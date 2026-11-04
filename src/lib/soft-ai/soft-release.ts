@@ -30,6 +30,9 @@ export const SOFT_RELEASE_DELAY_MS = 5 * 60_000
 export const SOFT_RELEASE_MAX_AGE_MS = 45 * 60_000
 const META_WINDOW_MS = 23 * 60 * 60_000
 const PER_RUN_MAX = 6
+/** Fact-only hand-offs examined per cron run, and the run's time budget (the cron route allows 60 s). */
+const PER_RUN_LOOK_MAX = 15
+const RUN_BUDGET_MS = 8_000
 export const SOFT_RELEASE_KEY_PREFIX = 'soft_release:'
 
 /**
@@ -132,11 +135,15 @@ export async function runSoftReleaseSweep(opts: { nowMs?: number } = {}): Promis
     out.skipped[r] = (out.skipped[r] || 0) + 1
   }
   try {
-    const flags = await prisma.tenantFeatureFlag.findMany({
-      where: { key: SOFT_RELEASE_FLAG, enabled: true, tenantId: { not: null } },
-      select: { tenantId: true },
-    })
+    // Tenant-scoped flag rows only (scope = tenant id, like isTenantFeatureEnabled).
+    const flags = (
+      await prisma.tenantFeatureFlag.findMany({
+        where: { key: SOFT_RELEASE_FLAG, enabled: true, tenantId: { not: null } },
+        select: { tenantId: true, scope: true },
+      })
+    ).filter((f) => f.scope === f.tenantId)
     const { loadHoursSetup } = await import('@/lib/soft-ai/agent-turn')
+    const startedAt = Date.now()
     for (const f of flags) {
       const tenantId = f.tenantId as string
       const turns = await prisma.chatAgentTurn.findMany({
@@ -152,11 +159,15 @@ export async function runSoftReleaseSweep(opts: { nowMs?: number } = {}): Promis
       })
       const seen = new Set<string>()
       for (const t of turns) {
-        if (out.queued >= PER_RUN_MAX) return out
+        // SecureDog INT-249: bounded — a few queued jobs, a few candidates checked, a time budget per run.
+        if (out.queued >= PER_RUN_MAX || out.looked >= PER_RUN_LOOK_MAX || Date.now() - startedAt > RUN_BUDGET_MS) return out
         if (!t.conversationId || seen.has(t.conversationId)) continue
         seen.add(t.conversationId)
         const markers = readOutcomeMarkers(t.decisionTrace)
         if (markers?.handoffKind !== 'handoff') continue
+        // Cheap reason check first: only a fact-only hand-off is worth the queries below.
+        const factOnly = markers.handoffReason === 'unknown_answer' || (markers.handoffReason === 'escalate' && markers.handoffSubReason === 'other')
+        if (!factOnly) continue
         out.looked += 1
         // Only the chat's LATEST delivered turn counts (a later answer means nothing is pending).
         const later = await prisma.chatAgentTurn.findFirst({

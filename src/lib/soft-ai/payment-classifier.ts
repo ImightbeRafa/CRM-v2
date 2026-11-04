@@ -1359,6 +1359,9 @@ export function isSalesPayQuestion(text: string): boolean {
   // without a payment noun ("acabo de mandar la foto"), a hard claim anywhere.
   if (PARTIAL_STATE_RE.test(v) || DEBT_RE.test(v) || hasFreePayAct(v) || hasHardPaymentClaim(v)) return false
   if (/(?<![\p{L}])acab\p{L}*\s+de(?![\p{L}])/iu.test(rest)) return false
+  // SecureDog INT-246: a payment statement next to the question ("¿Hay contra entrega? Se lo dio al mensajero",
+  // "todo arreglado con el mensajero") — the statement check agentExit ran — stays with a person.
+  if (PAY_STATEMENT_RE.test(rest) || /(?<![\p{L}])(?:di[oó]?|dieron|entreg\p{L}*|arregl\p{L}*|resolv\p{L}*|resolvi\p{L}*)(?![\p{L}])/iu.test(rest)) return false
   return true
 }
 

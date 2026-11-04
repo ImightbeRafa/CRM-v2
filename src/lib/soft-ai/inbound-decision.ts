@@ -115,6 +115,8 @@ function finish(input: {
   forceNeedsHuman?: boolean
   extraReasons?: string[]
   handoff?: TurnHandoff | null
+  /** Card by team: a saved reply's [[PAGO_TARJETA]] becomes "te preparo el link…" and the chat goes to a person. */
+  cardByTeam?: boolean
 }): InboundDecision {
   const policy = applyFinalOutputPolicy({
     text: input.text,
@@ -127,7 +129,12 @@ function finish(input: {
     allowedDeals: input.allowedDeals,
     freeShippingRule: input.freeShippingRule,
     includedShippingAmounts: input.includedShippingAmounts,
+    ...(input.cardByTeam ? { paymentOptions: { cardByTeam: true } } : {}),
   })
+  // SecureDog INT-247: a saved reply that filled the card token hands off for the link like the choice path does.
+  if (input.cardByTeam && !input.handoff && policy.paymentMethods.includes('tarjeta')) {
+    input = { ...input, escalate: true, forceNeedsHuman: true, handoff: { kind: 'handoff', reason: HANDOFF_REASON.paymentData } }
+  }
   const reasons = [...new Set([...(input.extraReasons || []), ...policy.reasons])]
   const needsHuman = input.forceNeedsHuman || policy.needsHuman || input.escalate
   if (policy.needsHuman) {
@@ -220,6 +227,7 @@ export function decideInbound(input: {
     allowedDeals: input.allowedDeals,
     freeShippingRule: input.freeShippingRule ?? null,
     includedShippingAmounts: input.includedShippingAmounts,
+    cardByTeam: input.cardByTeam === true,
   }
   // SecureDog r1 INT-159: the relaxation needs a text message AND no bubble of the burst (this one included) hinting at
   // a payment's state ("¿Me confirmás?" + "¿Les llegó?" stays a payment hand-off).

@@ -311,6 +311,9 @@ async function safeLineSentRecently(tenantId: string, conversationId: string, de
   }
 }
 
+/** "te paso / mando / preparo el link de pago": the model promised the card link (card by team → a person makes it). */
+const CARD_LINK_PROMISE_RE = /(?<![\p{L}])te\s+(?:lo\s+)?(?:paso|mando|env[ií]o|preparo|genero|hago|comparto)\s+(?:el|un)\s+(?:link|enlace)(?:\s+de\s+pago)?(?![\p{L}])/iu
+
 function plannedMarkers(
   base: { needsHuman: boolean; fallbackUsed: boolean; escalate: boolean },
   handoff: TurnHandoff | null,
@@ -1736,7 +1739,8 @@ export async function executeAgentLayerTurn(
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
-      cardByTeam: cardByTeam && policy.paymentMethods.includes('tarjeta'),
+      // SecureDog INT-248: also when the model promises the link in its own words (no token): a person must make it.
+      cardByTeam: cardByTeam && (policy.paymentMethods.includes('tarjeta') || CARD_LINK_PROMISE_RE.test(policy.text)),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
       customerText: turnCustomerText,
     }),
@@ -2998,7 +3002,7 @@ async function runAgentTestTurnInner(input: {
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
-        cardByTeam: probarCardByTeam && policy.paymentMethods.includes('tarjeta'),
+        cardByTeam: probarCardByTeam && (policy.paymentMethods.includes('tarjeta') || CARD_LINK_PROMISE_RE.test(policy.text)),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
       customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText),
     })

@@ -49,6 +49,12 @@ const CLAIMS = [
   'te paso el comprobante, cuál es el número para el resto?',
   'le paso el comprobante, me pasás la cuenta para el resto?',
   'ya lo tengo pago, se puede pagar contra entrega?',
+  // SecureDog INT-246: a payment statement next to a COD question.
+  '¿Hay contra entrega? Se lo dio al mensajero',
+  'aceptan contra entrega? se lo entrego mi mamá al mensajero',
+  'hacen contra entrega? mi hermana lo arreglo todo',
+  'tienen contra entrega? mi mamá lo resolvio con el mensajero',
+  'hay contra entrega? todo arreglado con el mensajero',
 ]
 
 const SALES = [

@@ -136,6 +136,8 @@ async function plan(): Promise<{ changes: Change[]; errors: string[] }> {
     after.payment = { ...(after.payment || {}), instructionsText: PAY_INSTRUCTIONS }
     const methods: string[] = Array.isArray(after.payment.methods) ? after.payment.methods : []
     if (!methods.includes('contra_entrega')) after.payment.methods = [...methods, 'contra_entrega']
+    // DATA-74: instructionsText is also the cash ([[PAGO_EFECTIVO]]) block — refuse an agent that offers efectivo.
+    if (methods.includes('efectivo')) errors.push(`${agent.name} offers efectivo: instructionsText would print as the cash block`)
     if (agentId === DEEPSLEEP_AGENTS.forge) after.returnsText = FORGE_RETURNS
     try { parseBrandFacts(after) } catch (e) { errors.push(`${agent.name} brandFacts invalid: ${String(e).slice(0, 200)}`) }
     if (!sameJson(before, after)) changes.push({ kind: 'brand_facts', agentId, before, after })
@@ -248,7 +250,7 @@ async function apply(changes: Change[], backup: Backup, backupPath: string, act:
       say(`  ✓ flag ${ch.key} on`)
     } else if (ch.kind === 'follow_up') {
       const ok = await prisma.$transaction(async (tx) => {
-        const rows = await tx.$queryRaw<Array<{ config: unknown }>>`SELECT "config" FROM "TenantFeatureFlag" WHERE "id" = ${ch.flagId} AND "key" = ${FOLLOW_UP_FLAG} FOR UPDATE`
+        const rows = await tx.$queryRaw<Array<{ config: unknown }>>`SELECT "config" FROM "TenantFeatureFlag" WHERE "id" = ${ch.flagId} AND "key" = ${FOLLOW_UP_FLAG} AND "tenantId" = ${TENANT_ID} FOR UPDATE`
         const config = structuredClone((rows[0]?.config ?? { campaigns: [] }) as { campaigns: Array<Record<string, unknown>> })
         const c = config.campaigns.find((x) => x.id === ch.campaignId)
         if (!c || c.stoppedAt || !sameJson(c.stageTexts ?? null, ch.before)) return false
@@ -291,7 +293,7 @@ async function revert(path: string, act: Awaited<ReturnType<typeof resolveNoWeig
       await prisma.tenantFeatureFlag.updateMany({ where: { scope: TENANT_ID, key: ch.key }, data: { enabled: ch.before?.enabled ?? false } })
     } else if (ch.kind === 'follow_up') {
       await prisma.$transaction(async (tx) => {
-        const rows = await tx.$queryRaw<Array<{ config: unknown }>>`SELECT "config" FROM "TenantFeatureFlag" WHERE "id" = ${ch.flagId} AND "key" = ${FOLLOW_UP_FLAG} FOR UPDATE`
+        const rows = await tx.$queryRaw<Array<{ config: unknown }>>`SELECT "config" FROM "TenantFeatureFlag" WHERE "id" = ${ch.flagId} AND "key" = ${FOLLOW_UP_FLAG} AND "tenantId" = ${TENANT_ID} FOR UPDATE`
         const config = structuredClone((rows[0]?.config ?? { campaigns: [] }) as { campaigns: Array<Record<string, unknown>> })
         // The round may have renewed since: restore every round of this agent that still carries the applied texts.
         for (const c of config.campaigns) {

@@ -69,6 +69,27 @@ export type FollowUpCampaignLike = {
 }
 
 /**
+ * Review 2026-11-04: only the agent's NEWEST round that nobody stopped is patched. Rounds stopped by hand, by the
+ * opt-out guard or by auto-renew (stoppedAt) stay exactly as they are — the cron reads only active/until, so setting
+ * active:true on them restarted sends.
+ */
+export function newestOpenRoundIds(campaigns: unknown[], agentIds: ReadonlySet<string>): Set<string> {
+  const best = new Map<string, { id: string; at: number }>()
+  for (const entry of campaigns) {
+    if (!entry || typeof entry !== 'object') continue
+    const c = entry as Record<string, unknown>
+    const agentId = typeof c.agentId === 'string' ? c.agentId : ''
+    const id = typeof c.id === 'string' ? c.id : ''
+    if (!id || !agentIds.has(agentId) || c.stoppedAt) continue
+    const parsed = Date.parse(String(c.createdAt ?? ''))
+    const at = Number.isFinite(parsed) ? parsed : 0 // no date: oldest, still a candidate
+    const cur = best.get(agentId)
+    if (!cur || at > cur.at) best.set(agentId, { id, at })
+  }
+  return new Set([...best.values()].map((b) => b.id))
+}
+
+/**
  * Plan campaign updates for --enable-follow-ups.
  * Activates only agents in enableAgentIds; leaves others' active state alone.
  */
@@ -80,8 +101,9 @@ export function planFollowUpCampaignsOnEnable<C extends FollowUpCampaignLike>(
   },
 ): C[] {
   const { enableAgentIds, stageTextsFor } = opts
+  const open = newestOpenRoundIds(campaigns, enableAgentIds)
   return campaigns.map((c) => {
-    if (!enableAgentIds.has(c.agentId)) {
+    if (!enableAgentIds.has(c.agentId) || !open.has(String(c.id ?? ''))) {
       return { ...c }
     }
     return {
@@ -110,12 +132,13 @@ export function patchRawFollowUpConfigEnable(
   }
   const patchedIds: string[] = []
   const skippedIds: string[] = []
+  const open = newestOpenRoundIds(cloned.campaigns, enableAgentIds)
   cloned.campaigns = cloned.campaigns.map((entry) => {
     if (!entry || typeof entry !== 'object') return entry
     const c = entry as Record<string, unknown>
     const agentId = typeof c.agentId === 'string' ? c.agentId : ''
     const id = typeof c.id === 'string' ? c.id : agentId || '?'
-    if (!enableAgentIds.has(agentId)) {
+    if (!enableAgentIds.has(agentId) || !open.has(id)) {
       skippedIds.push(id)
       return c
     }
@@ -199,7 +222,8 @@ export function restoreRawFollowUpCampaignFields(
     if (!before) return c
     const next: Record<string, unknown> = { ...c, active: before.active }
     if ('stageTexts' in before) {
-      if (before.stageTexts === undefined) delete next.stageTexts
+      // null = the round had no stageTexts (JSON drops undefined, so the backup stores null).
+      if (before.stageTexts === undefined || before.stageTexts === null) delete next.stageTexts
       else next.stageTexts = structuredClone(before.stageTexts)
     }
     return next

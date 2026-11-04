@@ -246,7 +246,8 @@ test('Verifier r2: keyword reply with an image that cannot go out → model answ
   const skipped = decideInbound({ inboundText: '¿qué talla me queda?', brandFacts: facts, shortcuts, skipVerbatimIds: new Set(['s1']) })
   assert.equal(skipped.handled, false)
   const turn = readFileSync('src/lib/soft-ai/agent-turn.ts', 'utf8')
-  assert.equal((turn.match(/skipVerbatimIds: new Set\(\[\.\.\.replyAssets\.keys\(\)\]/g) || []).length, 2)
+  // Live and Probar both skip a keyword reply whose image cannot go out (a helper since the shortcut-clip change).
+  assert.equal((turn.match(/skipVerbatimIds: verbatimIdsBlockedByMissingImage\(replyAssets,/g) || []).length, 2)
   const inputs = readFileSync('src/lib/soft-ai/agent-turn-inputs.ts', 'utf8')
   assert.match(inputs, /facts: promptFacts,\s*clientFirstName: null,/)
   const { AI_NO_REPLY_REASONS } = await import('@/lib/workspace-notifications')

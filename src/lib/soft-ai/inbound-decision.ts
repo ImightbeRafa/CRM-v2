@@ -303,7 +303,9 @@ export function decideInbound(input: {
       handoff: { kind: 'handoff', reason: HANDOFF_REASON.optOut },
     })
   }
-  if (mediaPlan === 'ask_in_writing') {
+  // Review 2026-11-04: a typed "Ya pagué" + a voice note in the same burst is a payment claim — the payment hand-off
+  // below wins over "¿Me contás por escrito…?".
+  if (mediaPlan === 'ask_in_writing' && paymentClass !== 'payment_proof_or_risk') {
     steps.push({ step: 'safety', outcome: 'media_ask', reason: 'media_inbound' })
     const shortcut = seedShortcut('sys_media_ask', input.shortcuts)
     return finish({

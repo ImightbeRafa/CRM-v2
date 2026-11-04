@@ -542,6 +542,7 @@ export function isShortDoneBubble(text: string): boolean {
  */
 const CONFIRM_NON_PAYMENT_OBJ_RE =
   /(?:voy\s+a|vamos\s+a|para|quiero|necesito)\s+confirm\p{L}*\s+(?:(?:mi|el|la|los|las|su|tus?|mis)\s+)?(?:peso|talla|medidas?|estatura|altura|direcci[oó]n|datos|correo|tel[eé]fono|n[uú]mero\s+de\s+tel|horario|cita|retiro)(?![\p{L}])/iu
+const CONFIRM_NON_PAYMENT_OBJ_G_RE = new RegExp(CONFIRM_NON_PAYMENT_OBJ_RE.source, 'giu')
 
 /**
  * A bare confirm / review verb stays a payment cue (SecureDog INT-93) — except a bare order-confirm ask in a chat where
@@ -550,7 +551,9 @@ const CONFIRM_NON_PAYMENT_OBJ_RE =
  */
 function confirmCueCounts(value: string, noPaymentYet: boolean): boolean {
   if (!CONFIRM_CUE_RE.test(value)) return false
-  if (CONFIRM_NON_PAYMENT_OBJ_RE.test(value)) return false
+  // Review 2026-11-04: only the "confirmar mi peso / dirección" phrase is cut out; any other confirm cue in the same
+  // message ("¿me confirman que entró? y quiero confirmar mi dirección") still counts.
+  if (!CONFIRM_CUE_RE.test(value.replace(CONFIRM_NON_PAYMENT_OBJ_G_RE, ' '))) return false
   return !(noPaymentYet && isBareOrderConfirmAsk(value))
 }
 
@@ -592,14 +595,22 @@ export function maskNonPaymentPhrases(value: string): string {
  */
 const FUTURE_RECEIPT_PROMISE_RE =
   /(?<![\p{L}])(?:y\s+)?(?:(?:le|te|les)\s+paso|paso)\s+el\s+comprobante(?:\s+por\s+(?:ac[aá]|aqu[ií]|este\s+chat))?(?![\p{L}])/giu
+const PAGE_TYPO_RE = /(?<![\p{L}])pag[ée](?![\p{L}])/gu
+
+/** The same bubble asks WHERE to pay: "¿a qué número…?", "me pasás el número / la cuenta / los datos". */
+const RECEIPT_PROMISE_NUMBER_ASK_RE =
+  /(?<![\p{L}])(?:a\s+qu[eé]\s+(?:n[uú]mero|cuenta|sinpe)|(?:me\s+)?pas(?:[aá]s?|ame|e)\s+(?:el\s+n[uú]mero|la\s+cuenta|los\s+datos)|cu[aá]l\s+es\s+(?:el\s+)?(?:n[uú]mero|sinpe|cuenta))(?![\p{L}])/iu
 export function maskFutureReceiptPromise(value: string): string {
-  // Only blank when the bubble is still asking how to pay (a number / datos ask or a "?"); a lone "te paso el
-  // comprobante" after paying stays a claim.
-  if (!/[?¿]/u.test(value) && !/(?:n[uú]mero|datos|cuenta|a\s+qu[eé])/iu.test(value)) return value
+  // Review 2026-11-04: only blank the promise when the SAME bubble asks for the number / account and nothing else in it
+  // is a done word. A bare "¿Te paso el comprobante?" / "Listo, le paso el comprobante por acá?" stays a claim (a
+  // question mark alone is not enough).
+  if (!RECEIPT_PROMISE_NUMBER_ASK_RE.test(value)) return value
   if (/(?<![\p{L}])(?:ya\s+)?(?:te|le|les)\s+(?:mand[eé]|envi[eé]|pas[eé])\s+el\s+comprobante|adjunto\s+(?:el\s+)?comprobante(?![\p{L}])/iu.test(value)) {
     return value
   }
-  return value.replace(FUTURE_RECEIPT_PROMISE_RE, ' ')
+  const masked = value.replace(FUTURE_RECEIPT_PROMISE_RE, ' ')
+  if (hasPastOrDoneWord(masked, false)) return value
+  return masked
 }
 
 /**
@@ -1190,7 +1201,11 @@ function classifyPaymentTextRules(
   if (opts.nothingPaidYet && embeddedPaymentChoice(text)) return 'payment_info_safe'
   // SecureDog: full-width / invisible-character spellings ("ＳＩＮＰＥ ✅", "he\u200Bcho") are read as plain text.
   // DeepSleep 2026-11-03: "¿a qué número… y le paso el comprobante?" is a how-to-pay ask, not a receipt claim.
-  const value = maskFutureReceiptPromise(maskNonPaymentPhrases(stripFormatChars((text || '').normalize('NFKC'))))
+  // Review 2026-11-04: "ya pagé" (é, no u) is the past tense misspelled — read as "pagué" (it reached the model).
+  const value = maskFutureReceiptPromise(maskNonPaymentPhrases(stripFormatChars((text || '').normalize('NFKC')))).replace(
+    PAGE_TYPO_RE,
+    'pagué',
+  )
   if (!value.trim()) return 'non_payment'
   if (SENT_AMOUNT_CLAIM_RE.test(value)) return 'payment_proof_or_risk'
   if (
@@ -1215,7 +1230,8 @@ function classifyPaymentTextRules(
     return 'payment_proof_or_risk'
   }
   if (COD_QUESTION_RE.test(value)) {
-    return agentExit(value, 'non_payment')
+    // Review 2026-11-04: "Si me interesa se puede pagar contra entrega" (no "?") failed closed in agentExit.
+    return isSalesPayQuestion(value) ? 'non_payment' : agentExit(value, 'non_payment')
   }
   // The store asked "¿Cómo preferís pagar?": an exact choice ("SINPE", "Por SINPE está bien") or a choice + a
   // logistics phrase ("Por sinpe y retiro en tienda") is a sales answer — only after every claim check above.
@@ -1267,9 +1283,10 @@ function classifyPaymentTextRules(
   // Prototipo shoppers: closed pre-purchase questions naming a method (how to order / how much with shipping).
   if (isPrePurchaseMethodQuestion(value)) return 'payment_info_safe'
   // DeepSleep 2026-11-03 (weekly review): how-to-pay / shipping / later-buy questions that still carried a payment
-  // noun and fell into the fail-closed path. Direct answer (not agentExit): these shapes are already whole-message
-  // allowlisted and claim-checked above; agentExit would fail-close them again on live-equivalence.
-  if (isSalesPayQuestion(value)) return 'payment_info_safe'
+  // noun and fell into the fail-closed path. Review 2026-11-04: everything outside the matched shapes must be free of
+  // payment and done words (isSalesPayQuestion), and the MODEL answers (non_payment): the canned method list ignored
+  // the real question ("¿se puede retirar y pagar ahí?", "estoy esperando un pago para comprar").
+  if (isSalesPayQuestion(value)) return 'non_payment'
   // "oki sinpe" / ack + one method (no digit, no done word): a method choice even before the store asked.
   if (isAckMethodChoice(value)) return 'non_payment'
   if (PAYMENT_RE.test(value)) {
@@ -1296,11 +1313,19 @@ const SALES_PAY_Q_RE = new RegExp(
     String.raw`(?:pasar\s+a\s+)?retir\p{L}*\s+(?:a\s+\p{L}+\s+)?(?:y\s+|para\s+)?(?:ah[ií]\s+)?pag(?:ar)(?:\s+ah[ií]|\s+all[aá]|\s+mismo)?`,
     String.raw`pag(?:ar)\s+(?:ah[ií]|alla|all[aá])(?:\s+mismo)?(?:\s+al\s+retir\p{L}*)?`,
     String.raw`ah[ií]\s+pag(?:ar)`,
+    // Review 2026-11-04 (live week): cash-on-delivery asked without "?" — "si me interesa, se puede pagar contra entrega".
+    String.raw`(?:se\s+puede|puedo)\s+pagar\s+(?:en\s+efectivo\s+)?(?:contra\s?entrega|al\s+recibir(?:lo|la)?)`,
+    String.raw`(?:hay|tienen|aceptan|manejan|hacen)\s+(?:pago\s+)?contra\s?entrega`,
+    // "¿a qué sinpe pago?" / "a qué si pe pago" — where to pay, before buying.
+    String.raw`a\s+qu[eé]\s+(?:sinpe|simpe|si\s+pe|n[uú]mero)\s+(?:le\s+|te\s+|les\s+)?(?:pago|hago\s+el\s+pago)`,
+    // "¿sin ningún tipo de problema o pago extra?" — asks about extra charges (an exchange / size question).
+    String.raw`(?:sin|ning[uú]n|alg[uú]n|hay|tiene|cobran)\s+(?:(?:tipo\s+de|otro|ning[uú]n|alg[uú]n)\s+)?(?:\p{L}+\s+o\s+)?(?:pago|cobro|costo|cargo)\s+(?:extra|adicional)`,
   ]
     .map((p) => `(?:${p})`)
     .join('|'),
   'iu',
 )
+const SALES_PAY_Q_G_RE = new RegExp(SALES_PAY_Q_RE.source, 'giu')
 
 /** Past-tense / completed "pago|pagado" after ya/quedó/está/tengo — never a sales how-to-pay question. */
 const PAID_AFTER_STATE_RE =
@@ -1313,7 +1338,12 @@ export function isSalesPayQuestion(text: string): boolean {
   if (/(?<![\p{L}])(?:ya\s+pagu[eé]|pagu[eé]|comprobante\s+(?:adjunto|enviado)|adjunto\s+el\s+comprobante)(?![\p{L}])/iu.test(v)) return false
   // "pasé a retirar y ya lo tengo pago" / "retiro el sábado, ya quedó pago" — paid state, not pickup+pay Q.
   if (PAID_AFTER_STATE_RE.test(v)) return false
-  return SALES_PAY_Q_RE.test(v)
+  if (!SALES_PAY_Q_RE.test(v)) return false
+  // Review 2026-11-04: the shapes matched anywhere, so "Ya realicé el pago, el envío viene pago?" was answered with the
+  // method list. Now everything OUTSIDE the matched shapes must carry no payment / money / done word and no status hint.
+  const rest = v.replace(SALES_PAY_Q_G_RE, ' ')
+  if (PAYMENT_NOUN_ANY_RE.test(rest) || hasPaymentStatusHint(rest) || hasPastOrDoneWord(rest, false)) return false
+  return true
 }
 
 /** "oki sinpe", "dale sinpe móvil" — ack + one clean method, no digit / done word. Pure. */

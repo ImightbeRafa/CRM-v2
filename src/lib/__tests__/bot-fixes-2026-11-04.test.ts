@@ -1,0 +1,118 @@
+/**
+ * Review 2026-11-04 (live PRs #161–#167): real payment claims must always reach a person; sales questions that only
+ * carry a payment word are answered by the agent. Phrases are from the live week (Oct 28 – Nov 4) and the review.
+ * Run: npx tsx --import ./scripts/shim-server-only.mjs --test src/lib/__tests__/bot-fixes-2026-11-04.test.ts
+ */
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import { classifyPaymentText, isSalesPayQuestion, maskFutureReceiptPromise } from '@/lib/soft-ai/payment-classifier'
+import { decideInbound } from '@/lib/soft-ai/inbound-decision'
+import { newestOpenRoundIds, planFollowUpCampaignsOnEnable, patchRawFollowUpConfigEnable, restoreRawFollowUpCampaignFields } from '@/lib/soft-ai/deepsleep-conversion-pack'
+
+const CLAIMS = [
+  // A claim next to a sales shape: the shape used to win anywhere in the message.
+  'Ya realicé el pago, el envío viene pago?',
+  'ya di el adelanto, el envío viene pago?',
+  'ya hize el pago. retirar y pagar ahí?',
+  'ya pagé, se paga en la página el envío?',
+  'Hecho. viene pago el envío?',
+  'Le mandé, retiro y pago ahí',
+  '✅ el envío viene pago',
+  'Ya hice el sinpe, a qué número le pago el resto?',
+  // A receipt promise is a claim unless the same bubble asks for the number.
+  '¿Te paso el comprobante?',
+  'Listo, le paso el comprobante por acá?',
+  'Ya está, ¿te paso el comprobante?',
+  'te paso el comprobante de la transferencia?',
+  // "confirmar mi dirección" no longer hides another confirm cue.
+  'Hola, me confirman que entró? y quiero confirmar mi dirección',
+  'me confirman si lo vieron? para confirmar el retiro',
+  // Live claims.
+  'Listo el pago',
+  'Hola ForgeCR, te envío el comprobante SINPE del pedido ORD-1793229953698-5392 por ₡14.900.',
+  'Ya pagué',
+  'ya pagé',
+  'ya le pagé',
+]
+
+const SALES = [
+  'Ah ok ok…\n\nPero por eso… si yo pido el 3XL y me queda pequeño o así… si se hace el cambio normal? Sin ningún tipo de problema o pago extra?',
+  'Bueno y se te hace el pago en el sitio?',
+  'Entonces en ese precio por dos ya viene pago el envío de correos? Muchas gracias',
+  'Es solo con envío? \nNo las puedo pasar a retirar a alguna parte y ahí pagar?',
+  'Hola quiero comprar 1 solo, cuanto sale con envío a Limón y a qué si pe pago',
+  'Muchas gracias solo estoy esperando un pago para poder realizar la compra',
+  'Si me interesa se puede pagar contra entrega',
+  'Preferiría pagarlo de una vez con SINPE, ¿a qué número sería, y le paso el comprobante por acá?',
+  'Perfecto 👌🏽 \nVoy a confirmar mi peso y les aviso',
+  'viene pago el envío?',
+  'hay manera de retirar y pagar ahi mismo',
+]
+
+describe('payment classifier — review 2026-11-04', () => {
+  it('every real claim goes to a person', () => {
+    for (const t of CLAIMS) assert.equal(classifyPaymentText(t), 'payment_proof_or_risk', t)
+  })
+  it('sales questions with a payment word are answered by the model (not the canned method list)', () => {
+    for (const t of SALES) assert.notEqual(classifyPaymentText(t), 'payment_proof_or_risk', t)
+    for (const t of ['Bueno y se te hace el pago en el sitio?', 'Muchas gracias solo estoy esperando un pago para poder realizar la compra']) {
+      assert.equal(classifyPaymentText(t), 'non_payment', t)
+    }
+  })
+  it('the sales allowlist needs everything outside the shape to be clean', () => {
+    assert.equal(isSalesPayQuestion('viene pago el envío?'), true)
+    assert.equal(isSalesPayQuestion('Ya realicé el pago, el envío viene pago?'), false)
+    assert.equal(isSalesPayQuestion('Listo, retirar y pagar ahí?'), false)
+    assert.equal(isSalesPayQuestion('Ya pagué'), false)
+  })
+  it('a receipt promise is masked only next to a number ask', () => {
+    assert.equal(maskFutureReceiptPromise('¿Te paso el comprobante?'), '¿Te paso el comprobante?')
+    assert.notEqual(maskFutureReceiptPromise('¿a qué número sería, y le paso el comprobante por acá?'), '¿a qué número sería, y le paso el comprobante por acá?')
+    assert.equal(maskFutureReceiptPromise('Ya hice el sinpe, ¿a qué número? y le paso el comprobante'), 'Ya hice el sinpe, ¿a qué número? y le paso el comprobante')
+  })
+  it('regex stays fast on 4 KB inputs', () => {
+    for (const filler of ['a ', 'pago ', 'ya ', 'viene pago el envío ', '¿te paso el comprobante? ']) {
+      const t = filler.repeat(Math.ceil(4096 / filler.length)).slice(0, 4096)
+      const t0 = Date.now()
+      classifyPaymentText(t)
+      assert.ok(Date.now() - t0 < 1500, `slow on "${filler}"`)
+    }
+  })
+})
+
+describe('typed claim + voice note in one burst', () => {
+  it('hands off as a payment, not "¿Me contás por escrito?"', () => {
+    const facts = { schemaVersion: 1 } as never
+    const d = decideInbound({ inboundText: '[audio]', messageType: 'audio', earlierCustomerTexts: ['Ya pagué'], brandFacts: facts, shortcuts: [] } as never)
+    assert.equal(d.escalate, true)
+    assert.notEqual(d.shortcutKey, 'sys_media_ask')
+    // A voice note alone still gets the type-it reply.
+    const alone = decideInbound({ inboundText: '[audio]', messageType: 'audio', brandFacts: facts, shortcuts: [] } as never)
+    assert.equal(alone.shortcutKey, 'sys_media_ask')
+  })
+})
+
+describe('follow-up enable never restarts a stopped round', () => {
+  const agent = 'forge'
+  const campaigns = [
+    { id: 'old', agentId: agent, active: false, createdAt: '2026-11-01T00:00:00Z', until: '2026-11-03T00:00:00Z', stoppedAt: '2026-11-03T00:00:00Z' },
+    { id: 'byhand', agentId: agent, active: false, createdAt: '2026-11-02T00:00:00Z', until: '2099-01-01T00:00:00Z', stoppedAt: '2026-11-02T05:00:00Z' },
+    { id: 'live', agentId: agent, active: true, createdAt: '2026-11-03T00:00:00Z', until: '2026-11-05T00:00:00Z' },
+    { id: 'other', agentId: 'ph', active: false, createdAt: '2026-11-03T00:00:00Z', until: '2026-11-05T00:00:00Z' },
+  ]
+  it('patches only the newest open round of the agent', () => {
+    assert.deepEqual([...newestOpenRoundIds(campaigns, new Set([agent]))], ['live'])
+    const planned = planFollowUpCampaignsOnEnable(campaigns, { enableAgentIds: new Set([agent]), stageTextsFor: () => ({ B: { quoted: 'x' } }) })
+    assert.equal(planned.find((c) => c.id === 'byhand')!.active, false)
+    assert.equal(planned.find((c) => c.id === 'old')!.active, false)
+    assert.deepEqual(planned.find((c) => c.id === 'live')!.stageTexts, { B: { quoted: 'x' } })
+    const raw = patchRawFollowUpConfigEnable({ campaigns }, { enableAgentIds: new Set([agent]), stageTextsFor: () => ({}) })
+    assert.deepEqual(raw.patchedIds, ['live'])
+  })
+  it('a backup with stageTexts null removes the texts on revert', () => {
+    const live = { campaigns: [{ id: 'live', agentId: agent, active: true, stageTexts: { B: { quoted: 'x' } } }] }
+    const before = JSON.parse(JSON.stringify({ live: { active: true, stageTexts: null } }))
+    const restored = restoreRawFollowUpCampaignFields(live, ['live'], before) as { campaigns: Array<Record<string, unknown>> }
+    assert.equal('stageTexts' in restored.campaigns[0], false)
+  })
+})

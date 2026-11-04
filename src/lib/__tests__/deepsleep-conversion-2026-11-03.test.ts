@@ -6,6 +6,7 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { resolve as resolvePath } from 'node:path'
 import { classifyPaymentText, isAckMethodChoice, isSalesPayQuestion } from '@/lib/soft-ai/payment-classifier'
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
 import { parseBrandFacts } from '@/lib/soft-ai/brand-facts'
@@ -367,11 +368,11 @@ describe('CRM161-13 out path guard', () => {
     assert.equal(pathIsOutsideRepo('/var/tmp/out', root), true)
     assert.equal(
       assertAllowedOutPath('/tmp/x', { repoRoot: root, label: '--out', isGitIgnored: () => false }),
-      '/tmp/x',
+      resolvePath('/tmp/x'),
     )
     assert.equal(
       assertAllowedOutPath('/home/ubuntu/outside', { repoRoot: root, label: '--out', isGitIgnored: () => false }),
-      '/home/ubuntu/outside',
+      resolvePath('/home/ubuntu/outside'),
     )
   })
 
@@ -393,6 +394,6 @@ describe('CRM161-13 out path guard', () => {
       label: '--out',
       isGitIgnored: () => true,
     })
-    assert.match(abs, /scripts\/agent-review\/out\/weekly$/)
+    assert.match(abs, /scripts[\\/]agent-review[\\/]out[\\/]weekly$/)
   })
 })

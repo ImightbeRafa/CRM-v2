@@ -93,7 +93,7 @@ describe('renewExpiredCampaigns', () => {
 
   it('the cron renews before sending (one flags read, re-read only on change), under the row lock, audited; one nudge ever', () => {
     const src = readFileSync(path.join(process.cwd(), 'src/lib/soft-ai/follow-up.ts'), 'utf8')
-    assert.match(src, /let flags = await readFlags\(\)\n\s+if \(await renewFollowUpCampaigns\(flags, now\)\) flags = await readFlags\(\)/)
+    assert.match(src, /let flags = await readFlags\(\)\r?\n\s+if \(await renewFollowUpCampaigns\(flags, now\)\) flags = await readFlags\(\)/)
     assert.match(src, /FOR UPDATE`/)
     assert.match(src, /Follow-up A\/B renovado automáticamente/)
     assert.match(src, /Follow-up A\/B DETENIDO por bajas/)

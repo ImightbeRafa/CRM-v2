@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useEffect } from 'react'
+import { useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useToast } from "@/app/hooks/use-toast"
 import { Sale } from '../produccion/types/sales'
@@ -140,11 +140,9 @@ export function useSalesStream({
 
   const error = queryError?.message ?? null;
 
-  // In an effect, not during render: a caller that toasts or sets state would loop otherwise.
-  useEffect(() => {
-    if (queryError && onError) onError(queryError.message);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryError]);
+  if (queryError && onError) {
+    onError(queryError.message);
+  }
 
   const stats = useMemo(() => ({
     total: sales.length,

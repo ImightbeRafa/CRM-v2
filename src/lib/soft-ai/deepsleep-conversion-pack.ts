@@ -32,7 +32,8 @@ export const STAGE_TEXTS = {
   },
   B: {
     quoted: '¡Hola! ¿Todavía te interesa? Te lo puedo apartar hoy mismo 🚚',
-    size: '¡Hola! Pasame tu peso y te digo la talla 😊 ¿Cuánto pesás?',
+    // 2026-11-03 owner rule: never ask weight or height; the guide + "between two sizes, the bigger one".
+    size: '¡Hola! 😊 ¿Ya elegiste tu talla con la guía? Si dudás entre dos, te recomiendo la más grande.',
     how_it_works: '¡Hola! ¿Te armo el pedido? Acá estoy 🙌',
     shipping_details: '¡Hola! ¿Seguimos con la dirección para enviártelo?',
     chose: '¡Hola! ¿Lo dejamos listo hoy?',
@@ -40,15 +41,22 @@ export const STAGE_TEXTS = {
   },
 } as const
 
-/** Whitening-strips store stage texts — price/options only on that agent. */
+/** Stage texts without the size stage (the store sells no sizes; that stage falls back to the round text). */
+function withoutSize<T extends { size: string }>(texts: T): Omit<T, 'size'> {
+  const { size: _size, ...rest } = texts
+  void _size
+  return rest
+}
+
+/** Whitening-strips store stage texts — price/options only on that agent; no size stage (2026-11-03). */
 export const PURA_STAGE = {
   A: {
-    ...STAGE_TEXTS.A,
+    ...withoutSize(STAGE_TEXTS.A),
     quoted:
       '¡Hola! 😁 Te recuerdo: 1 caja ₡10 450 + envío ₡3 000; Combo 2 ₡19 900 ya con envío; Pack 4 sabores ₡37 900. ¿Cuál te armamos?',
   },
   B: {
-    ...STAGE_TEXTS.B,
+    ...withoutSize(STAGE_TEXTS.B),
     quoted: '¡Hola! ¿Te armo el Combo 2 cajas a ₡19 900 ya con envío? 😊',
   },
 } as const

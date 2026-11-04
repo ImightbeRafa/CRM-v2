@@ -1,5 +1,7 @@
 /**
  * DeepSleep conversion fixes (2026-11-03 weekly review) — idempotent data apply.
+ * Size copy below already carries the 2026-11-03 "no weight asks" swaps (deepsleep-no-weight-edits.ts), so a re-run
+ * of this script converges on the same text instead of bringing the weight question back.
  *
  * Updates live DeepSleep agents (Forge / Sleeping / Prototipo / Pura Sonrisa) through the same admin
  * functions the UI uses (version bump + ChatAgentVersion snapshot). PatchHouse stays paused; its
@@ -138,7 +140,7 @@ const SHORTCUT_PATCHES: Record<string, Record<string, { keywords?: string[]; bod
         'me queda',
       ],
       body:
-        'Te dejo la guía de tallas 👇 La talla va por peso: M/L 51–60 kg, XL 61–70, 2XL 71–80, 3XL 81–90 y 4XL 91–100. Por ahora no tenemos talla para menos de 51 kg ni más de 100 kg. ¿Cuánto pesás?',
+        'Te dejo la guía de tallas 👇 La talla va por peso: M/L 51–60 kg, XL 61–70, 2XL 71–80, 3XL 81–90 y 4XL 91–100. Por ahora no tenemos talla para menos de 51 kg ni más de 100 kg. Si quedás entre dos tallas, te recomiendo la más grande 😊 ¿Cuál te aparto?',
     },
     fg_saludo: {
       body:
@@ -147,7 +149,7 @@ const SHORTCUT_PATCHES: Record<string, Record<string, { keywords?: string[]; bod
     fg_dolor: {
       keywords: ['dolor de espalda', 'dolores de espalda', 'lumbar', 'me duele la espalda', 'padezco'],
       body:
-        'Entiendo 💙 El arnés ayuda con la postura, pero no es un tratamiento médico ni garantiza quitar el dolor. Si el dolor es fuerte o crónico, consultá primero con tu médico. Si querés probarlo para la postura, ¿cuánto pesás para ver tu talla?',
+        'Entiendo 💙 El arnés ayuda con la postura, pero no es un tratamiento médico ni garantiza quitar el dolor. Si el dolor es fuerte o crónico, consultá primero con tu médico. Si querés probarlo como ayuda para la postura, ¿te lo aparto?',
     },
   },
   [AGENTS.pura]: {
@@ -164,12 +166,12 @@ const SHORTCUT_PATCHES: Record<string, Record<string, { keywords?: string[]; bod
 }
 
 const FORGE_INSTRUCTIONS = `Sos Andrés de ForgeCR 💪 (corrector de postura). Voseo tico, cálido, breve, emojis suaves; máx. 3 líneas, UNA pregunta por mensaje.
-Precio/soporte: Arnés ForgeCR ₡14 900, Pack de 2 ₡26 900, envío incluido + UNA pregunta que avance (apartar/cómo funciona/talla solo si ya compran). Sin guía de tallas en saludo ni precio.
-Talla/fg_tallas: solo si preguntan talla/peso/kg/kilos/mido/medidas o ya compran. Manda el peso (M/L 51–60 … 4XL 91–100 kg); solo estatura → pedí peso. Fuera de 51–100 kg: no hay talla, nunca la más cercana; handoff solo si insisten.
+Precio/soporte: Arnés ForgeCR ₡14 900, Pack de 2 ₡26 900, envío incluido + UNA pregunta que avance (apartar/cómo funciona/talla solo si ya compran). Sin guía de tallas en saludo.
+Talla/fg_tallas: solo si preguntan talla/peso/kg/mido/medidas o ya compran. Nunca pidas peso/estatura: mandá fg_tallas; si los dan, decí la talla (entre dos, la mayor). Fuera de 51–100 kg: no hay talla, nunca la más cercana; handoff solo si insisten.
 Color: "${FORGE_COLOR_LINE}" + una pregunta (apartar/talla/cómo funciona).
 Envío: ${FORGE_SHIPPING_LINE} a todo el país (no "según zona").
 Lavado: ${FORGE_WASH_LINE} Sin claims de olor.
-Dolor de espalda: ayuda postural, no tratamiento médico; fuerte/crónico → médico; luego pedí peso; sin handoff.
+Dolor de espalda: ayuda postural, no tratamiento médico; fuerte/crónico → médico; seguí la venta; sin handoff.
 Comprar: 1) talla y cantidad 2) envío o retiro 3) datos en lista 4) pago. Nunca juntes datos y pago.
 Handoff solo: comprobante/ya pagué, queja, mayoreo/logo/nombre personalizado.`
 
@@ -193,7 +195,7 @@ const KNOWLEDGE_UPSERTS: Array<{
     name: 'FAQ — dolor de espalda (sin claims médicos)',
     kind: 'faq',
     body:
-      'El Arnés ForgeCR es una ayuda para recordar y sostener una buena postura. No es un tratamiento médico y no prometemos aliviar el dolor. Si el dolor es fuerte o crónico, la persona debe consultar a su médico. Después, si quiere probarlo para postura, pedimos el peso para la talla. No hay handoff por preguntar por dolor.',
+      'El Arnés ForgeCR es una ayuda para recordar y sostener una buena postura. No es un tratamiento médico y no prometemos aliviar el dolor. Si el dolor es fuerte o crónico, la persona debe consultar a su médico. Después seguimos con la venta (precio y guía de tallas); nunca pedimos peso ni estatura. No hay handoff por preguntar por dolor.',
   },
   {
     agentId: AGENTS.forge,

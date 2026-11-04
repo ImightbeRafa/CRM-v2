@@ -828,7 +828,7 @@ export const SALES_REPLY_TEMPLATES: ShortcutDraft[] = [
     intents: ['catalog_photo'],
     keywords: ['talla', 'tallas', 'medida', 'medidas'],
     deliveryMode: 'verbatim',
-    body: 'Te paso la guía de tallas 👇 Decime cuánto medís y pesás y te digo cuál te queda mejor.',
+    body: 'Te paso la guía de tallas 👇 Elegí la tuya y, si quedás entre dos, decime y te ayudo 😊',
   },
   {
     key: 'pb_promo',

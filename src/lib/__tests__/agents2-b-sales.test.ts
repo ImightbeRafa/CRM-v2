@@ -211,8 +211,8 @@ describe('B1 wiring (source asserts)', () => {
     assert.match(turn, /import \{ notifyHandoff \} from '@\/lib\/soft-ai\/handoff-notify'/)
   })
   it('planned text is what is stored and hashed; the held model reply only in the redacted trace', () => {
-    // luna-10: the planned text then gets the code-owned night intro (withNightIntro).
-    assert.match(turn, /const finalText = withNightIntro\(finalizePlannedText\(modelPlan, payload, trigger\.sentAt, hours\), hours, nightIntroWho\(resolved\.agent, history\)\)/)
+    // luna-10: the planned text then gets the code-owned night intro (withNightIntro); first-greeting (flag) goes in first.
+    assert.match(turn, /const finalText = withNightIntro\(\s*withFirstGreeting\(finalizePlannedText\(modelPlan, payload, trigger\.sentAt, hours\), nightIntroWho\(resolved\.agent, history\), greetFirst\),\s*hours,\s*nightIntroWho\(resolved\.agent, history\),?\s*\)/)
     assert.match(turn, /heldModelText: policy\.text\.slice\(0, 1_000\)/)
     assert.match(turn, /outputText: handledText/)
     assert.equal((turn.match(/plannedReply: true,/g) || []).length, 2)

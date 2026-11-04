@@ -21,6 +21,8 @@ import {
   type BusinessHours,
 } from '@/lib/soft-ai/business-hours'
 import { loadAgentSalesContext } from '@/lib/soft-ai/agent-sales-context'
+import { FIRST_GREETING_FLAG, withFirstGreeting } from '@/lib/soft-ai/first-greeting'
+import { isTenantFeatureEnabled } from '@/lib/feature-flags'
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import {
@@ -133,6 +135,7 @@ import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
 import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
 import { selectReplyImages, selectReplyVideo, sendableImageReplyIds, verbatimIdsBlockedByMissingImage, type ReplyImage } from '@/lib/soft-ai/reply-images'
+import { loadSizeGuideKey, sizeGuideFallbackKey } from '@/lib/soft-ai/size-guide'
 import type { AgentAsset } from '@/lib/soft-ai/agent-assets'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import { AGENT_IMAGE_DEADLINE_MS, loadSentAgentImageShas, loadSentAgentVideoShas, sendAgentImagesOnce, sendAgentVideoOnce } from '@/lib/soft-ai/agent-media-send'
@@ -261,6 +264,22 @@ function nightIntroWho(
     name: (agent.introductionNames || []).find((n) => typeof n === 'string' && n.trim()) ?? null,
     store: agent.brandFacts?.storeName ?? null,
     introduced: history.some((h) => h.direction === 'outbound'),
+  }
+}
+
+/**
+ * First-reply greeting (flag FIRST_GREETING_FLAG, default off): on only when nobody wrote to this customer yet — not
+ * in the loaded window and not anywhere in the chat (a long burst can push an old reply out of the window). Any read
+ * error → off (the turn never fails for a hello).
+ */
+async function firstGreetingOn(tenantId: string, conversationId: string, history: Array<{ direction: string }>): Promise<boolean> {
+  if (history.some((h) => h.direction === 'outbound')) return false
+  try {
+    if (!(await isTenantFeatureEnabled(tenantId, FIRST_GREETING_FLAG))) return false
+    const prior = await prisma.chatMessage.findFirst({ where: { tenantId, conversationId, direction: 'outbound' }, select: { id: true } })
+    return !prior
+  } catch {
+    return false
   }
 }
 
@@ -1382,6 +1401,7 @@ export async function executeAgentLayerTurn(
     isMediaLikeMessageType(trigger.messageType) || burstEarlier.some((m) => isMediaLikeMessageType(m.messageType)) ? turnSalesContext : null
   const shortcuts = await listRuntimeShortcuts(row.tenantId, resolved.agent.id)
   const replyAssets = await loadReplyAssets(row.tenantId, resolved.agent.id)
+  const greetFirst = await firstGreetingOn(row.tenantId, row.conversationId, history)
   // Only replies whose image would really go out are marked "(va con imagen)" (WhatsApp / Instagram, not yet sent in this chat).
   const channelSendsImages = imageChannel(payload.platform)
   const sentReplyMediaIds =
@@ -1392,6 +1412,8 @@ export async function executeAgentLayerTurn(
     channelSendsImages && replyAssets.size
       ? sendableImageReplyIds(replyAssets, sentReplyMediaIds)
       : new Set<string>()
+  // Size-guide fallback (flag agent_size_guide_v1, default off): the agent's configured guide saved reply, if any.
+  const sizeGuideKey = channelSendsImages && replyAssets.size ? await loadSizeGuideKey(row.tenantId, resolved.agent.id) : null
   // The turn budget starts before the "¿ya pagó?" check (it can take up to 4.5 s).
   const turnBudgetStartedAt = Date.now()
   // "Que costo tiene" + photo: the text is answered, a person still looks at the photo (a receipt keeps its path).
@@ -1495,7 +1517,11 @@ export async function executeAgentLayerTurn(
       planDecisionDelivery({ text: decision.text, textOk: decision.textOk, handoff: decision.handoff }),
       await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey),
     )
-    const handledText = withNightIntro(finalizePlannedText(plan, payload, trigger.sentAt, hours), hours, nightIntroWho(resolved.agent, history))
+    const handledText = withNightIntro(
+      withFirstGreeting(finalizePlannedText(plan, payload, trigger.sentAt, hours), nightIntroWho(resolved.agent, history), greetFirst),
+      hours,
+      nightIntroWho(resolved.agent, history),
+    )
     const outputHash = hashSoftAiOutput(handledText)
     const handledMarkers: OutcomeMarkers = plannedMarkers(
       { needsHuman: decision.needsHuman, fallbackUsed: false, escalate: decision.escalate },
@@ -1594,6 +1620,7 @@ export async function executeAgentLayerTurn(
       replyShortcutKey: decision.shortcutKey,
       shortcuts,
       replyAssets,
+      sizeGuide: sizeGuideKey ? { key: sizeGuideKey, customerText: customerTextSinceLastAnswer(history, burst.inboundText) } : null,
       startedAt: turnStartedAt,
       afterHours: hours,
     })
@@ -1701,7 +1728,11 @@ export async function executeAgentLayerTurn(
     },
   )
   const modelPlan = applySafeLineCap(night.plan, await safeLineSentRecently(row.tenantId, row.conversationId, row.deliveryKey))
-  const finalText = withNightIntro(finalizePlannedText(modelPlan, payload, trigger.sentAt, hours), hours, nightIntroWho(resolved.agent, history))
+  const finalText = withNightIntro(
+    withFirstGreeting(finalizePlannedText(modelPlan, payload, trigger.sentAt, hours), nightIntroWho(resolved.agent, history), greetFirst),
+    hours,
+    nightIntroWho(resolved.agent, history),
+  )
   const modelMarkers: OutcomeMarkers = plannedMarkers(
     { needsHuman: night.soft ? false : needsHuman, fallbackUsed: llm.fallbackUsed, escalate: night.soft ? false : llm.escalate },
     // The night review is recorded too: a lease reclaim settles it (review: the chat stays on the agent).
@@ -1826,6 +1857,7 @@ export async function executeAgentLayerTurn(
     replyShortcutKey: policy.purchaseSummaryAppended ? null : llm.shortcutKey || null,
     shortcuts,
     replyAssets,
+    sizeGuide: sizeGuideKey ? { key: sizeGuideKey, customerText: turnCustomerText } : null,
     startedAt: turnStartedAt,
     afterHours: hours,
   })
@@ -1960,6 +1992,8 @@ async function finishDeliveryOrSuggestInner(input: {
   replyShortcutKey?: string | null
   shortcuts?: RuntimeShortcut[]
   replyAssets?: Map<string, AgentAsset[]>
+  /** Size-guide fallback (size-guide.ts): a price / size question also gets this guide's image when the reply has none. */
+  sizeGuide?: { key: string; customerText: string } | null
   /** When the job started: images are skipped once the turn is late (the job times out at 42 s). */
   startedAt?: number
   /** B1: the text was planned by code (never a silent draft for needsHuman / fallback / escalate). */
@@ -2195,12 +2229,32 @@ async function finishDeliveryOrSuggestInner(input: {
     })
     const videoAsset = video ? byId.get(video.assetId) : undefined
     if (videoAsset) await sendAgentVideoOnce(mediaCtx, videoAsset)
-    const pick = selectReplyImages({
+    const ownPick = selectReplyImages({
       shortcutKey: input.replyShortcutKey,
       shortcuts: input.shortcuts ?? [],
       assetsByShortcut: input.replyAssets,
       alreadySent: await loadSentAgentImageShas(input.row.tenantId, input.row.conversationId),
     })
+    // Size guide on a price / size question (flag agent_size_guide_v1): only when the reply's own saved reply has no
+    // image; once per chat (same sent-image check); never on a hand-off (this block already skips those).
+    const guideSent = !ownPick.images.length && input.sizeGuide && !input.needsHuman
+      ? await loadSentAgentImageShas(input.row.tenantId, input.row.conversationId)
+      : null
+    const guideKey =
+      guideSent && input.sizeGuide
+        ? sizeGuideFallbackKey({
+            guideKey: input.sizeGuide.key,
+            customerText: input.sizeGuide.customerText,
+            replyText: input.outputText,
+            replyShortcutKey: input.replyShortcutKey,
+            shortcuts: input.shortcuts ?? [],
+            assetsByShortcut: input.replyAssets,
+            alreadySent: guideSent,
+          })
+        : null
+    const pick = guideKey && guideSent
+      ? selectReplyImages({ shortcutKey: guideKey, shortcuts: input.shortcuts ?? [], assetsByShortcut: input.replyAssets, alreadySent: guideSent })
+      : ownPick
     const assets = pick.images.map((img) => byId.get(img.assetId)).filter((a): a is AgentAsset => Boolean(a))
     if (assets.length) {
       await sendAgentImagesOnce(mediaCtx, assets)
@@ -2585,6 +2639,9 @@ async function runAgentTestTurnInner(input: {
 
   const shortcuts = await listRuntimeShortcuts(input.tenantId, runtimeAgent.id)
   const replyAssets = await loadReplyAssets(input.tenantId, runtimeAgent.id)
+  // Probar parity: the test chat has no stored messages, so only its own history counts.
+  const probarGreetFirst =
+    !(input.history ?? []).some((h) => h.direction === 'outbound') && (await isTenantFeatureEnabled(input.tenantId, FIRST_GREETING_FLAG).catch(() => false))
   const history = windowedAgentHistory(
     (input.history || []).map((message, index) => ({
       id: `test-${index}`,
@@ -2847,7 +2904,11 @@ async function runAgentTestTurnInner(input: {
     const probarCustomerText = customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText)
     const night = nightKeepsSelling(planned, probarHours, { safeReview: SAFE_LINE.review, customerText: probarCustomerText, cannotAnswer: admitsCannotAnswer, isComplaint: isComplaintText, modelReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null })
     const plan = night.plan
-    text = withNightIntro(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), probarHours, nightIntroWho(runtimeAgent, input.history ?? []))
+    text = withNightIntro(
+      withFirstGreeting(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), nightIntroWho(runtimeAgent, input.history ?? []), probarGreetFirst),
+      probarHours,
+      nightIntroWho(runtimeAgent, input.history ?? []),
+    )
     handoff = plan.handoff ?? night.review
     intent = policy.intent
     shortcutKey = planned.text !== policy.text ? null : policy.purchaseSummaryAppended ? 'sys_purchase_summary' : llm.shortcutKey || null
@@ -2864,7 +2925,11 @@ async function runAgentTestTurnInner(input: {
     ]
   } else {
     const plan = planDecisionDelivery({ text: decision.text, textOk: decision.textOk, handoff: decision.handoff })
-    text = withNightIntro(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), probarHours, nightIntroWho(runtimeAgent, input.history ?? []))
+    text = withNightIntro(
+      withFirstGreeting(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), nightIntroWho(runtimeAgent, input.history ?? []), probarGreetFirst),
+      probarHours,
+      nightIntroWho(runtimeAgent, input.history ?? []),
+    )
     handoff = plan.handoff
     needsHuman = decision.needsHuman
     escalate = decision.escalate
@@ -2888,10 +2953,23 @@ async function runAgentTestTurnInner(input: {
   const wouldSend = outcome.outcome === 'send'
   decision.decisionTrace.wouldSend = wouldSend
   // Images of the saved reply it used (code-picked, never twice in the same chat; none on a hand-off).
+  // Live parity: the size-guide fallback (flag agent_size_guide_v1) when the reply's own saved reply has no image.
+  const probarGuideKey =
+    text && !escalate && !notBound && !needsHuman && !fallbackUsed && !handoff && imageChannel(account.platform)
+      ? sizeGuideFallbackKey({
+          guideKey: await loadSizeGuideKey(input.tenantId, runtimeAgent.id),
+          customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText),
+          replyText: text,
+          replyShortcutKey: shortcutKey,
+          shortcuts,
+          assetsByShortcut: replyAssets,
+          alreadySent: input.sentImageIds,
+        })
+      : null
   const images =
     // Same as live: WhatsApp / Instagram, never on a hand-off / needs-a-person / fallback answer.
     text && !escalate && !notBound && !needsHuman && !fallbackUsed && imageChannel(account.platform)
-      ? selectReplyImages({ shortcutKey, shortcuts, assetsByShortcut: replyAssets, alreadySent: input.sentImageIds }).images
+      ? selectReplyImages({ shortcutKey: probarGuideKey ?? shortcutKey, shortcuts, assetsByShortcut: replyAssets, alreadySent: input.sentImageIds }).images
       : []
   const video =
     text && !escalate && !notBound && !needsHuman && !fallbackUsed && imageChannel(account.platform)

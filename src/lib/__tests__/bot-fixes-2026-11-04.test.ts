@@ -33,6 +33,21 @@ const CLAIMS = [
   'Ya pagué',
   'ya pagé',
   'ya le pagé',
+  'Ya Pagé',
+  // Verifier r1: a part still owed / an earlier part / a payment act without a noun.
+  'a qué sinpe pago el resto?',
+  'a qué sinpe pago lo que falta?',
+  'a qué sinpe pago lo pendiente?',
+  'a qué sinpe pago mi parte?',
+  'sin pago extra por lo que falta?',
+  'el envío viene pago o lo debo?',
+  'acabo de mandar la foto, hay contra entrega',
+  'te paso el comprobante del adelanto, a qué sinpe pago el resto?',
+  'a qué sinpe pago? le paso el comprobante del primero',
+  'ahí te paso el comprobante, a qué número pago el envío?',
+  'te paso el comprobante, cuál es el número para el resto?',
+  'le paso el comprobante, me pasás la cuenta para el resto?',
+  'ya lo tengo pago, se puede pagar contra entrega?',
 ]
 
 const SALES = [

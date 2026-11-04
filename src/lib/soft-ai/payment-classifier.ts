@@ -595,7 +595,7 @@ export function maskNonPaymentPhrases(value: string): string {
  */
 const FUTURE_RECEIPT_PROMISE_RE =
   /(?<![\p{L}])(?:y\s+)?(?:(?:le|te|les)\s+paso|paso)\s+el\s+comprobante(?:\s+por\s+(?:ac[aá]|aqu[ií]|este\s+chat))?(?![\p{L}])/giu
-const PAGE_TYPO_RE = /(?<![\p{L}])pag[ée](?![\p{L}])/gu
+const PAGE_TYPO_RE = /(?<![\p{L}])pag[ée](?![\p{L}])/giu
 
 /** The same bubble asks WHERE to pay: "¿a qué número…?", "me pasás el número / la cuenta / los datos". */
 const RECEIPT_PROMISE_NUMBER_ASK_RE =
@@ -608,8 +608,18 @@ export function maskFutureReceiptPromise(value: string): string {
   if (/(?<![\p{L}])(?:ya\s+)?(?:te|le|les)\s+(?:mand[eé]|envi[eé]|pas[eé])\s+el\s+comprobante|adjunto\s+(?:el\s+)?comprobante(?![\p{L}])/iu.test(value)) {
     return value
   }
-  const masked = value.replace(FUTURE_RECEIPT_PROMISE_RE, ' ')
-  if (hasPastOrDoneWord(masked, false)) return value
+  // Verifier r1: a receipt for an earlier part ("el comprobante del adelanto") or a part still owed ("el resto", "lo
+  // que falta") is a payment in progress — never masked.
+  if (/comprobante\s+de(?:l|\s+la)(?![\p{L}])/iu.test(value) || PARTIAL_STATE_RE.test(value) || DEBT_RE.test(value)) return value
+  // Only a promise AFTER the number ask and joined by "y" ("¿a qué número sería, y le paso el comprobante?"); "ahí te
+  // paso el comprobante, ¿a qué número…?" reads as sending it now.
+  const askAt = RECEIPT_PROMISE_NUMBER_ASK_RE.exec(value)?.index ?? Infinity
+  let masked = value
+  for (const m of value.matchAll(FUTURE_RECEIPT_PROMISE_RE)) {
+    if (!/^y\s/iu.test(m[0]) || askAt > (m.index ?? 0)) return value
+    masked = masked.replace(m[0], ' ')
+  }
+  if (masked === value || hasPastOrDoneWord(masked, false)) return value
   return masked
 }
 
@@ -1231,6 +1241,8 @@ function classifyPaymentTextRules(
   }
   if (COD_QUESTION_RE.test(value)) {
     // Review 2026-11-04: "Si me interesa se puede pagar contra entrega" (no "?") failed closed in agentExit.
+    // Verifier r1: a paid state next to it ("ya lo tengo pago, ¿hay contra entrega?") or a hard claim stays with a person.
+    if (PAID_AFTER_STATE_RE.test(value) || hasHardPaymentClaim(value)) return 'payment_proof_or_risk'
     return isSalesPayQuestion(value) ? 'non_payment' : agentExit(value, 'non_payment')
   }
   // The store asked "¿Cómo preferís pagar?": an exact choice ("SINPE", "Por SINPE está bien") or a choice + a
@@ -1343,6 +1355,10 @@ export function isSalesPayQuestion(text: string): boolean {
   // method list. Now everything OUTSIDE the matched shapes must carry no payment / money / done word and no status hint.
   const rest = v.replace(SALES_PAY_Q_G_RE, ' ')
   if (PAYMENT_NOUN_ANY_RE.test(rest) || hasPaymentStatusHint(rest) || hasPastOrDoneWord(rest, false)) return false
+  // Verifier r1: the checks agentExit runs — a part still owed ("el resto", "lo que falta", "lo debo"), a payment act
+  // without a payment noun ("acabo de mandar la foto"), a hard claim anywhere.
+  if (PARTIAL_STATE_RE.test(v) || DEBT_RE.test(v) || hasFreePayAct(v) || hasHardPaymentClaim(v)) return false
+  if (/(?<![\p{L}])acab\p{L}*\s+de(?![\p{L}])/iu.test(rest)) return false
   return true
 }
 

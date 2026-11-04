@@ -160,9 +160,10 @@ describe('burst = one reply · queue coalescing (source)', () => {
   it('the agent turn yields before the model, after loading history and right before each send — never a hand-off, a reclaim, or twice per burst', () => {
     const turn = read('src/lib/soft-ai/agent-turn.ts')
     const live = turn.slice(turn.indexOf('export async function executeAgentLayerTurn'), turn.indexOf('function persistedTurnStatus'))
-    const pre = live.indexOf('if (await yieldsToNewerBurst(row, trigger.sentAt)) {')
+    // A soft-release job (soft-release.ts) answers the whole waiting burst: it never yields to a newer bubble.
+    const pre = live.indexOf('if (!softRelease && (await yieldsToNewerBurst(row, trigger.sentAt))) {')
     assert.ok(pre > live.indexOf('runClaimGates(') && pre < live.indexOf('runPreModelGates('))
-    const later = live.indexOf('if (burstHasLaterBubble(burstEarlier, trigger) && (await yieldsToNewerBurst(row, trigger.sentAt))) {')
+    const later = live.indexOf('if (!softRelease && burstHasLaterBubble(burstEarlier, trigger) && (await yieldsToNewerBurst(row, trigger.sentAt))) {')
     assert.ok(later > live.indexOf('const burstEarlier = unansweredBurst(') && later < live.indexOf('const burst = planBurstInbound('))
     const sends = [...live.matchAll(/return finishDeliveryOrSuggest\(\{/g)].map((m) => m.index!)
     const handledYield = live.indexOf("if (await yieldsToNewerBurst(row, trigger.sentAt, plan.handoff, 'pre_send')) return markTurnSuperseded(row, turn.id)")

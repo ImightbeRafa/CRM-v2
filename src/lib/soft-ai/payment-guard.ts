@@ -27,6 +27,11 @@ export type TokenPaymentMethod = keyof typeof PAYMENT_METHOD_TOKENS
  * envío) rather than by the brand facts; codNote is its zone line ("Solo dentro del GAM.").
  */
 export type PaymentFillOptions = {
+  /**
+   * Rafael 2026-11-04 (tenant flag agent_card_by_team_v1): card prices vary, so a person makes the Tilopay link with the
+   * exact amount. The card token becomes CARD_BY_TEAM_LINE (no website link) and the turn hands the chat to a person.
+   */
+  cardByTeam?: boolean
   codAvailable?: boolean
   codNote?: string | null
   /**
@@ -93,7 +98,11 @@ function transferBlock(facts: BrandFacts): string {
     .join('\n')
 }
 
-function cardBlock(facts: BrandFacts): string {
+export const CARD_BY_TEAM_FLAG = 'agent_card_by_team_v1'
+export const CARD_BY_TEAM_LINE = 'Te preparo el link de pago con el monto exacto y te lo paso por aquí en un momento 😊'
+
+function cardBlock(facts: BrandFacts, opts: PaymentFillOptions = {}): string {
+  if (opts.cardByTeam) return CARD_BY_TEAM_LINE
   const url = oneLine(facts.payment?.cardUrl || facts.website || '')
   return url ? `Podés pagar con tarjeta en ${url}` : ''
 }
@@ -133,7 +142,7 @@ export function paymentMethodBlock(facts: BrandFacts, method: TokenPaymentMethod
     case 'transferencia':
       return transferBlock(facts)
     case 'tarjeta':
-      return cardBlock(facts)
+      return cardBlock(facts, opts)
     case 'contra_entrega':
       return codBlock(facts, opts)
     case 'efectivo':

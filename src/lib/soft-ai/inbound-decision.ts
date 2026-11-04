@@ -31,6 +31,7 @@ import {
   type PaymentClassification,
 } from '@/lib/soft-ai/payment-classifier'
 import {
+  CARD_BY_TEAM_LINE,
   customerAskedPaymentDetails,
   paymentDetailsText,
   paymentMethodBlock,
@@ -162,6 +163,8 @@ export function decideInbound(input: {
   shortcuts: RuntimeShortcut[]
   /** Keyword replies not sent as-is this turn (their image would not go out): the model answers instead. */
   skipVerbatimIds?: ReadonlySet<string>
+  /** Card by team (payment-guard CARD_BY_TEAM_FLAG): card → "te preparo el link…" + a person makes the payment link. */
+  cardByTeam?: boolean
   /** The sale already gave the payment details: a photo / file now is treated as the receipt (B6). */
   awaitingReceipt?: boolean
   /**
@@ -435,6 +438,24 @@ export function decideInbound(input: {
       steps.push({ step: 'payment_choice', outcome: 'model', reason: `order_data_${choice}` })
       return continueToModel(paymentClass, steps)
     }
+    // Rafael 2026-11-04: card → a person makes the Tilopay link with the exact amount (prices vary). True hand-off.
+    if (choice === 'tarjeta' && input.cardByTeam && paymentMethodsOf(input.brandFacts).includes('tarjeta')) {
+      steps.push({ step: 'payment_choice', outcome: 'handoff', reason: 'card_by_team' })
+      return finish({
+        text: `${input.awaitingPaymentMethod ? 'Perfecto 🙌' : 'Claro 🙌'}\n${CARD_BY_TEAM_LINE}`,
+        intent: 'payment_info',
+        shortcutKey: 'sys_payment_soon',
+        escalate: true,
+        paymentClass,
+        steps,
+        facts: input.brandFacts,
+        ...dealCtx,
+        replyStyle: input.replyStyle,
+        shortcuts: input.shortcuts,
+        forceNeedsHuman: true,
+        handoff: { kind: 'handoff', reason: HANDOFF_REASON.paymentData },
+      })
+    }
     // A method the store does not offer (or without its data): the model answers.
     if (reply && paymentMethodBlock(input.brandFacts, choice)) {
       steps.push({ step: 'payment_choice', outcome: choice })
@@ -459,6 +480,24 @@ export function decideInbound(input: {
   // SecureDog r3: a card number offered by chat ("te paso el número de mi tarjeta por acá?") is never left to the model,
   // whatever is pending or also asked: the store's card link, or without one the payment-data review.
   if (paymentClass === 'payment_info_safe' && isCardByChatOffer(input.inboundText)) {
+    // Card by team: never card data by chat, and a person makes the payment link (true hand-off).
+    if (input.cardByTeam && paymentMethodsOf(input.brandFacts).includes('tarjeta')) {
+      steps.push({ step: 'payment_info', outcome: 'handoff', reason: 'card_by_chat_team' })
+      return finish({
+        text: `Claro 🙌 Por seguridad no mandés los datos de tu tarjeta por chat 🙏\n${CARD_BY_TEAM_LINE}`,
+        intent: 'payment_info',
+        shortcutKey: 'sys_payment_soon',
+        escalate: true,
+        paymentClass,
+        steps,
+        facts: input.brandFacts,
+        ...dealCtx,
+        replyStyle: input.replyStyle,
+        shortcuts: input.shortcuts,
+        forceNeedsHuman: true,
+        handoff: { kind: 'handoff', reason: HANDOFF_REASON.paymentData },
+      })
+    }
     const cardReply =
       canSharePaymentFacts(input.brandFacts) && paymentMethodBlock(input.brandFacts, 'tarjeta')
         ? paymentChoiceReply('tarjeta', 'Claro 🙌 Por seguridad no mandés los datos de tu tarjeta por chat:')
@@ -523,7 +562,11 @@ export function decideInbound(input: {
         : isCueFreePaymentChoiceText(input.inboundText)
           ? parsePaymentMethodChoice(input.inboundText) ?? singleMethodNamed(input.inboundText)
           : singleMethodNamed(input.inboundText)
-      const namedReply = named && named !== 'contra_entrega' && paymentMethodBlock(input.brandFacts, named) ? paymentChoiceReply(named, 'Claro 🙌') : null
+      // Card by team: "¿aceptan tarjeta?" gets the method list (no website link); the link comes from a person on the choice.
+      const namedReply =
+        named && named !== 'contra_entrega' && !(named === 'tarjeta' && input.cardByTeam) && paymentMethodBlock(input.brandFacts, named)
+          ? paymentChoiceReply(named, 'Claro 🙌')
+          : null
       if (namedReply) {
         steps.push({ step: 'payment_info', outcome: 'share', reason: named! })
         return finish({

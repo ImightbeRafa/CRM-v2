@@ -131,3 +131,35 @@ describe('follow-up enable never restarts a stopped round', () => {
     assert.equal('stageTexts' in restored.campaigns[0], false)
   })
 })
+
+describe('card by team (Rafael 2026-11-04: a person makes the Tilopay link)', async () => {
+  const { parseBrandFacts } = await import('@/lib/soft-ai/brand-facts')
+  const { fillPaymentToken, CARD_BY_TEAM_LINE } = await import('@/lib/soft-ai/payment-guard')
+  const { planModelTurnDelivery } = await import('@/lib/soft-ai/agent-turn-outcome')
+  const facts = parseBrandFacts({
+    schemaVersion: 1,
+    website: 'https://forge.shopping',
+    payment: { shareWithCustomers: true, methods: ['sinpe', 'tarjeta', 'contra_entrega'], sinpe: { number: '62019914', holderName: 'Rafael García' } },
+  })
+  it('the card token never carries the website link when on', () => {
+    const on = fillPaymentToken('Perfecto 🙌 [[PAGO_TARJETA]]', facts, { cardByTeam: true })
+    assert.match(on.text, /Te preparo el link de pago/)
+    assert.doesNotMatch(on.text, /forge\.shopping/)
+    assert.deepEqual(on.methods, ['tarjeta'])
+    const off = fillPaymentToken('Perfecto 🙌 [[PAGO_TARJETA]]', facts, {})
+    assert.match(off.text, /forge\.shopping/)
+  })
+  it('choosing card hands the chat to a person; off keeps the old reply', () => {
+    const base = { inboundText: 'Tarjeta', messageType: 'text', brandFacts: facts, shortcuts: [], awaitingPaymentMethod: true }
+    const on = decideInbound({ ...base, cardByTeam: true } as never)
+    assert.equal(on.escalate, true)
+    assert.match(on.text || '', /Te preparo el link de pago/)
+    const off = decideInbound(base as never)
+    assert.doesNotMatch(off.text || '', /Te preparo el link/)
+  })
+  it('a model reply that filled the card line is a true hand-off (payment_details)', () => {
+    const plan = planModelTurnDelivery({ text: `Perfecto 🙌\n${CARD_BY_TEAM_LINE}`, textOk: true, llmHandoff: null, cardByTeam: true })
+    assert.deepEqual(plan.handoff, { kind: 'handoff', reason: 'payment_details' })
+    assert.match(plan.text, /Te preparo el link/)
+  })
+})

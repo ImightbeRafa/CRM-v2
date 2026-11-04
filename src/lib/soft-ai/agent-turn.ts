@@ -23,6 +23,7 @@ import {
 import { loadAgentSalesContext } from '@/lib/soft-ai/agent-sales-context'
 import { FIRST_GREETING_FLAG, withFirstGreeting } from '@/lib/soft-ai/first-greeting'
 import { isTenantFeatureEnabled } from '@/lib/feature-flags'
+import { CARD_BY_TEAM_FLAG } from '@/lib/soft-ai/payment-guard'
 import { prisma } from '@/lib/db'
 import { safeHandoffSubReason, softReleaseReplyOk, SOFT_RELEASE_PROMPT_LINE } from '@/lib/soft-ai/soft-release'
 import { staffControlledAfter } from '@/lib/chat-agent-control'
@@ -1436,8 +1437,11 @@ export async function executeAgentLayerTurn(
     earlier: burstEarlier,
     awaitingReceipt: (type) => mediaAwaitingReceipt(type, history, mediaSalesContext),
   })
+  // Rafael 2026-11-04: card → a person makes the Tilopay link (tenant flag, default off).
+  const cardByTeam = await isTenantFeatureEnabled(row.tenantId, CARD_BY_TEAM_FLAG).catch(() => false)
   const decisionBase = {
     brandFacts: resolved.agent.brandFacts,
+    cardByTeam,
     // Verifier r3 (2026-10-24): the bubbles not answered yet (the rescued "¿pago envío?" allow-list).
     unansweredCustomerTexts: [...customerTextsSinceStore(history).after, ...burstEarlier.map((m) => m.content || '')],
     raceCustomerTexts: customerTextsSinceStore(history).race,
@@ -1714,7 +1718,7 @@ export async function executeAgentLayerTurn(
     linkAllowlist: runtimeInput.linkAllowlist,
     modelText: true,
     // Verifier round 4: "pasame los datos" … "gracias" — every customer message since the store last answered.
-    paymentOptions: { ...runtimeInput.salesPaymentOptions, customerText: customerTextSinceLastAnswer(history, burst.inboundText) },
+    paymentOptions: { ...runtimeInput.salesPaymentOptions, cardByTeam, customerText: customerTextSinceLastAnswer(history, burst.inboundText) },
   })
   const needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
   // B1: what goes out is planned by code: the model reply (checked), the safe line, or the hand-off text.
@@ -1730,6 +1734,7 @@ export async function executeAgentLayerTurn(
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
+      cardByTeam: cardByTeam && policy.paymentMethods.includes('tarjeta'),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
       customerText: turnCustomerText,
     }),
@@ -2813,8 +2818,11 @@ async function runAgentTestTurnInner(input: {
     earlier: probarBurstEarlier,
     awaitingReceipt: (type) => mediaAwaitingReceipt(type, history, probarMediaSalesContext),
   })
+  // Parity: same card-by-team switch as the live turn.
+  const probarCardByTeam = await isTenantFeatureEnabled(input.tenantId, CARD_BY_TEAM_FLAG).catch(() => false)
   const probarDecisionBase = {
     brandFacts: runtimeAgent.brandFacts,
+    cardByTeam: probarCardByTeam,
     // Verifier r3 (2026-10-24): same as live — the bubbles not answered yet.
     unansweredCustomerTexts: [...customerTextsSinceStore(history).after, ...probarBurstEarlier.map((m) => m.content || '')],
     raceCustomerTexts: customerTextsSinceStore(history).race,
@@ -2961,7 +2969,7 @@ async function runAgentTestTurnInner(input: {
       shortenLongReply: true,
       linkAllowlist: runtimeInput.linkAllowlist,
       modelText: true,
-      paymentOptions: { ...runtimeInput.salesPaymentOptions, customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText) },
+      paymentOptions: { ...runtimeInput.salesPaymentOptions, cardByTeam: probarCardByTeam, customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText) },
     })
     // Same plan as the live turn (B1): checked model reply, safe line, or hand-off text.
     const planned = planModelTurnDelivery({
@@ -2972,6 +2980,7 @@ async function runAgentTestTurnInner(input: {
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
+        cardByTeam: probarCardByTeam && policy.paymentMethods.includes('tarjeta'),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
       customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText),
     })

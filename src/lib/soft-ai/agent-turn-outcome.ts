@@ -23,6 +23,8 @@ export type OutcomeMarkers = {
   planned?: boolean
   handoffKind?: 'handoff' | 'review' | null
   handoffReason?: string | null
+  /** The model's own escalate reason ("other", "complaint"…), allowlisted — soft-release.ts reads it. */
+  handoffSubReason?: string | null
 }
 
 /**
@@ -424,6 +426,9 @@ export function readOutcomeMarkers(trace: unknown): OutcomeMarkers | null {
     escalate: row.escalate,
     ...(row.planned === true ? { planned: true } : {}),
     ...(kind ? { handoffKind: kind, handoffReason: typeof row.handoffReason === 'string' ? row.handoffReason.slice(0, 120) : null } : {}),
+    ...(kind && typeof row.handoffSubReason === 'string' && /^[a-z_]{1,32}$/.test(row.handoffSubReason)
+      ? { handoffSubReason: row.handoffSubReason }
+      : {}),
   }
 }
 

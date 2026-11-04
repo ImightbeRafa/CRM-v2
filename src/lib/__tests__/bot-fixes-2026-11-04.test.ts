@@ -105,7 +105,7 @@ describe('follow-up enable never restarts a stopped round', () => {
     const planned = planFollowUpCampaignsOnEnable(campaigns, { enableAgentIds: new Set([agent]), stageTextsFor: () => ({ B: { quoted: 'x' } }) })
     assert.equal(planned.find((c) => c.id === 'byhand')!.active, false)
     assert.equal(planned.find((c) => c.id === 'old')!.active, false)
-    assert.deepEqual(planned.find((c) => c.id === 'live')!.stageTexts, { B: { quoted: 'x' } })
+    assert.deepEqual((planned.find((c) => c.id === 'live') as { stageTexts?: unknown }).stageTexts, { B: { quoted: 'x' } })
     const raw = patchRawFollowUpConfigEnable({ campaigns }, { enableAgentIds: new Set([agent]), stageTextsFor: () => ({}) })
     assert.deepEqual(raw.patchedIds, ['live'])
   })

@@ -17,13 +17,14 @@ export const NO_WEIGHT_ACTOR_EMAIL = 'rafa.work0412@gmail.com'
 
 export const NO_WEIGHT_AGENT_ID = DEEPSLEEP_AGENTS.forge
 
-/** Forge systemInstructions (live 1193 → 1198 JS chars, cap 1200). The Color/Envío/Lavado interpolated lines are untouched. */
+/** Forge systemInstructions (live 1193 → 1199 JS chars, cap 1200). The Color/Envío/Lavado interpolated lines are untouched. */
 export const NO_WEIGHT_INSTRUCTION_EDITS: TextEdit[] = [
   // Item 4 (first price question → price + guide image) is delivered by agent_size_guide_v1; the old line forbade it.
-  { from: 'Sin guía de tallas en saludo ni precio.', to: 'Sin guía de tallas en el saludo.' },
+  { from: 'Sin guía de tallas en saludo ni precio.', to: 'Sin guía de tallas en saludo.' },
   {
-    from: 'Manda el peso (M/L 51–60 … 4XL 91–100 kg); solo estatura → pedí peso.',
-    to: 'No pidas peso ni estatura; si los dan, la talla va por peso (entre dos, la mayor).',
+    // Probar: with only "no pidas peso" the model still asked "¿Cuánto pesás?" on "¿Qué talla soy?"; say what to do instead.
+    from: 'solo si preguntan talla/peso/kg/kilos/mido/medidas o ya compran. Manda el peso (M/L 51–60 … 4XL 91–100 kg); solo estatura → pedí peso.',
+    to: 'solo si preguntan talla/peso/kg/mido/medidas o ya compran. Nunca pidas peso/estatura: mandá fg_tallas; si los dan, decí la talla (entre dos, la mayor).',
   },
   { from: 'luego pedí peso; sin handoff.', to: 'seguí la venta; sin handoff.' },
 ]
@@ -52,11 +53,17 @@ export const NO_WEIGHT_KNOWLEDGE_EDITS: Record<string, TextEdit[]> = {
       from: 'R: Manda el peso: M/L 51–60 kg, XL 61–70, 2XL 71–80, 3XL 81–90, 4XL 91–100. Decí esa talla ("por tu peso va la XL") y mandá la guía. Solo estatura: pedí el peso.',
       to: 'R: Mandá la guía; nunca pidas peso ni estatura. Si te dan el peso, manda el peso: M/L 51–60 kg, XL 61–70, 2XL 71–80, 3XL 81–90, 4XL 91–100; decí esa talla ("por tu peso va la XL"). Solo estatura: usá la estatura de la guía. Entre dos tallas, siempre la más grande.',
     },
+    // Owner: "specially for mixed where people are between sizes which is normal" + "always round to bigger size".
+    { from: 'Si estatura y peso no coinciden, seguí el peso;', to: 'Si estatura y peso no coinciden, la más grande de las dos;' },
   ],
   'ForgeCR · Arnés': [
     {
       from: 'Si solo hay estatura, pedí el peso.',
       to: 'Si solo hay estatura, usá la estatura de la tabla; nunca pidas peso ni estatura. Entre dos tallas, siempre la más grande.',
+    },
+    {
+      from: 'Si la estatura cae en otra talla, igual va la del peso (aunque quede fuera de los cm).',
+      to: 'Si la estatura cae en otra talla, recomendá la más grande de las dos.',
     },
   ],
 }
@@ -66,7 +73,7 @@ export const NO_WEIGHT_BRAND_FACT_EDITS: Record<string, TextEdit[]> = {
   'Elegir talla': [
     {
       from: 'Andrés no elige la talla: siempre manda la guía de tallas y el cliente elige. Única guía: entre dos tallas, la más pequeña.',
-      to: 'Andrés manda la guía de tallas y nunca pide peso ni estatura. Si el cliente los da, le dice su talla (va por peso). Entre dos tallas, siempre la más grande.',
+      to: 'Andrés manda la guía de tallas y nunca pide peso ni estatura. Si el cliente los da, le dice su talla. Entre dos tallas (o si peso y estatura no coinciden), la más grande.',
     },
   ],
 }
@@ -87,7 +94,7 @@ export const NO_WEIGHT_SALES_RULE_EDITS: {
   neverSay: [
     {
       from: 'Elegir la talla por el cliente o decir "te queda X" / "según la tabla caés en X": solo mandá la guía; entre dos tallas, la más pequeña',
-      to: 'Pedir peso o estatura. Si el cliente los da, decí su talla por peso; entre dos tallas, la más grande',
+      to: 'Pedir peso o estatura. Si el cliente los da, decí su talla; entre dos tallas (o peso y estatura distintos), la más grande',
     },
   ],
   objections: [

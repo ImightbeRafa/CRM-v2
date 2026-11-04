@@ -1,4 +1,7 @@
-/** Shared by deepsleep-no-weight-apply.ts and -revert.ts: backup shape, tenant guard, actor lookup. */
+/**
+ * Shared by the DeepSleep sentence-swap scripts (deepsleep-no-weight-*, deepsleep-weight-decides-*): backup shape,
+ * tenant guard, actor lookup. The engine itself is deepsleep-text-edit-engine.ts.
+ */
 import { prisma } from '@/lib/db'
 import type { SalesRules } from '@/lib/soft-ai/agent-sales-setup'
 
@@ -21,9 +24,12 @@ export type NoWeightChange =
   /** Only the edited selling-rule keys (before = live values, after = new values). */
   | { kind: 'sales_rules'; agentId: string; before: Partial<SalesRules>; after: Partial<SalesRules> }
 
+/** Backup kinds written by the sentence-swap scripts; a revert only accepts its own kind. */
+export type TextEditBackupKind = 'deepsleep-no-weight' | 'deepsleep-weight-decides'
+
 export type NoWeightBackupV1 = {
   version: 1
-  kind: 'deepsleep-no-weight'
+  kind: TextEditBackupKind
   createdAt: string
   tenantId: string
   changes: NoWeightChange[]

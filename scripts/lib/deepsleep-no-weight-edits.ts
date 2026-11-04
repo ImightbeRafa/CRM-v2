@@ -11,6 +11,9 @@
  */
 import type { TextEdit } from '@/lib/soft-ai/text-patch'
 import { DEEPSLEEP_AGENTS } from './deepsleep-conversion-ids'
+// 2026-11-04 "weight decides": the mismatch sentences below end on the same text as deepsleep-weight-decides-edits.ts,
+// so a re-run of this set after that apply is a no-op and can never bring "la más grande de las dos" back.
+import { ELEGIR_TALLA_SIZE, MISMATCH_ARNES, MISMATCH_FAQ, NEVER_SAY_SIZE } from './deepsleep-weight-decides-edits'
 
 /** Owner/admin login that saves these edits (has an active OWNER/ADMIN membership on DeepSleep). */
 export const NO_WEIGHT_ACTOR_EMAIL = 'rafa.work0412@gmail.com'
@@ -53,8 +56,8 @@ export const NO_WEIGHT_KNOWLEDGE_EDITS: Record<string, TextEdit[]> = {
       from: 'R: Manda el peso: M/L 51–60 kg, XL 61–70, 2XL 71–80, 3XL 81–90, 4XL 91–100. Decí esa talla ("por tu peso va la XL") y mandá la guía. Solo estatura: pedí el peso.',
       to: 'R: Mandá la guía; nunca pidas peso ni estatura. Si te dan el peso, manda el peso: M/L 51–60 kg, XL 61–70, 2XL 71–80, 3XL 81–90, 4XL 91–100; decí esa talla ("por tu peso va la XL"). Solo estatura: usá la estatura de la guía. Entre dos tallas, siempre la más grande.',
     },
-    // Owner: "specially for mixed where people are between sizes which is normal" + "always round to bigger size".
-    { from: 'Si estatura y peso no coinciden, seguí el peso;', to: 'Si estatura y peso no coinciden, la más grande de las dos;' },
+    // 2026-11-04 owner: when height and weight disagree, weight decides (was "la más grande de las dos" on 11-03).
+    { from: 'Si estatura y peso no coinciden, seguí el peso;', to: MISMATCH_FAQ },
   ],
   'ForgeCR · Arnés': [
     {
@@ -63,7 +66,7 @@ export const NO_WEIGHT_KNOWLEDGE_EDITS: Record<string, TextEdit[]> = {
     },
     {
       from: 'Si la estatura cae en otra talla, igual va la del peso (aunque quede fuera de los cm).',
-      to: 'Si la estatura cae en otra talla, recomendá la más grande de las dos.',
+      to: MISMATCH_ARNES,
     },
   ],
 }
@@ -73,7 +76,7 @@ export const NO_WEIGHT_BRAND_FACT_EDITS: Record<string, TextEdit[]> = {
   'Elegir talla': [
     {
       from: 'Andrés no elige la talla: siempre manda la guía de tallas y el cliente elige. Única guía: entre dos tallas, la más pequeña.',
-      to: 'Andrés manda la guía de tallas y nunca pide peso ni estatura. Si el cliente los da, le dice su talla. Entre dos tallas (o si peso y estatura no coinciden), la más grande.',
+      to: `Andrés manda la guía de tallas y nunca pide peso ni estatura. ${ELEGIR_TALLA_SIZE}`,
     },
   ],
 }
@@ -94,7 +97,7 @@ export const NO_WEIGHT_SALES_RULE_EDITS: {
   neverSay: [
     {
       from: 'Elegir la talla por el cliente o decir "te queda X" / "según la tabla caés en X": solo mandá la guía; entre dos tallas, la más pequeña',
-      to: 'Pedir peso o estatura. Si el cliente los da, decí su talla; entre dos tallas (o peso y estatura distintos), la más grande',
+      to: NEVER_SAY_SIZE,
     },
   ],
   objections: [

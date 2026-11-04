@@ -35,7 +35,7 @@ function PlatformBadges({ platforms }: { platforms: string[] }) {
       {platforms.map((p) => (
         <span
           key={p}
-          className={`rounded-md px-1.5 py-px text-[10px] font-semibold ring-1 ${p === 'instagram' ? 'bg-pink-50 text-pink-700 ring-pink-200/70' : 'bg-emerald-50 text-emerald-700 ring-emerald-200/70'}`}
+          className={`rounded-md px-1.5 py-px text-[12px] font-semibold ring-1 ${p === 'instagram' ? 'bg-pink-50 text-pink-700 ring-pink-200/70' : 'bg-emerald-50 text-emerald-700 ring-emerald-200/70'}`}
         >
           {p === 'instagram' ? 'Instagram' : 'WhatsApp'}
         </span>
@@ -45,7 +45,7 @@ function PlatformBadges({ platforms }: { platforms: string[] }) {
 }
 
 function ConversionChip({ value }: { value: number | null }) {
-  if (value === null) return <span className="text-[12px] text-slate-400">—</span>
+  if (value === null) return <span className="text-[12px] text-slate-500">—</span>
   const tone = value >= 0.1 ? 'good' : value > 0 ? 'info' : 'neutral'
   return (
     <StatusChip tone={tone} icon={null}>
@@ -59,7 +59,7 @@ function AdTitle({ row }: { row: AdSalesRow }) {
     return (
       <div className="min-w-0">
         <p className="font-semibold text-slate-900">Sin anuncio</p>
-        <p className="text-[11px] text-slate-400">Escribieron solos (o el anuncio fue hace más de 7 días)</p>
+        <p className="text-[12px] text-slate-500">Escribieron solos (o el anuncio fue hace más de 7 días)</p>
       </div>
     )
   }
@@ -70,7 +70,7 @@ function AdTitle({ row }: { row: AdSalesRow }) {
         {row.campaignName ? `${row.campaignName} · ` : ''}
         {row.headline || 'Anuncio sin título'}
       </p>
-      <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-400">
+      <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-slate-500">
         <PlatformBadges platforms={row.platforms} />
         {row.adId ? <span className="tabular-nums">ID {row.adId}</span> : null}
         {link ? (
@@ -93,7 +93,7 @@ function MoneyCell({ main, second, secondLabel, max, symbol, cls }: { main: numb
       <div className="mt-1 h-1.5 w-full rounded-r-[4px] bg-slate-100/80">
         <div className={`${cls} h-full rounded-r-[4px] bg-current`} style={{ width: `${max > 0 ? Math.max(main > 0 ? 2 : 0, (main / max) * 100) : 0}%` }} />
       </div>
-      <p className="mt-0.5 text-right text-[10.5px] text-slate-400">
+      <p className="mt-0.5 text-right text-[11.5px] text-slate-500">
         {secondLabel} {formatCompactMoney(second, symbol)}
       </p>
     </div>
@@ -136,9 +136,9 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
       <div className={STATS_SPLIT}>
         <div className="rounded-xl border border-slate-100 p-3.5">
           <p className="text-[12.5px] font-semibold text-slate-800">Pedidos por día</p>
-          <p className="mb-3 text-[11px] text-slate-400">Pedidos vinculados a un chat, por día de venta</p>
+          <p className="mb-3 text-[12px] text-slate-500">Pedidos vinculados a un chat, por día de venta</p>
           {report.daily.every((d) => d.adOrders + d.organicOrders === 0) ? (
-            <p className="py-10 text-center text-[12px] text-slate-400">Todavía no hay pedidos vinculados a un chat en este período.</p>
+            <p className="py-10 text-center text-[12px] text-slate-500">Todavía no hay pedidos vinculados a un chat en este período.</p>
           ) : (
           <AreaChart
             labels={report.daily.map((d) => d.date)}
@@ -155,7 +155,7 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
         </div>
         <div className="rounded-xl border border-slate-100 p-3.5">
           <p className="text-[12.5px] font-semibold text-slate-800">De dónde vienen los pedidos</p>
-          <p className="mb-3 text-[11px] text-slate-400">
+          <p className="mb-3 text-[12px] text-slate-500">
             {data.platform ? `Pedidos del período vinculados a un chat de ${data.platform === 'instagram' ? 'Instagram' : 'WhatsApp'}` : 'Todos los pedidos del período'}
           </p>
           <SplitBar
@@ -188,7 +188,7 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
       <div className="hidden overflow-hidden rounded-xl border border-slate-100 md:block">
         <table className="w-full text-[13px]">
           <thead className="bg-slate-50/80">
-            <tr className="text-left text-[11px] font-medium uppercase tracking-wide text-slate-400">
+            <tr className="text-left text-[12px] font-medium uppercase tracking-wide text-slate-500">
               <th className="px-3 py-2.5 font-medium">Anuncio</th>
               <th className="px-3 py-2.5 text-right font-medium">Chats</th>
               <th className="px-3 py-2.5 text-right font-medium">Pedidos</th>
@@ -230,7 +230,7 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
                 <tr key={r.key} className="border-t border-dashed border-slate-200 align-top text-slate-500" data-testid={r.testId}>
                   <td className="px-3 py-3">
                     <p className="font-medium">{r.title}</p>
-                    <p className="text-[11px] text-slate-400">{r.sub}</p>
+                    <p className="text-[12px] text-slate-500">{r.sub}</p>
                   </td>
                   <td className="px-3 py-3 text-right">—</td>
                   <td className="px-3 py-3 text-right tabular-nums">{nf.format(r.t.orders)}</td>
@@ -252,15 +252,15 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
             </div>
             <dl className="mt-3 grid grid-cols-3 gap-2 text-[12px]">
               <div>
-                <dt className="text-slate-400">Chats</dt>
+                <dt className="text-slate-500">Chats</dt>
                 <dd className="font-semibold tabular-nums text-slate-900">{nf.format(row.chats)}</dd>
               </div>
               <div>
-                <dt className="text-slate-400">Pedidos</dt>
+                <dt className="text-slate-500">Pedidos</dt>
                 <dd className="font-semibold tabular-nums text-slate-900">{nf.format(row.orders)}</dd>
               </div>
               <div>
-                <dt className="text-slate-400">Pagados</dt>
+                <dt className="text-slate-500">Pagados</dt>
                 <dd className="font-semibold tabular-nums text-slate-900">{nf.format(row.paidOrders)}</dd>
               </div>
             </dl>
@@ -285,7 +285,7 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
           </li>
         ) : null}
         {cancelled.orders > 0 ? (
-          <li className="rounded-xl border border-dashed border-slate-200 p-3 text-[12px] text-slate-400" data-testid="ad-card-cancelled">
+          <li className="rounded-xl border border-dashed border-slate-200 p-3 text-[12px] text-slate-500" data-testid="ad-card-cancelled">
             <p className="font-medium">Cancelados (no se atribuyen)</p>
             <p className="tabular-nums">
               {nf.format(cancelled.orders)} pedidos · {formatCompactMoney(money(cancelled), symbol)}
@@ -295,14 +295,14 @@ function Report({ data, symbol }: { data: Payload; symbol: string }) {
       </ul>
 
       {report.hiddenAds > 0 ? (
-        <p className="text-[11.5px] text-slate-400">
+        <p className="text-[11.5px] text-slate-500">
           Y {nf.format(report.hiddenAds)} anuncios más con menos actividad (están sumados en los totales de arriba).
         </p>
       ) : null}
 
       <details className="group rounded-xl bg-slate-50 px-3.5 py-2.5 text-[12px] text-slate-600">
         <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-slate-700">
-          <HelpCircle className="h-4 w-4 text-slate-400" aria-hidden />
+          <HelpCircle className="h-4 w-4 text-slate-500" aria-hidden />
           ¿Cómo se cuenta?
         </summary>
         <ul className="mt-2 list-disc space-y-1 pl-5">

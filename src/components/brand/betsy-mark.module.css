@@ -34,6 +34,10 @@
 .bm[data-on] .breath {
   animation: bm-breath 4400ms ease-in-out infinite alternate;
 }
+/* Under 40 px a sub-pixel breath only resamples the edge (soft, haloed outline): keep the body crisp. */
+.bm[data-on][data-small]:not([data-state='speak']) .breath {
+  animation: none;
+}
 .bm[data-on][data-state='speak'] .breath {
   animation: bm-speak 340ms ease-in-out infinite alternate;
 }

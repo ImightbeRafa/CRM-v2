@@ -2,6 +2,7 @@
 
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CheckCircle, Edit3, Loader2, Package, RefreshCw, Search } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { parseOrder, useSalesStream } from '@/app/hooks/useSalesStream'
 import { useTenantSettings } from '@/app/contexts/TenantSettingsContext'
 import { useUpdateOrderStatus } from '@/app/hooks/useOrderMutations'
@@ -19,6 +20,8 @@ import { PedidosKpiCards } from '@/components/aurora/pedidos/PedidosKpiCards'
 import { PedidosTable } from '@/components/aurora/pedidos/PedidosTable'
 import { PedidosPager } from '@/components/aurora/pedidos/PedidosPager'
 import { PedidoDetailDrawer } from '@/components/aurora/pedidos/PedidoDetailDrawer'
+import { PagosPorConfirmar, toPendingPaymentRows } from '@/components/aurora/pedidos/PagosPorConfirmar'
+import { useAuroraViewer } from '@/components/aurora/shell/useAuroraViewer'
 import { useOrderLines } from '@/app/ventas/components/useOrderLines'
 import {
   LINE_FILTER_ALL,
@@ -67,6 +70,25 @@ function getRangeCR(days: number) {
   return { dateFrom: new Date(start).toISOString(), dateTo: new Date(end).toISOString() }
 }
 
+function crDayKey(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: CR_TZ })
+}
+
+/** Today's date in Costa Rica, re-checked every minute and when the tab comes back. */
+function useCrToday(): string {
+  const [day, setDay] = useState(crDayKey)
+  useEffect(() => {
+    const check = () => setDay(crDayKey())
+    const timer = window.setInterval(check, 60_000)
+    document.addEventListener('visibilitychange', check)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', check)
+    }
+  }, [])
+  return day
+}
+
 async function fetchSaleList(path: string): Promise<Sale[]> {
   const res = await fetch(path, { credentials: 'include' })
   if (!res.ok) throw new Error(String(res.status))
@@ -78,12 +100,18 @@ async function fetchSaleList(path: string): Promise<Sale[]> {
 export const PedidosBoard = React.memo(function PedidosBoard({
   onCreate,
   initialSearch,
+  focusPayments = false,
+  paymentsKind,
   pedidoRef,
   onPedidoChange,
 }: {
   onCreate: () => void
   /** `?buscar=` deep link seeds the Pedidos search. */
   initialSearch?: string | null
+  /** `?vista=pagos` (Inicio "Revisar"): open and scroll to "Pagos por confirmar". */
+  focusPayments?: boolean
+  /** `&tipo=ce` from the Inicio contra entrega card: open on that tab so the numbers match. */
+  paymentsKind?: 'contra_entrega'
   /** `?pedido=` deep link (public orderId or Order.id). */
   pedidoRef?: string | null
   /** Keep the URL in sync when the drawer opens / closes. */
@@ -104,11 +132,36 @@ export const PedidosBoard = React.memo(function PedidosBoard({
   const updateStatus = useUpdateOrderStatus()
 
   const rangeMeta = RANGES.find((r) => r.key === range) ?? RANGES[0]
-  const filters = useMemo(() => getRangeCR(rangeMeta.days), [rangeMeta.days])
+  // The window follows the Costa Rica calendar day: a tab left open past midnight must move to the new
+  // day instead of polling yesterday forever (the memo used to depend on the range only).
+  const crToday = useCrToday()
+  const filters = useMemo(() => getRangeCR(rangeMeta.days), [rangeMeta.days, crToday]) // eslint-disable-line react-hooks/exhaustive-deps
   const { sales, isLoading, error, refresh } = useSalesStream({
-    pollingInterval: 30000,
+    // "Hoy" is the live view; 7 / 30 days download far more rows and change slowly.
+    pollingInterval: range === 'hoy' ? 30_000 : 120_000,
     filters,
   })
+
+  // "Pagos por confirmar": any date, independent of the range below (same ['sales'] family, so
+  // every existing order invalidation, `refresh` included, refreshes it too).
+  const viewer = useAuroraViewer()
+  const pendingQuery = useQuery<Sale[], Error>({
+    queryKey: ['sales', 'pending-payments'],
+    queryFn: () => fetchSaleList('/api/orders?pago=por_confirmar'),
+    refetchInterval: 120_000,
+    refetchOnWindowFocus: true,
+    staleTime: 30_000,
+  })
+  const pendingRows = useMemo(() => toPendingPaymentRows(pendingQuery.data ?? []), [pendingQuery.data])
+  const [paymentsOpen, setPaymentsOpen] = useState(true)
+  const paymentsRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!focusPayments) return
+    setPaymentsOpen(true)
+    paymentsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [focusPayments])
+  // `refresh` invalidates every ['sales', …] query, the pending payments included.
+  const refreshAll = refresh
 
   const lines = useOrderLines(useMemo(() => sales.map((s) => s.id).filter(Boolean), [sales]))
   const lineOptions = useMemo(() => distinctLines(lines), [lines])
@@ -143,10 +196,11 @@ export const PedidosBoard = React.memo(function PedidosBoard({
 
   const selectedSale = useMemo(() => {
     if (!selectedRef) return null
-    return sales.find((s) => s.orderId === selectedRef || s.id === selectedRef) ?? (
+    const matches = (s: Sale) => s.orderId === selectedRef || s.id === selectedRef
+    return sales.find(matches) ?? (pendingQuery.data ?? []).find(matches) ?? (
       resolvedSale && (resolvedSale.orderId === selectedRef || resolvedSale.id === selectedRef) ? resolvedSale : null
     )
-  }, [sales, selectedRef, resolvedSale])
+  }, [sales, pendingQuery.data, selectedRef, resolvedSale])
 
   // Deep link to an order outside the loaded range: search by public id, then details by cuid.
   useEffect(() => {
@@ -219,8 +273,28 @@ export const PedidosBoard = React.memo(function PedidosBoard({
   return (
     <div className="space-y-4" data-testid="pedidos-board">
       {!isLoading && !error ? (
-        <PedidosKpiCards kpis={kpis} rangeLabel={rangeMeta.kpiLabel} formatCurrency={formatCurrency} />
+        <PedidosKpiCards
+          kpis={kpis}
+          rangeLabel={rangeMeta.kpiLabel}
+          formatCurrency={formatCurrency}
+          pendingAnyDay={pendingRows.length}
+        />
       ) : null}
+
+      <PagosPorConfirmar
+        ref={paymentsRef}
+        rows={pendingRows}
+        loading={pendingQuery.isLoading}
+        error={pendingQuery.error ? pendingQuery.error.message : null}
+        open={paymentsOpen}
+        onToggle={() => setPaymentsOpen((v) => !v)}
+        onRetry={() => void pendingQuery.refetch()}
+        onConfirmed={refreshAll}
+        onOpenOrder={openOrder}
+        canConfirm={viewer.can('update_production')}
+        initialFilter={paymentsKind}
+        formatCurrency={formatCurrency}
+      />
 
       <section className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white">
         <div className="flex flex-col gap-3 px-4 py-3.5 lg:flex-row lg:items-center lg:justify-between lg:px-5">
@@ -397,7 +471,7 @@ export const PedidosBoard = React.memo(function PedidosBoard({
           onClose={closeOrder}
           onEdit={() => setEditing(true)}
           onGenerateGuia={() => setGuiaOpen(true)}
-          onUpdated={refresh}
+          onUpdated={refreshAll}
         />
       ) : null}
 

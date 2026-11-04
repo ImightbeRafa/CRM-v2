@@ -11,6 +11,7 @@ import { createLifecycleOrder, lifecycleIdempotencyKey, OrderLifecycleError } fr
 import { orderItemLabels } from '@/lib/orders/order-items'
 import { loadOrderNo, loadOrderNos, orderIdForSearch } from '@/lib/orders/order-number-server'
 import { withInventoryItemNames } from '@/lib/orders/item-names-server'
+import { PENDING_PAYMENT_MAX_ROWS, pendingPaymentKind, pendingPaymentWhere } from '@/lib/orders/pending-payments'
 
 // Force dynamic rendering for authentication
 export const dynamic = 'force-dynamic'
@@ -138,14 +139,16 @@ export async function GET(request: NextRequest) {
       const search = searchParams.get('search')
       const dateFrom = searchParams.get('dateFrom')
       const dateTo = searchParams.get('dateTo')
+      // ?pago=por_confirmar: every order whose payment still needs a person, any date (Pedidos › Pagos).
+      const pendingPayments = searchParams.get('pago') === 'por_confirmar'
 
       // Build where clause for filtering (tenant filter auto-injected by middleware)
-      const whereClause: any = {}
+      const whereClause: any = pendingPayments ? pendingPaymentWhere() : {}
       if (status && status !== 'all') whereClause.status = status
       if (orderType && orderType !== 'all') whereClause.orderType = orderType
       
       // Add search filter
-      if (search) {
+      if (search && !pendingPayments) {
         // "#1042" / "1042" also finds the order with that short number (SQL 062; none before it).
         const idForNo = await orderIdForSearch(tenantId, search)
         whereClause.OR = [
@@ -158,7 +161,7 @@ export async function GET(request: NextRequest) {
       }
       
       // Add date range filter
-      if (dateFrom || dateTo) {
+      if (!pendingPayments && (dateFrom || dateTo)) {
         whereClause.timestamp = {}
         if (dateFrom) whereClause.timestamp.gte = new Date(dateFrom)
         if (dateTo) whereClause.timestamp.lte = new Date(dateTo)
@@ -169,9 +172,10 @@ export async function GET(request: NextRequest) {
         tenantPrisma.order.count({ where: whereClause }),
         tenantPrisma.order.findMany({
         where: whereClause,
-        orderBy: { timestamp: 'desc' },
-        skip,
-        ...(limit && { take: limit }), // Only add take if limit is defined
+        // Pagos por confirmar: oldest first, so a cap can only drop the newest (the list sorts again anyway).
+        orderBy: { timestamp: pendingPayments ? 'asc' : 'desc' },
+        skip: pendingPayments ? 0 : skip,
+        take: pendingPayments ? PENDING_PAYMENT_MAX_ROWS : limit || undefined,
         select: {
           id: true,
           clientId: true,
@@ -234,9 +238,10 @@ export async function GET(request: NextRequest) {
       }
     }
       
+      const rows = pendingPayments ? orders.filter((o: any) => pendingPaymentKind(o) !== null) : orders
       const [orderNos, named] = await Promise.all([
-        loadOrderNos(tenantId, orders.map((o: any) => o.id)),
-        withInventoryItemNames(tenantId, orders),
+        loadOrderNos(tenantId, rows.map((o: any) => o.id)),
+        withInventoryItemNames(tenantId, rows),
       ])
       const data = named.map(({ productDetails, ...order }: any) => {
         const itemLines = orderItemLabels({ productDetails, product: order.product, quantity: order.quantity, comments: order.comments })
@@ -251,9 +256,9 @@ export async function GET(request: NextRequest) {
         pagination: {
           page,
           limit,
-          total: totalCount,
-          totalPages: limit ? Math.ceil(totalCount / limit) : 1,
-          hasMore: skip + orders.length < totalCount
+          total: pendingPayments ? data.length : totalCount,
+          totalPages: pendingPayments ? 1 : limit ? Math.ceil(totalCount / limit) : 1,
+          hasMore: pendingPayments ? false : skip + orders.length < totalCount
         }
       })
       

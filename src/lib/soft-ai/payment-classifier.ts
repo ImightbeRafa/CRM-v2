@@ -1515,7 +1515,8 @@ function foldChoice(text: string): string {
 }
 
 // Rafael 2026-10-28 (live): "Tarjeta contra entrega :)" — card ON delivery is the contra-entrega choice, not a claim.
-const METHOD = String.raw`(tarjeta (?:contra ?entrega|al recibir(?:lo|la)?)|sinpe(?: movil)?|transferencia(?: bancaria)?|tarjeta(?: de (?:credito|debito))?|contra ?entrega|al recibir(?:lo|la)?|efectivo)`
+// Live 2026-11-04: "Sinpe móvil contra entrega" — SINPE to the courier on delivery is the contra-entrega choice too.
+const METHOD = String.raw`(tarjeta (?:contra ?entrega|al recibir(?:lo|la)?)|sinpe(?: movil)? (?:contra ?entrega|al recibir(?:lo|la)?)|sinpe(?: movil)?|transferencia(?: bancaria)?|tarjeta(?: de (?:credito|debito))?|contra ?entrega|al recibir(?:lo|la)?|efectivo)`
 // Rafael 2026-10-25 (Dani Probar): "seria sinpe" — "sería / va a ser / lo pago por / elijo / escojo" + the method only.
 // DeepSleep 2026-11-03: "oki sinpe", "preferiría pagarlo de una vez con sinpe".
 const LEAD = String.raw`(?:(?:ok|oki|okey|dale|claro|perfecto|listo|lista)\s+)?(?:(?:prefiero pagar|preferiria pagar(?:lo|la)?|prefiero|mejor|quiero pagar|voy a pagar|quisiera pagar|preferiria|(?:te|le|les) pago|pago|seria|va a ser|lo pago|lo voy a pagar|elijo|escojo)(?:\s+de\s+una\s+vez)?\s+)?(?:(?:por|con|en)\s+)?(?:el\s+|la\s+)?`
@@ -1534,6 +1535,7 @@ const ASK_FOR_METHOD_RE = new RegExp(String.raw`^${ASK_HEAD}\s+(?:de|del|para)(?
 const CHOICE_REJECT_RE = /[\d#₡¢$✅✔☑👍💸]|(?<![\p{L}])ref(?![\p{L}])/u
 
 function methodOf(word: string): PaymentChoiceMethod {
+  if (/^sinpe(?: movil)? (?:contra|al recibir)/u.test(word)) return 'contra_entrega'
   if (word.startsWith('sinpe')) return 'sinpe'
   if (word.startsWith('transferencia')) return 'transferencia'
   if (/^tarjeta (?:contra|al recibir)/u.test(word)) return 'contra_entrega'

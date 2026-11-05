@@ -49,6 +49,7 @@ const CLAIMS = [
   'te paso el comprobante, cuál es el número para el resto?',
   'le paso el comprobante, me pasás la cuenta para el resto?',
   'ya lo tengo pago, se puede pagar contra entrega?',
+  'Ya hice el sinpe contra entrega',
   // SecureDog INT-246: a payment statement next to a COD question.
   '¿Hay contra entrega? Se lo dio al mensajero',
   'aceptan contra entrega? se lo entrego mi mamá al mensajero',
@@ -69,6 +70,8 @@ const SALES = [
   'Perfecto 👌🏽 \nVoy a confirmar mi peso y les aviso',
   'viene pago el envío?',
   'hay manera de retirar y pagar ahi mismo',
+  // Live 2026-11-04 replay: SINPE to the courier on delivery is the contra-entrega choice.
+  'Sinpe móvil contra entrega',
 ]
 
 describe('payment classifier — review 2026-11-04', () => {

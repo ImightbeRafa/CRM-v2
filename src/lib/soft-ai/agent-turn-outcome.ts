@@ -7,6 +7,7 @@ import type { EffectiveAgentBehavior } from '@/lib/soft-ai/agent-types'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 import { reservedShortcutBody } from '@/lib/soft-ai/shortcuts'
 import { COMPLAINT_HANDOFF_LINE } from '@/lib/soft-ai/business-hours'
+import { CARD_BY_TEAM_LINE } from '@/lib/soft-ai/payment-guard'
 
 export type AgentTurnOutcomeName = 'send' | 'suggest' | 'skip'
 
@@ -23,6 +24,8 @@ export type OutcomeMarkers = {
   planned?: boolean
   handoffKind?: 'handoff' | 'review' | null
   handoffReason?: string | null
+  /** The model's own escalate reason ("other", "complaint"…), allowlisted — soft-release.ts reads it. */
+  handoffSubReason?: string | null
 }
 
 /**
@@ -250,6 +253,8 @@ export function planModelTurnDelivery(input: {
   codOrderReady?: boolean
   /** N6: the order is paid in cash (a filled [[PAGO_EFECTIVO]] the customer chose) → reason 'order_ready_cash'. */
   orderReadyCash?: boolean
+  /** Card by team (payment-guard CARD_BY_TEAM_LINE was filled): a person makes the payment link → true hand-off. */
+  cardByTeam?: boolean
   /** Lane C D3: the customer's unanswered text (picks the empathetic line for a complaint / late order / refund). */
   customerText?: string
 }): TurnDeliveryPlan {
@@ -270,6 +275,11 @@ export function planModelTurnDelivery(input: {
       text: usable ? text : SAFE_LINE.review,
       handoff: { kind: 'handoff', reason: input.orderReadyCash ? HANDOFF_REASON.orderReadyCash : HANDOFF_REASON.orderReady },
     }
+  }
+  // Rafael 2026-11-04: card prices vary — a person sends the Tilopay link. The reply (with "te preparo el link…") goes
+  // out, then the chat goes to a person (payment_details). Never released by the soft release.
+  if (input.cardByTeam && !modelPaymentEscalate && input.llmHandoff?.kind !== 'review') {
+    return { text: usable ? text : CARD_BY_TEAM_LINE, handoff: { kind: 'handoff', reason: HANDOFF_REASON.paymentData } }
   }
   const cannotAnswer = usable && admitsCannotAnswer(text)
   if (input.llmHandoff?.kind === 'handoff' && !(input.paymentDataByTeam && modelPaymentEscalate)) {
@@ -424,6 +434,9 @@ export function readOutcomeMarkers(trace: unknown): OutcomeMarkers | null {
     escalate: row.escalate,
     ...(row.planned === true ? { planned: true } : {}),
     ...(kind ? { handoffKind: kind, handoffReason: typeof row.handoffReason === 'string' ? row.handoffReason.slice(0, 120) : null } : {}),
+    ...(kind && typeof row.handoffSubReason === 'string' && /^[a-z_]{1,32}$/.test(row.handoffSubReason)
+      ? { handoffSubReason: row.handoffSubReason }
+      : {}),
   }
 }
 

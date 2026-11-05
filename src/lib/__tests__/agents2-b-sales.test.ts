@@ -201,13 +201,17 @@ describe('B1 wiring (source asserts)', () => {
   const turn = read('src/lib/soft-ai/agent-turn.ts')
   const runtime = read('src/lib/soft-ai/llm/runtime.ts')
   it('no flip to human before the send; the flip + notifyHandoff happen after it (also when blocked)', () => {
-    assert.equal((turn.match(/data: \{ aiMode: 'human' \}/g) || []).length, 1)
+    // The only other flip is the soft release giving the chat BACK after nothing went out (only from 'ai_active').
+    const giveBack = turn.slice(turn.indexOf('async function giveBackToPerson'), turn.indexOf('async function softReleaseGate'))
+    assert.match(giveBack, /where: \{ id: row\.conversationId, tenantId: row\.tenantId, aiMode: 'ai_active' \}, data: \{ aiMode: 'human' \}/)
+    assert.equal((turn.replace(giveBack, '').match(/data: \{ aiMode: 'human' \}/g) || []).length, 1)
     const settle = turn.slice(turn.indexOf('async function settleHandoff'), turn.indexOf('async function finishDeliveryOrSuggestInner'))
     assert.match(settle, /data: \{ aiMode: 'human' \}/)
     assert.match(settle, /OR: \[\{ aiMode: null \}, \{ aiMode: \{ not: 'paused' \} \}\]/)
     assert.match(settle, /await notifyHandoff\(\{/)
     assert.match(settle, /finally \{\s*\/\/[^\n]*\n\s*if \(input\.handoff\) await settleHandoff\(input\.row, input\.handoff, input\.afterHours\)/)
-    assert.match(settle, /if \(!input\.handoff && \(result\.status === 'suggested' \|\| result\.status === 'skipped'\)\)/)
+    // A soft release that sent nothing stays silent (`!released`): the hand-off alert is still open.
+    assert.match(settle, /if \(!input\.handoff && !released && \(result\.status === 'suggested' \|\| result\.status === 'skipped'\)\)/)
     assert.match(turn, /import \{ notifyHandoff \} from '@\/lib\/soft-ai\/handoff-notify'/)
   })
   it('planned text is what is stored and hashed; the held model reply only in the redacted trace', () => {

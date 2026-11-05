@@ -408,7 +408,7 @@ async function planKnowledgeChanges(agentId: string, items: typeof KNOWLEDGE_UPS
   for (const item of items.filter((i) => i.agentId === agentId)) {
     const hash = hashKnowledgeBody(item.body)
     const existing = await prisma.chatKnowledgeSource.findFirst({
-      where: { tenantId: TENANT_ID, name: item.name, contentHash: hash },
+      where: { tenantId: TENANT_ID, name: item.name, contentHash: hash, status: 'approved' },
       select: { id: true },
     })
     const bound = existing
@@ -483,7 +483,7 @@ async function planFollowUpChange(): Promise<BackupChange | null> {
     if (before) {
       beforeByCampaignId[id] = {
         active: Boolean(before.active),
-        stageTexts: before.stageTexts,
+        stageTexts: before.stageTexts ?? null, // null survives JSON (undefined is dropped)
       }
     }
     if (after) {
@@ -541,6 +541,13 @@ async function applyChanges(changes: BackupChange[], act: Actor, knowledgeBodies
         await approveKnowledgeSource({ tenantId: TENANT_ID, sourceId: id, ...act })
         ch.afterBoundSourceId = id
       }
+      // Review 2026-11-04: bind the new doc FIRST — a failed bind used to leave the agent with neither version.
+      await bindKnowledgeToAgent({
+        tenantId: TENANT_ID,
+        agentId: ch.agentId,
+        sourceId: id,
+        ...act,
+      })
       for (const oldId of ch.beforeBoundSourceIds) {
         if (oldId === id) continue
         await unbindKnowledgeFromAgent({
@@ -550,12 +557,6 @@ async function applyChanges(changes: BackupChange[], act: Actor, knowledgeBodies
           ...act,
         }).catch(() => null)
       }
-      await bindKnowledgeToAgent({
-        tenantId: TENANT_ID,
-        agentId: ch.agentId,
-        sourceId: id,
-        ...act,
-      })
       continue
     }
     if (ch.kind === 'follow_up') {

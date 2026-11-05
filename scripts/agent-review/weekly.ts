@@ -14,7 +14,7 @@
  * (no reply text samples). CRM161-13: --out must be gitignored, under /tmp, or outside the repo.
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { prisma } from '@/lib/db'
 import { resolveRepoOutPath } from '../lib/out-path-guard'
 
@@ -240,15 +240,10 @@ async function main() {
     ``,
   ].join('\n')
 
-  mkdirSync(outBase.replace(/\/[^/]+$/, '') === outBase ? '.' : outBase.replace(/\/[^/]+$/, ''), { recursive: true })
-  // Ensure parent of outBase exists when outBase is a file prefix path
+  // outBase is a file prefix: create its parent folder (dirname: the old "/" regex made "<out>.json" a folder on Windows).
+  mkdirSync(dirname(outBase), { recursive: true })
   const jsonPath = `${outBase}.json`
   const mdPath = `${outBase}.md`
-  try {
-    mkdirSync(jsonPath.replace(/\/[^/]+$/, ''), { recursive: true })
-  } catch {
-    /* root */
-  }
   writeFileSync(jsonPath, JSON.stringify(summary, null, 2))
   writeFileSync(mdPath, md)
   console.log(`Wrote ${jsonPath}`)

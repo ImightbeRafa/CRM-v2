@@ -27,6 +27,11 @@ export type TokenPaymentMethod = keyof typeof PAYMENT_METHOD_TOKENS
  * envío) rather than by the brand facts; codNote is its zone line ("Solo dentro del GAM.").
  */
 export type PaymentFillOptions = {
+  /**
+   * Rafael 2026-11-04 (tenant flag agent_card_by_team_v1): card prices vary, so a person makes the Tilopay link with the
+   * exact amount. The card token becomes CARD_BY_TEAM_LINE (no website link) and the turn hands the chat to a person.
+   */
+  cardByTeam?: boolean
   codAvailable?: boolean
   codNote?: string | null
   /**
@@ -58,8 +63,14 @@ export function customerAskedPaymentDetails(text: string | null | undefined): bo
 }
 
 /** "Tenemos SINPE Móvil, tarjeta y contra entrega (GAM). ¿Cuál preferís?" — names only, from configuration. */
-export function paymentMethodsQuestion(facts: BrandFacts): string {
-  const labels = paymentMethodLabels(paymentMethodsOf(facts), paymentLabelOptions(facts))
+/** Card by team: "tarjeta" without "(en la web)" — a person sends the link. */
+function labelOptions(facts: BrandFacts, cardByTeam?: boolean) {
+  const o = paymentLabelOptions(facts)
+  return cardByTeam ? { ...o, cardOnWeb: false } : o
+}
+
+export function paymentMethodsQuestion(facts: BrandFacts, cardByTeam?: boolean): string {
+  const labels = paymentMethodLabels(paymentMethodsOf(facts), labelOptions(facts, cardByTeam))
   // Verifier round 4: the sales flow's own method question (PAYMENT_METHOD_ASKED_RE) — the next "SINPE" is a choice.
   return labels.length ? `Tenemos ${joinEs(labels)}. ¿Cómo preferís pagar?` : ''
 }
@@ -93,7 +104,11 @@ function transferBlock(facts: BrandFacts): string {
     .join('\n')
 }
 
-function cardBlock(facts: BrandFacts): string {
+export const CARD_BY_TEAM_FLAG = 'agent_card_by_team_v1'
+export const CARD_BY_TEAM_LINE = 'Te preparo el link de pago con el monto exacto y te lo paso por aquí en un momento 😊'
+
+function cardBlock(facts: BrandFacts, opts: PaymentFillOptions = {}): string {
+  if (opts.cardByTeam) return CARD_BY_TEAM_LINE
   const url = oneLine(facts.payment?.cardUrl || facts.website || '')
   return url ? `Podés pagar con tarjeta en ${url}` : ''
 }
@@ -133,7 +148,7 @@ export function paymentMethodBlock(facts: BrandFacts, method: TokenPaymentMethod
     case 'transferencia':
       return transferBlock(facts)
     case 'tarjeta':
-      return cardBlock(facts)
+      return cardBlock(facts, opts)
     case 'contra_entrega':
       return codBlock(facts, opts)
     case 'efectivo':
@@ -148,11 +163,11 @@ export function paymentMethodBlock(facts: BrandFacts, method: TokenPaymentMethod
  * per method, single line breaks — never a blank line, so the whole block stays in one message). Empty when they may
  * not be shared.
  */
-export function paymentDetailsText(facts: BrandFacts): string {
+export function paymentDetailsText(facts: BrandFacts, cardByTeam?: boolean): string {
   if (!canSharePaymentFacts(facts)) return ''
   const blocks = [sinpeBlock(facts), transferBlock(facts)].filter(Boolean)
   const others = paymentMethodsOf(facts).filter((m) => m !== 'sinpe' && m !== 'transferencia')
-  const labels = paymentMethodLabels(others, paymentLabelOptions(facts))
+  const labels = paymentMethodLabels(others, labelOptions(facts, cardByTeam))
   if (labels.length) blocks.push(`${blocks.length ? 'También' : 'Podés pagar con'}: ${joinEs(labels)}`)
   return blocks.join('\n')
 }
@@ -205,7 +220,7 @@ export function fillPaymentToken(
     // [[DATOS_PAGO]] without a request for the details → the method names + "¿Cuál preferís?" (no numbers).
     const namesOnly = method === 'all' && opts.customerText !== undefined && !opts.chosenMethod && !customerAskedPaymentDetails(opts.customerText)
     if (namesOnly && canSharePaymentFacts(facts)) {
-      const question = paymentMethodsQuestion(facts)
+      const question = paymentMethodsQuestion(facts, opts.cardByTeam)
       if (question) return question
     }
     // Verifier round 5: [[DATOS_PAGO]] after the customer chose a method → only that method's block (no SINPE + IBAN
@@ -220,7 +235,7 @@ export function fillPaymentToken(
         : null
     const chosenBlock = chosen ? paymentMethodBlock(facts, chosen, opts) : ''
     const filled: TokenPaymentMethod | 'all' = chosenBlock && chosen ? chosen : method
-    const block = chosenBlock || (method === 'all' ? paymentDetailsText(facts) : paymentMethodBlock(facts, method, opts))
+    const block = chosenBlock || (method === 'all' ? paymentDetailsText(facts, opts.cardByTeam) : paymentMethodBlock(facts, method, opts))
     if (!block) {
       needsHuman = true
       return ''

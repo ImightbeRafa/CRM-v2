@@ -20,7 +20,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { prisma } from '@/lib/db'
 import { updateChatAgent } from '@/lib/soft-ai/agent-admin'
 import { listShortcuts, updateShortcut } from '@/lib/soft-ai/shortcut-admin'
-import { bindKnowledgeToAgent, unbindKnowledgeFromAgent } from '@/lib/soft-ai/knowledge-admin'
+import { approveKnowledgeSource, bindKnowledgeToAgent, unbindKnowledgeFromAgent, updateKnowledgeDraft } from '@/lib/soft-ai/knowledge-admin'
 import { FOLLOW_UP_FLAG } from '@/lib/soft-ai/follow-up'
 import {
   BackupChange,
@@ -187,28 +187,39 @@ async function revertKnowledge(ch: Extract<BackupChange, { kind: 'knowledge' }>,
     console.log(`~ knowledge "${ch.name}"`)
   }
   if (DRY) return
-  if (ch.afterBoundSourceId) {
-    await unbindKnowledgeFromAgent({
-      tenantId: TENANT_ID,
-      agentId: ch.agentId,
-      sourceId: ch.afterBoundSourceId,
-      ...act,
-    }).catch(() => null)
-  }
+  // Review 2026-11-04: approving the new version ARCHIVED the old one, so re-binding the old id failed (swallowed) and the
+  // agent ended up with neither doc. Restore first — an archived old doc comes back as a NEW approved version with the
+  // old body (same as the no-weight revert) — and only unbind the apply's doc once every old doc is bound again.
   for (const oldId of ch.beforeBoundSourceIds) {
     if (oldId === ch.afterBoundSourceId) continue
-    await bindKnowledgeToAgent({
-      tenantId: TENANT_ID,
-      agentId: ch.agentId,
-      sourceId: oldId,
-      ...act,
-    }).catch((e) => console.log(`    ! re-bind ${oldId}: ${String(e)}`))
+    const old = await prisma.chatKnowledgeSource.findFirst({
+      where: { tenantId: TENANT_ID, id: oldId },
+      select: { id: true, status: true, body: true },
+    })
+    if (!old) throw new Error(`knowledge "${ch.name}": old source ${oldId} not found — nothing unbound`)
+    let restoreId = old.id
+    if (old.status !== 'approved') {
+      if (!ch.afterBoundSourceId) throw new Error(`knowledge "${ch.name}": old source archived and no new doc to version from`)
+      const draft = await updateKnowledgeDraft({ tenantId: TENANT_ID, sourceId: ch.afterBoundSourceId, ...act, body: old.body })
+      await approveKnowledgeSource({ tenantId: TENANT_ID, sourceId: draft.id, ...act })
+      restoreId = draft.id
+    }
+    await bindKnowledgeToAgent({ tenantId: TENANT_ID, agentId: ch.agentId, sourceId: restoreId, ...act })
+  }
+  if (ch.afterBoundSourceId) {
+    const still = await prisma.chatAgentKnowledgeSource.findFirst({
+      where: { tenantId: TENANT_ID, agentId: ch.agentId, sourceId: ch.afterBoundSourceId },
+      select: { sourceId: true },
+    })
+    if (still) {
+      await unbindKnowledgeFromAgent({ tenantId: TENANT_ID, agentId: ch.agentId, sourceId: ch.afterBoundSourceId, ...act })
+    }
   }
 }
 
 async function revertFollowUp(ch: Extract<BackupChange, { kind: 'follow_up' }>) {
   const live = await prisma.tenantFeatureFlag.findFirst({
-    where: { id: ch.flagId, key: FOLLOW_UP_FLAG },
+    where: { id: ch.flagId, key: FOLLOW_UP_FLAG, OR: [{ scope: TENANT_ID }, { tenantId: TENANT_ID }] },
   })
   if (!live) {
     console.log(`! follow-up flag ${ch.flagId} missing — skip`)

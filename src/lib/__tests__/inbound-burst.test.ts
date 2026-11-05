@@ -160,9 +160,10 @@ describe('burst = one reply · queue coalescing (source)', () => {
   it('the agent turn yields before the model, after loading history and right before each send — never a hand-off, a reclaim, or twice per burst', () => {
     const turn = read('src/lib/soft-ai/agent-turn.ts')
     const live = turn.slice(turn.indexOf('export async function executeAgentLayerTurn'), turn.indexOf('function persistedTurnStatus'))
-    const pre = live.indexOf('if (await yieldsToNewerBurst(row, trigger.sentAt)) {')
+    // A soft-release job (soft-release.ts) answers the whole waiting burst: it never yields to a newer bubble.
+    const pre = live.indexOf('if (!softRelease && (await yieldsToNewerBurst(row, trigger.sentAt))) {')
     assert.ok(pre > live.indexOf('runClaimGates(') && pre < live.indexOf('runPreModelGates('))
-    const later = live.indexOf('if (burstHasLaterBubble(burstEarlier, trigger) && (await yieldsToNewerBurst(row, trigger.sentAt))) {')
+    const later = live.indexOf('if (!softRelease && burstHasLaterBubble(burstEarlier, trigger) && (await yieldsToNewerBurst(row, trigger.sentAt))) {')
     assert.ok(later > live.indexOf('const burstEarlier = unansweredBurst(') && later < live.indexOf('const burst = planBurstInbound('))
     const sends = [...live.matchAll(/return finishDeliveryOrSuggest\(\{/g)].map((m) => m.index!)
     const handledYield = live.indexOf("if (await yieldsToNewerBurst(row, trigger.sentAt, plan.handoff, 'pre_send')) return markTurnSuperseded(row, turn.id)")
@@ -446,7 +447,7 @@ describe('burst = one reply · wiring (source)', () => {
     assert.match(live, /handoff: modelPlan\.handoff,\s+\/\/[^\n]*\n\s+burstReview: burstReview \?\? night\.review,/)
     const finish = turn.slice(turn.indexOf('async function finishDeliveryOrSuggest('), turn.indexOf('async function finishDeliveryOrSuggestInner'))
     assert.match(finish, /else if \(input\.burstReview\) \{\s+await settleHandoff\(input\.row, input\.burstReview, input\.afterHours\)/)
-    assert.match(finish, /if \(!input\.handoff && \(result\.status === 'suggested' \|\| result\.status === 'skipped'\)\)/)
+    assert.match(finish, /if \(!input\.handoff && !released && \(result\.status === 'suggested' \|\| result\.status === 'skipped'\)\)/)
   })
 
   it('Probar sandbox: a reply to an earlier queued message is in the history of the next one', () => {

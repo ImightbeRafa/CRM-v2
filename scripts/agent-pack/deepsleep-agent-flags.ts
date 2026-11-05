@@ -19,6 +19,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { DEEPSLEEP_AGENTS, DEEPSLEEP_TENANT_ID, DEEPSLEEP_TENANT_SLUG } from '../lib/deepsleep-conversion-ids'
 import { resolveRepoOutPath } from '../lib/out-path-guard'
@@ -120,11 +121,12 @@ async function main() {
     if (after === null) {
       await prisma.tenantFeatureFlag.deleteMany({ where: { scope: TENANT_ID, tenantId: TENANT_ID, key } })
     } else {
-      const config = (after.config ?? undefined) as object | undefined
+      // Review 2026-11-04: a null config is written as SQL NULL (exact restore), not skipped.
+      const config = after.config == null ? Prisma.DbNull : (after.config as Prisma.InputJsonValue)
       await prisma.tenantFeatureFlag.upsert({
         where: { scope_key: { scope: TENANT_ID, key } },
-        create: { scope: TENANT_ID, tenantId: TENANT_ID, key, enabled: after.enabled, ...(config ? { config } : {}) },
-        update: { enabled: after.enabled, ...(config ? { config } : {}) },
+        create: { scope: TENANT_ID, tenantId: TENANT_ID, key, enabled: after.enabled, config },
+        update: { enabled: after.enabled, config },
       })
     }
     console.log(`  ✓ ${key}`)

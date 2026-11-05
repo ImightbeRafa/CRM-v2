@@ -23,7 +23,10 @@ import {
 import { loadAgentSalesContext } from '@/lib/soft-ai/agent-sales-context'
 import { FIRST_GREETING_FLAG, withFirstGreeting } from '@/lib/soft-ai/first-greeting'
 import { isTenantFeatureEnabled } from '@/lib/feature-flags'
+import { CARD_BY_TEAM_FLAG } from '@/lib/soft-ai/payment-guard'
 import { prisma } from '@/lib/db'
+import { safeHandoffSubReason, softReleaseReplyOk, SOFT_RELEASE_FLAG, SOFT_RELEASE_PROMPT_LINE } from '@/lib/soft-ai/soft-release'
+import { staffControlledAfter } from '@/lib/chat-agent-control'
 import { Prisma } from '@prisma/client'
 import {
   deliverOnce,
@@ -177,6 +180,8 @@ type JobPayload = {
   senderName?: string | null
   /** Set by the waiting sweep (stream C): 'explicit' | 'periodic'. */
   sweep?: string | null
+  /** Set by the soft-release sweep (soft-release.ts): the hand-off turn this job may answer after. */
+  softRelease?: string | null
 }
 
 function readPayload(payload: unknown): JobPayload {
@@ -187,6 +192,7 @@ function readPayload(payload: unknown): JobPayload {
     content: typeof p.content === 'string' ? p.content : null,
     senderName: typeof p.senderName === 'string' ? p.senderName : null,
     sweep: typeof p.sweep === 'string' ? p.sweep : null,
+    softRelease: typeof p.softRelease === 'string' && /^[a-z0-9]{8,40}$/i.test(p.softRelease) ? p.softRelease : null,
   }
 }
 
@@ -305,8 +311,16 @@ async function safeLineSentRecently(tenantId: string, conversationId: string, de
   }
 }
 
-function plannedMarkers(base: { needsHuman: boolean; fallbackUsed: boolean; escalate: boolean }, handoff: TurnHandoff | null): OutcomeMarkers {
-  return { ...base, planned: true, handoffKind: handoff?.kind ?? null, handoffReason: handoff?.reason ?? null }
+/** "te paso / mando / preparo el link de pago": the model promised the card link (card by team → a person makes it). */
+const CARD_LINK_PROMISE_RE = /(?<![\p{L}])te\s+(?:lo\s+)?(?:paso|mando|env[ií]o|preparo|genero|hago|comparto)\s+(?:el|un)\s+(?:link|enlace)(?:\s+de\s+pago)?(?![\p{L}])/iu
+
+function plannedMarkers(
+  base: { needsHuman: boolean; fallbackUsed: boolean; escalate: boolean },
+  handoff: TurnHandoff | null,
+  modelReason?: string | null,
+): OutcomeMarkers {
+  const sub = handoff?.kind === 'handoff' && handoff.reason === HANDOFF_REASON.modelAsked ? safeHandoffSubReason(modelReason) : null
+  return { ...base, planned: true, handoffKind: handoff?.kind ?? null, handoffReason: handoff?.reason ?? null, ...(sub ? { handoffSubReason: sub } : {}) }
 }
 
 type DecideInboundInput = Parameters<typeof decideInbound>[0]
@@ -1146,6 +1160,10 @@ export async function executeAgentLayerTurn(
       humanWroteRecently: lineOn ? await humanWroteRecently(row.tenantId, row.conversationId) : false,
     }).mode
   }
+  // Soft release (soft-release.ts): this one job may answer a chat that waits on a person after a fact-only hand-off.
+  // The chat itself stays 'human' until softReleaseGate approves the reply and claims it back right before the send.
+  const softRelease = payload.softRelease && conversation.aiMode === 'human' && agentMode === 'human' ? payload.softRelease : null
+  if (softRelease) agentMode = 'ai_active'
 
   const resolved = await resolveChatAgent({
     tenantId: row.tenantId,
@@ -1203,7 +1221,7 @@ export async function executeAgentLayerTurn(
   }
 
   // Burst = one reply: the customer's next bubble is already queued → that job answers the whole burst.
-  if (await yieldsToNewerBurst(row, trigger.sentAt)) {
+  if (!softRelease && (await yieldsToNewerBurst(row, trigger.sentAt))) {
     await persistSkippedTurn({
       tenantId: row.tenantId,
       conversationId: row.conversationId,
@@ -1376,7 +1394,7 @@ export async function executeAgentLayerTurn(
     : windowBurst
   // Burst = one reply (Verifier r2 #2): a bubble sent after this trigger landed since the first check and its job is
   // queued → that job answers the whole burst (and takes any hand-off in it), never this one and then that one too.
-  if (burstHasLaterBubble(burstEarlier, trigger) && (await yieldsToNewerBurst(row, trigger.sentAt))) {
+  if (!softRelease && burstHasLaterBubble(burstEarlier, trigger) && (await yieldsToNewerBurst(row, trigger.sentAt))) {
     await persistSkippedTurn({
       tenantId: row.tenantId,
       conversationId: row.conversationId,
@@ -1422,8 +1440,13 @@ export async function executeAgentLayerTurn(
     earlier: burstEarlier,
     awaitingReceipt: (type) => mediaAwaitingReceipt(type, history, mediaSalesContext),
   })
+  // Rafael 2026-11-04: card → a person makes the Tilopay link (tenant flag, default off).
+  const cardByTeam = await isTenantFeatureEnabled(row.tenantId, CARD_BY_TEAM_FLAG).catch(() => false)
+  // The method list then says "tarjeta" (not "en la web"): a person sends the link.
+  if (cardByTeam && turnSalesContext) turnSalesContext.cardOnWeb = false
   const decisionBase = {
     brandFacts: resolved.agent.brandFacts,
+    cardByTeam,
     // Verifier r3 (2026-10-24): the bubbles not answered yet (the rescued "¿pago envío?" allow-list).
     unansweredCustomerTexts: [...customerTextsSinceStore(history).after, ...burstEarlier.map((m) => m.content || '')],
     raceCustomerTexts: customerTextsSinceStore(history).race,
@@ -1642,7 +1665,8 @@ export async function executeAgentLayerTurn(
     replyImageShortcutIds: liveImageReplyIds,
     knowledge,
     decision,
-    afterHoursLine: afterHoursPromptLine(hours),
+    // Soft release: one code-written context line (no customer text) — answer, or the stall line the gate then drops.
+    afterHoursLine: [afterHoursPromptLine(hours), softRelease ? SOFT_RELEASE_PROMPT_LINE : null].filter(Boolean).join('\n\n') || null,
     salesContext: turnSalesContext,
     settledSale,
     toolCtxBase: {
@@ -1699,7 +1723,7 @@ export async function executeAgentLayerTurn(
     linkAllowlist: runtimeInput.linkAllowlist,
     modelText: true,
     // Verifier round 4: "pasame los datos" … "gracias" — every customer message since the store last answered.
-    paymentOptions: { ...runtimeInput.salesPaymentOptions, customerText: customerTextSinceLastAnswer(history, burst.inboundText) },
+    paymentOptions: { ...runtimeInput.salesPaymentOptions, cardByTeam, customerText: customerTextSinceLastAnswer(history, burst.inboundText) },
   })
   const needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
   // B1: what goes out is planned by code: the model reply (checked), the safe line, or the hand-off text.
@@ -1715,6 +1739,8 @@ export async function executeAgentLayerTurn(
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
+      // SecureDog INT-248: also when the model promises the link in its own words (no token): a person must make it.
+      cardByTeam: cardByTeam && (policy.paymentMethods.includes('tarjeta') || CARD_LINK_PROMISE_RE.test(policy.text)),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
       customerText: turnCustomerText,
     }),
@@ -1737,6 +1763,7 @@ export async function executeAgentLayerTurn(
     { needsHuman: night.soft ? false : needsHuman, fallbackUsed: llm.fallbackUsed, escalate: night.soft ? false : llm.escalate },
     // The night review is recorded too: a lease reclaim settles it (review: the chat stays on the agent).
     modelPlan.handoff ?? night.review,
+    llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
   )
   const modelTrace = redactAgentTrace(
     withOutcomeMarkers(
@@ -1925,8 +1952,19 @@ async function finishDeliveryOrSuggest(
   input: Parameters<typeof finishDeliveryOrSuggestInner>[0],
 ): Promise<AgentTurnDispatchResult> {
   let result: AgentTurnDispatchResult
+  // Soft release (soft-release.ts): only a real answer goes out; anything else stays with the person, silently.
+  let released = false
+  if (input.payload.softRelease && input.conversation.aiMode === 'human') {
+    const declined = await softReleaseGate(input)
+    if (declined) return declined
+    released = true
+    input = { ...input, conversation: { ...input.conversation, aiMode: 'ai_active' } }
+  }
   try {
     result = await finishDeliveryOrSuggestInner(input)
+  } catch (error) {
+    if (released) await giveBackToPerson(input.row)
+    throw error
   } finally {
     // Also when the send threw or was blocked (window / token / kill switch): the person must still get the chat.
     if (input.handoff) await settleHandoff(input.row, input.handoff, input.afterHours)
@@ -1944,11 +1982,69 @@ async function finishDeliveryOrSuggest(
   }
   // notifyHandoff already told the team: no second "La IA no respondió" alert.
   // A burst photo review alone does not say the customer got no reply: that alert still goes out.
-  if (!input.handoff && (result.status === 'suggested' || result.status === 'skipped')) {
+  // A soft release that sent nothing is silent: the original hand-off alert is still open for the team.
+  if (!input.handoff && !released && (result.status === 'suggested' || result.status === 'skipped')) {
     const turn = await prisma.chatAgentTurn.findUnique({ where: { id: input.turnId }, select: { skipReason: true } })
     void notifyAiNoReply({ tenantId: input.row.tenantId, conversationId: input.row.conversationId, reason: turn?.skipReason })
   }
+  if (released) {
+    // Nothing went out (window closed, kill switch, a gate): the chat goes back to the person who owed the answer.
+    if (result.status !== 'delivered') await giveBackToPerson(input.row)
+    // Answered: the team sees the agent took the sale back (the original hand-off alert stays in the queue).
+    else await settleHandoff(input.row, { kind: 'review', reason: HANDOFF_REASON.review }, input.afterHours)
+  }
   return result
+}
+
+/** Soft release gave the chat to the agent but nothing went out: back to 'human' (only if still the agent's). */
+async function giveBackToPerson(row: ClaimedChatAutomationJob): Promise<void> {
+  await prisma.chatConversation
+    .updateMany({ where: { id: row.conversationId, tenantId: row.tenantId, aiMode: 'ai_active' }, data: { aiMode: 'human' } })
+    .catch(() => null)
+}
+
+/**
+ * Soft release send gate (Rafael 2026-11-04: "never escalate and then 5 minutes later give a very dumb answer").
+ * Declines — nothing sent, the chat keeps waiting on the person, no extra alert — unless the reply is a real answer:
+ * no hand-off / review of its own, no safe line, no "dame un momento / te confirmo / no lo tengo". Then the person-wins
+ * checks run again and the chat is claimed back for the agent with a conditional update (human → ai_active).
+ */
+async function softReleaseGate(input: Parameters<typeof finishDeliveryOrSuggestInner>[0]): Promise<AgentTurnDispatchResult | null> {
+  const { row } = input
+  const decline = async (why: string): Promise<AgentTurnDispatchResult> => {
+    await prisma.chatAgentTurn
+      .updateMany({ where: { id: input.turnId, tenantId: row.tenantId }, data: { status: 'skipped', skipReason: 'soft_release_declined', errorCode: why.slice(0, 40), completedAt: new Date() } })
+      .catch(() => null)
+    return { status: 'skipped', reason: 'soft_release_declined' }
+  }
+  if (input.suppressSend || input.handoff || input.burstReview || input.needsHuman || input.escalate || input.plannedReply === false) {
+    return decline('needs_person')
+  }
+  if (!softReleaseReplyOk(input.outputText)) return decline('not_an_answer')
+  // Verifier r2: the switch is re-read at send time (turned off after the job was queued → nothing goes out).
+  if (!(await isTenantFeatureEnabled(row.tenantId, SOFT_RELEASE_FLAG).catch(() => false))) return decline('flag_off')
+  // Verifier r2: a customer message that arrived after this job's trigger (a receipt photo, a complaint) was never
+  // checked by the sweep — the chat stays with the person.
+  const newer = await prisma.chatMessage.findFirst({
+    where: { tenantId: row.tenantId, conversationId: row.conversationId, direction: 'inbound', sentAt: { gt: input.trigger.sentAt } },
+    select: { id: true },
+  })
+  if (newer) return decline('customer_wrote_again')
+  const handoffTurn = await prisma.chatAgentTurn.findFirst({
+    where: { id: input.payload.softRelease as string, tenantId: row.tenantId, conversationId: row.conversationId },
+    select: { createdAt: true },
+  })
+  if (!handoffTurn) return decline('handoff_missing')
+  if (await hasHumanRepliedAfter({ conversationId: row.conversationId, triggerSentAt: handoffTurn.createdAt })) return decline('person_replied')
+  if (await staffControlledAfter(row.tenantId, softAiConversationKey(row.socialAccountId, row.peerId), handoffTurn.createdAt)) {
+    return decline('person_took_control')
+  }
+  const claimed = await prisma.chatConversation.updateMany({
+    where: { id: row.conversationId, tenantId: row.tenantId, aiMode: 'human' },
+    data: { aiMode: 'ai_active' },
+  })
+  if (claimed.count !== 1) return decline('mode_changed')
+  return null
 }
 
 async function finishDeliveryOrSuggestInner(input: {
@@ -2175,6 +2271,11 @@ async function finishDeliveryOrSuggestInner(input: {
     }
     const customerText = [...sinceLastAnswer.reverse(), input.payload.content || ''].join('\n')
     const repeat = dropRepeatedParts({ text: input.outputText, previous, customerText })
+    // Verifier r2: a soft release that would repeat itself (or end on the safe line) sends nothing; the outer function
+    // gives the chat back to the person.
+    if (input.payload.softRelease && repeat.dropped.length) {
+      return persistDecidedTurn({ turnId: input.turnId, outcome: { outcome: 'skip', reason: 'soft_release_declined' }, operationMode: input.agent.operationMode, setMode: false })
+    }
     if (repeat.dropped.length && repeat.kept.length) {
       outgoingText = repeat.kept.join('\n\n')
     } else if (repeat.dropped.length) {
@@ -2738,8 +2839,12 @@ async function runAgentTestTurnInner(input: {
     earlier: probarBurstEarlier,
     awaitingReceipt: (type) => mediaAwaitingReceipt(type, history, probarMediaSalesContext),
   })
+  // Parity: same card-by-team switch as the live turn.
+  const probarCardByTeam = await isTenantFeatureEnabled(input.tenantId, CARD_BY_TEAM_FLAG).catch(() => false)
+  if (probarCardByTeam && probarTurnSalesContext) probarTurnSalesContext.cardOnWeb = false
   const probarDecisionBase = {
     brandFacts: runtimeAgent.brandFacts,
+    cardByTeam: probarCardByTeam,
     // Verifier r3 (2026-10-24): same as live — the bubbles not answered yet.
     unansweredCustomerTexts: [...customerTextsSinceStore(history).after, ...probarBurstEarlier.map((m) => m.content || '')],
     raceCustomerTexts: customerTextsSinceStore(history).race,
@@ -2886,7 +2991,7 @@ async function runAgentTestTurnInner(input: {
       shortenLongReply: true,
       linkAllowlist: runtimeInput.linkAllowlist,
       modelText: true,
-      paymentOptions: { ...runtimeInput.salesPaymentOptions, customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText) },
+      paymentOptions: { ...runtimeInput.salesPaymentOptions, cardByTeam: probarCardByTeam, customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText) },
     })
     // Same plan as the live turn (B1): checked model reply, safe line, or hand-off text.
     const planned = planModelTurnDelivery({
@@ -2897,6 +3002,7 @@ async function runAgentTestTurnInner(input: {
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
+        cardByTeam: probarCardByTeam && (policy.paymentMethods.includes('tarjeta') || CARD_LINK_PROMISE_RE.test(policy.text)),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
       customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText),
     })
@@ -2936,7 +3042,7 @@ async function runAgentTestTurnInner(input: {
     fallbackUsed = false
   }
 
-  const markers: OutcomeMarkers = notBound ? { needsHuman, fallbackUsed, escalate } : plannedMarkers({ needsHuman, fallbackUsed, escalate }, handoff)
+  const markers: OutcomeMarkers = notBound ? { needsHuman, fallbackUsed, escalate } : plannedMarkers({ needsHuman, fallbackUsed, escalate }, handoff, escalateReason)
   const outcomeBlockers = input.ignoreLayerFlag
     ? blockedBy.filter((reason) => reason !== 'flag_off')
     : blockedBy

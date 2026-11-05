@@ -31,6 +31,7 @@ import {
   type PaymentClassification,
 } from '@/lib/soft-ai/payment-classifier'
 import {
+  CARD_BY_TEAM_LINE,
   customerAskedPaymentDetails,
   paymentDetailsText,
   paymentMethodBlock,
@@ -114,6 +115,8 @@ function finish(input: {
   forceNeedsHuman?: boolean
   extraReasons?: string[]
   handoff?: TurnHandoff | null
+  /** Card by team: a saved reply's [[PAGO_TARJETA]] becomes "te preparo el link…" and the chat goes to a person. */
+  cardByTeam?: boolean
 }): InboundDecision {
   const policy = applyFinalOutputPolicy({
     text: input.text,
@@ -126,7 +129,12 @@ function finish(input: {
     allowedDeals: input.allowedDeals,
     freeShippingRule: input.freeShippingRule,
     includedShippingAmounts: input.includedShippingAmounts,
+    ...(input.cardByTeam ? { paymentOptions: { cardByTeam: true } } : {}),
   })
+  // SecureDog INT-247: a saved reply that filled the card token hands off for the link like the choice path does.
+  if (input.cardByTeam && !input.handoff && policy.paymentMethods.includes('tarjeta')) {
+    input = { ...input, escalate: true, forceNeedsHuman: true, handoff: { kind: 'handoff', reason: HANDOFF_REASON.paymentData } }
+  }
   const reasons = [...new Set([...(input.extraReasons || []), ...policy.reasons])]
   const needsHuman = input.forceNeedsHuman || policy.needsHuman || input.escalate
   if (policy.needsHuman) {
@@ -162,6 +170,8 @@ export function decideInbound(input: {
   shortcuts: RuntimeShortcut[]
   /** Keyword replies not sent as-is this turn (their image would not go out): the model answers instead. */
   skipVerbatimIds?: ReadonlySet<string>
+  /** Card by team (payment-guard CARD_BY_TEAM_FLAG): card → "te preparo el link…" + a person makes the payment link. */
+  cardByTeam?: boolean
   /** The sale already gave the payment details: a photo / file now is treated as the receipt (B6). */
   awaitingReceipt?: boolean
   /**
@@ -217,6 +227,7 @@ export function decideInbound(input: {
     allowedDeals: input.allowedDeals,
     freeShippingRule: input.freeShippingRule ?? null,
     includedShippingAmounts: input.includedShippingAmounts,
+    cardByTeam: input.cardByTeam === true,
   }
   // SecureDog r1 INT-159: the relaxation needs a text message AND no bubble of the burst (this one included) hinting at
   // a payment's state ("¿Me confirmás?" + "¿Les llegó?" stays a payment hand-off).
@@ -303,7 +314,9 @@ export function decideInbound(input: {
       handoff: { kind: 'handoff', reason: HANDOFF_REASON.optOut },
     })
   }
-  if (mediaPlan === 'ask_in_writing') {
+  // Review 2026-11-04: a typed "Ya pagué" + a voice note in the same burst is a payment claim — the payment hand-off
+  // below wins over "¿Me contás por escrito…?".
+  if (mediaPlan === 'ask_in_writing' && paymentClass !== 'payment_proof_or_risk') {
     steps.push({ step: 'safety', outcome: 'media_ask', reason: 'media_inbound' })
     const shortcut = seedShortcut('sys_media_ask', input.shortcuts)
     return finish({
@@ -433,6 +446,24 @@ export function decideInbound(input: {
       steps.push({ step: 'payment_choice', outcome: 'model', reason: `order_data_${choice}` })
       return continueToModel(paymentClass, steps)
     }
+    // Rafael 2026-11-04: card → a person makes the Tilopay link with the exact amount (prices vary). True hand-off.
+    if (choice === 'tarjeta' && input.cardByTeam && paymentMethodsOf(input.brandFacts).includes('tarjeta')) {
+      steps.push({ step: 'payment_choice', outcome: 'handoff', reason: 'card_by_team' })
+      return finish({
+        text: `${input.awaitingPaymentMethod ? 'Perfecto 🙌' : 'Claro 🙌'}\n${CARD_BY_TEAM_LINE}`,
+        intent: 'payment_info',
+        shortcutKey: 'sys_payment_soon',
+        escalate: true,
+        paymentClass,
+        steps,
+        facts: input.brandFacts,
+        ...dealCtx,
+        replyStyle: input.replyStyle,
+        shortcuts: input.shortcuts,
+        forceNeedsHuman: true,
+        handoff: { kind: 'handoff', reason: HANDOFF_REASON.paymentData },
+      })
+    }
     // A method the store does not offer (or without its data): the model answers.
     if (reply && paymentMethodBlock(input.brandFacts, choice)) {
       steps.push({ step: 'payment_choice', outcome: choice })
@@ -457,6 +488,24 @@ export function decideInbound(input: {
   // SecureDog r3: a card number offered by chat ("te paso el número de mi tarjeta por acá?") is never left to the model,
   // whatever is pending or also asked: the store's card link, or without one the payment-data review.
   if (paymentClass === 'payment_info_safe' && isCardByChatOffer(input.inboundText)) {
+    // Card by team: never card data by chat, and a person makes the payment link (true hand-off).
+    if (input.cardByTeam && paymentMethodsOf(input.brandFacts).includes('tarjeta')) {
+      steps.push({ step: 'payment_info', outcome: 'handoff', reason: 'card_by_chat_team' })
+      return finish({
+        text: `Claro 🙌 Por seguridad no mandés los datos de tu tarjeta por chat 🙏\n${CARD_BY_TEAM_LINE}`,
+        intent: 'payment_info',
+        shortcutKey: 'sys_payment_soon',
+        escalate: true,
+        paymentClass,
+        steps,
+        facts: input.brandFacts,
+        ...dealCtx,
+        replyStyle: input.replyStyle,
+        shortcuts: input.shortcuts,
+        forceNeedsHuman: true,
+        handoff: { kind: 'handoff', reason: HANDOFF_REASON.paymentData },
+      })
+    }
     const cardReply =
       canSharePaymentFacts(input.brandFacts) && paymentMethodBlock(input.brandFacts, 'tarjeta')
         ? paymentChoiceReply('tarjeta', 'Claro 🙌 Por seguridad no mandés los datos de tu tarjeta por chat:')
@@ -516,12 +565,34 @@ export function decideInbound(input: {
         steps.push({ step: 'payment_info', outcome: 'model', reason: 'link_plus_product_question' })
         return continueToModel(paymentClass, steps)
       }
+      // Card by team: "¿me pasás el link de pago?" → a person makes the link (true hand-off), never the website.
+      if (linkAsk && input.cardByTeam && paymentMethodsOf(input.brandFacts).includes('tarjeta')) {
+        steps.push({ step: 'payment_info', outcome: 'handoff', reason: 'card_link_team' })
+        return finish({
+          text: `Claro 🙌\n${CARD_BY_TEAM_LINE}`,
+          intent: 'payment_info',
+          shortcutKey: 'sys_payment_soon',
+          escalate: true,
+          paymentClass,
+          steps,
+          facts: input.brandFacts,
+          ...dealCtx,
+          replyStyle: input.replyStyle,
+          shortcuts: input.shortcuts,
+          forceNeedsHuman: true,
+          handoff: { kind: 'handoff', reason: HANDOFF_REASON.paymentData },
+        })
+      }
       const named = linkAsk
         ? 'tarjeta'
         : isCueFreePaymentChoiceText(input.inboundText)
           ? parsePaymentMethodChoice(input.inboundText) ?? singleMethodNamed(input.inboundText)
           : singleMethodNamed(input.inboundText)
-      const namedReply = named && named !== 'contra_entrega' && paymentMethodBlock(input.brandFacts, named) ? paymentChoiceReply(named, 'Claro 🙌') : null
+      // Card by team: "¿aceptan tarjeta?" gets the method list (no website link); the link comes from a person on the choice.
+      const namedReply =
+        named && named !== 'contra_entrega' && !(named === 'tarjeta' && input.cardByTeam) && paymentMethodBlock(input.brandFacts, named)
+          ? paymentChoiceReply(named, 'Claro 🙌')
+          : null
       if (namedReply) {
         steps.push({ step: 'payment_info', outcome: 'share', reason: named! })
         return finish({
@@ -544,11 +615,13 @@ export function decideInbound(input: {
       // body is used instead, and the details go out only when the customer asked for them.
       const shortcut = seedShortcut('sys_payment_info', input.shortcuts)
       const dumpsDetails = /brand\.payment\.summary/.test(shortcut.body)
+      // Card by team: the method list says "tarjeta", never "tarjeta (en la web)" (no card link / website for the labels).
+      const labelFacts = input.cardByTeam ? cardByTeamLabelFacts(input.brandFacts) : input.brandFacts
       const text = dumpsDetails
         ? customerAskedPaymentDetails(input.inboundText)
-          ? paymentDetailsText(input.brandFacts) || renderShortcutTemplate(PAYMENT_INFO_BODY, { facts: input.brandFacts })
-          : renderShortcutTemplate(PAYMENT_INFO_BODY, { facts: input.brandFacts }) || paymentMethodsQuestion(input.brandFacts)
-        : renderShortcutTemplate(shortcut.body, { facts: input.brandFacts })
+          ? paymentDetailsText(input.brandFacts, input.cardByTeam) || renderShortcutTemplate(PAYMENT_INFO_BODY, { facts: labelFacts })
+          : renderShortcutTemplate(PAYMENT_INFO_BODY, { facts: labelFacts }) || paymentMethodsQuestion(input.brandFacts, input.cardByTeam)
+        : renderShortcutTemplate(shortcut.body, { facts: labelFacts })
       return finish({
         text,
         intent: 'payment_info',
@@ -658,6 +731,11 @@ function continueToModel(paymentClass: PaymentClassification, steps: DecisionSte
  * with the configured details, vertical) and, in a second message, what to do next. Null for contra entrega (the
  * model confirms zone + order, then a person takes it).
  */
+/** Facts for the method LABELS only: no card link / website, so "tarjeta" is not "tarjeta (en la web)". */
+function cardByTeamLabelFacts(facts: BrandFacts): BrandFacts {
+  return { ...facts, website: undefined, payment: facts.payment ? { ...facts.payment, cardUrl: undefined } : facts.payment } as BrandFacts
+}
+
 export function paymentChoiceReply(method: ChosenPaymentMethod, opener = 'Perfecto 🙌'): string | null {
   switch (method) {
     case 'sinpe':

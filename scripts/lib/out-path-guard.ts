@@ -3,11 +3,13 @@
  * or under /tmp, or outside the repo root. Pure helpers + optional git check-ignore.
  */
 import { execFileSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
 import { isAbsolute, resolve, relative, sep } from 'node:path'
 
 export function isUnderTmp(absPath: string): boolean {
   const n = resolve(absPath)
-  return n === '/tmp' || n.startsWith(`/tmp${sep}`)
+  // resolve() keeps this right on Windows too ("/tmp" → "D:\tmp"); the OS temp folder also counts.
+  return [resolve('/tmp'), resolve(tmpdir())].some((t) => n === t || n.startsWith(`${t}${sep}`))
 }
 
 /** True when path is outside the repo. */

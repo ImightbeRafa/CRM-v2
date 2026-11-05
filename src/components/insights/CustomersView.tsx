@@ -109,7 +109,7 @@ function ChatLink({ href: rawHref, whatsappHref }: { href: string | null; whatsa
   // /chats needs update_sales: other roles get no inbox link.
   const { data: session } = useSession()
   const href = rawHref && hasSessionPermission(session, 'update_sales') ? rawHref : null
-  if (!href && rawHref) return <span className="text-[11.5px] text-slate-400">Tiene chat en Betsy</span>
+  if (!href && rawHref) return <span className="text-[11.5px] text-slate-500">Tiene chat en Betsy</span>
   if (!href && whatsappHref) {
     return (
       <a
@@ -124,7 +124,7 @@ function ChatLink({ href: rawHref, whatsappHref }: { href: string | null; whatsa
       </a>
     )
   }
-  if (!href) return <span className="text-[11.5px] text-slate-400">Sin chat en Betsy</span>
+  if (!href) return <span className="text-[11.5px] text-slate-500">Sin chat en Betsy</span>
   return (
     <Link
       href={href}
@@ -192,7 +192,7 @@ function RulesEditor({ onSaved }: { onSaved: () => void }) {
   if (res.state === 'error') {
     return <p className="text-[12px] text-red-600">No se pudieron cargar las reglas.</p>
   }
-  if (!draft) return <p className="text-[12px] text-slate-400">Cargando reglas…</p>
+  if (!draft) return <p className="text-[12px] text-slate-500">Cargando reglas…</p>
 
   return (
     <div className="space-y-3" data-testid="reorder-rules-editor">
@@ -200,11 +200,11 @@ function RulesEditor({ onSaved }: { onSaved: () => void }) {
         Decile a Betsy cuánto dura cada producto. Ejemplo: una caja de 30 parches dura 30 días. Con eso calculamos cuándo se le acaba a cada
         cliente según su último pedido.
       </p>
-      {draft.length === 0 ? <p className="text-[12px] text-slate-400">Todavía no hay productos con duración.</p> : null}
+      {draft.length === 0 ? <p className="text-[12px] text-slate-500">Todavía no hay productos con duración.</p> : null}
       <ul className="space-y-2">
         {draft.map((rule) => (
           <li key={rule.id} className="grid grid-cols-1 gap-2 rounded-xl border border-slate-100 p-3 sm:grid-cols-[1fr_1fr_120px_auto] sm:items-end">
-            <label className="text-[11px] text-slate-500">
+            <label className="text-[12px] text-slate-500">
               Nombre para el mensaje
               <input
                 value={rule.label}
@@ -214,7 +214,7 @@ function RulesEditor({ onSaved }: { onSaved: () => void }) {
                 className="mt-0.5 w-full rounded-lg border border-slate-200 px-2 py-2 text-[13px] text-slate-900"
               />
             </label>
-            <div className="text-[11px] text-slate-500">
+            <div className="text-[12px] text-slate-500">
               <div className="flex gap-2">
                 <button type="button" onClick={() => update(rule.id, { mode: 'product' })} className={rule.mode === 'product' ? 'font-semibold text-au-ink-5b6cff' : ''}>
                   Producto del inventario
@@ -247,7 +247,7 @@ function RulesEditor({ onSaved }: { onSaved: () => void }) {
                 />
               )}
             </div>
-            <label className="text-[11px] text-slate-500">
+            <label className="text-[12px] text-slate-500">
               Días que dura 1 unidad
               <input
                 type="number"
@@ -290,7 +290,7 @@ function RulesEditor({ onSaved }: { onSaved: () => void }) {
         </button>
         {message ? <span className={`text-[12px] ${message.ok ? 'text-emerald-600' : 'text-red-600'}`}>{message.text}</span> : null}
       </div>
-      <p className="text-[11px] text-slate-400">“Por nombre” busca ese texto en el producto del pedido: puede confundirse con productos parecidos.</p>
+      <p className="text-[12px] text-slate-500">“Por nombre” busca ese texto en el producto del pedido: puede confundirse con productos parecidos.</p>
     </div>
   )
 }
@@ -363,7 +363,7 @@ function ReorderSection({ canEditRules }: { canEditRules: boolean }) {
                     <Settings2 className="h-4 w-4" aria-hidden /> Configurar duración
                   </button>
                 ) : !canEditRules ? (
-                  <p className="mt-2 text-[11.5px] text-slate-400">Pedile a quien administra Betsy que configure la duración.</p>
+                  <p className="mt-2 text-[11.5px] text-slate-500">Pedile a quien administra Betsy que configure la duración.</p>
                 ) : null
               }
             />
@@ -393,7 +393,7 @@ function ReorderSection({ canEditRules }: { canEditRules: boolean }) {
                             <StatusChip tone={dueTone(row.daysLeft)}>{dueLabel(row.daysLeft)}</StatusChip>
                           </div>
                           <p className="mt-0.5 text-[12px] text-slate-500">
-                            {row.ruleLabel} · {nf.format(row.units)} {row.units === 1 ? 'unidad' : 'unidades'} · pedido #{row.lastOrderNumber} del{' '}
+                            {row.ruleLabel} · {nf.format(row.units)} {row.units === 1 ? 'unidad' : 'unidades'} · pedido #{String(row.lastOrderNumber).replace(/^#+/, '')} del{' '}
                             {formatDayLabel(row.lastOrderDate)}
                           </p>
                           <div className="mt-2 max-w-[320px]">
@@ -402,7 +402,7 @@ function ReorderSection({ canEditRules }: { canEditRules: boolean }) {
                               tone={row.daysLeft < 0 ? 'critical' : row.daysLeft <= 3 ? 'warning' : 'brand'}
                               label={`Producto usado de ${row.customerName}`}
                             />
-                            <p className="mt-1 text-[10.5px] text-slate-400">Se acaba el {formatDayLabel(row.runsOutOn)}</p>
+                            <p className="mt-1 text-[11.5px] text-slate-500">Se acaba el {formatDayLabel(row.runsOutOn)}</p>
                           </div>
                         </div>
                       </div>
@@ -488,45 +488,66 @@ function RepeatSection() {
           />
         ) : (
           <>
+            {/* Column heads line up with the grid rows below (desktop); phones get stacked rows. */}
+            <div className="hidden grid-cols-[minmax(0,1.4fr)_90px_minmax(0,1.2fr)_minmax(0,1fr)_190px] gap-4 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 md:grid">
+              <span>Cliente</span>
+              <span className="text-right">Pedidos</span>
+              <span>Total gastado</span>
+              <span>Último pedido</span>
+              <span className="sr-only">Acciones</span>
+            </div>
             <ul className="divide-y divide-slate-100" data-testid="repeat-list">
-              {data.rows.map((row) => (
-                <li key={row.clientId} className="flex flex-col gap-3 py-3.5 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 flex-1 items-start gap-3">
-                    <Initial name={row.name} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-[13.5px] font-semibold text-slate-900">{row.name}</p>
-                        <StatusChip tone="info" icon={ShoppingBag}>
-                          {nf.format(row.totalOrders)} pedidos
-                        </StatusChip>
-                        {row.daysSinceLast > 60 ? (
-                          <StatusChip tone="neutral" icon={Moon}>
-                            Hace rato no compra
-                          </StatusChip>
-                        ) : null}
-                      </div>
-                      <div className="mt-2 max-w-[360px]">
-                        <div className="flex items-baseline justify-between text-[12px]">
-                          <span className="text-slate-500">Total gastado</span>
-                          <span className="font-semibold tabular-nums text-slate-900">{formatCompactMoney(row.totalSpent, symbol)}</span>
-                        </div>
-                        <div className="mt-1 h-1.5 w-full rounded-r-[4px] bg-slate-100/80">
-                          <div
-                            className={`${SERIES[1]} h-full rounded-r-[4px] bg-current`}
-                            style={{ width: `${maxSpent > 0 ? Math.max(row.totalSpent > 0 ? 2 : 0, (row.totalSpent / maxSpent) * 100) : 0}%` }}
-                          />
-                        </div>
-                        <p className="mt-1 text-[10.5px] text-slate-400">
-                          Último pedido el {formatDayLabel(row.lastOrder)} ({row.daysSinceLast === 0 ? 'hoy' : `hace ${nf.format(row.daysSinceLast)} días`})
+              {data.rows.map((row) => {
+                const ago = row.daysSinceLast === 0 ? 'hoy' : row.daysSinceLast === 1 ? 'ayer' : `hace ${nf.format(row.daysSinceLast)} días`
+                return (
+                  <li
+                    key={row.clientId}
+                    className="grid grid-cols-1 gap-3 py-3.5 md:grid-cols-[minmax(0,1.4fr)_90px_minmax(0,1.2fr)_minmax(0,1fr)_190px] md:items-center md:gap-4"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Initial name={row.name} />
+                      <div className="min-w-0">
+                        <p className="truncate text-[14px] font-semibold text-slate-900">{row.name}</p>
+                        <p className="flex flex-wrap items-center gap-1.5 text-[12px] text-slate-500">
+                          {row.phone ? <span className="tabular-nums">{row.phone}</span> : null}
+                          <span className="md:hidden">· {nf.format(row.totalOrders)} pedidos</span>
+                          {row.daysSinceLast > 60 ? (
+                            <StatusChip tone="neutral" icon={Moon}>
+                              Hace rato no compra
+                            </StatusChip>
+                          ) : null}
                         </p>
                       </div>
                     </div>
-                  </div>
-                  <div className="shrink-0 pl-12 sm:pl-0">
-                    <ChatLink href={row.chatHref} whatsappHref={row.whatsappHref} />
-                  </div>
-                </li>
-              ))}
+                    <p className="hidden text-right md:block">
+                      <span className="inline-flex items-center gap-1 text-[15px] font-semibold tabular-nums text-slate-900">
+                        <ShoppingBag className="h-3.5 w-3.5 text-slate-500" aria-hidden />
+                        {nf.format(row.totalOrders)}
+                      </span>
+                    </p>
+                    <div className="min-w-0">
+                      <div className="flex items-baseline justify-between gap-2 text-[12px] md:justify-start">
+                        <span className="text-slate-500 md:hidden">Total gastado</span>
+                        <span className="text-[14px] font-semibold tabular-nums text-slate-900">{formatCompactMoney(row.totalSpent, symbol)}</span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 w-full rounded-r-[4px] bg-slate-100/80">
+                        <div
+                          className={`${SERIES[1]} h-full rounded-r-[4px] bg-current`}
+                          style={{ width: `${maxSpent > 0 ? Math.max(row.totalSpent > 0 ? 2 : 0, (row.totalSpent / maxSpent) * 100) : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[12.5px] text-slate-600">
+                      <span className="md:hidden">Último pedido: </span>
+                      {formatDayLabel(row.lastOrder)}
+                      <span className={`ml-1.5 ${row.daysSinceLast > 60 ? 'text-amber-600' : 'text-slate-500'}`}>({ago})</span>
+                    </p>
+                    <div className="shrink-0 md:justify-self-end">
+                      <ChatLink href={row.chatHref} whatsappHref={row.whatsappHref} />
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
             {pages > 1 ? (
               <div className="mt-3 flex items-center justify-between text-[12px]">
@@ -538,7 +559,7 @@ function RepeatSection() {
                 >
                   <ChevronLeft className="h-4 w-4" aria-hidden /> Anterior
                 </button>
-                <span className="tabular-nums text-slate-400">
+                <span className="tabular-nums text-slate-500">
                   Página {page + 1} de {pages}
                 </span>
                 <button

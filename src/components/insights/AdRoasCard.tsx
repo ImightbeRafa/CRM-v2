@@ -45,7 +45,7 @@ function AdName({ row, unnamed }: { row: RoasRow; unnamed: string }) {
       <p className="truncate font-semibold text-slate-900" title={row.adName ?? row.headline ?? undefined}>
         {row.adName || row.headline || unnamed}
       </p>
-      <p className="truncate text-[11px] text-slate-400">
+      <p className="truncate text-[12px] text-slate-500">
         {parts ? `${parts} · ` : ''}
         <span className="tabular-nums">ID {row.adId}</span>
       </p>
@@ -102,7 +102,7 @@ export function AdRoasCard({ query }: { query: string | null }) {
           <div className="overflow-x-auto rounded-xl border border-slate-100">
             <table className="w-full min-w-[760px] text-[13px]">
               <thead className="bg-slate-50/80">
-                <tr className="text-left text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                <tr className="text-left text-[12px] font-medium uppercase tracking-wide text-slate-500">
                   <th className="px-3 py-2.5 font-medium">{t.colAd}</th>
                   <th className="px-3 py-2.5 text-right font-medium">{t.colSpend}</th>
                   <th className="px-3 py-2.5 text-right font-medium">{t.colImpressions}</th>
@@ -146,7 +146,7 @@ export function AdRoasCard({ query }: { query: string | null }) {
           </div>
           <ul className="space-y-1 text-[11.5px] text-slate-500">
             <li className="flex items-start gap-1.5">
-              <HelpCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+              <HelpCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
               {t.roasHelp}
             </li>
             {report.roasReason === 'currency_mismatch' && report.adCurrency && report.storeCurrency ? (

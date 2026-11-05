@@ -16,6 +16,7 @@ import { getCurrentStatsDateKey, getOrderStatsDateKey, addDaysToStatsDateKey, bu
 import { isCancelledFulfillment } from '@/lib/order-payment-status'
 import { queryWithTimeout } from '@/lib/soft-ai/safe-query'
 import { InsightsTooLargeError, ORDER_CAP } from '@/lib/insights/insights-server'
+import { loadOrderNos } from '@/lib/orders/order-number-server'
 import {
   buildReorderList,
   parseReorderRules,
@@ -315,7 +316,11 @@ export async function loadReorderDue(input: {
       })),
   })
   const customers = due.map((d) => ({ clientId: d.clientId, phone: d.phone, orderId: d.lastOrderId }))
-  const links = await loadChatLinks(tenantId, customers)
+  const [links, orderNos] = await Promise.all([
+    loadChatLinks(tenantId, customers),
+    // The short "#2309" the team sees in Pedidos (SQL 062), not the long public id.
+    loadOrderNos(tenantId, due.map((d) => d.lastOrderId)),
+  ])
   return {
     rules,
     todayKey,
@@ -323,7 +328,13 @@ export async function loadReorderDue(input: {
     // lastOrderId is only for the lookup; the browser gets the chat link, not internal ids.
     rows: due.map(({ lastOrderId, ...d }) => {
       const chatHref = chatLinkFor(links, { clientId: d.clientId, phone: d.phone, orderId: lastOrderId })
-      return { ...d, chatHref, whatsappHref: chatHref ? null : crWhatsAppHref(d.phone, d.suggestedMessage) }
+      const orderNo = orderNos.get(lastOrderId)
+      return {
+        ...d,
+        lastOrderNumber: orderNo != null ? String(orderNo) : d.lastOrderNumber,
+        chatHref,
+        whatsappHref: chatHref ? null : crWhatsAppHref(d.phone, d.suggestedMessage),
+      }
     }),
   }
 }

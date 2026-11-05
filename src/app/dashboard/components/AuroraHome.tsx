@@ -21,10 +21,15 @@ import {
   Users,
   Wallet,
   Warehouse,
+  XCircle,
 } from 'lucide-react'
 import { useDashboardStats } from '@/app/hooks/useDashboardStats'
 import { SetupChecklist } from './SetupChecklist'
 import { orderLabel } from '@/lib/orders/order-label'
+import { paymentChip, type PedidoRow } from '@/lib/pedidos-aurora'
+import { isCancelledFulfillment } from '@/lib/order-payment-status'
+import { Chip } from '@/components/ui/Chip'
+import { PaymentPill } from '@/components/aurora/pedidos/PedidoChips'
 
 type RecentOrder = {
   id: string
@@ -36,6 +41,8 @@ type RecentOrder = {
   status: string
   contraEntrega?: boolean
   cePaymentConfirmed?: boolean
+  comments?: string | null
+  customFields?: unknown
 }
 
 /** ₡24.900 */
@@ -78,17 +85,6 @@ function greetingFor(date: Date): string {
   if (h < 12) return 'Buenos días'
   if (h < 19) return 'Buenas tardes'
   return 'Buenas noches'
-}
-
-function statusPill(order: RecentOrder): { label: string; className: string } {
-  const s = order.status.toLowerCase()
-  if (s.includes('cancel') || s.includes('rechaz')) return { label: order.status, className: 'bg-red-50 text-red-600' }
-  if (s.includes('entregado') || s.includes('completado') || s.includes('pagado'))
-    return { label: order.status, className: 'bg-emerald-50 text-emerald-700' }
-  if (s.includes('pendiente')) return { label: order.status, className: 'bg-amber-50 text-amber-700' }
-  if (s.includes('tránsito') || s.includes('transito') || s.includes('enviado'))
-    return { label: order.status, className: 'bg-sky-50 text-sky-700' }
-  return { label: order.status, className: 'bg-slate-100 text-slate-600' }
 }
 
 function initialsOf(name: string): string {
@@ -178,7 +174,7 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
       title: `${cePendingCount} ${cePendingCount === 1 ? 'pago contra entrega por confirmar' : 'pagos contra entrega por confirmar'}`,
       detail: `${crc(stats.cePendingTotal ?? 0)} en total`,
       cta: 'Revisar',
-      href: '/ventas?status=pending',
+      href: '/ventas?vista=pagos&tipo=ce',
     },
   ].filter(Boolean) as {
     key: string
@@ -424,9 +420,21 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
           ) : (
             <ul className="mt-3 divide-y divide-slate-100">
               {recentOrders.map((o) => {
-                const pill = statusPill(o)
+                // Same payment chip as Pedidos: "Pendiente" here used to be the shipping status, so a paid
+                // order read as unpaid on Inicio and "Pagado" in Pedidos.
+                const row = o as unknown as PedidoRow
+                const pay = paymentChip(row)
+                const chip = isCancelledFulfillment(o.status) ? (
+                  <Chip tone="danger" icon={XCircle}>{o.status}</Chip>
+                ) : (
+                  <PaymentPill chip={pay} />
+                )
                 return (
-                  <li key={o.id} className="flex items-center gap-3 py-3">
+                  <li key={o.id}>
+                    <Link
+                      href={`/ventas?pedido=${encodeURIComponent(o.orderId)}`}
+                      className="-mx-2 flex items-center gap-3 rounded-xl px-2 py-3 transition-colors hover:bg-slate-50"
+                    >
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-au-tint-eeeaff text-[11px] font-bold text-au-ink-6d4aff">
                       {initialsOf(o.customerName)}
                     </span>
@@ -436,15 +444,16 @@ export function AuroraHome({ firstName, tenantName, isLogisticsAdmin, isOwner }:
                         {orderLabel(o)}
                         {o.product ? ` · ${o.product}` : ''}
                       </p>
-                      {/* Status under the order on phones (the right-hand pill is sm+ only). */}
-                      <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[12px] font-medium sm:hidden ${pill.className}`}>
-                        {pill.label}
+                      {/* Payment under the order on phones (the right-hand chip is sm+ only). */}
+                      <span className="mt-1 inline-block sm:hidden">
+                        {chip}
                       </span>
                     </div>
                     <span className="text-[13px] font-semibold tabular-nums text-slate-900">{crc(o.total)}</span>
-                    <span className={`hidden shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium sm:inline-block ${pill.className}`}>
-                      {pill.label}
+                    <span className="hidden shrink-0 sm:inline-flex">
+                      {chip}
                     </span>
+                    </Link>
                   </li>
                 )
               })}

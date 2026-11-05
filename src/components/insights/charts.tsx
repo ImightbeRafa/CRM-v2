@@ -66,20 +66,20 @@ export function InsightCard({
 }) {
   return (
     <section
-      className={`rounded-2xl border border-slate-200/70 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] md:p-5 ${className}`}
+      className={`rounded-2xl border border-slate-200/70 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] md:p-6 ${className}`}
       aria-busy={state === 'loading'}
       data-testid={testId}
     >
-      <header className="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+      <header className="mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="flex min-w-0 items-start gap-3">
           {Icon ? (
-            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-au-tint-eef0ff text-au-ink-5b6cff" aria-hidden>
-              <Icon className="h-[18px] w-[18px]" />
+            <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-au-tint-eef0ff text-au-ink-5b6cff" aria-hidden>
+              <Icon className="h-5 w-5" />
             </span>
           ) : null}
           <div className="min-w-0">
-            <h2 className="text-[15px] font-semibold leading-tight text-au-ink-0e0d17">{title}</h2>
-            {subtitle ? <p className="mt-0.5 text-[12px] leading-snug text-slate-500">{subtitle}</p> : null}
+            <h2 className="text-[16px] font-semibold leading-tight text-au-ink-0e0d17">{title}</h2>
+            {subtitle ? <p className="mt-1 text-[13px] leading-snug text-slate-500">{subtitle}</p> : null}
           </div>
         </div>
         {state !== 'error' && right ? <div className="min-w-0 max-w-full">{right}</div> : null}
@@ -157,18 +157,27 @@ export function StatTile({
     pink: 'bg-pink-50 text-pink-600',
     neutral: 'bg-slate-100 text-slate-500',
   }[tone]
+  // Same accent rail as the Pedidos KPI cards, so both pages read as one product.
+  const barCls = {
+    brand: 'from-[#5B6CFF] to-[#A855F7]',
+    green: 'from-emerald-400 to-teal-400',
+    amber: 'from-amber-400 to-orange-400',
+    pink: 'from-pink-400 to-rose-400',
+    neutral: 'from-slate-300 to-slate-400',
+  }[tone]
   return (
-    <div className="flex min-w-0 flex-col rounded-xl border border-slate-100 bg-slate-50/60 px-3.5 py-3" data-testid="insight-tile">
+    <div className="relative flex min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200/70 bg-white px-4 pb-3.5 pt-4" data-testid="insight-tile">
+      <span className={`absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r opacity-80 ${barCls}`} aria-hidden />
       <div className="flex items-center gap-2">
         {Icon ? (
-          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${toneCls}`} aria-hidden>
-            <Icon className="h-3.5 w-3.5" />
+          <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${toneCls}`} aria-hidden>
+            <Icon className="h-4 w-4" />
           </span>
         ) : null}
-        <dt className="min-w-0 text-[11.5px] font-medium leading-tight text-slate-500">{label}</dt>
+        <dt className="min-w-0 text-[12.5px] font-medium leading-tight text-slate-600">{label}</dt>
       </div>
-      <dd className="mt-2 text-[22px] font-semibold leading-none tracking-tight text-au-ink-0e0d17">{value}</dd>
-      {hint ? <dd className="mt-1.5 text-[11px] leading-snug text-slate-400">{hint}</dd> : null}
+      <dd className="mt-2.5 text-[26px] font-semibold leading-none tracking-tight tabular-nums text-au-ink-0e0d17">{value}</dd>
+      {hint ? <dd className="mt-2 text-[12px] leading-snug text-slate-500">{hint}</dd> : null}
       {trend ? <dd className="mt-2">{trend}</dd> : null}
     </div>
   )
@@ -267,7 +276,7 @@ export function BarList({ rows, max, empty }: { rows: BarRow[]; max?: number; em
             <div className="min-w-0 text-[12.5px] text-slate-700">{r.label}</div>
             <span className="shrink-0 text-[12.5px] font-semibold tabular-nums text-slate-900">{r.display}</span>
           </div>
-          {r.sub ? <div className="text-[11px] text-slate-400">{r.sub}</div> : null}
+          {r.sub ? <div className="text-[12px] text-slate-500">{r.sub}</div> : null}
           <div className="mt-1.5 h-2 w-full rounded-r-[4px] bg-slate-100/70">
             <div
               className={`${r.cls ?? SERIES[0]} h-full rounded-r-[4px] bg-current`}
@@ -415,7 +424,7 @@ export function AreaChart({
       >
         {width > 0 ? (
           <svg width={width} height={height} role="img" aria-label={ariaLabel} className="block overflow-visible">
-            <g className="text-slate-400">
+            <g className="text-slate-500">
               {ticks.map((t) => (
                 <g key={t}>
                   <line x1={padL} x2={width - padR} y1={y(t)} y2={y(t)} stroke="currentColor" strokeOpacity={t === 0 ? 0.45 : 0.2} strokeWidth={1} shapeRendering="crispEdges" />
@@ -451,7 +460,7 @@ export function AreaChart({
             })}
             {hover !== null ? (
               <g>
-                <line x1={x(hover)} x2={x(hover)} y1={padT} y2={padT + innerH} className="text-slate-400" stroke="currentColor" strokeOpacity={0.5} strokeWidth={1} />
+                <line x1={x(hover)} x2={x(hover)} y1={padT} y2={padT + innerH} className="text-slate-500" stroke="currentColor" strokeOpacity={0.5} strokeWidth={1} />
                 {series.map((s) => {
                   const v = s.values[hover]
                   if (v == null || !Number.isFinite(v)) return null
@@ -469,7 +478,7 @@ export function AreaChart({
         {hover !== null && width > 0 ? (
           <div
             role="tooltip"
-            className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 whitespace-nowrap rounded-lg bg-[#0E0D17] px-2.5 py-1.5 text-[11px] text-white shadow-lg"
+            className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 whitespace-nowrap rounded-lg bg-[#0E0D17] px-2.5 py-1.5 text-[12px] text-white shadow-lg"
             style={{ left: tipLeft }}
           >
             <p className="font-semibold">{tickLabel(labels[hover])}</p>

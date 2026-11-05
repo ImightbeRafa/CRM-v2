@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { CalendarRange, Database, HeartHandshake, LayoutGrid, Megaphone, Users } from 'lucide-react'
+import { CalendarRange, ChevronDown, Database, HeartHandshake, LayoutGrid, Megaphone, Users } from 'lucide-react'
 import { AuroraTopActions } from '@/components/aurora/shell/AuroraTopActions'
 import { PeriodPicker } from '@/components/aurora/estadisticas/StatsHeader'
 import type { CardLoad } from '@/components/aurora/estadisticas/StatsCard'
@@ -155,7 +155,7 @@ export function InsightsHeader({
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <h1 className="text-[18px] font-semibold leading-tight text-au-ink-0e0d17">{title}</h1>
-          <p className="text-[12px] text-slate-400">{subtitle}</p>
+          <p className="text-[12px] text-slate-500">{subtitle}</p>
         </div>
         <div className="flex min-w-0 items-start gap-2">
           {spec && onPeriod ? (
@@ -171,30 +171,39 @@ export function InsightsHeader({
   )
 }
 
-/** "Fuente: … · 1–30 oct" — every number says where it comes from and for which period. */
+/**
+ * "1–30 oct · ¿Cómo se calcula?" — every number says where it comes from and for which period. The
+ * explanation is one tap away instead of a paragraph under every card (it buried the numbers).
+ */
 export function SourceNote({ children, range }: { children: ReactNode; range?: AuroraDateRange | null }) {
   return (
-    <div className="flex flex-wrap items-start gap-x-3 gap-y-1 text-[11px] leading-relaxed text-slate-400" data-testid="insights-source">
-      {range ? (
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
-          <CalendarRange className="h-3 w-3" aria-hidden />
-          {formatRangeLabel(range.startDate, range.endDate)}
+    <details className="group text-[12px] leading-relaxed text-slate-500" data-testid="insights-source">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 [&::-webkit-details-marker]:hidden">
+        {range ? (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
+            <CalendarRange className="h-3 w-3" aria-hidden />
+            {formatRangeLabel(range.startDate, range.endDate)}
+          </span>
+        ) : null}
+        <span className="inline-flex items-center gap-1 font-medium text-slate-500 hover:text-slate-700">
+          <Database className="h-3 w-3" aria-hidden />
+          ¿Cómo se calcula?
+          <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" aria-hidden />
         </span>
-      ) : null}
-      <p className="min-w-0 flex-1">
-        <Database className="mr-1 inline h-3 w-3 -translate-y-px" aria-hidden />
-        <span className="font-medium text-slate-500">Fuente:</span> {children}
+      </summary>
+      <p className="mt-2 max-w-[900px]">
+        <span className="font-medium text-slate-600">Fuente:</span> {children}
       </p>
-    </div>
+    </details>
   )
 }
 
 export function Tile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="min-w-0 rounded-xl bg-slate-50 px-3 py-2.5">
-      <dt className="text-[11px] leading-tight text-slate-500">{label}</dt>
+      <dt className="text-[12px] leading-tight text-slate-500">{label}</dt>
       <dd className="mt-0.5 text-[17px] font-semibold tabular-nums text-au-ink-0e0d17">{value}</dd>
-      {hint ? <p className="mt-0.5 text-[10.5px] leading-tight text-slate-400">{hint}</p> : null}
+      {hint ? <p className="mt-0.5 text-[11.5px] leading-tight text-slate-500">{hint}</p> : null}
     </div>
   )
 }

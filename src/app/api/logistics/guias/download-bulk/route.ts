@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PII_NO_STORE_HEADERS } from '@/lib/security';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { packPdfBuffersToA4 } from '@/lib/pdf/packPdfPages';
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="${fileName}"`,
+        ...PII_NO_STORE_HEADERS,
         'Content-Length': mergedPdf.length.toString(),
       },
     });

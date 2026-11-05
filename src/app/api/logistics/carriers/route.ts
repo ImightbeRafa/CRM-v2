@@ -13,7 +13,13 @@ export async function GET(req: NextRequest) {
       FROM lm_carrier_configs
       ORDER BY carrier ASC, key ASC
     `;
-        return NextResponse.json({ carriers: data });
+        // Same mask as /api/logistics/correos-config: credentials never go back to the browser.
+        const carriers = data.map(row =>
+            /password|secret|token/i.test(String(row.key ?? '')) && row.value
+                ? { ...row, value: '••••••••' }
+                : row,
+        );
+        return NextResponse.json({ carriers }, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch (error) {
         console.error('[logistics/carriers GET]', error);
         return NextResponse.json({ error: 'Failed to fetch carrier configs' }, { status: 500 });

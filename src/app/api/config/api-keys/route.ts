@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateAPI } from '@/lib/auth-helpers';
+import { authenticateAPIWithPermission } from '@/lib/auth-helpers';
 import { createApiKey, listApiKeys } from '@/lib/integration-auth';
 
+// Integration API keys act for the whole business (orders, paid Correos guías): OWNER/ADMIN only.
 export async function GET(req: NextRequest) {
   try {
-    const auth = await authenticateAPI(req);
+    const auth = await authenticateAPIWithPermission(req, 'update_config');
     if (!auth.ok) {
       return auth.response;
     }
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await authenticateAPI(req);
+    const auth = await authenticateAPIWithPermission(req, 'update_config');
     if (!auth.ok) {
       return auth.response;
     }

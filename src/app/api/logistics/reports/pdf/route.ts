@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PII_NO_STORE_HEADERS } from '@/lib/security';
 import { prisma } from '@/lib/db';
 import { guardLogisticsApi } from '@/lib/logistics-auth';
 import { calculateTilopayFees, isTilopayOrder } from '@/lib/tilopay-fees';
@@ -234,6 +235,7 @@ export async function GET(req: NextRequest) {
             headers: {
                 'Content-Type': 'application/pdf',
                 'Content-Disposition': `attachment; filename="reporte-logistica-${ws}_${we}.pdf"`,
+                ...PII_NO_STORE_HEADERS,
                 'Content-Length': pdfBuffer.length.toString(),
             },
         });

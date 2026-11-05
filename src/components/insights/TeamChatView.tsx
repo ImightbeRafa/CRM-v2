@@ -43,16 +43,16 @@ function ChannelPanel({ c }: { c: ChannelMetrics }) {
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-3 text-[12px]">
         <div>
-          <dt className="text-slate-400">1.ª respuesta</dt>
-          <dd className="text-[17px] font-semibold text-slate-900">{formatDurationEs(c.firstResponseMedianMs)}</dd>
-          <dd className="text-[10.5px] text-slate-400">
-            9 de 10: {formatDurationEs(c.firstResponseP90Ms)} · {nf.format(c.firstResponseSamples)} medidos
+          <dt className="text-slate-500">Respuesta típica</dt>
+          <dd className="text-[20px] font-semibold tabular-nums text-slate-900">{formatDurationEs(c.firstResponseMedianMs)}</dd>
+          <dd className="text-[11.5px] text-slate-500">
+            9 de cada 10 en menos de {formatDurationEs(c.firstResponseP90Ms)} · {nf.format(c.firstResponseSamples)} chats
           </dd>
         </div>
         <div>
-          <dt className="text-slate-400">Esperando ahora</dt>
-          <dd className="text-[17px] font-semibold text-slate-900">{nf.format(c.waiting)}</dd>
-          <dd className="text-[10.5px] text-slate-400">más viejo: {formatDurationEs(c.oldestWaitingMs)}</dd>
+          <dt className="text-slate-500">Esperando ahora</dt>
+          <dd className="text-[20px] font-semibold tabular-nums text-slate-900">{nf.format(c.waiting)}</dd>
+          <dd className="text-[11.5px] text-slate-500">más viejo: {formatDurationEs(c.oldestWaitingMs)}</dd>
         </div>
       </dl>
       <div className="mt-3">
@@ -61,7 +61,7 @@ function ChannelPanel({ c }: { c: ChannelMetrics }) {
           <span className="font-semibold tabular-nums text-slate-900">{formatPercent(c.chatToSale)}</span>
         </div>
         <Meter value={c.chatToSale ?? 0} tone="brand" label={`Chat a pedido en ${CHANNEL_LABEL[c.channel]}`} />
-        <p className="mt-1 text-[10.5px] text-slate-400">
+        <p className="mt-1 text-[11.5px] text-slate-500">
           {nf.format(c.linkedOrders)} pedidos / {nf.format(c.chatsStarted)} chats nuevos
         </p>
       </div>
@@ -114,8 +114,8 @@ function View() {
           {report ? (
             <div className="space-y-4">
               <dl className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-                <StatTile icon={Timer} label="1.ª respuesta (mediana)" value={formatDurationEs(report.overall.firstResponseMedianMs)} hint={`${nf.format(report.overall.samples)} chats medidos`} />
-                <StatTile icon={Gauge} tone="amber" label="1.ª respuesta (9 de 10)" value={formatDurationEs(report.overall.firstResponseP90Ms)} hint="el 90 % respondió en menos" />
+                <StatTile icon={Timer} label="Tiempo típico de respuesta" value={formatDurationEs(report.overall.firstResponseMedianMs)} hint={`medido en ${nf.format(report.overall.samples)} chats`} />
+                <StatTile icon={Gauge} tone="amber" label="9 de cada 10 chats" value={formatDurationEs(report.overall.firstResponseP90Ms)} hint="se respondieron en menos de esto" />
                 <StatTile
                   icon={Hourglass}
                   tone={report.overall.waiting > 0 ? 'pink' : 'green'}
@@ -127,7 +127,7 @@ function View() {
               </dl>
               <div className="rounded-xl border border-slate-100 p-3.5">
                 <p className="text-[12.5px] font-semibold text-slate-800">Primera respuesta por día</p>
-                <p className="mb-3 text-[11px] text-slate-400">Mediana de cada día (más bajo es mejor)</p>
+                <p className="mb-3 text-[12px] text-slate-500">Tiempo típico de respuesta de cada día (más bajo es mejor)</p>
                 {hasDaily ? (
                   <AreaChart
                     labels={daily.map((d) => d.date)}
@@ -138,7 +138,7 @@ function View() {
                     ariaLabel="Mediana de la primera respuesta por día"
                   />
                 ) : (
-                  <p className="py-6 text-center text-[12px] text-slate-400">Todavía no hay respuestas medidas en este período.</p>
+                  <p className="py-6 text-center text-[12px] text-slate-500">Todavía no hay respuestas medidas en este período.</p>
                 )}
               </div>
             </div>
@@ -202,7 +202,7 @@ function View() {
                     <li key={t.userId} className="grid grid-cols-1 gap-2 py-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)] md:items-center md:gap-4" data-testid="team-row">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-au-tint-eef0ff text-[11px] font-semibold text-au-ink-5b6cff" aria-hidden>
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-au-tint-eef0ff text-[12px] font-semibold text-au-ink-5b6cff" aria-hidden>
                             {(names.get(t.userId) ?? '?').trim().charAt(0).toUpperCase()}
                           </span>
                           <span className="truncate text-[13.5px] font-semibold text-slate-900">{names.get(t.userId)}</span>
@@ -219,13 +219,13 @@ function View() {
                         <div className="mt-1 h-1.5 w-full rounded-r-[4px] bg-slate-100/80">
                           <div className={`${SERIES[0]} h-full rounded-r-[4px] bg-current`} style={{ width: `${maxReplies > 0 ? Math.max(t.replies > 0 ? 2 : 0, (t.replies / maxReplies) * 100) : 0}%` }} />
                         </div>
-                        <p className="mt-0.5 text-[10.5px] text-slate-400">{nf.format(t.openAssigned)} chats asignados ahora</p>
+                        <p className="mt-0.5 text-[11.5px] text-slate-500">{nf.format(t.openAssigned)} chats asignados ahora</p>
                       </div>
                       <div className="text-[12px]">
-                        <span className="text-slate-500">1.ª respuesta </span>
+                        <span className="text-slate-500">Responde en </span>
                         <span className="font-semibold text-slate-900">{formatDurationEs(t.firstResponseMedianMs)}</span>
-                        <p className="text-[10.5px] text-slate-400">
-                          9 de 10: {formatDurationEs(t.firstResponseP90Ms)} · {nf.format(t.firstResponseSamples)} medidos
+                        <p className="text-[11.5px] text-slate-500">
+                          9 de cada 10 en menos de {formatDurationEs(t.firstResponseP90Ms)} · {nf.format(t.firstResponseSamples)} chats
                         </p>
                       </div>
                     </li>

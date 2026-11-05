@@ -116,7 +116,8 @@ export function BetsyMark({
   const cid = `bmc${uid}`
   const tid = `bmt${uid}`
   const micro = size <= 16
-  const showLight = size >= 32 && (tone === 'dark' || tone === 'cream')
+  // The top sheen only reads as light on big marks; at nav sizes it washes the edge out (a pale rim).
+  const showLight = size >= 48 && (tone === 'dark' || tone === 'cream')
   const mono = tone === 'mono-white' || tone === 'mono-ink'
   const bodyFill = tone === 'mono-white' ? '#FFFFFF' : tone === 'mono-ink' ? BETSY_COLORS.ink : `url(#${gid})`
   const eyeFill = tone === 'mono-white' ? BETSY_COLORS.ink : mono ? '#FFFFFF' : BETSY_COLORS.eye
@@ -141,10 +142,19 @@ export function BetsyMark({
       className={`${s.bm} ${className ?? ''}`}
       data-state={state}
       data-on={on ? '' : undefined}
+      data-small={size < 40 ? '' : undefined}
       style={{ ['--bm-lvl' as string]: lvl, fontSize: size, ...style } as React.CSSProperties}
       {...a11y}
     >
-      <svg width={size} height={size} viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true">
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 120 120"
+        xmlns="http://www.w3.org/2000/svg"
+        shapeRendering="geometricPrecision"
+        focusable="false"
+        aria-hidden="true"
+      >
         <defs>
           <linearGradient id={gid} x1="0" y1="0" x2="1" y2="0">
             <stop offset="0" stopColor={BETSY_COLORS.blue} />

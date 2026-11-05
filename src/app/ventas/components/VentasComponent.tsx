@@ -62,6 +62,8 @@ function VentasInner() {
               <PedidosBoard
                 onCreate={openCreate}
                 initialSearch={buscar}
+                focusPayments={searchParams?.get('vista') === 'pagos'}
+                paymentsKind={searchParams?.get('tipo') === 'ce' ? 'contra_entrega' : undefined}
                 pedidoRef={pedido}
                 onPedidoChange={(ref) => setParams({ pedido: ref })}
               />

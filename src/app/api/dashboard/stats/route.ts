@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getTenantPrisma } from '@/lib/prisma-tenant';
 import { authenticateAPI } from '@/lib/auth-helpers';
 import { costaRicaRangeStart } from '@/lib/statistics-aurora';
+import { codPendingWhere } from '@/lib/orders/pending-payments';
 
 const statsCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 30000;
@@ -141,12 +142,8 @@ export async function GET(request: NextRequest) {
         },
       }),
       prisma.order.aggregate({
-        where: {
-          ...whereClause,
-          contraEntrega: true,
-          cePaymentConfirmed: false,
-          status: { notIn: completedStatuses },
-        },
+        // Same rule as Pedidos › Pagos por confirmar ("Revisar" lands there), returned packages excluded.
+        where: { ...whereClause, ...codPendingWhere() },
         _count: { _all: true },
         _sum: { total: true },
       }),

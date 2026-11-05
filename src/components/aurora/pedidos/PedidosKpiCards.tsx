@@ -60,16 +60,21 @@ export function PedidosKpiCards({
   kpis,
   rangeLabel,
   formatCurrency,
+  pendingAnyDay = 0,
 }: {
   kpis: PedidosKpis
   /** "hoy" | "7 días" | "30 días" */
   rangeLabel: string
   formatCurrency: (n: number) => string
+  /** "Pagos por confirmar" of any date (the section below), so this card never says "nada" while older ones wait. */
+  pendingAnyDay?: number
 }) {
   const isToday = rangeLabel === 'hoy'
   const sinpeHint =
     kpis.pendingCount === 0
-      ? 'Nada por confirmar'
+      ? pendingAnyDay > 0
+        ? `${plural(pendingAnyDay, 'pago', 'pagos')} por confirmar · ver abajo`
+        : 'Nada por confirmar'
       : kpis.pendingSinpeCount > 0
         ? `${plural(kpis.pendingSinpeCount, 'pedido', 'pedidos')} SINPE por confirmar`
         : `${plural(kpis.pendingCount, 'pedido', 'pedidos')} por confirmar`
@@ -96,7 +101,7 @@ export function PedidosKpiCards({
         value={formatCurrency(kpis.pendingAmount)}
         valueClass="text-amber-600"
         hint={sinpeHint}
-        hintTone={kpis.pendingCount > 0 ? 'warn' : 'muted'}
+        hintTone={kpis.pendingCount > 0 || pendingAnyDay > 0 ? 'warn' : 'muted'}
       />
       <KpiCard
         accent="teal"

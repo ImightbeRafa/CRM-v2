@@ -3857,3 +3857,15 @@ Plan: `docs/plans/betsy-agent-studio-sales-flow-2026-10-08.md` (v4). Off `claudi
   business team + owner bell (`ai_budget`), markers reset when a budget changes, explicit DELETE, read fresh;
   dashboard opens audited (throttled), budget audit rows in the affected business; platform-wide labels on the
   headline; calls/cost toggle; cached tokens; chats and cost per chat by business/agent; Agent Ops links here.
+
+## 2026-11-05 — Apex domain redirect (claude/apex-redirect)
+
+- Bug: `https://betsycrm.com` (no www) showed Vercel "This deployment is temporarily paused"
+  (`x-vercel-error: DEPLOYMENT_DISABLED`). Cause: the app Worker only has the `www.betsycrm.com/*`
+  route; the apex DNS record is still the old Vercel target, so apex traffic fell through to Vercel.
+- Fix: new redirect-only Worker `betsy-apex-redirect` (`cloudflare/apex-redirect/`) on route
+  `betsycrm.com/*` → 301 (GET/HEAD) / 308 (other methods) to `https://www.betsycrm.com` + same path/query.
+  Does not touch the app Worker or its container. Deploy:
+  `npx wrangler deploy --config cloudflare/apex-redirect/wrangler.jsonc`.
+- Follow-up for Rafael (dashboard; the API token lacks Zone DNS edit): repoint/delete any remaining
+  Vercel DNS records in the betsycrm.com zone so no other hostname can land on Vercel.

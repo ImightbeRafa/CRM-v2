@@ -3,6 +3,7 @@
 > **SoT for agents:** Notion [Betsy CRM — hosting SoT](https://www.notion.so/3e7bc39c41ae813a8cc4d4410be6b773) — child of the visual board. This file is the repo ops mirror.
 >
 > **Live host:** Cloudflare Containers Worker `betsy-crm-daytime-smoke` serving `https://www.betsycrm.com` (zone route).
+> **Apex:** `https://betsycrm.com/*` is served by the redirect-only Worker `betsy-apex-redirect` (`cloudflare/apex-redirect/`) → 301/308 to www. Without it the apex falls through to the old Vercel DNS target ("deployment paused").
 > **Vercel:** domains may still be listed for rollback only. **Builds frozen** (`commandForIgnoringBuildStep=exit 1`, previews disabled). Production crons empty. **Do not deploy Betsy on Vercel.**
 > **Writer:** Claudio (Claude Code). Deploy via `wrangler deploy`. No Vercel Preview for product PRs.
 > **Staff Meta / `/api/bot/whatsapp/webhook`:** out of scope — never touch in Betsy CRM hosting work.

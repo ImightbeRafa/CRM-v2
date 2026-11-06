@@ -99,7 +99,7 @@ export type SoftAiLlmRuntimeInput = {
   /** Sales flow: contra entrega offered by a shipping method, for [[PAGO_CONTRA_ENTREGA]] (agents2-format). */
   salesPaymentOptions?: { codAvailable?: boolean; codNote?: string | null; chosenMethod?: string | null; dataListFirst?: 'shipping' | 'pickup' | null }
   /** Sales state for the turn trace (debug only; not sent to the model separately). */
-  salesTrace?: { stage: string; said: Record<string, boolean>; chosenMethod?: string | null } | null
+  salesTrace?: { stage: string; said: Record<string, boolean>; chosenMethod?: string | null; dataReceived?: boolean } | null
 }
 
 export type SoftAiLlmRuntimeResult = {
@@ -133,6 +133,10 @@ export type SoftAiLlmRuntimeResult = {
   /** Lane D 2026-10-22: the model call failed on the provider side (no credit / 429 / auth / 5xx / timeout / network). */
   providerFailure?: ProviderFailureKind | null
   validationReasons?: string[]
+  /** The model itself asked for a person (structured needsHuman). Undefined on fallback paths. */
+  modelAskedHuman?: boolean
+  /** A tool call failed this turn. Undefined on fallback paths. */
+  toolProblem?: boolean
   inventoryPrices?: number[]
   intent?: string
   shortcutKey?: string | null
@@ -578,6 +582,8 @@ export async function runSoftAiLlmRuntime(
       latencyMs: Date.now() - started,
       fallbackUsed: false,
       validationReasons: validation.reasons,
+      modelAskedHuman: structured.needsHuman,
+      toolProblem,
     }
   } catch (error) {
     const fb = await runAgentFallback({

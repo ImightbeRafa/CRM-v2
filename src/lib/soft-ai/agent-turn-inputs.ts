@@ -296,7 +296,7 @@ export function assembleAgentRuntimeInputs(input: {
           dataListFirst: salesState ? salesDataListFirst(salesState, saleHistory, input.inboundText, sales) : null,
         }
       : undefined,
-    salesTrace: salesState ? { stage: salesState.stage, said: salesState.said, chosenMethod: salesState.chosenMethod ?? null } : null,
+    salesTrace: salesState ? { stage: salesState.stage, said: salesState.said, chosenMethod: salesState.chosenMethod ?? null, ...(salesState.dataReceived ? { dataReceived: true } : {}) } : null,
     toolCtx: {
       ...input.toolCtxBase,
       enabledTools,

@@ -208,3 +208,19 @@ export function canonicalizeOrderDataList(text: string): string {
   }
   return out.join('\n')
 }
+
+/** Order data labels the customer fills in ("Nombre: …", "Provincia: …") or address words. */
+const DATA_LABEL_RE =
+  /(?<![\p{L}])(?:nombre(?:\s+completo)?|tel[eé]fono|celular|provincia|cant[oó]n|distrito|direcci[oó]n|se[nñ]as|c[eé]dula|correo)\s*[:\-–]/iu
+const ADDRESS_WORD_RE =
+  /(?<![\p{L}])(?:provincia|cant[oó]n|distrito|barrio|residencial|condominio|apartamento|casa\s+(?:n[uú]mero|#|color)|\d+\s*(?:metros|mts?|m)\.?\s+(?:al\s+)?(?:norte|sur|este|oeste)|(?:del|de\s+la)\s+(?:iglesia|escuela|pulper[ií]a|plaza|parque|super|rotonda)\p{L}*)(?![\p{L}])/iu
+/** A Costa Rica phone: 8 digits, optional +506 and one separator. */
+const CR_PHONE_RE = /(?<!\d)(?:\+?506[\s-]?)?[2-8]\d{3}[\s.-]?\d{4}(?!\d)/u
+const EMAIL_RE = /[^\s@]+@[^\s@]+\.[a-z]{2,}/iu
+
+/** The customer sent order data: labelled fields, an email, or a phone next to an address. */
+export function looksLikeOrderData(text: string): boolean {
+  const t = text || ''
+  if (DATA_LABEL_RE.test(t) || EMAIL_RE.test(t)) return true
+  return CR_PHONE_RE.test(t) && (ADDRESS_WORD_RE.test(t) || t.split(/\n|,|\//u).length >= 3)
+}

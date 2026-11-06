@@ -4,9 +4,12 @@
  * address or got the SINPE details, after "espero la quincena" / "ahorita no tengo plata", after "mañana le escribo".
  * No DB, no server-only: follow-up.ts reads the messages and calls this.
  */
-import { paidAfterDetails, paymentDetailsIn } from '@/lib/soft-ai/sales-state'
+import { isPaymentMethodQuestion, paidAfterDetails, paymentDetailsIn } from '@/lib/soft-ai/sales-state'
 import { classifyPaymentText, isShortDoneBubble } from '@/lib/soft-ai/payment-classifier'
 import type { SoftAiHistoryMessage } from '@/lib/soft-ai/llm/prompt'
+import { looksLikeOrderData as customerGaveOrderData } from '@/lib/soft-ai/order-data-list'
+
+export { customerGaveOrderData }
 
 export type FollowUpStateMessage = { direction: string; content?: string | null; messageType?: string | null }
 /** A photo / file / audio placeholder or a file name ("[image]", "comprobante_sinpe.pdf"). */
@@ -15,15 +18,6 @@ const MEDIA_LIKE_RE = /\[(?:image|imagen|foto|audio|voice|video|document|documen
 const SENT_VERB_RE =
   /(?<![\p{L}])(?:acab[oéeó]\s+de|ya\s+(?:le|te|les|lo|la)\b|mand[eéoó]|envi[eéoó]|pas[eéoó]|hic[eé]|hizo|transfer\p{L}*|deposit\p{L}*|consign\p{L}*|abon\p{L}*|cancel[eéoó]|sinpe[eéoó]|dej[eéoó]|entregu[eé]|entreg[oó]|met[ií]|meti[oó]|list[oa]|hech[oa])(?![\p{L}])/iu
 export type FollowUpStateSkip = 'payment_details_sent' | 'data_given' | 'waiting_date'
-
-/** Order data labels the customer fills in ("Nombre: …", "Provincia: …") or address words. */
-const DATA_LABEL_RE =
-  /(?<![\p{L}])(?:nombre(?:\s+completo)?|tel[eé]fono|celular|provincia|cant[oó]n|distrito|direcci[oó]n|se[nñ]as|c[eé]dula|correo)\s*[:\-–]/iu
-const ADDRESS_WORD_RE =
-  /(?<![\p{L}])(?:provincia|cant[oó]n|distrito|barrio|residencial|condominio|apartamento|casa\s+(?:n[uú]mero|#|color)|\d+\s*(?:metros|mts?|m)\.?\s+(?:al\s+)?(?:norte|sur|este|oeste)|(?:del|de\s+la)\s+(?:iglesia|escuela|pulper[ií]a|plaza|parque|super|rotonda)\p{L}*)(?![\p{L}])/iu
-/** A Costa Rica phone: 8 digits, optional +506 and one separator. */
-const CR_PHONE_RE = /(?<!\d)(?:\+?506[\s-]?)?[2-8]\d{3}[\s.-]?\d{4}(?!\d)/u
-const EMAIL_RE = /[^\s@]+@[^\s@]+\.[a-z]{2,}/iu
 
 /**
  * The customer named a later moment or has no money right now (follow-ups are only sent inside Meta's 23 h window, so
@@ -49,13 +43,6 @@ export const WAITING_DATE_RE = new RegExp(
   ].map((p) => `(?<![\\p{L}])${p}(?![\\p{L}])`).join('|'),
   'iu',
 )
-
-/** The customer sent order data: labelled fields, an email, or a phone next to an address. */
-export function customerGaveOrderData(text: string): boolean {
-  const t = text || ''
-  if (DATA_LABEL_RE.test(t) || EMAIL_RE.test(t)) return true
-  return CR_PHONE_RE.test(t) && (ADDRESS_WORD_RE.test(t) || t.split(/\n|,|\//u).length >= 3)
-}
 
 /**
  * Why this chat must not get a follow-up from its messages (newest first or oldest first, any order), or null.
@@ -85,9 +72,11 @@ export function customerNamedLaterDate(newestFirst: readonly FollowUpStateMessag
  *   how_it_works      — last stage was how it works / video / demo
  *   shipping_details  — the store asked for order data (nombre / dirección / …) and the customer went quiet
  *   sinpe_reminder    — the store sent its payment details and no receipt / paid message came after them
+ *   pay_pending       — Pura Sonrisa 2026-11-05: the customer sent the order data after the store asked for it, the
+ *                       agent's last message asks how to pay, no payment details yet (only arms with this text nudge)
  */
-export type FollowUpSlot = 'chose' | 'quoted' | 'size' | 'how_it_works' | 'shipping_details' | 'sinpe_reminder'
-export const FOLLOW_UP_SLOTS: readonly FollowUpSlot[] = ['chose', 'quoted', 'size', 'how_it_works', 'shipping_details', 'sinpe_reminder']
+export type FollowUpSlot = 'chose' | 'quoted' | 'size' | 'how_it_works' | 'shipping_details' | 'sinpe_reminder' | 'pay_pending'
+export const FOLLOW_UP_SLOTS: readonly FollowUpSlot[] = ['chose', 'quoted', 'size', 'how_it_works', 'shipping_details', 'sinpe_reminder', 'pay_pending']
 
 /** The customer picked a product, size, quantity or pack (one bubble, not a question). */
 const CHOSE_RE =
@@ -142,6 +131,7 @@ export function followUpSlot(messages: readonly FollowUpStateMessage[], newestFi
   // nudges about size — not a generic "¿te quedó alguna duda?" after ₡.
   const lastOut = [...history].reverse().find((m) => m.direction === 'outbound')
   const lastIn = [...history].reverse().find((m) => m.direction === 'inbound')
+  if (payPendingAfterData(history)) return 'pay_pending'
   if (lastOut && SHIPPING_DETAILS_ASK_RE.test(lastOut.content)) return 'shipping_details'
   if ((lastIn && SIZE_ASK_RE.test(lastIn.content)) || (lastOut && SIZE_ANSWER_RE.test(lastOut.content))) return 'size'
   if ((lastOut && HOW_IT_WORKS_STAGE_RE.test(lastOut.content)) || (lastIn && HOW_IT_WORKS_STAGE_RE.test(lastIn.content))) {
@@ -166,7 +156,7 @@ export function parseStageTexts(raw: unknown): Partial<Record<FollowUpSlot, stri
     // r2: on the NFKC form (superscripts, circled digits, "․" one-dot leader), any \p{N}, and tens / slang money words.
     const k = t.normalize('NFKC')
     if (
-      slot === 'sinpe_reminder' &&
+      (slot === 'sinpe_reminder' || slot === 'pay_pending') &&
       (/[\p{N}\p{Sc}]|https?:|www\.|[\p{L}\p{N}-][.․。][\p{L}]{2,}/u.test(k) ||
         /(?<![\p{L}])(?:mil|miles|cien|ciento|cientos|colones|rojos|lucas|teja|tejas|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|veinte|veinti\p{L}*|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)(?![\p{L}])/iu.test(k))
     )
@@ -174,4 +164,20 @@ export function parseStageTexts(raw: unknown): Partial<Record<FollowUpSlot, stri
     out[slot] = t.trim()
   }
   return Object.keys(out).length ? out : undefined
+}
+
+/**
+ * pay_pending (oldest first): the store asked for the order data, the customer sent it (bubbles joined), and the store's
+ * LAST message asks how to pay — no payment details, no later date. The data request must come before the data.
+ */
+function payPendingAfterData(history: readonly SoftAiHistoryMessage[]): boolean {
+  const lastOutAt = history.map((m) => m.direction).lastIndexOf('outbound')
+  if (lastOutAt < 0 || !isPaymentMethodQuestion(history[lastOutAt].content)) return false
+  if (history.slice(lastOutAt + 1).some((m) => m.direction === 'inbound')) return false
+  const askAt = history.findIndex((m) => m.direction === 'outbound' && SHIPPING_DETAILS_ASK_RE.test(m.content))
+  if (askAt < 0 || askAt >= lastOutAt) return false
+  const given = history.slice(askAt + 1, lastOutAt).filter((m) => m.direction === 'inbound').map((m) => m.content)
+  if (!given.some((t) => customerGaveOrderData(t)) && !customerGaveOrderData(given.join('\n'))) return false
+  const newestFirst = [...history].reverse().map((m) => ({ direction: m.direction, content: m.content }))
+  return !customerNamedLaterDate(newestFirst)
 }

@@ -111,6 +111,7 @@ import {
   type OutcomeMarkers,
   type TurnDeliveryPlan,
   type TurnHandoff,
+  dataEchoRescueText,
 } from '@/lib/soft-ai/agent-turn-outcome'
 import { notifyHandoff } from '@/lib/soft-ai/handoff-notify'
 import { decideWaitingAck, isOptOutText, waitingAckKey, waitingAckText, WAITING_ACK_KEY_PREFIX, WAITING_ACK_MAX_AGE_MS, WAITING_ALERT_THROTTLE_MS } from '@/lib/soft-ai/waiting-ack'
@@ -126,6 +127,9 @@ import {
   salesAllowedAmounts,
   salesAllowedDeals,
   salesFreeShippingRule,
+  salesMethodQuestion,
+  salesPaymentMethods,
+  type SalesContext,
 } from '@/lib/soft-ai/sales-state'
 import { duplicateReceiptReply, isPaymentHandoff } from '@/lib/soft-ai/repeat-order'
 import { loadSettledSale } from '@/lib/soft-ai/settled-sale'
@@ -1730,6 +1734,18 @@ export async function executeAgentLayerTurn(
   const turnCustomerText = customerTextSinceLastAnswer(history, burst.inboundText)
   // Rafael 2026-10-25: at night an escalation / "no lo tengo" keeps the agent's answer and the chat on the agent
   // (before the safe-line cap, so a repeated night safe line still becomes a hand-off).
+  // Pura Sonrisa 2026-11-05: the held echo of the customer's own data → thanks + the method question (shared with Probar).
+  const dataEchoRescue = turnDataEchoRescue({
+    llm,
+    policyReasons: policy.reasons,
+    policyText: policy.text,
+    dataReceived: runtimeInput.salesTrace?.dataReceived === true,
+    ctx: turnSalesContext,
+    receiptCue: runtimeInput.salesReceiptCue === true,
+    paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
+    cardByTeam: cardByTeam && (policy.paymentMethods.includes('tarjeta') || CARD_LINK_PROMISE_RE.test(policy.text)),
+    customerText: turnCustomerText,
+  })
   const night = nightKeepsSelling(
     planModelTurnDelivery({
       text: policy.text,
@@ -1743,6 +1759,7 @@ export async function executeAgentLayerTurn(
       cardByTeam: cardByTeam && (policy.paymentMethods.includes('tarjeta') || CARD_LINK_PROMISE_RE.test(policy.text)),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
       customerText: turnCustomerText,
+      dataEchoRescue,
     }),
     hours,
     {
@@ -1759,8 +1776,9 @@ export async function executeAgentLayerTurn(
     hours,
     nightIntroWho(resolved.agent, history),
   )
+  const echoRescued = Boolean(dataEchoRescue) && modelPlan.text === dataEchoRescue
   const modelMarkers: OutcomeMarkers = plannedMarkers(
-    { needsHuman: night.soft ? false : needsHuman, fallbackUsed: llm.fallbackUsed, escalate: night.soft ? false : llm.escalate },
+    { needsHuman: night.soft || echoRescued ? false : needsHuman, fallbackUsed: llm.fallbackUsed, escalate: night.soft ? false : llm.escalate },
     // The night review is recorded too: a lease reclaim settles it (review: the chat stays on the agent).
     modelPlan.handoff ?? night.review,
     llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
@@ -1776,6 +1794,7 @@ export async function executeAgentLayerTurn(
         escalateKind: llm.escalateKind,
         // The held model reply stays only in the redacted trace (the customer got the planned text).
         ...(modelPlan.text !== policy.text ? { heldModelText: policy.text.slice(0, 1_000) } : {}),
+        ...(echoRescued ? { dataEchoRescue: true } : {}),
       },
       modelMarkers,
     ),
@@ -2994,6 +3013,17 @@ async function runAgentTestTurnInner(input: {
       paymentOptions: { ...runtimeInput.salesPaymentOptions, cardByTeam: probarCardByTeam, customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText) },
     })
     // Same plan as the live turn (B1): checked model reply, safe line, or hand-off text.
+    const probarDataEchoRescue = turnDataEchoRescue({
+      llm,
+      policyReasons: policy.reasons,
+      policyText: policy.text,
+      dataReceived: runtimeInput.salesTrace?.dataReceived === true,
+      ctx: probarTurnSalesContext,
+      receiptCue: runtimeInput.salesReceiptCue === true,
+      paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
+      cardByTeam: probarCardByTeam && (policy.paymentMethods.includes('tarjeta') || CARD_LINK_PROMISE_RE.test(policy.text)),
+      customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText),
+    })
     const planned = planModelTurnDelivery({
       text: policy.text,
       textOk: llm.textOk && !policy.needsHuman,
@@ -3005,6 +3035,7 @@ async function runAgentTestTurnInner(input: {
         cardByTeam: probarCardByTeam && (policy.paymentMethods.includes('tarjeta') || CARD_LINK_PROMISE_RE.test(policy.text)),
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
       customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText),
+      dataEchoRescue: probarDataEchoRescue,
     })
     // Live parity: at night an escalation / "no lo tengo" keeps the answer and the chat on the agent (a review).
     const probarCustomerText = customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText)
@@ -3022,7 +3053,8 @@ async function runAgentTestTurnInner(input: {
     tokens = { input: llm.inputTokens, output: llm.outputTokens, cached: llm.cachedInputTokens }
     latencyMs = llm.latencyMs
     // Live parity (Verifier #3): a night review is a normal answer — images, no "pasa a una persona".
-    needsHuman = night.soft ? false : policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
+    const probarEchoRescued = Boolean(probarDataEchoRescue) && plan.text === probarDataEchoRescue
+    needsHuman = night.soft || probarEchoRescued ? false : policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
     fallbackUsed = llm.fallbackUsed
     escalate = night.soft ? false : llm.escalate
     policyReasons = [
@@ -3182,4 +3214,34 @@ export async function runAgentTestTurn(input: ProbarInput): Promise<ProbarResult
   } finally {
     releaseProbarSlot(input.tenantId)
   }
+}
+
+/** dataEchoRescueText inputs from one model turn (live and Probar share it, so both plan the same text). */
+function turnDataEchoRescue(a: {
+  llm: { validationReasons?: string[]; modelAskedHuman?: boolean; toolProblem?: boolean; escalate: boolean; handoff: TurnHandoff | null }
+  policyReasons: readonly string[]
+  policyText: string
+  dataReceived: boolean
+  ctx: SalesContext | null | undefined
+  receiptCue: boolean
+  paymentDataByTeam: boolean
+  cardByTeam: boolean
+  customerText: string
+}): string | null {
+  const ctx = a.ctx
+  const methodQuestion = ctx && ctx.paymentShareable && salesPaymentMethods(ctx).length > 0 ? salesMethodQuestion(ctx) : null
+  return dataEchoRescueText({
+    dataReceived: a.dataReceived,
+    methodQuestion,
+    reasons: [...new Set([...(a.llm.validationReasons ?? []), ...a.policyReasons])],
+    modelAskedHuman: a.llm.modelAskedHuman,
+    toolProblem: a.llm.toolProblem,
+    escalate: a.llm.escalate,
+    llmHandoff: a.llm.handoff,
+    text: a.policyText,
+    customerText: a.customerText,
+    receiptCue: a.receiptCue,
+    paymentDataByTeam: a.paymentDataByTeam,
+    cardByTeam: a.cardByTeam,
+  })
 }

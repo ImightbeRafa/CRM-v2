@@ -7,7 +7,7 @@ import type { EffectiveAgentBehavior } from '@/lib/soft-ai/agent-types'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 import { reservedShortcutBody } from '@/lib/soft-ai/shortcuts'
 import { COMPLAINT_HANDOFF_LINE } from '@/lib/soft-ai/business-hours'
-import { CARD_BY_TEAM_LINE } from '@/lib/soft-ai/payment-guard'
+import { CARD_BY_TEAM_LINE, commaPaymentNumbers, LONG_NUMBER_RE } from '@/lib/soft-ai/payment-guard'
 
 export type AgentTurnOutcomeName = 'send' | 'suggest' | 'skip'
 
@@ -231,6 +231,68 @@ export function isPaymentHandoffReason(reason: string | null | undefined): boole
 
 const SAYS_HOW_TO_PAY_RE = /c[oó]mo\s+pagar|datos\s+(de|para)\s+(pago|pagar)|te\s+paso\s+c[oó]mo/i
 
+/** The echo itself + shape-only reasons (length / bubbles / data-list rewrites) — the held text never goes out. */
+const ECHO_RESCUE_REASONS: ReadonlySet<string> = new Set([
+  'payment_number_unsourced',
+  'style_too_long',
+  'shortened',
+  'unjoined',
+  'data_list',
+  'data_list_first',
+  'purchase_summary_appended',
+])
+
+const onlyDigits = (s: string) => s.replace(/\D/g, '')
+/** SecureDog INT-251: the same runs payment-guard checks (separators, +506, comma runs), as digits without +506. */
+function numberRuns(text: string): string[] {
+  const t = (text || '').normalize('NFKC')
+  return [...(t.match(LONG_NUMBER_RE) ?? []), ...commaPaymentNumbers(t)].map((r) => {
+    const d = onlyDigits(r)
+    return d.length === 11 && d.startsWith('506') ? d.slice(3) : d
+  })
+}
+
+/**
+ * Pura Sonrisa 2026-11-05 (live): the customer sent her order data, the model wrote it back (her phone next to "¿Cómo
+ * preferís pagar?"), the unsourced-number check held the reply and the review line "Dame un momento y te confirmo"
+ * went out — no total, no way to pay, and follow-ups then skipped the chat. When that echo is the ONLY problem, the
+ * model text is discarded entirely and this code-written line goes out instead (no customer-written number can leave).
+ * Null = no rescue (the normal safe line / hand-off applies). Pure; live turn and test chat share it.
+ */
+export function dataEchoRescueText(input: {
+  /** sales-state dataReceived (agent set to pay after data, data just sent, no payment details yet). */
+  dataReceived: boolean
+  /** salesMethodQuestion(ctx) when the store shares payment data by chat and offers a method; else null. */
+  methodQuestion: string | null
+  /** Runtime validation reasons + final output policy reasons. */
+  reasons: readonly string[]
+  modelAskedHuman?: boolean
+  toolProblem?: boolean
+  escalate: boolean
+  llmHandoff: TurnHandoff | null
+  /** The held model text. */
+  text: string
+  /** Customer text since the store last answered. */
+  customerText: string
+  receiptCue?: boolean
+  paymentDataByTeam?: boolean
+  cardByTeam?: boolean
+}): string | null {
+  if (!input.dataReceived || !input.methodQuestion) return null
+  if (input.receiptCue || input.paymentDataByTeam || input.cardByTeam) return null
+  // Verifier r1 #7: reasons about the text's shape don't matter (the model text is discarded); every other one does.
+  if (!input.reasons.includes('payment_number_unsourced') || input.reasons.some((r) => !ECHO_RESCUE_REASONS.has(r))) return null
+  // Fail closed: unknown (fallback paths) counts as "the model / a tool asked for a person".
+  if (input.modelAskedHuman !== false || input.toolProblem !== false || input.escalate) return null
+  if (input.llmHandoff && input.llmHandoff.kind !== 'review') return null
+  // Advisor: a number the customer did NOT write points to injection / hallucination → a person looks.
+  // SecureDog INT-251: each run must be one whole number the customer wrote (never a slice spanning two of hers).
+  const customerRuns = new Set(numberRuns(input.customerText))
+  const runs = numberRuns(input.text)
+  if (!runs.length || runs.some((r) => !customerRuns.has(r))) return null
+  return `¡Gracias por tus datos! 🙌\n\n${input.methodQuestion}`
+}
+
 /**
  * What a model turn sends (pure; live turn and test chat). A reply that failed a fixed rule is NEVER sent as written:
  * the customer gets a fixed safe line. Payment claims always get the fixed payment line, never model wording.
@@ -257,6 +319,8 @@ export function planModelTurnDelivery(input: {
   cardByTeam?: boolean
   /** Lane C D3: the customer's unanswered text (picks the empathetic line for a complaint / late order / refund). */
   customerText?: string
+  /** dataEchoRescueText result (code-written; replaces the review safe line only). */
+  dataEchoRescue?: string | null
 }): TurnDeliveryPlan {
   const text = (input.text || '').trim()
   const usable = input.textOk && text.length > 0
@@ -310,6 +374,10 @@ export function planModelTurnDelivery(input: {
       text: usable ? (SAYS_HOW_TO_PAY_RE.test(text) ? text : `${text}\n${SAFE_LINE.paymentSoon}`) : SAFE_LINE.paymentSoon,
       handoff: { kind: 'review', reason: HANDOFF_REASON.paymentData },
     }
+  }
+  // dataEchoRescueText: the held echo of the customer's own data → thanks + the method question, the chat stays on IA.
+  if (input.dataEchoRescue && !usable && (!input.llmHandoff || input.llmHandoff.kind === 'review')) {
+    return { text: input.dataEchoRescue, handoff: null }
   }
   if (input.llmHandoff || !usable) {
     return { text: SAFE_LINE.review, handoff: { kind: 'review', reason: input.llmHandoff?.reason || HANDOFF_REASON.review } }

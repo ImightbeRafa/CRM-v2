@@ -31,7 +31,7 @@ import { HISTORY_WINDOW_MAX } from '@/lib/soft-ai/agent-types'
 import { soldOutFocus, type StockGuard } from '@/lib/soft-ai/product-availability-core'
 import { productsNamedIn } from '@/lib/soft-ai/products-asked'
 import { stripFormatChars } from '@/lib/soft-ai/prompt-fence'
-import { PICKUP_DATA_LIST, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
+import { looksLikeOrderData, PICKUP_DATA_LIST, SHIPPING_DATA_LIST } from '@/lib/soft-ai/order-data-list'
 import { MONEY_WORDS_RE } from '@/lib/soft-ai/payment-claim-check-core'
 import {
   paymentMethodLabels,
@@ -81,6 +81,8 @@ export type SalesContext = {
   freeShippingOver?: number | null
   /** Out-of-stock switch (SQL 055): this agent's sold-out products (with the owner's "vuelve aprox.") and names on sale. */
   stock?: Omit<StockGuard, 'focus'>
+  /** salesRules.afterData === 'pay': order data received → total + method question (DATA_IN_STEP). */
+  dataThenPay?: boolean
 }
 
 export type SalesStage =
@@ -111,6 +113,10 @@ export type SalesState = {
   soldOutFocus?: string | null
   /** Two or more catalog products named in this turn. Each one gets a short line. */
   namedProducts?: string[]
+  /** salesRules.afterData = pay: the customer sent the order data since the store last wrote, no payment details yet. */
+  dataReceived?: boolean
+  /** salesRules.afterData = pay: order data given since the last data request (even with a method question pending). */
+  dataGiven?: boolean
 }
 
 /** A method the customer can pick (efectivo is its own method when configured; otherwise it means contra entrega). */
@@ -440,6 +446,69 @@ export function paidAfterDetails(history: SoftAiHistoryMessage[], isDetails: (te
   })
 }
 
+/** Never write the customer's own data back (an echoed phone next to "pagar" is held as an unknown payment number). */
+const DATA_NO_ECHO =
+  ' Ya te mandó sus datos: no los repitas ni los resumas (nunca escribas su nombre completo, teléfono, correo ni dirección).'
+/**
+ * Pura Sonrisa 2026-11-05: the customer just sent the order data, no payment details yet → thanks, the total and the
+ * method question (Rafael 2026-10-16: ask the method first, then only that method's details). The question line itself
+ * is added by salesTurnBlock for the cierre stage.
+ */
+const DATA_IN_STEP =
+  'Respondé primero lo que preguntó (breve). El cliente YA te mandó sus datos del pedido.' +
+  ' Si todavía falta el producto / sabor o cómo lo recibe, preguntá solo eso (sin total ni pago).' +
+  ' Si falta un dato de la lista (por ejemplo la dirección o el nombre), pedí solo ese dato, sin total ni pago.' +
+  DATA_NO_ECHO +
+  ' Agradecé en una frase corta, decí el total (precio + envío, o el precio del combo de la lista que ya trae el envío) y, en su propio mensaje, preguntá cómo prefiere pagar con la pregunta de pago de abajo. Todavía no des datos de pago.'
+
+/** Contra entrega / efectivo: the step itself asks for a short summary (product, total, name, address). */
+const DATA_NO_ECHO_SUMMARY = ' No escribas su teléfono ni su correo.'
+/**
+ * Verifier r1 #5 (agents set to pay after data): at the close BEFORE the data, no payment question in the same turn —
+ * total + the data list only; the method question comes when the data arrives (DATA_IN_STEP).
+ */
+const CIERRE_DATA_FIRST_STEP =
+  'Respondé primero lo que preguntó (breve). Si falta el producto / sabor o cómo lo recibe (envío o retiro), preguntá solo eso. Si ya está claro: decí el total (precio + envío) y pedí los datos del pedido con la lista fija de "Datos que necesita un pedido" (un dato por renglón). Todavía NO preguntes cómo pagar ni des datos de pago; si pregunta cómo pagar, nombrá los métodos en una línea y seguí con lo que falta.'
+/** A CR phone (8 digits, one optional separator, optional +506). */
+const CR_PHONE_IN_DATA_RE = /(?<!\d)(?:\+?506[\s-]?)?[2-8]\d{3}[\s.-]?\d{4}(?!\d)/u
+
+/**
+ * After the store's last data request: the customer messages (oldest first, plus the one being answered) and whether
+ * the store already asked the payment method since then. Null = the data was never asked.
+ */
+function sinceDataAsk(history: SoftAiHistoryMessage[], last: string): { inbound: string[]; methodAsked: boolean } | null {
+  let ask = -1
+  history.forEach((m, i) => {
+    if (m.direction === 'outbound' && orderDataAsked([m.content || ''])) ask = i
+  })
+  if (ask < 0) return null
+  const after = history.slice(ask + 1)
+  return {
+    inbound: [...after.filter((m) => m.direction === 'inbound').map((m) => m.content || ''), last].filter((t) => t.trim()),
+    methodAsked: after.some((m) => m.direction === 'outbound' && isPaymentMethodQuestion(m.content || '')),
+  }
+}
+
+/**
+ * Verifier r3 R1: a later moment / no money now ("espero la quincena y le aviso", "mañana le escribo", "no tengo plata")
+ * anywhere after the data request — never push the payment over it.
+ */
+const LATER_OR_NO_MONEY_RE =
+  /(?<![\p{L}])(?:quincena|fin\s+de\s+mes|aguinaldo|cuando\s+(?:me\s+)?paguen|no\s+tengo\s+(?:plata|platica|dinero)|ahorita\s+no|(?:la\s+)?(?:otra|pr[oó]xima)\s+semana|(?:ma[nñ]ana|luego|despu[eé]s|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\s+(?:(?:yo\s+)?(?:le|te|les)\s+)?(?:escribo|aviso|confirmo|hablo|pago|compro)|(?:le|te|les)\s+(?:escribo|aviso|confirmo)\s+(?:ma[nñ]ana|luego|despu[eé]s))(?![\p{L}])/iu
+
+/** Thanks + total were already said after the data: only answer and ask the method again (Verifier r3 R3). */
+const DATA_IN_AGAIN_STEP =
+  'Respondé primero lo que preguntó (breve). Ya tenés sus datos y ya le diste el total.' +
+  DATA_NO_ECHO +
+  ' No vuelvas a agradecer ni a repetir el total salvo que lo pida; terminá con la pregunta de pago de abajo, en su propio mensaje. Todavía no des datos de pago.'
+
+/** Customer messages since the store last wrote, plus the one being answered. */
+function customerDataSinceStore(history: SoftAiHistoryMessage[], last: string): string[] {
+  const out = [last]
+  for (let i = history.length - 1; i >= 0 && history[i].direction !== 'outbound'; i--) out.push(history[i].content || '')
+  return out.filter((t) => t.trim())
+}
+
 /** The customer wants a product that is AGOTADO: no close for it (no total, data or payment question). */
 const SOLD_OUT_STEP =
   'Lo que pide está AGOTADO: decilo claro y corto, con el "vuelve aprox." de la lista si lo tiene (si no, decí que todavía no hay fecha; nunca des una fecha). Ofrecé UN producto disponible de la lista si le sirve para lo mismo. No cierres ese producto: no des total, no pidas datos del pedido ni preguntes cómo pagar hasta que elija uno disponible.'
@@ -515,6 +584,33 @@ export function deriveSalesState(input: {
     carriedOrderMethod(input.history, last, offered) ??
     (dataChoice ? resolvePaymentChoice(dataChoice, offered) : null)
 
+  // Pura Sonrisa 2026-11-05 (live): "Me interesa una caja" → "Sí, de sandía" → "Domicilio" → name / phone / address has
+  // no buy cue, so the chat stayed in cotizar; the model echoed the data (phone included), the reply was held and the
+  // customer never got the total or how to pay. Order data sent since the store last wrote = she is buying.
+  // Advisor 2026-11-05: only for agents set to pay after data; the whole unanswered burst joined (name / phone / address
+  // often come as separate bubbles); only after the store asked for the data or the customer said she wants it (never
+  // "hola soy Ana, 8888-1234, ¿precio?"); never over a method question still pending (that one is answered first).
+  const sinceStore = customerDataSinceStore(input.history, last)
+  // Verifier r2 N1 / N2: the data counts from the store's LAST data request on, not only since the store last wrote —
+  // after "Dame un momento" or a sabor question, "¿Cómo te pago?" / "Menta" must still get the total + method question.
+  // (No method question pending and no payment details: both checked below.)
+  const ask = sinceDataAsk(input.history, last)
+  // Verifier r3 R2: "data given since the request" ignores a pending method question (it only switches the data-first
+  // close off); dataIn below adds that gate.
+  const dataGiven =
+    input.ctx.dataThenPay === true &&
+    !receiptCue &&
+    !said.payment &&
+    !said.order &&
+    // Verifier r1 #4b: only after the store asked for the data (a want cue alone let "quiero saber si llega…, 8888-1234" in).
+    ask !== null &&
+    // Verifier r1 #4a / r3 R1: a retraction, a "no" or a later date anywhere after the data request is not a close.
+    ![...ask.inbound, ...sinceStore].some((t) => RETRACT_BUY_RE.test(t) || NEGATED_BUY_RE.test(t) || LATER_OR_NO_MONEY_RE.test(t)) &&
+    // Verifier r1 #1: after the list, a one-line answer ("Adrian Retana 85844314 Heredia Ulloa…") or the pickup pair
+    // (name + phone) counts too: a CR phone anywhere, or the labelled / address shapes.
+    (ask.inbound.some((t) => looksLikeOrderData(t) || CR_PHONE_IN_DATA_RE.test(t)) || looksLikeOrderData(ask.inbound.join('\n')))
+  const dataIn = dataGiven && !askedMethod
+
   let stage: SalesStage
   if (receiptCue) stage = 'verificando'
   // N5: the order (contra entrega / efectivo) already went to a person: no receipt, no method question again.
@@ -522,7 +618,7 @@ export function deriveSalesState(input: {
   else if (said.payment && !duplicateOrder) stage = 'esperando_comprobante'
   // A new buy cue after the question ("la quiero", another product) goes back to the close (Verifier F5).
   else if (chosenMethod || (askedMethod && !buyCue)) stage = 'metodo_pago'
-  else if (buyCue) stage = 'cierre'
+  else if (buyCue || dataIn) stage = 'cierre'
   else if (said.price) stage = 'cotizar'
   else if (ours.length === 0) stage = 'saludo'
   else stage = 'descubrir'
@@ -558,8 +654,14 @@ export function deriveSalesState(input: {
     focus && closing
       ? SOLD_OUT_STEP
       : stage === 'metodo_pago' && chosenMethod
-        ? chosenMethodStep(input.ctx, chosenMethod) + (totalStepFits ? DATA_CHOICE_TOTAL_STEP : '')
-        : NEXT_STEP[stage]
+        ? chosenMethodStep(input.ctx, chosenMethod) +
+          (totalStepFits ? DATA_CHOICE_TOTAL_STEP : '') +
+          (dataIn ? (chosenMethod === 'contra_entrega' || chosenMethod === 'efectivo' ? DATA_NO_ECHO_SUMMARY : DATA_NO_ECHO) : '')
+        : stage === 'cierre' && dataIn
+          ? (ask?.methodAsked ? DATA_IN_AGAIN_STEP : DATA_IN_STEP)
+          : stage === 'cierre' && input.ctx.dataThenPay === true && !dataGiven
+            ? CIERRE_DATA_FIRST_STEP
+            : NEXT_STEP[stage]
   // The receipt already came in after the details: a later message ("Muchas gracias") is post-sale, not "pagá y mandame el comprobante".
   if (stage === 'esperando_comprobante' && !buyCue && paidAfterDetails(input.history, paymentDetailsMsg)) {
     nextStep = PAID_STEP
@@ -580,6 +682,9 @@ export function deriveSalesState(input: {
     askedMethod,
     chosenMethod: stage === 'metodo_pago' ? chosenMethod : null,
     namedProducts,
+    // Verifier r1 #2: never for a sold-out product (its own step: no total, no payment question).
+    ...(dataIn && stage === 'cierre' && !focus ? { dataReceived: true } : {}),
+    ...(dataGiven ? { dataGiven: true } : {}),
   }
 }
 
@@ -707,7 +812,9 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
     )
   }
   // agents2-format: the method question is built by code from the configured methods (never a dump of every number).
-  if (ctx.paymentShareable && !state.soldOutFocus && (state.stage === 'cierre' || (state.stage === 'metodo_pago' && !state.chosenMethod))) {
+  // Verifier r1 #5: an agent set to pay after data asks the method only once the data is in.
+  const dataFirst = ctx.dataThenPay === true && state.stage === 'cierre' && !state.dataReceived && !state.dataGiven
+  if (ctx.paymentShareable && !state.soldOutFocus && !dataFirst && (state.stage === 'cierre' || (state.stage === 'metodo_pago' && !state.chosenMethod))) {
     lines.push(`Pregunta de pago (usala tal cual, en su propio mensaje): «${salesMethodQuestion(ctx)}»`)
   }
   if (closingFor(state) && !ctx.paymentShareable) {
@@ -1180,7 +1287,7 @@ export function salesDataListFirst(
   inboundText: string,
   ctx?: Pick<SalesContext, 'shippingMethods'> | null,
 ): 'shipping' | 'pickup' | null {
-  if (!DATA_LIST_STAGES.has(state.stage) || state.said.payment || state.said.order || state.said.howToBuy) return null
+  if (state.dataReceived || !DATA_LIST_STAGES.has(state.stage) || state.said.payment || state.said.order || state.said.howToBuy) return null
   const outbound = history.filter((m) => m.direction === 'outbound').map((m) => m.content || '')
   if (orderDataAsked(outbound)) return null
   const inbound = [...history.filter((m) => m.direction === 'inbound').map((m) => m.content || ''), inboundText || '']

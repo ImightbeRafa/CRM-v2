@@ -115,7 +115,9 @@ describe('nightKeepsSelling', () => {
     assert.match(turn, /burstReview: burstReview \?\? night\.review,/)
     assert.match(turn, /escalate: night\.soft \? false : llm\.escalate,/)
     assert.match(turn, /escalate = night\.soft \? false : llm\.escalate/)
-    assert.match(turn, /needsHuman = night\.soft \? false :/)
+    // 2026-11-05: the data-echo rescue (code line, no hand-off) clears needsHuman too, live and Probar alike.
+    assert.match(turn, /needsHuman = night\.soft \|\| probarEchoRescued \? false :/)
+    assert.match(turn, /needsHuman: night\.soft \|\| echoRescued \? false : needsHuman,/)
     assert.equal(turn.match(/modelReason: llm\.handoff\?\.kind === 'handoff' \? llm\.escalateReason : null/g)?.length, 2)
     assert.equal(turn.match(/isComplaint: isComplaintText/g)?.length, 2)
   })

@@ -39,6 +39,11 @@ export type SalesRules = {
   promo: AgentPromo
   /** Owner's combos at a fixed total (quoted only as listed). Optional so older callers keep compiling. */
   bundles?: SalesRuleBundle[]
+  /**
+   * Pura Sonrisa 2026-11-05: 'pay' = once the customer sends the order data, the agent thanks, says the total and asks
+   * the payment method (sales-state DATA_IN_STEP). Missing = the prompt decides (e.g. "el equipo revisa tu pedido").
+   */
+  afterData?: 'pay'
 }
 /** shippingIncluded: the owner says this combo's total already includes shipping (never inferred from a threshold). */
 export type SalesRuleBundle = { name: string; price: number; shippingIncluded: boolean }
@@ -139,6 +144,7 @@ export function parseSalesRules(raw: unknown): SalesRules {
     neverSay: list(r.neverSay, 10, 200),
     promo: parsePromo(r.promo),
     bundles: parseBundles(r.bundles),
+    ...(r.afterData === 'pay' ? { afterData: 'pay' as const } : {}),
   }
 }
 

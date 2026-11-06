@@ -137,7 +137,7 @@ async function markFailed(flagId: string, index: number, campaignId: string, con
 export async function followUpSkipReason(
   tenantId: string,
   conv: { id: string; aiMode: string | null; tags: string[]; status: string | null },
-  opts: { sinpeReminder?: boolean } = {},
+  opts: { sinpeReminder?: boolean; payPending?: boolean } = {},
 ): Promise<string | null> {
   if (conv.aiMode === 'human' || conv.aiMode === 'paused' || conv.aiMode === 'human_takeover') return 'person_or_paused'
   if (!NUDGE_STATUSES.has(conv.status || '')) return 'stage_not_deciding'
@@ -174,7 +174,9 @@ export async function followUpSkipReason(
   // Verifier 2026-10-28: never over a named later date ("espero la quincena y le hago el sinpe").
   const reminder =
     stateSkip === 'payment_details_sent' && opts.sinpeReminder === true && followUpSlot(recent) === 'sinpe_reminder' && !customerNamedLaterDate(recent)
-  if (stateSkip && !reminder) return stateSkip
+  // Pura Sonrisa 2026-11-05: data given and the agent asked how to pay → only an arm with a pay_pending text nudges.
+  const payPending = stateSkip === 'data_given' && opts.payPending === true && followUpSlot(recent, true, { payPending: true }) === 'pay_pending'
+  if (stateSkip && !reminder && !payPending) return stateSkip
   if (recent.some((m) => m.direction === 'outbound' && (m.metadata as { followUp?: unknown } | null)?.followUp)) return 'already_followed_up'
   // Verifier (auto-renew): one nudge per chat EVER, not only within its last 30 messages (rounds renew every 48 h).
   if (await followedUpBefore(tenantId, conv.id)) return 'already_followed_up'
@@ -182,14 +184,14 @@ export async function followUpSkipReason(
 }
 
 /** Follow-ups v2: the slot of a chat from its last 30 messages (newest first, like followUpSkipReason). */
-async function chatSlot(tenantId: string, conversationId: string): Promise<FollowUpSlot | null> {
+async function chatSlot(tenantId: string, conversationId: string, payPending = false): Promise<FollowUpSlot | null> {
   const recent = await prisma.chatMessage.findMany({
     where: { tenantId, conversationId },
     orderBy: { sentAt: 'desc' },
     take: 30,
     select: { direction: true, content: true, messageType: true },
   })
-  return followUpSlot(recent)
+  return followUpSlot(recent, true, { payPending })
 }
 
 /** Any follow-up ever sent in this chat (whatever round). */
@@ -450,7 +452,7 @@ async function runCampaign(
         if (stop()) return
         const variant = followUpVariant(c.id, conv.id)
         const stageTexts = c.stageTexts?.[variant]
-        if (await followUpSkipReason(tenantId, conv, { sinpeReminder: Boolean(stageTexts?.sinpe_reminder) })) {
+        if (await followUpSkipReason(tenantId, conv, { sinpeReminder: Boolean(stageTexts?.sinpe_reminder), payPending: Boolean(stageTexts?.pay_pending) })) {
           skipped.add(conv.id)
           continue
         }
@@ -473,8 +475,8 @@ async function runCampaign(
           continue
         }
         // Follow-ups v2: arm B picks the text for where the chat stopped (same last 30 messages the skip rules read).
-        const slot = stageTexts ? await chatSlot(tenantId, conv.id) : null
-        if (slot === 'sinpe_reminder' && !stageTexts?.sinpe_reminder) {
+        const slot = stageTexts ? await chatSlot(tenantId, conv.id, Boolean(stageTexts.pay_pending)) : null
+        if ((slot === 'sinpe_reminder' && !stageTexts?.sinpe_reminder) || (slot === 'pay_pending' && !stageTexts?.pay_pending)) {
           skipped.add(conv.id)
           continue
         }

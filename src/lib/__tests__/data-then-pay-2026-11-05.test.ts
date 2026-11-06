@@ -174,21 +174,76 @@ describe('data then pay: follow-up slot pay_pending', () => {
   ]
 
   it('data given + our method question last + customer quiet → pay_pending (still data_given for the skip rule)', () => {
-    assert.equal(followUpSlot(chat, false), 'pay_pending')
+    assert.equal(followUpSlot(chat, false, PP), 'pay_pending')
     assert.equal(followUpStateSkip(chat, false), 'data_given')
   })
 
   it('not pay_pending: no method question, customer answered, a later date, or payment details sent', () => {
-    assert.notEqual(followUpSlot(chat.slice(0, 4), false), 'pay_pending')
-    assert.notEqual(followUpSlot([...chat, fin('SINPE')], false), 'pay_pending')
+    assert.notEqual(followUpSlot(chat.slice(0, 4), false, PP), 'pay_pending')
+    assert.notEqual(followUpSlot([...chat, fin('SINPE')], false, PP), 'pay_pending')
     const later = [fin('Si de sandía'), fout(DATA_ASK), fin(`${DATA}\nmañana le escribo`), chat[4]]
-    assert.notEqual(followUpSlot(later, false), 'pay_pending')
-    assert.equal(followUpSlot([...chat, fout('SINPE Móvil: 6201 9914 a nombre de Rafael García')], false), 'sinpe_reminder')
+    assert.notEqual(followUpSlot(later, false, PP), 'pay_pending')
+    assert.equal(followUpSlot([...chat, fout('SINPE Móvil: 6201 9914 a nombre de Rafael García')], false, PP), 'sinpe_reminder')
   })
 
   it('pay_pending texts follow the reminder ban (no digits, money words or links)', () => {
     assert.deepEqual(parseStageTexts({ pay_pending: '¡Hola! 😁 Ya tengo tus datos. ¿Cómo preferís pagar?' }), { pay_pending: '¡Hola! 😁 Ya tengo tus datos. ¿Cómo preferís pagar?' })
     assert.equal(parseStageTexts({ pay_pending: 'Son ₡13 450, ¿me pagás?' }), undefined)
     assert.equal(parseStageTexts({ pay_pending: 'Pagá en purasonrisa.shopping' }), undefined)
+  })
+})
+
+const PP = { payPending: true }
+
+describe('data then pay: verifier r1 + SecureDog r1', () => {
+  it('#1 one-line data and the pickup pair (name + phone) after the list count', () => {
+    for (const t of ['Adrian Retana 85844314 Heredia Ulloa Lagunilla Avenida la Gardenia', 'Adrian Retana\n85844314']) {
+      const s = deriveSalesState({ history: LAURA, inboundText: t, ctx: CTX })
+      assert.equal(s.dataReceived, true, t)
+    }
+  })
+
+  it('#4 no data request yet → never the data step (even with "quiero"); a retraction after the data is not a close', () => {
+    const early = [msg('inbound', 'Hola'), msg('outbound', '¡Hola! ¿Qué te gustaría saber?')]
+    const s1 = deriveSalesState({ history: early, inboundText: 'Quiero saber si llega a Heredia, barrio Los Ángeles, mi número es 8888-1234', ctx: CTX })
+    assert.equal(s1.dataReceived, undefined)
+    const s2 = deriveSalesState({ history: LAURA, inboundText: `${DATA}\nmejor no, después le escribo`, ctx: CTX })
+    assert.equal(s2.dataReceived, undefined)
+  })
+
+  it('#2 sold-out focus → no dataReceived (no rescue, no method question)', () => {
+    const ctx = { ...CTX, stock: { soldOut: [{ name: 'Pura Sonrisa Sandia', back: null }], inStockNames: ['Pura Sonrisa Menta'] } } as unknown as SalesContext
+    const s = deriveSalesState({ history: LAURA, inboundText: `${DATA}\nla de Sandia`, ctx })
+    assert.ok(s.soldOutFocus, 'the sold-out flavor is in focus')
+    assert.equal(s.dataReceived, undefined)
+  })
+
+  it('#5 an after-data agent at the close before the data: no payment question line, the step asks total + data', () => {
+    const history = [msg('inbound', 'Hola'), msg('outbound', 'Una caja cuesta ₡10 450 más ₡3 000 de envío.')]
+    const s = deriveSalesState({ history, inboundText: 'Lo quiero, sandía con envío', ctx: CTX })
+    assert.equal(s.stage, 'cierre')
+    assert.match(s.nextStep, /Todavía NO preguntes cómo pagar/)
+    assert.ok(!formatSalesTurnBlock(CTX, s).includes('Pregunta de pago'))
+    const other = deriveSalesState({ history, inboundText: 'Lo quiero, sandía con envío', ctx: { ...CTX, dataThenPay: false } })
+    assert.ok(formatSalesTurnBlock({ ...CTX, dataThenPay: false }, other).includes('Pregunta de pago'), 'other agents unchanged')
+  })
+
+  it('#7 shape-only reasons do not stop the rescue; INT-251 separated or spanning numbers do', () => {
+    assert.ok(dataEchoRescueText({ ...BASE, reasons: ['payment_number_unsourced', 'style_too_long', 'shortened'] }))
+    for (const extra of ['SINPE al 7000–1111', 'SINPE al 7000 / 1111', 'SINPE al 7000_1111', 'SINPE al 7000·1111', 'SINPE al 7000  1111']) {
+      assert.equal(dataEchoRescueText({ ...BASE, text: `${ECHO}\n${extra}` }), null, extra)
+    }
+    assert.equal(dataEchoRescueText({ ...BASE, customerText: 'Tel 8888 1234, cédula 1 2345 6789', text: 'Tel 12341234 ¿Cómo preferís pagar?' }), null)
+    assert.ok(dataEchoRescueText({ ...BASE, text: '+506 8584-1234 ¿cómo preferís pagar?' }), '+506 / dashes of her own number still rescue')
+  })
+
+  it('INT-250: a photo or payment-like bubble next to the data → no pay_pending nudge; #11 no text → old slot', () => {
+    const withPhoto = [fin('Si de sandía'), fout(DATA_ASK), { direction: 'inbound', content: '[image]', messageType: 'image' }, fin(DATA), fout('¿Cómo preferís pagar? Tenemos SINPE Móvil y transferencia.')]
+    assert.notEqual(followUpSlot(withPhoto, false, PP), 'pay_pending')
+    const paid = [fin('Si de sandía'), fout(DATA_ASK), fin(`${DATA}\nya le hice el sinpe`), fout('¿Cómo preferís pagar? Tenemos SINPE Móvil y transferencia.')]
+    assert.notEqual(followUpSlot(paid, false, PP), 'pay_pending')
+    const ok = [fin('Si de sandía'), fout(DATA_ASK), fin(DATA), fout('¿Cómo preferís pagar? Tenemos SINPE Móvil y transferencia.')]
+    assert.equal(followUpSlot(ok, false, PP), 'pay_pending')
+    assert.notEqual(followUpSlot(ok, false), 'pay_pending', 'an arm without the text never gets the slot')
   })
 })

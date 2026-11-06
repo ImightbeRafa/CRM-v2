@@ -96,7 +96,12 @@ const SHIPPING_DETAILS_ASK_RE =
   /(?<![\p{L}])(?:nombre\s+completo|para\s+preparar\s+tu\s+pedido|me\s+pas[aá]s?(?:\s+por\s+favor)?\s*:|direcci[oó]n\s+exacta|provincia|cant[oó]n|distrito)(?![\p{L}])/iu
 
 /** Which v2 text a quiet chat gets, from its messages (any order), or null (the round's own text). */
-export function followUpSlot(messages: readonly FollowUpStateMessage[], newestFirst = true): FollowUpSlot | null {
+export function followUpSlot(
+  messages: readonly FollowUpStateMessage[],
+  newestFirst = true,
+  /** Verifier r1 #11: pay_pending is only a slot for an arm that has its text (others keep the old slot). */
+  opts: { payPending?: boolean } = {},
+): FollowUpSlot | null {
   const ordered = newestFirst ? [...messages].reverse() : [...messages]
   const history: SoftAiHistoryMessage[] = ordered.map((m, i) => ({
     id: String(i),
@@ -113,25 +118,13 @@ export function followUpSlot(messages: readonly FollowUpStateMessage[], newestFi
       if (m.direction === 'outbound' && paymentDetailsIn(m.content || '')) last = i
     })
     const after = ordered.slice(last + 1).filter((m) => m.direction === 'inbound')
-    const clean = after.every((m) => {
-      const t = m.content || ''
-      return (
-        (!m.messageType || m.messageType === 'text') &&
-        !MEDIA_LIKE_RE.test(t) &&
-        !SENT_VERB_RE.test(t) &&
-        // INT-241 r2: a later date anywhere after the details ("Mañana le escribo" then "Gracias").
-        !(!/[?¿]/u.test(t) && WAITING_DATE_RE.test(t)) &&
-        classifyPaymentText(t) === 'non_payment' &&
-        !isShortDoneBubble(t)
-      )
-    })
-    return clean ? 'sinpe_reminder' : null
+    return after.every(cleanBubble) ? 'sinpe_reminder' : null
   }
   // Prefer the most recent stage signal (newest outbound / inbound), so a price opener that later asked for size
   // nudges about size — not a generic "¿te quedó alguna duda?" after ₡.
   const lastOut = [...history].reverse().find((m) => m.direction === 'outbound')
   const lastIn = [...history].reverse().find((m) => m.direction === 'inbound')
-  if (payPendingAfterData(history)) return 'pay_pending'
+  if (opts.payPending === true && payPendingAfterData(ordered)) return 'pay_pending'
   if (lastOut && SHIPPING_DETAILS_ASK_RE.test(lastOut.content)) return 'shipping_details'
   if ((lastIn && SIZE_ASK_RE.test(lastIn.content)) || (lastOut && SIZE_ANSWER_RE.test(lastOut.content))) return 'size'
   if ((lastOut && HOW_IT_WORKS_STAGE_RE.test(lastOut.content)) || (lastIn && HOW_IT_WORKS_STAGE_RE.test(lastIn.content))) {
@@ -170,14 +163,35 @@ export function parseStageTexts(raw: unknown): Partial<Record<FollowUpSlot, stri
  * pay_pending (oldest first): the store asked for the order data, the customer sent it (bubbles joined), and the store's
  * LAST message asks how to pay — no payment details, no later date. The data request must come before the data.
  */
-function payPendingAfterData(history: readonly SoftAiHistoryMessage[]): boolean {
-  const lastOutAt = history.map((m) => m.direction).lastIndexOf('outbound')
-  if (lastOutAt < 0 || !isPaymentMethodQuestion(history[lastOutAt].content)) return false
-  if (history.slice(lastOutAt + 1).some((m) => m.direction === 'inbound')) return false
-  const askAt = history.findIndex((m) => m.direction === 'outbound' && SHIPPING_DETAILS_ASK_RE.test(m.content))
+function payPendingAfterData(ordered: readonly FollowUpStateMessage[]): boolean {
+  const content = (m: FollowUpStateMessage) => m.content || ''
+  const lastOutAt = ordered.map((m) => (m.direction === 'outbound' ? 'outbound' : 'inbound')).lastIndexOf('outbound')
+  if (lastOutAt < 0 || !isPaymentMethodQuestion(content(ordered[lastOutAt]))) return false
+  if (ordered.slice(lastOutAt + 1).some((m) => m.direction !== 'outbound')) return false
+  const askAt = ordered.findIndex((m) => m.direction === 'outbound' && SHIPPING_DETAILS_ASK_RE.test(content(m)))
   if (askAt < 0 || askAt >= lastOutAt) return false
-  const given = history.slice(askAt + 1, lastOutAt).filter((m) => m.direction === 'inbound').map((m) => m.content)
-  if (!given.some((t) => customerGaveOrderData(t)) && !customerGaveOrderData(given.join('\n'))) return false
-  const newestFirst = [...history].reverse().map((m) => ({ direction: m.direction, content: m.content }))
-  return !customerNamedLaterDate(newestFirst)
+  const bubbles = ordered.slice(askAt + 1, lastOutAt).filter((m) => m.direction !== 'outbound')
+  // SecureDog INT-250: a photo / file / "ya lo hice" / anything payment-like next to the data → no unattended nudge.
+  if (!bubbles.length || !bubbles.every(cleanBubble)) return false
+  const given = bubbles.map(content)
+  // After the data list, a one-line answer with a CR phone counts too (same rule as the sales step).
+  if (!given.some((t) => customerGaveOrderData(t) || CR_PHONE_RE.test(t)) && !customerGaveOrderData(given.join('\n'))) return false
+  return !customerNamedLaterDate([...ordered].reverse())
+}
+
+/** CR phone (8 digits, one optional separator, optional +506). */
+const CR_PHONE_RE = /(?<!\d)(?:\+?506[\s-]?)?[2-8]\d{3}[\s.-]?\d{4}(?!\d)/u
+
+/** SecureDog INT-242: a plain text bubble with nothing about paying (no photo / file, done verb, later date, claim). */
+function cleanBubble(m: FollowUpStateMessage): boolean {
+  const t = m.content || ''
+  return (
+    (!m.messageType || m.messageType === 'text') &&
+    !MEDIA_LIKE_RE.test(t) &&
+    !SENT_VERB_RE.test(t) &&
+    // INT-241 r2: a later date anywhere after the details ("Mañana le escribo" then "Gracias").
+    !(!/[?¿]/u.test(t) && WAITING_DATE_RE.test(t)) &&
+    classifyPaymentText(t) === 'non_payment' &&
+    !isShortDoneBubble(t)
+  )
 }

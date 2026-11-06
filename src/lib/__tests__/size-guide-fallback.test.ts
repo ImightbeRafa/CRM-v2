@@ -99,7 +99,8 @@ describe('size-guide wiring (agent-turn.ts)', () => {
     assert.match(block, /!ownPick\.images\.length && input\.sizeGuide && !input\.needsHuman/)
   })
   it('both live call sites pass the size guide; Probar uses the same fallback, never on a hand-off', () => {
-    assert.equal((src.match(/sizeGuide: sizeGuideKey \?/g) || []).length, 2)
+    // 2026-11-05 SecureDog INT-252: the live model path skips the guide on a rescued data echo.
+    assert.equal((src.match(/sizeGuide: sizeGuideKey (?:&& !echoRescued )?\?/g) || []).length, 2)
     assert.match(src, /!needsHuman && !fallbackUsed && !handoff && imageChannel\(account\.platform\)\s*\n\s*\? sizeGuideFallbackKey\(/)
     assert.match(src, /selectReplyImages\(\{ shortcutKey: probarGuideKey \?\? shortcutKey,/)
     assert.match(src, /replyText: input\.outputText,/)

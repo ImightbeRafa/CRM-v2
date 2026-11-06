@@ -454,8 +454,20 @@ const DATA_NO_ECHO =
  */
 const DATA_IN_STEP =
   'Respondé primero lo que preguntó (breve). El cliente YA te mandó sus datos del pedido.' +
+  ' Si todavía falta el producto / sabor o cómo lo recibe, preguntá solo eso (sin total ni pago).' +
   DATA_NO_ECHO +
   ' Agradecé en una frase corta, decí el total (precio + envío, o el precio del combo de la lista que ya trae el envío) y, en su propio mensaje, preguntá cómo prefiere pagar con la pregunta de pago de abajo. Todavía no des datos de pago.'
+
+/** Contra entrega / efectivo: the step itself asks for a short summary (product, total, name, address). */
+const DATA_NO_ECHO_SUMMARY = ' No escribas su teléfono ni su correo.'
+/**
+ * Verifier r1 #5 (agents set to pay after data): at the close BEFORE the data, no payment question in the same turn —
+ * total + the data list only; the method question comes when the data arrives (DATA_IN_STEP).
+ */
+const CIERRE_DATA_FIRST_STEP =
+  'Respondé primero lo que preguntó (breve). Si falta el producto / sabor o cómo lo recibe (envío o retiro), preguntá solo eso. Si ya está claro: decí el total (precio + envío) y pedí los datos del pedido con la lista fija de "Datos que necesita un pedido" (un dato por renglón). Todavía NO preguntes cómo pagar ni des datos de pago; si pregunta cómo pagar, nombrá los métodos en una línea y seguí con lo que falta.'
+/** A CR phone (8 digits, one optional separator, optional +506). */
+const CR_PHONE_IN_DATA_RE = /(?<!\d)(?:\+?506[\s-]?)?[2-8]\d{3}[\s.-]?\d{4}(?!\d)/u
 
 /** Customer messages since the store last wrote, plus the one being answered. */
 function customerDataSinceStore(history: SoftAiHistoryMessage[], last: string): string[] {
@@ -546,15 +558,20 @@ export function deriveSalesState(input: {
   // often come as separate bubbles); only after the store asked for the data or the customer said she wants it (never
   // "hola soy Ana, 8888-1234, ¿precio?"); never over a method question still pending (that one is answered first).
   const sinceStore = customerDataSinceStore(input.history, last)
-  const recentIn = [...input.history.filter((m) => m.direction === 'inbound').slice(-6).map((m) => m.content || ''), last]
   const dataIn =
     input.ctx.dataThenPay === true &&
     !receiptCue &&
     !said.payment &&
     !said.order &&
     !askedMethod &&
-    (orderDataAsked(ours) || recentIn.some((t) => WANT_CUE_RE.test(t))) &&
-    (sinceStore.some((t) => looksLikeOrderData(t)) || looksLikeOrderData(sinceStore.slice().reverse().join('\n')))
+    // Verifier r1 #4b: only after the store asked for the data (a want cue alone let "quiero saber si llega…, 8888-1234" in).
+    orderDataAsked(ours) &&
+    // Verifier r1 #4a: "<datos> mejor no, después le escribo" is not a close.
+    !sinceStore.some((t) => RETRACT_BUY_RE.test(t) || NEGATED_BUY_RE.test(t)) &&
+    // Verifier r1 #1: after the list, a one-line answer ("Adrian Retana 85844314 Heredia Ulloa…") or the pickup pair
+    // (name + phone) counts too: a CR phone anywhere in the burst, or the labelled / address shapes.
+    (sinceStore.some((t) => looksLikeOrderData(t) || CR_PHONE_IN_DATA_RE.test(t)) ||
+      looksLikeOrderData(sinceStore.slice().reverse().join('\n')))
 
   let stage: SalesStage
   if (receiptCue) stage = 'verificando'
@@ -599,10 +616,14 @@ export function deriveSalesState(input: {
     focus && closing
       ? SOLD_OUT_STEP
       : stage === 'metodo_pago' && chosenMethod
-        ? chosenMethodStep(input.ctx, chosenMethod) + (totalStepFits ? DATA_CHOICE_TOTAL_STEP : '') + (dataIn ? DATA_NO_ECHO : '')
+        ? chosenMethodStep(input.ctx, chosenMethod) +
+          (totalStepFits ? DATA_CHOICE_TOTAL_STEP : '') +
+          (dataIn ? (chosenMethod === 'contra_entrega' || chosenMethod === 'efectivo' ? DATA_NO_ECHO_SUMMARY : DATA_NO_ECHO) : '')
         : stage === 'cierre' && dataIn
           ? DATA_IN_STEP
-          : NEXT_STEP[stage]
+          : stage === 'cierre' && input.ctx.dataThenPay === true
+            ? CIERRE_DATA_FIRST_STEP
+            : NEXT_STEP[stage]
   // The receipt already came in after the details: a later message ("Muchas gracias") is post-sale, not "pagá y mandame el comprobante".
   if (stage === 'esperando_comprobante' && !buyCue && paidAfterDetails(input.history, paymentDetailsMsg)) {
     nextStep = PAID_STEP
@@ -623,7 +644,8 @@ export function deriveSalesState(input: {
     askedMethod,
     chosenMethod: stage === 'metodo_pago' ? chosenMethod : null,
     namedProducts,
-    ...(dataIn && stage === 'cierre' ? { dataReceived: true } : {}),
+    // Verifier r1 #2: never for a sold-out product (its own step: no total, no payment question).
+    ...(dataIn && stage === 'cierre' && !focus ? { dataReceived: true } : {}),
   }
 }
 
@@ -751,7 +773,9 @@ export function formatSalesTurnBlock(ctx: SalesContext, state: SalesState): stri
     )
   }
   // agents2-format: the method question is built by code from the configured methods (never a dump of every number).
-  if (ctx.paymentShareable && !state.soldOutFocus && (state.stage === 'cierre' || (state.stage === 'metodo_pago' && !state.chosenMethod))) {
+  // Verifier r1 #5: an agent set to pay after data asks the method only once the data is in.
+  const dataFirst = ctx.dataThenPay === true && state.stage === 'cierre' && !state.dataReceived
+  if (ctx.paymentShareable && !state.soldOutFocus && !dataFirst && (state.stage === 'cierre' || (state.stage === 'metodo_pago' && !state.chosenMethod))) {
     lines.push(`Pregunta de pago (usala tal cual, en su propio mensaje): «${salesMethodQuestion(ctx)}»`)
   }
   if (closingFor(state) && !ctx.paymentShareable) {

@@ -7,7 +7,7 @@ import type { EffectiveAgentBehavior } from '@/lib/soft-ai/agent-types'
 import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 import { reservedShortcutBody } from '@/lib/soft-ai/shortcuts'
 import { COMPLAINT_HANDOFF_LINE } from '@/lib/soft-ai/business-hours'
-import { CARD_BY_TEAM_LINE } from '@/lib/soft-ai/payment-guard'
+import { CARD_BY_TEAM_LINE, commaPaymentNumbers, LONG_NUMBER_RE } from '@/lib/soft-ai/payment-guard'
 
 export type AgentTurnOutcomeName = 'send' | 'suggest' | 'skip'
 
@@ -231,9 +231,26 @@ export function isPaymentHandoffReason(reason: string | null | undefined): boole
 
 const SAYS_HOW_TO_PAY_RE = /c[oó]mo\s+pagar|datos\s+(de|para)\s+(pago|pagar)|te\s+paso\s+c[oó]mo/i
 
-/** Every 8+ digit run (separators allowed), as digits. */
-const LONG_DIGIT_RUN_RE = /\d(?:[\s.,-]?\d){7,}/gu
+/** The echo itself + shape-only reasons (length / bubbles / data-list rewrites) — the held text never goes out. */
+const ECHO_RESCUE_REASONS: ReadonlySet<string> = new Set([
+  'payment_number_unsourced',
+  'style_too_long',
+  'shortened',
+  'unjoined',
+  'data_list',
+  'data_list_first',
+  'purchase_summary_appended',
+])
+
 const onlyDigits = (s: string) => s.replace(/\D/g, '')
+/** SecureDog INT-251: the same runs payment-guard checks (separators, +506, comma runs), as digits without +506. */
+function numberRuns(text: string): string[] {
+  const t = (text || '').normalize('NFKC')
+  return [...(t.match(LONG_NUMBER_RE) ?? []), ...commaPaymentNumbers(t)].map((r) => {
+    const d = onlyDigits(r)
+    return d.length === 11 && d.startsWith('506') ? d.slice(3) : d
+  })
+}
 
 /**
  * Pura Sonrisa 2026-11-05 (live): the customer sent her order data, the model wrote it back (her phone next to "¿Cómo
@@ -263,14 +280,16 @@ export function dataEchoRescueText(input: {
 }): string | null {
   if (!input.dataReceived || !input.methodQuestion) return null
   if (input.receiptCue || input.paymentDataByTeam || input.cardByTeam) return null
-  if (!input.reasons.length || input.reasons.some((r) => r !== 'payment_number_unsourced')) return null
+  // Verifier r1 #7: reasons about the text's shape don't matter (the model text is discarded); every other one does.
+  if (!input.reasons.includes('payment_number_unsourced') || input.reasons.some((r) => !ECHO_RESCUE_REASONS.has(r))) return null
   // Fail closed: unknown (fallback paths) counts as "the model / a tool asked for a person".
   if (input.modelAskedHuman !== false || input.toolProblem !== false || input.escalate) return null
   if (input.llmHandoff && input.llmHandoff.kind !== 'review') return null
   // Advisor: a number the customer did NOT write points to injection / hallucination → a person looks.
-  const customerDigits = onlyDigits(input.customerText || '')
-  const runs = (input.text || '').normalize('NFKC').match(LONG_DIGIT_RUN_RE) ?? []
-  if (!runs.length || runs.some((r) => !customerDigits.includes(onlyDigits(r)))) return null
+  // SecureDog INT-251: each run must be one whole number the customer wrote (never a slice spanning two of hers).
+  const customerRuns = new Set(numberRuns(input.customerText))
+  const runs = numberRuns(input.text)
+  if (!runs.length || runs.some((r) => !customerRuns.has(r))) return null
   return `¡Gracias por tus datos! 🙌\n\n${input.methodQuestion}`
 }
 

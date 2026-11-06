@@ -1895,15 +1895,17 @@ export async function executeAgentLayerTurn(
       latencyMs: llm.latencyMs,
       fallbackUsed: llm.fallbackUsed,
     },
-    needsHuman: night.soft ? false : needsHuman,
+    // Verifier r1 #8: a rescued echo is a normal answer (repeat guard, soft release) — same as Probar.
+    needsHuman: night.soft || echoRescued ? false : needsHuman,
     fallbackUsed: llm.fallbackUsed,
     // Night review: a normal answer — its images (size guide…) and the repeat guard apply.
     escalate: night.soft ? false : llm.escalate,
     // A planned safe line / hand-off text carries no images (input.handoff is set): see the image block.
-    replyShortcutKey: policy.purchaseSummaryAppended ? null : llm.shortcutKey || null,
+    // SecureDog INT-252: the discarded reply's saved-reply images never go out with the rescue line.
+    replyShortcutKey: policy.purchaseSummaryAppended || echoRescued ? null : llm.shortcutKey || null,
     shortcuts,
     replyAssets,
-    sizeGuide: sizeGuideKey ? { key: sizeGuideKey, customerText: turnCustomerText } : null,
+    sizeGuide: sizeGuideKey && !echoRescued ? { key: sizeGuideKey, customerText: turnCustomerText } : null,
     startedAt: turnStartedAt,
     afterHours: hours,
   })
@@ -3048,7 +3050,7 @@ async function runAgentTestTurnInner(input: {
     )
     handoff = plan.handoff ?? night.review
     intent = policy.intent
-    shortcutKey = planned.text !== policy.text ? null : policy.purchaseSummaryAppended ? 'sys_purchase_summary' : llm.shortcutKey || null
+    shortcutKey = planned.text !== policy.text || probarDataEchoRescue === planned.text ? null : policy.purchaseSummaryAppended ? 'sys_purchase_summary' : llm.shortcutKey || null
     highlightedAmounts = policy.highlightedAmounts
     tokens = { input: llm.inputTokens, output: llm.outputTokens, cached: llm.cachedInputTokens }
     latencyMs = llm.latencyMs
@@ -3228,6 +3230,8 @@ function turnDataEchoRescue(a: {
   cardByTeam: boolean
   customerText: string
 }): string | null {
+  // SecureDog r1 (Info): a complaint or anything payment-like in the burst keeps the review (a person looks).
+  if (isComplaintText(a.customerText) || classifyPaymentText(a.customerText) !== 'non_payment') return null
   const ctx = a.ctx
   const methodQuestion = ctx && ctx.paymentShareable && salesPaymentMethods(ctx).length > 0 ? salesMethodQuestion(ctx) : null
   return dataEchoRescueText({

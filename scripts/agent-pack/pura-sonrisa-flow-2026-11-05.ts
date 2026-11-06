@@ -70,12 +70,12 @@ export const PURA_CLOSING =
 // ---- 3. Hand-off keywords -----------------------------------------------------------------------------------------
 const TRASPASO_KEY = 'ps_traspaso'
 const DROP_KEYWORDS = new Set(['mi pedido', 'para regalo'])
-const ADD_KEYWORDS = ['dónde está mi pedido', 'donde esta mi pedido', 'estado de mi pedido', 'número de guía', 'numero de guia']
+const ADD_KEYWORDS = ['dónde está mi pedido', 'donde esta mi pedido', 'estado de mi pedido', 'número de guía', 'numero de guia', 'no me ha llegado', 'no me llegó', 'cancelar mi pedido']
 
 // ---- 4. Follow-up text --------------------------------------------------------------------------------------------
 export const PAY_PENDING_TEXTS = {
   A: '¡Hola! 😁 Ya tengo tus datos. ¿Cómo preferís pagar para dejar listo tu pedido?',
-  B: '¡Hola! 😁 Tu pedido ya está casi listo, solo falta el pago 🙌 ¿Lo pagás por SINPE Móvil o preferís otro método?',
+  B: '¡Hola! 😁 Solo falta el pago para preparar tu pedido 🙌 ¿Lo pagás por SINPE Móvil o preferís otro método?',
 } as const
 
 type Change =
@@ -101,7 +101,8 @@ async function plan(): Promise<{ changes: Change[]; errors: string[] }> {
     if (salesRulesOctets(next) > SALES_RULES_MAX_OCTETS) errors.push(`salesRules over ${SALES_RULES_MAX_OCTETS} bytes`)
     changes.push({
       kind: 'sales_rules',
-      before: { closing: salesRules.closing, afterData: salesRules.afterData },
+      // Verifier r1 #3 / SecureDog INT-253: null (not undefined, which JSON drops) so a revert really removes afterData.
+      before: { closing: salesRules.closing, afterData: (salesRules.afterData ?? null) as never },
       after: { closing: PURA_CLOSING, afterData: 'pay' },
     })
   }
@@ -154,8 +155,11 @@ async function writeRules(expect: Partial<SalesRules>, next: Partial<SalesRules>
   return prisma.$transaction(async (tx) => {
     await lockAgentForSalesRules(tx, TENANT_ID, AGENT_ID)
     const { salesRules } = await loadSalesSetup(TENANT_ID, AGENT_ID, tx, true)
-    for (const [k, v] of Object.entries(expect)) if (!sameJson(salesRules[k as keyof SalesRules], v)) return false
-    await saveSalesSetup(TENANT_ID, AGENT_ID, { salesRules: { ...salesRules, ...next } }, act.actorUserId, tx)
+    for (const [k, v] of Object.entries(expect)) if (!sameJson(salesRules[k as keyof SalesRules] ?? null, v ?? null)) return false
+    // A null in the target = remove the key: an explicit undefined wins saveSalesSetup's merge and parseSalesRules drops it.
+    const merged: Record<string, unknown> = { ...salesRules, ...next }
+    for (const [k, v] of Object.entries(next)) if (v === null) merged[k] = undefined
+    await saveSalesSetup(TENANT_ID, AGENT_ID, { salesRules: merged as Partial<SalesRules> }, act.actorUserId, tx)
     await tx.chatAgent.updateMany({ where: { id: AGENT_ID, tenantId: TENANT_ID }, data: { version: { increment: 1 }, updatedBy: act.actorUserId } })
     return true
   }, SALES_RULES_TX)
@@ -178,7 +182,32 @@ async function run(ch: Change, dir: 'after' | 'before', act: Actor): Promise<boo
     await updateShortcut({ tenantId: TENANT_ID, agentId: AGENT_ID, shortcutId: ch.shortcutId, ...act, patch: { keywords: to as string[] } })
     return true
   }
+  if (dir === 'before') return removePayPending(ch.flagId)
   return writeFollowUp(ch.flagId, ch.campaignId, from, to)
+}
+
+/**
+ * Verifier r1 #10: auto-renew stops the round and copies its texts into a new one within ~48 h, so a revert removes
+ * this script's pay_pending text from EVERY round of this agent (stopped or not) instead of restoring one round.
+ */
+async function removePayPending(flagId: string): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<Array<{ config: unknown }>>`SELECT "config" FROM "TenantFeatureFlag" WHERE "id" = ${flagId} AND "key" = ${FOLLOW_UP_FLAG} AND "tenantId" = ${TENANT_ID} FOR UPDATE`
+    const config = structuredClone((rows[0]?.config ?? { campaigns: [] }) as { campaigns: Array<Record<string, any>> })
+    let touched = 0
+    for (const c of config.campaigns) {
+      if (c.agentId !== AGENT_ID || !c.stageTexts) continue
+      for (const arm of ['A', 'B'] as const) {
+        if (c.stageTexts[arm]?.pay_pending === PAY_PENDING_TEXTS[arm]) {
+          delete c.stageTexts[arm].pay_pending
+          touched += 1
+        }
+      }
+    }
+    if (!touched) return false
+    await tx.tenantFeatureFlag.update({ where: { id: flagId }, data: { config: config as Prisma.InputJsonValue } })
+    return true
+  })
 }
 
 async function revert(path: string, act: Actor) {

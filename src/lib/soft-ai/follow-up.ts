@@ -175,7 +175,7 @@ export async function followUpSkipReason(
   const reminder =
     stateSkip === 'payment_details_sent' && opts.sinpeReminder === true && followUpSlot(recent) === 'sinpe_reminder' && !customerNamedLaterDate(recent)
   // Pura Sonrisa 2026-11-05: data given and the agent asked how to pay → only an arm with a pay_pending text nudges.
-  const payPending = stateSkip === 'data_given' && opts.payPending === true && followUpSlot(recent) === 'pay_pending'
+  const payPending = stateSkip === 'data_given' && opts.payPending === true && followUpSlot(recent, true, { payPending: true }) === 'pay_pending'
   if (stateSkip && !reminder && !payPending) return stateSkip
   if (recent.some((m) => m.direction === 'outbound' && (m.metadata as { followUp?: unknown } | null)?.followUp)) return 'already_followed_up'
   // Verifier (auto-renew): one nudge per chat EVER, not only within its last 30 messages (rounds renew every 48 h).
@@ -184,14 +184,14 @@ export async function followUpSkipReason(
 }
 
 /** Follow-ups v2: the slot of a chat from its last 30 messages (newest first, like followUpSkipReason). */
-async function chatSlot(tenantId: string, conversationId: string): Promise<FollowUpSlot | null> {
+async function chatSlot(tenantId: string, conversationId: string, payPending = false): Promise<FollowUpSlot | null> {
   const recent = await prisma.chatMessage.findMany({
     where: { tenantId, conversationId },
     orderBy: { sentAt: 'desc' },
     take: 30,
     select: { direction: true, content: true, messageType: true },
   })
-  return followUpSlot(recent)
+  return followUpSlot(recent, true, { payPending })
 }
 
 /** Any follow-up ever sent in this chat (whatever round). */
@@ -475,7 +475,7 @@ async function runCampaign(
           continue
         }
         // Follow-ups v2: arm B picks the text for where the chat stopped (same last 30 messages the skip rules read).
-        const slot = stageTexts ? await chatSlot(tenantId, conv.id) : null
+        const slot = stageTexts ? await chatSlot(tenantId, conv.id, Boolean(stageTexts.pay_pending)) : null
         if ((slot === 'sinpe_reminder' && !stageTexts?.sinpe_reminder) || (slot === 'pay_pending' && !stageTexts?.pay_pending)) {
           skipped.add(conv.id)
           continue

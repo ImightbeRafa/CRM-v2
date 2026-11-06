@@ -268,3 +268,38 @@ describe('data then pay: verifier r2', () => {
     assert.match(s.nextStep, /Si falta un dato de la lista/)
   })
 })
+
+describe('data then pay: verifier r3', () => {
+  const stalled = [...LAURA, msg('inbound', DATA), msg('outbound', 'Dame un momento y te confirmo 😊')]
+
+  it('R1: a retraction or a later date earlier after the data blocks the payment push on later turns', () => {
+    const backedOut = [...stalled, msg('inbound', 'Mejor no, después le escribo'), msg('outbound', '¡Con gusto!')]
+    assert.equal(deriveSalesState({ history: backedOut, inboundText: 'Gracias', ctx: CTX }).dataReceived, undefined)
+    const later = [...stalled, msg('inbound', 'Espero la quincena y le aviso'), msg('outbound', '¡Claro!')]
+    assert.equal(deriveSalesState({ history: later, inboundText: 'Gracias', ctx: CTX }).dataReceived, undefined)
+  })
+
+  it('R2: a new product while the method question is pending never asks the data again; the question line stays', () => {
+    const history = [...LAURA, msg('inbound', DATA), msg('outbound', '¿Cómo preferís pagar? Tenemos SINPE Móvil y transferencia.')]
+    const s = deriveSalesState({ history, inboundText: 'También quiero una de menta', ctx: CTX })
+    assert.equal(s.dataGiven, true)
+    assert.doesNotMatch(s.nextStep, /Todavía NO preguntes cómo pagar/)
+    if (s.stage === 'cierre') assert.ok(formatSalesTurnBlock(CTX, s).includes(salesMethodQuestion(CTX)))
+  })
+
+  it('R3: once the method question went out after the data, later turns do not repeat thanks + total', () => {
+    const history = [
+      ...LAURA,
+      msg('inbound', DATA),
+      msg('outbound', '¡Gracias! El total es ₡13 450.'),
+      msg('outbound', '¿Cómo preferís pagar? Tenemos SINPE Móvil y transferencia.'),
+      msg('inbound', '¿Tienen de fresa?'),
+      msg('outbound', 'Sí, tenemos Fresa 🍓'),
+      msg('inbound', '¿y de menta?'),
+      msg('outbound', 'Sí, Menta también 🌿'),
+      msg('outbound', '¿Algo más?'),
+    ]
+    const s = deriveSalesState({ history, inboundText: '¿Llega en 2 días?', ctx: CTX })
+    if (s.dataReceived) assert.match(s.nextStep, /No vuelvas a agradecer ni a repetir el total/)
+  })
+})

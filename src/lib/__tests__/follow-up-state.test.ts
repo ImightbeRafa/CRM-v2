@@ -86,7 +86,9 @@ describe('follow-ups v2: where the chat stopped (slots)', () => {
   it('the engine: arm texts per slot, the reminder only with an owner text, slot recorded on the message', () => {
     const src = readFileSync('src/lib/soft-ai/follow-up.ts', 'utf8')
     assert.match(src, /const stageTexts = c\.stageTexts\?\.\[variant\]/)
-    assert.match(src, /followUpSkipReason\(tenantId, conv, \{ sinpeReminder: Boolean\(stageTexts\?\.sinpe_reminder\) \}\)/)
+    assert.match(src, /followUpSkipReason\(tenantId, conv, \{ sinpeReminder: Boolean\(stageTexts\?\.sinpe_reminder\), payPending: Boolean\(stageTexts\?\.pay_pending\) \}\)/)
+    // Pura Sonrisa 2026-11-05: a pay_pending chat with no owner text for its arm is skipped, never the generic text.
+    assert.match(src, /slot === 'pay_pending' && !stageTexts\?\.pay_pending/)
     assert.match(src, /followUp: \{ campaignId: c\.id, variant, \.\.\.\(slot && stageTexts\?\.\[slot\] \? \{ slot \} : \{\}\) \}/)
     // The review tags and every older skip rule still run first.
     assert.ok(src.indexOf("return 'review_alert'") < src.indexOf('followUpStateSkip(recent)'))

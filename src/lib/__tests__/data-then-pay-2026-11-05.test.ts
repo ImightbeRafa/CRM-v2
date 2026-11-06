@@ -131,7 +131,7 @@ describe('data then pay: echo rescue (never "Dame un momento" for an echo)', () 
   })
 
   it('never fires: invented number, another reason, model asked a person, unknown fields, not shareable, card by team, receipt', () => {
-    const cases: Array<Partial<typeof BASE> & Record<string, unknown>> = [
+    const cases: Array<Record<string, unknown>> = [
       { text: `${ECHO}\nSINPE al 70001111` },
       { reasons: ['payment_number_unsourced', 'amount_unsourced'] },
       { reasons: [] },

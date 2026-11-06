@@ -609,7 +609,9 @@ const PRESALE_EVENT_RE = wordsRe([
   String.raw`mare[oa]d[oa]s?|ronch\p{L}*|hinch\p{L}*|v[oó]mit\p{L}*|n[aá]usea\p{L}*|sangr\p{L}*|desmay\p{L}*|mord\p{L}*|se\s+(?:tom[oó]|comi[oó]|trag[oó]|puso|meti[oó])`,
   String.raw`est[aá]\s+(?:raro|rara|mal)|estoy\s+(?:muy\s+)?mal|no\s+s[eé]\s+qu[eé]\s+hacer|ayuda|urgente|emergencia`,
   // SecureDog INT-PRE-1: crisis / child-exposure / current-symptom words, even inside a question.
-  String.raw`pastillas?|p[ií]ldoras?|sobredosis|no\s+despertar|morir\p{L}*|muert\p{L}*|matar\p{L}*|suicid\p{L}*|desaparecer|acabar\s+con|hacerme\s+da[ñn]o|vivir`,
+  String.raw`pastillas?|p[ií]ldoras?|sobredosis|no\s+despertar|morir\p{L}*|muer[oe]\p{L}*|muert\p{L}*|matar\p{L}*|suicid\p{L}*|desaparecer|acabar\s+con|hacerme\s+da[ñn]o|vivir`,
+  // SecureDog r4: crisis / injury / exposure wordings that avoided the list.
+  String.raw`para\s+siempre|volver\s+a\s+levantar\p{L}*|ya\s+no\s+estar|de\s+(?:golpe|una\s+vez)|juntos|ojos?|enc[ií]as?|quem\p{L}*|adolorid\p{L}*|presi[oó]n|sobrin\p{L}*|se\s+(?:me\s+|le\s+)?(?:l[oa]s?\s+)?(?:meti[oó]|comi[oó]|trag[oó]|tom[oó]|puso|pusieron|pic[oó])|qu[eé]\s+hago|se\s+me\s+pusieron|se\s+le\s+pusieron`,
   String.raw`beb[eé]s?|bebit\p{L}*|niñ[oa]s?|hij[oa]s?|chiquit\p{L}*|chup\p{L}*|lam[ií]\p{L}*|lami\p{L}*|trag\p{L}*|boca|embarazad\p{L}*|lactan\p{L}*`,
   String.raw`respir\p{L}*|ahog\p{L}*|pecho|coraz[oó]n|palpitac\p{L}*|acelerad\p{L}*|fiebre|ahorita|ahora\s+mismo|desde\s+ayer|me\s+cuesta`,
   // Verifier r2 #3: a symptom asked as a question ("¿Es normal que me pique…?", "¿Por qué me salen granitos?").
@@ -647,6 +649,13 @@ const AD_PRESET_SAFETY_QUESTIONS = new Set([
   'es adecuado para personas con dolores de espalda cronicos',
   'son seguros para personas con alergias',
 ])
+/** "¿Cuánto cuesta el soporte de X?" — a closed price shape, nothing else in it ("para / si / que / cuando / porque" never). */
+const AD_PRESET_SALES_RE = /^¿?\s*cu[aá]nto\s+(?:cuesta|vale|sale)n?\s+(?:el|la|los|las|un|una|cada)\s+(?:[\p{L}\d-]+\s*){1,5}\?$/iu
+const PRICE_SHAPE_BLOCK_RE = /(?<![\p{L}])(?:para|si|que|cuando|porque|por\s+qu[eé])(?![\p{L}])/iu
+export function isPlainPriceQuestion(line: string): boolean {
+  const l = line.trim()
+  return AD_PRESET_SALES_RE.test(l) && !PRICE_SHAPE_BLOCK_RE.test(l)
+}
 export function adPresetQuestionKey(line: string): string {
   return line
     .normalize('NFD')
@@ -700,8 +709,17 @@ export function presaleEscalationIsAnswer(input: {
   if (!lines.every((l) => QUESTION_LINE_RE.test(l) && /\p{L}{3,}/u.test(l))) return false
   // SecureDog INT-PRE-1: "safety" only for the exact ad questions (and still nothing above matched).
   // Live 2026-11-06 20:40Z: the customer tapped two ad questions ("¿Cuánto cuesta el soporte…?" + the back-pain one).
-  // At least one line must be the ad's health question; every other line already passed the strict checks above.
-  if (reason === 'safety' && !lines.some((l) => AD_PRESET_SAFETY_QUESTIONS.has(adPresetQuestionKey(l)))) return false
+  // SecureDog: an ALLOWLIST — every line is the ad's health question or a plain price question, and at least one is
+  // the health question (a typed question next to the chip keeps the hand-off).
+  if (
+    reason === 'safety' &&
+    !(
+      lines.some((l) => AD_PRESET_SAFETY_QUESTIONS.has(adPresetQuestionKey(l))) &&
+      lines.every((l) => AD_PRESET_SAFETY_QUESTIONS.has(adPresetQuestionKey(l)) || isPlainPriceQuestion(l))
+    )
+  ) {
+    return false
+  }
   return true
 }
 

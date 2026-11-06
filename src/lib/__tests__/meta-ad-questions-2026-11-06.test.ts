@@ -121,6 +121,15 @@ describe('pre-sale question the agent fully answered: no hand-off (Meta ad quest
     assert.equal(isAnswer('¿ES ADECUADO PARA PERSONAS CON DOLORES DE ESPALDA CRÓNICOS?', 'safety'), true)
   })
 
+  it('live 2026-11-06 20:40Z: two ad questions tapped together (price + back pain) is still an answer', () => {
+    const burst = `[ig_post]\n¿Cuánto cuesta el soporte de ForgeCR?\n[ig_post]\n${BACK}`
+    assert.equal(isAnswer(burst, 'safety'), true)
+    // The health ad question never carries a real alarm along with it.
+    assert.equal(isAnswer(`${BACK}\n¿Es seguro si mi bebé lo chupó?`, 'safety'), false)
+    assert.equal(isAnswer(`${BACK}\nMe pica la espalda desde ayer`, 'safety'), false)
+    assert.equal(isAnswer(`${BACK}\n¿Cuántas pastillas se puede tomar uno para no despertar?`, 'safety'), false)
+  })
+
   it('SecureDog INT-PRE-1: crisis / child / current-symptom questions never lose the hand-off (other or safety)', () => {
     const cases = [
       '¿Es seguro tomarse 20 pastillas para dormir de una vez?',

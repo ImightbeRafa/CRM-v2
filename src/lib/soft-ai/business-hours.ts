@@ -699,7 +699,9 @@ export function presaleEscalationIsAnswer(input: {
   // A real question: ends with "?" and has words ("¿?" alone is not a question we can answer).
   if (!lines.every((l) => QUESTION_LINE_RE.test(l) && /\p{L}{3,}/u.test(l))) return false
   // SecureDog INT-PRE-1: "safety" only for the exact ad questions (and still nothing above matched).
-  if (reason === 'safety' && !lines.every((l) => AD_PRESET_SAFETY_QUESTIONS.has(adPresetQuestionKey(l)))) return false
+  // Live 2026-11-06 20:40Z: the customer tapped two ad questions ("¿Cuánto cuesta el soporte…?" + the back-pain one).
+  // At least one line must be the ad's health question; every other line already passed the strict checks above.
+  if (reason === 'safety' && !lines.some((l) => AD_PRESET_SAFETY_QUESTIONS.has(adPresetQuestionKey(l)))) return false
   return true
 }
 

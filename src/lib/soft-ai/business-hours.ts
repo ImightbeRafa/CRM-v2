@@ -600,6 +600,117 @@ export function nightKeepsSelling<P extends NightPlan>(
   return { plan: { ...plan, handoff: null, text: promises && !saysWhen ? `${kept1}\n${afterHoursTeamLine(state.label)}` : kept1 }, review, soft: true }
 }
 
+/** The next selling step added when the kept answer ends without a question (generic: every store). */
+export const PRESALE_NEXT_STEP_LINE = '¿Te ayudo a hacer tu pedido? 😊'
+
+/** Something that HAPPENED (a symptom, a reaction, a child, "estoy mal"): never a pre-sale question. */
+const PRESALE_EVENT_RE = wordsRe([
+  String.raw`desde\s+que|me\s+(?:puse|pus[eé]|sali[oó]|salieron|dio|dieron|pic[aó]|pica|arde|ard[ií]a|duele|doli[oó]|siento|sent[ií]|mare[eé]|cay[oó])`,
+  String.raw`mare[oa]d[oa]s?|ronch\p{L}*|hinch\p{L}*|v[oó]mit\p{L}*|n[aá]usea\p{L}*|sangr\p{L}*|desmay\p{L}*|mord\p{L}*|se\s+(?:tom[oó]|comi[oó]|trag[oó]|puso|meti[oó])`,
+  String.raw`est[aá]\s+(?:raro|rara|mal)|estoy\s+(?:muy\s+)?mal|no\s+s[eé]\s+qu[eé]\s+hacer|ayuda|urgente|emergencia`,
+  // SecureDog INT-PRE-1: crisis / child-exposure / current-symptom words, even inside a question.
+  String.raw`pastillas?|p[ií]ldoras?|sobredosis|no\s+despertar|morir\p{L}*|muert\p{L}*|matar\p{L}*|suicid\p{L}*|desaparecer|acabar\s+con|hacerme\s+da[ñn]o|vivir`,
+  String.raw`beb[eé]s?|bebit\p{L}*|niñ[oa]s?|hij[oa]s?|chiquit\p{L}*|chup\p{L}*|lam[ií]\p{L}*|lami\p{L}*|trag\p{L}*|boca|embarazad\p{L}*|lactan\p{L}*`,
+  String.raw`respir\p{L}*|ahog\p{L}*|pecho|coraz[oó]n|palpitac\p{L}*|acelerad\p{L}*|fiebre|ahorita|ahora\s+mismo|desde\s+ayer|me\s+cuesta`,
+  // Verifier r2 #3: a symptom asked as a question ("¿Es normal que me pique…?", "¿Por qué me salen granitos?").
+  String.raw`me\s+(?:pique|piquen|duela|duelan|sale|salen|arda|arden|pasa|pas[oó])|despu[eé]s\s+de\s+(?:usarl|ponerm|ponérm|tomarl)\p{L}*|es\s+normal|siento|sentir|hormigue\p{L}*|entumid\p{L}*|mareos?|manchas?|granit\p{L}*|picaz[oó]n|comez[oó]n|ardor|alergia\s+a|reacci[oó]n`,
+  // Verifier r2 #2: the customer asks for a person.
+  String.raw`me\s+pas(?:an|as|e|en)\s+con|alguien\s+(?:real|del\s+equipo)|humano|una\s+persona|asesor[ae]?s?|due[ñn][oa]|encargad[oa]`,
+  // SecureDog r3 (Low): question-shaped person requests / complaints / late orders.
+  String.raw`pasar\s+con|atiend\p{L}*|atender|contest\p{L}*|respond\p{L}*|tarde|semanas?|lleg[oó]|llegaron|no\s+(?:me\s+)?(?:ha|han)\s+llegado|cu[aá]ndo\s+me\s+llega`,
+])
+
+/** Verifier r2 #2: the reply hands the customer to a person ("te paso con alguien", "le aviso al equipo"). */
+// SecureDog INT-PRE-3: wide on purpose — a false match only keeps the hand-off (the old behaviour).
+const PERSON_PROMISE_RE = new RegExp(
+  `(?<![\\p{L}])(?:${[
+    // "te escribe / te contacta / te va a llamar / te responden / te atienden / te contactarán / te escribirán"
+    String.raw`(?:te|le|les)\s+(?:(?:va|van)\s+a\s+)?(?:escrib|contact|llam|respond|atiend)\p{L}*`,
+    // first-person plural promises: "te respondemos / escribimos / contactamos / avisamos / confirmamos"
+    String.raw`(?:respondemos|escribimos|contactamos|avisamos|confirmamos)`,
+    // a hand-over: "le paso / le comenté / le dejo / le aviso / le envío …"
+    String.raw`(?:le|les)\s+(?:paso|pas[eé]|comento|coment[eé]|dejo|dej[eé]|aviso|avis[eé]|env[ií]o|envi[eé])`,
+    String.raw`te\s+paso\s+con|aviso\s+al\s+equipo`,
+    // a third party who would act
+    String.raw`due[ñn][oa]s?|encargad[oa]s?|compa[ñn]er[oa]s?|equipo|asesor\p{L}*|alguien|(?:una|otra)\s+persona`,
+  ].join('|')})(?![\\p{L}])`,
+  'iu',
+)
+export function promisesPerson(text: string): boolean {
+  return PERSON_PROMISE_RE.test(text || '')
+}
+/**
+ * SecureDog INT-PRE-1: a model "safety" escalation is kept, except for Meta's ready-made ad questions seen in production
+ * (closed list, normalized; the customer tapped the ad's question, nothing happened to anyone). Rafael 2026-11-06.
+ */
+const AD_PRESET_SAFETY_QUESTIONS = new Set([
+  'es adecuado para personas con dolores de espalda cronicos',
+  'son seguros para personas con alergias',
+])
+export function adPresetQuestionKey(line: string): string {
+  return line
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[¿?¡!.,]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+const PLACEHOLDER_LINE_RE = /^\[[a-z_]+\]$/i
+const QUESTION_LINE_RE = /\?\s*\p{Extended_Pictographic}*\s*$/u
+
+/**
+ * Rafael 2026-11-06 (an Instagram ad question, "¿Es adecuado para personas con dolores de espalda crónicos?"): Meta's
+ * ready-made ad questions got a good answer AND a model escalation (15 of 50 chats in 14 days; also "¿Son seguros para
+ * personas con alergias?", washing, price, the size guide…) → "Necesita persona", nobody was needed, the sale stopped.
+ * True only when the model's escalation can be ignored at ANY hour (the caller plans the turn as if the model had not
+ * escalated, so every code-owned review — payment data by the team, a close — still happens):
+ *  - model reason "other" or "safety", and the reply passed every check with a complete answer (no "lo reviso",
+ *    "no lo tengo", right-now person sentence);
+ *  - EVERY customer line since the store last answered is a question ("…?"), with nothing that happened (a symptom,
+ *    a reaction, a child, "estoy mal", "ayuda") and no alarm / crisis / complaint / person request;
+ *  - "safety" only when every line is one of Meta's ready-made ad questions (closed list, SecureDog INT-PRE-1);
+ *    any other model "safety" escalation always keeps the hand-off (and the night 911 line).
+ * Payments, complaints, opt-out, media, ownership and unknown reasons never qualify. Fail closed (Verifier 2026-11-06).
+ */
+export function presaleEscalationIsAnswer(input: {
+  text: string
+  textOk: boolean
+  handoff: { kind: 'handoff' | 'review'; reason: string } | null | undefined
+  modelReason?: string | null
+  customerText?: string | null
+  cannotAnswer?: (text: string) => boolean
+  isComplaint?: (text: string) => boolean
+}): boolean {
+  const h = input.handoff
+  if (!h || h.kind !== 'handoff' || h.reason !== 'escalate') return false
+  const reason = input.modelReason
+  if (reason !== 'other' && reason !== 'safety') return false
+  const text = String(input.text || '').trim()
+  if (!input.textOk || !text) return false
+  if (hasCheckPromise(text) || input.cannotAnswer?.(text) === true || promisesPerson(text)) return false
+  const cut = dropNowCheckSentences(text)
+  if (cut.dropped || cut.keptNow || cut.hedged) return false
+  const customer = String(input.customerText || '').normalize('NFKC')
+  const lines = customer.split(/\n+/).map((l) => l.trim()).filter((l) => l && !PLACEHOLDER_LINE_RE.test(l))
+  if (!lines.length) return false
+  if (customerNightNeed(customer, input.isComplaint) !== null) return false
+  if (lines.some((l) => PRESALE_EVENT_RE.test(l))) return false
+  // A real question: ends with "?" and has words ("¿?" alone is not a question we can answer).
+  if (!lines.every((l) => QUESTION_LINE_RE.test(l) && /\p{L}{3,}/u.test(l))) return false
+  // SecureDog INT-PRE-1: "safety" only for the exact ad questions (and still nothing above matched).
+  if (reason === 'safety' && !lines.every((l) => AD_PRESET_SAFETY_QUESTIONS.has(adPresetQuestionKey(l)))) return false
+  return true
+}
+
+/** The kept answer ends with the next selling step when it asks nothing — only before a close / order (reason other). */
+export function withPresaleNextStep(text: string, opts: { modelReason?: string | null; stage?: string | null; dataReceived?: boolean }): string {
+  const t = text.trim()
+  if (!t || /[?¿]/.test(t) || opts.modelReason !== 'other' || opts.dataReceived) return text
+  if (opts.stage && !['saludo', 'descubrir', 'cotizar'].includes(opts.stage)) return text
+  return `${t}\n\n${PRESALE_NEXT_STEP_LINE}`
+}
+
 /** Team alerts for a hand-off after hours: the dedupe key carries `:night-<opening unix seconds>` (quiet until then). */
 export const NIGHT_KEY_RE = /:night-(\d{9,11})$/
 
@@ -627,4 +738,15 @@ export function starterBusinessHours(): BusinessHours {
     windows: [1, 2, 3, 4, 5, 6].map((day) => ({ day, open: '08:00', close: '18:00' })),
     afterHoursNote: null,
   }
+}
+
+/** A kept pre-sale answer (no hand-off planned) ends with the next selling step when it asks nothing. Pure. */
+export function presaleDelivery<P extends NightPlan>(
+  presale: boolean,
+  opts: { modelReason?: string | null; stage?: string | null; dataReceived?: boolean },
+  plan: P,
+): P {
+  if (!presale || plan.handoff) return plan
+  const text = withPresaleNextStep(plan.text, opts)
+  return text === plan.text ? plan : { ...plan, text }
 }

@@ -12,13 +12,16 @@ import 'server-only'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { WAITING_ACK_KEY_PREFIX } from '@/lib/soft-ai/waiting-ack'
+import { SAFE_LINE } from '@/lib/soft-ai/agent-turn-outcome'
+import { AFTER_HOURS_REVIEW_PREFIX, promisesPerson } from '@/lib/soft-ai/business-hours'
+import { softReleaseReplyOk } from '@/lib/soft-ai/soft-release'
 
 // LIKE pattern: '_' escaped so only the literal prefix matches.
 const WAITING_ACK_LIKE = `${WAITING_ACK_KEY_PREFIX.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`
 
 /** The chat's latest real agent turn (delivered, not Probar, not the "ya le avisé" ack) as alias `lt`. */
 const LATEST_REAL_TURN_SQL = Prisma.sql`(
-  SELECT COALESCE(tm."sentAt", t."createdAt") AS since, t."decisionTrace" -> 'outcomeMarkers' AS om, t.intent AS intent
+  SELECT COALESCE(tm."sentAt", t."createdAt") AS since, t."decisionTrace" -> 'outcomeMarkers' AS om, t.intent AS intent, t."outputText" AS text
   FROM "ChatAgentTurn" t
   LEFT JOIN "ChatMessage" tm ON tm.id = t."triggerMessageId" AND tm."tenantId" = t."tenantId"
   WHERE t."conversationId" = c.id
@@ -183,5 +186,82 @@ export async function openAgentHandoffSince(tenantId: string, conversationId: st
     return rows[0]?.since ?? null
   } catch {
     return null
+  }
+}
+
+/**
+ * Pure: Devolver a IA may close the open hand-off only when it was a missing store fact (same allowlist as the soft
+ * release, SecureDog INT-RSM-1: "unknown_answer", or "escalate" with the model's own reason exactly "other"; older turns
+ * with no sub-reason, safety / ownership / complaint / payment / person / night hand-offs never) AND the delivered text
+ * was the agent's own answer, not a holding line.
+ */
+export function resumeClearsHandoff(turn: {
+  text: string | null
+  reason: string | null
+  subReason?: string | null
+  fallbackUsed: boolean
+  intent: string | null
+}): boolean {
+  // Verifier r2 #1: "unknown_answer" always delivers a "no lo tengo / lo confirmo" text — the question is still open.
+  if (!(turn.reason === 'escalate' && turn.subReason === 'other')) return false
+  if (turn.fallbackUsed || turn.intent === 'outage_ack') return false
+  const text = String(turn.text || '').trim()
+  if (!text) return false
+  const holding = [SAFE_LINE.review, SAFE_LINE.payment, SAFE_LINE.paymentSoon, SAFE_LINE.complaint].map((l) => String(l || '').trim())
+  if (holding.includes(text) || text.startsWith(AFTER_HOURS_REVIEW_PREFIX)) return false
+  // A reply that only stalls ("Dame un momento y te confirmo") answers nothing either.
+  if (/^(?:¡?hola!?[^\n]{0,60}?)?dame\s+un\s+momento\b/iu.test(text) && text.length < 120) return false
+  // Verifier r2 #1/#2: an admitted gap, a check promise, a stall or a promised person = the question is still open.
+  if (!softReleaseReplyOk(text) || promisesPerson(text)) return false
+  return true
+}
+
+/**
+ * "Devolver a IA" (Rafael 2026-11-06): the agent had already answered and handed the chat off, so there was no
+ * customer message left to answer — the chat went back to the agent but stayed in "Necesita persona" forever (that
+ * state reads the latest agent turn, not aiMode). When the chat is back on an answering line and its last message is
+ * ours, the open hand-off is marked handled exactly like "Respondido" (answeredThroughAt = the customer's last message,
+ * never later than the hand-off it covers): the chat leaves Necesita persona and the agent answers the customer's next
+ * message. A newer customer message / hand-off shows again. Tenant-scoped; returns whether it stamped. Never throws.
+ * Verifier 2026-11-06 (fail closed): only a MODEL hand-off ('escalate' / 'unknown_answer') whose delivered text was the
+ * agent's own answer — never a holding line ("Dame un momento…", the payment line, the after-hours line, the outage
+ * line), never a payment / complaint / order hand-off, and never when the customer wrote after it (the waiting ack
+ * "Ya le avisé al equipo" is ours but answers nothing): those stay in Necesita persona for a person.
+ */
+export async function clearOpenHandoffOnResume(input: {
+  tenantId: string
+  conversationId: string
+  userId: string | null
+}): Promise<boolean> {
+  try {
+    if (!(await answeredMarkerReady())) return false
+    const rows = await prisma.$queryRaw<
+      Array<{ since: Date | null; text: string | null; reason: string | null; sub: string | null; fallback: string | null; intent: string | null }>
+    >`
+      SELECT lt.since AS since, lt.text AS text, lt.om ->> 'handoffReason' AS reason, lt.om ->> 'handoffSubReason' AS sub,
+             lt.om ->> 'fallbackUsed' AS fallback, lt.intent AS intent
+      FROM "ChatConversation" c CROSS JOIN LATERAL ${LATEST_REAL_TURN_SQL}
+      WHERE c."tenantId" = ${input.tenantId} AND c.id = ${input.conversationId}
+        AND ${HANDOFF_MARKERS_SQL} AND NOT ${PERSON_WROTE_SINCE_SQL}`
+    const open = rows[0]
+    if (!open?.since) return false
+    if (!resumeClearsHandoff({ text: open.text, reason: open.reason, subReason: open.sub, fallbackUsed: open.fallback === 'true', intent: open.intent })) return false
+    const since = open.since
+    const at = new Date()
+    const n = await prisma.$executeRaw`
+      UPDATE "ChatConversation"
+      SET "answeredAt" = ${at},
+          "answeredByUserId" = ${input.userId},
+          "answeredThroughAt" = GREATEST(COALESCE("lastInboundAt", "lastMessageAt"), ${since}::timestamp(3)),
+          "updatedAt" = ${at}
+      WHERE id = ${input.conversationId}
+        AND "tenantId" = ${input.tenantId}
+        AND "aiMode" = 'ai_active'
+        AND "lastMessageDirection" = 'outbound'
+        AND COALESCE("lastInboundAt", "lastMessageAt") <= ${since}::timestamp(3)`
+    return n > 0
+  } catch (error) {
+    console.error('[chat unanswered] resume clear', { code: error instanceof Error ? error.name : 'error' })
+    return false
   }
 }

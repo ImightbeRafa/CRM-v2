@@ -17,6 +17,8 @@ import {
   DEFAULT_BUSINESS_HOURS,
   IN_HOURS,
   nightKeepsSelling,
+  presaleDelivery,
+  presaleEscalationIsAnswer,
   type AfterHoursState,
   type BusinessHours,
 } from '@/lib/soft-ai/business-hours'
@@ -142,7 +144,14 @@ import { decideBurstTurn } from '@/lib/soft-ai/burst-decision'
 import { listRuntimeShortcuts } from '@/lib/soft-ai/shortcut-repository'
 import { loadReplyAssets } from '@/lib/soft-ai/agent-assets'
 import { selectReplyImages, selectReplyVideo, sendableImageReplyIds, verbatimIdsBlockedByMissingImage, type ReplyImage } from '@/lib/soft-ai/reply-images'
-import { loadSizeGuideKey, sizeGuideFallbackKey } from '@/lib/soft-ai/size-guide'
+import {
+  fixSizeGuideOffer,
+  GUIDE_TEXT_RE,
+  loadSizeGuideKey,
+  sizeGuideFallbackKey,
+  sizeGuidePromptLine,
+  sizeGuideState,
+} from '@/lib/soft-ai/size-guide'
 import type { AgentAsset } from '@/lib/soft-ai/agent-assets'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import { AGENT_IMAGE_DEADLINE_MS, loadSentAgentImageShas, loadSentAgentVideoShas, sendAgentImagesOnce, sendAgentVideoOnce } from '@/lib/soft-ai/agent-media-send'
@@ -1670,7 +1679,17 @@ export async function executeAgentLayerTurn(
     knowledge,
     decision,
     // Soft release: one code-written context line (no customer text) — answer, or the stall line the gate then drops.
-    afterHoursLine: [afterHoursPromptLine(hours), softRelease ? SOFT_RELEASE_PROMPT_LINE : null].filter(Boolean).join('\n\n') || null,
+    afterHoursLine:
+      [
+        afterHoursPromptLine(hours),
+        softRelease ? SOFT_RELEASE_PROMPT_LINE : null,
+        // Rafael 2026-11-06: never offer a size guide the chat already has / gets with this reply.
+        sizeGuideKey
+          ? sizeGuidePromptLine(sizeGuideState({ guideKey: sizeGuideKey, shortcuts, assetsByShortcut: replyAssets, alreadySent: sentReplyMediaIds }))
+          : null,
+      ]
+        .filter(Boolean)
+        .join('\n\n') || null,
     salesContext: turnSalesContext,
     settledSale,
     toolCtxBase: {
@@ -1729,9 +1748,12 @@ export async function executeAgentLayerTurn(
     // Verifier round 4: "pasame los datos" … "gracias" — every customer message since the store last answered.
     paymentOptions: { ...runtimeInput.salesPaymentOptions, cardByTeam, customerText: customerTextSinceLastAnswer(history, burst.inboundText) },
   })
-  const needsHuman = policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
   // B1: what goes out is planned by code: the model reply (checked), the safe line, or the hand-off text.
   const turnCustomerText = customerTextSinceLastAnswer(history, burst.inboundText)
+  // Rafael 2026-11-06: a pre-sale question the agent fully answered (Meta's ad questions) is no hand-off at any hour —
+  // planned as if the model had not escalated, so every code-owned review still happens (shared with Probar).
+  const presale = turnPresaleIsAnswer(llm, policy, turnCustomerText)
+  const needsHuman = policy.needsHuman || (presale ? false : llm.needsHuman) || runtimeInput.salesNeedsHuman === true
   // Rafael 2026-10-25: at night an escalation / "no lo tengo" keeps the agent's answer and the chat on the agent
   // (before the safe-line cap, so a repeated night safe line still becomes a hand-off).
   // Pura Sonrisa 2026-11-05: the held echo of the customer's own data → thanks + the method question (shared with Probar).
@@ -1747,11 +1769,11 @@ export async function executeAgentLayerTurn(
     customerText: turnCustomerText,
   })
   const night = nightKeepsSelling(
-    planModelTurnDelivery({
+    presaleDelivery(presale, presaleStepOpts(runtimeInput.salesTrace, llm.escalateReason), planModelTurnDelivery({
       text: policy.text,
       textOk: llm.textOk && !policy.needsHuman,
-      llmHandoff: llm.handoff,
-      llmEscalateReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
+      llmHandoff: presale ? null : llm.handoff,
+      llmEscalateReason: presale ? null : llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
@@ -1760,7 +1782,7 @@ export async function executeAgentLayerTurn(
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
       customerText: turnCustomerText,
       dataEchoRescue,
-    }),
+    })),
     hours,
     {
       safeReview: SAFE_LINE.review,
@@ -1778,7 +1800,7 @@ export async function executeAgentLayerTurn(
   )
   const echoRescued = Boolean(dataEchoRescue) && modelPlan.text === dataEchoRescue
   const modelMarkers: OutcomeMarkers = plannedMarkers(
-    { needsHuman: night.soft || echoRescued ? false : needsHuman, fallbackUsed: llm.fallbackUsed, escalate: night.soft ? false : llm.escalate },
+    { needsHuman: night.soft || echoRescued ? false : needsHuman, fallbackUsed: llm.fallbackUsed, escalate: night.soft || presale ? false : llm.escalate },
     // The night review is recorded too: a lease reclaim settles it (review: the chat stays on the agent).
     modelPlan.handoff ?? night.review,
     llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
@@ -1795,6 +1817,7 @@ export async function executeAgentLayerTurn(
         // The held model reply stays only in the redacted trace (the customer got the planned text).
         ...(modelPlan.text !== policy.text ? { heldModelText: policy.text.slice(0, 1_000) } : {}),
         ...(echoRescued ? { dataEchoRescue: true } : {}),
+        ...(presale ? { presaleKeptSelling: llm.escalateReason || true } : {}),
       },
       modelMarkers,
     ),
@@ -1899,7 +1922,7 @@ export async function executeAgentLayerTurn(
     needsHuman: night.soft || echoRescued ? false : needsHuman,
     fallbackUsed: llm.fallbackUsed,
     // Night review: a normal answer — its images (size guide…) and the repeat guard apply.
-    escalate: night.soft ? false : llm.escalate,
+    escalate: night.soft || presale ? false : llm.escalate,
     // A planned safe line / hand-off text carries no images (input.handoff is set): see the image block.
     // SecureDog INT-252: the discarded reply's saved-reply images never go out with the rescue line.
     replyShortcutKey: policy.purchaseSummaryAppended || echoRescued ? null : llm.shortcutKey || null,
@@ -2317,6 +2340,29 @@ async function finishDeliveryOrSuggestInner(input: {
     }
   }
 
+  // Rafael 2026-11-06: the guide image is already in the chat (earlier, or going out with this reply) → the text never
+  // offers it again ("¿Querés que te pase la guía de tallas?"). Runs once, before any image is sent.
+  let guideFixDone = false
+  const fixGuideText = async (goingOutNow: string[]) => {
+    if (guideFixDone) return
+    guideFixDone = true
+    if (!input.sizeGuide || input.handoff?.kind === 'handoff' || input.escalate || !GUIDE_TEXT_RE.test(outgoingText)) return
+    const state = sizeGuideState({
+      guideKey: input.sizeGuide.key,
+      shortcuts: input.shortcuts ?? [],
+      assetsByShortcut: input.replyAssets ?? new Map(),
+      alreadySent: [...(await loadSentAgentImageShas(input.row.tenantId, input.row.conversationId)), ...goingOutNow],
+    })
+    const fixed = state === 'sent' ? fixSizeGuideOffer(outgoingText) : null
+    if (fixed?.changed) {
+      outgoingText = fixed.text
+      await prisma.chatAgentTurn.update({
+        where: { id: input.turnId },
+        data: { outputText: outgoingText, outputHash: hashSoftAiOutput(outgoingText) },
+      })
+    }
+  }
+
   // Images of the saved reply first (like a person sending the size guide, then the text). Code picks them.
   const platform = input.payload.platform || 'whatsapp'
   const textAlreadyClaimed = await prisma.chatAutomationDelivery
@@ -2378,10 +2424,13 @@ async function finishDeliveryOrSuggestInner(input: {
       ? selectReplyImages({ shortcutKey: guideKey, shortcuts: input.shortcuts ?? [], assetsByShortcut: input.replyAssets, alreadySent: guideSent })
       : ownPick
     const assets = pick.images.map((img) => byId.get(img.assetId)).filter((a): a is AgentAsset => Boolean(a))
+    // The text is fixed (and stored) BEFORE the images go out: a reclaimed job plans from the stored, fixed text.
+    await fixGuideText(assets.map((a) => a.id))
     if (assets.length) {
       await sendAgentImagesOnce(mediaCtx, assets)
     }
   }
+  await fixGuideText([])
 
   // agents2-format: the reply goes out as up to 3 messages (one per paragraph), in order, each claimed exactly once.
   const partsPlan = planReplyParts({ text: outgoingText, deliveryKey: input.row.deliveryKey, hash: hashSoftAiDeliveryContent })
@@ -2964,7 +3013,14 @@ async function runAgentTestTurnInner(input: {
       clientName: input.customerName ?? null,
       shortcuts,
       replyImageShortcutIds: probarImageReplyIds,
-      afterHoursLine: afterHoursPromptLine(probarHours),
+      afterHoursLine: await (async () => {
+        // Live parity: the size-guide context line (Rafael 2026-11-06).
+        const guideKey = imageChannel(account.platform) && replyAssets.size ? await loadSizeGuideKey(input.tenantId, runtimeAgent.id) : null
+        const guideLine = guideKey
+          ? sizeGuidePromptLine(sizeGuideState({ guideKey, shortcuts, assetsByShortcut: replyAssets, alreadySent: input.sentImageIds ?? [] }))
+          : null
+        return [afterHoursPromptLine(probarHours), guideLine].filter(Boolean).join('\n\n') || null
+      })(),
       knowledge,
       decision,
       salesContext: probarTurnSalesContext,
@@ -3026,11 +3082,13 @@ async function runAgentTestTurnInner(input: {
       cardByTeam: probarCardByTeam && (policy.paymentMethods.includes('tarjeta') || CARD_LINK_PROMISE_RE.test(policy.text)),
       customerText: customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText),
     })
+    // Live parity (Rafael 2026-11-06): a fully answered pre-sale question is no hand-off.
+    const probarPresale = turnPresaleIsAnswer(llm, policy, customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText))
     const planned = planModelTurnDelivery({
       text: policy.text,
       textOk: llm.textOk && !policy.needsHuman,
-      llmHandoff: llm.handoff,
-      llmEscalateReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
+      llmHandoff: probarPresale ? null : llm.handoff,
+      llmEscalateReason: probarPresale ? null : llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
@@ -3041,7 +3099,7 @@ async function runAgentTestTurnInner(input: {
     })
     // Live parity: at night an escalation / "no lo tengo" keeps the answer and the chat on the agent (a review).
     const probarCustomerText = customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText)
-    const night = nightKeepsSelling(planned, probarHours, { safeReview: SAFE_LINE.review, customerText: probarCustomerText, cannotAnswer: admitsCannotAnswer, isComplaint: isComplaintText, modelReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null })
+    const night = nightKeepsSelling(presaleDelivery(probarPresale, presaleStepOpts(runtimeInput.salesTrace, llm.escalateReason), planned), probarHours, { safeReview: SAFE_LINE.review, customerText: probarCustomerText, cannotAnswer: admitsCannotAnswer, isComplaint: isComplaintText, modelReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null })
     const plan = night.plan
     text = withNightIntro(
       withFirstGreeting(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), nightIntroWho(runtimeAgent, input.history ?? []), probarGreetFirst),
@@ -3056,9 +3114,9 @@ async function runAgentTestTurnInner(input: {
     latencyMs = llm.latencyMs
     // Live parity (Verifier #3): a night review is a normal answer — images, no "pasa a una persona".
     const probarEchoRescued = Boolean(probarDataEchoRescue) && plan.text === probarDataEchoRescue
-    needsHuman = night.soft || probarEchoRescued ? false : policy.needsHuman || llm.needsHuman || runtimeInput.salesNeedsHuman === true
+    needsHuman = night.soft || probarEchoRescued ? false : policy.needsHuman || (probarPresale ? false : llm.needsHuman) || runtimeInput.salesNeedsHuman === true
     fallbackUsed = llm.fallbackUsed
-    escalate = night.soft ? false : llm.escalate
+    escalate = night.soft || probarPresale ? false : llm.escalate
     policyReasons = [
       ...(policy.needsHuman ? policy.reasons : []),
       ...(runtimeInput.salesNeedsHuman === true ? ['sales_needs_human'] : []),
@@ -3115,6 +3173,19 @@ async function runAgentTestTurnInner(input: {
     text && !escalate && !notBound && !needsHuman && !fallbackUsed && imageChannel(account.platform)
       ? selectReplyVideo({ shortcutKey, shortcuts, assetsByShortcut: replyAssets, alreadySent: input.sentImageIds })
       : null
+  // Live parity (Rafael 2026-11-06): the guide is in the chat (earlier or with this reply) → no "¿Querés la guía?".
+  if (text && !escalate && handoff?.kind !== 'handoff' && imageChannel(account.platform) && GUIDE_TEXT_RE.test(text)) {
+    const guideKey = await loadSizeGuideKey(input.tenantId, runtimeAgent.id)
+    const state = guideKey
+      ? sizeGuideState({
+          guideKey,
+          shortcuts,
+          assetsByShortcut: replyAssets,
+          alreadySent: [...(input.sentImageIds ?? []), ...images.map((img) => img.assetId)],
+        })
+      : 'none'
+    if (state === 'sent') text = fixSizeGuideOffer(text).text
+  }
   const toolTrace = redactAgentTrace(
     withOutcomeMarkers(
       {
@@ -3216,6 +3287,39 @@ export async function runAgentTestTurn(input: ProbarInput): Promise<ProbarResult
   } finally {
     releaseProbarSlot(input.tenantId)
   }
+}
+
+/**
+ * Rafael 2026-11-06: the model escalated a pre-sale question it fully answered (presaleEscalationIsAnswer). Only a
+ * clean model turn qualifies: no fallback, no tool problem, the model did not ask for a person in its own output, and
+ * nothing payment-like in the customer's words. Live and Probar share it.
+ */
+function turnPresaleIsAnswer(
+  llm: { textOk: boolean; fallbackUsed: boolean; modelAskedHuman?: boolean; toolProblem?: boolean; handoff: TurnHandoff | null; escalateReason?: string | null },
+  policy: { text: string; needsHuman: boolean },
+  customerText: string,
+): boolean {
+  if (llm.fallbackUsed || llm.modelAskedHuman !== false || llm.toolProblem !== false || policy.needsHuman) return false
+  if (classifyPaymentText(customerText) !== 'non_payment') return false
+  // Verifier r2 #2: same "real answer" bar as the soft release (no stall, no "no lo tengo", no check promise).
+  if (!softReleaseReplyOk(policy.text)) return false
+  return presaleEscalationIsAnswer({
+    text: policy.text,
+    textOk: llm.textOk,
+    handoff: llm.handoff,
+    modelReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
+    customerText,
+    cannotAnswer: admitsCannotAnswer,
+    isComplaint: isComplaintText,
+  })
+}
+
+/** Where the sale is, for the next-step line after a kept pre-sale answer. */
+function presaleStepOpts(
+  trace: { stage?: string | null; dataReceived?: boolean } | null | undefined,
+  modelReason: string | null | undefined,
+): { modelReason: string | null; stage: string | null; dataReceived: boolean } {
+  return { modelReason: modelReason ?? null, stage: trace?.stage ?? null, dataReceived: trace?.dataReceived === true }
 }
 
 /** dataEchoRescueText inputs from one model turn (live and Probar share it, so both plan the same text). */

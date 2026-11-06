@@ -278,7 +278,8 @@ describe('agents2-hours: turn wiring (source)', () => {
     assert.match(turn, /noteOk: \(note: string\) => !afterHoursNoteRejected\(note\),\s*composedOk: afterHoursComposedOk,/)
     assert.match(turn, /finalizePlannedText\(plan, payload, trigger\.sentAt, hours\)/)
     assert.match(turn, /finalizePlannedText\(modelPlan, payload, trigger\.sentAt, hours\)/)
-    assert.match(turn, /afterHoursLine: \[afterHoursPromptLine\(hours\), softRelease \? SOFT_RELEASE_PROMPT_LINE : null\]/)
+    // 2026-11-06: the size-guide context line joins the same code-written lines.
+    assert.match(turn, /afterHoursLine:\s*\[\s*afterHoursPromptLine\(hours\),\s*softRelease \? SOFT_RELEASE_PROMPT_LINE : null,/)
     assert.match(turn, /quietUntil: afterHours\.afterHours \? afterHours\.opensAt : null,/)
     assert.equal((turn.match(/afterHours: hours,/g) || []).length, 3)
     assert.match(turn, /hours: AfterHoursState = IN_HOURS/)

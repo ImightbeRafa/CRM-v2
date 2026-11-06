@@ -19,6 +19,7 @@ import {
 import { admitsCannotAnswer, isComplaintText, planModelTurnDelivery, SAFE_LINE } from '@/lib/soft-ai/agent-turn-outcome'
 import { fixSizeGuideOffer, SIZE_GUIDE_NEXT_QUESTION, sizeGuidePromptLine, sizeGuideState } from '@/lib/soft-ai/size-guide'
 import { resumeClearsHandoff } from '@/lib/chat-unanswered-server'
+import { classifyPaymentText, hasHardPaymentClaim } from '@/lib/soft-ai/payment-classifier'
 import type { RuntimeShortcut } from '@/lib/soft-ai/shortcuts'
 import type { AgentAsset } from '@/lib/soft-ai/agent-assets'
 
@@ -295,6 +296,38 @@ describe('size guide already in the chat: never offered again', () => {
     assert.match(src, /await fixGuideText\(\[\]\)/)
     assert.equal((src.match(/fixSizeGuideOffer\(/g) || []).length, 2)
     assert.equal((src.match(/sizeGuidePromptLine\(/g) || []).length, 2)
+  })
+})
+
+describe('Pura Sonrisa live 2026-11-06: "no he hecho el pedido" is not a payment', () => {
+  const RAQUEL = 'Hola, qué pena no he hecho el pedido y quiero saber cómo se usan las tiras blanqueadoras'
+
+  it('saying the order was NOT placed is no payment claim; real claims next to it still are', () => {
+    for (const t of [RAQUEL, 'no he hecho el pedido', 'Todavía no hice mi pedido', 'Aún no he realizado la compra']) {
+      assert.equal(classifyPaymentText(t), 'non_payment', t)
+      assert.equal(hasHardPaymentClaim(t), false, t)
+    }
+    for (const t of ['no he hecho el pedido, ya pagué', 'no he hecho el pedido pero ya hice el sinpe', 'no he hecho el pedido, adjunto comprobante', 'ya hice el pedido', 'aún no he hecho el pago']) {
+      assert.equal(hasHardPaymentClaim(t), true, t)
+    }
+  })
+
+  it('SecureDog delta: a charge / debit / done word / verify request next to it keeps the hand-off', () => {
+    for (const t of [
+      'no he hecho el pedido pero me debitaron',
+      'no he hecho el pedido, pero el BAC me rebajó',
+      'No hice ninguna compra y me sale un cargo',
+      'no hice ningún pedido, me están cobrando',
+      'no he hecho el pedido, verifiquen',
+      'no he hecho el pedido 💸',
+      'no hice el pedido, sent',
+      'no hice el pedido. Done.',
+      'no he hecho el pedido, ahí está',
+      'no he hecho el pedido pero ya le pasé la plata',
+      'no hice el pedido, les deposité',
+    ]) {
+      assert.equal(hasHardPaymentClaim(t), true, t)
+    }
   })
 })
 

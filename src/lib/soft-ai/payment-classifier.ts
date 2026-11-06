@@ -586,8 +586,31 @@ export function maskNonPaymentPhrases(value: string): string {
   // Verifier b3: "Ya llegó el mensajero, le di los 15 mil" is a cash-on-delivery claim and keeps its hand-off.
   const arrival = out.replace(DELIVERY_ARRIVAL_RE, ' ')
   if (arrival !== out && (!arrival.replace(FRIENDLY_RE, '').replace(/[\s,.!¡¿?…]+/gu, '') || isCourtesyText(arrival))) out = arrival
+  // Rafael 2026-11-06 (Pura Sonrisa live): "Hola, qué pena no he hecho el pedido y quiero saber cómo se usan las tiras"
+  // got the payment hand-off — "hecho" read as done. Saying the order was NOT placed yet is blanked only when nothing
+  // left in the bubble is money / a payment state ("no he hecho el pedido, ya pagué" keeps its hand-off).
+  const notOrdered = out.replace(NOT_ORDERED_YET_RE, ' ')
+  // SecureDog delta 2026-11-06: also no done word, no charge / debit / "verifiquen", no 💸 and no foreign payment state
+  // ("no he hecho el pedido pero me debitaron", "no hice el pedido, sent").
+  if (
+    notOrdered !== out &&
+    !PAYMENT_NOUN_ANY_RE.test(notOrdered) &&
+    !hasPaymentStatusHint(notOrdered) &&
+    !hasPastOrDoneWord(notOrdered, false) &&
+    !NOT_ORDERED_MONEY_HINT_RE.test(notOrdered) &&
+    !hasForeignPaymentState(notOrdered)
+  ) {
+    out = notOrdered
+  }
   return out
 }
+
+const NOT_ORDERED_MONEY_HINT_RE =
+  /(?<![\p{L}])(?:cobr\p{L}*|cargo\p{L}*|debit\p{L}*|rebaj\p{L}*|descont\p{L}*|verifi\p{L}*|ah[ií]\s+est[aá])(?![\p{L}])|[\u{1F4B8}\u{1F911}]/iu
+
+/** "no he hecho el pedido", "todavía no hice mi pedido", "aún no he realizado la compra" (never a payment word). */
+const NOT_ORDERED_YET_RE =
+  /(?<![\p{L}])(?:(?:a[uú]n|todav[ií]a)\s+)?no\s+(?:(?:he|hemos|lo\s+he)\s+(?:hecho|realizado|completado)|hice|hicimos|realic[eé]|realizamos)\s+(?:el|mi|un|una|la|ning[uú]n|ninguna|nuestro)\s+(?:pedido|compra|orden)(?![\p{L}])/giu
 
 /**
  * DeepSleep 2026-11-03: a future "le/te paso el comprobante" next to asking for the SINPE number is a how-to-pay

@@ -455,6 +455,7 @@ const DATA_NO_ECHO =
 const DATA_IN_STEP =
   'Respondé primero lo que preguntó (breve). El cliente YA te mandó sus datos del pedido.' +
   ' Si todavía falta el producto / sabor o cómo lo recibe, preguntá solo eso (sin total ni pago).' +
+  ' Si falta un dato de la lista (por ejemplo la dirección o el nombre), pedí solo ese dato, sin total ni pago.' +
   DATA_NO_ECHO +
   ' Agradecé en una frase corta, decí el total (precio + envío, o el precio del combo de la lista que ya trae el envío) y, en su propio mensaje, preguntá cómo prefiere pagar con la pregunta de pago de abajo. Todavía no des datos de pago.'
 
@@ -468,6 +469,16 @@ const CIERRE_DATA_FIRST_STEP =
   'Respondé primero lo que preguntó (breve). Si falta el producto / sabor o cómo lo recibe (envío o retiro), preguntá solo eso. Si ya está claro: decí el total (precio + envío) y pedí los datos del pedido con la lista fija de "Datos que necesita un pedido" (un dato por renglón). Todavía NO preguntes cómo pagar ni des datos de pago; si pregunta cómo pagar, nombrá los métodos en una línea y seguí con lo que falta.'
 /** A CR phone (8 digits, one optional separator, optional +506). */
 const CR_PHONE_IN_DATA_RE = /(?<!\d)(?:\+?506[\s-]?)?[2-8]\d{3}[\s.-]?\d{4}(?!\d)/u
+
+/** Customer messages after the store's last data request (oldest first) plus the one being answered; null = never asked. */
+function customerDataSinceDataAsk(history: SoftAiHistoryMessage[], last: string): string[] | null {
+  let ask = -1
+  history.forEach((m, i) => {
+    if (m.direction === 'outbound' && orderDataAsked([m.content || ''])) ask = i
+  })
+  if (ask < 0) return null
+  return [...history.slice(ask + 1).filter((m) => m.direction === 'inbound').map((m) => m.content || ''), last].filter((t) => t.trim())
+}
 
 /** Customer messages since the store last wrote, plus the one being answered. */
 function customerDataSinceStore(history: SoftAiHistoryMessage[], last: string): string[] {
@@ -558,6 +569,10 @@ export function deriveSalesState(input: {
   // often come as separate bubbles); only after the store asked for the data or the customer said she wants it (never
   // "hola soy Ana, 8888-1234, ¿precio?"); never over a method question still pending (that one is answered first).
   const sinceStore = customerDataSinceStore(input.history, last)
+  // Verifier r2 N1 / N2: the data counts from the store's LAST data request on, not only since the store last wrote —
+  // after "Dame un momento" or a sabor question, "¿Cómo te pago?" / "Menta" must still get the total + method question.
+  // (No method question pending and no payment details: both checked below.)
+  const sinceAsk = customerDataSinceDataAsk(input.history, last)
   const dataIn =
     input.ctx.dataThenPay === true &&
     !receiptCue &&
@@ -565,13 +580,12 @@ export function deriveSalesState(input: {
     !said.order &&
     !askedMethod &&
     // Verifier r1 #4b: only after the store asked for the data (a want cue alone let "quiero saber si llega…, 8888-1234" in).
-    orderDataAsked(ours) &&
+    sinceAsk !== null &&
     // Verifier r1 #4a: "<datos> mejor no, después le escribo" is not a close.
     !sinceStore.some((t) => RETRACT_BUY_RE.test(t) || NEGATED_BUY_RE.test(t)) &&
     // Verifier r1 #1: after the list, a one-line answer ("Adrian Retana 85844314 Heredia Ulloa…") or the pickup pair
-    // (name + phone) counts too: a CR phone anywhere in the burst, or the labelled / address shapes.
-    (sinceStore.some((t) => looksLikeOrderData(t) || CR_PHONE_IN_DATA_RE.test(t)) ||
-      looksLikeOrderData(sinceStore.slice().reverse().join('\n')))
+    // (name + phone) counts too: a CR phone anywhere, or the labelled / address shapes.
+    (sinceAsk.some((t) => looksLikeOrderData(t) || CR_PHONE_IN_DATA_RE.test(t)) || looksLikeOrderData(sinceAsk.join('\n')))
 
   let stage: SalesStage
   if (receiptCue) stage = 'verificando'

@@ -182,7 +182,7 @@ async function run(ch: Change, dir: 'after' | 'before', act: Actor): Promise<boo
     await updateShortcut({ tenantId: TENANT_ID, agentId: AGENT_ID, shortcutId: ch.shortcutId, ...act, patch: { keywords: to as string[] } })
     return true
   }
-  if (dir === 'before') return removePayPending(ch.flagId)
+  if (dir === 'before') return removePayPending(ch.flagId, ch.after as Record<'A' | 'B', Record<string, string> | undefined>)
   return writeFollowUp(ch.flagId, ch.campaignId, from, to)
 }
 
@@ -190,7 +190,7 @@ async function run(ch: Change, dir: 'after' | 'before', act: Actor): Promise<boo
  * Verifier r1 #10: auto-renew stops the round and copies its texts into a new one within ~48 h, so a revert removes
  * this script's pay_pending text from EVERY round of this agent (stopped or not) instead of restoring one round.
  */
-async function removePayPending(flagId: string): Promise<boolean> {
+async function removePayPending(flagId: string, applied: Record<'A' | 'B', Record<string, string> | undefined>): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<Array<{ config: unknown }>>`SELECT "config" FROM "TenantFeatureFlag" WHERE "id" = ${flagId} AND "key" = ${FOLLOW_UP_FLAG} AND "tenantId" = ${TENANT_ID} FOR UPDATE`
     const config = structuredClone((rows[0]?.config ?? { campaigns: [] }) as { campaigns: Array<Record<string, any>> })
@@ -198,7 +198,7 @@ async function removePayPending(flagId: string): Promise<boolean> {
     for (const c of config.campaigns) {
       if (c.agentId !== AGENT_ID || !c.stageTexts) continue
       for (const arm of ['A', 'B'] as const) {
-        if (c.stageTexts[arm]?.pay_pending === PAY_PENDING_TEXTS[arm]) {
+        if (applied?.[arm]?.pay_pending && c.stageTexts[arm]?.pay_pending === applied[arm]?.pay_pending) {
           delete c.stageTexts[arm].pay_pending
           touched += 1
         }

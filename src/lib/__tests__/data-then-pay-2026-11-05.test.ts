@@ -247,3 +247,24 @@ describe('data then pay: verifier r1 + SecureDog r1', () => {
     assert.notEqual(followUpSlot(ok, false), 'pay_pending', 'an arm without the text never gets the slot')
   })
 })
+
+describe('data then pay: verifier r2', () => {
+  it('N1: data → "Dame un momento" → "¿Cómo te pago?" still gets the total + method question (never the list again)', () => {
+    const history = [...LAURA, msg('inbound', DATA), msg('outbound', 'Dame un momento y te confirmo 😊')]
+    const s = deriveSalesState({ history, inboundText: '¿Cómo te pago?', ctx: CTX })
+    assert.equal(s.stage, 'cierre')
+    assert.equal(s.dataReceived, true)
+    assert.ok(formatSalesTurnBlock(CTX, s).includes(salesMethodQuestion(CTX)))
+  })
+
+  it('N2: data → sabor question → "Menta" comes back to the total + method question', () => {
+    const history = [...LAURA, msg('inbound', DATA), msg('outbound', '¡Gracias! ¿Qué sabor preferís?')]
+    const s = deriveSalesState({ history, inboundText: 'Menta', ctx: CTX })
+    assert.equal(s.dataReceived, true)
+  })
+
+  it('N3: the step asks only for a missing field', () => {
+    const s = deriveSalesState({ history: LAURA, inboundText: '85844314', ctx: CTX })
+    assert.match(s.nextStep, /Si falta un dato de la lista/)
+  })
+})

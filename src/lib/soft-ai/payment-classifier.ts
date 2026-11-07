@@ -231,12 +231,20 @@ function hasPastOrDoneWord(segment: string, question: boolean): boolean {
     if ((m.index ?? 0) > 0 && /^\p{Lu}/u.test(w)) continue
     // Rafael 2026-11-06 (live): "José Andrés Quesada Rojas" opening the order data — a capitalised word
     // followed on the same line by another capitalised word is a full name, also as the first word.
-    if (/^\p{Lu}/u.test(w) && /^[ \t]+\p{Lu}\p{Ll}/u.test(s.slice((m.index ?? 0) + w.length))) continue
+    // Verifier 2026-11-06: never for a payment verb ("Envió Mi Esposo", "Mandó Mi Esposa", "Pasó Mi Hijo").
+    if (
+      /^\p{Lu}/u.test(w) &&
+      !PAY_VERB_STEM_RE.test(lw) &&
+      /^[ \t]+\p{Lu}\p{Ll}/u.test(s.slice((m.index ?? 0) + w.length))
+    ) continue
     if (/r[éá]$/u.test(lw) && !PAST_RE_WORDS.has(lw)) continue
     return true
   }
   return false
 }
+
+/** Stems of verbs that can name a payment ("envió", "mandó", "pasó", "pagó", "giró", "depositó", "canceló"…). */
+const PAY_VERB_STEM_RE = /^(?:envi|mand|pas|pag|gir|tir|deposit|transf|abon|cancel|realic|realiz|cubr|complet|termin|liquid|met|sinp|simp|hic|hiz)/u
 
 const PRICE_COSTO_TYPO_RE = /(?<![\p{L}])(qu[eé]|cu[aá]nto|el|su|un|ese|este)\s+cost[oó](?![\p{L}])/giu
 
@@ -1762,6 +1770,13 @@ function noPaymentTalk(part: string): boolean {
 }
 
 /** One non-choice part, read against the ALLOWLIST (label + value, phone, delivery phrase, courtesy). */
+/** "Ana Mora Rojas", "San José", "Alajuela", "María de los Ángeles Soto": capitalised words + a few connectors. */
+const UNLABELED_NAME_OR_PLACE_RE =
+  /^\p{Lu}[\p{Ll}'´-]+(?:\s+(?:(?:de|del|la|las|los|y)\s+)?\p{Lu}[\p{Ll}'´-]+){0,5}$/u
+/** An address line names a place relation: "Del súper 200 sur", "100 m norte de la iglesia", "Casa 12, Barrio X". */
+const UNLABELED_ADDRESS_RE =
+  /(?<![\p{L}])(?:\d+\s*(?:m|mts|metros|varas|km)|metros|varas|sur|norte|este|oeste|frente|contiguo|diagonal|costado|esquina|avenida|ave|calle|casa|barrio|residencial|condominio|apartamento|apto|edificio|urbanizaci[oó]n|lote|carretera|ruta|kil[oó]metro|port[oó]n|iglesia|escuela|plaza|parque|super|s[uú]per|supermercado|gasolinera|bomba|pulper[ií]a)(?![\p{L}])/iu
+
 function isOrderDataPart(raw: string): boolean {
   const part = raw.replace(/[\s.!,;]+$/u, '').trim()
   if (!part) return true
@@ -1769,9 +1784,15 @@ function isOrderDataPart(raw: string): boolean {
   if (DATA_PHONE_RE.test(part) || DATA_DELIVERY_RE.test(part) || isCourtesyText(part)) return true
   const m = DATA_LABEL_LINE_RE.exec(part)
   // Rafael 2026-11-06 (close flow: the agent asks the data AND the method together, so "Luis Soto / 87776655 /
-  // luis@gmail.com / Sinpe" comes as one message): an UNLABELED line is judged exactly like a labeled one — an e-mail
-  // as "Correo:", anything else as "Dirección:" (every value check below: money, glued / chunked claims, word cap).
-  if (!m) return DATA_EMAIL_RE.test(part) || (!/^\s*(?:direcci[oó]n)\s*[:=\-–]/iu.test(part) && isOrderDataPart(`Dirección: ${part}`))
+  // luis@gmail.com / Sinpe" comes as one message). An UNLABELED line counts only in a known shape (Verifier 2026-11-06:
+  // never free text — "la primera parte", "Terminé", "Giró mi esposo"): an e-mail, a name / place (capitalised words
+  // only, no past verb), or an address with an address word; then every value check of a labelled "Dirección:".
+  if (!m) {
+    if (DATA_EMAIL_RE.test(part)) return true
+    if (!UNLABELED_NAME_OR_PLACE_RE.test(part) && !UNLABELED_ADDRESS_RE.test(part)) return false
+    if (hasPastOrDoneWord(part, false)) return false
+    return !/^\s*(?:direcci[oó]n)\s*[:=\-–]/iu.test(part) && isOrderDataPart(`Dirección: ${part}`)
+  }
   const label = foldChoice(m[1])
   const v = m[2].trim()
   if (/^(?:tel|cel|whats|wsp)/u.test(label)) return DATA_PHONE_RE.test(v)
@@ -1951,6 +1972,8 @@ export function isPlainOrderData(text: string): boolean {
   if (!value.trim() || value.length > DATA_CHOICE_MAX_CHARS || /[?¿]/u.test(value)) return false
   const lines = value.split('\n').map((l) => l.trim()).filter(Boolean)
   if (lines.length < 2 || !lines.every((l) => isOrderDataPart(l))) return false
+  // Real order data carries a contact: a CR phone or an e-mail (Verifier 2026-11-06: "Ana Mora / Terminé" is not data).
+  if (!/(?<!\d)(?:\+?506[\s-]?)?[2-8]\d{3}[\s.-]?\d{4}(?!\d)|[^\s@]+@[^\s@]+\.[a-z]{2,}/iu.test(value)) return false
   if (embeddedPaymentChoice(value) !== null) return false
   // The same whole-message status / claim / debt checks embeddedPaymentChoice runs ("ya está", "hoy en la mañana",
   // "falta el resto", "le debo la mitad", "verifiquen"): any of them → not plain data (fail closed).

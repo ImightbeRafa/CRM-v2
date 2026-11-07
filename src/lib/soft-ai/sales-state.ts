@@ -83,6 +83,8 @@ export type SalesContext = {
   stock?: Omit<StockGuard, 'focus'>
   /** salesRules.afterData === 'pay': order data received → total + method question (DATA_IN_STEP). */
   dataThenPay?: boolean
+  /** salesRules.closeWithPay (Rafael 2026-11-06, first agent only): the close cue below is on for this agent. */
+  closeWithPay?: boolean
 }
 
 export type SalesStage =
@@ -117,6 +119,8 @@ export type SalesState = {
   dataReceived?: boolean
   /** salesRules.afterData = pay: order data given since the last data request (even with a method question pending). */
   dataGiven?: boolean
+  /** The receipt / payment already came in after the payment details (PAID_STEP): post-sale. */
+  paid?: boolean
 }
 
 /** A method the customer can pick (efectivo is its own method when configured; otherwise it means contra entrega). */
@@ -497,8 +501,16 @@ const LATER_OR_NO_MONEY_RE =
   /(?<![\p{L}])(?:quincena|fin\s+de\s+mes|aguinaldo|cuando\s+(?:me\s+)?paguen|no\s+tengo\s+(?:plata|platica|dinero)|ahorita\s+no|(?:la\s+)?(?:otra|pr[oó]xima)\s+semana|(?:ma[nñ]ana|luego|despu[eé]s|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\s+(?:(?:yo\s+)?(?:le|te|les)\s+)?(?:escribo|aviso|confirmo|hablo|pago|compro)|(?:le|te|les)\s+(?:escribo|aviso|confirmo)\s+(?:ma[nñ]ana|luego|despu[eé]s))(?![\p{L}])/iu
 
 /** The customer picks how to receive it or says the data is coming ("envío a domicilio", "Ya te paso la dirección"). */
+/**
+ * Verifier 2026-11-06: a STATEMENT choosing how to receive it ("Me sirve más la mensajería privada", "Prefiero envío a
+ * domicilio", "Retiro con cita" as the whole message) or saying the data is coming ("Ya te paso la dirección"). A bare
+ * "a domicilio" / "por correos" inside a longer message is not enough (CR chats drop the "?").
+ */
 const CLOSE_CUE_RE =
-  /(?<![\p{L}])(?:(?:env[ií]o|enviar\p{L}*|entrega)\s+a\s+(?:domicilio|la\s+casa|mi\s+casa)|a\s+domicilio|(?:por|con)\s+(?:mensajer[ií]a|correos)|(?:me\s+sirve|prefiero|mejor)\s+(?:m[aá]s\s+)?(?:la\s+)?(?:mensajer[ií]a|el\s+env[ií]o|correos|retir\p{L}*)|retiro\s+con\s+cita|(?:ya\s+)?(?:te|le|les)\s+(?:paso|mando|env[ií]o|escribo)\s+(?:la\s+direcci[oó]n|los\s+datos|mis\s+datos)|(?:ah[ií]|ac[aá]|aqu[ií])\s+(?:van|est[aá]n|te\s+(?:paso|mando))\s+(?:los\s+|mis\s+)?datos)(?![\p{L}])/iu
+  /^(?:(?:ok|ok[,.]?\s*|dale[,.]?\s*|listo[,.]?\s*|perfecto[,.]?\s*|s[ií][,.]?\s*)?(?:(?:me\s+sirve|prefiero|mejor|quiero|lo\s+quiero|ser[ií]a|que\s+sea|elijo)\s+(?:m[aá]s\s+)?(?:(?:la|el|por|con|a)\s+)?(?:mensajer[ií]a(?:\s+privada)?|env[ií]o(?:\s+a\s+(?:domicilio|la\s+casa|mi\s+casa))?|domicilio|correos|retir\p{L}*(?:\s+con\s+cita)?)|(?:env[ií]o|entrega)\s+a\s+(?:domicilio|la\s+casa|mi\s+casa)|a\s+domicilio|por\s+(?:mensajer[ií]a(?:\s+privada)?|correos)|retiro(?:\s+con\s+cita)?|(?:ya\s+)?(?:te|le|les)\s+(?:paso|mando|env[ií]o|escribo)\s+(?:la\s+direcci[oó]n|los\s+datos|mis\s+datos)|(?:ah[ií]|ac[aá]|aqu[ií])\s+(?:van|est[aá]n|te\s+(?:paso|mando))\s+(?:los\s+|mis\s+)?datos))[\s.!,😊🙌👍]*$/iu
+/** Never a close: a "no", a question word or a price question typed without "?". */
+const CLOSE_CUE_BLOCK_RE =
+  /(?<![\p{L}])(?:no|nunca|tampoco|cu[aá]nto|cu[aá]l|c[oó]mo|d[oó]nde|cu[aá]ndo|hacen|tienen|hay|precio|sale|cuesta|vale)(?![\p{L}])/iu
 
 /** Thanks + total were already said after the data: only answer and ask the method again (Verifier r3 R3). */
 const DATA_IN_AGAIN_STEP =
@@ -620,11 +632,21 @@ export function deriveSalesState(input: {
   // The close also starts when the customer picks how to receive it / says the data is coming (a statement, not a
   // question), or once the store asked for the order data — never over a retraction, a "no", a later date or no money.
   const noBackOff = (texts: string[]) => !texts.some((t) => RETRACT_BUY_RE.test(t) || NEGATED_BUY_RE.test(t) || LATER_OR_NO_MONEY_RE.test(t))
+  // Verifier 2026-11-06: only for an agent with salesRules.closeWithPay and payment details shareable by chat; after our
+  // request only when the reply IS order data (a phone / the data shapes) within a few messages; a delivery cue only as
+  // a statement after a quote, never with a "no", a question word or "cuánto".
   const closeCue =
+    input.ctx.closeWithPay === true &&
+    input.ctx.paymentShareable === true &&
     !receiptCue &&
     !said.payment &&
     !said.order &&
-    ((ask !== null && !ask.methodAsked && noBackOff(ask.inbound)) || (!/[?¿]/u.test(last) && CLOSE_CUE_RE.test(last) && noBackOff([last])))
+    ((ask !== null &&
+      !ask.methodAsked &&
+      ask.inbound.length <= 6 &&
+      noBackOff(ask.inbound) &&
+      (ask.inbound.some((t) => looksLikeOrderData(t) || CR_PHONE_IN_DATA_RE.test(t)) || looksLikeOrderData(ask.inbound.join('\n')))) ||
+      (said.price && !/[?¿]/u.test(last) && !CLOSE_CUE_BLOCK_RE.test(last) && CLOSE_CUE_RE.test(last) && noBackOff([last])))
 
   let stage: SalesStage
   if (receiptCue) stage = 'verificando'
@@ -700,6 +722,7 @@ export function deriveSalesState(input: {
     // Verifier r1 #2: never for a sold-out product (its own step: no total, no payment question).
     ...(dataIn && stage === 'cierre' && !focus ? { dataReceived: true } : {}),
     ...(dataGiven ? { dataGiven: true } : {}),
+    ...(nextStep === PAID_STEP ? { paid: true } : {}),
   }
 }
 

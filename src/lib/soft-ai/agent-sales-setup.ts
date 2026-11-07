@@ -44,6 +44,11 @@ export type SalesRules = {
    * the payment method (sales-state DATA_IN_STEP). Missing = the prompt decides (e.g. "el equipo revisa tu pedido").
    */
   afterData?: 'pay'
+  /**
+   * Rafael 2026-11-06 (first agent only): the close also starts on a delivery-choice statement or once the customer sends
+   * the order data after our request, so the data list always goes out with the payment question. Missing = off.
+   */
+  closeWithPay?: boolean
 }
 /** shippingIncluded: the owner says this combo's total already includes shipping (never inferred from a threshold). */
 export type SalesRuleBundle = { name: string; price: number; shippingIncluded: boolean }
@@ -145,6 +150,7 @@ export function parseSalesRules(raw: unknown): SalesRules {
     promo: parsePromo(r.promo),
     bundles: parseBundles(r.bundles),
     ...(r.afterData === 'pay' ? { afterData: 'pay' as const } : {}),
+    ...(r.closeWithPay === true ? { closeWithPay: true } : {}),
   }
 }
 

@@ -252,6 +252,11 @@ async function plan(): Promise<NoWeightChange[]> {
     if (after !== null) Object.assign(patch, { [key]: after }), Object.assign(before, { [key]: live })
   }
   // Combo names (price / shipping unchanged): each rename must hit exactly one live combo, or it is already done.
+  // Boolean selling-rule switches (close-flow: closeWithPay = true). Already set → unchanged.
+  if (SET === 'close-flow' && current.closeWithPay !== true) {
+    Object.assign(patch, { closeWithPay: true }), Object.assign(before, { closeWithPay: current.closeWithPay ?? false })
+    say('  ~ salesRules.closeWithPay: false → true')
+  } else if (SET === 'close-flow') say('  = salesRules.closeWithPay: already true')
   const renames = Object.entries(EDITS.bundleRenames)
   if (renames.length) {
     const bundles = current.bundles ?? []

@@ -151,7 +151,8 @@ test('live WhatsApp images: before the text, exactly-once keys, never twice per 
   assert.match(turn, /alreadySent: await loadSentAgentImageShas\(input\.row\.tenantId, input\.row\.conversationId\)/)
   assert.match(turn, /replyShortcutKey: decision\.shortcutKey,/)
   // 2026-11-05 SecureDog INT-252: a rescued data echo sends no saved-reply image either.
-  assert.match(turn, /replyShortcutKey: policy\.purchaseSummaryAppended \|\| echoRescued \? null : llm\.shortcutKey \|\| null/)
+  // 2026-11-06 Verifier #4: nor the "Quedo a la espera del comprobante" code line (waitLine).
+  assert.match(turn, /replyShortcutKey: policy\.purchaseSummaryAppended \|\| echoRescued \|\| waitLine \? null : llm\.shortcutKey \|\| null/)
 })
 
 test('Verifier 2026-10-09: tag-only / template replies never become an empty or raw send', async () => {

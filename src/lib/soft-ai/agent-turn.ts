@@ -1930,10 +1930,10 @@ export async function executeAgentLayerTurn(
     escalate: night.soft || skipModelHandoff ? false : llm.escalate,
     // A planned safe line / hand-off text carries no images (input.handoff is set): see the image block.
     // SecureDog INT-252: the discarded reply's saved-reply images never go out with the rescue line.
-    replyShortcutKey: policy.purchaseSummaryAppended || echoRescued ? null : llm.shortcutKey || null,
+    replyShortcutKey: policy.purchaseSummaryAppended || echoRescued || waitLine ? null : llm.shortcutKey || null,
     shortcuts,
     replyAssets,
-    sizeGuide: sizeGuideKey && !echoRescued ? { key: sizeGuideKey, customerText: turnCustomerText } : null,
+    sizeGuide: sizeGuideKey && !echoRescued && !waitLine ? { key: sizeGuideKey, customerText: turnCustomerText } : null,
     startedAt: turnStartedAt,
     afterHours: hours,
   })
@@ -3322,8 +3322,9 @@ function turnPresaleIsAnswer(
 }
 
 /** Code line after the customer's plain order data once the payment details were sent (Rafael 2026-11-06). */
-export const WAITING_RECEIPT_LINE = '¡Gracias! Quedo atento al comprobante 🙌'
-const WAIT_LINE_REASONS = new Set(['payment_or_sinpe', 'payment_claim'])
+export const WAITING_RECEIPT_LINE = '¡Gracias! Quedo a la espera del comprobante 🙌'
+/** Verifier 2026-11-06: only "send the payment details" — a model payment_claim (INT-93) always keeps the hand-off. */
+const WAIT_LINE_REASONS = new Set(['payment_or_sinpe'])
 
 /**
  * Rafael 2026-11-06 close flow: the store already sent the payment details (stage esperando_comprobante) and the
@@ -3331,13 +3332,13 @@ const WAIT_LINE_REASONS = new Set(['payment_or_sinpe', 'payment_claim'])
  * payment escalation over that has nothing to act on — the reply is the code line and the chat waits for the receipt.
  * Any other reason, a fallback / tool problem, a receipt cue or anything that is not plain data keeps the hand-off.
  */
-function turnDataWhileWaitingReceipt(
+export function turnDataWhileWaitingReceipt(
   llm: { fallbackUsed: boolean; toolProblem?: boolean; handoff: TurnHandoff | null; escalateReason?: string | null },
-  trace: { stage?: string | null } | null | undefined,
+  trace: { stage?: string | null; paid?: boolean } | null | undefined,
   customerText: string,
   receiptCue: boolean,
 ): string | null {
-  if (trace?.stage !== 'esperando_comprobante' || receiptCue || llm.fallbackUsed || llm.toolProblem) return null
+  if (trace?.stage !== 'esperando_comprobante' || trace.paid || receiptCue || llm.fallbackUsed || llm.toolProblem) return null
   if (llm.handoff?.kind !== 'handoff' || !WAIT_LINE_REASONS.has(String(llm.escalateReason || ''))) return null
   return isPlainOrderData(customerText) ? WAITING_RECEIPT_LINE : null
 }

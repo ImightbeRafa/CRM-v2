@@ -199,6 +199,8 @@ describe('"Quedo a la espera del comprobante": plain data after the payment deta
     for (const l of [
       'Bac Luis Soto', 'Desde Bac', 'Banco Nacional Luis Soto', 'Titular Luis Soto', 'Remitente Luis Soto', 'Ready', 'All Set',
       'Casa 12, se lo entregue al guarda', 'Frente a la escuela, mi esposo le consigno', '100 m norte de la iglesia, le cubrio mi esposo', 'Casa 12, Dejó Juan',
+      // SecureDog r2 Lows: more banks / cooperatives / payer words.
+      'Coopealianza Luis Soto', 'Bct Luis Soto', 'Cathay Luis Soto', 'Emisor Luis Soto', 'Ordenante Luis Soto', 'Del súper 100 norte, Juan lo consigno', 'Casa 12, De Luis Soto',
     ]) {
       assert.equal(isPlainOrderData(`Ana Mora\n8888-8888\n${l}`), false, l)
       assert.equal(embeddedPaymentChoice(`Ana Mora\n8888-8888\n${l}\nPago por SINPE`), null, l)

@@ -1804,7 +1804,7 @@ const CR_ACCENTED_PLACES = new Set(['josé', 'jacó', 'tárcoles', 'colón', 'le
 
 /** Bank / payer / sender words, English done-words and clitic + verb clauses inside an unlabeled line. */
 const UNLABELED_PAY_CONTEXT_RE =
-  /(?<![\p{L}])(?:bac|bcr|bn|banco|nacional|popular|davivienda|prom[eé]rica|scotiabank|lafise|coopenae|coopeservidores|mucap|mutual|titular|remitente|desde|ready|all\s+set|done|sent|paid|ok|nombre|parte|sale\s+como|cuenta|sinpe|simpe|comprobante|transfer\p{L}*|dep[oó]sit\p{L}*|(?:se|le|les|me|te|nos)\s+(?:l[oa]s?\s+)?\p{L}{3,}|(?:mi|su|tu)\s+(?:espos[oa]|mam[aá]|pap[aá]|herman[oa]|hij[oa]|novi[oa]|pareja|jef[ea]|amig[oa]))(?![\p{L}])/iu
+  /(?<![\p{L}])(?:bac|bcr|bn|bct|banco|nacional|popular|davivienda|prom[eé]rica|scotiabank|lafise|cathay|improsa|coope\p{L}*|caja|mucap|mutual|titular|remitente|emisor|ordenante|consign\p{L}*|desde|ready|all\s+set|done|sent|paid|ok|nombre|parte|sale\s+como|cuenta|sinpe|simpe|comprobante|transfer\p{L}*|dep[oó]sit\p{L}*|(?:se|le|les|me|te|nos)\s+(?:l[oa]s?\s+)?\p{L}{3,}|(?:mi|su|tu)\s+(?:espos[oa]|mam[aá]|pap[aá]|herman[oa]|hij[oa]|novi[oa]|pareja|jef[ea]|amig[oa]))(?![\p{L}])/iu
 
 function isOrderDataPart(raw: string): boolean {
   const part = raw.replace(/[\s.!,;]+$/u, '').trim()
@@ -1822,6 +1822,8 @@ function isOrderDataPart(raw: string): boolean {
     // SecureDog 2026-11-06 INT-264: who paid / from where ("Desde Bac", "Titular Luis Soto", "Ready") or a clause
     // hidden in an address ("Casa 12, se lo entregué al guarda", "… mi esposo le consignó") is never order data.
     if (UNLABELED_PAY_CONTEXT_RE.test(part)) return false
+    // "De Luis Soto" (who it came from) at the start of the line or after a comma — case-sensitive on purpose.
+    if (/(?:^|,\s*)[Dd]e\s+\p{Lu}\p{Ll}+(?:\s+\p{Lu}\p{Ll}+)*\s*$/u.test(part)) return false
     // An accented é / í / ó word anywhere in an unlabeled line ("Casa 12, Dejó Juan") counts only as a known first
     // name, a CR place or a non-verb accent word — any other one reads as a past verb.
     for (const m of part.matchAll(/\p{L}+/gu)) {

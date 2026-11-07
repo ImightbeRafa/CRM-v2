@@ -184,7 +184,7 @@ import type { SoftAiAgentMode } from '@/lib/soft-ai/types'
 import { readSoftTenantAiConfig } from '@/lib/feature-flags'
 import { turnWasCodeDecided } from '@/lib/soft-ai/turn-origin'
 import { withAiUsageContext } from '@/lib/ai-usage/context'
-import { classifyPaymentText, isCourtesyText } from '@/lib/soft-ai/payment-classifier'
+import { classifyPaymentText, isCourtesyText, isPlainOrderData } from '@/lib/soft-ai/payment-classifier'
 import { effectiveTestCap } from '@/lib/soft-ai/provider-outage'
 
 type JobPayload = {
@@ -1753,7 +1753,11 @@ export async function executeAgentLayerTurn(
   // Rafael 2026-11-06: a pre-sale question the agent fully answered (Meta's ad questions) is no hand-off at any hour —
   // planned as if the model had not escalated, so every code-owned review still happens (shared with Probar).
   const presale = turnPresaleIsAnswer(llm, policy, turnCustomerText)
-  const needsHuman = policy.needsHuman || (presale ? false : llm.needsHuman) || runtimeInput.salesNeedsHuman === true
+  // Rafael 2026-11-06 close flow: payment details already sent + the customer's plain order data → "Quedo atento al
+  // comprobante", never a payment hand-off the model asked for over plain data (shared with Probar).
+  const waitLine = turnDataWhileWaitingReceipt(llm, runtimeInput.salesTrace, turnCustomerText, runtimeInput.salesReceiptCue === true)
+  const skipModelHandoff = presale || waitLine !== null
+  const needsHuman = policy.needsHuman || (skipModelHandoff ? false : llm.needsHuman) || runtimeInput.salesNeedsHuman === true
   // Rafael 2026-10-25: at night an escalation / "no lo tengo" keeps the agent's answer and the chat on the agent
   // (before the safe-line cap, so a repeated night safe line still becomes a hand-off).
   // Pura Sonrisa 2026-11-05: the held echo of the customer's own data → thanks + the method question (shared with Probar).
@@ -1770,10 +1774,10 @@ export async function executeAgentLayerTurn(
   })
   const night = nightKeepsSelling(
     presaleDelivery(presale, presaleStepOpts(runtimeInput.salesTrace, llm.escalateReason), planModelTurnDelivery({
-      text: policy.text,
-      textOk: llm.textOk && !policy.needsHuman,
-      llmHandoff: presale ? null : llm.handoff,
-      llmEscalateReason: presale ? null : llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
+      text: waitLine ?? policy.text,
+      textOk: waitLine !== null || (llm.textOk && !policy.needsHuman),
+      llmHandoff: skipModelHandoff ? null : llm.handoff,
+      llmEscalateReason: skipModelHandoff ? null : llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
@@ -1800,7 +1804,7 @@ export async function executeAgentLayerTurn(
   )
   const echoRescued = Boolean(dataEchoRescue) && modelPlan.text === dataEchoRescue
   const modelMarkers: OutcomeMarkers = plannedMarkers(
-    { needsHuman: night.soft || echoRescued ? false : needsHuman, fallbackUsed: llm.fallbackUsed, escalate: night.soft || presale ? false : llm.escalate },
+    { needsHuman: night.soft || echoRescued ? false : needsHuman, fallbackUsed: llm.fallbackUsed, escalate: night.soft || skipModelHandoff ? false : llm.escalate },
     // The night review is recorded too: a lease reclaim settles it (review: the chat stays on the agent).
     modelPlan.handoff ?? night.review,
     llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
@@ -1818,6 +1822,7 @@ export async function executeAgentLayerTurn(
         ...(modelPlan.text !== policy.text ? { heldModelText: policy.text.slice(0, 1_000) } : {}),
         ...(echoRescued ? { dataEchoRescue: true } : {}),
         ...(presale ? { presaleKeptSelling: llm.escalateReason || true } : {}),
+        ...(waitLine ? { dataWhileWaitingReceipt: llm.escalateReason || true } : {}),
       },
       modelMarkers,
     ),
@@ -1922,7 +1927,7 @@ export async function executeAgentLayerTurn(
     needsHuman: night.soft || echoRescued ? false : needsHuman,
     fallbackUsed: llm.fallbackUsed,
     // Night review: a normal answer — its images (size guide…) and the repeat guard apply.
-    escalate: night.soft || presale ? false : llm.escalate,
+    escalate: night.soft || skipModelHandoff ? false : llm.escalate,
     // A planned safe line / hand-off text carries no images (input.handoff is set): see the image block.
     // SecureDog INT-252: the discarded reply's saved-reply images never go out with the rescue line.
     replyShortcutKey: policy.purchaseSummaryAppended || echoRescued ? null : llm.shortcutKey || null,
@@ -3084,11 +3089,13 @@ async function runAgentTestTurnInner(input: {
     })
     // Live parity (Rafael 2026-11-06): a fully answered pre-sale question is no hand-off.
     const probarPresale = turnPresaleIsAnswer(llm, policy, customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText))
+    const probarWaitLine = turnDataWhileWaitingReceipt(llm, runtimeInput.salesTrace, customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText), runtimeInput.salesReceiptCue === true)
+    const probarSkip = probarPresale || probarWaitLine !== null
     const planned = planModelTurnDelivery({
-      text: policy.text,
-      textOk: llm.textOk && !policy.needsHuman,
-      llmHandoff: probarPresale ? null : llm.handoff,
-      llmEscalateReason: probarPresale ? null : llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
+      text: probarWaitLine ?? policy.text,
+      textOk: probarWaitLine !== null || (llm.textOk && !policy.needsHuman),
+      llmHandoff: probarSkip ? null : llm.handoff,
+      llmEscalateReason: probarSkip ? null : llm.handoff?.kind === 'handoff' ? llm.escalateReason : null,
       receiptCue: runtimeInput.salesReceiptCue === true,
       paymentDataByTeam: runtimeInput.salesPaymentDataByTeam === true,
       codOrderReady: policy.paymentMethods.some((m) => m === 'contra_entrega' || m === 'efectivo'),
@@ -3114,9 +3121,9 @@ async function runAgentTestTurnInner(input: {
     latencyMs = llm.latencyMs
     // Live parity (Verifier #3): a night review is a normal answer — images, no "pasa a una persona".
     const probarEchoRescued = Boolean(probarDataEchoRescue) && plan.text === probarDataEchoRescue
-    needsHuman = night.soft || probarEchoRescued ? false : policy.needsHuman || (probarPresale ? false : llm.needsHuman) || runtimeInput.salesNeedsHuman === true
+    needsHuman = night.soft || probarEchoRescued ? false : policy.needsHuman || (probarSkip ? false : llm.needsHuman) || runtimeInput.salesNeedsHuman === true
     fallbackUsed = llm.fallbackUsed
-    escalate = night.soft || probarPresale ? false : llm.escalate
+    escalate = night.soft || probarSkip ? false : llm.escalate
     policyReasons = [
       ...(policy.needsHuman ? policy.reasons : []),
       ...(runtimeInput.salesNeedsHuman === true ? ['sales_needs_human'] : []),
@@ -3312,6 +3319,27 @@ function turnPresaleIsAnswer(
     cannotAnswer: admitsCannotAnswer,
     isComplaint: isComplaintText,
   })
+}
+
+/** Code line after the customer's plain order data once the payment details were sent (Rafael 2026-11-06). */
+export const WAITING_RECEIPT_LINE = '¡Gracias! Quedo atento al comprobante 🙌'
+const WAIT_LINE_REASONS = new Set(['payment_or_sinpe', 'payment_claim'])
+
+/**
+ * Rafael 2026-11-06 close flow: the store already sent the payment details (stage esperando_comprobante) and the
+ * customer now sends ONLY plain order data (isPlainOrderData: no claim, no choice, no question, no receipt cue). A model
+ * payment escalation over that has nothing to act on — the reply is the code line and the chat waits for the receipt.
+ * Any other reason, a fallback / tool problem, a receipt cue or anything that is not plain data keeps the hand-off.
+ */
+function turnDataWhileWaitingReceipt(
+  llm: { fallbackUsed: boolean; toolProblem?: boolean; handoff: TurnHandoff | null; escalateReason?: string | null },
+  trace: { stage?: string | null } | null | undefined,
+  customerText: string,
+  receiptCue: boolean,
+): string | null {
+  if (trace?.stage !== 'esperando_comprobante' || receiptCue || llm.fallbackUsed || llm.toolProblem) return null
+  if (llm.handoff?.kind !== 'handoff' || !WAIT_LINE_REASONS.has(String(llm.escalateReason || ''))) return null
+  return isPlainOrderData(customerText) ? WAITING_RECEIPT_LINE : null
 }
 
 /** Where the sale is, for the next-step line after a kept pre-sale answer. */

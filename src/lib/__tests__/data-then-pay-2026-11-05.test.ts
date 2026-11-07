@@ -74,10 +74,11 @@ describe('data then pay: sales stage (Laura 2026-11-05)', () => {
     assert.equal(s.stage, 'cierre')
   })
 
-  it('agents not set to pay after data keep the old stage (no change for Sofi / Vale / Dani / Andrés)', () => {
+  it('agents not set to pay after data: no data-then-pay step, but the data after our request is the close (Rafael 2026-11-06)', () => {
+    // Before 2026-11-06 this stayed 'cotizar' and the method question never went out (Forge live, order data + a link).
     const s = deriveSalesState({ history: LAURA, inboundText: DATA, ctx: { ...CTX, dataThenPay: false } })
     assert.equal(s.dataReceived, undefined)
-    assert.equal(s.stage, 'cotizar')
+    assert.equal(s.stage, 'cierre')
   })
 
   it('method question already pending → metodo_pago stays (never asked twice)', () => {

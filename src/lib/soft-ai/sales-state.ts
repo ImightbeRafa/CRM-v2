@@ -496,6 +496,10 @@ function sinceDataAsk(history: SoftAiHistoryMessage[], last: string): { inbound:
 const LATER_OR_NO_MONEY_RE =
   /(?<![\p{L}])(?:quincena|fin\s+de\s+mes|aguinaldo|cuando\s+(?:me\s+)?paguen|no\s+tengo\s+(?:plata|platica|dinero)|ahorita\s+no|(?:la\s+)?(?:otra|pr[oó]xima)\s+semana|(?:ma[nñ]ana|luego|despu[eé]s|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\s+(?:(?:yo\s+)?(?:le|te|les)\s+)?(?:escribo|aviso|confirmo|hablo|pago|compro)|(?:le|te|les)\s+(?:escribo|aviso|confirmo)\s+(?:ma[nñ]ana|luego|despu[eé]s))(?![\p{L}])/iu
 
+/** The customer picks how to receive it or says the data is coming ("envío a domicilio", "Ya te paso la dirección"). */
+const CLOSE_CUE_RE =
+  /(?<![\p{L}])(?:(?:env[ií]o|enviar\p{L}*|entrega)\s+a\s+(?:domicilio|la\s+casa|mi\s+casa)|a\s+domicilio|(?:por|con)\s+(?:mensajer[ií]a|correos)|(?:me\s+sirve|prefiero|mejor)\s+(?:m[aá]s\s+)?(?:la\s+)?(?:mensajer[ií]a|el\s+env[ií]o|correos|retir\p{L}*)|retiro\s+con\s+cita|(?:ya\s+)?(?:te|le|les)\s+(?:paso|mando|env[ií]o|escribo)\s+(?:la\s+direcci[oó]n|los\s+datos|mis\s+datos)|(?:ah[ií]|ac[aá]|aqu[ií])\s+(?:van|est[aá]n|te\s+(?:paso|mando))\s+(?:los\s+|mis\s+)?datos)(?![\p{L}])/iu
+
 /** Thanks + total were already said after the data: only answer and ask the method again (Verifier r3 R3). */
 const DATA_IN_AGAIN_STEP =
   'Respondé primero lo que preguntó (breve). Ya tenés sus datos y ya le diste el total.' +
@@ -611,6 +615,17 @@ export function deriveSalesState(input: {
     (ask.inbound.some((t) => looksLikeOrderData(t) || CR_PHONE_IN_DATA_RE.test(t)) || looksLikeOrderData(ask.inbound.join('\n')))
   const dataIn = dataGiven && !askedMethod
 
+  // Rafael 2026-11-06 (live): "Me sirve más la mensajería privada" + "Ya te paso la dirección" had no buy cue, so
+  // the chat stayed in descubrir: the data list went out WITHOUT the payment question and nobody sent how to pay.
+  // The close also starts when the customer picks how to receive it / says the data is coming (a statement, not a
+  // question), or once the store asked for the order data — never over a retraction, a "no", a later date or no money.
+  const noBackOff = (texts: string[]) => !texts.some((t) => RETRACT_BUY_RE.test(t) || NEGATED_BUY_RE.test(t) || LATER_OR_NO_MONEY_RE.test(t))
+  const closeCue =
+    !receiptCue &&
+    !said.payment &&
+    !said.order &&
+    ((ask !== null && !ask.methodAsked && noBackOff(ask.inbound)) || (!/[?¿]/u.test(last) && CLOSE_CUE_RE.test(last) && noBackOff([last])))
+
   let stage: SalesStage
   if (receiptCue) stage = 'verificando'
   // N5: the order (contra entrega / efectivo) already went to a person: no receipt, no method question again.
@@ -618,7 +633,7 @@ export function deriveSalesState(input: {
   else if (said.payment && !duplicateOrder) stage = 'esperando_comprobante'
   // A new buy cue after the question ("la quiero", another product) goes back to the close (Verifier F5).
   else if (chosenMethod || (askedMethod && !buyCue)) stage = 'metodo_pago'
-  else if (buyCue || dataIn) stage = 'cierre'
+  else if (buyCue || dataIn || closeCue) stage = 'cierre'
   else if (said.price) stage = 'cotizar'
   else if (ours.length === 0) stage = 'saludo'
   else stage = 'descubrir'

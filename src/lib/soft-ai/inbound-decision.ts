@@ -269,8 +269,16 @@ export function decideInbound(input: {
     rescued &&
     (neighbours.some((t) => !isRescuedPayShipQuestion(t || '') && !isCleanPayShipNeighbour(t || '')) ||
       (input.earlierCustomerTexts || []).some((t) => hasRecentMoneyState(t || '')))
+  // Rafael 2026-11-06 (live, order data opening with a name): an earlier bubble was judged ONLY by the strict hard-claim detector,
+  // the latest one by the full classifier — the same order data was fine as the last bubble and a payment hand-off as
+  // soon as a link followed it (6 of 7 such hand-offs in 14 days were false: order data, "Envió", "me gustó", "Ya te paso
+  // la dirección"). An earlier bubble now needs BOTH: a hard claim AND the full classifier calling it payment. A short
+  // done-bubble after the store's payment details keeps its own rule (doneAfterDetails above).
   const burstClaim = doneAfterDetails || payShipAfterTrace || (input.earlierCustomerTexts || []).some(
-    (t) => hasHardPaymentClaim(t, { noPaymentYet }) && !(embeddedPaymentChoice(t) && !hasHardPaymentClaimLabelMasked(t)),
+    (t) =>
+      hasHardPaymentClaim(t, { noPaymentYet }) &&
+      classifyPaymentText(t, { noPaymentYet }) !== 'non_payment' &&
+      !(embeddedPaymentChoice(t) && !hasHardPaymentClaimLabelMasked(t)),
   )
   const forced = input.forcePaymentRisk === true
   const paymentClass: PaymentClassification = burstClaim || forced ? 'payment_proof_or_risk' : latestClass

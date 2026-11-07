@@ -180,8 +180,25 @@ describe('a real claim stays a claim / hand-off', () => {
       assert.equal(classifyPaymentText(t, { nothingPaidYet: true }), classifyPaymentText(t), t)
     }
   })
-  it('unlabelled free lines are not order data (allowlist: label + value, phone, delivery phrase, greeting)', () => {
-    for (const t of ['Ana Mora\n8888-8888\nHeredia\nPago por SINPE', 'Pago por SINPE\nla otra parte mañana', 'Nombre: hace poco\nPago por SINPE', 'Dirección: me da error\nPago por SINPE']) {
+  it('unlabelled lines are judged like labelled values (Rafael 2026-11-06 close flow): plain data is data, claim-like lines never are', () => {
+    // Close flow: the agent asks the data AND the method together, so plain unlabelled data + "Sinpe" is the normal reply.
+    assert.equal(embeddedPaymentChoice('Ana Mora\n8888-8888\nHeredia\nPago por SINPE'), 'sinpe')
+    assert.equal(embeddedPaymentChoice('Luis Soto\n87776655\nluis@gmail.com\nSinpe'), 'sinpe')
+    for (const t of [
+      'Pago por SINPE\nla otra parte mañana',
+      'Nombre: hace poco\nPago por SINPE',
+      'Dirección: me da error\nPago por SINPE',
+      'Ana Mora\nhace poco\nPago por SINPE',
+      'Ana Mora\nme da error\nPago por SINPE',
+      'Ana Mora\nya está\nSinpe',
+      'Ana\nhoy en la mañana\nSinpe',
+      'Ana\nle debo la mitad\nSinpe',
+      'Ana\nfalta el resto\nSinpe',
+      'Luis Soto\n87776655\nluis@gmail.com\nYa pagué por sinpe',
+      'Luis Soto\nYa le pasé\nSinpe',
+      'Luis Soto\n87776655\nles transferí 26900\nSinpe',
+      'Luis Soto\ncomprobante adjunto\nSinpe',
+    ]) {
       assert.equal(embeddedPaymentChoice(t), null, t)
     }
   })

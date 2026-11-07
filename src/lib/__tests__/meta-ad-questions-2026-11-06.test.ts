@@ -232,8 +232,11 @@ describe('pre-sale question the agent fully answered: no hand-off (Meta ad quest
   it('live turn and Probar plan the turn without the model hand-off only through turnPresaleIsAnswer', () => {
     const src = read('src/lib/soft-ai/agent-turn.ts')
     assert.equal((src.match(/turnPresaleIsAnswer\(llm, policy,/g) || []).length, 2)
-    assert.match(src, /llmHandoff: presale \? null : llm\.handoff,/)
-    assert.match(src, /llmHandoff: probarPresale \? null : llm\.handoff,/)
+    // 2026-11-06 close flow: the same skip also covers plain data while waiting for the receipt (waitLine).
+    assert.match(src, /const skipModelHandoff = presale \|\| waitLine !== null/)
+    assert.match(src, /const probarSkip = probarPresale \|\| probarWaitLine !== null/)
+    assert.match(src, /llmHandoff: skipModelHandoff \? null : llm\.handoff,/)
+    assert.match(src, /llmHandoff: probarSkip \? null : llm\.handoff,/)
     assert.match(src, /if \(llm\.fallbackUsed \|\| llm\.modelAskedHuman !== false \|\| llm\.toolProblem !== false \|\| policy\.needsHuman\) return false/)
     assert.match(src, /if \(classifyPaymentText\(customerText\) !== 'non_payment'\) return false/)
     assert.match(src, /presaleKeptSelling/)

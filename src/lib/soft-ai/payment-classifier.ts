@@ -229,6 +229,9 @@ function hasPastOrDoneWord(segment: string, question: boolean): boolean {
     const lw = w.toLowerCase()
     if (!/[éíó]$/u.test(lw) || ACCENT_OK.has(lw)) continue
     if ((m.index ?? 0) > 0 && /^\p{Lu}/u.test(w)) continue
+    // Rafael 2026-11-06 (live): "José Andrés Quesada Rojas" opening the order data — a capitalised word
+    // followed on the same line by another capitalised word is a full name, also as the first word.
+    if (/^\p{Lu}/u.test(w) && /^[ \t]+\p{Lu}\p{Ll}/u.test(s.slice((m.index ?? 0) + w.length))) continue
     if (/r[éá]$/u.test(lw) && !PAST_RE_WORDS.has(lw)) continue
     return true
   }
@@ -1765,7 +1768,10 @@ function isOrderDataPart(raw: string): boolean {
   if (!noPaymentTalk(part)) return false
   if (DATA_PHONE_RE.test(part) || DATA_DELIVERY_RE.test(part) || isCourtesyText(part)) return true
   const m = DATA_LABEL_LINE_RE.exec(part)
-  if (!m) return false
+  // Rafael 2026-11-06 (close flow: the agent asks the data AND the method together, so "Luis Soto / 87776655 /
+  // luis@gmail.com / Sinpe" comes as one message): an UNLABELED line is judged exactly like a labeled one — an e-mail
+  // as "Correo:", anything else as "Dirección:" (every value check below: money, glued / chunked claims, word cap).
+  if (!m) return DATA_EMAIL_RE.test(part) || (!/^\s*(?:direcci[oó]n)\s*[:=\-–]/iu.test(part) && isOrderDataPart(`Dirección: ${part}`))
   const label = foldChoice(m[1])
   const v = m[2].trim()
   if (/^(?:tel|cel|whats|wsp)/u.test(label)) return DATA_PHONE_RE.test(v)
@@ -1931,4 +1937,30 @@ export function paymentHandoffReason(text: string): 'payment' | 'complaint' {
   const value = text || ''
   if (RISK_CUE_RE.test(value) || (REFUND_RE.test(value) && !isReturnPolicyQuestion(value))) return 'complaint'
   return 'payment'
+}
+
+/**
+ * Rafael 2026-11-06 close flow: the customer's bubble is ONLY order data (≥ 2 lines, every line a plain or labelled
+ * order-data value judged by isOrderDataPart — money, glued / chunked claims, word caps), with no hard claim and the
+ * full classifier calling it non-payment. Never a question, a method choice or a claim. Pure.
+ */
+export function isPlainOrderData(text: string): boolean {
+  // Like embeddedPaymentChoice: odd breaks / invisible characters are rejected on the RAW text, never stripped.
+  if (DATA_ODD_BREAK_RE.test((text || '').normalize('NFKC')) || hasOddAccentPayWord(text || '')) return false
+  const value = stripFormatChars((text || '').normalize('NFKC'))
+  if (!value.trim() || value.length > DATA_CHOICE_MAX_CHARS || /[?¿]/u.test(value)) return false
+  const lines = value.split('\n').map((l) => l.trim()).filter(Boolean)
+  if (lines.length < 2 || !lines.every((l) => isOrderDataPart(l))) return false
+  if (embeddedPaymentChoice(value) !== null) return false
+  // The same whole-message status / claim / debt checks embeddedPaymentChoice runs ("ya está", "hoy en la mañana",
+  // "falta el resto", "le debo la mitad", "verifiquen"): any of them → not plain data (fail closed).
+  const masked = value.replace(DATA_LABEL_MASK_RE, (l) => l.split(/\s+/)[0])
+  const folded = foldChoice(masked)
+  const collapsed = folded.replace(/(\p{L})\1+/gu, '$1')
+  for (const v of [masked, folded, collapsed]) {
+    if (DATA_CHOICE_REJECT_RE.test(v) || CHOICE_CLAIM_WORD_RE.test(v) || PAYMENT_COMPLETION_RE.test(v) || STATUS_DISPUTE_RE.test(foldChoice(v))) return false
+    if (PARTIAL_STATE_RE.test(v) || DEBT_RE.test(v) || hasPaymentStatusHint(v) || hasChoiceClaimOrStatusWord(v)) return false
+  }
+  if (STATUS_CLAIM_RE.test(masked) || DATA_STATUS_CUE_RE.test(masked) || hasFreePayAct(masked)) return false
+  return !hasHardPaymentClaim(value) && classifyPaymentText(value) === 'non_payment'
 }

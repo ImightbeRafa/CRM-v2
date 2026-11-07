@@ -114,8 +114,9 @@ describe('nightKeepsSelling', () => {
     assert.match(turn, /const modelPlan = applySafeLineCap\(night\.plan,/)
     assert.match(turn, /burstReview: burstReview \?\? night\.review,/)
     // 2026-11-06: a fully answered pre-sale question (planned without the model hand-off) drops escalate too.
-    assert.match(turn, /escalate: night\.soft \|\| presale \? false : llm\.escalate,/)
-    assert.match(turn, /escalate = night\.soft \|\| probarPresale \? false : llm\.escalate/)
+    // 2026-11-06 close flow: data while waiting for the receipt (waitLine) skips the model hand-off the same way.
+    assert.match(turn, /escalate: night\.soft \|\| skipModelHandoff \? false : llm\.escalate,/)
+    assert.match(turn, /escalate = night\.soft \|\| probarSkip \? false : llm\.escalate/)
     // 2026-11-05: the data-echo rescue (code line, no hand-off) clears needsHuman too, live and Probar alike.
     assert.match(turn, /needsHuman = night\.soft \|\| probarEchoRescued \? false :/)
     assert.match(turn, /needsHuman: night\.soft \|\| echoRescued \? false : needsHuman,/)

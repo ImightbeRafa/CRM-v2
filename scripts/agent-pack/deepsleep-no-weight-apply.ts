@@ -61,19 +61,25 @@ import {
   PACK_SALES_RULE_EDITS,
   PACK_SHORTCUT_EDITS,
 } from '../lib/forge-pack-wording-edits'
+import { CLOSE_INSTRUCTION_EDITS, CLOSE_SALES_RULE_EDITS } from '../lib/forge-close-flow-edits'
 import { resolveRepoOutPath } from '../lib/out-path-guard'
 import { sameJson, type NoWeightBackupV1, type NoWeightChange, resolveNoWeightActor, requireNoWeightTenant } from './deepsleep-no-weight-shared'
 
 const APPLY = process.argv.includes('--apply')
 const TENANT_ID = DEEPSLEEP_TENANT_ID
 const AGENT_ID = NO_WEIGHT_AGENT_ID
-/** --set=pack-wording (Rafael 2026-11-06, "uno o dos" instead of "Pack de 2"); default: the 2026-11-03 no-weight set. */
+/**
+ * --set=pack-wording (Rafael 2026-11-06, "uno o dos" instead of "Pack de 2"); --set=close-flow (2026-11-06, data +
+ * payment question together, SINPE details right away); default: the 2026-11-03 no-weight set.
+ */
 const SET = arg('set') || 'no-weight'
-if (SET !== 'no-weight' && SET !== 'pack-wording') throw new Error('--set must be no-weight or pack-wording')
+if (SET !== 'no-weight' && SET !== 'pack-wording' && SET !== 'close-flow') throw new Error('--set must be no-weight, pack-wording or close-flow')
 const EDITS =
   SET === 'pack-wording'
     ? { instructions: PACK_INSTRUCTION_EDITS, shortcuts: PACK_SHORTCUT_EDITS, knowledge: PACK_KNOWLEDGE_EDITS, brandFacts: PACK_BRAND_FACT_EDITS, salesRules: PACK_SALES_RULE_EDITS as Record<string, TextEdit[]>, bundleRenames: PACK_BUNDLE_RENAMES }
-    : { instructions: NO_WEIGHT_INSTRUCTION_EDITS, shortcuts: NO_WEIGHT_SHORTCUT_EDITS, knowledge: NO_WEIGHT_KNOWLEDGE_EDITS, brandFacts: NO_WEIGHT_BRAND_FACT_EDITS, salesRules: NO_WEIGHT_SALES_RULE_EDITS as Record<string, TextEdit[]>, bundleRenames: {} as Record<string, string> }
+    : SET === 'close-flow'
+      ? { instructions: CLOSE_INSTRUCTION_EDITS, shortcuts: {} as Record<string, TextEdit[]>, knowledge: {} as Record<string, TextEdit[]>, brandFacts: {} as Record<string, TextEdit[]>, salesRules: CLOSE_SALES_RULE_EDITS as Record<string, TextEdit[]>, bundleRenames: {} as Record<string, string> }
+      : { instructions: NO_WEIGHT_INSTRUCTION_EDITS, shortcuts: NO_WEIGHT_SHORTCUT_EDITS, knowledge: NO_WEIGHT_KNOWLEDGE_EDITS, brandFacts: NO_WEIGHT_BRAND_FACT_EDITS, salesRules: NO_WEIGHT_SALES_RULE_EDITS as Record<string, TextEdit[]>, bundleRenames: {} as Record<string, string> }
 
 function arg(name: string): string | null {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`))

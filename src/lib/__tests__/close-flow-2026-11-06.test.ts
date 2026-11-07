@@ -7,6 +7,8 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { decideInbound } from '@/lib/soft-ai/inbound-decision'
 import { embeddedPaymentChoice, hasHardPaymentClaim, isPlainOrderData } from '@/lib/soft-ai/payment-classifier'
 import { deriveSalesState, formatSalesTurnBlock, type SalesContext } from '@/lib/soft-ai/sales-state'
@@ -166,23 +168,59 @@ describe('"Quedo a la espera del comprobante": plain data after the payment deta
   const PLAIN = 'Ana Mora Rojas\n88887777\nSan José\nDesamparados\nDel súper 200 sur'
   const llm = (reason: string | null, extra: object = {}) => ({ fallbackUsed: false, toolProblem: false, handoff: reason ? { kind: 'handoff' as const, reason: 'escalate' } : null, escalateReason: reason, ...extra })
   const WAIT = { stage: 'esperando_comprobante' }
+  const FORGE = { closeWithPay: true, paymentDigits: ['62019914'] }
+  const wait = (l: ReturnType<typeof llm>, trace: object, text: string, receipt = false, ctx: object | null = FORGE) =>
+    turnDataWhileWaitingReceipt(l, trace, text, receipt, ctx as never)
 
-  it('only a payment_or_sinpe escalation over plain data at esperando_comprobante becomes the line (gender-neutral)', () => {
-    assert.equal(turnDataWhileWaitingReceipt(llm('payment_or_sinpe'), WAIT, PLAIN, false), WAITING_RECEIPT_LINE)
+  it('only a payment_or_sinpe escalation over plain data at esperando_comprobante, on a close-flow agent, becomes the line', () => {
+    assert.equal(wait(llm('payment_or_sinpe'), WAIT, PLAIN), WAITING_RECEIPT_LINE)
     assert.equal(WAITING_RECEIPT_LINE, '¡Gracias! Quedo a la espera del comprobante 🙌')
   })
 
-  it('Verifier 2026-11-06 #2/#5: payment_claim, other reasons, a receipt cue, a paid chat, fallback, other stages or non-data keep the hand-off', () => {
-    assert.equal(turnDataWhileWaitingReceipt(llm('payment_claim'), WAIT, PLAIN, false), null)
-    assert.equal(turnDataWhileWaitingReceipt(llm('other'), WAIT, PLAIN, false), null)
-    assert.equal(turnDataWhileWaitingReceipt(llm(null), WAIT, PLAIN, false), null)
-    assert.equal(turnDataWhileWaitingReceipt(llm('payment_or_sinpe'), WAIT, PLAIN, true), null)
-    assert.equal(turnDataWhileWaitingReceipt(llm('payment_or_sinpe'), { ...WAIT, paid: true }, PLAIN, false), null)
-    assert.equal(turnDataWhileWaitingReceipt(llm('payment_or_sinpe', { fallbackUsed: true }), WAIT, PLAIN, false), null)
-    assert.equal(turnDataWhileWaitingReceipt(llm('payment_or_sinpe', { toolProblem: true }), WAIT, PLAIN, false), null)
-    assert.equal(turnDataWhileWaitingReceipt(llm('payment_or_sinpe'), { stage: 'cierre' }, PLAIN, false), null)
-    for (const t of ['Ana Mora\nTerminé', 'Ana Mora\n88887777\nYa pagué', 'Ana Mora\nde parte de Ana Mora']) {
-      assert.equal(turnDataWhileWaitingReceipt(llm('payment_or_sinpe'), WAIT, t, false), null, t)
+  it('SecureDog INT-264: never for an agent without closeWithPay, or with the store number in the text', () => {
+    assert.equal(wait(llm('payment_or_sinpe'), WAIT, PLAIN, false, null), null)
+    assert.equal(wait(llm('payment_or_sinpe'), WAIT, PLAIN, false, { closeWithPay: false }), null)
+    assert.equal(wait(llm('payment_or_sinpe'), WAIT, 'Ana Mora\n8888-8888\n6201-9914'), null)
+  })
+
+  it('Verifier #2/#5: payment_claim, other reasons, a receipt cue, a paid chat, fallback, other stages or non-data keep the hand-off', () => {
+    assert.equal(wait(llm('payment_claim'), WAIT, PLAIN), null)
+    assert.equal(wait(llm('other'), WAIT, PLAIN), null)
+    assert.equal(wait(llm(null), WAIT, PLAIN), null)
+    assert.equal(wait(llm('payment_or_sinpe'), WAIT, PLAIN, true), null)
+    assert.equal(wait(llm('payment_or_sinpe'), { ...WAIT, paid: true }, PLAIN), null)
+    assert.equal(wait(llm('payment_or_sinpe', { fallbackUsed: true }), WAIT, PLAIN), null)
+    assert.equal(wait(llm('payment_or_sinpe', { toolProblem: true }), WAIT, PLAIN), null)
+    assert.equal(wait(llm('payment_or_sinpe'), { stage: 'cierre' }, PLAIN), null)
+    for (const t of ['Ana Mora\nTerminé', 'Ana Mora\n88887777\nYa pagué', 'Ana Mora\nde parte de Ana Mora']) assert.equal(wait(llm('payment_or_sinpe'), WAIT, t), null, t)
+  })
+
+  it('SecureDog INT-264: bank / payer / sender lines and clauses hidden in an address are never plain data', () => {
+    for (const l of [
+      'Bac Luis Soto', 'Desde Bac', 'Banco Nacional Luis Soto', 'Titular Luis Soto', 'Remitente Luis Soto', 'Ready', 'All Set',
+      'Casa 12, se lo entregue al guarda', 'Frente a la escuela, mi esposo le consigno', '100 m norte de la iglesia, le cubrio mi esposo', 'Casa 12, Dejó Juan',
+    ]) {
+      assert.equal(isPlainOrderData(`Ana Mora\n8888-8888\n${l}`), false, l)
+      assert.equal(embeddedPaymentChoice(`Ana Mora\n8888-8888\n${l}\nPago por SINPE`), null, l)
     }
+  })
+
+  it('the line goes out with a quiet review for the team (never no alert at all), live and Probar', () => {
+    const src = readFileSync(path.join(process.cwd(), 'src/lib/soft-ai/agent-turn.ts'), 'utf8')
+    assert.match(src, /return \{ \.\.\.plan, handoff: \{ kind: 'review', reason: HANDOFF_REASON\.payment \} \}/)
+    assert.match(src, /withWaitReview\(waitLine, presaleDelivery\(/)
+    assert.match(src, /withWaitReview\(probarWaitLine, presaleDelivery\(/)
+  })
+})
+
+describe('SecureDog INT-263: an accented verb before a capitalised word is still a claim', () => {
+  it('only known first names open a full name', () => {
+    for (const t of ['Dejó Juan la plata con el guarda', 'Entregó María los 20 mil al mensajero', 'Dejé La Plata Con El Guarda', 'Entregué Los 15 Mil Al Mensajero', 'Solté Los 20 Mil', 'Consigné Los 15 Mil', 'Dejó Mi Esposo La Plata', 'Entregó Mi Mamá Los 20 Mil']) {
+      assert.equal(hasHardPaymentClaim(t), true, t)
+    }
+    for (const [earlier, latest] of [['Dejó Juan la plata con el guarda', 'Gracias 🙏'], ['Entregó María los 20 mil al mensajero', '¿Cuándo llega?']]) {
+      assert.equal(payClass(earlier, latest).outcome, 'payment_proof_or_risk', earlier)
+    }
+    assert.equal(hasHardPaymentClaim('José Andrés Quesada Rojas\nLa entrega se haría en el parqueo'), false)
   })
 })

@@ -231,10 +231,11 @@ function hasPastOrDoneWord(segment: string, question: boolean): boolean {
     if ((m.index ?? 0) > 0 && /^\p{Lu}/u.test(w)) continue
     // Rafael 2026-11-06 (live): "José Andrés Quesada Rojas" opening the order data — a capitalised word
     // followed on the same line by another capitalised word is a full name, also as the first word.
-    // Verifier 2026-11-06: never for a payment verb ("Envió Mi Esposo", "Mandó Mi Esposa", "Pasó Mi Hijo").
+    // SecureDog 2026-11-06 INT-263: only a known accented first name, never a verb ("Envió Mi Esposo", "Dejó Juan la
+    // plata", "Entregó María los 20 mil").
     if (
+      ACCENTED_FIRST_NAMES.has(lw) &&
       /^\p{Lu}/u.test(w) &&
-      !PAY_VERB_STEM_RE.test(lw) &&
       /^[ \t]+\p{Lu}\p{Ll}/u.test(s.slice((m.index ?? 0) + w.length))
     ) continue
     if (/r[éá]$/u.test(lw) && !PAST_RE_WORDS.has(lw)) continue
@@ -243,8 +244,8 @@ function hasPastOrDoneWord(segment: string, question: boolean): boolean {
   return false
 }
 
-/** Stems of verbs that can name a payment ("envió", "mandó", "pasó", "pagó", "giró", "depositó", "canceló"…). */
-const PAY_VERB_STEM_RE = /^(?:envi|mand|pas|pag|gir|tir|deposit|transf|abon|cancel|realic|realiz|cubr|complet|termin|liquid|met|sinp|simp|hic|hiz)/u
+/** First names that end in an accented é / í / ó (never verbs). Only these open a full name (SecureDog INT-263). */
+const ACCENTED_FIRST_NAMES = new Set(['josé', 'josué', 'noé', 'zoé', 'rubí', 'martí', 'noemí', 'nohemí', 'saharí', 'yarí', 'nazaré', 'renée', 'irené', 'abdí', 'leví', 'arnó'])
 
 const PRICE_COSTO_TYPO_RE = /(?<![\p{L}])(qu[eé]|cu[aá]nto|el|su|un|ese|este)\s+cost[oó](?![\p{L}])/giu
 
@@ -1798,6 +1799,13 @@ function isNameOrPlaceLine(part: string): boolean {
 const UNLABELED_ADDRESS_RE =
   /(?<![\p{L}])(?:\d+\s*(?:m|mts|metros|varas|km)?\s*(?:al\s+)?(?:sur|norte|este|oeste)|(?:frente|contiguo|diagonal|costado|esquina)\s+(?:a|al|de|del)\s+\p{L}+|(?:del|de\s+la|detr[aá]s\s+de(?:l|\s+la)?)\s+(?:s[uú]per|supermercado|iglesia|escuela|colegio|parque|plaza|gasolinera|bomba|pulper[ií]a|cementerio|cruz\s+roja|plaza\s+de\s+deportes)|(?:avenida|ave|calle|casa|apartamento|apto|lote|edificio|condominio|residencial|barrio|urbanizaci[oó]n)\s+(?:#|n[°º.]?\s*)?[\p{L}\d]+|(?:avenida|calle|calles)\s+\d)(?![\p{L}])/iu
 
+/** CR places / place words ending in an accented vowel ("San José", "Jacó", "Turrialba" has none). */
+const CR_ACCENTED_PLACES = new Set(['josé', 'jacó', 'tárcoles', 'colón', 'león', 'ramón', 'sarapiquí', 'tilarán', 'potrerillos', 'aserrí', 'moravia', 'carrizal', 'jiménez', 'zarcero', 'poás', 'barrió', 'quepos', 'turrubares', 'bebedero', 'paquera', 'lepanto', 'cóbano', 'pejibaye', 'concepción', 'unión', 'asunción', 'atenas', 'ángeles'])
+
+/** Bank / payer / sender words, English done-words and clitic + verb clauses inside an unlabeled line. */
+const UNLABELED_PAY_CONTEXT_RE =
+  /(?<![\p{L}])(?:bac|bcr|bn|banco|nacional|popular|davivienda|prom[eé]rica|scotiabank|lafise|coopenae|coopeservidores|mucap|mutual|titular|remitente|desde|ready|all\s+set|done|sent|paid|ok|nombre|parte|sale\s+como|cuenta|sinpe|simpe|comprobante|transfer\p{L}*|dep[oó]sit\p{L}*|(?:se|le|les|me|te|nos)\s+(?:l[oa]s?\s+)?\p{L}{3,}|(?:mi|su|tu)\s+(?:espos[oa]|mam[aá]|pap[aá]|herman[oa]|hij[oa]|novi[oa]|pareja|jef[ea]|amig[oa]))(?![\p{L}])/iu
+
 function isOrderDataPart(raw: string): boolean {
   const part = raw.replace(/[\s.!,;]+$/u, '').trim()
   if (!part) return true
@@ -1811,6 +1819,15 @@ function isOrderDataPart(raw: string): boolean {
   if (!m) {
     if (DATA_EMAIL_RE.test(part)) return true
     if (!isNameOrPlaceLine(part) && !UNLABELED_ADDRESS_RE.test(part)) return false
+    // SecureDog 2026-11-06 INT-264: who paid / from where ("Desde Bac", "Titular Luis Soto", "Ready") or a clause
+    // hidden in an address ("Casa 12, se lo entregué al guarda", "… mi esposo le consignó") is never order data.
+    if (UNLABELED_PAY_CONTEXT_RE.test(part)) return false
+    // An accented é / í / ó word anywhere in an unlabeled line ("Casa 12, Dejó Juan") counts only as a known first
+    // name, a CR place or a non-verb accent word — any other one reads as a past verb.
+    for (const m of part.matchAll(/\p{L}+/gu)) {
+      const lw = m[0].toLowerCase()
+      if (/[éíó]$/u.test(lw) && !ACCENT_OK.has(lw) && !ACCENTED_FIRST_NAMES.has(lw) && !CR_ACCENTED_PLACES.has(lw)) return false
+    }
     if (hasPastOrDoneWord(part, false)) return false
     return !/^\s*(?:direcci[oó]n)\s*[:=\-–]/iu.test(part) && isOrderDataPart(`Dirección: ${part}`)
   }

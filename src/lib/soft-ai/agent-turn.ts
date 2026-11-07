@@ -1755,7 +1755,7 @@ export async function executeAgentLayerTurn(
   const presale = turnPresaleIsAnswer(llm, policy, turnCustomerText)
   // Rafael 2026-11-06 close flow: payment details already sent + the customer's plain order data → "Quedo atento al
   // comprobante", never a payment hand-off the model asked for over plain data (shared with Probar).
-  const waitLine = turnDataWhileWaitingReceipt(llm, runtimeInput.salesTrace, turnCustomerText, runtimeInput.salesReceiptCue === true)
+  const waitLine = turnDataWhileWaitingReceipt(llm, runtimeInput.salesTrace, turnCustomerText, runtimeInput.salesReceiptCue === true, turnSalesContext)
   const skipModelHandoff = presale || waitLine !== null
   const needsHuman = policy.needsHuman || (skipModelHandoff ? false : llm.needsHuman) || runtimeInput.salesNeedsHuman === true
   // Rafael 2026-10-25: at night an escalation / "no lo tengo" keeps the agent's answer and the chat on the agent
@@ -1773,7 +1773,7 @@ export async function executeAgentLayerTurn(
     customerText: turnCustomerText,
   })
   const night = nightKeepsSelling(
-    presaleDelivery(presale, presaleStepOpts(runtimeInput.salesTrace, llm.escalateReason), planModelTurnDelivery({
+    withWaitReview(waitLine, presaleDelivery(presale, presaleStepOpts(runtimeInput.salesTrace, llm.escalateReason), planModelTurnDelivery({
       text: waitLine ?? policy.text,
       textOk: waitLine !== null || (llm.textOk && !policy.needsHuman),
       llmHandoff: skipModelHandoff ? null : llm.handoff,
@@ -1786,7 +1786,7 @@ export async function executeAgentLayerTurn(
       orderReadyCash: policy.paymentMethods.includes('efectivo'),
       customerText: turnCustomerText,
       dataEchoRescue,
-    })),
+    }))),
     hours,
     {
       safeReview: SAFE_LINE.review,
@@ -3089,7 +3089,7 @@ async function runAgentTestTurnInner(input: {
     })
     // Live parity (Rafael 2026-11-06): a fully answered pre-sale question is no hand-off.
     const probarPresale = turnPresaleIsAnswer(llm, policy, customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText))
-    const probarWaitLine = turnDataWhileWaitingReceipt(llm, runtimeInput.salesTrace, customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText), runtimeInput.salesReceiptCue === true)
+    const probarWaitLine = turnDataWhileWaitingReceipt(llm, runtimeInput.salesTrace, customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText), runtimeInput.salesReceiptCue === true, probarTurnSalesContext)
     const probarSkip = probarPresale || probarWaitLine !== null
     const planned = planModelTurnDelivery({
       text: probarWaitLine ?? policy.text,
@@ -3106,7 +3106,7 @@ async function runAgentTestTurnInner(input: {
     })
     // Live parity: at night an escalation / "no lo tengo" keeps the answer and the chat on the agent (a review).
     const probarCustomerText = customerTextSinceLastAnswer(input.history ?? [], probarBurst.inboundText)
-    const night = nightKeepsSelling(presaleDelivery(probarPresale, presaleStepOpts(runtimeInput.salesTrace, llm.escalateReason), planned), probarHours, { safeReview: SAFE_LINE.review, customerText: probarCustomerText, cannotAnswer: admitsCannotAnswer, isComplaint: isComplaintText, modelReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null })
+    const night = nightKeepsSelling(withWaitReview(probarWaitLine, presaleDelivery(probarPresale, presaleStepOpts(runtimeInput.salesTrace, llm.escalateReason), planned)), probarHours, { safeReview: SAFE_LINE.review, customerText: probarCustomerText, cannotAnswer: admitsCannotAnswer, isComplaint: isComplaintText, modelReason: llm.handoff?.kind === 'handoff' ? llm.escalateReason : null })
     const plan = night.plan
     text = withNightIntro(
       withFirstGreeting(applyAfterHoursText(plan, probarHours, AFTER_HOURS_TEXT_OPTS), nightIntroWho(runtimeAgent, input.history ?? []), probarGreetFirst),
@@ -3337,10 +3337,25 @@ export function turnDataWhileWaitingReceipt(
   trace: { stage?: string | null; paid?: boolean } | null | undefined,
   customerText: string,
   receiptCue: boolean,
+  ctx: { closeWithPay?: boolean; paymentDigits?: readonly string[] } | null | undefined,
 ): string | null {
+  // SecureDog 2026-11-06 INT-264: only for an agent with the close flow switched on (salesRules.closeWithPay).
+  if (ctx?.closeWithPay !== true) return null
   if (trace?.stage !== 'esperando_comprobante' || trace.paid || receiptCue || llm.fallbackUsed || llm.toolProblem) return null
   if (llm.handoff?.kind !== 'handoff' || !WAIT_LINE_REASONS.has(String(llm.escalateReason || ''))) return null
+  // The store's own payment number in the customer text is a payment talk, never order data.
+  const digits = customerText.replace(/\D/g, '')
+  if ((ctx.paymentDigits ?? []).some((d) => d && digits.includes(d))) return null
   return isPlainOrderData(customerText) ? WAITING_RECEIPT_LINE : null
+}
+
+/**
+ * SecureDog 2026-11-06 INT-264: the wait line goes out with a quiet REVIEW for the team (reason payment), never with
+ * no alert at all — the chat stays on the agent, a person still glances at what the customer sent.
+ */
+function withWaitReview<P extends { text: string; handoff: TurnHandoff | null }>(waitLine: string | null, plan: P): P {
+  if (!waitLine || plan.handoff) return plan
+  return { ...plan, handoff: { kind: 'review', reason: HANDOFF_REASON.payment } }
 }
 
 /** Where the sale is, for the next-step line after a kept pre-sale answer. */

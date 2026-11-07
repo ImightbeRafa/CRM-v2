@@ -1644,11 +1644,22 @@ export function SoftCopilotInboxV2() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, conversationKey: key }),
       })
-      const parsed = await parseApiJson<{ success?: boolean }>(res)
+      const parsed = await parseApiJson<{ success?: boolean; handoffCleared?: boolean }>(res)
       if (!parsed.ok || !res.ok || !parsed.data.success) return
       const next = applyAgentControl(agentStateMap, key, action, false)
       setAgentStateMap(next)
       writeAgentStateMap(next)
+      // Devolver a IA with nothing left to answer: the server closed the open hand-off — "Necesita persona" goes now.
+      const resumedId = selectedConversationId
+      if (parsed.data.handoffCleared && resumedId) {
+        setDtoMap((prev) => {
+          const row = prev.get(resumedId)
+          if (!row) return prev
+          const nextMap = new Map(prev)
+          nextMap.set(resumedId, { ...row, waiting: false, needsPerson: false, aiMode: 'ai_active' })
+          return nextMap
+        })
+      }
       if (selectedConversationId) {
         await fetchChanges()
       }

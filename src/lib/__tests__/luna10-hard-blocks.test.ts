@@ -345,7 +345,7 @@ describe('exam round 1 fixes (luna-10)', () => {
     }
   })
   it('health questions are answered (doctor) without a hand-off; coverage "no sé" check ignores "no se recomienda"', async () => {
-    assert.match(fs.readFileSync('src/lib/soft-ai/llm/tool-definitions.ts', 'utf8'), /Salud \(embarazo, lactancia, una condición, medicamentos\): respondé con tus datos y que consulte a su médico, sin escalar/)
+    assert.match(fs.readFileSync('src/lib/soft-ai/llm/tool-definitions.ts', 'utf8'), /Salud \(embarazo, lactancia, una condición, dolor crónico, alergias, medicamentos\): respondé con tus datos y que consulte a su médico, sin escalar/)
     const { coverageScenarios } = await import('../soft-ai/knowledge-coverage')
     const re = new RegExp(coverageScenarios(['Focus'])[0].steps[0].expect!.forbidRegex![1], 'iu')
     assert.equal(re.test('Por precaución, no se recomienda usarlo durante el embarazo'), false)

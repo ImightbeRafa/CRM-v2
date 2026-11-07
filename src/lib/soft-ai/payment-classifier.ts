@@ -229,11 +229,23 @@ function hasPastOrDoneWord(segment: string, question: boolean): boolean {
     const lw = w.toLowerCase()
     if (!/[éíó]$/u.test(lw) || ACCENT_OK.has(lw)) continue
     if ((m.index ?? 0) > 0 && /^\p{Lu}/u.test(w)) continue
+    // Rafael 2026-11-06 (live): "José Andrés Quesada Rojas" opening the order data — a capitalised word
+    // followed on the same line by another capitalised word is a full name, also as the first word.
+    // SecureDog 2026-11-06 INT-263: only a known accented first name, never a verb ("Envió Mi Esposo", "Dejó Juan la
+    // plata", "Entregó María los 20 mil").
+    if (
+      ACCENTED_FIRST_NAMES.has(lw) &&
+      /^\p{Lu}/u.test(w) &&
+      /^[ \t]+\p{Lu}\p{Ll}/u.test(s.slice((m.index ?? 0) + w.length))
+    ) continue
     if (/r[éá]$/u.test(lw) && !PAST_RE_WORDS.has(lw)) continue
     return true
   }
   return false
 }
+
+/** First names that end in an accented é / í / ó (never verbs). Only these open a full name (SecureDog INT-263). */
+const ACCENTED_FIRST_NAMES = new Set(['josé', 'josué', 'noé', 'zoé', 'rubí', 'martí', 'noemí', 'nohemí', 'saharí', 'yarí', 'nazaré', 'renée', 'irené', 'abdí', 'leví', 'arnó'])
 
 const PRICE_COSTO_TYPO_RE = /(?<![\p{L}])(qu[eé]|cu[aá]nto|el|su|un|ese|este)\s+cost[oó](?![\p{L}])/giu
 
@@ -586,8 +598,31 @@ export function maskNonPaymentPhrases(value: string): string {
   // Verifier b3: "Ya llegó el mensajero, le di los 15 mil" is a cash-on-delivery claim and keeps its hand-off.
   const arrival = out.replace(DELIVERY_ARRIVAL_RE, ' ')
   if (arrival !== out && (!arrival.replace(FRIENDLY_RE, '').replace(/[\s,.!¡¿?…]+/gu, '') || isCourtesyText(arrival))) out = arrival
+  // Rafael 2026-11-06 (Pura Sonrisa live): "Hola, qué pena no he hecho el pedido y quiero saber cómo se usan las tiras"
+  // got the payment hand-off — "hecho" read as done. Saying the order was NOT placed yet is blanked only when nothing
+  // left in the bubble is money / a payment state ("no he hecho el pedido, ya pagué" keeps its hand-off).
+  const notOrdered = out.replace(NOT_ORDERED_YET_RE, ' ')
+  // SecureDog delta 2026-11-06: also no done word, no charge / debit / "verifiquen", no 💸 and no foreign payment state
+  // ("no he hecho el pedido pero me debitaron", "no hice el pedido, sent").
+  if (
+    notOrdered !== out &&
+    !PAYMENT_NOUN_ANY_RE.test(notOrdered) &&
+    !hasPaymentStatusHint(notOrdered) &&
+    !hasPastOrDoneWord(notOrdered, false) &&
+    !NOT_ORDERED_MONEY_HINT_RE.test(notOrdered) &&
+    !hasForeignPaymentState(notOrdered)
+  ) {
+    out = notOrdered
+  }
   return out
 }
+
+const NOT_ORDERED_MONEY_HINT_RE =
+  /(?<![\p{L}])(?:cobr\p{L}*|cargo\p{L}*|debit\p{L}*|rebaj\p{L}*|descont\p{L}*|verifi\p{L}*|ah[ií]\s+est[aá])(?![\p{L}])|[\u{1F4B8}\u{1F911}]/iu
+
+/** "no he hecho el pedido", "todavía no hice mi pedido", "aún no he realizado la compra" (never a payment word). */
+const NOT_ORDERED_YET_RE =
+  /(?<![\p{L}])(?:(?:a[uú]n|todav[ií]a)\s+)?no\s+(?:(?:he|hemos|lo\s+he)\s+(?:hecho|realizado|completado)|hice|hicimos|realic[eé]|realizamos)\s+(?:el|mi|un|una|la|ning[uú]n|ninguna|nuestro)\s+(?:pedido|compra|orden)(?![\p{L}])/giu
 
 /**
  * DeepSleep 2026-11-03: a future "le/te paso el comprobante" next to asking for the SINPE number is a how-to-pay
@@ -1736,13 +1771,68 @@ function noPaymentTalk(part: string): boolean {
 }
 
 /** One non-choice part, read against the ALLOWLIST (label + value, phone, delivery phrase, courtesy). */
+/** "Ana Mora Rojas", "San José", "Alajuela", "María de los Ángeles Soto": capitalised words + a few connectors. */
+const UNLABELED_NAME_OR_PLACE_RE =
+  /^\p{Lu}[\p{Ll}'´-]+(?:\s+(?:(?:de|del|la|las|los|y)\s+){0,2}\p{Lu}[\p{Ll}'´-]+){0,5}$/u
+/** CR places that end like a participle ("Desamparados", "Coronado", "Alvarado") — single-word lines only. */
+const CR_PLACE_PARTICIPLE_OK = new Set(['desamparados', 'coronado', 'alvarado', 'granados', 'colorado', 'dulce nombre', 'salitrillos', 'sabanilla'])
+/**
+ * Verifier r2 2026-11-06: a capitalised line can still be a done-word / payment phrase ("Completo", "Terminado",
+ * "Lo Logré", "La Primera Parte", "Solo El Envío", "Giro Mi Esposo"). Any of these words → not a name / place.
+ */
+const NAME_LINE_BAD_WORD_RE =
+  /^(?:complet\p{L}*|termin\p{L}*|cumpl\p{L}*|logr\p{L}*|resuel\p{L}*|resolv\p{L}*|conclu\p{L}*|pud\p{L}*|list[oa]s?|hech[oa]s?|ya|ok|okay|parte|mitad|resto|env[ií]o|primera|segunda|solo|s[oó]lo|lo|mi|mis|el|tu|su|sus|me|le|les|te|gir\p{L}*|pag\p{L}*|mand\p{L}*|envi\p{L}*|pas[eéoó]\p{L}*|deposit\p{L}*|transf\p{L}*|abon\p{L}*|cancel\p{L}*|cubr\p{L}*|liquid\p{L}*|sinp\p{L}*|simp\p{L}*|hic\p{L}*|hiz\p{L}*|realiz\p{L}*|realic\p{L}*|efectu\p{L}*|recib\p{L}*|lleg\p{L}*|verific\p{L}*|confirm\p{L}*|revis\p{L}*|comprobante|captura|recibo|monto|plata|dinero|pago|pagado)$/iu
+/** A single word that reads as a participle / done-word ("Terminado", "Cumplido", "Logrado", "Concluida"). */
+const SINGLE_DONE_WORD_RE = /^\p{L}+(?:ad[oa]s?|id[oa]s?)$/iu
+function isNameOrPlaceLine(part: string): boolean {
+  if (!UNLABELED_NAME_OR_PLACE_RE.test(part)) return false
+  const words = part.split(/\s+/u).filter(Boolean)
+  if (words.some((w) => NAME_LINE_BAD_WORD_RE.test(w))) return false
+  // A single word: a place or a surname, never a participle (fails closed for "Coronado" / "Alvarado").
+  return !(words.length === 1 && SINGLE_DONE_WORD_RE.test(words[0]) && !CR_PLACE_PARTICIPLE_OK.has(words[0].toLowerCase()))
+}
+/**
+ * An address line names a place relation: "Del súper 200 sur", "100 m norte de la iglesia", "Casa 12, Barrio X",
+ * "Frente a la escuela", "Avenida 3, calles 2 y 4". Verifier r2: a distance + direction, a relation word + a place, or
+ * an address noun with a number — never a bare "casa" / "este" ("lo tiene en la casa", "este mismo").
+ */
+const UNLABELED_ADDRESS_RE =
+  /(?<![\p{L}])(?:\d+\s*(?:m|mts|metros|varas|km)?\s*(?:al\s+)?(?:sur|norte|este|oeste)|(?:frente|contiguo|diagonal|costado|esquina)\s+(?:a|al|de|del)\s+\p{L}+|(?:del|de\s+la|detr[aá]s\s+de(?:l|\s+la)?)\s+(?:s[uú]per|supermercado|iglesia|escuela|colegio|parque|plaza|gasolinera|bomba|pulper[ií]a|cementerio|cruz\s+roja|plaza\s+de\s+deportes)|(?:avenida|ave|calle|casa|apartamento|apto|lote|edificio|condominio|residencial|barrio|urbanizaci[oó]n)\s+(?:#|n[°º.]?\s*)?[\p{L}\d]+|(?:avenida|calle|calles)\s+\d)(?![\p{L}])/iu
+
+/** CR places / place words ending in an accented vowel ("San José", "Jacó", "Turrialba" has none). */
+const CR_ACCENTED_PLACES = new Set(['josé', 'jacó', 'tárcoles', 'colón', 'león', 'ramón', 'sarapiquí', 'tilarán', 'potrerillos', 'aserrí', 'moravia', 'carrizal', 'jiménez', 'zarcero', 'poás', 'barrió', 'quepos', 'turrubares', 'bebedero', 'paquera', 'lepanto', 'cóbano', 'pejibaye', 'concepción', 'unión', 'asunción', 'atenas', 'ángeles'])
+
+/** Bank / payer / sender words, English done-words and clitic + verb clauses inside an unlabeled line. */
+const UNLABELED_PAY_CONTEXT_RE =
+  /(?<![\p{L}])(?:bac|bcr|bn|bct|banco|nacional|popular|davivienda|prom[eé]rica|scotiabank|lafise|cathay|improsa|coope\p{L}*|caja|mucap|mutual|titular|remitente|emisor|ordenante|consign\p{L}*|desde|ready|all\s+set|done|sent|paid|ok|nombre|parte|sale\s+como|cuenta|sinpe|simpe|comprobante|transfer\p{L}*|dep[oó]sit\p{L}*|(?:se|le|les|me|te|nos)\s+(?:l[oa]s?\s+)?\p{L}{3,}|(?:mi|su|tu)\s+(?:espos[oa]|mam[aá]|pap[aá]|herman[oa]|hij[oa]|novi[oa]|pareja|jef[ea]|amig[oa]))(?![\p{L}])/iu
+
 function isOrderDataPart(raw: string): boolean {
   const part = raw.replace(/[\s.!,;]+$/u, '').trim()
   if (!part) return true
   if (!noPaymentTalk(part)) return false
   if (DATA_PHONE_RE.test(part) || DATA_DELIVERY_RE.test(part) || isCourtesyText(part)) return true
   const m = DATA_LABEL_LINE_RE.exec(part)
-  if (!m) return false
+  // Rafael 2026-11-06 (close flow: the agent asks the data AND the method together, so "Luis Soto / 87776655 /
+  // luis@gmail.com / Sinpe" comes as one message). An UNLABELED line counts only in a known shape (Verifier 2026-11-06:
+  // never free text — "la primera parte", "Terminé", "Giró mi esposo"): an e-mail, a name / place (capitalised words
+  // only, no past verb), or an address with an address word; then every value check of a labelled "Dirección:".
+  if (!m) {
+    if (DATA_EMAIL_RE.test(part)) return true
+    if (!isNameOrPlaceLine(part) && !UNLABELED_ADDRESS_RE.test(part)) return false
+    // SecureDog 2026-11-06 INT-264: who paid / from where ("Desde Bac", "Titular Luis Soto", "Ready") or a clause
+    // hidden in an address ("Casa 12, se lo entregué al guarda", "… mi esposo le consignó") is never order data.
+    if (UNLABELED_PAY_CONTEXT_RE.test(part)) return false
+    // "De Luis Soto" (who it came from) at the start of the line or after a comma — case-sensitive on purpose.
+    if (/(?:^|,\s*)[Dd]e\s+\p{Lu}\p{Ll}+(?:\s+\p{Lu}\p{Ll}+)*\s*$/u.test(part)) return false
+    // An accented é / í / ó word anywhere in an unlabeled line ("Casa 12, Dejó Juan") counts only as a known first
+    // name, a CR place or a non-verb accent word — any other one reads as a past verb.
+    for (const m of part.matchAll(/\p{L}+/gu)) {
+      const lw = m[0].toLowerCase()
+      if (/[éíó]$/u.test(lw) && !ACCENT_OK.has(lw) && !ACCENTED_FIRST_NAMES.has(lw) && !CR_ACCENTED_PLACES.has(lw)) return false
+    }
+    if (hasPastOrDoneWord(part, false)) return false
+    return !/^\s*(?:direcci[oó]n)\s*[:=\-–]/iu.test(part) && isOrderDataPart(`Dirección: ${part}`)
+  }
   const label = foldChoice(m[1])
   const v = m[2].trim()
   if (/^(?:tel|cel|whats|wsp)/u.test(label)) return DATA_PHONE_RE.test(v)
@@ -1908,4 +1998,32 @@ export function paymentHandoffReason(text: string): 'payment' | 'complaint' {
   const value = text || ''
   if (RISK_CUE_RE.test(value) || (REFUND_RE.test(value) && !isReturnPolicyQuestion(value))) return 'complaint'
   return 'payment'
+}
+
+/**
+ * Rafael 2026-11-06 close flow: the customer's bubble is ONLY order data (≥ 2 lines, every line a plain or labelled
+ * order-data value judged by isOrderDataPart — money, glued / chunked claims, word caps), with no hard claim and the
+ * full classifier calling it non-payment. Never a question, a method choice or a claim. Pure.
+ */
+export function isPlainOrderData(text: string): boolean {
+  // Like embeddedPaymentChoice: odd breaks / invisible characters are rejected on the RAW text, never stripped.
+  if (DATA_ODD_BREAK_RE.test((text || '').normalize('NFKC')) || hasOddAccentPayWord(text || '')) return false
+  const value = stripFormatChars((text || '').normalize('NFKC'))
+  if (!value.trim() || value.length > DATA_CHOICE_MAX_CHARS || /[?¿]/u.test(value)) return false
+  const lines = value.split('\n').map((l) => l.trim()).filter(Boolean)
+  if (lines.length < 2 || !lines.every((l) => isOrderDataPart(l))) return false
+  // Real order data carries a contact: a CR phone or an e-mail (Verifier 2026-11-06: "Ana Mora / Terminé" is not data).
+  if (!/(?<!\d)(?:\+?506[\s-]?)?[2-8]\d{3}[\s.-]?\d{4}(?!\d)|[^\s@]+@[^\s@]+\.[a-z]{2,}/iu.test(value)) return false
+  if (embeddedPaymentChoice(value) !== null) return false
+  // The same whole-message status / claim / debt checks embeddedPaymentChoice runs ("ya está", "hoy en la mañana",
+  // "falta el resto", "le debo la mitad", "verifiquen"): any of them → not plain data (fail closed).
+  const masked = value.replace(DATA_LABEL_MASK_RE, (l) => l.split(/\s+/)[0])
+  const folded = foldChoice(masked)
+  const collapsed = folded.replace(/(\p{L})\1+/gu, '$1')
+  for (const v of [masked, folded, collapsed]) {
+    if (DATA_CHOICE_REJECT_RE.test(v) || CHOICE_CLAIM_WORD_RE.test(v) || PAYMENT_COMPLETION_RE.test(v) || STATUS_DISPUTE_RE.test(foldChoice(v))) return false
+    if (PARTIAL_STATE_RE.test(v) || DEBT_RE.test(v) || hasPaymentStatusHint(v) || hasChoiceClaimOrStatusWord(v)) return false
+  }
+  if (STATUS_CLAIM_RE.test(masked) || DATA_STATUS_CUE_RE.test(masked) || hasFreePayAct(masked)) return false
+  return !hasHardPaymentClaim(value) && classifyPaymentText(value) === 'non_payment'
 }

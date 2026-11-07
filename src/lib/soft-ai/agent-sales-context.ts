@@ -138,6 +138,7 @@ export async function loadAgentSalesContext(input: {
     salesScript: setup ? salesRulesForPrompt(setup.salesRules) : '',
     aiDisclosure: setup?.salesRules.aiDisclosure ?? 'discreet',
     dataThenPay: setup?.salesRules.afterData === 'pay',
+    closeWithPay: setup?.salesRules.closeWithPay === true,
     // Shareable = switch on AND the details exist (never ask the model to give details that aren't configured).
     paymentShareable: canSharePaymentFacts(input.brandFacts),
     paymentDigits,

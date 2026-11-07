@@ -53,12 +53,33 @@ import {
   NO_WEIGHT_SALES_RULE_EDITS,
   NO_WEIGHT_SHORTCUT_EDITS,
 } from '../lib/deepsleep-no-weight-edits'
+import {
+  PACK_BRAND_FACT_EDITS,
+  PACK_BUNDLE_RENAMES,
+  PACK_INSTRUCTION_EDITS,
+  PACK_KNOWLEDGE_EDITS,
+  PACK_SALES_RULE_EDITS,
+  PACK_SHORTCUT_EDITS,
+} from '../lib/forge-pack-wording-edits'
+import { CLOSE_INSTRUCTION_EDITS, CLOSE_SALES_RULE_EDITS } from '../lib/forge-close-flow-edits'
 import { resolveRepoOutPath } from '../lib/out-path-guard'
 import { sameJson, type NoWeightBackupV1, type NoWeightChange, resolveNoWeightActor, requireNoWeightTenant } from './deepsleep-no-weight-shared'
 
 const APPLY = process.argv.includes('--apply')
 const TENANT_ID = DEEPSLEEP_TENANT_ID
 const AGENT_ID = NO_WEIGHT_AGENT_ID
+/**
+ * --set=pack-wording (Rafael 2026-11-06, "uno o dos" instead of "Pack de 2"); --set=close-flow (2026-11-06, data +
+ * payment question together, SINPE details right away); default: the 2026-11-03 no-weight set.
+ */
+const SET = arg('set') || 'no-weight'
+if (SET !== 'no-weight' && SET !== 'pack-wording' && SET !== 'close-flow') throw new Error('--set must be no-weight, pack-wording or close-flow')
+const EDITS =
+  SET === 'pack-wording'
+    ? { instructions: PACK_INSTRUCTION_EDITS, shortcuts: PACK_SHORTCUT_EDITS, knowledge: PACK_KNOWLEDGE_EDITS, brandFacts: PACK_BRAND_FACT_EDITS, salesRules: PACK_SALES_RULE_EDITS as Record<string, TextEdit[]>, bundleRenames: PACK_BUNDLE_RENAMES }
+    : SET === 'close-flow'
+      ? { instructions: CLOSE_INSTRUCTION_EDITS, shortcuts: {} as Record<string, TextEdit[]>, knowledge: {} as Record<string, TextEdit[]>, brandFacts: {} as Record<string, TextEdit[]>, salesRules: CLOSE_SALES_RULE_EDITS as Record<string, TextEdit[]>, bundleRenames: {} as Record<string, string> }
+      : { instructions: NO_WEIGHT_INSTRUCTION_EDITS, shortcuts: NO_WEIGHT_SHORTCUT_EDITS, knowledge: NO_WEIGHT_KNOWLEDGE_EDITS, brandFacts: NO_WEIGHT_BRAND_FACT_EDITS, salesRules: NO_WEIGHT_SALES_RULE_EDITS as Record<string, TextEdit[]>, bundleRenames: {} as Record<string, string> }
 
 function arg(name: string): string | null {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`))
@@ -115,7 +136,7 @@ async function plan(): Promise<NoWeightChange[]> {
   say(`\n== ${agent.name} (${agent.id}) live v${agent.version} ==`)
 
   // 1. Instructions
-  const ins = planText('systemInstructions', agent.systemInstructions, NO_WEIGHT_INSTRUCTION_EDITS)
+  const ins = planText('systemInstructions', agent.systemInstructions, EDITS.instructions)
   if (ins !== null) {
     if (ins.trim().length > AGENT_INSTRUCTIONS_MAX) errors.push(`systemInstructions: ${ins.trim().length} > ${AGENT_INSTRUCTIONS_MAX}`)
     else say(`      (${ins.trim().length}/${AGENT_INSTRUCTIONS_MAX})`)
@@ -123,7 +144,7 @@ async function plan(): Promise<NoWeightChange[]> {
   }
 
   // 2. Saved replies (raw DB body, not the display upgrade)
-  for (const [key, edits] of Object.entries(NO_WEIGHT_SHORTCUT_EDITS)) {
+  for (const [key, edits] of Object.entries(EDITS.shortcuts)) {
     const row = await prisma.chatAgentShortcut.findFirst({ where: { tenantId: TENANT_ID, agentId: AGENT_ID, key } })
     if (!row) {
       errors.push(`shortcut ${key}: not found`)
@@ -146,7 +167,7 @@ async function plan(): Promise<NoWeightChange[]> {
   }
 
   // 3. Knowledge (the approved source bound to this agent with that exact name)
-  for (const [name, edits] of Object.entries(NO_WEIGHT_KNOWLEDGE_EDITS)) {
+  for (const [name, edits] of Object.entries(EDITS.knowledge)) {
     const links = await prisma.chatAgentKnowledgeSource.findMany({
       where: { tenantId: TENANT_ID, agentId: AGENT_ID, source: { name, status: 'approved' } },
       include: { source: true },
@@ -179,7 +200,7 @@ async function plan(): Promise<NoWeightChange[]> {
   const rawFacts = (agent.brandFacts ?? {}) as Record<string, unknown>
   const extra = Array.isArray(rawFacts.extraFacts) ? (rawFacts.extraFacts as Array<{ label?: unknown; value?: unknown }>) : []
   const valueByLabel = new Map<string, string>()
-  for (const [label, edits] of Object.entries(NO_WEIGHT_BRAND_FACT_EDITS)) {
+  for (const [label, edits] of Object.entries(EDITS.brandFacts)) {
     const hits = extra.filter((e) => e.label === label)
     if (hits.length !== 1 || typeof hits[0].value !== 'string') {
       errors.push(`brandFacts "${label}": expected 1 entry, found ${hits.length}`)
@@ -216,18 +237,42 @@ async function plan(): Promise<NoWeightChange[]> {
   const { salesRules: current } = await loadSalesSetup(TENANT_ID, AGENT_ID)
   const patch: Partial<SalesRules> = {}
   const before: Partial<SalesRules> = {}
-  const must = planList('salesRules.mustSay', current.mustSay, NO_WEIGHT_SALES_RULE_EDITS.mustSay)
+  const must = EDITS.salesRules.mustSay ? planList('salesRules.mustSay', current.mustSay, EDITS.salesRules.mustSay) : null
   if (must) Object.assign(patch, { mustSay: must }), Object.assign(before, { mustSay: current.mustSay })
-  const never = planList('salesRules.neverSay', current.neverSay, NO_WEIGHT_SALES_RULE_EDITS.neverSay)
+  const never = EDITS.salesRules.neverSay ? planList('salesRules.neverSay', current.neverSay, EDITS.salesRules.neverSay) : null
   if (never) Object.assign(patch, { neverSay: never }), Object.assign(before, { neverSay: current.neverSay })
-  for (const key of ['objections', 'handoffWhen'] as const) {
+  for (const key of ['objections', 'handoffWhen', 'closing', 'upsells'] as const) {
+    if (!EDITS.salesRules[key]) continue
     const live = current[key]
     if (typeof live !== 'string') {
       errors.push(`salesRules.${key}: empty`)
       continue
     }
-    const after = planText(`salesRules.${key}`, live, NO_WEIGHT_SALES_RULE_EDITS[key])
+    const after = planText(`salesRules.${key}`, live, EDITS.salesRules[key])
     if (after !== null) Object.assign(patch, { [key]: after }), Object.assign(before, { [key]: live })
+  }
+  // Combo names (price / shipping unchanged): each rename must hit exactly one live combo, or it is already done.
+  // Boolean selling-rule switches (close-flow: closeWithPay = true). Already set → unchanged.
+  if (SET === 'close-flow' && current.closeWithPay !== true) {
+    // "before" is the live value as stored (missing = undefined), so the in-transaction re-check matches it.
+    Object.assign(patch, { closeWithPay: true }), Object.assign(before, { closeWithPay: current.closeWithPay })
+    say('  ~ salesRules.closeWithPay: false → true')
+  } else if (SET === 'close-flow') say('  = salesRules.closeWithPay: already true')
+  const renames = Object.entries(EDITS.bundleRenames)
+  if (renames.length) {
+    const bundles = current.bundles ?? []
+    let changed = false
+    const next = bundles.map((b) => ({ ...b }))
+    for (const [from, to] of renames) {
+      const hits = next.filter((b) => b.name === from)
+      if (hits.length === 1) {
+        hits[0].name = to
+        changed = true
+        say(`  ~ salesRules.bundles: ${JSON.stringify(from)} → ${JSON.stringify(to)}`)
+      } else if (next.some((b) => b.name === to)) say(`  = salesRules.bundles: ${JSON.stringify(to)} already applied`)
+      else errors.push(`salesRules.bundles: ${JSON.stringify(from)} found ${hits.length} times`)
+    }
+    if (changed) Object.assign(patch, { bundles: next }), Object.assign(before, { bundles })
   }
   if (Object.keys(patch).length) {
     const merged = parseSalesRules({ ...current, ...patch })
@@ -298,7 +343,7 @@ async function apply(changes: NoWeightChange[], backup: NoWeightBackupV1, backup
 }
 
 async function main() {
-  say(`DeepSleep no-weight apply — ${APPLY ? 'APPLY' : 'DRY-RUN'}`)
+  say(`DeepSleep Forge text apply (set ${SET}) — ${APPLY ? 'APPLY' : 'DRY-RUN'}`)
   const tenant = await requireNoWeightTenant(arg('confirm-tenant'), TENANT_ID, DEEPSLEEP_TENANT_SLUG)
   say(`Tenant: ${tenant.name} (${tenant.slug} / ${tenant.id})`)
   const act = await resolveNoWeightActor(arg('actor-email') || NO_WEIGHT_ACTOR_EMAIL, TENANT_ID, 'deepsleep-no-weight-apply')
@@ -324,7 +369,7 @@ async function main() {
   mkdirSync(dir, { recursive: true })
   const createdAt = new Date().toISOString()
   const backup: NoWeightBackupV1 = { version: 1, kind: 'deepsleep-no-weight', createdAt, tenantId: TENANT_ID, changes }
-  const backupPath = join(dir, `deepsleep-no-weight-backup-${createdAt.replace(/[:.]/g, '-')}.json`)
+  const backupPath = join(dir, `deepsleep-${SET}-backup-${createdAt.replace(/[:.]/g, '-')}.json`)
   writeBackup(backup, backupPath)
   say(`\nBackup: ${backupPath}`)
   const skipped = await apply(changes, backup, backupPath, act)

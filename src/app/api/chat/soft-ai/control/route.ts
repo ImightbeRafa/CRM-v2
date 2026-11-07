@@ -10,6 +10,9 @@ import { setConversationAgentMode, type AgentControlAction } from '@/lib/chat-ag
 import { sweepWaitingConversation } from '@/lib/soft-ai/waiting-sweep'
 import { isSameOriginRequest } from '@/lib/same-origin'
 import { createIdentifierRateLimit } from '@/lib/rate-limit'
+import { prisma } from '@/lib/db'
+import { clearOpenHandoffOnResume } from '@/lib/chat-unanswered-server'
+import { logAuditEvent } from '@/lib/auditLogger'
 
 // SecureDog INT-96: resume now triggers an AI answer (model spend) — same-origin + per-person limit.
 const controlRateLimit = createIdentifierRateLimit({ windowMs: 60_000, maxRequests: 20, identifier: 'chat-soft-ai-control' })
@@ -48,6 +51,7 @@ export async function POST(request: NextRequest) {
     // Devolver a IA: if the customer's last message is still unanswered (and the line answers), answer it now.
     // Same job path as the webhook (same delivery key), so it is never answered twice.
     let answering = false
+    let sweepReason = ''
     if (action === 'resume' && keyParts) {
       const sweep = await sweepWaitingConversation({
         tenantId,
@@ -55,9 +59,37 @@ export async function POST(request: NextRequest) {
         peerId: keyParts.peerId,
       })
       answering = sweep.queued
+      sweepReason = sweep.reason
     }
 
-    return NextResponse.json({ success: true, conversationKey, action, mode, answering })
+    // Rafael 2026-11-06: nothing left to answer (the agent already replied, then handed off) → the chat must still
+    // leave "Necesita persona", or it looks like the agent never took it back. Only when the sweep itself (uncached
+    // line check, flag, chat) found our message last ('answered'), and only for a missing-fact hand-off (see
+    // clearOpenHandoffOnResume). Audited like Respondido.
+    let handoffCleared = false
+    if (action === 'resume' && keyParts && !answering && sweepReason === 'answered') {
+      const convo = await prisma.chatConversation.findFirst({
+        where: { tenantId, socialAccountId: keyParts.socialAccountId, peerId: keyParts.peerId },
+        select: { id: true },
+      })
+      if (convo) {
+        handoffCleared = await clearOpenHandoffOnResume({ tenantId, conversationId: convo.id, userId: auth.userId })
+        if (handoffCleared) {
+          await logAuditEvent({
+            action: 'UPDATE',
+            entityType: 'ChatConversation',
+            entityId: convo.id,
+            description: 'Devuelto a la IA: la pregunta ya estaba respondida, sale de Necesita persona',
+            newValues: { handoffCleared: true },
+            userId: auth.userId,
+            userRole: auth.role,
+            tenantId,
+          }).catch(() => {})
+        }
+      }
+    }
+
+    return NextResponse.json({ success: true, conversationKey, action, mode, answering, handoffCleared })
   } catch (error) {
     console.error('[soft-ai/control]', error)
     return NextResponse.json({ success: false, error: 'Error al controlar Soft AI' }, { status: 500 })

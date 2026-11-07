@@ -269,6 +269,9 @@ export function decideInbound(input: {
     rescued &&
     (neighbours.some((t) => !isRescuedPayShipQuestion(t || '') && !isCleanPayShipNeighbour(t || '')) ||
       (input.earlierCustomerTexts || []).some((t) => hasRecentMoneyState(t || '')))
+  // Rafael 2026-11-06 (live, order data opening with a name + a link): the strict check stays the only rule for an
+  // earlier bubble (Verifier 2026-11-06: "Le mandé", "Te lo pasé en la mañana" keep their hand-off). The live case is
+  // fixed inside the check itself (a full name opening the data is a name, never a past verb).
   const burstClaim = doneAfterDetails || payShipAfterTrace || (input.earlierCustomerTexts || []).some(
     (t) => hasHardPaymentClaim(t, { noPaymentYet }) && !(embeddedPaymentChoice(t) && !hasHardPaymentClaimLabelMasked(t)),
   )

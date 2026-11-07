@@ -78,6 +78,9 @@ describe('data then pay: sales stage (Laura 2026-11-05)', () => {
     const s = deriveSalesState({ history: LAURA, inboundText: DATA, ctx: { ...CTX, dataThenPay: false } })
     assert.equal(s.dataReceived, undefined)
     assert.equal(s.stage, 'cotizar')
+    // 2026-11-06: only an agent with salesRules.closeWithPay (Forge first) turns this into the close.
+    const forge = deriveSalesState({ history: LAURA, inboundText: DATA, ctx: { ...CTX, dataThenPay: false, closeWithPay: true } })
+    assert.equal(forge.stage, 'cierre')
   })
 
   it('method question already pending → metodo_pago stays (never asked twice)', () => {

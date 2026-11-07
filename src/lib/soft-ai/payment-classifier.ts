@@ -1772,10 +1772,31 @@ function noPaymentTalk(part: string): boolean {
 /** One non-choice part, read against the ALLOWLIST (label + value, phone, delivery phrase, courtesy). */
 /** "Ana Mora Rojas", "San José", "Alajuela", "María de los Ángeles Soto": capitalised words + a few connectors. */
 const UNLABELED_NAME_OR_PLACE_RE =
-  /^\p{Lu}[\p{Ll}'´-]+(?:\s+(?:(?:de|del|la|las|los|y)\s+)?\p{Lu}[\p{Ll}'´-]+){0,5}$/u
-/** An address line names a place relation: "Del súper 200 sur", "100 m norte de la iglesia", "Casa 12, Barrio X". */
+  /^\p{Lu}[\p{Ll}'´-]+(?:\s+(?:(?:de|del|la|las|los|y)\s+){0,2}\p{Lu}[\p{Ll}'´-]+){0,5}$/u
+/** CR places that end like a participle ("Desamparados", "Coronado", "Alvarado") — single-word lines only. */
+const CR_PLACE_PARTICIPLE_OK = new Set(['desamparados', 'coronado', 'alvarado', 'granados', 'colorado', 'dulce nombre', 'salitrillos', 'sabanilla'])
+/**
+ * Verifier r2 2026-11-06: a capitalised line can still be a done-word / payment phrase ("Completo", "Terminado",
+ * "Lo Logré", "La Primera Parte", "Solo El Envío", "Giro Mi Esposo"). Any of these words → not a name / place.
+ */
+const NAME_LINE_BAD_WORD_RE =
+  /^(?:complet\p{L}*|termin\p{L}*|cumpl\p{L}*|logr\p{L}*|resuel\p{L}*|resolv\p{L}*|conclu\p{L}*|pud\p{L}*|list[oa]s?|hech[oa]s?|ya|ok|okay|parte|mitad|resto|env[ií]o|primera|segunda|solo|s[oó]lo|lo|mi|mis|el|tu|su|sus|me|le|les|te|gir\p{L}*|pag\p{L}*|mand\p{L}*|envi\p{L}*|pas[eéoó]\p{L}*|deposit\p{L}*|transf\p{L}*|abon\p{L}*|cancel\p{L}*|cubr\p{L}*|liquid\p{L}*|sinp\p{L}*|simp\p{L}*|hic\p{L}*|hiz\p{L}*|realiz\p{L}*|realic\p{L}*|efectu\p{L}*|recib\p{L}*|lleg\p{L}*|verific\p{L}*|confirm\p{L}*|revis\p{L}*|comprobante|captura|recibo|monto|plata|dinero|pago|pagado)$/iu
+/** A single word that reads as a participle / done-word ("Terminado", "Cumplido", "Logrado", "Concluida"). */
+const SINGLE_DONE_WORD_RE = /^\p{L}+(?:ad[oa]s?|id[oa]s?)$/iu
+function isNameOrPlaceLine(part: string): boolean {
+  if (!UNLABELED_NAME_OR_PLACE_RE.test(part)) return false
+  const words = part.split(/\s+/u).filter(Boolean)
+  if (words.some((w) => NAME_LINE_BAD_WORD_RE.test(w))) return false
+  // A single word: a place or a surname, never a participle (fails closed for "Coronado" / "Alvarado").
+  return !(words.length === 1 && SINGLE_DONE_WORD_RE.test(words[0]) && !CR_PLACE_PARTICIPLE_OK.has(words[0].toLowerCase()))
+}
+/**
+ * An address line names a place relation: "Del súper 200 sur", "100 m norte de la iglesia", "Casa 12, Barrio X",
+ * "Frente a la escuela", "Avenida 3, calles 2 y 4". Verifier r2: a distance + direction, a relation word + a place, or
+ * an address noun with a number — never a bare "casa" / "este" ("lo tiene en la casa", "este mismo").
+ */
 const UNLABELED_ADDRESS_RE =
-  /(?<![\p{L}])(?:\d+\s*(?:m|mts|metros|varas|km)|metros|varas|sur|norte|este|oeste|frente|contiguo|diagonal|costado|esquina|avenida|ave|calle|casa|barrio|residencial|condominio|apartamento|apto|edificio|urbanizaci[oó]n|lote|carretera|ruta|kil[oó]metro|port[oó]n|iglesia|escuela|plaza|parque|super|s[uú]per|supermercado|gasolinera|bomba|pulper[ií]a)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:\d+\s*(?:m|mts|metros|varas|km)?\s*(?:al\s+)?(?:sur|norte|este|oeste)|(?:frente|contiguo|diagonal|costado|esquina)\s+(?:a|al|de|del)\s+\p{L}+|(?:del|de\s+la|detr[aá]s\s+de(?:l|\s+la)?)\s+(?:s[uú]per|supermercado|iglesia|escuela|colegio|parque|plaza|gasolinera|bomba|pulper[ií]a|cementerio|cruz\s+roja|plaza\s+de\s+deportes)|(?:avenida|ave|calle|casa|apartamento|apto|lote|edificio|condominio|residencial|barrio|urbanizaci[oó]n)\s+(?:#|n[°º.]?\s*)?[\p{L}\d]+|(?:avenida|calle|calles)\s+\d)(?![\p{L}])/iu
 
 function isOrderDataPart(raw: string): boolean {
   const part = raw.replace(/[\s.!,;]+$/u, '').trim()
@@ -1789,7 +1810,7 @@ function isOrderDataPart(raw: string): boolean {
   // only, no past verb), or an address with an address word; then every value check of a labelled "Dirección:".
   if (!m) {
     if (DATA_EMAIL_RE.test(part)) return true
-    if (!UNLABELED_NAME_OR_PLACE_RE.test(part) && !UNLABELED_ADDRESS_RE.test(part)) return false
+    if (!isNameOrPlaceLine(part) && !UNLABELED_ADDRESS_RE.test(part)) return false
     if (hasPastOrDoneWord(part, false)) return false
     return !/^\s*(?:direcci[oó]n)\s*[:=\-–]/iu.test(part) && isOrderDataPart(`Dirección: ${part}`)
   }

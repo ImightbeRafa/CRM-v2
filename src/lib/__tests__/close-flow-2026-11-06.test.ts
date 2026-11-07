@@ -75,6 +75,16 @@ describe('order data shapes (strict): unlabeled lines only as an e-mail, a name 
     ]) assert.equal(isPlainOrderData(t), false, t)
   })
 
+  it('Verifier r2: a capitalised done-word / payment phrase or a loose "address" is never a data line; real places are', () => {
+    for (const l of ['Completo', 'Terminado', 'Cumplido', 'Logrado', 'Resuelto', 'Concluido', 'Pude', 'Lo Logré', 'La Primera Parte', 'Solo El Envío', 'Giro Mi Esposo', 'lo tiene en la casa', 'este mismo']) {
+      assert.equal(isPlainOrderData(`Ana Mora\n8888-8888\n${l}`), false, l)
+      assert.equal(embeddedPaymentChoice(`Ana Mora\n8888-8888\n${l}\nSinpe`), null, l)
+    }
+    for (const l of ['Desamparados', 'Coronado', 'Alvarado', 'María de los Ángeles Soto', 'Cartago', 'La Unión', 'Del súper 200 sur', 'Frente a la escuela', 'Casa 12, Barrio Los Ángeles', '100 m norte de la iglesia']) {
+      assert.equal(isPlainOrderData(`Ana Mora\n8888-8888\n${l}`), true, l)
+    }
+  })
+
   it('Verifier 2026-11-06 #7: data + "Sinpe" is a choice only with plain data lines', () => {
     assert.equal(embeddedPaymentChoice('Ana Mora\n8888-8888\nHeredia\nPago por SINPE'), 'sinpe')
     assert.equal(embeddedPaymentChoice('Luis Soto\n87776655\nluis@gmail.com\nSinpe'), 'sinpe')

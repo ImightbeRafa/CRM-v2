@@ -700,7 +700,9 @@ export function deriveSalesState(input: {
             ? CIERRE_DATA_FIRST_STEP
             : NEXT_STEP[stage]
   // The receipt already came in after the details: a later message ("Muchas gracias") is post-sale, not "pagá y mandame el comprobante".
-  if (stage === 'esperando_comprobante' && !buyCue && paidAfterDetails(input.history, paymentDetailsMsg)) {
+  // Verifier r2 2026-11-06: the paid flag comes from the receipt itself (later steps may overwrite nextStep).
+  const paidAlready = stage === 'esperando_comprobante' && paidAfterDetails(input.history, paymentDetailsMsg)
+  if (paidAlready && !buyCue) {
     nextStep = PAID_STEP
   }
   if (duplicateOrder && !buyCue) {
@@ -722,7 +724,7 @@ export function deriveSalesState(input: {
     // Verifier r1 #2: never for a sold-out product (its own step: no total, no payment question).
     ...(dataIn && stage === 'cierre' && !focus ? { dataReceived: true } : {}),
     ...(dataGiven ? { dataGiven: true } : {}),
-    ...(nextStep === PAID_STEP ? { paid: true } : {}),
+    ...(paidAlready ? { paid: true } : {}),
   }
 }
 
